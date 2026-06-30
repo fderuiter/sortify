@@ -1,0 +1,5 @@
+scikit-learn
+pypdf
+python-docx
+pandas
+customtkinter
