@@ -11,9 +11,8 @@ from typing import Callable, Tuple
 
 import pandas as pd
 import pypdf
-from docx import Document
-
 from config import LOG_FILE, MAX_WORKERS
+from docx import Document
 
 # Configure Centralized Logger
 logging.basicConfig(

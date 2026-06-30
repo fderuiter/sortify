@@ -9,7 +9,6 @@ import time
 from tkinter import filedialog
 
 import customtkinter as ctk
-
 from config import MAX_FOLDERS
 from core.analyzer import generate_sorting_plan
 from core.extractor import build_corpus
@@ -33,6 +32,7 @@ class AutoSorterApp(ctk.CTk):
 
         self.base_dir: str = ""
         self.plan: dict = {}
+        self.original_items: set = set()
 
         # Benchmarking / Progress Metrics
         self.total_files = 0
@@ -69,8 +69,9 @@ class AutoSorterApp(ctk.CTk):
         self.meta_label.pack(pady=2)
 
         # Display Preview Box
-        self.textbox = ctk.CTkTextbox(self, width=650, height=250, state="disabled")
+        self.textbox = ctk.CTkTextbox(self, width=650, height=250, state="normal")
         self.textbox.pack(pady=10)
+        self.textbox.bind("<KeyRelease>", self.disable_reclustering)
 
         self.execute_btn = ctk.CTkButton(
             self,
@@ -81,6 +82,14 @@ class AutoSorterApp(ctk.CTk):
             state="disabled",
         )
         self.execute_btn.pack(pady=15)
+
+    def disable_reclustering(self, event=None) -> None:
+        """Disable AI re-clustering (directory selection) once manual edits begin."""
+        if self.select_btn.cget("state") != "disabled":
+            self.select_btn.configure(state="disabled")
+            self.status_label.configure(
+                text="Manual edits detected. Re-clustering disabled.", text_color="yellow"
+            )
 
     def select_directory(self) -> None:
         """Open a directory selection dialog and initialize processing threads.
@@ -95,6 +104,7 @@ class AutoSorterApp(ctk.CTk):
             items_to_sort = [
                 f for f in os.listdir(self.base_dir) if not f.startswith(".")
             ]
+            self.original_items = set(items_to_sort)
             self.total_files = len(items_to_sort)
 
             if self.total_files == 0:
@@ -179,14 +189,10 @@ class AutoSorterApp(ctk.CTk):
         self.textbox.delete("1.0", "end")
 
         for folder, files in self.plan.items():
-            self.textbox.insert("end", f"📂 [{folder}] ({len(files)} items)\n")
-            for f in files[:3]:
-                self.textbox.insert("end", f"   ├── {f}\n")
-            if len(files) > 3:
-                self.textbox.insert("end", f"   └── ...and {len(files) - 3} more.\n")
+            self.textbox.insert("end", f"[{folder}]\n")
+            for f in files:
+                self.textbox.insert("end", f"{f}\n")
             self.textbox.insert("end", "\n")
-
-        self.textbox.configure(state="disabled")
 
         # Reset Interaction States on UI
         self.status_label.configure(
@@ -203,20 +209,56 @@ class AutoSorterApp(ctk.CTk):
         None
 
         """
-        if self.plan and self.base_dir:
-            self.status_label.configure(
-                text="Moving files into position...", text_color="white"
-            )
-            self.execute_btn.configure(state="disabled")
+        if not self.base_dir:
+            return
 
-            # Execute physical operations safely
-            execute_moves(self.base_dir, self.plan)
+        text_plan = self.textbox.get("1.0", "end").strip()
+        parsed_plan: dict[str, list[str]] = {}
+        current_folder = None
+        
+        illegal_chars = set('\\/:*?"<>|')
 
-            self.status_label.configure(
-                text="Sorting complete! Check log for skipped/locked files.",
-                text_color="green",
-            )
-            self.meta_label.configure(text="")
+        lines = text_plan.split('\n')
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+
+            if line in self.original_items:
+                if current_folder is None:
+                    self.status_label.configure(text="Error: Missing folder headers.", text_color="red")
+                    return
+                parsed_plan[current_folder].append(line)
+            elif line.startswith('[') and line.endswith(']'):
+                current_folder = line[1:-1].strip()
+                if not current_folder:
+                    self.status_label.configure(text="Error: Empty folder name.", text_color="red")
+                    return
+                if any(c in illegal_chars for c in current_folder):
+                    self.status_label.configure(text=f"Error: Illegal characters in folder '{current_folder}'.", text_color="red")
+                    return
+                if current_folder not in parsed_plan:
+                    parsed_plan[current_folder] = []
+            else:
+                self.status_label.configure(text=f"Error: Unknown or arbitrary file '{line}'.", text_color="red")
+                return
+
+        self.plan = parsed_plan
+
+        self.status_label.configure(
+            text="Moving files into position...", text_color="white"
+        )
+        self.execute_btn.configure(state="disabled")
+        self.textbox.configure(state="disabled")
+
+        # Execute physical operations safely
+        execute_moves(self.base_dir, self.plan)
+
+        self.status_label.configure(
+            text="Sorting complete! Check log for skipped/locked files.",
+            text_color="green",
+        )
+        self.meta_label.configure(text="")
 
 
 def run_app() -> None:

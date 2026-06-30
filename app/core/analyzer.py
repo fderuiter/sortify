@@ -5,10 +5,9 @@ This module provides topic modeling functionality.
 
 from collections import defaultdict
 
+from config import MAX_DF, MIN_DF, STOP_WORDS
 from sklearn.decomposition import NMF
 from sklearn.feature_extraction.text import TfidfVectorizer
-
-from config import MAX_DF, MIN_DF, STOP_WORDS
 
 
 def generate_sorting_plan(corpus: dict, max_folders: int) -> dict:
