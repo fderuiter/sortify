@@ -33,8 +33,8 @@ def print_proposal(plan: dict) -> None:
     """
     print("\n" + "="*50)
     print("PROPOSED SORTING PLAN")
-    print("="*50)
-    
+    print("=" * 50)
+
     for folder, files in plan.items():
         if files:
             print(f"\n📂 [{folder}] ({len(files)} items)")
@@ -42,8 +42,9 @@ def print_proposal(plan: dict) -> None:
                 print(f"   ├── {f}")
             if len(files) > 3:
                 print(f"   └── ...and {len(files) - 3} more.")
-                
-    print("\n" + "="*50)
+
+    print("\n" + "=" * 50)
+
 
 def ask_for_approval() -> bool:
     """Prompt the user to approve or reject the plan.
@@ -56,9 +57,9 @@ def ask_for_approval() -> bool:
     """
     while True:
         choice = input("\nDo you approve this sorting plan? (Y/N): ").strip().lower()
-        if choice in ['y', 'yes']:
+        if choice in ["y", "yes"]:
             return True
-        elif choice in ['n', 'no']:
+        elif choice in ["n", "no"]:
             print("Sorting cancelled by user. No files were moved.")
             return False
         else:

@@ -3,9 +3,10 @@
 This module is responsible for safely moving files to new directories.
 """
 
+import logging
 import os
 import shutil
-import logging
+
 
 def get_safe_path(dest_dir: str, filename: str) -> str:
     """Generate a safe file path to avoid overwriting existing files.
@@ -31,6 +32,7 @@ def get_safe_path(dest_dir: str, filename: str) -> str:
         counter += 1
     return safe_path
 
+
 def execute_moves(base_dir: str, plan: dict) -> None:
     """Create directories and safely move files, tracking file-system errors.
 
@@ -47,17 +49,19 @@ def execute_moves(base_dir: str, plan: dict) -> None:
 
     """
     for folder, files in plan.items():
-        if not files: 
+        if not files:
             continue
-            
+
         folder_path = os.path.join(base_dir, folder)
         if not os.path.exists(folder_path):
             try:
                 os.makedirs(folder_path)
             except Exception as e:
-                logging.error(f"Failed to create directory {folder_path}. Error: {str(e)}")
+                logging.error(
+                    f"Failed to create directory {folder_path}. Error: {str(e)}"
+                )
                 continue
-            
+
         for item in files:
             source_path = os.path.join(base_dir, item)
             dest_path = get_safe_path(folder_path, item)
@@ -65,4 +69,7 @@ def execute_moves(base_dir: str, plan: dict) -> None:
                 shutil.move(source_path, dest_path)
             except Exception as e:
                 # Logs permissions blocks or file system locks centrally
-                logging.error(f"Failed to move file {item} to {folder_path}. Check if file is open elsewhere. Error: {str(e)}")
+                logging.error(
+                    f"Failed to move file {item} to {folder_path}. "
+                    f"Check if file is open elsewhere. Error: {str(e)}"
+                )
