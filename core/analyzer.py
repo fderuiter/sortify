@@ -1,4 +1,11 @@
 # core/analyzer.py
+"""
+Analyzer Module
+
+This module is responsible for analyzing the text content of documents and creating
+a logical folder structure using machine learning algorithms.
+"""
+
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.decomposition import NMF
 from collections import defaultdict
@@ -8,6 +15,14 @@ def generate_sorting_plan(corpus, max_folders):
     """
     Uses Machine Learning (TF-IDF + NMF) to cluster documents by connected themes.
     Returns a sorting plan and the connected keywords defining each folder.
+
+    :param corpus: Dictionary mapping filenames to their text content.
+    :type corpus: dict
+    :param max_folders: Maximum number of folders to cluster the files into.
+    :type max_folders: int
+    :return: A sorting plan dictionary mapping folder names to lists of filenames.
+    :rtype: dict
+    :raises ValueError: If the vectorizer fails unexpectedly with non-text data.
     """
     documents = list(corpus.values())
     filenames = list(corpus.keys())

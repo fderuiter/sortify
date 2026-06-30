@@ -1,0 +1,50 @@
+name: Documentation
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install sphinx interrogate sphinx-rtd-theme
+          # Install any project dependencies if needed for Sphinx
+          # pip install -r requirements.txt || true
+
+      - name: Check Docstring Coverage
+        run: |
+          interrogate -v --fail-under 100 core/ | tee coverage_report.txt
+
+      - name: Archive Coverage Report
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: coverage-report
+          path: coverage_report.txt
+
+      - name: Build Sphinx Documentation
+        run: |
+          cd docs
+          make html
+
+      - name: Deploy to GitHub Pages
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./docs/_build/html

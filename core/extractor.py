@@ -1,4 +1,11 @@
 # core/extractor.py
+"""
+Extractor Module
+
+This module handles the extraction of text from various file formats
+including PDF, DOCX, CSV, TXT, and Excel files.
+"""
+
 import os
 import csv
 import logging
@@ -16,6 +23,17 @@ logging.basicConfig(
 )
 
 def extract_file_text(file_path):
+    """
+    Extracts text content from a given file based on its extension.
+    
+    Supported extensions include .txt, .docx, .csv, .xlsx, .xls, and .pdf.
+
+    :param file_path: The absolute or relative path to the file.
+    :type file_path: str
+    :return: The extracted text as a single string. Returns empty string on failure.
+    :rtype: str
+    :raises Exception: Catches and logs any extraction errors without halting execution.
+    """
     ext = os.path.splitext(file_path)[1].lower()
     text = ""
     try:
@@ -43,6 +61,19 @@ def extract_file_text(file_path):
     return text
 
 def process_item_worker(base_dir, item, progress_callback):
+    """
+    Worker function to process a single item (file or directory) for text extraction.
+
+    :param base_dir: The base directory where the item is located.
+    :type base_dir: str
+    :param item: The name of the file or directory to process.
+    :type item: str
+    :param progress_callback: A function to call upon completion to update UI progress.
+    :type progress_callback: callable
+    :return: A tuple containing the item name and its extracted text.
+    :rtype: tuple(str, str)
+    :raises Exception: Catches and logs any unexpected worker failures.
+    """
     try:
         item_path = os.path.join(base_dir, item)
         if os.path.isfile(item_path):
@@ -59,7 +90,18 @@ def process_item_worker(base_dir, item, progress_callback):
     return item, ""
 
 def build_corpus(base_dir, items_to_sort, progress_callback):
-    """Maps every item to its text payload asynchronously while updating UI progress."""
+    """
+    Maps every item to its text payload asynchronously while updating UI progress.
+
+    :param base_dir: The base directory containing items to process.
+    :type base_dir: str
+    :param items_to_sort: A list of filenames or directories to include in the corpus.
+    :type items_to_sort: list[str]
+    :param progress_callback: A callback function to update progress in the UI.
+    :type progress_callback: callable
+    :return: A dictionary mapping filenames to their extracted text.
+    :rtype: dict
+    """
     corpus = {}
     with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         future_to_item = {
