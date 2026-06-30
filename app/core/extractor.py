@@ -102,8 +102,8 @@ def process_item_worker(base_dir: str, item: str, progress_callback: Callable) -
     return item, ""
 
 
-def build_corpus(base_dir: str, items_to_sort: list, progress_callback: Callable) -> dict:
-    """Map every item to its text payload asynchronously while updating UI progress.
+def build_corpus_generator(base_dir: str, items_to_sort: list, progress_callback: Callable, chunk_size: int = 50):
+    """Map every item to its text payload asynchronously and yield chunks.
 
     Parameters
     ----------
@@ -113,14 +113,15 @@ def build_corpus(base_dir: str, items_to_sort: list, progress_callback: Callable
         A list of item names to process.
     progress_callback : Callable
         A callback function to execute after each item is processed.
+    chunk_size : int
+        The number of items to yield in each chunk.
 
-    Returns
-    -------
+    Yields
+    ------
     dict
-        A mapping of item names to their text payloads.
-
+        A mapping of item names to their text payloads for a chunk of items.
     """
-    corpus = {}
+    chunk = {}
     with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         future_to_item = {
             executor.submit(
@@ -130,5 +131,11 @@ def build_corpus(base_dir: str, items_to_sort: list, progress_callback: Callable
         }
         for future in concurrent.futures.as_completed(future_to_item):
             item_name, item_text = future.result()
-            corpus[item_name] = item_name + " " + item_text
-    return corpus
+            chunk[item_name] = item_name + " " + item_text
+            
+            if len(chunk) >= chunk_size:
+                yield chunk
+                chunk = {}
+                
+        if chunk:
+            yield chunk

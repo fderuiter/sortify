@@ -3,87 +3,107 @@
 This module provides topic modeling functionality.
 """
 
+import re
 from collections import defaultdict
 
-from sklearn.decomposition import NMF
-from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.decomposition import MiniBatchNMF
+from sklearn.feature_extraction.text import HashingVectorizer
 
 from config import MAX_DF, MIN_DF, STOP_WORDS
 
 
-def generate_sorting_plan(corpus: dict, max_folders: int) -> dict:
-    """Generate a machine learning based sorting plan to cluster documents.
-
-    Uses TF-IDF + NMF to cluster documents by connected themes and returns a
-    sorting plan mapping the connected keywords defining each folder to lists
-    of filenames.
-
-    Parameters
-    ----------
-    corpus : dict
-        A dictionary mapping filenames to their extracted text content.
-    max_folders : int
-        The maximum number of semantic folders to create.
-
-    Returns
-    -------
-    dict
-        A mapping where keys are generated folder names and values are lists
-        of filenames belonging to that folder.
-
+class IncrementalAnalyzer:
+    """Stateful ML analyzer using incremental topic modeling.
+    
+    Uses HashingVectorizer and MiniBatchNMF to cluster documents incrementally.
     """
-    documents = list(corpus.values())
-    filenames = list(corpus.keys())
 
-    plan = defaultdict(list)
+    def __init__(self, max_folders: int) -> None:
+        """Initialize the analyzer with the maximum number of folders."""
+        self.max_folders = max_folders
+        self.n_features = 10000
+        self.vectorizer = HashingVectorizer(
+            stop_words=list(STOP_WORDS),
+            n_features=self.n_features,
+            norm=None,
+            alternate_sign=False
+        )
+        self.nmf_model = None
+        self.corpus = {}
+        self.index_to_word = {}
+        self.is_fitted = False
 
-    # 1. Edge Case: If there are too few files, ML will fail. Fallback to basic sorting.
-    if len(documents) < 3:
-        for f in filenames:
-            plan["Miscellaneous"].append(f)
-        return plan
+    def _update_vocab(self, documents: list) -> None:
+        """Update the reverse lookup for HashingVectorizer indices."""
+        for doc in documents:
+            words = set(re.findall(r'\b[a-zA-Z]{3,}\b', doc.lower()))
+            words.difference_update(STOP_WORDS)
+            for word in words:
+                transformed = self.vectorizer.transform([word])
+                indices = transformed.indices
+                if len(indices) > 0:
+                    self.index_to_word[indices[0]] = word
 
-    # 2. Extract significant vocabulary while ignoring generic terms
-    vectorizer = TfidfVectorizer(
-        max_df=MAX_DF, min_df=MIN_DF, stop_words=list(STOP_WORDS)
-    )
-    try:
-        tfidf_matrix = vectorizer.fit_transform(documents)
-    except ValueError:
-        # Happens if files contain no recognizable text at all
-        for f in filenames:
-            plan["Miscellaneous"].append(f)
-        return plan
+    def partial_fit(self, new_corpus: dict) -> None:
+        """Update the ML model incrementally with new documents."""
+        self.corpus.update(new_corpus)
+        documents = list(new_corpus.values())
+        if not documents:
+            return
 
-    # 3. Topic Modeling: Group files into semantic clusters
-    actual_k = min(max_folders, len(documents) // 2, tfidf_matrix.shape[1])
-    if actual_k < 2:
-        actual_k = 2
+        self._update_vocab(documents)
+        X = self.vectorizer.transform(documents)
 
-    nmf_model = NMF(n_components=actual_k, random_state=42)
-    document_topic_matrix = nmf_model.fit_transform(tfidf_matrix)
-    topic_word_matrix = nmf_model.components_
-
-    feature_names = vectorizer.get_feature_names_out()
-
-    # 4. Name folders based on the strongest connected terms
-    folder_names = []
-    for topic in topic_word_matrix:
-        # Get top 2 connected terms to name the folder (e.g., "Invoice_Billing")
-        top_indices = topic.argsort()[:-3:-1]
-        top_terms = [feature_names[i].capitalize() for i in top_indices]
-        folder_names.append("-".join(top_terms))
-
-    # 5. Map each file to its dominant topic cluster
-    for i, filename in enumerate(filenames):
-        # Find which topic cluster this document scores highest in
-        best_topic_idx = document_topic_matrix[i].argmax()
-
-        # If the highest score is 0, the document had no matching text
-        if document_topic_matrix[i][best_topic_idx] == 0:
-            plan["Miscellaneous"].append(filename)
+        if not self.is_fitted:
+            actual_k = min(self.max_folders, len(documents) // 2)
+            if actual_k < 2:
+                actual_k = 2
+            self.nmf_model = MiniBatchNMF(n_components=actual_k, random_state=42)
+            self.nmf_model.partial_fit(X)
+            self.is_fitted = True
         else:
-            folder = folder_names[best_topic_idx]
-            plan[folder].append(filename)
+            self.nmf_model.partial_fit(X)
 
-    return dict(plan)
+    def generate_sorting_plan(self) -> dict:
+        """Generate a sorting plan based on the current model state.
+        
+        Returns
+        -------
+        dict
+            A mapping where keys are generated folder names and values are lists
+            of filenames belonging to that folder.
+        """
+        plan = defaultdict(list)
+        filenames = list(self.corpus.keys())
+        documents = list(self.corpus.values())
+
+        if len(documents) < 3 or not self.is_fitted or self.nmf_model is None:
+            for f in filenames:
+                plan["Miscellaneous"].append(f)
+            return dict(plan)
+
+        X = self.vectorizer.transform(documents)
+        document_topic_matrix = self.nmf_model.transform(X)
+        topic_word_matrix = self.nmf_model.components_
+
+        folder_names = []
+        for topic in topic_word_matrix:
+            top_indices = topic.argsort()[:-3:-1]
+            top_terms = []
+            for i in top_indices:
+                word = self.index_to_word.get(i, f"Topic{i}")
+                top_terms.append(word.capitalize())
+            if not top_terms:
+                folder_names.append("Miscellaneous")
+            else:
+                folder_names.append("-".join(top_terms))
+
+        for i, filename in enumerate(filenames):
+            best_topic_idx = document_topic_matrix[i].argmax()
+            if document_topic_matrix[i][best_topic_idx] == 0:
+                plan["Miscellaneous"].append(filename)
+            else:
+                folder = folder_names[best_topic_idx]
+                plan[folder].append(filename)
+
+        return dict(plan)
