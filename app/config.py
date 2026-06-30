@@ -1,4 +1,9 @@
-# config.py
+"""Configuration settings for the autosorter application.
+
+This module contains various settings and constants used throughout the
+application, including max folders, thread workers, ML parameters, and
+stop words.
+"""
 
 MAX_FOLDERS = 12
 MAX_WORKERS = 15

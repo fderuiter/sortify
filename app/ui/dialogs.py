@@ -1,10 +1,21 @@
-# ui/dialogs.py
+"""Dialog windows for the user interface.
+
+Provides functions to open native OS dialogs.
+"""
+
 import tkinter as tk
 from tkinter import filedialog
+from typing import Optional
 
+def select_directory() -> Optional[str]:
+    """Open a GUI window for the user to select a target directory.
 
-def select_directory():
-    """Opens a GUI window for the user to select a target directory."""
+    Returns
+    -------
+    Optional[str]
+        The path of the selected directory, or None if no directory was selected.
+
+    """
     root = tk.Tk()
     root.withdraw()  # Hides the small empty Tkinter baseline window
 

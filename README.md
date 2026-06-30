@@ -1,5 +1,14 @@
 # Smart AutoSorter AI Pro
 
+Smart AutoSorter AI Pro is a machine-learning based document organization tool.
+
+It extracts text from various file formats, uses TF-IDF and NMF to cluster files by semantic topics, and safely organizes them into a structured directory hierarchy.
+
+## Features
+- **Semantic Clustering:** Understands themes in your documents.
+- **Robust Extraction:** Supports PDF, DOCX, CSV, and XLSX.
+- **Modern UI:** Built with CustomTkinter.
+
 ## Execution
 
 To run the application, use `uv run`:
@@ -14,6 +23,9 @@ The application is structured to strictly separate business logic from the user 
 
 - **core/**: Contains the core business logic, text extraction, machine learning models, and file operations.
 - **ui/**: Contains graphical interface components, dialogs, and progress rendering.
+
+## Documentation
+Check the `docs/` folder for the MkDocs configuration or run `mkdocs serve` to build the site locally.
 
 ## Platform Dependencies (Linux)
 

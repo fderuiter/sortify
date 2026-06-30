@@ -1,14 +1,37 @@
-# ui/console.py
+"""Console user interface utilities.
 
+Provides functions to display status and proposal plans via standard output.
+"""
 
-def print_status(message):
-    """Prints a standard status update to the console."""
+def print_status(message: str) -> None:
+    """Print a standard status update to the console.
+
+    Parameters
+    ----------
+    message : str
+        The message to display.
+
+    Returns
+    -------
+    None
+
+    """
     print(f"\n{message}")
 
+def print_proposal(plan: dict) -> None:
+    """Draw the visual directory tree of the proposed sorting plan.
 
-def print_proposal(plan):
-    """Draws the visual directory tree of the proposed sorting plan."""
-    print("\n" + "=" * 50)
+    Parameters
+    ----------
+    plan : dict
+        A mapping of folder names to lists of files.
+
+    Returns
+    -------
+    None
+
+    """
+    print("\n" + "="*50)
     print("PROPOSED SORTING PLAN")
     print("=" * 50)
 
@@ -23,8 +46,15 @@ def print_proposal(plan):
     print("\n" + "=" * 50)
 
 
-def ask_for_approval():
-    """Prompts the user to approve or reject the plan."""
+def ask_for_approval() -> bool:
+    """Prompt the user to approve or reject the plan.
+
+    Returns
+    -------
+    bool
+        True if the user approves, False otherwise.
+
+    """
     while True:
         choice = input("\nDo you approve this sorting plan? (Y/N): ").strip().lower()
         if choice in ["y", "yes"]:
