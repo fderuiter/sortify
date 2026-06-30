@@ -1,4 +1,8 @@
-# ui/app.py
+"""Main application GUI module.
+
+This module provides the main application window and logic for the AutoSorter.
+"""
+
 import os
 import time
 import threading
@@ -13,18 +17,24 @@ ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
 
 class AutoSorterApp(ctk.CTk):
-    def __init__(self):
+    """Main application class for Smart AutoSorter AI Pro.
+
+    Inherits from customtkinter.CTk to provide the main GUI window.
+    """
+
+    def __init__(self) -> None:
+        """Initialize the main application window and UI components."""
         super().__init__()
         self.title("Smart AutoSorter AI Pro")
         self.geometry("750x600")
         
-        self.base_dir = None
-        self.plan = None
+        self.base_dir: str = ""
+        self.plan: dict = {}
         
         # Benchmarking / Progress Metrics
         self.total_files = 0
         self.completed_files = 0
-        self.start_time = 0
+        self.start_time: float = 0.0
         
         # --- UI Build ---
         self.title_label = ctk.CTkLabel(self, text="AI File Organizer Pro", font=("Roboto", 24, "bold"))
@@ -53,7 +63,14 @@ class AutoSorterApp(ctk.CTk):
                                          fg_color="green", hover_color="darkgreen", state="disabled")
         self.execute_btn.pack(pady=15)
 
-    def select_directory(self):
+    def select_directory(self) -> None:
+        """Open a directory selection dialog and initialize processing threads.
+
+        Returns
+        -------
+        None
+
+        """
         self.base_dir = filedialog.askdirectory(title="Select Directory")
         if self.base_dir:
             items_to_sort = [f for f in os.listdir(self.base_dir) if not f.startswith('.')]
@@ -74,8 +91,16 @@ class AutoSorterApp(ctk.CTk):
             # FIRE BACKGROUND THREAD: Keeps UI interactive and moving fluidly
             threading.Thread(target=self.pipeline_worker, args=(items_to_sort,), daemon=True).start()
 
-    def item_completed_callback(self):
-        """Thread-safe counter tracking execution velocity and calculating remaining time."""
+    def item_completed_callback(self) -> None:
+        """Track execution velocity and update UI progress smoothly.
+
+        Thread-safe counter tracking execution velocity and calculating remaining time.
+
+        Returns
+        -------
+        None
+
+        """
         self.completed_files += 1
         progress_percentage = self.completed_files / self.total_files
         self.progress_bar.set(progress_percentage)
@@ -93,8 +118,19 @@ class AutoSorterApp(ctk.CTk):
             text=f"Processed: {self.completed_files}/{self.total_files} items | Speed: {files_per_second:.1f} files/sec | ETA: {int(eta)}s remaining"
         )
 
-    def pipeline_worker(self, items_to_sort):
-        """Runs the data collection and ML algorithm inside a background environment."""
+    def pipeline_worker(self, items_to_sort: list) -> None:
+        """Run the data collection and ML algorithm in a background thread.
+
+        Parameters
+        ----------
+        items_to_sort : list
+            A list of item names in the directory to be processed.
+
+        Returns
+        -------
+        None
+
+        """
         # 1. Asynchronous Text Extraction
         corpus = build_corpus(self.base_dir, items_to_sort, self.item_completed_callback)
         
@@ -123,7 +159,14 @@ class AutoSorterApp(ctk.CTk):
         self.execute_btn.configure(state="normal")
         self.select_btn.configure(state="normal")
 
-    def execute_sort(self):
+    def execute_sort(self) -> None:
+        """Execute the physical file moving operations safely based on the generated plan.
+
+        Returns
+        -------
+        None
+
+        """
         if self.plan and self.base_dir:
             self.status_label.configure(text="Moving files into position...", text_color="white")
             self.execute_btn.configure(state="disabled")
@@ -134,6 +177,13 @@ class AutoSorterApp(ctk.CTk):
             self.status_label.configure(text="Sorting complete! Check autosorter.log for any skipped/locked files.", text_color="green")
             self.meta_label.configure(text="")
 
-def run_app():
+def run_app() -> None:
+    """Instantiate and run the main application.
+
+    Returns
+    -------
+    None
+
+    """
     app = AutoSorterApp()
     app.mainloop()

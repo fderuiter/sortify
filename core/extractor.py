@@ -1,9 +1,14 @@
-# core/extractor.py
+"""Document extraction and processing module.
+
+This module provides utilities to read text from various file formats.
+"""
+
 import os
 import csv
 import logging
 import concurrent.futures
 import pypdf
+from typing import Tuple, Callable
 from docx import Document
 import pandas as pd
 from config import MAX_WORKERS, LOG_FILE
@@ -15,7 +20,20 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s'
 )
 
-def extract_file_text(file_path):
+def extract_file_text(file_path: str) -> str:
+    """Extract text content from a given file.
+
+    Parameters
+    ----------
+    file_path : str
+        The path to the file to be extracted.
+
+    Returns
+    -------
+    str
+        The extracted text from the file. Returns an empty string if extraction fails.
+
+    """
     ext = os.path.splitext(file_path)[1].lower()
     text = ""
     try:
@@ -34,15 +52,32 @@ def extract_file_text(file_path):
             text = df.to_string()
         elif ext == '.pdf':
             with open(file_path, 'rb') as f:
-                reader = pypdf.PdfReader(f)
-                for page in reader.pages:
+                pdf_reader = pypdf.PdfReader(f)
+                for page in pdf_reader.pages:
                     text += page.extract_text() or ""
     except Exception as e:
         # Centralized Error Catching: Logs the file path and specific error stack
         logging.error(f"Failed to extract text from {file_path}. Error: {str(e)}", exc_info=True)
     return text
 
-def process_item_worker(base_dir, item, progress_callback):
+def process_item_worker(base_dir: str, item: str, progress_callback: Callable) -> Tuple[str, str]:
+    """Process a single item and extract its text content.
+
+    Parameters
+    ----------
+    base_dir : str
+        The base directory containing the item.
+    item : str
+        The name of the item (file or directory) to process.
+    progress_callback : Callable
+        A callback function to execute after processing is complete.
+
+    Returns
+    -------
+    Tuple[str, str]
+        A tuple containing the item name and its extracted text.
+
+    """
     try:
         item_path = os.path.join(base_dir, item)
         if os.path.isfile(item_path):
@@ -58,8 +93,24 @@ def process_item_worker(base_dir, item, progress_callback):
         
     return item, ""
 
-def build_corpus(base_dir, items_to_sort, progress_callback):
-    """Maps every item to its text payload asynchronously while updating UI progress."""
+def build_corpus(base_dir: str, items_to_sort: list, progress_callback: Callable) -> dict:
+    """Map every item to its text payload asynchronously while updating UI progress.
+
+    Parameters
+    ----------
+    base_dir : str
+        The base directory containing the items.
+    items_to_sort : list
+        A list of item names to process.
+    progress_callback : Callable
+        A callback function to execute after each item is processed.
+
+    Returns
+    -------
+    dict
+        A mapping of item names to their text payloads.
+
+    """
     corpus = {}
     with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         future_to_item = {

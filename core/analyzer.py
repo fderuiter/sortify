@@ -1,13 +1,33 @@
-# core/analyzer.py
+"""Core semantic analysis module.
+
+This module provides topic modeling functionality.
+"""
+
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.decomposition import NMF
 from collections import defaultdict
 from config import STOP_WORDS, MIN_DF, MAX_DF
 
-def generate_sorting_plan(corpus, max_folders):
-    """
-    Uses Machine Learning (TF-IDF + NMF) to cluster documents by connected themes.
-    Returns a sorting plan and the connected keywords defining each folder.
+def generate_sorting_plan(corpus: dict, max_folders: int) -> dict:
+    """Generate a machine learning based sorting plan to cluster documents.
+
+    Uses TF-IDF + NMF to cluster documents by connected themes and returns a
+    sorting plan mapping the connected keywords defining each folder to lists
+    of filenames.
+
+    Parameters
+    ----------
+    corpus : dict
+        A dictionary mapping filenames to their extracted text content.
+    max_folders : int
+        The maximum number of semantic folders to create.
+
+    Returns
+    -------
+    dict
+        A mapping where keys are generated folder names and values are lists
+        of filenames belonging to that folder.
+
     """
     documents = list(corpus.values())
     filenames = list(corpus.keys())
@@ -32,7 +52,8 @@ def generate_sorting_plan(corpus, max_folders):
 
     # 3. Topic Modeling: Group files into semantic clusters
     actual_k = min(max_folders, len(documents) // 2, tfidf_matrix.shape[1])
-    if actual_k < 2: actual_k = 2
+    if actual_k < 2:
+        actual_k = 2
     
     nmf_model = NMF(n_components=actual_k, random_state=42)
     document_topic_matrix = nmf_model.fit_transform(tfidf_matrix)

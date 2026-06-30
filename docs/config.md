@@ -1,0 +1,3 @@
+# Config API Reference
+
+::: config

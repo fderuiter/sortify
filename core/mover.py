@@ -1,9 +1,28 @@
-# core/mover.py
+"""File movement and organization module.
+
+This module is responsible for safely moving files to new directories.
+"""
+
 import os
 import shutil
 import logging
 
-def get_safe_path(dest_dir, filename):
+def get_safe_path(dest_dir: str, filename: str) -> str:
+    """Generate a safe file path to avoid overwriting existing files.
+
+    Parameters
+    ----------
+    dest_dir : str
+        The destination directory path.
+    filename : str
+        The original filename.
+
+    Returns
+    -------
+    str
+        A unique file path that does not already exist in the destination.
+
+    """
     base, extension = os.path.splitext(filename)
     counter = 1
     safe_path = os.path.join(dest_dir, filename)
@@ -12,8 +31,21 @@ def get_safe_path(dest_dir, filename):
         counter += 1
     return safe_path
 
-def execute_moves(base_dir, plan):
-    """Creates directories and safely moves files, tracking file-system errors."""
+def execute_moves(base_dir: str, plan: dict) -> None:
+    """Create directories and safely move files, tracking file-system errors.
+
+    Parameters
+    ----------
+    base_dir : str
+        The base directory where files are located and folders will be created.
+    plan : dict
+        A mapping of destination folder names to lists of files to be moved there.
+
+    Returns
+    -------
+    None
+
+    """
     for folder, files in plan.items():
         if not files: 
             continue
