@@ -1,11 +1,14 @@
 # config.py
 
 MAX_FOLDERS = 12
-MAX_WORKERS = 15 # Threads for reading files quickly
+MAX_WORKERS = 15 
 
 # ML Settings
-MIN_DF = 2 # A word must appear in at least 2 different files to be considered a "connection"
-MAX_DF = 0.85 # Ignore words that appear in over 85% of files (they are too generic)
+MIN_DF = 2 
+MAX_DF = 0.85 
+
+# Centralized Logging File
+LOG_FILE = "autosorter.log"
 
 STOP_WORDS = {
     'the', 'and', 'for', 'this', 'that', 'with', 'from', 'inc', 'com', 'pdf', 'docx', 'txt', 'csv', 
