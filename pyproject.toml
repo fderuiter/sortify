@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "file-organizer"
+version = "0.1.0"
+description = "AI-powered file organizer"
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "scikit-learn",
+    "pypdf",
+    "python-docx",
+    "pandas",
+    "customtkinter"
+]
+
+[tool.setuptools]
+packages = ["core", "ui"]
