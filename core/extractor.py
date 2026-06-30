@@ -1,19 +1,12 @@
 # core/extractor.py
 import os
 import csv
-import logging
 import concurrent.futures
 import pypdf
 from docx import Document
 import pandas as pd
 from config import MAX_WORKERS, LOG_FILE
-
-# Configure Centralized Logger
-logging.basicConfig(
-    filename=LOG_FILE,
-    level=logging.ERROR,
-    format='%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s'
-)
+from core.logger import logger
 
 def extract_file_text(file_path):
     ext = os.path.splitext(file_path)[1].lower()
@@ -39,7 +32,7 @@ def extract_file_text(file_path):
                     text += page.extract_text() or ""
     except Exception as e:
         # Centralized Error Catching: Logs the file path and specific error stack
-        logging.error(f"Failed to extract text from {file_path}. Error: {str(e)}", exc_info=True)
+        logger.error(f"Failed to extract text from {file_path}. Error: {str(e)}", exc_info=True)
     return text
 
 def process_item_worker(base_dir, item, progress_callback):
@@ -51,7 +44,7 @@ def process_item_worker(base_dir, item, progress_callback):
         elif os.path.isdir(item_path):
             return item, item
     except Exception as e:
-        logging.error(f"General worker failure processing item: {item}. Error: {str(e)}")
+        logger.error(f"General worker failure processing item: {item}. Error: {str(e)}")
     finally:
         # Crucial: Always fire callback so progress tracking doesn't stall out
         progress_callback()

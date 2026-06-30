@@ -1,7 +1,7 @@
 # core/mover.py
 import os
 import shutil
-import logging
+from core.logger import logger
 
 def get_safe_path(dest_dir, filename):
     base, extension = os.path.splitext(filename)
@@ -23,7 +23,7 @@ def execute_moves(base_dir, plan):
             try:
                 os.makedirs(folder_path)
             except Exception as e:
-                logging.error(f"Failed to create directory {folder_path}. Error: {str(e)}")
+                logger.error(f"Failed to create directory {folder_path}. Error: {str(e)}", exc_info=True)
                 continue
             
         for item in files:
@@ -33,4 +33,4 @@ def execute_moves(base_dir, plan):
                 shutil.move(source_path, dest_path)
             except Exception as e:
                 # Logs permissions blocks or file system locks centrally
-                logging.error(f"Failed to move file {item} to {folder_path}. Check if file is open elsewhere. Error: {str(e)}")
+                logger.error(f"Failed to move file {item} to {folder_path}. Check if file is open elsewhere. Error: {str(e)}", exc_info=True)

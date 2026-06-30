@@ -3,6 +3,8 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.decomposition import NMF
 from collections import defaultdict
 from config import STOP_WORDS, MIN_DF, MAX_DF
+from core.logger import logger
+from core.validator import validator
 
 def generate_sorting_plan(corpus, max_folders):
     """
@@ -24,15 +26,15 @@ def generate_sorting_plan(corpus, max_folders):
     vectorizer = TfidfVectorizer(max_df=MAX_DF, min_df=MIN_DF, stop_words=list(STOP_WORDS))
     try:
         tfidf_matrix = vectorizer.fit_transform(documents)
-    except ValueError:
+    except ValueError as e:
+        logger.error(f"Analysis failure: Unable to fit TF-IDF. Context: {filenames}. Error: {str(e)}", exc_info=True)
         # Happens if files contain no recognizable text at all
         for f in filenames:
             plan["Miscellaneous"].append(f)
         return plan
 
     # 3. Topic Modeling: Group files into semantic clusters
-    actual_k = min(max_folders, len(documents) // 2, tfidf_matrix.shape[1])
-    if actual_k < 2: actual_k = 2
+    actual_k = validator.validate_clustering_constraints(max_folders, len(documents), tfidf_matrix.shape[1])
     
     nmf_model = NMF(n_components=actual_k, random_state=42)
     document_topic_matrix = nmf_model.fit_transform(tfidf_matrix)
