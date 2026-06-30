@@ -1,1 +1,5 @@
 .mypy_cache/*
+site/
+.tox/
+.mypy_cache/
+.ruff_cache/
