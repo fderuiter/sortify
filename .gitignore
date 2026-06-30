@@ -1,7 +1,10 @@
-.mypy_cache/*
+.mypy_cache/
 venv/
 *.egg-info/
 build/
 __pycache__/
 *.pyc
 autosorter.log
+site/
+.tox/
+.ruff_cache/
