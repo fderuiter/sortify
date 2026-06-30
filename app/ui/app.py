@@ -6,11 +6,9 @@ This module provides the main application window and logic for the AutoSorter.
 import os
 import threading
 import time
-from tkinter import filedialog
-from tkinter import ttk
+from tkinter import filedialog, ttk
 
 import customtkinter as ctk
-
 from config import MAX_FOLDERS
 from core.analyzer import IncrementalAnalyzer
 from core.extractor import build_corpus_generator
@@ -21,10 +19,7 @@ ctk.set_default_color_theme("blue")
 
 
 class AutoSorterApp(ctk.CTk):
-    """Main application class for Smart AutoSorter AI Pro.
-
-    Inherits from customtkinter.CTk to provide the main GUI window.
-    """
+    """Main application class for Smart AutoSorter AI Pro."""
 
     def __init__(self) -> None:
         """Initialize the main application window and UI components."""
@@ -36,14 +31,12 @@ class AutoSorterApp(ctk.CTk):
         self.plan: dict = {}
         self.locked_files: dict = {}
 
-        # Benchmarking / Progress Metrics
         self.total_files = 0
         self.completed_files = 0
         self.start_time: float = 0.0
 
         self.analyzer = None
 
-        # Debounce state
         self._debounce_timer = None
         self._update_lock = threading.Lock()
 
@@ -66,7 +59,6 @@ class AutoSorterApp(ctk.CTk):
         )
         self.status_label.pack(pady=5)
 
-        # Progress Bar Layout
         self.progress_bar = ctk.CTkProgressBar(self, width=500)
         self.progress_bar.set(0)
         self.progress_bar.pack(pady=10)
@@ -76,7 +68,6 @@ class AutoSorterApp(ctk.CTk):
         )
         self.meta_label.pack(pady=2)
 
-        # Treeview for interactive plan
         self.tree_frame = ctk.CTkFrame(self)
         self.tree_frame.pack(pady=10, fill="both", expand=True, padx=20)
         
@@ -87,7 +78,6 @@ class AutoSorterApp(ctk.CTk):
         self.scrollbar.pack(side="right", fill="y")
         self.tree.configure(yscrollcommand=self.scrollbar.set)
         
-        # Bind Drag and Drop
         self.tree.bind("<ButtonPress-1>", self.on_drag_start)
         self.tree.bind("<B1-Motion>", self.on_drag_motion)
         self.tree.bind("<ButtonRelease-1>", self.on_drop)
@@ -103,13 +93,26 @@ class AutoSorterApp(ctk.CTk):
         )
         self.execute_btn.pack(pady=15)
 
+    def _get_files_recursively(self, base: str, rel_path: str = "") -> list:
+        files = []
+        try:
+            for entry in os.scandir(os.path.join(base, rel_path)):
+                if entry.name.startswith("."):
+                    continue
+                entry_rel_path = os.path.join(rel_path, entry.name) if rel_path else entry.name
+                if entry.is_dir():
+                    files.extend(self._get_files_recursively(base, entry_rel_path))
+                else:
+                    files.append(entry_rel_path)
+        except Exception:
+            pass
+        return files
+
     def select_directory(self) -> None:
         """Open a directory selection dialog and initialize processing threads."""
         self.base_dir = filedialog.askdirectory(title="Select Directory")
         if self.base_dir:
-            items_to_sort = [
-                f for f in os.listdir(self.base_dir) if not f.startswith(".")
-            ]
+            items_to_sort = self._get_files_recursively(self.base_dir)
             self.total_files = len(items_to_sort)
 
             if self.total_files == 0:
@@ -127,7 +130,6 @@ class AutoSorterApp(ctk.CTk):
             self.plan = {}
             self.tree.delete(*self.tree.get_children())
             
-            # Start fresh model
             self.analyzer = IncrementalAnalyzer(MAX_FOLDERS)
 
             self.status_label.configure(
@@ -135,7 +137,6 @@ class AutoSorterApp(ctk.CTk):
             )
             self.start_time = time.time()
 
-            # FIRE BACKGROUND THREAD: Keeps UI interactive and moving fluidly
             threading.Thread(
                 target=self.pipeline_worker, args=(items_to_sort,), daemon=True
             ).start()
@@ -144,8 +145,6 @@ class AutoSorterApp(ctk.CTk):
         """Track execution velocity and update UI progress smoothly."""
         self.completed_files += 1
         progress_percentage = self.completed_files / self.total_files
-        
-        # Use after to update UI safely from thread
         self.after(0, self._update_progress_ui, progress_percentage)
         
     def _update_progress_ui(self, progress_percentage):
@@ -167,29 +166,46 @@ class AutoSorterApp(ctk.CTk):
         ):
             self.analyzer.partial_fit(chunk)
             
-            # Refresh plan in background
             new_plan = self.analyzer.generate_sorting_plan()
             self._apply_locked_files(new_plan)
             self.plan = new_plan
             
-            # Update UI incrementally
             self.after(0, self.render_tree)
 
         self.after(0, self._finalize_pipeline)
 
+    def _remove_file_from_plan(self, plan_node, filename: str) -> bool:
+        """Recursively removes a file from the plan. Returns True if removed."""
+        if not isinstance(plan_node, dict):
+            return False
+            
+        if filename in plan_node:
+            del plan_node[filename]
+            return True
+            
+        for k in list(plan_node.keys()):
+            if self._remove_file_from_plan(plan_node[k], filename):
+                if not plan_node[k]:
+                    del plan_node[k]
+                return True
+        return False
+
     def _apply_locked_files(self, new_plan):
         """Ensure user's manual moves override the AI clustering."""
-        for folder in list(new_plan.keys()):
-            new_plan[folder] = [f for f in new_plan[folder] if f not in self.locked_files]
+        for f, target_path in self.locked_files.items():
+            self._remove_file_from_plan(new_plan, f)
             
-        for f, locked_folder in self.locked_files.items():
-            if locked_folder not in new_plan:
-                new_plan[locked_folder] = []
-            new_plan[locked_folder].append(f)
-            
-        empty_folders = [folder for folder, files in new_plan.items() if not files]
-        for folder in empty_folders:
-            del new_plan[folder]
+            parts = target_path.split("/")
+            current = new_plan
+            for i, part in enumerate(parts):
+                if i == len(parts) - 1:
+                    if part not in current or current[part] is None:
+                        current[part] = {}
+                    current[part][f] = None
+                else:
+                    if part not in current or current[part] is None:
+                        current[part] = {}
+                    current = current[part]
 
     def _finalize_pipeline(self):
         """Final UI transition after all files are processed."""
@@ -203,19 +219,40 @@ class AutoSorterApp(ctk.CTk):
     def render_tree(self):
         """Draw the plan on the Treeview, preserving expanded nodes."""
         expanded = set()
-        for item in self.tree.get_children():
-            if self.tree.item(item, "open"):
-                expanded.add(item)
+        for item in self.tree.get_children(""):
+            self._save_expanded(item, expanded)
                 
         self.tree.delete(*self.tree.get_children())
-        for folder, files in self.plan.items():
-            folder_id = f"folder:{folder}"
-            self.tree.insert("", "end", iid=folder_id, text=f"📂 [{folder}] ({len(files)} items)")
-            for f in files:
-                self.tree.insert(folder_id, "end", iid=f"file:{f}", text=f)
+        self._insert_nodes("", self.plan, expanded)
+
+    def _save_expanded(self, item, expanded):
+        if self.tree.item(item, "open"):
+            expanded.add(item)
+        for child in self.tree.get_children(item):
+            self._save_expanded(child, expanded)
+
+    def _insert_nodes(self, parent_id, plan_node, expanded):
+        if not isinstance(plan_node, dict):
+            return
+            
+        for name, child_node in plan_node.items():
+            if child_node is None:
+                self.tree.insert(parent_id, "end", iid=f"file:{name}", text=os.path.basename(name))
+            else:
+                folder_id = f"folder:{name}" if not parent_id else f"{parent_id}/{name}"
+                count = self._count_files(child_node)
+                self.tree.insert(parent_id, "end", iid=folder_id, text=f"📂 [{name}] ({count} items)")
+                self._insert_nodes(folder_id, child_node, expanded)
                 
-            if folder_id in expanded or len(self.tree.get_children()) == 1:
-                self.tree.item(folder_id, open=True)
+                if folder_id in expanded or (not parent_id and len(plan_node) == 1):
+                    self.tree.item(folder_id, open=True)
+
+    def _count_files(self, plan_node):
+        if plan_node is None:
+            return 1
+        elif isinstance(plan_node, dict):
+            return sum(self._count_files(v) for v in plan_node.values())
+        return 0
 
     def on_drag_start(self, event):
         item = self.tree.identify_row(event.y)
@@ -250,17 +287,29 @@ class AutoSorterApp(ctk.CTk):
                 self.tree.move(self.dragged_item, f"folder:{target_folder}", "end")
                 self.locked_files[filename] = target_folder
                 
-                # Update text on folder nodes immediately for Optimistic UI
                 self._update_folder_counts()
-                
                 self.trigger_model_update(filename)
                 
     def _update_folder_counts(self):
-        for item in self.tree.get_children():
-            if item.startswith("folder:"):
-                folder_name = item.split(":", 1)[1]
-                count = len(self.tree.get_children(item))
-                self.tree.item(item, text=f"📂 [{folder_name}] ({count} items)")
+        for item in self.tree.get_children(""):
+            self._update_folder_count_recursive(item)
+            
+    def _update_folder_count_recursive(self, item):
+        if item.startswith("folder:"):
+            folder_name = item.split("/")[-1]
+            if ":" in folder_name:
+                folder_name = folder_name.split(":", 1)[1]
+            
+            count = 0
+            for child in self.tree.get_children(item):
+                if child.startswith("file:"):
+                    count += 1
+                elif child.startswith("folder:"):
+                    count += self._update_folder_count_recursive(child)
+            
+            self.tree.item(item, text=f"📂 [{folder_name}] ({count} items)")
+            return count
+        return 0
 
     def trigger_model_update(self, moved_file: str):
         if self._debounce_timer:
