@@ -1,0 +1,32 @@
+[project]
+name = "smart-autosorter"
+version = "0.1.0"
+description = "AI File Organizer Pro"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "pandas",
+    "scikit-learn",
+    "customtkinter",
+    "python-docx",
+    "pypdf",
+    "openpyxl",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+[tool.ruff]
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "I"] # flake8, pyflakes, isort
+ignore = []
+
+[tool.ruff.format]
+# Enable auto-formatting of code
+docstring-code-format = true
