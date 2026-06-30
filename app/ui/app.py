@@ -9,10 +9,11 @@ import time
 from tkinter import filedialog, ttk
 
 import customtkinter as ctk
-from config import MAX_FOLDERS
-from core.analyzer import IncrementalAnalyzer
-from core.extractor import build_corpus_generator
-from core.mover import execute_moves
+
+from app.config import MAX_FOLDERS
+from app.core.analyzer import IncrementalAnalyzer
+from app.core.extractor import build_corpus_generator
+from app.core.mover import execute_moves
 
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
@@ -253,7 +254,7 @@ class AutoSorterApp(ctk.CTk):
                     current = current[part]
 
     def _finalize_pipeline(self):
-        """Final UI transition after all files are processed."""
+        """Execute final UI transition after all files are processed."""
         self.status_label.configure(
             text="AI Plan ready for review.", text_color="green"
         )
@@ -304,6 +305,7 @@ class AutoSorterApp(ctk.CTk):
         return 0
 
     def on_drag_start(self, event):
+        """Handle the start of a drag event in the tree view."""
         item = self.tree.identify_row(event.y)
         if item and item.startswith("file:"):
             self.dragged_item = item
@@ -311,9 +313,11 @@ class AutoSorterApp(ctk.CTk):
             self.dragged_item = None
 
     def on_drag_motion(self, event):
+        """Handle the motion of a drag event."""
         pass
 
     def on_drop(self, event):
+        """Handle the drop event to move a file in the tree view."""
         if not self.dragged_item:
             return
 
@@ -361,6 +365,7 @@ class AutoSorterApp(ctk.CTk):
         return 0
 
     def trigger_model_update(self, moved_file: str):
+        """Trigger an incremental update of the ML model after a file is moved."""
         if self._debounce_timer:
             self._debounce_timer.cancel()
         self._debounce_timer = threading.Timer(

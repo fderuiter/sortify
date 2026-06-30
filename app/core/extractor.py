@@ -11,15 +11,9 @@ from typing import Callable, Tuple
 
 import pandas as pd
 import pypdf
-from config import LOG_FILE, MAX_WORKERS
 from docx import Document
 
-# Configure Centralized Logger
-logging.basicConfig(
-    filename=LOG_FILE,
-    level=logging.ERROR,
-    format="%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s",
-)
+from app.config import MAX_WORKERS
 
 
 def extract_file_text(file_path: str) -> str:
