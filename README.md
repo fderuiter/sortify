@@ -9,6 +9,13 @@ It extracts text from various file formats, uses TF-IDF and NMF to cluster files
 - **Robust Extraction:** Supports PDF, DOCX, CSV, and XLSX.
 - **Modern UI:** Built with CustomTkinter.
 
+## System Limits & Constraints
+To ensure optimal performance and accuracy, Smart AutoSorter AI Pro enforces the following hardcoded constraints:
+- **Supported File Formats:** Only `.txt`, `.docx`, `.csv`, `.xlsx`, `.xls`, and `.pdf` files are supported for text extraction and clustering.
+- **Minimum File Requirement:** At least 3 supported files are required to enable AI-driven clustering. If fewer files are present, sorting will not proceed optimally.
+- **Maximum Folders:** The AI will generate an upper limit of 12 subdirectories for organizing the documents.
+- **Miscellaneous Folder:** Any files with insufficient text, low semantic scores, or unreadable data are automatically moved to a fallback `Miscellaneous` folder.
+
 ## Execution
 
 To run the application, use `uv run`:
