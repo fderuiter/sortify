@@ -9,7 +9,6 @@ import time
 from tkinter import filedialog
 
 import customtkinter as ctk
-
 from config import MAX_FOLDERS
 from core.analyzer import generate_sorting_plan
 from core.extractor import build_corpus
@@ -29,7 +28,7 @@ class AutoSorterApp(ctk.CTk):
         """Initialize the main application window and UI components."""
         super().__init__()
         self.title("Smart AutoSorter AI Pro")
-        self.geometry("750x600")
+        self.geometry("750x850")
 
         self.base_dir: str = ""
         self.plan: dict = {}
@@ -52,7 +51,7 @@ class AutoSorterApp(ctk.CTk):
 
         self.status_label = ctk.CTkLabel(
             self,
-            text="Waiting for directory...",
+            text="Waiting for local directory...",
             text_color="gray",
             font=("Roboto", 13),
         )
@@ -71,6 +70,16 @@ class AutoSorterApp(ctk.CTk):
         # Display Preview Box
         self.textbox = ctk.CTkTextbox(self, width=650, height=250, state="disabled")
         self.textbox.pack(pady=10)
+
+        # Privacy Transparency Panel
+        self.transparency_label = ctk.CTkLabel(
+            self, text="Local Verification", font=("Roboto", 14, "bold"), text_color="lightgreen"
+        )
+        self.transparency_label.pack(pady=(10, 0))
+        
+        self.transparency_log = ctk.CTkTextbox(self, width=650, height=150, state="disabled", fg_color="#1a1a1a", text_color="#00ff00")
+        self.transparency_log.pack(pady=5)
+
 
         self.execute_btn = ctk.CTkButton(
             self,
@@ -109,7 +118,7 @@ class AutoSorterApp(ctk.CTk):
             self.execute_btn.configure(state="disabled")
 
             self.status_label.configure(
-                text="Initializing scanning threads...", text_color="white"
+                text="Initializing local file scanning threads...", text_color="white"
             )
             self.start_time = time.time()
 
@@ -118,7 +127,7 @@ class AutoSorterApp(ctk.CTk):
                 target=self.pipeline_worker, args=(items_to_sort,), daemon=True
             ).start()
 
-    def item_completed_callback(self) -> None:
+    def item_completed_callback(self, item_name: str = "") -> None:
         """Track execution velocity and update UI progress smoothly.
 
         Thread-safe counter tracking execution velocity and calculating remaining time.
@@ -128,6 +137,8 @@ class AutoSorterApp(ctk.CTk):
         None
 
         """
+        if item_name:
+            self.log_transparency(f"Read local file: {item_name}")
         self.completed_files += 1
         progress_percentage = self.completed_files / self.total_files
         self.progress_bar.set(progress_percentage)
@@ -161,6 +172,7 @@ class AutoSorterApp(ctk.CTk):
         None
 
         """
+        self.log_transparency("Starting local file extraction. No network calls will be made.")
         # 1. Asynchronous Text Extraction
         corpus = build_corpus(
             self.base_dir, items_to_sort, self.item_completed_callback
@@ -168,11 +180,12 @@ class AutoSorterApp(ctk.CTk):
 
         # 2. Transition Status to Processing Phase
         self.status_label.configure(
-            text="Data compiled. Modeling semantic themes...", text_color="yellow"
+            text="Local data compiled. Analyzing local file content without external APIs...", text_color="yellow"
         )
+        self.log_transparency("Corpus built locally. Initializing scikit-learn models...")
 
         # 3. Process Topic Clustering
-        self.plan = generate_sorting_plan(corpus, MAX_FOLDERS)
+        self.plan = generate_sorting_plan(corpus, MAX_FOLDERS, self.log_transparency)
 
         # 4. Render Layout Proposal Tree
         self.textbox.configure(state="normal")
@@ -195,6 +208,16 @@ class AutoSorterApp(ctk.CTk):
         self.execute_btn.configure(state="normal")
         self.select_btn.configure(state="normal")
 
+    def log_transparency(self, message: str) -> None:
+        """Add a log entry to the transparency panel."""
+        # Use after() to ensure this runs on the main thread
+        def update_log():
+            self.transparency_log.configure(state="normal")
+            self.transparency_log.insert("end", f"[LOCAL] {message}\n")
+            self.transparency_log.see("end")
+            self.transparency_log.configure(state="disabled")
+        self.after(0, update_log)
+
     def execute_sort(self) -> None:
         """Execute the physical file moving operations safely based on the generated plan.
 
@@ -205,12 +228,12 @@ class AutoSorterApp(ctk.CTk):
         """
         if self.plan and self.base_dir:
             self.status_label.configure(
-                text="Moving files into position...", text_color="white"
+                text="Moving local files into position securely...", text_color="white"
             )
             self.execute_btn.configure(state="disabled")
 
             # Execute physical operations safely
-            execute_moves(self.base_dir, self.plan)
+            execute_moves(self.base_dir, self.plan, self.log_transparency)
 
             self.status_label.configure(
                 text="Sorting complete! Check log for skipped/locked files.",

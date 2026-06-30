@@ -33,7 +33,7 @@ def get_safe_path(dest_dir: str, filename: str) -> str:
     return safe_path
 
 
-def execute_moves(base_dir: str, plan: dict) -> None:
+def execute_moves(base_dir: str, plan: dict, log_callback=None) -> None:
     """Create directories and safely move files, tracking file-system errors.
 
     Parameters
@@ -67,6 +67,8 @@ def execute_moves(base_dir: str, plan: dict) -> None:
             dest_path = get_safe_path(folder_path, item)
             try:
                 shutil.move(source_path, dest_path)
+                if log_callback:
+                    log_callback(f"Moved '{item}' to '{folder}' locally.")
             except Exception as e:
                 # Logs permissions blocks or file system locks centrally
                 logging.error(

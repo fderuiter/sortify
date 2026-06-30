@@ -13,6 +13,8 @@ plugins:
 
 nav:
   - Home: index.md
+  - Privacy Manifest: privacy_manifest.md
+  - Architecture Guide: architecture_guide.md
   - API Reference:
     - Core: core.md
     - UI: ui.md

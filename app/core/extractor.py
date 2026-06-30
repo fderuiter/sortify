@@ -11,9 +11,8 @@ from typing import Callable, Tuple
 
 import pandas as pd
 import pypdf
-from docx import Document
-
 from config import LOG_FILE, MAX_WORKERS
+from docx import Document
 
 # Configure Centralized Logger
 logging.basicConfig(
@@ -55,8 +54,8 @@ def extract_file_text(file_path: str) -> str:
             text = df.to_string()
         elif ext == ".pdf":
             with open(file_path, "rb") as f:
-                reader = pypdf.PdfReader(f)
-                for page in reader.pages:
+                pdf_reader = pypdf.PdfReader(f)
+                for page in pdf_reader.pages:
                     text += page.extract_text() or ""
     except Exception as e:
         # Centralized Error Catching: Logs the file path and specific error stack
@@ -97,7 +96,7 @@ def process_item_worker(base_dir: str, item: str, progress_callback: Callable) -
         )
     finally:
         # Crucial: Always fire callback so progress tracking doesn't stall out
-        progress_callback()
+        progress_callback(item)
 
     return item, ""
 

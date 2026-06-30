@@ -7,6 +7,7 @@ import tkinter as tk
 from tkinter import filedialog
 from typing import Optional
 
+
 def select_directory() -> Optional[str]:
     """Open a GUI window for the user to select a target directory.
 

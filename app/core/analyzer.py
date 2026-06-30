@@ -5,13 +5,12 @@ This module provides topic modeling functionality.
 
 from collections import defaultdict
 
+from config import MAX_DF, MIN_DF, STOP_WORDS
 from sklearn.decomposition import NMF
 from sklearn.feature_extraction.text import TfidfVectorizer
 
-from config import MAX_DF, MIN_DF, STOP_WORDS
 
-
-def generate_sorting_plan(corpus: dict, max_folders: int) -> dict:
+def generate_sorting_plan(corpus: dict, max_folders: int, log_callback=None) -> dict:
     """Generate a machine learning based sorting plan to cluster documents.
 
     Uses TF-IDF + NMF to cluster documents by connected themes and returns a
@@ -38,6 +37,8 @@ def generate_sorting_plan(corpus: dict, max_folders: int) -> dict:
     plan = defaultdict(list)
 
     # 1. Edge Case: If there are too few files, ML will fail. Fallback to basic sorting.
+    if log_callback:
+        log_callback("Analyzing topics using local TF-IDF Vectorizer...")
     if len(documents) < 3:
         for f in filenames:
             plan["Miscellaneous"].append(f)
@@ -56,6 +57,8 @@ def generate_sorting_plan(corpus: dict, max_folders: int) -> dict:
         return plan
 
     # 3. Topic Modeling: Group files into semantic clusters
+    if log_callback:
+        log_callback("Running NMF algorithm locally for semantic clustering...")
     actual_k = min(max_folders, len(documents) // 2, tfidf_matrix.shape[1])
     if actual_k < 2:
         actual_k = 2
