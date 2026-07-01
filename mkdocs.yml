@@ -2,6 +2,13 @@ site_name: Smart AutoSorter AI Pro API
 theme:
   name: material
 
+markdown_extensions:
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+
 plugins:
   - search
   - mkdocstrings:
@@ -14,6 +21,8 @@ plugins:
 nav:
   - User Guides: user_guide.md
   - Administrator Guide: admin_guide.md
+  - Architecture & Internals: architecture.md
+  - Contributor Guide: contributor.md
   - Developer Reference:
     - Core: core.md
     - UI: ui.md

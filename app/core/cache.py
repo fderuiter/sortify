@@ -10,7 +10,6 @@ DB_PATH = pathlib.Path.home() / ".autosorter" / "cache.db"
 
 _executor = ThreadPoolExecutor(max_workers=1)
 
-
 def _get_conn():
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
@@ -25,10 +24,7 @@ def _get_conn():
     conn.commit()
     return conn
 
-
-def _save_cache_sync(
-    source_directory: str, corpus: dict, locked_files: dict, index_to_word: dict
-):
+def _save_cache_sync(source_directory: str, corpus: dict, locked_files: dict, index_to_word: dict):
     try:
         conn = _get_conn()
         conn.execute(
@@ -44,39 +40,27 @@ def _save_cache_sync(
                 source_directory,
                 json.dumps(corpus),
                 json.dumps(locked_files),
-                json.dumps({str(k): v for k, v in index_to_word.items()}),
-            ),
+                json.dumps({str(k): v for k, v in index_to_word.items()})
+            )
         )
         conn.commit()
         conn.close()
     except Exception as e:
         logging.error(f"Failed to save cache: {e}")
 
-
-def save_cache_async(
-    source_directory: str, corpus: dict, locked_files: dict, index_to_word: dict
-):
+def save_cache_async(source_directory: str, corpus: dict, locked_files: dict, index_to_word: dict):
     """Save the current directory cache asynchronously to avoid blocking."""
-    _executor.submit(
-        _save_cache_sync, source_directory, corpus, locked_files, index_to_word
-    )
+    _executor.submit(_save_cache_sync, source_directory, corpus, locked_files, index_to_word)
 
-
-def save_cache_sync(
-    source_directory: str, corpus: dict, locked_files: dict, index_to_word: dict
-):
+def save_cache_sync(source_directory: str, corpus: dict, locked_files: dict, index_to_word: dict):
     """Save the current directory cache synchronously."""
     _save_cache_sync(source_directory, corpus, locked_files, index_to_word)
-
 
 def load_cache(source_directory: str):
     """Load the cache for a given source directory from SQLite database."""
     try:
         conn = _get_conn()
-        cur = conn.execute(
-            "SELECT corpus, locked_files, index_to_word FROM directory_cache WHERE source_directory = ?",
-            (source_directory,),
-        )
+        cur = conn.execute("SELECT corpus, locked_files, index_to_word FROM directory_cache WHERE source_directory = ?", (source_directory,))
         row = cur.fetchone()
         conn.close()
         if row:
@@ -87,3 +71,4 @@ def load_cache(source_directory: str):
     except Exception as e:
         logging.error(f"Failed to load cache: {e}")
     return None, None, None
+

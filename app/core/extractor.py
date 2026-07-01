@@ -57,9 +57,7 @@ def extract_file_text(file_path: str) -> str:
     return text
 
 
-def process_item_worker(
-    base_dir: str, item: str, progress_callback: Callable
-) -> Tuple[str, str]:
+def process_item_worker(base_dir: str, item: str, progress_callback: Callable) -> Tuple[str, str]:
     """Process a single item and extract its text content.
 
     Parameters
@@ -95,13 +93,7 @@ def process_item_worker(
     return item, ""
 
 
-def build_corpus_generator(
-    base_dir: str,
-    items_to_sort: list,
-    progress_callback: Callable,
-    max_workers: int,
-    chunk_size: int = 50,
-):
+def build_corpus_generator(base_dir: str, items_to_sort: list, progress_callback: Callable, max_workers: int, chunk_size: int = 50, sequential: bool = False):
     """Map every item to its text payload asynchronously and yield chunks.
 
     Parameters
@@ -116,6 +108,8 @@ def build_corpus_generator(
         The maximum number of parallel workers.
     chunk_size : int
         The number of items to yield in each chunk.
+    sequential : bool
+        If True, items are processed iteratively in exact order to eliminate ingestion noise.
 
     Yields
     ------
@@ -124,19 +118,27 @@ def build_corpus_generator(
     """
     items_to_sort = sorted(items_to_sort)
     chunk = {}
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        item_to_future = {
-            item: executor.submit(process_item_worker, base_dir, item, progress_callback)
-            for item in items_to_sort
-        }
+    if sequential:
         for item in items_to_sort:
-            future = item_to_future[item]
-            item_name, item_text = future.result()
+            item_name, item_text = process_item_worker(base_dir, item, progress_callback)
             chunk[item_name] = item_name + " " + item_text
-
             if len(chunk) >= chunk_size:
                 yield chunk
                 chunk = {}
-
         if chunk:
             yield chunk
+    else:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            item_to_future = {
+                item: executor.submit(process_item_worker, base_dir, item, progress_callback)
+                for item in items_to_sort
+            }
+            for item in items_to_sort:
+                future = item_to_future[item]
+                item_name, item_text = future.result()
+                chunk[item_name] = item_name + " " + item_text
+                if len(chunk) >= chunk_size:
+                    yield chunk
+                    chunk = {}
+            if chunk:
+                yield chunk
