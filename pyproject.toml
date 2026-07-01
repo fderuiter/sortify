@@ -29,6 +29,7 @@ dev = [
 ]
 
 [project.scripts]
+smart-autosorter = "app.main:main"
 docs = "mkdocs:build"
 
 [tool.hatch.build.targets.wheel]
