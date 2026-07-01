@@ -114,7 +114,7 @@ def test_build_corpus_generator(mocker):
     ])
     
     mock_callback = MagicMock()
-    generator = build_corpus_generator("/base", ["file1.txt", "file2.txt", "file3.txt"], mock_callback, chunk_size=2)
+    generator = build_corpus_generator("/base", ["file1.txt", "file2.txt", "file3.txt"], mock_callback, max_workers=2, chunk_size=2)
     
     chunks = list(generator)
     assert len(chunks) == 2

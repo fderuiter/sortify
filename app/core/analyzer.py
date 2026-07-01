@@ -11,8 +11,6 @@ from collections import defaultdict
 from sklearn.decomposition import MiniBatchNMF
 from sklearn.feature_extraction.text import HashingVectorizer
 
-from app.config import STOP_WORDS
-
 
 class IncrementalAnalyzer:
     """Stateful ML analyzer using incremental topic modeling.
@@ -20,12 +18,13 @@ class IncrementalAnalyzer:
     Uses HashingVectorizer and MiniBatchNMF to cluster documents incrementally.
     """
 
-    def __init__(self, max_folders: int) -> None:
+    def __init__(self, max_folders: int, stop_words: set) -> None:
         """Initialize the analyzer with the maximum number of folders."""
         self.max_folders = max_folders
+        self.stop_words = stop_words
         self.n_features = 10000
         self.vectorizer = HashingVectorizer(
-            stop_words=list(STOP_WORDS),
+            stop_words=list(self.stop_words),
             n_features=self.n_features,
             norm=None,
             alternate_sign=False
@@ -33,11 +32,15 @@ class IncrementalAnalyzer:
         self.corpus = {}
         self.index_to_word = {}
 
+    def update_config(self, max_folders: int) -> None:
+        """Update the configuration limits without losing learned state."""
+        self.max_folders = max_folders
+
     def _update_vocab(self, documents: list) -> None:
         """Update the reverse lookup for HashingVectorizer indices."""
         for doc in documents:
             words = set(re.findall(r'\b[a-zA-Z]{3,}\b', doc.lower()))
-            words.difference_update(STOP_WORDS)
+            words.difference_update(self.stop_words)
             for word in words:
                 transformed = self.vectorizer.transform([word])
                 indices = transformed.indices

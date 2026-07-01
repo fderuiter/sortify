@@ -10,7 +10,6 @@ from tkinter import filedialog, ttk
 
 import customtkinter as ctk
 
-from app.config import MAX_FOLDERS
 from app.core.analyzer import IncrementalAnalyzer
 from app.core.extractor import build_corpus_generator
 from app.core.mover import execute_moves
@@ -23,9 +22,10 @@ ctk.set_default_color_theme("blue")
 class AutoSorterApp(ctk.CTk):
     """Main application class for Smart AutoSorter AI Pro."""
 
-    def __init__(self) -> None:
+    def __init__(self, settings) -> None:
         """Initialize the main application window and UI components."""
         super().__init__()
+        self.settings = settings
         self.title("Smart AutoSorter AI Pro")
         self.geometry("750x650")
 
@@ -50,10 +50,15 @@ class AutoSorterApp(ctk.CTk):
         )
         self.title_label.pack(pady=15)
 
+        self.settings_btn = ctk.CTkButton(
+            self, text="Settings", width=70, command=self.show_settings_modal
+        )
+        self.settings_btn.place(relx=0.85, rely=0.03)
+
         self.help_btn = ctk.CTkButton(
             self, text="Help", width=60, command=self.show_help_modal
         )
-        self.help_btn.place(relx=0.85, rely=0.03)
+        self.help_btn.place(relx=0.75, rely=0.03)
 
         self.select_btn = ctk.CTkButton(
             self, text="Select Directory to Sort", command=self.select_directory
@@ -121,6 +126,61 @@ class AutoSorterApp(ctk.CTk):
             pass
         return files
 
+    def show_settings_modal(self) -> None:
+        """Display a settings modal to configure dynamic limits."""
+        settings_window = ctk.CTkToplevel(self)
+        settings_window.title("Settings")
+        settings_window.geometry("400x300")
+        settings_window.transient(self)
+        settings_window.grab_set()
+
+        ctk.CTkLabel(settings_window, text="Max Folders:", font=("Roboto", 14)).pack(pady=(20, 5))
+        folders_slider = ctk.CTkSlider(settings_window, from_=2, to=30, number_of_steps=28)
+        folders_slider.set(self.settings.MAX_FOLDERS)
+        folders_slider.pack(pady=5)
+        
+        folders_val = ctk.CTkLabel(settings_window, text=str(self.settings.MAX_FOLDERS))
+        folders_val.pack()
+        folders_slider.configure(command=lambda v: folders_val.configure(text=str(int(v))))
+
+        ctk.CTkLabel(settings_window, text="Max Background Workers:", font=("Roboto", 14)).pack(pady=(15, 5))
+        workers_slider = ctk.CTkSlider(settings_window, from_=1, to=32, number_of_steps=31)
+        workers_slider.set(self.settings.MAX_WORKERS)
+        workers_slider.pack(pady=5)
+        
+        workers_val = ctk.CTkLabel(settings_window, text=str(self.settings.MAX_WORKERS))
+        workers_val.pack()
+        workers_slider.configure(command=lambda v: workers_val.configure(text=str(int(v))))
+
+        def apply_settings():
+            self.settings.MAX_FOLDERS = int(folders_slider.get())
+            self.settings.MAX_WORKERS = int(workers_slider.get())
+            
+            if self.analyzer:
+                self.analyzer.update_config(self.settings.MAX_FOLDERS)
+                # Re-generate plan with new limits if we have data
+                if self.analyzer.corpus:
+                    self.status_label.configure(text="Applying new settings...", text_color="white")
+                    # Background update avoids freezing UI
+                    threading.Thread(target=self._apply_settings_worker, daemon=True).start()
+                    
+            settings_window.destroy()
+
+        ctk.CTkButton(settings_window, text="Apply", command=apply_settings).pack(pady=20)
+
+    def _apply_settings_worker(self):
+        with self._update_lock:
+            new_plan = self.analyzer.generate_sorting_plan()
+            self._apply_locked_files(new_plan)
+            self.plan = new_plan
+            
+            self.plan_errors = self.verifier.verify_plan(self.base_dir, self.plan)
+            has_errors = bool(self.plan_errors)
+            
+            self.after(0, lambda: self.execute_btn.configure(state="disabled" if has_errors else "normal"))
+            self.after(0, lambda: self.status_label.configure(text="AI Plan ready for review.", text_color="green"))
+            self.after(0, self.render_tree)
+
     def show_help_modal(self) -> None:
         """Display a help modal containing system limits and file processing logic."""
         help_window = ctk.CTkToplevel(self)
@@ -177,7 +237,7 @@ class AutoSorterApp(ctk.CTk):
             self.plan = {}
             self.tree.delete(*self.tree.get_children())
 
-            self.analyzer = IncrementalAnalyzer(MAX_FOLDERS)
+            self.analyzer = IncrementalAnalyzer(self.settings.MAX_FOLDERS, self.settings.STOP_WORDS)
 
             self.status_label.configure(
                 text="Scanning and modeling incrementally...", text_color="white"
@@ -211,7 +271,7 @@ class AutoSorterApp(ctk.CTk):
     def pipeline_worker(self, items_to_sort: list) -> None:
         """Run the data collection and ML algorithm incrementally in a background thread."""
         for chunk in build_corpus_generator(
-            self.base_dir, items_to_sort, self.item_completed_callback, chunk_size=50
+            self.base_dir, items_to_sort, self.item_completed_callback, max_workers=self.settings.MAX_WORKERS, chunk_size=50
         ):
             self.analyzer.partial_fit(chunk)
 
@@ -468,7 +528,7 @@ class AutoSorterApp(ctk.CTk):
             self.tree.delete(*self.tree.get_children())
 
 
-def run_app() -> None:
+def run_app(settings) -> None:
     """Instantiate and run the main application."""
-    app = AutoSorterApp()
+    app = AutoSorterApp(settings)
     app.mainloop()
