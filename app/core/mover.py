@@ -3,7 +3,6 @@
 This module is responsible for safely moving files to new directories.
 """
 
-import logging
 import os
 import shutil
 
