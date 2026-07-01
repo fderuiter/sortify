@@ -171,6 +171,19 @@ class TopicNode:
             child_new_docs = {f: d for f, d in group}
             self.children[topic_idx].add_documents(child_new_docs)
             
+    def get_reconstruction_error(self):
+        """Calculate the total reconstruction error for this node and all its children.
+
+        Returns
+        -------
+        float
+            The aggregated reconstruction error.
+        """
+        err = getattr(self.model, 'reconstruction_err_', 0.0) if self.model else 0.0
+        for child in self.children.values():
+            err += child.get_reconstruction_error()
+        return err
+
     def get_plan(self):
         """Generate a hierarchical sorting plan from this node."""
         plan = {}
@@ -218,6 +231,19 @@ class IncrementalAnalyzer:
         self.corpus = {}
         self.index_to_word = {}
         self.root_node = None
+
+    @property
+    def last_reconstruction_error(self):
+        """Get the last reconstruction error from the underlying model.
+
+        Returns
+        -------
+        float
+            The reconstruction error.
+        """
+        if self.root_node:
+            return self.root_node.get_reconstruction_error()
+        return 0.0
 
     def _update_vocab(self, documents: list) -> None:
         """Update the reverse lookup for HashingVectorizer indices."""

@@ -38,6 +38,17 @@ The application is structured to strictly separate business logic from the user 
 - **core/**: Contains the core business logic, text extraction, machine learning models, and file operations.
 - **ui/**: Contains graphical interface components, dialogs, and progress rendering.
 
+## Hybrid Quality Guardrails (Testing)
+
+To prevent semantic regressions during development, Smart AutoSorter AI Pro enforces a "Hybrid Quality Guardrail." This test uses deterministic sequential ingestion and low-level mathematical metrics (reconstruction error) to verify clustering quality.
+
+If you make an intentional algorithmic improvement to the analyzer and the `test_quality_guardrails.py` test fails due to the reconstruction error falling outside the +/- 5% tolerance window, you must update the golden baseline:
+
+```bash
+UPDATE_BASELINE=1 uv run pytest tests/test_quality_guardrails.py
+```
+Commit the updated `tests/baseline_metrics.json` file to establish the new expected baseline.
+
 ## Documentation
 Check the `docs/` folder for the MkDocs configuration or run `tox -e docs` to build the site.
 
