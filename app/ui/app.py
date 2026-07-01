@@ -15,6 +15,7 @@ from app.core.analyzer import IncrementalAnalyzer
 from app.core.extractor import build_corpus_generator
 from app.core.mover import execute_moves
 from app.core.verifier import VerificationEngine
+from app.core.scanner import get_files_recursively
 
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
@@ -105,21 +106,7 @@ class AutoSorterApp(ctk.CTk):
         self.execute_btn.pack(pady=15)
 
     def _get_files_recursively(self, base: str, rel_path: str = "") -> list:
-        files = []
-        try:
-            for entry in os.scandir(os.path.join(base, rel_path)):
-                if entry.name.startswith("."):
-                    continue
-                entry_rel_path = (
-                    os.path.join(rel_path, entry.name) if rel_path else entry.name
-                )
-                if entry.is_dir():
-                    files.extend(self._get_files_recursively(base, entry_rel_path))
-                else:
-                    files.append(entry_rel_path)
-        except Exception:
-            pass
-        return files
+        return get_files_recursively(base, rel_path)
 
     def show_help_modal(self) -> None:
         """Display a help modal containing system limits and file processing logic."""

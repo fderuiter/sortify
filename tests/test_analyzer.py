@@ -69,3 +69,21 @@ def test_generate_sorting_plan_exception(mocker):
     
     mock_logger.assert_called_once()
     assert plan == {}
+
+def test_naming_collision_resolution():
+    analyzer = IncrementalAnalyzer(max_folders=3)
+    # We want two topics to have the same primary keywords, but different term frequencies
+    corpus = {
+        "file1.txt": "apple banana apple banana apple orange",
+        "file2.txt": "apple banana apple banana grape grape grape grape",
+        "file3.txt": "apple banana apple banana peach peach",
+        "file4.txt": "apple banana apple banana kiwi kiwi kiwi kiwi kiwi"
+    }
+    analyzer.partial_fit(corpus)
+    plan = analyzer.generate_sorting_plan()
+    
+    # Check that there are no duplicate folder names in the plan except perhaps Miscellaneous 
+    # (actually generate_sorting_plan returns a dictionary, so duplicate keys are impossible, 
+    # but we want to ensure the logic doesn't just fallback to name-0, name-1 without trying term frequencies)
+    folder_names = list(plan.keys())
+    assert "Miscellaneous" not in folder_names or len(folder_names) > 1

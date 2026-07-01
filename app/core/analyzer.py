@@ -42,7 +42,9 @@ class IncrementalAnalyzer:
                 transformed = self.vectorizer.transform([word])
                 indices = transformed.indices
                 if len(indices) > 0:
-                    self.index_to_word[indices[0]] = word
+                    idx = indices[0]
+                    if idx not in self.index_to_word or word < self.index_to_word[idx]:
+                        self.index_to_word[idx] = word
 
     def partial_fit(self, new_corpus: dict) -> None:
         """Update the ML model incrementally with new documents."""
@@ -70,6 +72,13 @@ class IncrementalAnalyzer:
             documents = list(self.corpus.values())
             if not filenames:
                 return {}
+                
+            # Sort deterministically by basename then content to be invariant to directory moves
+            items = list(zip(filenames, documents))
+            items.sort(key=lambda x: (os.path.basename(x[0]), x[1], x[0]))
+            filenames = [x[0] for x in items]
+            documents = [x[1] for x in items]
+            
             plan = self._cluster_recursive(filenames, documents, depth=1)
             
             def _annotate(node, current_path):
@@ -115,21 +124,6 @@ class IncrementalAnalyzer:
         document_topic_matrix = nmf.fit_transform(X)
         topic_word_matrix = nmf.components_
 
-        folder_names = []
-        for topic in topic_word_matrix:
-            top_indices = topic.argsort()[:-3:-1]
-            top_terms = []
-            for i in top_indices:
-                word = self.index_to_word.get(i)
-                if word:
-                    top_terms.append(word.capitalize())
-                else:
-                    top_terms.append(f"Topic{i}")
-            if not top_terms:
-                folder_names.append("Miscellaneous")
-            else:
-                folder_names.append("-".join(top_terms))
-
         topic_groups = defaultdict(list)
         misc_files = []
 
@@ -140,8 +134,54 @@ class IncrementalAnalyzer:
             else:
                 topic_groups[best_topic_idx].append((filename, documents[i]))
 
+        used_names = set()
+        folder_names = {}
+        
+        for topic_idx in sorted(topic_groups.keys()):
+            group = topic_groups[topic_idx]
+            topic = topic_word_matrix[topic_idx]
+            top_indices = topic.argsort()[:-3:-1]
+            top_terms = []
+            for i in top_indices:
+                word = self.index_to_word.get(i)
+                if word:
+                    top_terms.append(word.capitalize())
+                else:
+                    top_terms.append(f"Topic{i}")
+                    
+            if not top_terms:
+                base_name = "Miscellaneous"
+            else:
+                base_name = "-".join(top_terms)
+                
+            if base_name not in used_names and base_name != "Miscellaneous":
+                folder_names[topic_idx] = base_name
+                used_names.add(base_name)
+            else:
+                from collections import Counter
+                term_counts = Counter()
+                for _, doc in group:
+                    words = re.findall(r'\b[a-zA-Z]{3,}\b', doc.lower())
+                    for w in words:
+                        if w not in STOP_WORDS:
+                            term_counts[w] += 1
+                            
+                resolved = False
+                for term, _ in sorted(term_counts.items(), key=lambda x: (-x[1], x[0])):
+                    cap_term = term.capitalize()
+                    if cap_term not in used_names:
+                        folder_names[topic_idx] = cap_term
+                        used_names.add(cap_term)
+                        resolved = True
+                        break
+                        
+                if not resolved:
+                    fallback = f"{base_name}-{topic_idx}"
+                    folder_names[topic_idx] = fallback
+                    used_names.add(fallback)
+
         for topic_idx, group in topic_groups.items():
-            folder_name = folder_names[topic_idx]
+            folder_name = folder_names.get(topic_idx, "Miscellaneous")
             sub_filenames = [item[0] for item in group]
             sub_documents = [item[1] for item in group]
 
