@@ -2,14 +2,14 @@ from app.core.analyzer import IncrementalAnalyzer
 
 
 def test_incremental_analyzer_init():
-    analyzer = IncrementalAnalyzer(max_folders=5)
+    analyzer = IncrementalAnalyzer(max_folders=5, stop_words={"the", "and"})
     assert analyzer.max_folders == 5
     assert analyzer.n_features == 10000
     assert analyzer.corpus == {}
 
 
 def test_partial_fit():
-    analyzer = IncrementalAnalyzer(max_folders=3)
+    analyzer = IncrementalAnalyzer(max_folders=3, stop_words={"the", "and"})
     corpus = {"file1.txt": "This is a document about finance and money.", "file2.txt": "Science and technology are great."}
     
     analyzer.partial_fit(corpus)
@@ -18,19 +18,19 @@ def test_partial_fit():
 
 
 def test_partial_fit_empty():
-    analyzer = IncrementalAnalyzer(max_folders=3)
+    analyzer = IncrementalAnalyzer(max_folders=3, stop_words={"the", "and"})
     analyzer.partial_fit({})
     assert len(analyzer.corpus) == 0
 
 
 def test_generate_sorting_plan_empty():
-    analyzer = IncrementalAnalyzer(max_folders=3)
+    analyzer = IncrementalAnalyzer(max_folders=3, stop_words={"the", "and"})
     plan = analyzer.generate_sorting_plan()
     assert plan == {}
 
 
 def test_generate_sorting_plan():
-    analyzer = IncrementalAnalyzer(max_folders=2)
+    analyzer = IncrementalAnalyzer(max_folders=2, stop_words={"the", "and"})
     corpus = {
         "finance1.txt": "money bank finance investment",
         "finance2.txt": "investment stock market money",
@@ -46,7 +46,7 @@ def test_generate_sorting_plan():
 
 
 def test_partial_fit_exception(mocker):
-    analyzer = IncrementalAnalyzer(max_folders=2)
+    analyzer = IncrementalAnalyzer(max_folders=2, stop_words={"the", "and"})
     mocker.patch.object(analyzer, "_update_vocab", side_effect=Exception("Test error"))
     mock_logger = mocker.patch("app.core.analyzer.logging.error")
     
@@ -58,7 +58,7 @@ def test_partial_fit_exception(mocker):
 
 
 def test_generate_sorting_plan_exception(mocker):
-    analyzer = IncrementalAnalyzer(max_folders=2)
+    analyzer = IncrementalAnalyzer(max_folders=2, stop_words={"the", "and"})
     corpus = {"file.txt": "test content"}
     analyzer.partial_fit(corpus)
     
@@ -71,7 +71,7 @@ def test_generate_sorting_plan_exception(mocker):
     assert plan == {}
 
 def test_naming_collision_resolution():
-    analyzer = IncrementalAnalyzer(max_folders=3)
+    analyzer = IncrementalAnalyzer(max_folders=3, stop_words={"the"})
     # We want two topics to have the same primary keywords, but different term frequencies
     corpus = {
         "file1.txt": "apple banana apple banana apple orange",

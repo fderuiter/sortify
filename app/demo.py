@@ -5,7 +5,6 @@ import os
 import sys
 import tempfile
 
-from app.config import settings
 from app.core.analyzer import IncrementalAnalyzer
 from app.core.extractor import build_corpus_generator
 
@@ -29,7 +28,7 @@ def generate_sample_corpus(base_dir: str):
         
     return ["demo_finance.txt", "demo_tech.txt", "demo_health.txt", "empty.txt"]
 
-def run_demo():
+def run_demo(settings):
     """Run an interactive CLI demo."""
     print("Starting Smart AutoSorter AI Pro - Interactive CLI Demo...")
     
@@ -38,20 +37,20 @@ def run_demo():
         files_to_sort = generate_sample_corpus(temp_dir)
         print(f"[*] Generated {len(files_to_sort)} files.")
         
-        analyzer = IncrementalAnalyzer(max_folders=settings.MAX_FOLDERS)
+        analyzer = IncrementalAnalyzer(max_folders=settings.MAX_FOLDERS, stop_words=settings.STOP_WORDS)
         
         def progress_callback():
             pass
             
         print("[*] Processing files incrementally...")
-        generator = build_corpus_generator(temp_dir, files_to_sort, progress_callback, chunk_size=2)
+        generator = build_corpus_generator(temp_dir, files_to_sort, progress_callback, chunk_size=2, max_workers=settings.MAX_WORKERS)
         
         for i, chunk in enumerate(generator):
             print(f"    - Processing chunk {i+1}...")
             analyzer.partial_fit(chunk)
             
         print("[*] Generating sorting plan...")
-        plan = analyzer.generate_sorting_plan()
+        plan = analyzer.generate_sorting_plan(settings)
         
         print("\n--- Generated Sorting Plan ---")
         print(json.dumps(plan, indent=2))

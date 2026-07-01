@@ -22,13 +22,14 @@ def test_semantic_quality_guardrails():
     files = [f for f in os.listdir(LARGE_CORPUS_DIR) if os.path.isfile(os.path.join(LARGE_CORPUS_DIR, f))]
     files.sort()  # crucial for determinism
     
-    analyzer = IncrementalAnalyzer(max_folders=4)
+    analyzer = IncrementalAnalyzer(max_folders=4, stop_words={"the", "and"})
     progress_callback = MagicMock()
     
     generator = build_corpus_generator(
         base_dir=LARGE_CORPUS_DIR,
         items_to_sort=files,
         progress_callback=progress_callback,
+        max_workers=1,
         chunk_size=50,
         sequential=True
     )

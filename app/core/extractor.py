@@ -13,8 +13,6 @@ import pandas as pd
 import pypdf
 from docx import Document
 
-from app.config import settings
-
 
 def extract_file_text(file_path: str) -> str:
     """Extract text content from a given file.
@@ -95,7 +93,7 @@ def process_item_worker(base_dir: str, item: str, progress_callback: Callable) -
     return item, ""
 
 
-def build_corpus_generator(base_dir: str, items_to_sort: list, progress_callback: Callable, chunk_size: int = 50, sequential: bool = False):
+def build_corpus_generator(base_dir: str, items_to_sort: list, progress_callback: Callable, max_workers: int, chunk_size: int = 50, sequential: bool = False):
     """Map every item to its text payload asynchronously and yield chunks.
 
     Parameters
@@ -106,6 +104,8 @@ def build_corpus_generator(base_dir: str, items_to_sort: list, progress_callback
         A list of item names to process.
     progress_callback : Callable
         A callback function to execute after each item is processed.
+    max_workers : int
+        The maximum number of parallel workers.
     chunk_size : int
         The number of items to yield in each chunk.
     sequential : bool
@@ -128,7 +128,7 @@ def build_corpus_generator(base_dir: str, items_to_sort: list, progress_callback
         if chunk:
             yield chunk
     else:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=settings.MAX_WORKERS) as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             item_to_future = {
                 item: executor.submit(process_item_worker, base_dir, item, progress_callback)
                 for item in items_to_sort
