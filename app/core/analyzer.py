@@ -4,6 +4,7 @@ This module provides topic modeling functionality.
 """
 
 import logging
+import os
 import re
 from collections import defaultdict
 
@@ -62,14 +63,36 @@ class IncrementalAnalyzer:
         -------
         dict
             A nested mapping where keys are generated folder names and values are 
-            either dicts (subfolders) or None (for leaf filenames).
+            either dicts (subfolders) or file metadata dicts.
         """
         try:
             filenames = list(self.corpus.keys())
             documents = list(self.corpus.values())
             if not filenames:
                 return {}
-            return self._cluster_recursive(filenames, documents, depth=1)
+            plan = self._cluster_recursive(filenames, documents, depth=1)
+            
+            def _annotate(node, current_path):
+                for k, v in list(node.items()):
+                    if v is None:
+                        filename = os.path.basename(k)
+                        target_path = os.path.join(current_path, filename)
+                        
+                        norm_source = os.path.normpath(k)
+                        norm_target = os.path.normpath(target_path)
+                        
+                        status = "Already Sorted" if norm_source == norm_target else "Pending Move"
+                        
+                        node[k] = {
+                            "__type__": "file",
+                            "status": status,
+                            "source_path": k
+                        }
+                    elif isinstance(v, dict):
+                        _annotate(v, os.path.join(current_path, k))
+            
+            _annotate(plan, "")
+            return plan
         except Exception as e:
             logging.error(f"Failed during generate_sorting_plan. Error: {str(e)}", exc_info=True)
             return {}

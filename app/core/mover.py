@@ -8,12 +8,18 @@ import os
 import shutil
 
 
-def get_safe_path(dest_dir: str, filename: str) -> str:
+def get_safe_path(dest_dir: str, filename: str, source_path: str = None) -> str:
     """Generate a safe file path to avoid overwriting existing files."""
     base, extension = os.path.splitext(filename)
     counter = 1
     safe_path = os.path.join(dest_dir, filename)
     while os.path.exists(safe_path):
+        if source_path and os.path.exists(source_path):
+            try:
+                if os.path.samefile(safe_path, source_path):
+                    return safe_path
+            except OSError:
+                pass
         safe_path = os.path.join(dest_dir, f"{base}_{counter}{extension}")
         counter += 1
     return safe_path
@@ -38,8 +44,14 @@ def _remove_empty_dirs(path: str):
 
 def _execute_moves_recursive(base_dir: str, plan: dict, current_dest: str = "") -> None:
     """Recursively move files according to the plan."""
+    if not isinstance(plan, dict) or plan.get("__type__") == "file":
+        return
+
     for key, content in plan.items():
-        if content is None:
+        if content is None or (isinstance(content, dict) and content.get("__type__") == "file"):
+            if isinstance(content, dict) and content.get("status") == "Already Sorted":
+                continue
+
             # It's a file, key is the original relative path
             source_path = os.path.join(base_dir, key)
             if not os.path.exists(source_path):
@@ -55,7 +67,11 @@ def _execute_moves_recursive(base_dir: str, plan: dict, current_dest: str = "") 
                     logging.error(f"Failed to create directory {dest_dir}. Error: {str(e)}")
                     continue
                     
-            dest_path = get_safe_path(dest_dir, filename)
+            dest_path = get_safe_path(dest_dir, filename, source_path)
+            
+            if dest_path == source_path:
+                continue
+
             try:
                 shutil.move(source_path, dest_path)
             except Exception as e:

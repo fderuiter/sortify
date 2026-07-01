@@ -222,7 +222,7 @@ class AutoSorterApp(ctk.CTk):
 
     def _remove_file_from_plan(self, plan_node, filename: str) -> bool:
         """Recursively removes a file from the plan. Returns True if removed."""
-        if not isinstance(plan_node, dict):
+        if not isinstance(plan_node, dict) or plan_node.get("__type__") == "file":
             return False
 
         if filename in plan_node:
@@ -245,11 +245,21 @@ class AutoSorterApp(ctk.CTk):
             current = new_plan
             for i, part in enumerate(parts):
                 if i == len(parts) - 1:
-                    if part not in current or current[part] is None:
+                    if part not in current or not isinstance(current[part], dict) or current[part].get("__type__") == "file":
                         current[part] = {}
-                    current[part][f] = None
+                        
+                    target_file_path = os.path.join(target_path, os.path.basename(f))
+                    norm_source = os.path.normpath(f)
+                    norm_target = os.path.normpath(target_file_path)
+                    status = "Already Sorted" if norm_source == norm_target else "Pending Move"
+                    
+                    current[part][f] = {
+                        "__type__": "file",
+                        "status": status,
+                        "source_path": f
+                    }
                 else:
-                    if part not in current or current[part] is None:
+                    if part not in current or not isinstance(current[part], dict) or current[part].get("__type__") == "file":
                         current[part] = {}
                     current = current[part]
 
@@ -278,19 +288,24 @@ class AutoSorterApp(ctk.CTk):
             self._save_expanded(child, expanded)
 
     def _insert_nodes(self, parent_id, plan_node, expanded):
-        if not isinstance(plan_node, dict):
+        if not isinstance(plan_node, dict) or plan_node.get("__type__") == "file":
             return
 
         for name, child_node in plan_node.items():
-            if child_node is None:
+            if child_node is None or (isinstance(child_node, dict) and child_node.get("__type__") == "file"):
+                text = os.path.basename(name)
+                status = child_node.get("status", "Pending Move") if isinstance(child_node, dict) else "Pending Move"
+                if status == "Already Sorted":
+                    text += " [Already Sorted]"
+                    
                 self.tree.insert(
-                    parent_id, "end", iid=f"file:{name}", text=os.path.basename(name)
+                    parent_id, "end", iid=f"file:{name}", text=text
                 )
             else:
                 folder_id = f"folder:{name}" if not parent_id else f"{parent_id}/{name}"
                 count = self._count_files(child_node)
                 self.tree.insert(
-                    parent_id, "end", iid=folder_id, text=f"📂 [{name}] ({count} items)"
+                    parent_id, "end", iid=folder_id, text=f"📂 [{name}] ({count} moves)"
                 )
                 self._insert_nodes(folder_id, child_node, expanded)
 
@@ -301,6 +316,8 @@ class AutoSorterApp(ctk.CTk):
         if plan_node is None:
             return 1
         elif isinstance(plan_node, dict):
+            if plan_node.get("__type__") == "file":
+                return 0 if plan_node.get("status") == "Already Sorted" else 1
             return sum(self._count_files(v) for v in plan_node.values())
         return 0
 
@@ -356,11 +373,13 @@ class AutoSorterApp(ctk.CTk):
             count = 0
             for child in self.tree.get_children(item):
                 if child.startswith("file:"):
-                    count += 1
+                    text = self.tree.item(child, "text")
+                    if "[Already Sorted]" not in text:
+                        count += 1
                 elif child.startswith("folder:"):
                     count += self._update_folder_count_recursive(child)
 
-            self.tree.item(item, text=f"📂 [{folder_name}] ({count} items)")
+            self.tree.item(item, text=f"📂 [{folder_name}] ({count} moves)")
             return count
         return 0
 
