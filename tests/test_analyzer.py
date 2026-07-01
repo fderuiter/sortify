@@ -69,7 +69,7 @@ def test_generate_sorting_plan_exception(mocker):
     corpus = {"file.txt": "test content"}
     analyzer.partial_fit("dummy_base", corpus)
     
-    mocker.patch.object(analyzer, "_cluster_recursive", side_effect=Exception("Test error"))
+    mocker.patch("app.core.db.db.get_all_documents", side_effect=Exception("Test error"))
     mock_logger = mocker.patch("app.core.analyzer.logging.error")
     
     plan = analyzer.generate_sorting_plan("dummy_base")
