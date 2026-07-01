@@ -150,6 +150,7 @@ class AutoSorterApp(ctk.CTk):
     def _build_settings_ui(self):
         self.settings_view = SettingsView(
             self.settings_frame, 
+            settings=self.settings,
             on_back=self.show_main_view, 
             on_settings_changed=self.on_settings_changed,
             fg_color="transparent"

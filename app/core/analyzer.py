@@ -29,6 +29,7 @@ class IncrementalAnalyzer:
         # Use a small, fast model for embeddings
         self.model = SentenceTransformer('all-MiniLM-L6-v2')
         self.corpus = {}
+        self._last_reconstruction_error = 0.0
 
     @property
     def last_reconstruction_error(self):
@@ -39,7 +40,7 @@ class IncrementalAnalyzer:
         float
             The reconstruction error.
         """
-        return 0.0
+        return self._last_reconstruction_error
 
     def partial_fit(self, base_dir: str, new_corpus: dict) -> None:
         """Update the ML model incrementally with new documents."""
@@ -97,6 +98,7 @@ class IncrementalAnalyzer:
             documents = [d[1] for d in docs]
             embeddings = [d[2] for d in docs]
             
+            self._last_reconstruction_error = 0.0
             plan = self._cluster_recursive(filenames, documents, embeddings, depth=1)
             
             def _annotate(node, current_path):
@@ -174,6 +176,7 @@ class IncrementalAnalyzer:
 
         kmeans = MiniBatchKMeans(n_clusters=actual_k, random_state=42, n_init="auto")
         labels = kmeans.fit_predict(X)
+        self._last_reconstruction_error += kmeans.inertia_
 
         topic_groups = defaultdict(list)
         for i, label in enumerate(labels):

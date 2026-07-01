@@ -83,7 +83,7 @@ def process_item_worker(base_dir: str, item: str, progress_callback: Callable) -
     return item, "", ""
 
 
-def build_corpus_generator(base_dir: str, items_to_sort: list, progress_callback: Callable, max_workers: int, chunk_size: int = 50, sequential: bool = False):
+def build_corpus_generator(base_dir: str, items_to_sort: list, progress_callback: Callable, max_workers: int = 15, chunk_size: int = 50, sequential: bool = False):
     """Map every item to its text payload asynchronously and yield chunks.
 
     Parameters
@@ -94,8 +94,6 @@ def build_corpus_generator(base_dir: str, items_to_sort: list, progress_callback
         A list of item names to process.
     progress_callback : Callable
         A callback function to execute after each item is processed.
-    max_workers : int
-        The maximum number of parallel workers.
     chunk_size : int
         The number of items to yield in each chunk.
     sequential : bool
@@ -114,9 +112,8 @@ def build_corpus_generator(base_dir: str, items_to_sort: list, progress_callback
             
             doc = db.get_document(base_dir, item_name)
             if doc and doc["file_hash"] == file_hash and doc["embedding"] is not None:
-                # Already processed and unchanged, no need to yield to analyzer
                 continue
-
+                
             chunk[item_name] = {"text": item_name + " " + item_text, "hash": file_hash}
             if len(chunk) >= chunk_size:
                 yield chunk
