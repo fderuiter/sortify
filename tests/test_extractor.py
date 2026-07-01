@@ -1,0 +1,123 @@
+from unittest.mock import MagicMock
+
+import pytest
+
+from app.core.extractor import (
+    build_corpus_generator,
+    extract_file_text,
+    process_item_worker,
+)
+
+
+@pytest.fixture
+def mock_txt_file(mocker):
+    mocker.patch("os.path.isfile", return_value=True)
+    mocker.patch("os.path.splitext", return_value=("file", ".txt"))
+    return mocker.patch("builtins.open", mocker.mock_open(read_data="Sample text content."))
+
+
+def test_extract_txt(mock_txt_file):
+    text = extract_file_text("dummy.txt")
+    assert text == "Sample text content."
+
+
+def test_extract_docx(mocker):
+    mocker.patch("os.path.splitext", return_value=("file", ".docx"))
+    mock_doc = mocker.patch("app.core.extractor.Document")
+    mock_instance = mock_doc.return_value
+    mock_instance.paragraphs = [MagicMock(text="Paragraph 1"), MagicMock(text="Paragraph 2")]
+    
+    text = extract_file_text("dummy.docx")
+    assert text == "Paragraph 1\nParagraph 2"
+
+
+def test_extract_csv(mocker):
+    mocker.patch("os.path.splitext", return_value=("file", ".csv"))
+    mocker.patch("builtins.open", mocker.mock_open(read_data="col1,col2\nval1,val2"))
+    mocker.patch("app.core.extractor.csv.reader", return_value=[["col1", "col2"], ["val1", "val2"]])
+    
+    text = extract_file_text("dummy.csv")
+    assert text == "col1 col2 val1 val2"
+
+
+def test_extract_excel(mocker):
+    mocker.patch("os.path.splitext", return_value=("file", ".xlsx"))
+    mock_pd = mocker.patch("app.core.extractor.pd.read_excel")
+    mock_df = mock_pd.return_value
+    mock_df.to_string.return_value = "Excel content"
+    
+    text = extract_file_text("dummy.xlsx")
+    assert text == "Excel content"
+
+
+def test_extract_pdf(mocker):
+    mocker.patch("os.path.splitext", return_value=("file", ".pdf"))
+    mocker.patch("builtins.open", mocker.mock_open())
+    mock_pdf = mocker.patch("app.core.extractor.pypdf.PdfReader")
+    mock_instance = mock_pdf.return_value
+    mock_page = MagicMock()
+    mock_page.extract_text.return_value = "PDF text"
+    mock_instance.pages = [mock_page]
+    
+    text = extract_file_text("dummy.pdf")
+    assert text == "PDF text"
+
+
+def test_extract_unsupported(mocker):
+    mocker.patch("os.path.splitext", return_value=("file", ".unknown"))
+    text = extract_file_text("dummy.unknown")
+    assert text == ""
+
+
+def test_process_item_worker_file(mocker):
+    mocker.patch("os.path.isfile", return_value=True)
+    mocker.patch("app.core.extractor.extract_file_text", return_value="worker text")
+    
+    mock_callback = MagicMock()
+    item, text = process_item_worker("/base", "file.txt", mock_callback)
+    
+    assert item == "file.txt"
+    assert text == "worker text"
+    mock_callback.assert_called_once()
+
+
+def test_process_item_worker_dir(mocker):
+    mocker.patch("os.path.isfile", return_value=False)
+    mocker.patch("os.path.isdir", return_value=True)
+    
+    mock_callback = MagicMock()
+    item, text = process_item_worker("/base", "subdir", mock_callback)
+    
+    assert item == "subdir"
+    assert text == "subdir"
+    mock_callback.assert_called_once()
+
+
+def test_process_item_worker_exception(mocker):
+    mocker.patch("os.path.isfile", side_effect=Exception("Test error"))
+    mock_logger = mocker.patch("app.core.extractor.logging.error")
+    
+    mock_callback = MagicMock()
+    item, text = process_item_worker("/base", "error.txt", mock_callback)
+    
+    assert item == "error.txt"
+    assert text == ""
+    mock_logger.assert_called_once()
+    mock_callback.assert_called_once()
+
+
+def test_build_corpus_generator(mocker):
+    mocker.patch("app.core.extractor.process_item_worker", side_effect=[
+        ("file1.txt", "text1"),
+        ("file2.txt", "text2"),
+        ("file3.txt", "text3"),
+    ])
+    
+    mock_callback = MagicMock()
+    generator = build_corpus_generator("/base", ["file1.txt", "file2.txt", "file3.txt"], mock_callback, chunk_size=2)
+    
+    chunks = list(generator)
+    assert len(chunks) == 2
+    assert "file1.txt" in chunks[0] or "file1.txt" in chunks[1]
+    assert len(chunks[0]) == 2
+    assert len(chunks[1]) == 1

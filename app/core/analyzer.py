@@ -3,12 +3,14 @@
 This module provides topic modeling functionality.
 """
 
+import logging
 import re
 from collections import defaultdict
 
-from config import STOP_WORDS
 from sklearn.decomposition import MiniBatchNMF
 from sklearn.feature_extraction.text import HashingVectorizer
+
+from app.config import STOP_WORDS
 
 
 class IncrementalAnalyzer:
@@ -43,12 +45,15 @@ class IncrementalAnalyzer:
 
     def partial_fit(self, new_corpus: dict) -> None:
         """Update the ML model incrementally with new documents."""
-        self.corpus.update(new_corpus)
-        documents = list(new_corpus.values())
-        if not documents:
-            return
+        try:
+            self.corpus.update(new_corpus)
+            documents = list(new_corpus.values())
+            if not documents:
+                return
 
-        self._update_vocab(documents)
+            self._update_vocab(documents)
+        except Exception as e:
+            logging.error(f"Failed during partial_fit. Error: {str(e)}", exc_info=True)
 
     def generate_sorting_plan(self) -> dict:
         """Generate a sorting plan based on the current model state.
@@ -59,9 +64,15 @@ class IncrementalAnalyzer:
             A nested mapping where keys are generated folder names and values are 
             either dicts (subfolders) or None (for leaf filenames).
         """
-        filenames = list(self.corpus.keys())
-        documents = list(self.corpus.values())
-        return self._cluster_recursive(filenames, documents, depth=1)
+        try:
+            filenames = list(self.corpus.keys())
+            documents = list(self.corpus.values())
+            if not filenames:
+                return {}
+            return self._cluster_recursive(filenames, documents, depth=1)
+        except Exception as e:
+            logging.error(f"Failed during generate_sorting_plan. Error: {str(e)}", exc_info=True)
+            return {}
 
     def _cluster_recursive(self, filenames: list, documents: list, depth: int) -> dict:
         plan = {}

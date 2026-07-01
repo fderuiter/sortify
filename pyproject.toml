@@ -23,7 +23,9 @@ dev = [
     "mkdocs-material",
     "mkdocstrings[python]",
     "ruff",
-    "mypy"
+    "mypy",
+    "pytest",
+    "pytest-mock"
 ]
 
 [project.scripts]
@@ -41,6 +43,9 @@ ignore = ["E501"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "numpy"
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["D"]
 
 [tool.ruff.format]
 docstring-code-format = true
