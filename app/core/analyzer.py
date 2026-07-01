@@ -32,9 +32,11 @@ class TopicNode:
         self.misc_docs = {}      # filename -> doc
         
     def add_documents(self, docs: dict):
+        """Add new documents to the node for processing."""
         self.new_docs.update(docs)
         
     def process(self, vectorizer, index_to_word):
+        """Process new documents and update the NMF model incrementally."""
         if not self.new_docs:
             return
             
@@ -123,6 +125,7 @@ class TopicNode:
             self.children[topic_idx].add_documents(child_new_docs)
             
     def get_plan(self):
+        """Generate a hierarchical sorting plan from this node."""
         plan = {}
         
         if self.model is None or self.prevent_clustering:
