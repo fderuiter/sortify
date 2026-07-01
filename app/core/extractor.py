@@ -95,7 +95,7 @@ def process_item_worker(base_dir: str, item: str, progress_callback: Callable) -
     return item, ""
 
 
-def build_corpus_generator(base_dir: str, items_to_sort: list, progress_callback: Callable, chunk_size: int = 50):
+def build_corpus_generator(base_dir: str, items_to_sort: list, progress_callback: Callable, chunk_size: int = 50, sequential: bool = False):
     """Map every item to its text payload asynchronously and yield chunks.
 
     Parameters
@@ -108,6 +108,8 @@ def build_corpus_generator(base_dir: str, items_to_sort: list, progress_callback
         A callback function to execute after each item is processed.
     chunk_size : int
         The number of items to yield in each chunk.
+    sequential : bool
+        If True, items are processed iteratively in exact order to eliminate ingestion noise.
 
     Yields
     ------
@@ -115,20 +117,30 @@ def build_corpus_generator(base_dir: str, items_to_sort: list, progress_callback
         A mapping of item names to their text payloads for a chunk of items.
     """
     chunk = {}
-    with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        future_to_item = {
-            executor.submit(
-                process_item_worker, base_dir, item, progress_callback
-            ): item
-            for item in items_to_sort
-        }
-        for future in concurrent.futures.as_completed(future_to_item):
-            item_name, item_text = future.result()
+    if sequential:
+        for item in items_to_sort:
+            item_name, item_text = process_item_worker(base_dir, item, progress_callback)
             chunk[item_name] = item_name + " " + item_text
-            
             if len(chunk) >= chunk_size:
                 yield chunk
                 chunk = {}
-                
         if chunk:
             yield chunk
+    else:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+            future_to_item = {
+                executor.submit(
+                    process_item_worker, base_dir, item, progress_callback
+                ): item
+                for item in items_to_sort
+            }
+            for future in concurrent.futures.as_completed(future_to_item):
+                item_name, item_text = future.result()
+                chunk[item_name] = item_name + " " + item_text
+                
+                if len(chunk) >= chunk_size:
+                    yield chunk
+                    chunk = {}
+                    
+            if chunk:
+                yield chunk

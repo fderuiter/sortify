@@ -32,6 +32,7 @@ class IncrementalAnalyzer:
         )
         self.corpus = {}
         self.index_to_word = {}
+        self.last_reconstruction_error = 0.0
 
     def _update_vocab(self, documents: list) -> None:
         """Update the reverse lookup for HashingVectorizer indices."""
@@ -66,6 +67,7 @@ class IncrementalAnalyzer:
             either dicts (subfolders) or file metadata dicts.
         """
         try:
+            self.last_reconstruction_error = 0.0
             filenames = list(self.corpus.keys())
             documents = list(self.corpus.values())
             if not filenames:
@@ -113,6 +115,7 @@ class IncrementalAnalyzer:
 
         nmf = MiniBatchNMF(n_components=actual_k, random_state=42)
         document_topic_matrix = nmf.fit_transform(X)
+        self.last_reconstruction_error += getattr(nmf, 'reconstruction_err_', 0.0)
         topic_word_matrix = nmf.components_
 
         folder_names = []
