@@ -37,8 +37,10 @@ def test_full_workflow_simulation():
     # The output folder names are based on extracted words (e.g. Finance-money, Technology-software)
     # We will search the nested dictionary to find our files.
     def find_file_folder(p, filename, current_path=""):
+        if not isinstance(p, dict) or p.get("__type__") == "file":
+            return None
         for k, v in p.items():
-            if v is None:
+            if v is None or (isinstance(v, dict) and v.get("__type__") == "file"):
                 if k == filename:
                     return current_path
             else:
@@ -126,8 +128,10 @@ def test_concurrent_large_volume():
         # Verify all 25 files are present
         def get_all_files(p):
             result = []
+            if not isinstance(p, dict) or p.get("__type__") == "file":
+                return result
             for k, v in p.items():
-                if v is None:
+                if v is None or (isinstance(v, dict) and v.get("__type__") == "file"):
                     result.append(k)
                 else:
                     result.extend(get_all_files(v))
