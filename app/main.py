@@ -8,6 +8,7 @@ import logging
 from app.config import AppSettings
 from app.ui.app import run_app
 
+
 def main():
     """Execute the main application GUI."""
     settings = AppSettings()

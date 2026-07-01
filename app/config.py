@@ -6,6 +6,8 @@ stop words.
 """
 
 class AppSettings:
+    """Dynamic configuration settings for the application."""
+
     def __init__(self):
         self.MAX_FOLDERS = 12
         self.MAX_WORKERS = 15
