@@ -63,4 +63,4 @@ pip install --upgrade pip
 pip install .
 
 echo "Setup complete. Launching application..."
-python main.py
+smart-autosorter

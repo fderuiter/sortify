@@ -15,5 +15,9 @@ logging.basicConfig(
     format="%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s",
 )
 
-if __name__ == "__main__":
+def main():
+    """Execute the main application GUI."""
     run_app()
+
+if __name__ == "__main__":
+    main()

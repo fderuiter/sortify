@@ -27,10 +27,12 @@ dev = [
     "ruff",
     "mypy",
     "pytest",
-    "pytest-mock"
+    "pytest-mock",
+    "reportlab"
 ]
 
 [project.scripts]
+smart-autosorter = "app.main:main"
 docs = "mkdocs:build"
 
 [tool.hatch.build.targets.wheel]

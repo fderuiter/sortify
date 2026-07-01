@@ -3,7 +3,6 @@
 This module is responsible for safely moving files to new directories.
 """
 
-import logging
 import os
 import shutil
 
@@ -27,19 +26,16 @@ def get_safe_path(dest_dir: str, filename: str, source_path: str = None) -> str:
 
 def _remove_empty_dirs(path: str):
     """Recursively remove empty directories."""
-    try:
-        if not os.path.isdir(path):
-            return
+    if not os.path.isdir(path):
+        return
+        
+    for entry in os.listdir(path):
+        entry_path = os.path.join(path, entry)
+        if os.path.isdir(entry_path):
+            _remove_empty_dirs(entry_path)
             
-        for entry in os.listdir(path):
-            entry_path = os.path.join(path, entry)
-            if os.path.isdir(entry_path):
-                _remove_empty_dirs(entry_path)
-                
-        if not os.listdir(path):
-            os.rmdir(path)
-    except Exception as e:
-        logging.error(f"Failed to remove empty directory {path}. Error: {str(e)}")
+    if not os.listdir(path):
+        os.rmdir(path)
 
 
 def _execute_moves_recursive(base_dir: str, plan: dict, current_dest: str = "") -> None:
@@ -61,24 +57,14 @@ def _execute_moves_recursive(base_dir: str, plan: dict, current_dest: str = "") 
             dest_dir = os.path.join(base_dir, current_dest)
             
             if not os.path.exists(dest_dir):
-                try:
-                    os.makedirs(dest_dir, exist_ok=True)
-                except Exception as e:
-                    logging.error(f"Failed to create directory {dest_dir}. Error: {str(e)}")
-                    continue
+                os.makedirs(dest_dir, exist_ok=True)
                     
             dest_path = get_safe_path(dest_dir, filename, source_path)
             
             if dest_path == source_path:
                 continue
 
-            try:
-                shutil.move(source_path, dest_path)
-            except Exception as e:
-                logging.error(
-                    f"Failed to move file {key} to {dest_dir}. "
-                    f"Check if file is open elsewhere. Error: {str(e)}"
-                )
+            shutil.move(source_path, dest_path)
         else:
             # It's a folder
             _execute_moves_recursive(base_dir, content, os.path.join(current_dest, key))

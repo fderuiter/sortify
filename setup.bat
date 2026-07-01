@@ -15,4 +15,4 @@ python -m pip install --upgrade pip
 python -m pip install .
 
 echo Setup complete. Launching application...
-python main.py
+smart-autosorter
