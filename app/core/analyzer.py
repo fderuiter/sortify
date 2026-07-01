@@ -163,7 +163,7 @@ class IncrementalAnalyzer:
                 for _, doc in group:
                     words = re.findall(r'\b[a-zA-Z]{3,}\b', doc.lower())
                     for w in words:
-                        if w not in STOP_WORDS:
+                        if w not in settings.STOP_WORDS:
                             term_counts[w] += 1
                             
                 resolved = False
