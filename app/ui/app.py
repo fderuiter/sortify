@@ -6,6 +6,7 @@ This module provides the main application window and logic for the AutoSorter.
 import os
 import threading
 import time
+import webbrowser
 from tkinter import filedialog, ttk
 
 import customtkinter as ctk
@@ -122,38 +123,8 @@ class AutoSorterApp(ctk.CTk):
         return files
 
     def show_help_modal(self) -> None:
-        """Display a help modal containing system limits and file processing logic."""
-        help_window = ctk.CTkToplevel(self)
-        help_window.title("Help & Information")
-        help_window.geometry("500x350")
-        help_window.transient(self)
-        help_window.grab_set()
-
-        help_text = (
-            "Smart AutoSorter AI Pro - Help\n\n"
-            "Supported File Formats:\n"
-            "• .txt, .docx, .csv, .xlsx, .xls, .pdf\n\n"
-            "AI Clustering Constraints:\n"
-            "• A minimum of 3 supported files is required to enable AI clustering.\n"
-            "• The system will generate a maximum of 12 folders (subdirectories).\n\n"
-            "Miscellaneous Folder:\n"
-            "• The 'Miscellaneous' folder acts as a fallback for files with insufficient text, "
-            "low semantic scores, or unreadable data that the AI cannot confidently categorize."
-        )
-
-        text_label = ctk.CTkLabel(
-            help_window,
-            text=help_text,
-            justify="left",
-            font=("Roboto", 13),
-            wraplength=450,
-        )
-        text_label.pack(padx=20, pady=20, fill="both", expand=True)
-
-        close_btn = ctk.CTkButton(
-            help_window, text="Close", command=help_window.destroy
-        )
-        close_btn.pack(pady=15)
+        """Display a help modal containing system limits and file processing logic by opening the online documentation."""
+        webbrowser.open("https://docs.smartautosorter.com/user_guide/#system-limits")
 
     def select_directory(self) -> None:
         """Open a directory selection dialog and initialize processing threads."""

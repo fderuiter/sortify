@@ -1,3 +1,3 @@
 # Config API Reference
 
-::: config
+::: app.config

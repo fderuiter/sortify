@@ -1,5 +1,5 @@
 # Core API Reference
 
-::: core.extractor
-::: core.analyzer
-::: core.mover
+::: app.core.extractor
+::: app.core.analyzer
+::: app.core.mover
