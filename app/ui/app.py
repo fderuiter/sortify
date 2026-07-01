@@ -136,7 +136,7 @@ class AutoSorterApp(ctk.CTk):
             from app.core.cache import save_cache_sync
             self.status_label.configure(text="Saving cache...", text_color="yellow")
             self.update()
-            save_cache_sync(self.base_dir, self.analyzer.corpus, self.locked_files, self.analyzer.index_to_word)
+            save_cache_sync(self.base_dir, self.analyzer.corpus, self.locked_files, {})
         self.destroy()
 
     def toggle_contextual_rename(self) -> None:
@@ -147,7 +147,7 @@ class AutoSorterApp(ctk.CTk):
             self.execute_btn.configure(state="disabled")
             
             def _update():
-                new_plan = self.analyzer.generate_sorting_plan()
+                new_plan = self.analyzer.generate_sorting_plan(self.base_dir)
                 self._apply_locked_files(new_plan)
                 self.plan = new_plan
                 
@@ -201,7 +201,7 @@ class AutoSorterApp(ctk.CTk):
                 pruned_corpus = {k: v for k, v in cached_corpus.items() if k in items_to_sort}
                 self.locked_files = {k: v for k, v in cached_locked.items() if k in pruned_corpus}
                 self.analyzer.corpus = pruned_corpus
-                self.analyzer.index_to_word = cached_idx
+                
 
                 self.completed_files = len(pruned_corpus)
                 self._initial_cached_files = self.completed_files
@@ -211,7 +211,7 @@ class AutoSorterApp(ctk.CTk):
                 items_to_sort = [f for f in items_to_sort if f not in pruned_corpus]
 
                 if pruned_corpus:
-                    new_plan = self.analyzer.generate_sorting_plan()
+                    new_plan = self.analyzer.generate_sorting_plan(self.base_dir)
                     self._apply_locked_files(new_plan)
                     self.plan = new_plan
                     self.render_tree()
@@ -400,7 +400,7 @@ class AutoSorterApp(ctk.CTk):
         self.render_tree()
         
         from app.core.cache import save_cache_async
-        save_cache_async(self.base_dir, self.analyzer.corpus, self.locked_files, self.analyzer.index_to_word)
+        save_cache_async(self.base_dir, self.analyzer.corpus, self.locked_files, {})
 
     def render_tree(self):
         """Draw the plan on the Treeview, preserving expanded nodes."""
@@ -578,7 +578,7 @@ class AutoSorterApp(ctk.CTk):
             self.after(0, self.render_tree)
             
             from app.core.cache import save_cache_async
-            save_cache_async(self.base_dir, self.analyzer.corpus, self.locked_files, self.analyzer.index_to_word)
+            save_cache_async(self.base_dir, self.analyzer.corpus, self.locked_files, {})
 
     def _prune_empty_folders(self, plan_node: dict) -> bool:
         if not isinstance(plan_node, dict) or plan_node.get("__type__") == "file":
@@ -763,7 +763,7 @@ class AutoSorterApp(ctk.CTk):
 
     def _rebuild_plan(self):
         if self.analyzer:
-            new_plan = self.analyzer.generate_sorting_plan()
+            new_plan = self.analyzer.generate_sorting_plan(self.base_dir)
             self._apply_locked_files(new_plan)
             self.plan = new_plan
             self.plan_errors = self.verifier.verify_plan(self.base_dir, self.plan)
