@@ -6,13 +6,10 @@ This module provides topic modeling functionality.
 import logging
 import os
 import re
-from collections import defaultdict
 
-import numpy as np
 from sentence_transformers import SentenceTransformer
-from sklearn.cluster import MiniBatchKMeans
-from sklearn.feature_extraction.text import TfidfVectorizer
 
+from app.core.analyzer_strategies import clustering_registry
 from app.core.db import db
 
 
@@ -22,10 +19,11 @@ class IncrementalAnalyzer:
     Uses SentenceTransformer and MiniBatchKMeans to cluster documents incrementally.
     """
 
-    def __init__(self, max_folders: int, stop_words: set) -> None:
+    def __init__(self, max_folders: int, stop_words: set, strategy_name: str = "default") -> None:
         """Initialize the analyzer with the maximum number of folders."""
         self.max_folders = max_folders
         self.stop_words = stop_words
+        self.strategy = clustering_registry.get_strategy(strategy_name)
         # Use a small, fast model for embeddings
         self.model = SentenceTransformer('all-MiniLM-L6-v2')
         self.corpus = {}
@@ -99,7 +97,12 @@ class IncrementalAnalyzer:
             embeddings = [d[2] for d in docs]
             
             self._last_reconstruction_error = 0.0
-            plan = self._cluster_recursive(filenames, documents, embeddings, depth=1)
+            
+            if self.strategy:
+                plan, error = self.strategy.generate_plan(filenames, documents, embeddings, self.max_folders, self.stop_words)
+                self._last_reconstruction_error = error
+            else:
+                plan = {}
             
             def _annotate(node, current_path):
                 for k, v in list(node.items()):
@@ -142,72 +145,3 @@ class IncrementalAnalyzer:
         except Exception as e:
             logging.error(f"Failed during generate_sorting_plan. Error: {str(e)}", exc_info=True)
             return {}
-
-    def _get_cluster_keywords(self, documents: list) -> str:
-        if not documents:
-            return "Miscellaneous"
-        try:
-            vectorizer = TfidfVectorizer(stop_words=list(self.stop_words), max_features=3)
-            X = vectorizer.fit_transform(documents)
-            feature_names = vectorizer.get_feature_names_out()
-            if len(feature_names) == 0:
-                return "Miscellaneous"
-            
-            scores = np.asarray(X.sum(axis=0)).ravel()
-            top_indices = scores.argsort()[::-1][:2]
-            top_terms = [feature_names[i].capitalize() for i in top_indices]
-            return "-".join(top_terms)
-        except Exception:
-            return "Miscellaneous"
-
-    def _cluster_recursive(self, filenames: list, documents: list, embeddings: list, depth: int) -> dict:
-        plan = {}
-        
-        # Base case
-        if depth >= 5 or len(documents) < 3:
-            for f in filenames:
-                plan[f] = None
-            return {"Miscellaneous": plan} if depth == 1 else plan
-
-        X = np.array(embeddings)
-        actual_k = min(self.max_folders, len(documents) // 2)
-        if actual_k < 2:
-            actual_k = 2
-
-        kmeans = MiniBatchKMeans(n_clusters=actual_k, random_state=42, n_init="auto")
-        labels = kmeans.fit_predict(X)
-        self._last_reconstruction_error += kmeans.inertia_
-
-        topic_groups = defaultdict(list)
-        for i, label in enumerate(labels):
-            topic_groups[label].append((filenames[i], documents[i], embeddings[i]))
-
-        for topic_idx, group in topic_groups.items():
-            sub_filenames = [item[0] for item in group]
-            sub_documents = [item[1] for item in group]
-            sub_embeddings = [item[2] for item in group]
-            
-            folder_name = self._get_cluster_keywords(sub_documents)
-
-            # Prevent infinite loop if a group captures all documents
-            if len(group) == len(documents):
-                for f in sub_filenames:
-                    if folder_name not in plan:
-                        plan[folder_name] = {}
-                    plan[folder_name][f] = None
-            else:
-                sub_plan = self._cluster_recursive(sub_filenames, sub_documents, sub_embeddings, depth + 1)
-                
-                def deep_update(d, u):
-                    for k, v in u.items():
-                        if isinstance(v, dict) and k in d and isinstance(d[k], dict):
-                            deep_update(d[k], v)
-                        else:
-                            d[k] = v
-                            
-                if folder_name not in plan:
-                    plan[folder_name] = sub_plan
-                else:
-                    deep_update(plan[folder_name], sub_plan)
-
-        return plan
