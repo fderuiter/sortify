@@ -48,6 +48,6 @@ if %ERRORLEVEL% NEQ 0 (
 
 echo Setup complete. Virtual environment provisioned.
 echo You can manually run the application anytime using:
-echo   .venv\Scripts\smart-autosorter.exe
+echo   uv run python app/main.py
 echo Launching application now...
-uv run smart-autosorter
+uv run python app/main.py

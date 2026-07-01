@@ -32,6 +32,6 @@ uv run pre-commit install
 
 echo "Setup complete. Virtual environment provisioned."
 echo "You can manually run the application anytime using:"
-echo "  .venv/bin/smart-autosorter"
+echo "  uv run python app/main.py"
 echo "Launching application now..."
-uv run smart-autosorter
+uv run python app/main.py
