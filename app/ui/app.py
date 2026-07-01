@@ -519,6 +519,7 @@ class AutoSorterApp(ctk.CTk):
         self.context_item = None
 
     def on_right_click(self, event):
+        """Handle right click events on the tree view."""
         item = self.tree.identify_row(event.y)
         self.context_item = item
         if item and item.startswith("folder:"):
@@ -550,14 +551,16 @@ class AutoSorterApp(ctk.CTk):
         _collect_files(node, new_folder_path)
 
     def _rename_folder(self):
-        if not self.context_item: return
+        if not self.context_item:
+            return
         current_path = self.context_item.split(":", 1)[1]
         old_name = current_path.split("/")[-1]
         parent_path = "/".join(current_path.split("/")[:-1])
         
         dialog = ctk.CTkInputDialog(text="Enter new folder name:", title="Rename Folder")
         new_name = dialog.get_input()
-        if not new_name: return
+        if not new_name:
+            return
         new_name = new_name.replace("/", "").replace("\\", "")
         if not new_name or new_name == old_name:
             return
@@ -591,7 +594,8 @@ class AutoSorterApp(ctk.CTk):
         self._rebuild_plan()
 
     def _delete_folder(self):
-        if not self.context_item: return
+        if not self.context_item:
+            return
         current_path = self.context_item.split(":", 1)[1]
         
         node = self._get_node_by_path(current_path)
@@ -613,7 +617,8 @@ class AutoSorterApp(ctk.CTk):
         self._rebuild_plan()
 
     def _create_folder_inside(self):
-        if not self.context_item: return
+        if not self.context_item:
+            return
         parent_path = self.context_item.split(":", 1)[1]
         self._prompt_and_create_folder(parent_path)
 
@@ -627,9 +632,11 @@ class AutoSorterApp(ctk.CTk):
                 return
         dialog = ctk.CTkInputDialog(text="Enter new folder name:", title="New Folder")
         new_name = dialog.get_input()
-        if not new_name: return
+        if not new_name:
+            return
         new_name = new_name.replace("/", "").replace("\\", "")
-        if not new_name: return
+        if not new_name:
+            return
         
         parent_node = self._get_node_by_path(parent_path) if parent_path else self.plan
         if parent_node is not None and new_name in parent_node:
