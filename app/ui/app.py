@@ -6,6 +6,7 @@ This module provides the main application window and logic for the AutoSorter.
 import os
 import threading
 import time
+import webbrowser
 from tkinter import filedialog, ttk
 
 import customtkinter as ctk
@@ -36,6 +37,7 @@ class AutoSorterApp(ctk.CTk):
 
         self.total_files = 0
         self.completed_files = 0
+        self._initial_cached_files = 0
         self.start_time: float = 0.0
 
         self.analyzer = None
@@ -109,6 +111,23 @@ class AutoSorterApp(ctk.CTk):
         )
         self.execute_btn.pack(pady=15)
 
+        self.protocol("WM_DELETE_WINDOW", self.on_close)
+
+    def on_close(self):
+        """Handle application close event by saving the cache synchronously."""
+        if self.base_dir and self.analyzer:
+            from app.core.cache import save_cache_sync
+
+            self.status_label.configure(text="Saving cache...", text_color="yellow")
+            self.update()
+            save_cache_sync(
+                self.base_dir,
+                self.analyzer.corpus,
+                self.locked_files,
+                self.analyzer.index_to_word,
+            )
+        self.destroy()
+
     def _get_files_recursively(self, base: str, rel_path: str = "") -> list:
         files = []
         try:
@@ -134,86 +153,84 @@ class AutoSorterApp(ctk.CTk):
         settings_window.transient(self)
         settings_window.grab_set()
 
-        ctk.CTkLabel(settings_window, text="Max Folders:", font=("Roboto", 14)).pack(pady=(20, 5))
-        folders_slider = ctk.CTkSlider(settings_window, from_=2, to=30, number_of_steps=28)
+        ctk.CTkLabel(settings_window, text="Max Folders:", font=("Roboto", 14)).pack(
+            pady=(20, 5)
+        )
+        folders_slider = ctk.CTkSlider(
+            settings_window, from_=2, to=30, number_of_steps=28
+        )
         folders_slider.set(self.settings.MAX_FOLDERS)
         folders_slider.pack(pady=5)
-        
+
         folders_val = ctk.CTkLabel(settings_window, text=str(self.settings.MAX_FOLDERS))
         folders_val.pack()
-        folders_slider.configure(command=lambda v: folders_val.configure(text=str(int(v))))
+        folders_slider.configure(
+            command=lambda v: folders_val.configure(text=str(int(v)))
+        )
 
-        ctk.CTkLabel(settings_window, text="Max Background Workers:", font=("Roboto", 14)).pack(pady=(15, 5))
-        workers_slider = ctk.CTkSlider(settings_window, from_=1, to=32, number_of_steps=31)
+        ctk.CTkLabel(
+            settings_window, text="Max Background Workers:", font=("Roboto", 14)
+        ).pack(pady=(15, 5))
+        workers_slider = ctk.CTkSlider(
+            settings_window, from_=1, to=32, number_of_steps=31
+        )
         workers_slider.set(self.settings.MAX_WORKERS)
         workers_slider.pack(pady=5)
-        
+
         workers_val = ctk.CTkLabel(settings_window, text=str(self.settings.MAX_WORKERS))
         workers_val.pack()
-        workers_slider.configure(command=lambda v: workers_val.configure(text=str(int(v))))
+        workers_slider.configure(
+            command=lambda v: workers_val.configure(text=str(int(v)))
+        )
 
         def apply_settings():
             self.settings.MAX_FOLDERS = int(folders_slider.get())
             self.settings.MAX_WORKERS = int(workers_slider.get())
-            
+
             if self.analyzer:
                 self.analyzer.update_config(self.settings.MAX_FOLDERS)
                 # Re-generate plan with new limits if we have data
                 if self.analyzer.corpus:
-                    self.status_label.configure(text="Applying new settings...", text_color="white")
+                    self.status_label.configure(
+                        text="Applying new settings...", text_color="white"
+                    )
                     # Background update avoids freezing UI
-                    threading.Thread(target=self._apply_settings_worker, daemon=True).start()
-                    
+                    threading.Thread(
+                        target=self._apply_settings_worker, daemon=True
+                    ).start()
+
             settings_window.destroy()
 
-        ctk.CTkButton(settings_window, text="Apply", command=apply_settings).pack(pady=20)
+        ctk.CTkButton(settings_window, text="Apply", command=apply_settings).pack(
+            pady=20
+        )
 
     def _apply_settings_worker(self):
         with self._update_lock:
             new_plan = self.analyzer.generate_sorting_plan()
             self._apply_locked_files(new_plan)
             self.plan = new_plan
-            
+
             self.plan_errors = self.verifier.verify_plan(self.base_dir, self.plan)
             has_errors = bool(self.plan_errors)
-            
-            self.after(0, lambda: self.execute_btn.configure(state="disabled" if has_errors else "normal"))
-            self.after(0, lambda: self.status_label.configure(text="AI Plan ready for review.", text_color="green"))
+
+            self.after(
+                0,
+                lambda: self.execute_btn.configure(
+                    state="disabled" if has_errors else "normal"
+                ),
+            )
+            self.after(
+                0,
+                lambda: self.status_label.configure(
+                    text="AI Plan ready for review.", text_color="green"
+                ),
+            )
             self.after(0, self.render_tree)
 
     def show_help_modal(self) -> None:
-        """Display a help modal containing system limits and file processing logic."""
-        help_window = ctk.CTkToplevel(self)
-        help_window.title("Help & Information")
-        help_window.geometry("500x350")
-        help_window.transient(self)
-        help_window.grab_set()
-
-        help_text = (
-            "Smart AutoSorter AI Pro - Help\n\n"
-            "Supported File Formats:\n"
-            "• .txt, .docx, .csv, .xlsx, .xls, .pdf\n\n"
-            "AI Clustering Constraints:\n"
-            "• A minimum of 3 supported files is required to enable AI clustering.\n"
-            "• The system will generate a maximum of 12 folders (subdirectories).\n\n"
-            "Miscellaneous Folder:\n"
-            "• The 'Miscellaneous' folder acts as a fallback for files with insufficient text, "
-            "low semantic scores, or unreadable data that the AI cannot confidently categorize."
-        )
-
-        text_label = ctk.CTkLabel(
-            help_window,
-            text=help_text,
-            justify="left",
-            font=("Roboto", 13),
-            wraplength=450,
-        )
-        text_label.pack(padx=20, pady=20, fill="both", expand=True)
-
-        close_btn = ctk.CTkButton(
-            help_window, text="Close", command=help_window.destroy
-        )
-        close_btn.pack(pady=15)
+        """Display a help modal containing system limits and file processing logic by opening the online documentation."""
+        webbrowser.open("https://docs.smartautosorter.com/user_guide/#system-limits")
 
     def select_directory(self) -> None:
         """Open a directory selection dialog and initialize processing threads."""
@@ -229,6 +246,7 @@ class AutoSorterApp(ctk.CTk):
                 return
 
             self.completed_files = 0
+            self._initial_cached_files = 0
             self.progress_bar.set(0)
             self.select_btn.configure(state="disabled")
             self.execute_btn.configure(state="disabled")
@@ -237,7 +255,42 @@ class AutoSorterApp(ctk.CTk):
             self.plan = {}
             self.tree.delete(*self.tree.get_children())
 
-            self.analyzer = IncrementalAnalyzer(self.settings.MAX_FOLDERS, self.settings.STOP_WORDS)
+            self.analyzer = IncrementalAnalyzer(
+                self.settings.MAX_FOLDERS, self.settings.STOP_WORDS
+            )
+
+            # --- CACHE INTEGRATION ---
+            from app.core.cache import load_cache
+
+            cached_corpus, cached_locked, cached_idx = load_cache(self.base_dir)
+
+            if cached_corpus is not None:
+                pruned_corpus = {
+                    k: v for k, v in cached_corpus.items() if k in items_to_sort
+                }
+                self.locked_files = {
+                    k: v for k, v in cached_locked.items() if k in pruned_corpus
+                }
+                self.analyzer.corpus = pruned_corpus
+                self.analyzer.index_to_word = cached_idx
+
+                self.completed_files = len(pruned_corpus)
+                self._initial_cached_files = self.completed_files
+                if self.total_files > 0:
+                    self.progress_bar.set(self.completed_files / self.total_files)
+
+                items_to_sort = [f for f in items_to_sort if f not in pruned_corpus]
+
+                if pruned_corpus:
+                    new_plan = self.analyzer.generate_sorting_plan()
+                    self._apply_locked_files(new_plan)
+                    self.plan = new_plan
+                    self.render_tree()
+                    self._update_progress_ui(self.completed_files / self.total_files)
+
+            if not items_to_sort:
+                self._finalize_pipeline()
+                return
 
             self.status_label.configure(
                 text="Scanning and modeling incrementally...", text_color="white"
@@ -257,9 +310,16 @@ class AutoSorterApp(ctk.CTk):
     def _update_progress_ui(self, progress_percentage):
         self.progress_bar.set(progress_percentage)
         elapsed_time = time.time() - self.start_time
-        files_per_second = (
-            self.completed_files / elapsed_time if elapsed_time > 0 else 0
+        # Only consider files processed in this session for speed
+        session_completed = self.completed_files - getattr(
+            self, "_initial_cached_files", 0
         )
+
+        # We need to compute speed accurately
+        files_per_second = session_completed / elapsed_time if elapsed_time > 0 else 0
+        if files_per_second == 0 and elapsed_time > 0:
+            files_per_second = self.completed_files / elapsed_time
+
         remaining_files = self.total_files - self.completed_files
         eta = remaining_files / files_per_second if files_per_second > 0 else 0
 
@@ -271,7 +331,11 @@ class AutoSorterApp(ctk.CTk):
     def pipeline_worker(self, items_to_sort: list) -> None:
         """Run the data collection and ML algorithm incrementally in a background thread."""
         for chunk in build_corpus_generator(
-            self.base_dir, items_to_sort, self.item_completed_callback, max_workers=self.settings.MAX_WORKERS, chunk_size=50
+            self.base_dir,
+            items_to_sort,
+            self.item_completed_callback,
+            max_workers=self.settings.MAX_WORKERS,
+            chunk_size=50,
         ):
             self.analyzer.partial_fit(chunk)
 
@@ -308,21 +372,33 @@ class AutoSorterApp(ctk.CTk):
             current = new_plan
             for i, part in enumerate(parts):
                 if i == len(parts) - 1:
-                    if part not in current or not isinstance(current[part], dict) or current[part].get("__type__") == "file":
+                    if (
+                        part not in current
+                        or not isinstance(current[part], dict)
+                        or current[part].get("__type__") == "file"
+                    ):
                         current[part] = {}
-                        
+
                     target_file_path = os.path.join(target_path, os.path.basename(f))
                     norm_source = os.path.normpath(f)
                     norm_target = os.path.normpath(target_file_path)
-                    status = "Already Sorted" if norm_source == norm_target else "Pending Move"
-                    
+                    status = (
+                        "Already Sorted"
+                        if norm_source == norm_target
+                        else "Pending Move"
+                    )
+
                     current[part][f] = {
                         "__type__": "file",
                         "status": status,
-                        "source_path": f
+                        "source_path": f,
                     }
                 else:
-                    if part not in current or not isinstance(current[part], dict) or current[part].get("__type__") == "file":
+                    if (
+                        part not in current
+                        or not isinstance(current[part], dict)
+                        or current[part].get("__type__") == "file"
+                    ):
                         current[part] = {}
                     current = current[part]
 
@@ -336,6 +412,15 @@ class AutoSorterApp(ctk.CTk):
         self.execute_btn.configure(state="disabled" if has_errors else "normal")
         self.select_btn.configure(state="normal")
         self.render_tree()
+
+        from app.core.cache import save_cache_async
+
+        save_cache_async(
+            self.base_dir,
+            self.analyzer.corpus,
+            self.locked_files,
+            self.analyzer.index_to_word,
+        )
 
     def render_tree(self):
         """Draw the plan on the Treeview, preserving expanded nodes."""
@@ -369,26 +454,33 @@ class AutoSorterApp(ctk.CTk):
             return
 
         for name, child_node in plan_node.items():
-            if child_node is None or (isinstance(child_node, dict) and child_node.get("__type__") == "file"):
+            if child_node is None or (
+                isinstance(child_node, dict) and child_node.get("__type__") == "file"
+            ):
                 error_msg = self.plan_errors.get(name)
                 icon = "❌ " if error_msg else "✅ "
                 text = f"{icon}{os.path.basename(name)}"
                 if error_msg:
                     text += f" - {error_msg}"
-                
-                status = child_node.get("status", "Pending Move") if isinstance(child_node, dict) else "Pending Move"
+
+                status = (
+                    child_node.get("status", "Pending Move")
+                    if isinstance(child_node, dict)
+                    else "Pending Move"
+                )
                 if status == "Already Sorted":
                     text += " [Already Sorted]"
 
-                self.tree.insert(
-                    parent_id, "end", iid=f"file:{name}", text=text
-                )
+                self.tree.insert(parent_id, "end", iid=f"file:{name}", text=text)
             else:
                 folder_id = f"folder:{name}" if not parent_id else f"{parent_id}/{name}"
                 count = self._count_files(child_node)
                 icon = "❌ " if self._node_has_errors(child_node) else "✅ "
                 self.tree.insert(
-                    parent_id, "end", iid=folder_id, text=f"{icon}📂 [{name}] ({count} moves)"
+                    parent_id,
+                    "end",
+                    iid=folder_id,
+                    text=f"{icon}📂 [{name}] ({count} moves)",
                 )
                 self._insert_nodes(folder_id, child_node, expanded)
 
@@ -447,7 +539,7 @@ class AutoSorterApp(ctk.CTk):
         self.plan_errors = self.verifier.verify_plan(self.base_dir, self.plan)
         has_errors = bool(self.plan_errors)
         self.execute_btn.configure(state="disabled" if has_errors else "normal")
-        
+
         for item in self.tree.get_children(""):
             self._update_folder_count_recursive(item)
 
@@ -464,7 +556,7 @@ class AutoSorterApp(ctk.CTk):
                     file_key = child.split(":", 1)[1]
                     if file_key in self.plan_errors:
                         has_errors = True
-                        
+
                     text = self.tree.item(child, "text")
                     if "[Already Sorted]" not in text:
                         count += 1
@@ -501,14 +593,28 @@ class AutoSorterApp(ctk.CTk):
             new_plan = self.analyzer.generate_sorting_plan()
             self._apply_locked_files(new_plan)
             self.plan = new_plan
-            
+
             self.plan_errors = self.verifier.verify_plan(self.base_dir, self.plan)
             has_errors = bool(self.plan_errors)
-            
+
             # The background update might re-enable/disable the button depending on the resolution.
-            self.after(0, lambda: self.execute_btn.configure(state="disabled" if has_errors else "normal"))
+            self.after(
+                0,
+                lambda: self.execute_btn.configure(
+                    state="disabled" if has_errors else "normal"
+                ),
+            )
 
             self.after(0, self.render_tree)
+
+            from app.core.cache import save_cache_async
+
+            save_cache_async(
+                self.base_dir,
+                self.analyzer.corpus,
+                self.locked_files,
+                self.analyzer.index_to_word,
+            )
 
     def execute_sort(self) -> None:
         """Execute the physical file moving operations safely based on the generated plan."""

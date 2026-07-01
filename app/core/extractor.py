@@ -57,7 +57,9 @@ def extract_file_text(file_path: str) -> str:
     return text
 
 
-def process_item_worker(base_dir: str, item: str, progress_callback: Callable) -> Tuple[str, str]:
+def process_item_worker(
+    base_dir: str, item: str, progress_callback: Callable
+) -> Tuple[str, str]:
     """Process a single item and extract its text content.
 
     Parameters
@@ -93,7 +95,13 @@ def process_item_worker(base_dir: str, item: str, progress_callback: Callable) -
     return item, ""
 
 
-def build_corpus_generator(base_dir: str, items_to_sort: list, progress_callback: Callable, max_workers: int, chunk_size: int = 50):
+def build_corpus_generator(
+    base_dir: str,
+    items_to_sort: list,
+    progress_callback: Callable,
+    max_workers: int,
+    chunk_size: int = 50,
+):
     """Map every item to its text payload asynchronously and yield chunks.
 
     Parameters
@@ -125,10 +133,10 @@ def build_corpus_generator(base_dir: str, items_to_sort: list, progress_callback
         for future in concurrent.futures.as_completed(future_to_item):
             item_name, item_text = future.result()
             chunk[item_name] = item_name + " " + item_text
-            
+
             if len(chunk) >= chunk_size:
                 yield chunk
                 chunk = {}
-                
+
         if chunk:
             yield chunk
