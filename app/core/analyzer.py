@@ -13,7 +13,6 @@ from sentence_transformers import SentenceTransformer
 from sklearn.cluster import MiniBatchKMeans
 from sklearn.feature_extraction.text import TfidfVectorizer
 
-from app.config import settings
 from app.core.db import db
 
 
@@ -23,23 +22,25 @@ class IncrementalAnalyzer:
     Uses SentenceTransformer and MiniBatchKMeans to cluster documents incrementally.
     """
 
-    def __init__(self, max_folders: int) -> None:
+    def __init__(self, max_folders: int, stop_words: set = None) -> None:
         """Initialize the analyzer with the maximum number of folders."""
         self.max_folders = max_folders
+        self.stop_words = stop_words or set()
         # Use a small, fast model for embeddings
         self.model = SentenceTransformer('all-MiniLM-L6-v2')
         self.corpus = {}
+        self._last_inertia = 0.0
 
     @property
     def last_reconstruction_error(self):
-        """Get the last reconstruction error from the underlying model.
+        """Get the last reconstruction error (inertia) from the underlying clustering model.
 
         Returns
         -------
         float
-            The reconstruction error.
+            The reconstruction error (inertia).
         """
-        return 0.0
+        return self._last_inertia
 
     def partial_fit(self, base_dir: str, new_corpus: dict) -> None:
         """Update the ML model incrementally with new documents."""
@@ -75,11 +76,7 @@ class IncrementalAnalyzer:
         except Exception as e:
             logging.error(f"Failed during partial_fit. Error: {str(e)}", exc_info=True)
 
-    def reload_stop_words(self) -> None:
-        """Reload stop words from config (no-op for dense vectors)."""
-        pass
-
-    def generate_sorting_plan(self, base_dir: str) -> dict:
+    def generate_sorting_plan(self, base_dir: str, settings=None) -> dict:
         """Generate a sorting plan based on the current model state.
         
         Returns
@@ -97,16 +94,16 @@ class IncrementalAnalyzer:
             documents = [d[1] for d in docs]
             embeddings = [d[2] for d in docs]
             
+            self._last_inertia = 0.0
             plan = self._cluster_recursive(filenames, documents, embeddings, depth=1)
             
             def _annotate(node, current_path):
-                import app.config as config
                 for k, v in list(node.items()):
                     if v is None:
                         filename = os.path.basename(k)
                         target_filename = filename
                         
-                        if getattr(config.settings, "CONTEXTUAL_RENAMING", False):
+                        if settings and getattr(settings, "CONTEXTUAL_RENAMING", False):
                             parent_dir = os.path.dirname(k)
                             if parent_dir:
                                 parent_folder = os.path.basename(parent_dir)
@@ -140,7 +137,7 @@ class IncrementalAnalyzer:
         if not documents:
             return "Miscellaneous"
         try:
-            vectorizer = TfidfVectorizer(stop_words=list(settings.STOP_WORDS), max_features=3)
+            vectorizer = TfidfVectorizer(stop_words=list(self.stop_words), max_features=3)
             X = vectorizer.fit_transform(documents)
             feature_names = vectorizer.get_feature_names_out()
             if len(feature_names) == 0:
@@ -169,6 +166,7 @@ class IncrementalAnalyzer:
 
         kmeans = MiniBatchKMeans(n_clusters=actual_k, random_state=42, n_init="auto")
         labels = kmeans.fit_predict(X)
+        self._last_inertia += getattr(kmeans, 'inertia_', 0.0)
 
         topic_groups = defaultdict(list)
         for i, label in enumerate(labels):

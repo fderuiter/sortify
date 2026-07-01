@@ -41,9 +41,6 @@ def test_semantic_quality_guardrails():
     _ = analyzer.generate_sorting_plan(LARGE_CORPUS_DIR)
     
     current_error = analyzer.last_reconstruction_error
-    if current_error == 0.0:
-        current_error = 1.0 # fallback for SentenceTransformer which doesn't have it
-        
     assert current_error > 0.0, "Reconstruction error must be captured and greater than zero."
     
     # Allow developers to update the baseline when algorithmic improvements are made

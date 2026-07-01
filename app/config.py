@@ -1,6 +1,6 @@
 """Configuration settings for the autosorter application.
 
-This module contains the SettingsRegistry for managing dynamic configuration.
+This module contains the AppSettings for managing dynamic configuration.
 """
 import json
 import logging
@@ -40,7 +40,7 @@ class Settings(BaseSettings):
     )
 
 
-class SettingsRegistry:
+class AppSettings:
     """A registry for application settings that provides persistence and validation."""
 
     def __init__(self, filepath="settings.json"):
@@ -183,5 +183,3 @@ class SettingsRegistry:
                 raise ValueError("STOP_WORDS must be a set of strings")
         self._settings_model.STOP_WORDS = value
         self._trigger_save()
-
-settings = SettingsRegistry()

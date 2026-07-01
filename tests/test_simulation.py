@@ -25,11 +25,11 @@ def test_full_workflow_simulation():
     # Requirement: multiple document types including PDF, Word, plain text
     
     files = [f for f in os.listdir(CORPUS_DIR) if f != "empty.txt" and f != "dummy.pdf"]
-    analyzer = IncrementalAnalyzer(max_folders=3)
+    analyzer = IncrementalAnalyzer(max_folders=3, stop_words={"the", "and"})
     progress_callback = MagicMock()
     
     # Process files asynchronously using the generator (which uses max workers)
-    generator = build_corpus_generator(CORPUS_DIR, files, progress_callback, chunk_size=50)
+    generator = build_corpus_generator(CORPUS_DIR, files, progress_callback, max_workers=4, chunk_size=50)
     
     for chunk in generator:
         analyzer.partial_fit(CORPUS_DIR, chunk)
@@ -73,7 +73,7 @@ def test_full_workflow_simulation():
 
 def test_small_dataset_fallback():
     # Requirement: Edge cases, small datasets produce fallback plans without errors
-    analyzer = IncrementalAnalyzer(max_folders=3)
+    analyzer = IncrementalAnalyzer(max_folders=3, stop_words={"the", "and"})
     
     # Only 2 files
     corpus = {
@@ -91,7 +91,7 @@ def test_small_dataset_fallback():
 
 def test_empty_files_handling():
     # Requirement: Edge cases, empty files produce expected fallback
-    analyzer = IncrementalAnalyzer(max_folders=3)
+    analyzer = IncrementalAnalyzer(max_folders=3, stop_words={"the", "and"})
     
     corpus = {
         "empty1.txt": "",
@@ -108,7 +108,7 @@ def test_empty_files_handling():
 
 def test_concurrent_large_volume():
     # Requirement: accurately simulates the asynchronous processing of at least 20 files simultaneously
-    analyzer = IncrementalAnalyzer(max_folders=5)
+    analyzer = IncrementalAnalyzer(max_folders=5, stop_words={"the", "and"})
     progress_callback = MagicMock()
     
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -120,7 +120,7 @@ def test_concurrent_large_volume():
                 f.write(f"This is simulation file {i} about technology and computers.")
             files_to_sort.append(fname)
             
-        generator = build_corpus_generator(temp_dir, files_to_sort, progress_callback, chunk_size=10)
+        generator = build_corpus_generator(temp_dir, files_to_sort, progress_callback, max_workers=4, chunk_size=10)
         
         for chunk in generator:
             analyzer.partial_fit(temp_dir, chunk)

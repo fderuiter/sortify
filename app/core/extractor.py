@@ -14,7 +14,6 @@ import pandas as pd
 import pypdf
 from docx import Document
 
-from app.config import settings
 from app.core.db import db
 
 
@@ -84,7 +83,7 @@ def process_item_worker(base_dir: str, item: str, progress_callback: Callable) -
     return item, "", ""
 
 
-def build_corpus_generator(base_dir: str, items_to_sort: list, progress_callback: Callable, chunk_size: int = 50, sequential: bool = False):
+def build_corpus_generator(base_dir: str, items_to_sort: list, progress_callback: Callable, max_workers: int = 15, chunk_size: int = 50, sequential: bool = False):
     """Map every item to its text payload asynchronously and yield chunks.
 
     Parameters
@@ -113,9 +112,8 @@ def build_corpus_generator(base_dir: str, items_to_sort: list, progress_callback
             
             doc = db.get_document(base_dir, item_name)
             if doc and doc["file_hash"] == file_hash and doc["embedding"] is not None:
-                # Already processed and unchanged, no need to yield to analyzer
                 continue
-
+                
             chunk[item_name] = {"text": item_name + " " + item_text, "hash": file_hash}
             if len(chunk) >= chunk_size:
                 yield chunk
@@ -123,7 +121,7 @@ def build_corpus_generator(base_dir: str, items_to_sort: list, progress_callback
         if chunk:
             yield chunk
     else:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=settings.MAX_WORKERS) as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             item_to_future = {
                 item: executor.submit(process_item_worker, base_dir, item, progress_callback)
                 for item in items_to_sort
