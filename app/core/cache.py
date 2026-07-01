@@ -1,7 +1,9 @@
-import sqlite3
-import pathlib
+"""Persistent SQLite cache for application analysis data."""
+
 import json
 import logging
+import pathlib
+import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 
 DB_PATH = pathlib.Path.home() / ".autosorter" / "cache.db"
@@ -47,12 +49,15 @@ def _save_cache_sync(source_directory: str, corpus: dict, locked_files: dict, in
         logging.error(f"Failed to save cache: {e}")
 
 def save_cache_async(source_directory: str, corpus: dict, locked_files: dict, index_to_word: dict):
+    """Save the current directory cache asynchronously to avoid blocking."""
     _executor.submit(_save_cache_sync, source_directory, corpus, locked_files, index_to_word)
 
 def save_cache_sync(source_directory: str, corpus: dict, locked_files: dict, index_to_word: dict):
+    """Save the current directory cache synchronously."""
     _save_cache_sync(source_directory, corpus, locked_files, index_to_word)
 
 def load_cache(source_directory: str):
+    """Load the cache for a given source directory from SQLite database."""
     try:
         conn = _get_conn()
         cur = conn.execute("SELECT corpus, locked_files, index_to_word FROM directory_cache WHERE source_directory = ?", (source_directory,))

@@ -108,6 +108,7 @@ class AutoSorterApp(ctk.CTk):
         self.protocol("WM_DELETE_WINDOW", self.on_close)
 
     def on_close(self):
+        """Handle application close event by saving the cache synchronously."""
         if self.base_dir and self.analyzer:
             from app.core.cache import save_cache_sync
             self.status_label.configure(text="Saving cache...", text_color="yellow")
