@@ -21,6 +21,7 @@ dependencies = [
     "reportlab>=5.0.0",
     "watchdog>=6.0.0",
     "sentence-transformers>=5.1.2",
+    "pylnk3>=0.4.2",
 ]
 
 [project.optional-dependencies]
