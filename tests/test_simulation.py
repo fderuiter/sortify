@@ -1,12 +1,13 @@
 import os
-import shutil
 import tempfile
-import pytest
 from unittest.mock import MagicMock
 
-from app.core.extractor import build_corpus_generator
+import pytest
+
 from app.core.analyzer import IncrementalAnalyzer
-from tests.generate_corpus import create_corpus, CORPUS_DIR
+from app.core.extractor import build_corpus_generator
+from tests.generate_corpus import CORPUS_DIR, create_corpus
+
 
 @pytest.fixture(scope="session", autouse=True)
 def setup_corpus():
@@ -53,7 +54,9 @@ def test_full_workflow_simulation():
     health_docx_folder = find_file_folder(plan, "health_doc.docx")
     
     assert finance_txt_folder is not None, "finance_report.txt should be sorted"
+    assert finance_csv_folder is not None, "finance_data.csv should be sorted"
     assert tech_txt_folder is not None, "tech_notes.txt should be sorted"
+    assert health_docx_folder is not None, "health_doc.docx should be sorted"
     
     science_pdf_folder = find_file_folder(plan, "science_doc.pdf")
     assert science_pdf_folder is not None, "science_doc.pdf should be sorted"
