@@ -81,3 +81,8 @@ deps =
 commands =
     mkdocs build
 """
+
+[dependency-groups]
+dev = [
+    "reportlab>=3.0",
+]
