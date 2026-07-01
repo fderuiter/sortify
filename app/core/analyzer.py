@@ -13,7 +13,6 @@ from sentence_transformers import SentenceTransformer
 from sklearn.cluster import MiniBatchKMeans
 from sklearn.feature_extraction.text import TfidfVectorizer
 
-from app.config import settings
 from app.core.db import db
 
 
@@ -23,9 +22,10 @@ class IncrementalAnalyzer:
     Uses SentenceTransformer and MiniBatchKMeans to cluster documents incrementally.
     """
 
-    def __init__(self, max_folders: int) -> None:
+    def __init__(self, max_folders: int, stop_words: set) -> None:
         """Initialize the analyzer with the maximum number of folders."""
         self.max_folders = max_folders
+        self.stop_words = stop_words
         # Use a small, fast model for embeddings
         self.model = SentenceTransformer('all-MiniLM-L6-v2')
         self.corpus = {}
@@ -75,11 +75,11 @@ class IncrementalAnalyzer:
         except Exception as e:
             logging.error(f"Failed during partial_fit. Error: {str(e)}", exc_info=True)
 
-    def reload_stop_words(self) -> None:
-        """Reload stop words from config (no-op for dense vectors)."""
-        pass
+    def reload_stop_words(self, new_stop_words: set) -> None:
+        """Reload stop words from config."""
+        self.stop_words = new_stop_words
 
-    def generate_sorting_plan(self, base_dir: str) -> dict:
+    def generate_sorting_plan(self, base_dir: str, runtime_settings=None) -> dict:
         """Generate a sorting plan based on the current model state.
         
         Returns
@@ -100,13 +100,18 @@ class IncrementalAnalyzer:
             plan = self._cluster_recursive(filenames, documents, embeddings, depth=1)
             
             def _annotate(node, current_path):
-                import app.config as config
                 for k, v in list(node.items()):
                     if v is None:
                         filename = os.path.basename(k)
                         target_filename = filename
                         
-                        if getattr(config.settings, "CONTEXTUAL_RENAMING", False):
+                        contextual_renaming = False
+                        if runtime_settings:
+                            contextual_renaming = getattr(runtime_settings, "CONTEXTUAL_RENAMING", False)
+                        else:
+                            contextual_renaming = False
+                            
+                        if contextual_renaming:
                             parent_dir = os.path.dirname(k)
                             if parent_dir:
                                 parent_folder = os.path.basename(parent_dir)
@@ -140,7 +145,7 @@ class IncrementalAnalyzer:
         if not documents:
             return "Miscellaneous"
         try:
-            vectorizer = TfidfVectorizer(stop_words=list(settings.STOP_WORDS), max_features=3)
+            vectorizer = TfidfVectorizer(stop_words=list(self.stop_words), max_features=3)
             X = vectorizer.fit_transform(documents)
             feature_names = vectorizer.get_feature_names_out()
             if len(feature_names) == 0:
