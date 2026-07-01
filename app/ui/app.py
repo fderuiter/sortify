@@ -11,8 +11,8 @@ from tkinter import filedialog, ttk
 
 import customtkinter as ctk
 
-from app.config import MAX_FOLDERS
 import app.config as config
+from app.config import MAX_FOLDERS
 from app.core.analyzer import IncrementalAnalyzer
 from app.core.extractor import build_corpus_generator
 from app.core.mover import execute_moves
