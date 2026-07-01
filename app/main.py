@@ -8,6 +8,7 @@ import logging
 
 from app.config import AppSettings
 
+
 def main():
     """Execute the main application GUI or Demo."""
     settings = AppSettings()
