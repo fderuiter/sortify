@@ -10,11 +10,13 @@ from tkinter import filedialog, ttk
 
 import customtkinter as ctk
 
-from app.config import MAX_FOLDERS
+from app.config import MAX_FOLDERS, STOP_WORDS, save_settings
 from app.core.analyzer import IncrementalAnalyzer
 from app.core.extractor import build_corpus_generator
 from app.core.mover import execute_moves
 from app.core.verifier import VerificationEngine
+from app.ui.settings import SettingsView
+
 
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
@@ -44,40 +46,43 @@ class AutoSorterApp(ctk.CTk):
         self._debounce_timer = None
         self._update_lock = threading.Lock()
 
-        # --- UI Build ---
-        self.title_label = ctk.CTkLabel(
-            self, text="AI File Organizer Pro", font=("Roboto", 24, "bold")
+        self.main_frame = ctk.CTkFrame(self, fg_color="transparent")
+        self.settings_frame = ctk.CTkFrame(self, fg_color="transparent")
+        
+        self._build_main_ui()
+        self._build_settings_ui()
+        self.show_main_view()
+
+    def _build_main_ui(self):
+
+        self.title_label = ctk.CTkLabel(self.main_frame, text="AI File Organizer Pro", font=("Roboto", 24, "bold")
         )
         self.title_label.pack(pady=15)
 
-        self.help_btn = ctk.CTkButton(
-            self, text="Help", width=60, command=self.show_help_modal
+        self.help_btn = ctk.CTkButton(self.main_frame, text="Help", width=60, command=self.show_help_modal
         )
         self.help_btn.place(relx=0.85, rely=0.03)
 
-        self.select_btn = ctk.CTkButton(
-            self, text="Select Directory to Sort", command=self.select_directory
+        self.select_btn = ctk.CTkButton(self.main_frame, text="Select Directory to Sort", command=self.select_directory
         )
         self.select_btn.pack(pady=10)
 
-        self.status_label = ctk.CTkLabel(
-            self,
+        self.status_label = ctk.CTkLabel(self.main_frame,
             text="Waiting for directory...",
             text_color="gray",
             font=("Roboto", 13),
         )
         self.status_label.pack(pady=5)
 
-        self.progress_bar = ctk.CTkProgressBar(self, width=500)
+        self.progress_bar = ctk.CTkProgressBar(self.main_frame, width=500)
         self.progress_bar.set(0)
         self.progress_bar.pack(pady=10)
 
-        self.meta_label = ctk.CTkLabel(
-            self, text="", font=("Roboto", 12, "italic"), text_color="cyan"
+        self.meta_label = ctk.CTkLabel(self.main_frame, text="", font=("Roboto", 12, "italic"), text_color="cyan"
         )
         self.meta_label.pack(pady=2)
 
-        self.tree_frame = ctk.CTkFrame(self)
+        self.tree_frame = ctk.CTkFrame(self.main_frame)
         self.tree_frame.pack(pady=10, fill="both", expand=True, padx=20)
 
         self.tree = ttk.Treeview(self.tree_frame, show="tree")
@@ -94,8 +99,7 @@ class AutoSorterApp(ctk.CTk):
         self.tree.bind("<ButtonRelease-1>", self.on_drop)
         self.dragged_item = None
 
-        self.execute_btn = ctk.CTkButton(
-            self,
+        self.execute_btn = ctk.CTkButton(self.main_frame,
             text="Approve & Execute Sort",
             command=self.execute_sort,
             fg_color="green",
@@ -103,6 +107,47 @@ class AutoSorterApp(ctk.CTk):
             state="disabled",
         )
         self.execute_btn.pack(pady=15)
+
+        self.settings_btn = ctk.CTkButton(
+            self.main_frame, text="⚙ Settings", width=80, command=self.show_settings_view
+        )
+        self.settings_btn.place(relx=0.05, rely=0.03)
+
+    def _build_settings_ui(self):
+        self.settings_view = SettingsView(
+            self.settings_frame, 
+            on_back=self.show_main_view, 
+            on_settings_changed=self.on_settings_changed,
+            fg_color="transparent"
+        )
+        self.settings_view.pack(fill="both", expand=True)
+
+    def show_main_view(self):
+        self.settings_frame.pack_forget()
+        self.main_frame.pack(fill="both", expand=True)
+
+    def show_settings_view(self):
+        self.main_frame.pack_forget()
+        self.settings_frame.pack(fill="both", expand=True)
+
+    def on_settings_changed(self, new_stop_words):
+        STOP_WORDS.clear()
+        STOP_WORDS.update(new_stop_words)
+        save_settings()
+        
+        if self.analyzer:
+            if self._debounce_timer:
+                self._debounce_timer.cancel()
+            self._debounce_timer = threading.Timer(
+                0.5, self._background_settings_update
+            )
+            self._debounce_timer.start()
+
+    def _background_settings_update(self):
+        if self.analyzer:
+            self.analyzer.reload_stop_words()
+            if self.analyzer.corpus:
+                self._background_model_update(None)
 
     def _get_files_recursively(self, base: str, rel_path: str = "") -> list:
         files = []
@@ -428,7 +473,7 @@ class AutoSorterApp(ctk.CTk):
         )
         self._debounce_timer.start()
 
-    def _background_model_update(self, moved_file: str):
+    def _background_model_update(self, moved_file: str | None = None):
         if self._update_lock.locked():
             return
 

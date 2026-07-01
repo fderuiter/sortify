@@ -56,6 +56,14 @@ class IncrementalAnalyzer:
         except Exception as e:
             logging.error(f"Failed during partial_fit. Error: {str(e)}", exc_info=True)
 
+    def reload_stop_words(self) -> None:
+        """Reload stop words from config and update the vectorizer/vocab."""
+        from app.config import STOP_WORDS
+        self.vectorizer.set_params(stop_words=list(STOP_WORDS))
+        self.index_to_word = {}
+        if self.corpus:
+            self._update_vocab(list(self.corpus.values()))
+
     def generate_sorting_plan(self) -> dict:
         """Generate a sorting plan based on the current model state.
         
