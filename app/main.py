@@ -16,6 +16,7 @@ logging.basicConfig(
 )
 
 def main():
+    """Execute the main application GUI."""
     run_app()
 
 if __name__ == "__main__":
