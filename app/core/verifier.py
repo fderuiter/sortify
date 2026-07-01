@@ -1,10 +1,16 @@
+"""Verification engine for proactive move validation."""
+
 import os
 import platform
 import shutil
 
+
 class VerificationEngine:
+    """Engine to verify file operations before execution."""
+
     @staticmethod
     def get_moves(base_dir: str, plan: dict, current_dest: str = "") -> list:
+        """Get a flat list of moves from the plan."""
         moves = []
         for key, content in plan.items():
             if content is None:
@@ -47,6 +53,7 @@ class VerificationEngine:
             return False
 
     def verify_plan(self, base_dir: str, plan: dict) -> dict:
+        """Verify the execution plan against constraints."""
         errors = {}
         moves = self.get_moves(base_dir, plan)
         
@@ -79,7 +86,8 @@ class VerificationEngine:
 
         is_windows = platform.system() == "Windows"
         for rel_src, src, dst in moves:
-            if rel_src in errors: continue
+            if rel_src in errors:
+                continue
             
             if is_windows:
                 if len(dst) >= 260:
