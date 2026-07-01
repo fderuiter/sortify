@@ -5,7 +5,7 @@ This module is responsible for safely moving files to new directories.
 
 import os
 import shutil
-import sys
+
 from app.core.link_manager import LinkManager
 from app.core.verifier import VerificationEngine
 
@@ -141,7 +141,6 @@ def _execute_moves_recursive(base_dir: str, plan: dict, current_dest: str = "", 
 
 def execute_moves(base_dir: str, plan: dict) -> None:
     """Create directories and safely move files, tracking file-system errors."""
-    
     # Build path mapping to track where targets move
     moves_list = VerificationEngine.get_moves(base_dir, plan)
     path_map = {}

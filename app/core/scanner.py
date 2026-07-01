@@ -1,6 +1,7 @@
 """Directory scanning utility."""
 
 import os
+
 from app.core.link_manager import LinkManager
 
 

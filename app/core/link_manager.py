@@ -1,6 +1,5 @@
 """Link management module."""
 import os
-import sys
 
 try:
     import pylnk3
@@ -9,6 +8,8 @@ except ImportError:
 
 
 class LinkManager:
+    """Manager for symbolic and shortcut links."""
+
     _registry = {}
 
     @classmethod
@@ -33,8 +34,10 @@ class LinkManager:
 
     @classmethod
     def get_link_info(cls, full_path: str):
+        """Retrieve link info for a given full path."""
         return cls._registry.get(full_path)
 
     @classmethod
     def clear(cls):
+        """Clear the registry of stored link infos."""
         cls._registry.clear()

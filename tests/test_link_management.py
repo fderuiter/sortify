@@ -1,9 +1,9 @@
 import os
-import shutil
-import pytest
-from app.core.scanner import get_files_recursively
+
 from app.core.link_manager import LinkManager
 from app.core.mover import execute_moves
+from app.core.scanner import get_files_recursively
+
 try:
     import pylnk3
 except ImportError:
