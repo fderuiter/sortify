@@ -15,6 +15,8 @@ MAX_DF = 0.85
 # Centralized Logging File
 LOG_FILE = "autosorter.log"
 
+CONTEXTUAL_RENAMING = False
+
 STOP_WORDS = {
     "the",
     "and",
