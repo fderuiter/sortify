@@ -114,15 +114,15 @@ def build_corpus_generator(base_dir: str, items_to_sort: list, progress_callback
     dict
         A mapping of item names to their text payloads for a chunk of items.
     """
+    items_to_sort = sorted(items_to_sort)
     chunk = {}
     with concurrent.futures.ThreadPoolExecutor(max_workers=settings.MAX_WORKERS) as executor:
-        future_to_item = {
-            executor.submit(
-                process_item_worker, base_dir, item, progress_callback
-            ): item
+        item_to_future = {
+            item: executor.submit(process_item_worker, base_dir, item, progress_callback)
             for item in items_to_sort
         }
-        for future in concurrent.futures.as_completed(future_to_item):
+        for item in items_to_sort:
+            future = item_to_future[item]
             item_name, item_text = future.result()
             chunk[item_name] = item_name + " " + item_text
             
