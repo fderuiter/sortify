@@ -1,0 +1,16 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: check-added-large-files
+      - id: check-merge-conflict
+      - id: debug-statements
+
+  - repo: local
+    hooks:
+      - id: forbid-cache-files
+        name: Block cache files, virtual environments, and bytecode
+        entry: Cannot commit cache files, bytecode, or virtual environments. Please clean your workspace.
+        language: fail
+        files: '(\.pytest_cache/|\.venv/|\.coverage|htmlcov/|__pycache__/|.*\.py[co]$)'
+
