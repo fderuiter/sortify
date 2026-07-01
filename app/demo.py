@@ -5,7 +5,7 @@ import os
 import sys
 import tempfile
 
-from app.config import MAX_FOLDERS
+from app.config import settings
 from app.core.analyzer import IncrementalAnalyzer
 from app.core.extractor import build_corpus_generator
 
@@ -38,7 +38,7 @@ def run_demo():
         files_to_sort = generate_sample_corpus(temp_dir)
         print(f"[*] Generated {len(files_to_sort)} files.")
         
-        analyzer = IncrementalAnalyzer(max_folders=MAX_FOLDERS)
+        analyzer = IncrementalAnalyzer(max_folders=settings.MAX_FOLDERS)
         
         def progress_callback():
             pass
