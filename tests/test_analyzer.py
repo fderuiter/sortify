@@ -89,8 +89,5 @@ def test_naming_collision_resolution():
     analyzer.partial_fit("dummy_base", corpus)
     plan = analyzer.generate_sorting_plan("dummy_base")
     
-    # Check that there are no duplicate folder names in the plan except perhaps Miscellaneous 
-    # (actually generate_sorting_plan returns a dictionary, so duplicate keys are impossible, 
-    # but we want to ensure the logic doesn't just fallback to name-0, name-1 without trying term frequencies)
     folder_names = list(plan.keys())
     assert "Miscellaneous" not in folder_names or len(folder_names) > 1

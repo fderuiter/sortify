@@ -64,9 +64,8 @@ class TokenWidget(ctk.CTkFrame):
 class SettingsView(ctk.CTkFrame):
     """The main settings view for user configuration."""
 
-    def __init__(self, master, settings, on_back, on_settings_changed, **kwargs):
+    def __init__(self, master, on_back, on_settings_changed, **kwargs):
         super().__init__(master, **kwargs)
-        self.settings = settings
         self.on_back = on_back
         
         # Header
@@ -80,10 +79,10 @@ class SettingsView(ctk.CTkFrame):
         title.pack(side="left", padx=20)
         
         # Content
-        
+        from app.config import settings
         
         desc = ctk.CTkLabel(self, text="Manage words ignored by the AI sorting engine (e.g. 'the', 'and', file extensions).", text_color="gray")
         desc.pack(padx=20, pady=(0, 10), anchor="w")
         
-        self.token_widget = TokenWidget(self, self.settings.STOP_WORDS, on_change=on_settings_changed)
+        self.token_widget = TokenWidget(self, settings.STOP_WORDS, on_change=on_settings_changed)
         self.token_widget.pack(fill="both", expand=True, padx=20, pady=(0, 20))
