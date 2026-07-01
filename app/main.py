@@ -4,13 +4,13 @@ This script imports and runs the main application GUI.
 """
 
 import logging
-
 import sys
 
 from pydantic import ValidationError
 
 from app.config import AppSettings
 from app.ui.app import run_app
+
 
 def main():
     """Execute the main application GUI."""

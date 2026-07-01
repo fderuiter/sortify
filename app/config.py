@@ -5,9 +5,7 @@ application, including max folders, thread workers, ML parameters, and
 stop words.
 """
 
-import sys
 
-from pydantic import ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
