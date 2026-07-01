@@ -3,9 +3,8 @@
 This script imports and runs the main application GUI or CLI demo.
 """
 
-import logging
 import argparse
-import sys
+import logging
 
 from app.config import LOG_FILE
 

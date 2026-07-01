@@ -1,11 +1,14 @@
-import os
-import tempfile
-import sys
-import json
+"""Interactive CLI demo module for Smart AutoSorter."""
 
+import json
+import os
+import sys
+import tempfile
+
+from app.config import MAX_FOLDERS
 from app.core.analyzer import IncrementalAnalyzer
 from app.core.extractor import build_corpus_generator
-from app.config import MAX_FOLDERS
+
 
 def generate_sample_corpus(base_dir: str):
     """Generate a sample corpus with at least 3 documents."""
