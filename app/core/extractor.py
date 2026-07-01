@@ -13,7 +13,7 @@ import pandas as pd
 import pypdf
 from docx import Document
 
-from app.config import MAX_WORKERS
+from app.config import settings
 
 
 def extract_file_text(file_path: str) -> str:
@@ -115,7 +115,7 @@ def build_corpus_generator(base_dir: str, items_to_sort: list, progress_callback
         A mapping of item names to their text payloads for a chunk of items.
     """
     chunk = {}
-    with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=settings.MAX_WORKERS) as executor:
         future_to_item = {
             executor.submit(
                 process_item_worker, base_dir, item, progress_callback
