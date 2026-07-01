@@ -69,7 +69,7 @@ def test_generate_sorting_plan_exception(mocker):
     corpus = {"file.txt": "test content"}
     analyzer.partial_fit("dummy_base", corpus)
     
-    mocker.patch("app.core.analyzer.TopicNode.get_plan", side_effect=Exception("Test error"))
+    mocker.patch("app.core.db.db.get_all_documents", side_effect=Exception("Test error"))
     mock_logger = mocker.patch("app.core.analyzer.logging.error")
     
     plan = analyzer.generate_sorting_plan("dummy_base")
@@ -86,8 +86,8 @@ def test_naming_collision_resolution():
         "file3.txt": "apple banana apple banana peach peach",
         "file4.txt": "apple banana apple banana kiwi kiwi kiwi kiwi kiwi"
     }
-    analyzer.partial_fit(corpus)
-    plan = analyzer.generate_sorting_plan()
+    analyzer.partial_fit("dummy_base", corpus)
+    plan = analyzer.generate_sorting_plan("dummy_base")
     
     # Check that there are no duplicate folder names in the plan except perhaps Miscellaneous 
     # (actually generate_sorting_plan returns a dictionary, so duplicate keys are impossible, 
