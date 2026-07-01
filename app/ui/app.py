@@ -9,6 +9,8 @@ import time
 from tkinter import filedialog, ttk
 
 import customtkinter as ctk
+from watchdog.events import FileSystemEventHandler
+from watchdog.observers import Observer
 
 from app.config import MAX_FOLDERS
 from app.core.analyzer import IncrementalAnalyzer
@@ -43,6 +45,10 @@ class AutoSorterApp(ctk.CTk):
 
         self._debounce_timer = None
         self._update_lock = threading.Lock()
+        
+        self.observer = None
+        self._fs_debounce_timer = None
+        self._pending_files = set()
 
         # --- UI Build ---
         self.title_label = ctk.CTkLabel(
@@ -183,10 +189,64 @@ class AutoSorterApp(ctk.CTk):
                 text="Scanning and modeling incrementally...", text_color="white"
             )
             self.start_time = time.time()
+            
+            self._start_watcher()
 
             threading.Thread(
                 target=self.pipeline_worker, args=(items_to_sort,), daemon=True
             ).start()
+
+    def _start_watcher(self):
+        if self.observer:
+            self.observer.stop()
+            self.observer.join()
+            
+        class Handler(FileSystemEventHandler):
+            def __init__(self, app_ref):
+                self.app = app_ref
+            def on_created(self, event):
+                if not event.is_directory:
+                    self.app._queue_file(event.src_path)
+            def on_modified(self, event):
+                if not event.is_directory:
+                    self.app._queue_file(event.src_path)
+                    
+        self.observer = Observer()
+        self.observer.schedule(Handler(self), self.base_dir, recursive=True)
+        self.observer.start()
+
+    def _queue_file(self, file_path):
+        try:
+            rel_path = os.path.relpath(file_path, self.base_dir)
+            if rel_path.startswith('.'):
+                return
+                
+            with self._update_lock:
+                self._pending_files.add(rel_path)
+                
+            if self._fs_debounce_timer:
+                self._fs_debounce_timer.cancel()
+            self._fs_debounce_timer = threading.Timer(2.0, self._process_pending_files)
+            self._fs_debounce_timer.start()
+        except Exception:
+            pass
+            
+    def _process_pending_files(self):
+        with self._update_lock:
+            files_to_process = list(self._pending_files)
+            self._pending_files.clear()
+            
+        if not files_to_process:
+            return
+            
+        self.after(0, lambda: self.status_label.configure(text="Processing new files...", text_color="cyan"))
+        
+        # Don't reset completed_files, just add to total
+        self.total_files += len(files_to_process)
+        
+        threading.Thread(
+            target=self.pipeline_worker, args=(files_to_process,), daemon=True
+        ).start()
 
     def item_completed_callback(self) -> None:
         """Track execution velocity and update UI progress smoothly."""
@@ -213,9 +273,9 @@ class AutoSorterApp(ctk.CTk):
         for chunk in build_corpus_generator(
             self.base_dir, items_to_sort, self.item_completed_callback, chunk_size=50
         ):
-            self.analyzer.partial_fit(chunk)
+            self.analyzer.partial_fit(self.base_dir, chunk)
 
-            new_plan = self.analyzer.generate_sorting_plan()
+            new_plan = self.analyzer.generate_sorting_plan(self.base_dir)
             self._apply_locked_files(new_plan)
             self.plan = new_plan
 
@@ -435,10 +495,11 @@ class AutoSorterApp(ctk.CTk):
         with self._update_lock:
             if moved_file in self.analyzer.corpus:
                 self.analyzer.partial_fit(
+                    self.base_dir,
                     {moved_file: self.analyzer.corpus[moved_file]}
                 )
 
-            new_plan = self.analyzer.generate_sorting_plan()
+            new_plan = self.analyzer.generate_sorting_plan(self.base_dir)
             self._apply_locked_files(new_plan)
             self.plan = new_plan
             

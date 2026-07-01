@@ -5,58 +5,65 @@ This module provides topic modeling functionality.
 
 import logging
 import os
-import re
 from collections import defaultdict
 
-from sklearn.decomposition import MiniBatchNMF
-from sklearn.feature_extraction.text import HashingVectorizer
+import numpy as np
+from sentence_transformers import SentenceTransformer
+from sklearn.cluster import MiniBatchKMeans
+from sklearn.feature_extraction.text import TfidfVectorizer
 
 from app.config import STOP_WORDS
+from app.core.db import db
 
 
 class IncrementalAnalyzer:
     """Stateful ML analyzer using incremental topic modeling.
     
-    Uses HashingVectorizer and MiniBatchNMF to cluster documents incrementally.
+    Uses SentenceTransformer and MiniBatchKMeans to cluster documents incrementally.
     """
 
     def __init__(self, max_folders: int) -> None:
         """Initialize the analyzer with the maximum number of folders."""
         self.max_folders = max_folders
-        self.n_features = 10000
-        self.vectorizer = HashingVectorizer(
-            stop_words=list(STOP_WORDS),
-            n_features=self.n_features,
-            norm=None,
-            alternate_sign=False
-        )
+        # Use a small, fast model for embeddings
+        self.model = SentenceTransformer('all-MiniLM-L6-v2')
         self.corpus = {}
-        self.index_to_word = {}
 
-    def _update_vocab(self, documents: list) -> None:
-        """Update the reverse lookup for HashingVectorizer indices."""
-        for doc in documents:
-            words = set(re.findall(r'\b[a-zA-Z]{3,}\b', doc.lower()))
-            words.difference_update(STOP_WORDS)
-            for word in words:
-                transformed = self.vectorizer.transform([word])
-                indices = transformed.indices
-                if len(indices) > 0:
-                    self.index_to_word[indices[0]] = word
-
-    def partial_fit(self, new_corpus: dict) -> None:
+    def partial_fit(self, base_dir: str, new_corpus: dict) -> None:
         """Update the ML model incrementally with new documents."""
         try:
-            self.corpus.update(new_corpus)
-            documents = list(new_corpus.values())
-            if not documents:
+            # new_corpus is now dict[item_name, dict[text, hash]] or dict[item_name, text] 
+            # (depending on where it's called from, UI manual moves might just pass text)
+            filepaths = []
+            texts = []
+            hashes = []
+            for filepath, data in new_corpus.items():
+                if isinstance(data, dict):
+                    texts.append(data.get("text", ""))
+                    hashes.append(data.get("hash", ""))
+                else:
+                    texts.append(data)
+                    hashes.append("")
+                filepaths.append(filepath)
+                self.corpus[filepath] = texts[-1] # keep in-memory for UI triggers
+
+            if not texts:
                 return
 
-            self._update_vocab(documents)
+            embeddings = self.model.encode(texts, show_progress_bar=False)
+            
+            for filepath, text, file_hash, embedding in zip(filepaths, texts, hashes, embeddings):
+                # If we don't have a hash, fetch existing from DB so we don't overwrite it with empty
+                if not file_hash:
+                    doc = db.get_document(base_dir, filepath)
+                    if doc:
+                        file_hash = doc["file_hash"]
+                db.upsert_document(base_dir, filepath, file_hash, text, embedding)
+
         except Exception as e:
             logging.error(f"Failed during partial_fit. Error: {str(e)}", exc_info=True)
 
-    def generate_sorting_plan(self) -> dict:
+    def generate_sorting_plan(self, base_dir: str) -> dict:
         """Generate a sorting plan based on the current model state.
         
         Returns
@@ -66,11 +73,15 @@ class IncrementalAnalyzer:
             either dicts (subfolders) or file metadata dicts.
         """
         try:
-            filenames = list(self.corpus.keys())
-            documents = list(self.corpus.values())
-            if not filenames:
+            docs = db.get_all_documents(base_dir)
+            if not docs:
                 return {}
-            plan = self._cluster_recursive(filenames, documents, depth=1)
+                
+            filenames = [d[0] for d in docs]
+            documents = [d[1] for d in docs]
+            embeddings = [d[2] for d in docs]
+            
+            plan = self._cluster_recursive(filenames, documents, embeddings, depth=1)
             
             def _annotate(node, current_path):
                 for k, v in list(node.items()):
@@ -97,7 +108,24 @@ class IncrementalAnalyzer:
             logging.error(f"Failed during generate_sorting_plan. Error: {str(e)}", exc_info=True)
             return {}
 
-    def _cluster_recursive(self, filenames: list, documents: list, depth: int) -> dict:
+    def _get_cluster_keywords(self, documents: list) -> str:
+        if not documents:
+            return "Miscellaneous"
+        try:
+            vectorizer = TfidfVectorizer(stop_words=list(STOP_WORDS), max_features=3)
+            X = vectorizer.fit_transform(documents)
+            feature_names = vectorizer.get_feature_names_out()
+            if len(feature_names) == 0:
+                return "Miscellaneous"
+            
+            scores = np.asarray(X.sum(axis=0)).ravel()
+            top_indices = scores.argsort()[::-1][:2]
+            top_terms = [feature_names[i].capitalize() for i in top_indices]
+            return "-".join(top_terms)
+        except Exception:
+            return "Miscellaneous"
+
+    def _cluster_recursive(self, filenames: list, documents: list, embeddings: list, depth: int) -> dict:
         plan = {}
         
         # Base case
@@ -106,44 +134,24 @@ class IncrementalAnalyzer:
                 plan[f] = None
             return {"Miscellaneous": plan} if depth == 1 else plan
 
-        X = self.vectorizer.transform(documents)
+        X = np.array(embeddings)
         actual_k = min(self.max_folders, len(documents) // 2)
         if actual_k < 2:
             actual_k = 2
 
-        nmf = MiniBatchNMF(n_components=actual_k, random_state=42)
-        document_topic_matrix = nmf.fit_transform(X)
-        topic_word_matrix = nmf.components_
-
-        folder_names = []
-        for topic in topic_word_matrix:
-            top_indices = topic.argsort()[:-3:-1]
-            top_terms = []
-            for i in top_indices:
-                word = self.index_to_word.get(i)
-                if word:
-                    top_terms.append(word.capitalize())
-                else:
-                    top_terms.append(f"Topic{i}")
-            if not top_terms:
-                folder_names.append("Miscellaneous")
-            else:
-                folder_names.append("-".join(top_terms))
+        kmeans = MiniBatchKMeans(n_clusters=actual_k, random_state=42, n_init="auto")
+        labels = kmeans.fit_predict(X)
 
         topic_groups = defaultdict(list)
-        misc_files = []
-
-        for i, filename in enumerate(filenames):
-            best_topic_idx = document_topic_matrix[i].argmax()
-            if document_topic_matrix[i][best_topic_idx] == 0:
-                misc_files.append((filename, documents[i]))
-            else:
-                topic_groups[best_topic_idx].append((filename, documents[i]))
+        for i, label in enumerate(labels):
+            topic_groups[label].append((filenames[i], documents[i], embeddings[i]))
 
         for topic_idx, group in topic_groups.items():
-            folder_name = folder_names[topic_idx]
             sub_filenames = [item[0] for item in group]
             sub_documents = [item[1] for item in group]
+            sub_embeddings = [item[2] for item in group]
+            
+            folder_name = self._get_cluster_keywords(sub_documents)
 
             # Prevent infinite loop if a group captures all documents
             if len(group) == len(documents):
@@ -152,16 +160,18 @@ class IncrementalAnalyzer:
                         plan[folder_name] = {}
                     plan[folder_name][f] = None
             else:
-                sub_plan = self._cluster_recursive(sub_filenames, sub_documents, depth + 1)
+                sub_plan = self._cluster_recursive(sub_filenames, sub_documents, sub_embeddings, depth + 1)
+                
+                def deep_update(d, u):
+                    for k, v in u.items():
+                        if isinstance(v, dict) and k in d and isinstance(d[k], dict):
+                            deep_update(d[k], v)
+                        else:
+                            d[k] = v
+                            
                 if folder_name not in plan:
                     plan[folder_name] = sub_plan
                 else:
-                    plan[folder_name].update(sub_plan)
-
-        if misc_files:
-            if "Miscellaneous" not in plan:
-                plan["Miscellaneous"] = {}
-            for f, d in misc_files:
-                plan["Miscellaneous"][f] = None
+                    deep_update(plan[folder_name], sub_plan)
 
         return plan

@@ -8,3 +8,5 @@ autosorter.log
 site/
 .tox/
 .ruff_cache/
+autosorter.db
+tests/corpus/
