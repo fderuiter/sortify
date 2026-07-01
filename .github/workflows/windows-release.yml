@@ -1,0 +1,126 @@
+name: Enterprise Windows Pipeline
+
+on:
+  release:
+    types: [published]
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-and-package:
+    runs-on: windows-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Install uv
+        uses: astral-sh/setup-uv@v2
+        
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          
+      - name: Install Dependencies
+        run: |
+          uv sync --all-extras
+          uv pip install pillow
+          
+      - name: Build Standalone Executable
+        run: |
+          python build_windows_msix.py
+          
+      - name: Decode Signing Certificate
+        id: decode_cert
+        run: |
+          # If WINDOWS_SIGNING_CERT is empty (e.g. PR or standard push), this will create a blank file or fail.
+          # We should ensure the secrets are set. Assuming they are for this pipeline.
+          $pfx_cert_byte = [System.Convert]::FromBase64String("${{ secrets.WINDOWS_SIGNING_CERT }}")
+          [IO.File]::WriteAllBytes("SigningCert.pfx", $pfx_cert_byte)
+          
+          # Extract Subject for Publisher matching
+          $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2("SigningCert.pfx", "${{ secrets.WINDOWS_SIGNING_PASSWORD }}")
+          $publisher = $cert.Subject
+          echo "PUBLISHER=$publisher" >> $env:GITHUB_ENV
+          
+      - name: Update MSIX Manifest with Dynamic Publisher
+        run: |
+          $manifestPath = "dist\smart-autosorter\AppxManifest.xml"
+          [xml]$manifest = Get-Content $manifestPath
+          $manifest.Package.Identity.Publisher = $env:PUBLISHER
+          $manifest.Save($manifestPath)
+          
+      - name: Setup MSBuild and Windows SDK
+        uses: microsoft/setup-msbuild@v2
+        
+      - name: Build MSIX
+        run: |
+          # Find MakeAppx.exe in Windows Kits
+          $makeAppx = (Get-ChildItem -Path "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\makeappx.exe" -ErrorAction SilentlyContinue | Sort-Object -Property LastWriteTime -Descending | Select-Object -First 1).FullName
+          if ([string]::IsNullOrEmpty($makeAppx)) {
+            Write-Error "makeappx.exe not found"
+            exit 1
+          }
+          & $makeAppx pack /d dist\smart-autosorter /p smart-autosorter.msix
+          
+      - name: Sign MSIX
+        run: |
+          # Find SignTool.exe in Windows Kits
+          $signTool = (Get-ChildItem -Path "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" -ErrorAction SilentlyContinue | Sort-Object -Property LastWriteTime -Descending | Select-Object -First 1).FullName
+          if ([string]::IsNullOrEmpty($signTool)) {
+            Write-Error "signtool.exe not found"
+            exit 1
+          }
+          & $signTool sign /fd SHA256 /a /f SigningCert.pfx /p "${{ secrets.WINDOWS_SIGNING_PASSWORD }}" smart-autosorter.msix
+          
+      - name: Generate AppInstaller File
+        run: |
+          $version = Get-Content build_version.txt
+          $repo = "${{ github.repository }}"
+          $uri = "https://github.com/$repo/releases/latest/download/smart-autosorter.msix"
+          $appinstallerUri = "https://github.com/$repo/releases/latest/download/smart-autosorter.appinstaller"
+          
+          $appinstaller = @"
+          <?xml version="1.0" encoding="utf-8"?>
+          <AppInstaller
+              Uri="$appinstallerUri"
+              Version="$version"
+              xmlns="http://schemas.microsoft.com/appx/appinstaller/2018">
+              <MainPackage
+                  Name="SmartAutoSorter"
+                  Publisher="$env:PUBLISHER"
+                  Version="$version"
+                  ProcessorArchitecture="x64"
+                  Uri="$uri" />
+              <UpdateSettings>
+                  <OnLaunch
+                      HoursBetweenUpdateChecks="0"
+                      ShowPrompt="true"
+                      UpdateBlocksActivation="false" />
+              </UpdateSettings>
+          </AppInstaller>
+          "@
+          Set-Content -Path smart-autosorter.appinstaller -Value $appinstaller
+          
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: |
+            smart-autosorter.msix
+            smart-autosorter.appinstaller
+            
+      - name: Release Artifacts
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            smart-autosorter.msix
+            smart-autosorter.appinstaller
+          
+      - name: Cleanup Secrets
+        if: always()
+        run: |
+          if (Test-Path "SigningCert.pfx") { Remove-Item "SigningCert.pfx" -Force }

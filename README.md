@@ -21,8 +21,11 @@ To ensure optimal performance and accuracy, Smart AutoSorter AI Pro enforces the
 Smart AutoSorter AI Pro is distributed as a zero-config standalone executable. You do not need to install Python, system packages, or manage dependencies.
 
 ### Windows
-1. Download the `SmartAutoSorter-Windows.exe` from the latest release.
-2. Double-click the executable to launch the application instantly.
+1. Download the `smart-autosorter.appinstaller` (or the `.msix` file directly) from the latest release.
+2. Double-click the installer to launch the verified, signed setup process.
+3. The application will automatically update in the background when future versions are released.
+
+*(Note: The old `setup.bat` script is now deprecated for end-users.)*
 
 ### Linux
 1. Download the `SmartAutoSorter-Linux` binary from the latest release.
