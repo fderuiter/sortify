@@ -2,6 +2,7 @@
 
 This module contains the AppSettings for managing dynamic configuration.
 """
+
 import json
 import logging
 import os
@@ -23,20 +24,72 @@ class Settings(BaseSettings):
     MAX_DF: float = Field(default=0.85, ge=0, le=1)
     LOG_FILE: str = Field(default="autosorter.log", min_length=1)
     STOP_WORDS: set[str] = {
-        "the", "and", "for", "this", "that", "with", "from", "inc", "com",
-        "pdf", "docx", "txt", "csv", "xlsx", "xls", "site", "team", "page",
-        "nan", "unnamed", "your", "have", "will", "are", "not", "can", "all",
-        "was", "has", "but", "what", "there", "out", "about", "get", "would",
-        "like", "which", "their", "when", "who", "some", "how", "these", "into",
-        "other", "could", "than", "only", "also", "over", "well", "because",
-        "through", "don", "should", "been", "much", "where",
+        "the",
+        "and",
+        "for",
+        "this",
+        "that",
+        "with",
+        "from",
+        "inc",
+        "com",
+        "pdf",
+        "docx",
+        "txt",
+        "csv",
+        "xlsx",
+        "xls",
+        "site",
+        "team",
+        "page",
+        "nan",
+        "unnamed",
+        "your",
+        "have",
+        "will",
+        "are",
+        "not",
+        "can",
+        "all",
+        "was",
+        "has",
+        "but",
+        "what",
+        "there",
+        "out",
+        "about",
+        "get",
+        "would",
+        "like",
+        "which",
+        "their",
+        "when",
+        "who",
+        "some",
+        "how",
+        "these",
+        "into",
+        "other",
+        "could",
+        "than",
+        "only",
+        "also",
+        "over",
+        "well",
+        "because",
+        "through",
+        "don",
+        "should",
+        "been",
+        "much",
+        "where",
     }
 
     model_config = SettingsConfigDict(
-        env_file='.env',
-        env_file_encoding='utf-8',
-        extra='ignore',
-        validate_assignment=True
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+        validate_assignment=True,
     )
 
 
@@ -47,13 +100,13 @@ class AppSettings:
         self._filepath = filepath
         self._save_timer = None
         self._lock = threading.Lock()
-        
+
         try:
             self._settings_model = Settings()
         except ValidationError as e:
             print(f"Configuration error: {e}", file=sys.stderr)
             sys.exit(1)
-            
+
         self.load()
 
     def load(self):
@@ -61,24 +114,31 @@ class AppSettings:
         if not os.path.exists(self._filepath):
             self._trigger_save()
             return
-            
+
         try:
             with open(self._filepath, "r") as f:
                 data = json.load(f)
-                
-            for key in ["MAX_FOLDERS", "MAX_WORKERS", "MIN_DF", "MAX_DF", "LOG_FILE", "CONTEXTUAL_RENAMING"]:
+
+            for key in [
+                "MAX_FOLDERS",
+                "MAX_WORKERS",
+                "MIN_DF",
+                "MAX_DF",
+                "LOG_FILE",
+                "CONTEXTUAL_RENAMING",
+            ]:
                 if key in data:
                     try:
                         setattr(self._settings_model, key, data[key])
                     except (ValueError, ValidationError) as e:
                         logging.warning(f"Invalid {key} in config, using default: {e}")
-                        
+
             if "STOP_WORDS" in data:
                 try:
                     self._settings_model.STOP_WORDS = set(data["STOP_WORDS"])
                 except (ValueError, ValidationError) as e:
                     logging.warning(f"Invalid STOP_WORDS in config, using default: {e}")
-                    
+
         except Exception as e:
             logging.warning(f"Failed to load settings, using defaults: {e}")
             self._trigger_save()
@@ -101,7 +161,7 @@ class AppSettings:
                 "MIN_DF": self._settings_model.MIN_DF,
                 "MAX_DF": self._settings_model.MAX_DF,
                 "LOG_FILE": self._settings_model.LOG_FILE,
-                "STOP_WORDS": list(self._settings_model.STOP_WORDS)
+                "STOP_WORDS": list(self._settings_model.STOP_WORDS),
             }
         try:
             with open(self._filepath, "w") as f:
@@ -113,7 +173,7 @@ class AppSettings:
     def CONTEXTUAL_RENAMING(self) -> bool:
         """Get the contextual renaming flag."""
         return self._settings_model.CONTEXTUAL_RENAMING
-        
+
     @CONTEXTUAL_RENAMING.setter
     def CONTEXTUAL_RENAMING(self, value: bool):
         self._settings_model.CONTEXTUAL_RENAMING = value
@@ -123,57 +183,57 @@ class AppSettings:
     def MAX_FOLDERS(self) -> int:
         """Get the maximum number of folders."""
         return self._settings_model.MAX_FOLDERS
-        
+
     @MAX_FOLDERS.setter
     def MAX_FOLDERS(self, value: int):
         self._settings_model.MAX_FOLDERS = value
         self._trigger_save()
-        
+
     @property
     def MAX_WORKERS(self) -> int:
         """Get the maximum number of worker threads."""
         return self._settings_model.MAX_WORKERS
-        
+
     @MAX_WORKERS.setter
     def MAX_WORKERS(self, value: int):
         self._settings_model.MAX_WORKERS = value
         self._trigger_save()
-        
+
     @property
     def MIN_DF(self) -> Union[int, float]:
         """Get the minimum document frequency."""
         return self._settings_model.MIN_DF
-        
+
     @MIN_DF.setter
     def MIN_DF(self, value: Union[int, float]):
         self._settings_model.MIN_DF = value
         self._trigger_save()
-        
+
     @property
     def MAX_DF(self) -> float:
         """Get the maximum document frequency."""
         return self._settings_model.MAX_DF
-        
+
     @MAX_DF.setter
     def MAX_DF(self, value: Union[int, float]):
         self._settings_model.MAX_DF = value
         self._trigger_save()
-        
+
     @property
     def LOG_FILE(self) -> str:
         """Get the central log file path."""
         return self._settings_model.LOG_FILE
-        
+
     @LOG_FILE.setter
     def LOG_FILE(self, value: str):
         self._settings_model.LOG_FILE = value
         self._trigger_save()
-        
+
     @property
     def STOP_WORDS(self) -> Set[str]:
         """Get the set of stop words to filter out."""
         return self._settings_model.STOP_WORDS
-        
+
     @STOP_WORDS.setter
     def STOP_WORDS(self, value: Set[str]):
         if not isinstance(value, set):

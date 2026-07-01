@@ -28,12 +28,12 @@ def _remove_empty_dirs(path: str):
     """Recursively remove empty directories."""
     if not os.path.isdir(path):
         return
-        
+
     for entry in os.listdir(path):
         entry_path = os.path.join(path, entry)
         if os.path.isdir(entry_path):
             _remove_empty_dirs(entry_path)
-            
+
     if not os.listdir(path):
         os.rmdir(path)
 
@@ -44,7 +44,9 @@ def _execute_moves_recursive(base_dir: str, plan: dict, current_dest: str = "") 
         return
 
     for key, content in plan.items():
-        if content is None or (isinstance(content, dict) and content.get("__type__") == "file"):
+        if content is None or (
+            isinstance(content, dict) and content.get("__type__") == "file"
+        ):
             if isinstance(content, dict) and content.get("status") == "Already Sorted":
                 continue
 
@@ -52,19 +54,19 @@ def _execute_moves_recursive(base_dir: str, plan: dict, current_dest: str = "") 
             source_path = os.path.join(base_dir, key)
             if not os.path.exists(source_path):
                 continue
-                
+
             if isinstance(content, dict) and "target_filename" in content:
                 filename = content["target_filename"]
             else:
                 filename = os.path.basename(key)
-                
+
             dest_dir = os.path.join(base_dir, current_dest)
-            
+
             if not os.path.exists(dest_dir):
                 os.makedirs(dest_dir, exist_ok=True)
-                    
+
             dest_path = get_safe_path(dest_dir, filename, source_path)
-            
+
             if dest_path == source_path:
                 continue
 
@@ -73,11 +75,12 @@ def _execute_moves_recursive(base_dir: str, plan: dict, current_dest: str = "") 
             # It's a folder
             _execute_moves_recursive(base_dir, content, os.path.join(current_dest, key))
 
+
 def execute_moves(base_dir: str, plan: dict) -> None:
     """Create directories and safely move files, tracking file-system errors."""
     # Execute all moves first
     _execute_moves_recursive(base_dir, plan, "")
-    
+
     # Then clean up empty source directories
     for entry in os.listdir(base_dir):
         entry_path = os.path.join(base_dir, entry)

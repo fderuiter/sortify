@@ -22,7 +22,7 @@ def get_files_recursively(base: str, rel_path: str = "") -> list:
                     files.append(entry_rel_path)
     except Exception:
         pass
-    
+
     if rel_path == "":
         return sorted(files)
     return files
