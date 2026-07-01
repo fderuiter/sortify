@@ -38,7 +38,7 @@ def test_semantic_quality_guardrails():
         analyzer.partial_fit(chunk)
         
     # Generate the plan, which triggers the clustering and calculates reconstruction error
-    plan = analyzer.generate_sorting_plan()
+    _ = analyzer.generate_sorting_plan()
     
     current_error = analyzer.last_reconstruction_error
     assert current_error > 0.0, "Reconstruction error must be captured and greater than zero."
