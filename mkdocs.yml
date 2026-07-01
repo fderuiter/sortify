@@ -12,8 +12,9 @@ plugins:
             show_root_heading: true
 
 nav:
-  - Home: index.md
-  - API Reference:
+  - User Guides: user_guide.md
+  - Administrator Guide: admin_guide.md
+  - Developer Reference:
     - Core: core.md
     - UI: ui.md
     - Config: config.md

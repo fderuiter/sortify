@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -e
 
 echo "Setting up development environment..."
@@ -27,7 +27,10 @@ fi
 echo "Synchronizing local environment with lockfile..."
 uv sync --all-extras
 
-echo "Setup complete."
+echo "Installing pre-commit hooks..."
+uv run pre-commit install
+
+echo "Setup complete. Virtual environment provisioned."
 echo "You can manually run the application anytime using:"
 echo "  .venv/bin/smart-autosorter"
 echo "Launching application now..."
