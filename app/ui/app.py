@@ -4,6 +4,7 @@ This module provides the main application window and logic for the AutoSorter.
 """
 
 import os
+import re
 import threading
 import time
 import tkinter as tk
@@ -16,6 +17,7 @@ from app.config import settings
 from app.core.analyzer import IncrementalAnalyzer
 from app.core.extractor import build_corpus_generator
 from app.core.mover import execute_moves
+from app.core.scanner import get_files_recursively
 from app.core.verifier import VerificationEngine
 from app.ui.settings import SettingsView
 
@@ -113,6 +115,14 @@ class AutoSorterApp(ctk.CTk):
             hover_color="darkgreen",
             state="disabled",
         )
+        self.contextual_rename_var = ctk.BooleanVar(value=settings.CONTEXTUAL_RENAMING)
+        self.contextual_rename_switch = ctk.CTkSwitch(
+            self,
+            text="Enable Contextual Renaming",
+            variable=self.contextual_rename_var,
+            command=self.toggle_contextual_rename
+        )
+        self.contextual_rename_switch.pack(pady=5)
         self.execute_btn.pack(pady=15)
 
         self.settings_btn = ctk.CTkButton(
@@ -168,22 +178,29 @@ class AutoSorterApp(ctk.CTk):
             if self.analyzer.corpus:
                 self._background_model_update(None)
 
+    def toggle_contextual_rename(self) -> None:
+        """Toggle contextual renaming and refresh the plan if active."""
+        settings.CONTEXTUAL_RENAMING = self.contextual_rename_var.get()
+        if self.plan:
+            self.status_label.configure(text="Updating plan for contextual renaming...", text_color="white")
+            self.execute_btn.configure(state="disabled")
+            
+            def _update():
+                new_plan = self.analyzer.generate_sorting_plan()
+                self._apply_locked_files(new_plan)
+                self.plan = new_plan
+                
+                self.plan_errors = self.verifier.verify_plan(self.base_dir, self.plan)
+                has_errors = bool(self.plan_errors)
+                
+                self.after(0, lambda: self.status_label.configure(text="AI Plan ready for review.", text_color="green"))
+                self.after(0, lambda: self.execute_btn.configure(state="disabled" if has_errors else "normal"))
+                self.after(0, self.render_tree)
+            
+            threading.Thread(target=_update, daemon=True).start()
+
     def _get_files_recursively(self, base: str, rel_path: str = "") -> list:
-        files = []
-        try:
-            for entry in os.scandir(os.path.join(base, rel_path)):
-                if entry.name.startswith("."):
-                    continue
-                entry_rel_path = (
-                    os.path.join(rel_path, entry.name) if rel_path else entry.name
-                )
-                if entry.is_dir():
-                    files.extend(self._get_files_recursively(base, entry_rel_path))
-                else:
-                    files.append(entry_rel_path)
-        except Exception:
-            pass
-        return files
+        return get_files_recursively(base, rel_path)
 
     def show_help_modal(self) -> None:
         """Display a help modal containing system limits and file processing logic by opening the online documentation."""
@@ -322,7 +339,17 @@ class AutoSorterApp(ctk.CTk):
                     if part not in current or not isinstance(current[part], dict) or current[part].get("__type__") == "file":
                         current[part] = {}
                         
-                    target_file_path = os.path.join(target_path, os.path.basename(f))
+                    filename = os.path.basename(f)
+                    target_filename = filename
+                    if settings.CONTEXTUAL_RENAMING:
+                        parent_dir = os.path.dirname(f)
+                        if parent_dir:
+                            parent_folder = os.path.basename(parent_dir)
+                            if parent_folder:
+                                safe_parent = re.sub(r'[^A-Za-z0-9]', '_', parent_folder)
+                                target_filename = f"{safe_parent}_{filename}"
+
+                    target_file_path = os.path.join(target_path, target_filename)
                     norm_source = os.path.normpath(f)
                     norm_target = os.path.normpath(target_file_path)
                     status = "Already Sorted" if norm_source == norm_target else "Pending Move"
@@ -330,7 +357,8 @@ class AutoSorterApp(ctk.CTk):
                     current[part][f] = {
                         "__type__": "file",
                         "status": status,
-                        "source_path": f
+                        "source_path": f,
+                        "target_filename": target_filename
                     }
                 else:
                     if part not in current or not isinstance(current[part], dict) or current[part].get("__type__") == "file":
@@ -394,7 +422,8 @@ class AutoSorterApp(ctk.CTk):
             if child_node is None or (isinstance(child_node, dict) and child_node.get("__type__") == "file"):
                 error_msg = self.plan_errors.get(name)
                 icon = "❌ " if error_msg else "✅ "
-                text = f"{icon}{os.path.basename(name)}"
+                display_name = child_node.get("target_filename", os.path.basename(name)) if isinstance(child_node, dict) else os.path.basename(name)
+                text = f"{icon}{display_name}"
                 if error_msg:
                     text += f" - {error_msg}"
                 

@@ -16,6 +16,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     """Application settings schema."""
 
+    CONTEXTUAL_RENAMING: bool = Field(default=False)
     MAX_FOLDERS: int = Field(default=12, gt=0)
     MAX_WORKERS: int = Field(default=15, gt=0)
     MIN_DF: Union[int, float] = Field(default=2, ge=0)
@@ -65,7 +66,7 @@ class SettingsRegistry:
             with open(self._filepath, "r") as f:
                 data = json.load(f)
                 
-            for key in ["MAX_FOLDERS", "MAX_WORKERS", "MIN_DF", "MAX_DF", "LOG_FILE"]:
+            for key in ["MAX_FOLDERS", "MAX_WORKERS", "MIN_DF", "MAX_DF", "LOG_FILE", "CONTEXTUAL_RENAMING"]:
                 if key in data:
                     try:
                         setattr(self._settings_model, key, data[key])
@@ -94,6 +95,7 @@ class SettingsRegistry:
     def _save(self):
         with self._lock:
             data = {
+                "CONTEXTUAL_RENAMING": self._settings_model.CONTEXTUAL_RENAMING,
                 "MAX_FOLDERS": self._settings_model.MAX_FOLDERS,
                 "MAX_WORKERS": self._settings_model.MAX_WORKERS,
                 "MIN_DF": self._settings_model.MIN_DF,
@@ -106,6 +108,16 @@ class SettingsRegistry:
                 json.dump(data, f, indent=4)
         except Exception as e:
             logging.error(f"Failed to save settings: {e}")
+
+    @property
+    def CONTEXTUAL_RENAMING(self) -> bool:
+        """Get the contextual renaming flag."""
+        return self._settings_model.CONTEXTUAL_RENAMING
+        
+    @CONTEXTUAL_RENAMING.setter
+    def CONTEXTUAL_RENAMING(self, value: bool):
+        self._settings_model.CONTEXTUAL_RENAMING = value
+        self._trigger_save()
 
     @property
     def MAX_FOLDERS(self) -> int:
