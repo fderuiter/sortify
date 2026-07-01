@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
+"""CLI tool for testing ML extraction and analysis in an isolated sandbox environment."""
+
 import argparse
 import os
 import shutil
-from app.core.extractor import extract_file_text
+
 from app.core.analyzer import IncrementalAnalyzer
+from app.core.extractor import extract_file_text
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SANDBOX_DIR = os.path.join(BASE_DIR, "sandbox", "dataset")
@@ -17,7 +20,7 @@ def reset_sandbox():
     print("Sandbox dataset has been reset to its original state.")
 
 def extract_file(filename):
-    """Extracts text from a specific sandbox file."""
+    """Extract text from a specific sandbox file."""
     filepath = os.path.join(SANDBOX_DIR, filename)
     if not os.path.exists(filepath):
         print(f"File not found: {filepath}")
@@ -28,7 +31,7 @@ def extract_file(filename):
     print("-" * 40)
 
 def analyze_all():
-    """Runs the analysis pipeline on all sandbox files."""
+    """Run the analysis pipeline on all sandbox files."""
     if not os.path.exists(SANDBOX_DIR):
         print("Sandbox dataset not found. Run reset first.")
         return
@@ -48,18 +51,19 @@ def analyze_all():
     print("-" * 40)
 
 def main():
+    """Execute the main CLI logic for the sandbox tool."""
     parser = argparse.ArgumentParser(description="Sandbox CLI Tool for ML Accuracy Verification")
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
     # reset command
-    parser_reset = subparsers.add_parser("reset", help="Reset the sandbox dataset to its golden state")
+    subparsers.add_parser("reset", help="Reset the sandbox dataset to its golden state")
 
     # extract command
     parser_extract = subparsers.add_parser("extract", help="Extract text from a specific sandbox file")
     parser_extract.add_argument("filename", type=str, help="Name of the file in the sandbox dataset")
 
     # analyze command
-    parser_analyze = subparsers.add_parser("analyze", help="Run the analysis pipeline on all sandbox files")
+    subparsers.add_parser("analyze", help="Run the analysis pipeline on all sandbox files")
 
     args = parser.parse_args()
 
