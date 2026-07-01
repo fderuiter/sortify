@@ -5,9 +5,15 @@ from unittest.mock import MagicMock
 import pytest
 
 from app.core.analyzer import IncrementalAnalyzer
+from app.core.db import db
 from app.core.extractor import build_corpus_generator
 from tests.generate_corpus import CORPUS_DIR, create_corpus
 
+
+@pytest.fixture(scope="function", autouse=True)
+def clean_db():
+    db.clear()
+    yield
 
 @pytest.fixture(scope="session", autouse=True)
 def setup_corpus():
@@ -26,9 +32,9 @@ def test_full_workflow_simulation():
     generator = build_corpus_generator(CORPUS_DIR, files, progress_callback, max_workers=4, chunk_size=50)
     
     for chunk in generator:
-        analyzer.partial_fit(chunk)
+        analyzer.partial_fit(CORPUS_DIR, chunk)
         
-    plan = analyzer.generate_sorting_plan()
+    plan = analyzer.generate_sorting_plan(CORPUS_DIR)
     
     # We should have some sorted categories and files
     assert isinstance(plan, dict)
@@ -75,8 +81,8 @@ def test_small_dataset_fallback():
         "file2.txt": "More content there."
     }
     
-    analyzer.partial_fit(corpus)
-    plan = analyzer.generate_sorting_plan()
+    analyzer.partial_fit("dummy", corpus)
+    plan = analyzer.generate_sorting_plan("dummy")
     
     # Expect fallback to Miscellaneous
     assert "Miscellaneous" in plan
@@ -93,8 +99,8 @@ def test_empty_files_handling():
         "empty3.txt": ""
     }
     
-    analyzer.partial_fit(corpus)
-    plan = analyzer.generate_sorting_plan()
+    analyzer.partial_fit("dummy", corpus)
+    plan = analyzer.generate_sorting_plan("dummy")
     
     # Since text is empty, topic indices might just fallback
     assert isinstance(plan, dict)
@@ -117,9 +123,9 @@ def test_concurrent_large_volume():
         generator = build_corpus_generator(temp_dir, files_to_sort, progress_callback, max_workers=4, chunk_size=10)
         
         for chunk in generator:
-            analyzer.partial_fit(chunk)
+            analyzer.partial_fit(temp_dir, chunk)
             
-        plan = analyzer.generate_sorting_plan()
+        plan = analyzer.generate_sorting_plan(temp_dir)
         
         # Verify
         assert progress_callback.call_count == 25
