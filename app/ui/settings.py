@@ -1,6 +1,11 @@
+"""Settings view and widgets for application configuration."""
+
 import customtkinter as ctk
 
+
 class TokenWidget(ctk.CTkFrame):
+    """A widget for managing and displaying unique tokenized text strings."""
+
     def __init__(self, master, tokens, on_change=None, **kwargs):
         super().__init__(master, **kwargs)
         self.tokens = set(tokens)
@@ -57,6 +62,8 @@ class TokenWidget(ctk.CTkFrame):
             btn.pack(side="right", padx=(0, 5), pady=2)
 
 class SettingsView(ctk.CTkFrame):
+    """The main settings view for user configuration."""
+
     def __init__(self, master, on_back, on_settings_changed, **kwargs):
         super().__init__(master, **kwargs)
         self.on_back = on_back

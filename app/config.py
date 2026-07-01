@@ -7,8 +7,8 @@ stop words.
 
 
 import json
-import os
 import logging
+import os
 
 MAX_FOLDERS = 12
 MAX_WORKERS = 15
@@ -35,6 +35,7 @@ DEFAULT_STOP_WORDS = {
 STOP_WORDS = set(DEFAULT_STOP_WORDS)
 
 def load_settings():
+    """Load settings from the persistent settings file."""
     global STOP_WORDS
     if os.path.exists(SETTINGS_FILE):
         try:
@@ -47,6 +48,7 @@ def load_settings():
             logging.error(f"Failed to load settings: {e}")
 
 def save_settings():
+    """Save current settings to the persistent settings file."""
     try:
         with open(SETTINGS_FILE, 'w') as f:
             json.dump({"stop_words": list(STOP_WORDS)}, f)

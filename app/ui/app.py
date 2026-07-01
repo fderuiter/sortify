@@ -17,7 +17,6 @@ from app.core.mover import execute_moves
 from app.core.verifier import VerificationEngine
 from app.ui.settings import SettingsView
 
-
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
 
@@ -123,14 +122,17 @@ class AutoSorterApp(ctk.CTk):
         self.settings_view.pack(fill="both", expand=True)
 
     def show_main_view(self):
+        """Switch the main interface to the main sorting view."""
         self.settings_frame.pack_forget()
         self.main_frame.pack(fill="both", expand=True)
 
     def show_settings_view(self):
+        """Switch the main interface to the settings view."""
         self.main_frame.pack_forget()
         self.settings_frame.pack(fill="both", expand=True)
 
     def on_settings_changed(self, new_stop_words):
+        """Handle updates to application settings like stop words."""
         STOP_WORDS.clear()
         STOP_WORDS.update(new_stop_words)
         save_settings()
