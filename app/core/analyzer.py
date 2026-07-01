@@ -11,7 +11,7 @@ from collections import defaultdict
 from sklearn.decomposition import MiniBatchNMF
 from sklearn.feature_extraction.text import HashingVectorizer
 
-from app.config import STOP_WORDS
+from app.config import settings
 
 
 class IncrementalAnalyzer:
@@ -25,7 +25,7 @@ class IncrementalAnalyzer:
         self.max_folders = max_folders
         self.n_features = 10000
         self.vectorizer = HashingVectorizer(
-            stop_words=list(STOP_WORDS),
+            stop_words=list(settings.STOP_WORDS),
             n_features=self.n_features,
             norm=None,
             alternate_sign=False
@@ -37,7 +37,7 @@ class IncrementalAnalyzer:
         """Update the reverse lookup for HashingVectorizer indices."""
         for doc in documents:
             words = set(re.findall(r'\b[a-zA-Z]{3,}\b', doc.lower()))
-            words.difference_update(STOP_WORDS)
+            words.difference_update(settings.STOP_WORDS)
             for word in words:
                 transformed = self.vectorizer.transform([word])
                 indices = transformed.indices
