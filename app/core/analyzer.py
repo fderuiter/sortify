@@ -12,7 +12,7 @@ from sentence_transformers import SentenceTransformer
 from sklearn.cluster import MiniBatchKMeans
 from sklearn.feature_extraction.text import TfidfVectorizer
 
-from app.config import STOP_WORDS
+from app.config import settings
 from app.core.db import db
 
 
@@ -112,7 +112,7 @@ class IncrementalAnalyzer:
         if not documents:
             return "Miscellaneous"
         try:
-            vectorizer = TfidfVectorizer(stop_words=list(STOP_WORDS), max_features=3)
+            vectorizer = TfidfVectorizer(stop_words=list(settings.STOP_WORDS), max_features=3)
             X = vectorizer.fit_transform(documents)
             feature_names = vectorizer.get_feature_names_out()
             if len(feature_names) == 0:

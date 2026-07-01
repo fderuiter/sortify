@@ -14,7 +14,7 @@ import pandas as pd
 import pypdf
 from docx import Document
 
-from app.config import MAX_WORKERS
+from app.config import settings
 from app.core.db import db
 
 
@@ -86,7 +86,7 @@ def process_item_worker(base_dir: str, item: str, progress_callback: Callable) -
 def build_corpus_generator(base_dir: str, items_to_sort: list, progress_callback: Callable, chunk_size: int = 50):
     """Map every item to its text payload asynchronously and yield chunks."""
     chunk = {}
-    with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=settings.MAX_WORKERS) as executor:
         future_to_item = {
             executor.submit(
                 process_item_worker, base_dir, item, progress_callback

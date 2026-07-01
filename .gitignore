@@ -10,3 +10,6 @@ site/
 .ruff_cache/
 autosorter.db
 tests/corpus/
+dist/
+*.spec
+sandbox/dataset/
