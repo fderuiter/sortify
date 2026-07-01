@@ -25,7 +25,8 @@ dev = [
     "ruff",
     "mypy",
     "pytest",
-    "pytest-mock"
+    "pytest-mock",
+    "reportlab"
 ]
 
 [project.scripts]
