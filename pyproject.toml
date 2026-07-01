@@ -29,7 +29,9 @@ dev = [
     "mypy",
     "pytest",
     "pytest-mock",
-    "reportlab"
+    "reportlab",
+    "pyinstaller",
+    "pre-commit"
 ]
 
 [project.scripts]

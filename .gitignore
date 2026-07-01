@@ -1,9 +1,14 @@
 .mypy_cache/
 venv/
+.venv/
+.pytest_cache/
+.coverage
+htmlcov/
 *.egg-info/
 build/
 __pycache__/
 *.pyc
+*.pyo
 autosorter.log
 site/
 .tox/

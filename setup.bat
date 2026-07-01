@@ -39,7 +39,14 @@ if %ERRORLEVEL% NEQ 0 (
     exit /b 1
 )
 
-echo Setup complete.
+echo Installing pre-commit hooks...
+uv run pre-commit install
+if %ERRORLEVEL% NEQ 0 (
+    echo Error: Failed to install pre-commit hooks.
+    exit /b 1
+)
+
+echo Setup complete. Virtual environment provisioned.
 echo You can manually run the application anytime using:
 echo   .venv\Scripts\smart-autosorter.exe
 echo Launching application now...
