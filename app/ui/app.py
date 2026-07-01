@@ -10,7 +10,7 @@ from tkinter import filedialog, ttk
 
 import customtkinter as ctk
 
-from app.config import MAX_FOLDERS
+from app.config import settings
 from app.core.analyzer import IncrementalAnalyzer
 from app.core.extractor import build_corpus_generator
 from app.core.mover import execute_moves
@@ -177,7 +177,7 @@ class AutoSorterApp(ctk.CTk):
             self.plan = {}
             self.tree.delete(*self.tree.get_children())
 
-            self.analyzer = IncrementalAnalyzer(MAX_FOLDERS)
+            self.analyzer = IncrementalAnalyzer(settings.MAX_FOLDERS)
 
             self.status_label.configure(
                 text="Scanning and modeling incrementally...", text_color="white"
