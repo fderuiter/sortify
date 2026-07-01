@@ -21,12 +21,13 @@ def get_file_hash(file_path: str) -> str:
     """Calculate the SHA-256 hash of a file."""
     hasher = hashlib.sha256()
     try:
-        with open(file_path, 'rb') as f:
+        with open(file_path, "rb") as f:
             for chunk in iter(lambda: f.read(4096), b""):
                 hasher.update(chunk)
     except Exception:
         pass
     return hasher.hexdigest()
+
 
 def extract_file_text(file_path: str) -> str:
     """Extract text content from a given file."""
@@ -58,7 +59,9 @@ def extract_file_text(file_path: str) -> str:
     return text
 
 
-def process_item_worker(base_dir: str, item: str, progress_callback: Callable) -> Tuple[str, str, str]:
+def process_item_worker(
+    base_dir: str, item: str, progress_callback: Callable
+) -> Tuple[str, str, str]:
     """Process a single item, checking hash first, and extract its text content."""
     try:
         item_path = os.path.join(base_dir, item)
@@ -68,7 +71,7 @@ def process_item_worker(base_dir: str, item: str, progress_callback: Callable) -
             if doc and doc["file_hash"] == file_hash and doc["embedding"] is not None:
                 # Skip extraction if unchanged
                 return item, doc["extracted_text"], file_hash
-            
+
             text = extract_file_text(item_path)
             return item, text, file_hash
         elif os.path.isdir(item_path):
@@ -83,7 +86,14 @@ def process_item_worker(base_dir: str, item: str, progress_callback: Callable) -
     return item, "", ""
 
 
-def build_corpus_generator(base_dir: str, items_to_sort: list, progress_callback: Callable, max_workers: int, chunk_size: int = 50, sequential: bool = False):
+def build_corpus_generator(
+    base_dir: str,
+    items_to_sort: list,
+    progress_callback: Callable,
+    max_workers: int,
+    chunk_size: int = 50,
+    sequential: bool = False,
+):
     """Map every item to its text payload asynchronously and yield chunks.
 
     Parameters
@@ -110,8 +120,10 @@ def build_corpus_generator(base_dir: str, items_to_sort: list, progress_callback
     chunk = {}
     if sequential:
         for item in items_to_sort:
-            item_name, item_text, file_hash = process_item_worker(base_dir, item, progress_callback)
-            
+            item_name, item_text, file_hash = process_item_worker(
+                base_dir, item, progress_callback
+            )
+
             doc = db.get_document(base_dir, item_name)
             if doc and doc["file_hash"] == file_hash and doc["embedding"] is not None:
                 # Already processed and unchanged, no need to yield to analyzer
@@ -126,18 +138,27 @@ def build_corpus_generator(base_dir: str, items_to_sort: list, progress_callback
     else:
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             item_to_future = {
-                item: executor.submit(process_item_worker, base_dir, item, progress_callback)
+                item: executor.submit(
+                    process_item_worker, base_dir, item, progress_callback
+                )
                 for item in items_to_sort
             }
             for item in items_to_sort:
                 future = item_to_future[item]
                 item_name, item_text, file_hash = future.result()
-                
+
                 doc = db.get_document(base_dir, item_name)
-                if doc and doc["file_hash"] == file_hash and doc["embedding"] is not None:
+                if (
+                    doc
+                    and doc["file_hash"] == file_hash
+                    and doc["embedding"] is not None
+                ):
                     continue
-                    
-                chunk[item_name] = {"text": item_name + " " + item_text, "hash": file_hash}
+
+                chunk[item_name] = {
+                    "text": item_name + " " + item_text,
+                    "hash": file_hash,
+                }
                 if len(chunk) >= chunk_size:
                     yield chunk
                     chunk = {}
