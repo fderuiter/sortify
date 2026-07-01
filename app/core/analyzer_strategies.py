@@ -1,3 +1,5 @@
+"""Defines clustering strategies for grouping documents."""
+
 from collections import defaultdict
 from typing import List, Protocol
 
@@ -7,12 +9,17 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 
 
 class ClusteringStrategy(Protocol):
+    """Protocol for defining document clustering strategies."""
+    
     def generate_plan(self, filenames: List[str], documents: List[str], embeddings: List[np.ndarray], max_folders: int, stop_words: set) -> tuple[dict, float]:
-        """Returns the clustering plan and the total reconstruction error."""
+        """Return the clustering plan and the total reconstruction error."""
         ...
 
 class RecursiveKMeansStrategy:
+    """Strategy that uses recursive KMeans to cluster documents."""
+    
     def generate_plan(self, filenames: List[str], documents: List[str], embeddings: List[np.ndarray], max_folders: int, stop_words: set) -> tuple[dict, float]:
+        """Return a hierarchical clustering plan and error using KMeans."""
         self.stop_words = stop_words
         self.max_folders = max_folders
         self._error = 0.0
@@ -87,13 +94,18 @@ class RecursiveKMeansStrategy:
         return plan
 
 class ClusteringRegistry:
+    """Registry for managing and resolving clustering strategies by name."""
+    
     def __init__(self):
+        """Initialize the clustering registry with an empty strategy map."""
         self._strategies = {}
 
     def register(self, name: str, strategy: ClusteringStrategy):
+        """Register a new clustering strategy under the given name."""
         self._strategies[name] = strategy
 
     def get_strategy(self, name: str) -> ClusteringStrategy:
+        """Retrieve a clustering strategy by name."""
         return self._strategies.get(name)
 
 clustering_registry = ClusteringRegistry()
