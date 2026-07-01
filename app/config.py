@@ -5,8 +5,38 @@ This module contains the SettingsRegistry for managing dynamic configuration.
 import json
 import logging
 import os
+import sys
 import threading
 from typing import Set, Union
+
+from pydantic import Field, ValidationError
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    """Application settings schema."""
+
+    MAX_FOLDERS: int = Field(default=12, gt=0)
+    MAX_WORKERS: int = Field(default=15, gt=0)
+    MIN_DF: Union[int, float] = Field(default=2, ge=0)
+    MAX_DF: float = Field(default=0.85, ge=0, le=1)
+    LOG_FILE: str = Field(default="autosorter.log", min_length=1)
+    STOP_WORDS: set[str] = {
+        "the", "and", "for", "this", "that", "with", "from", "inc", "com",
+        "pdf", "docx", "txt", "csv", "xlsx", "xls", "site", "team", "page",
+        "nan", "unnamed", "your", "have", "will", "are", "not", "can", "all",
+        "was", "has", "but", "what", "there", "out", "about", "get", "would",
+        "like", "which", "their", "when", "who", "some", "how", "these", "into",
+        "other", "could", "than", "only", "also", "over", "well", "because",
+        "through", "don", "should", "been", "much", "where",
+    }
+
+    model_config = SettingsConfigDict(
+        env_file='.env',
+        env_file_encoding='utf-8',
+        extra='ignore',
+        validate_assignment=True
+    )
 
 
 class SettingsRegistry:
@@ -17,22 +47,12 @@ class SettingsRegistry:
         self._save_timer = None
         self._lock = threading.Lock()
         
-        # Defaults
-        self._MAX_FOLDERS = 12
-        self._MAX_WORKERS = 15
-        self._MIN_DF = 2
-        self._MAX_DF = 0.85
-        self._LOG_FILE = "autosorter.log"
-        self._STOP_WORDS = {
-            "the", "and", "for", "this", "that", "with", "from", "inc", "com", "pdf", 
-            "docx", "txt", "csv", "xlsx", "xls", "site", "team", "page", "nan", "unnamed", 
-            "your", "have", "will", "are", "not", "can", "all", "was", "has", "but", "what", 
-            "there", "out", "about", "get", "would", "like", "which", "their", "when", 
-            "who", "some", "how", "these", "into", "other", "could", "than", "only", 
-            "also", "over", "well", "because", "through", "don", "should", "been", 
-            "much", "where"
-        }
-        
+        try:
+            self._settings_model = Settings()
+        except ValidationError as e:
+            print(f"Configuration error: {e}", file=sys.stderr)
+            sys.exit(1)
+            
         self.load()
 
     def load(self):
@@ -48,14 +68,14 @@ class SettingsRegistry:
             for key in ["MAX_FOLDERS", "MAX_WORKERS", "MIN_DF", "MAX_DF", "LOG_FILE"]:
                 if key in data:
                     try:
-                        setattr(self, key, data[key])
-                    except ValueError as e:
+                        setattr(self._settings_model, key, data[key])
+                    except (ValueError, ValidationError) as e:
                         logging.warning(f"Invalid {key} in config, using default: {e}")
                         
             if "STOP_WORDS" in data:
                 try:
-                    self.STOP_WORDS = set(data["STOP_WORDS"])
-                except ValueError as e:
+                    self._settings_model.STOP_WORDS = set(data["STOP_WORDS"])
+                except (ValueError, ValidationError) as e:
                     logging.warning(f"Invalid STOP_WORDS in config, using default: {e}")
                     
         except Exception as e:
@@ -74,12 +94,12 @@ class SettingsRegistry:
     def _save(self):
         with self._lock:
             data = {
-                "MAX_FOLDERS": self._MAX_FOLDERS,
-                "MAX_WORKERS": self._MAX_WORKERS,
-                "MIN_DF": self._MIN_DF,
-                "MAX_DF": self._MAX_DF,
-                "LOG_FILE": self._LOG_FILE,
-                "STOP_WORDS": list(self._STOP_WORDS)
+                "MAX_FOLDERS": self._settings_model.MAX_FOLDERS,
+                "MAX_WORKERS": self._settings_model.MAX_WORKERS,
+                "MIN_DF": self._settings_model.MIN_DF,
+                "MAX_DF": self._settings_model.MAX_DF,
+                "LOG_FILE": self._settings_model.LOG_FILE,
+                "STOP_WORDS": list(self._settings_model.STOP_WORDS)
             }
         try:
             with open(self._filepath, "w") as f:
@@ -90,67 +110,57 @@ class SettingsRegistry:
     @property
     def MAX_FOLDERS(self) -> int:
         """Get the maximum number of folders."""
-        return self._MAX_FOLDERS
+        return self._settings_model.MAX_FOLDERS
         
     @MAX_FOLDERS.setter
     def MAX_FOLDERS(self, value: int):
-        if not isinstance(value, int) or value <= 0:
-            raise ValueError("MAX_FOLDERS must be a positive integer")
-        self._MAX_FOLDERS = value
+        self._settings_model.MAX_FOLDERS = value
         self._trigger_save()
         
     @property
     def MAX_WORKERS(self) -> int:
         """Get the maximum number of worker threads."""
-        return self._MAX_WORKERS
+        return self._settings_model.MAX_WORKERS
         
     @MAX_WORKERS.setter
     def MAX_WORKERS(self, value: int):
-        if not isinstance(value, int) or value <= 0:
-            raise ValueError("MAX_WORKERS must be a positive integer")
-        self._MAX_WORKERS = value
+        self._settings_model.MAX_WORKERS = value
         self._trigger_save()
         
     @property
     def MIN_DF(self) -> Union[int, float]:
         """Get the minimum document frequency."""
-        return self._MIN_DF
+        return self._settings_model.MIN_DF
         
     @MIN_DF.setter
     def MIN_DF(self, value: Union[int, float]):
-        if not isinstance(value, (int, float)) or value < 0:
-            raise ValueError("MIN_DF must be a non-negative number")
-        self._MIN_DF = value
+        self._settings_model.MIN_DF = value
         self._trigger_save()
         
     @property
     def MAX_DF(self) -> float:
         """Get the maximum document frequency."""
-        return self._MAX_DF
+        return self._settings_model.MAX_DF
         
     @MAX_DF.setter
     def MAX_DF(self, value: Union[int, float]):
-        if not isinstance(value, (int, float)) or not (0 <= value <= 1):
-            raise ValueError("MAX_DF must be a float between 0 and 1")
-        self._MAX_DF = float(value)
+        self._settings_model.MAX_DF = value
         self._trigger_save()
         
     @property
     def LOG_FILE(self) -> str:
         """Get the central log file path."""
-        return self._LOG_FILE
+        return self._settings_model.LOG_FILE
         
     @LOG_FILE.setter
     def LOG_FILE(self, value: str):
-        if not isinstance(value, str) or not value.strip():
-            raise ValueError("LOG_FILE must be a non-empty string")
-        self._LOG_FILE = value
+        self._settings_model.LOG_FILE = value
         self._trigger_save()
         
     @property
     def STOP_WORDS(self) -> Set[str]:
         """Get the set of stop words to filter out."""
-        return self._STOP_WORDS
+        return self._settings_model.STOP_WORDS
         
     @STOP_WORDS.setter
     def STOP_WORDS(self, value: Set[str]):
@@ -159,9 +169,7 @@ class SettingsRegistry:
                 value = set(value)
             except Exception:
                 raise ValueError("STOP_WORDS must be a set of strings")
-        if not all(isinstance(x, str) for x in value):
-            raise ValueError("STOP_WORDS must be a set of strings")
-        self._STOP_WORDS = value
+        self._settings_model.STOP_WORDS = value
         self._trigger_save()
 
 settings = SettingsRegistry()

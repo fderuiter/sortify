@@ -6,6 +6,7 @@ This module provides the main application window and logic for the AutoSorter.
 import os
 import threading
 import time
+import tkinter as tk
 from tkinter import filedialog, ttk
 
 import customtkinter as ctk
@@ -32,6 +33,7 @@ class AutoSorterApp(ctk.CTk):
         self.base_dir: str = ""
         self.plan: dict = {}
         self.locked_files: dict = {}
+        self.manual_folders: set = set()
         self.plan_errors: dict = {}
 
         self.total_files = 0
@@ -93,6 +95,10 @@ class AutoSorterApp(ctk.CTk):
         self.tree.bind("<B1-Motion>", self.on_drag_motion)
         self.tree.bind("<ButtonRelease-1>", self.on_drop)
         self.dragged_item = None
+
+        self._create_context_menus()
+        self.tree.bind("<Button-3>", self.on_right_click)
+        self.tree.bind("<Button-2>", self.on_right_click)
 
         self.execute_btn = ctk.CTkButton(
             self,
@@ -174,6 +180,7 @@ class AutoSorterApp(ctk.CTk):
             self.execute_btn.configure(state="disabled")
 
             self.locked_files = {}
+            self.manual_folders = set()
             self.plan = {}
             self.tree.delete(*self.tree.get_children())
 
@@ -265,6 +272,14 @@ class AutoSorterApp(ctk.CTk):
                     if part not in current or not isinstance(current[part], dict) or current[part].get("__type__") == "file":
                         current[part] = {}
                     current = current[part]
+
+        for folder_path in self.manual_folders:
+            parts = folder_path.split("/")
+            current = new_plan
+            for part in parts:
+                if part not in current or not isinstance(current[part], dict) or current[part].get("__type__") == "file":
+                    current[part] = {}
+                current = current[part]
 
     def _finalize_pipeline(self):
         """Execute final UI transition after all files are processed."""
@@ -450,9 +465,34 @@ class AutoSorterApp(ctk.CTk):
 
             self.after(0, self.render_tree)
 
+    def _prune_empty_folders(self, plan_node: dict) -> bool:
+        if not isinstance(plan_node, dict) or plan_node.get("__type__") == "file":
+            return True
+            
+        keys_to_delete = []
+        has_content = False
+        for k, v in plan_node.items():
+            if v is None:
+                has_content = True
+            elif not isinstance(v, dict) or v.get("__type__") == "file":
+                has_content = True
+            else:
+                keep = self._prune_empty_folders(v)
+                if not keep:
+                    keys_to_delete.append(k)
+                else:
+                    has_content = True
+                    
+        for k in keys_to_delete:
+            del plan_node[k]
+            
+        return has_content
+
     def execute_sort(self) -> None:
         """Execute the physical file moving operations safely based on the generated plan."""
         if self.plan and self.base_dir:
+            self._prune_empty_folders(self.plan)
+            
             self.status_label.configure(
                 text="Moving files into position...", text_color="white"
             )
@@ -466,6 +506,155 @@ class AutoSorterApp(ctk.CTk):
             )
             self.meta_label.configure(text="")
             self.tree.delete(*self.tree.get_children())
+
+
+    def _create_context_menus(self):
+        self.context_menu = tk.Menu(self, tearoff=0)
+        self.context_menu.add_command(label="Rename Folder", command=self._rename_folder)
+        self.context_menu.add_command(label="Delete Empty Folder", command=self._delete_folder)
+        self.context_menu.add_command(label="Create Folder Inside", command=self._create_folder_inside)
+        
+        self.bg_context_menu = tk.Menu(self, tearoff=0)
+        self.bg_context_menu.add_command(label="Create Root Folder", command=self._create_root_folder)
+        self.context_item = None
+
+    def on_right_click(self, event):
+        """Handle right click events on the tree view."""
+        item = self.tree.identify_row(event.y)
+        self.context_item = item
+        if item and item.startswith("folder:"):
+            self.context_menu.tk_popup(event.x_root, event.y_root)
+        elif not item:
+            self.bg_context_menu.tk_popup(event.x_root, event.y_root)
+
+    def _get_node_by_path(self, path):
+        if not path:
+            return self.plan
+        parts = path.split("/")
+        current = self.plan
+        for p in parts:
+            if p in current and isinstance(current[p], dict) and current[p].get("__type__") != "file":
+                current = current[p]
+            else:
+                return None
+        return current
+
+    def _lock_all_files_in_folder(self, node, new_folder_path):
+        if not node:
+            return
+        def _collect_files(n, current_subpath):
+            for k, v in n.items():
+                if v is None or (isinstance(v, dict) and v.get("__type__") == "file"):
+                    self.locked_files[k] = current_subpath
+                elif isinstance(v, dict):
+                    _collect_files(v, f"{current_subpath}/{k}")
+        _collect_files(node, new_folder_path)
+
+    def _rename_folder(self):
+        if not self.context_item:
+            return
+        current_path = self.context_item.split(":", 1)[1]
+        old_name = current_path.split("/")[-1]
+        parent_path = "/".join(current_path.split("/")[:-1])
+        
+        dialog = ctk.CTkInputDialog(text="Enter new folder name:", title="Rename Folder")
+        new_name = dialog.get_input()
+        if not new_name:
+            return
+        new_name = new_name.replace("/", "").replace("\\", "")
+        if not new_name or new_name == old_name:
+            return
+            
+        parent_node = self._get_node_by_path(parent_path) if parent_path else self.plan
+        if parent_node is not None and new_name in parent_node:
+            return
+
+        new_path = f"{parent_path}/{new_name}" if parent_path else new_name
+        
+        node = self._get_node_by_path(current_path)
+        self._lock_all_files_in_folder(node, new_path)
+        
+        new_manual = set()
+        for mf in list(self.manual_folders):
+            if mf == current_path:
+                self.manual_folders.remove(mf)
+                new_manual.add(new_path)
+            elif mf.startswith(current_path + "/"):
+                self.manual_folders.remove(mf)
+                new_manual.add(new_path + mf[len(current_path):])
+        self.manual_folders.update(new_manual)
+        
+        for f, target in list(self.locked_files.items()):
+            if target == current_path:
+                self.locked_files[f] = new_path
+            elif target.startswith(current_path + "/"):
+                self.locked_files[f] = new_path + target[len(current_path):]
+                
+        self.manual_folders.add(new_path)
+        self._rebuild_plan()
+
+    def _delete_folder(self):
+        if not self.context_item:
+            return
+        current_path = self.context_item.split(":", 1)[1]
+        
+        node = self._get_node_by_path(current_path)
+        if node is not None:
+            has_files = False
+            def _check(n):
+                nonlocal has_files
+                for k, v in n.items():
+                    if v is None or (isinstance(v, dict) and v.get("__type__") == "file"):
+                        has_files = True
+                    elif isinstance(v, dict):
+                        _check(v)
+            _check(node)
+            if has_files:
+                return
+
+        if current_path in self.manual_folders:
+            self.manual_folders.remove(current_path)
+        self._rebuild_plan()
+
+    def _create_folder_inside(self):
+        if not self.context_item:
+            return
+        parent_path = self.context_item.split(":", 1)[1]
+        self._prompt_and_create_folder(parent_path)
+
+    def _create_root_folder(self):
+        self._prompt_and_create_folder("")
+
+    def _prompt_and_create_folder(self, parent_path):
+        if parent_path:
+            depth = len(parent_path.split("/"))
+            if depth >= 5:
+                return
+        dialog = ctk.CTkInputDialog(text="Enter new folder name:", title="New Folder")
+        new_name = dialog.get_input()
+        if not new_name:
+            return
+        new_name = new_name.replace("/", "").replace("\\", "")
+        if not new_name:
+            return
+        
+        parent_node = self._get_node_by_path(parent_path) if parent_path else self.plan
+        if parent_node is not None and new_name in parent_node:
+            return
+
+        new_path = f"{parent_path}/{new_name}" if parent_path else new_name
+        self.manual_folders.add(new_path)
+        self._rebuild_plan()
+
+    def _rebuild_plan(self):
+        if self.analyzer:
+            new_plan = self.analyzer.generate_sorting_plan()
+            self._apply_locked_files(new_plan)
+            self.plan = new_plan
+            self.plan_errors = self.verifier.verify_plan(self.base_dir, self.plan)
+            has_errors = bool(self.plan_errors)
+            self.execute_btn.configure(state="disabled" if has_errors else "normal")
+            self.render_tree()
 
 
 def run_app() -> None:

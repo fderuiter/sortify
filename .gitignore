@@ -12,3 +12,4 @@ dist/
 *.spec
 settings.json
 .venv/
+sandbox/dataset/
