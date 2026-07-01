@@ -1,9 +1,14 @@
 .mypy_cache/
 venv/
+.venv/
+.pytest_cache/
+.coverage
+htmlcov/
 *.egg-info/
 build/
 __pycache__/
 *.pyc
+*.pyo
 autosorter.log
 site/
 .tox/
@@ -12,4 +17,6 @@ autosorter.db
 tests/corpus/
 dist/
 *.spec
+settings.json
+.venv/
 sandbox/dataset/

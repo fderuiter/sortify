@@ -5,6 +5,7 @@ This module provides topic modeling functionality.
 
 import logging
 import os
+import re
 from collections import defaultdict
 
 import numpy as np
@@ -84,10 +85,21 @@ class IncrementalAnalyzer:
             plan = self._cluster_recursive(filenames, documents, embeddings, depth=1)
             
             def _annotate(node, current_path):
+                import app.config as config
                 for k, v in list(node.items()):
                     if v is None:
                         filename = os.path.basename(k)
-                        target_path = os.path.join(current_path, filename)
+                        target_filename = filename
+                        
+                        if getattr(config, "CONTEXTUAL_RENAMING", False):
+                            parent_dir = os.path.dirname(k)
+                            if parent_dir:
+                                parent_folder = os.path.basename(parent_dir)
+                                if parent_folder:
+                                    safe_parent = re.sub(r'[^A-Za-z0-9]', '_', parent_folder)
+                                    target_filename = f"{safe_parent}_{filename}"
+
+                        target_path = os.path.join(current_path, target_filename)
                         
                         norm_source = os.path.normpath(k)
                         norm_target = os.path.normpath(target_path)
@@ -97,7 +109,8 @@ class IncrementalAnalyzer:
                         node[k] = {
                             "__type__": "file",
                             "status": status,
-                            "source_path": k
+                            "source_path": k,
+                            "target_filename": target_filename
                         }
                     elif isinstance(v, dict):
                         _annotate(v, os.path.join(current_path, k))
