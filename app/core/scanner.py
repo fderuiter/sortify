@@ -1,4 +1,7 @@
+"""Directory scanning utility."""
+
 import os
+
 
 def get_files_recursively(base: str, rel_path: str = "") -> list:
     """Recursively list all files in a directory deterministically."""

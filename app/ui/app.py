@@ -14,8 +14,8 @@ from app.config import MAX_FOLDERS
 from app.core.analyzer import IncrementalAnalyzer
 from app.core.extractor import build_corpus_generator
 from app.core.mover import execute_moves
-from app.core.verifier import VerificationEngine
 from app.core.scanner import get_files_recursively
+from app.core.verifier import VerificationEngine
 
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
