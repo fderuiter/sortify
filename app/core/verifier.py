@@ -13,9 +13,14 @@ class VerificationEngine:
         """Get a flat list of moves from the plan."""
         moves = []
         for key, content in plan.items():
-            if content is None:
+            if content is None or (isinstance(content, dict) and content.get("__type__") == "file"):
                 source_path = os.path.join(base_dir, key)
-                filename = os.path.basename(key)
+                
+                if isinstance(content, dict) and "target_filename" in content:
+                    filename = content["target_filename"]
+                else:
+                    filename = os.path.basename(key)
+                    
                 dest_dir = os.path.join(base_dir, current_dest)
                 dest_path = os.path.join(dest_dir, filename)
                 moves.append((key, source_path, dest_path))

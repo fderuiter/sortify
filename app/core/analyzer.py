@@ -16,9 +16,10 @@ class TopicNode:
     """Stateful node in the topic hierarchy, encapsulating an NMF model."""
 
     def __init__(
-        self, max_folders: int, depth: int = 1, prevent_clustering: bool = False
+        self, max_folders: int, stop_words: set, depth: int = 1, prevent_clustering: bool = False
     ):
         self.max_folders = max_folders
+        self.stop_words = stop_words
         self.depth = depth
         self.prevent_clustering = prevent_clustering
 
@@ -49,9 +50,11 @@ class TopicNode:
 
         if self.model is None:
             # Initial fit
-            filenames = list(total_docs.keys())
-            documents = list(total_docs.values())
-
+            items = list(total_docs.items())
+            items.sort(key=lambda x: (os.path.basename(x[0]), x[1], x[0]))
+            filenames = [x[0] for x in items]
+            documents = [x[1] for x in items]
+            
             X = vectorizer.transform(documents)
             self.actual_k = min(self.max_folders, len(documents) // 2)
             if self.actual_k < 2:
@@ -59,19 +62,20 @@ class TopicNode:
 
             self.model = MiniBatchNMF(n_components=self.actual_k, random_state=42)
             doc_topic_matrix = self.model.fit_transform(X)
-
-            self._generate_folder_names(index_to_word)
-            self._route_documents(
-                filenames, documents, doc_topic_matrix, is_initial=True
-            )
-
+            
+            topic_groups = self._compute_topic_groups(filenames, documents, doc_topic_matrix)
+            self._generate_folder_names(index_to_word, topic_groups)
+            self._route_documents(filenames, documents, doc_topic_matrix, is_initial=True)
+            
             self.assigned_docs = total_docs
             self.new_docs = {}
         else:
             # Incremental update
-            filenames = list(self.new_docs.keys())
-            documents = list(self.new_docs.values())
-
+            items = list(self.new_docs.items())
+            items.sort(key=lambda x: (os.path.basename(x[0]), x[1], x[0]))
+            filenames = [x[0] for x in items]
+            documents = [x[1] for x in items]
+            
             X_new = vectorizer.transform(documents)
 
             # Stability Check: ratio of new docs to existing docs
@@ -84,23 +88,35 @@ class TopicNode:
             if ratio > 0.1:
                 # Exceeds change threshold -> selective update
                 self.model.partial_fit(X_new)
-                self._generate_folder_names(index_to_word)
-
-            doc_topic_matrix = self.model.transform(X_new)
-            self._route_documents(
-                filenames, documents, doc_topic_matrix, is_initial=False
-            )
-
+                doc_topic_matrix = self.model.transform(X_new)
+                topic_groups = self._compute_topic_groups(filenames, documents, doc_topic_matrix)
+                self._generate_folder_names(index_to_word, topic_groups)
+            else:
+                doc_topic_matrix = self.model.transform(X_new)
+                
+            self._route_documents(filenames, documents, doc_topic_matrix, is_initial=False)
+            
             self.assigned_docs.update(self.new_docs)
             self.new_docs = {}
 
         # Process children
         for child in self.children.values():
             child.process(vectorizer, index_to_word)
-
-    def _generate_folder_names(self, index_to_word):
+            
+    def _compute_topic_groups(self, filenames, documents, doc_topic_matrix):
+        topic_groups = defaultdict(list)
+        for i, filename in enumerate(filenames):
+            best_topic_idx = doc_topic_matrix[i].argmax()
+            if doc_topic_matrix[i][best_topic_idx] != 0:
+                topic_groups[best_topic_idx].append((filename, documents[i]))
+        return topic_groups
+            
+    def _generate_folder_names(self, index_to_word, topic_groups):
         topic_word_matrix = self.model.components_
-        for topic_idx, topic in enumerate(topic_word_matrix):
+        used_names = set()
+        
+        for topic_idx in sorted(range(len(topic_word_matrix))):
+            topic = topic_word_matrix[topic_idx]
             top_indices = topic.argsort()[:-3:-1]
             top_terms = []
             for i in top_indices:
@@ -110,9 +126,36 @@ class TopicNode:
                 else:
                     top_terms.append(f"Topic{i}")
             if not top_terms:
-                self.folder_names[topic_idx] = "Miscellaneous"
+                base_name = "Miscellaneous"
             else:
-                self.folder_names[topic_idx] = "-".join(top_terms)
+                base_name = "-".join(top_terms)
+                
+            if base_name not in used_names and base_name != "Miscellaneous":
+                self.folder_names[topic_idx] = base_name
+                used_names.add(base_name)
+            else:
+                resolved = False
+                if topic_idx in topic_groups:
+                    from collections import Counter
+                    term_counts = Counter()
+                    for _, doc in topic_groups[topic_idx]:
+                        words = re.findall(r'\b[a-zA-Z]{3,}\b', doc.lower())
+                        for w in words:
+                            if w not in self.stop_words:
+                                term_counts[w] += 1
+                                
+                    for term, _ in sorted(term_counts.items(), key=lambda x: (-x[1], x[0])):
+                        cap_term = term.capitalize()
+                        if cap_term not in used_names:
+                            self.folder_names[topic_idx] = cap_term
+                            used_names.add(cap_term)
+                            resolved = True
+                            break
+                            
+                if not resolved:
+                    fallback = f"{base_name}-{topic_idx}"
+                    self.folder_names[topic_idx] = fallback
+                    used_names.add(fallback)
 
     def _route_documents(self, filenames, documents, doc_topic_matrix, is_initial):
         topic_groups = defaultdict(list)
@@ -123,12 +166,14 @@ class TopicNode:
                 self.misc_docs[filename] = documents[i]
             else:
                 topic_groups[best_topic_idx].append((filename, documents[i]))
-
-        for topic_idx, group in topic_groups.items():
+                
+        for topic_idx in sorted(topic_groups.keys()):
+            group = topic_groups[topic_idx]
             if topic_idx not in self.children:
                 prevent = is_initial and len(group) == len(filenames)
                 self.children[topic_idx] = TopicNode(
                     max_folders=self.max_folders,
+                    stop_words=self.stop_words,
                     depth=self.depth + 1,
                     prevent_clustering=prevent,
                 )
@@ -198,7 +243,9 @@ class IncrementalAnalyzer:
                 transformed = self.vectorizer.transform([word])
                 indices = transformed.indices
                 if len(indices) > 0:
-                    self.index_to_word[indices[0]] = word
+                    idx = indices[0]
+                    if idx not in self.index_to_word or word < self.index_to_word[idx]:
+                        self.index_to_word[idx] = word
 
     def partial_fit(self, new_corpus: dict) -> None:
         """Update the ML model incrementally with new documents."""
@@ -211,14 +258,14 @@ class IncrementalAnalyzer:
             self._update_vocab(documents)
 
             if self.root_node is None:
-                self.root_node = TopicNode(max_folders=self.max_folders, depth=1)
+                self.root_node = TopicNode(max_folders=self.max_folders, stop_words=self.stop_words, depth=1)
 
             self.root_node.add_documents(new_corpus)
             self.root_node.process(self.vectorizer, self.index_to_word)
         except Exception as e:
             logging.error(f"Failed during partial_fit. Error: {str(e)}", exc_info=True)
 
-    def generate_sorting_plan(self) -> dict:
+    def generate_sorting_plan(self, contextual_renaming: bool = False) -> dict:
         """Generate a sorting plan based on the current model state.
 
         Returns
@@ -240,8 +287,18 @@ class IncrementalAnalyzer:
                 for k, v in list(node.items()):
                     if v is None:
                         filename = os.path.basename(k)
-                        target_path = os.path.join(current_path, filename)
+                        target_filename = filename
+                        
+                        if contextual_renaming:
+                            parent_dir = os.path.dirname(k)
+                            if parent_dir:
+                                parent_folder = os.path.basename(parent_dir)
+                                if parent_folder:
+                                    safe_parent = re.sub(r'[^A-Za-z0-9]', '_', parent_folder)
+                                    target_filename = f"{safe_parent}_{filename}"
 
+                        target_path = os.path.join(current_path, target_filename)
+                        
                         norm_source = os.path.normpath(k)
                         norm_target = os.path.normpath(target_path)
 
@@ -255,6 +312,7 @@ class IncrementalAnalyzer:
                             "__type__": "file",
                             "status": status,
                             "source_path": k,
+                            "target_filename": target_filename
                         }
                     elif isinstance(v, dict):
                         _annotate(v, os.path.join(current_path, k))

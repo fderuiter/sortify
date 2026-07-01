@@ -54,8 +54,10 @@ def _execute_moves_recursive(base_dir: str, plan: dict, current_dest: str = "") 
             source_path = os.path.join(base_dir, key)
             if not os.path.exists(source_path):
                 continue
-
-            filename = os.path.basename(key)
+            if isinstance(content, dict) and "target_filename" in content:
+                filename = content["target_filename"]
+            else:
+                filename = os.path.basename(key)
             dest_dir = os.path.join(base_dir, current_dest)
 
             if not os.path.exists(dest_dir):
