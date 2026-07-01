@@ -18,3 +18,5 @@ dist/
 settings.json
 .venv/
 sandbox/dataset/
+autosorter.db
+tests/corpus/
