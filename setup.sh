@@ -44,23 +44,14 @@ case "${OS}" in
         ;;
 esac
 
-echo "Setting up Python virtual environment..."
-if command -v python3 >/dev/null 2>&1; then
-    PYTHON_CMD="python3"
-else
-    PYTHON_CMD="python"
+echo "Installing uv if not present..."
+if ! command -v uv >/dev/null 2>&1; then
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    export PATH="$HOME/.cargo/bin:$PATH"
 fi
 
-if [ ! -d "venv" ]; then
-    $PYTHON_CMD -m venv venv
-fi
-
-# Activate virtual environment
-source venv/bin/activate
-
-echo "Installing Python dependencies from pyproject.toml..."
-pip install --upgrade pip
-pip install .
+echo "Installing Python dependencies from pyproject.toml using uv..."
+uv sync --all-extras
 
 echo "Setup complete. Launching application..."
-smart-autosorter
+uv run smart-autosorter
