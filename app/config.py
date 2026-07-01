@@ -1,10 +1,17 @@
+"""Configuration settings for the autosorter application.
+
+This module contains the SettingsRegistry for managing dynamic configuration.
+"""
 import json
-import threading
-import os
 import logging
+import os
+import threading
 from typing import Set, Union
 
+
 class SettingsRegistry:
+    """A registry for application settings that provides persistence and validation."""
+
     def __init__(self, filepath="settings.json"):
         self._filepath = filepath
         self._save_timer = None
@@ -29,6 +36,7 @@ class SettingsRegistry:
         self.load()
 
     def load(self):
+        """Load settings from the configuration file."""
         if not os.path.exists(self._filepath):
             self._trigger_save()
             return
@@ -81,6 +89,7 @@ class SettingsRegistry:
 
     @property
     def MAX_FOLDERS(self) -> int:
+        """Get the maximum number of folders."""
         return self._MAX_FOLDERS
         
     @MAX_FOLDERS.setter
@@ -92,6 +101,7 @@ class SettingsRegistry:
         
     @property
     def MAX_WORKERS(self) -> int:
+        """Get the maximum number of worker threads."""
         return self._MAX_WORKERS
         
     @MAX_WORKERS.setter
@@ -103,6 +113,7 @@ class SettingsRegistry:
         
     @property
     def MIN_DF(self) -> Union[int, float]:
+        """Get the minimum document frequency."""
         return self._MIN_DF
         
     @MIN_DF.setter
@@ -114,6 +125,7 @@ class SettingsRegistry:
         
     @property
     def MAX_DF(self) -> float:
+        """Get the maximum document frequency."""
         return self._MAX_DF
         
     @MAX_DF.setter
@@ -125,6 +137,7 @@ class SettingsRegistry:
         
     @property
     def LOG_FILE(self) -> str:
+        """Get the central log file path."""
         return self._LOG_FILE
         
     @LOG_FILE.setter
@@ -136,6 +149,7 @@ class SettingsRegistry:
         
     @property
     def STOP_WORDS(self) -> Set[str]:
+        """Get the set of stop words to filter out."""
         return self._STOP_WORDS
         
     @STOP_WORDS.setter
