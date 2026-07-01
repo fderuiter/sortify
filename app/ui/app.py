@@ -36,6 +36,7 @@ class AutoSorterApp(ctk.CTk):
 
         self.total_files = 0
         self.completed_files = 0
+        self._initial_cached_files = 0
         self.start_time: float = 0.0
 
         self.analyzer = None
@@ -104,6 +105,16 @@ class AutoSorterApp(ctk.CTk):
         )
         self.execute_btn.pack(pady=15)
 
+        self.protocol("WM_DELETE_WINDOW", self.on_close)
+
+    def on_close(self):
+        if self.base_dir and self.analyzer:
+            from app.core.cache import save_cache_sync
+            self.status_label.configure(text="Saving cache...", text_color="yellow")
+            self.update()
+            save_cache_sync(self.base_dir, self.analyzer.corpus, self.locked_files, self.analyzer.index_to_word)
+        self.destroy()
+
     def _get_files_recursively(self, base: str, rel_path: str = "") -> list:
         files = []
         try:
@@ -169,6 +180,7 @@ class AutoSorterApp(ctk.CTk):
                 return
 
             self.completed_files = 0
+            self._initial_cached_files = 0
             self.progress_bar.set(0)
             self.select_btn.configure(state="disabled")
             self.execute_btn.configure(state="disabled")
@@ -178,6 +190,34 @@ class AutoSorterApp(ctk.CTk):
             self.tree.delete(*self.tree.get_children())
 
             self.analyzer = IncrementalAnalyzer(MAX_FOLDERS)
+
+            # --- CACHE INTEGRATION ---
+            from app.core.cache import load_cache
+            cached_corpus, cached_locked, cached_idx = load_cache(self.base_dir)
+            
+            if cached_corpus is not None:
+                pruned_corpus = {k: v for k, v in cached_corpus.items() if k in items_to_sort}
+                self.locked_files = {k: v for k, v in cached_locked.items() if k in pruned_corpus}
+                self.analyzer.corpus = pruned_corpus
+                self.analyzer.index_to_word = cached_idx
+
+                self.completed_files = len(pruned_corpus)
+                self._initial_cached_files = self.completed_files
+                if self.total_files > 0:
+                    self.progress_bar.set(self.completed_files / self.total_files)
+
+                items_to_sort = [f for f in items_to_sort if f not in pruned_corpus]
+
+                if pruned_corpus:
+                    new_plan = self.analyzer.generate_sorting_plan()
+                    self._apply_locked_files(new_plan)
+                    self.plan = new_plan
+                    self.render_tree()
+                    self._update_progress_ui(self.completed_files / self.total_files)
+
+            if not items_to_sort:
+                self._finalize_pipeline()
+                return
 
             self.status_label.configure(
                 text="Scanning and modeling incrementally...", text_color="white"
@@ -197,9 +237,16 @@ class AutoSorterApp(ctk.CTk):
     def _update_progress_ui(self, progress_percentage):
         self.progress_bar.set(progress_percentage)
         elapsed_time = time.time() - self.start_time
+        # Only consider files processed in this session for speed
+        session_completed = self.completed_files - getattr(self, '_initial_cached_files', 0)
+        
+        # We need to compute speed accurately
         files_per_second = (
-            self.completed_files / elapsed_time if elapsed_time > 0 else 0
+            session_completed / elapsed_time if elapsed_time > 0 else 0
         )
+        if files_per_second == 0 and elapsed_time > 0:
+            files_per_second = self.completed_files / elapsed_time
+
         remaining_files = self.total_files - self.completed_files
         eta = remaining_files / files_per_second if files_per_second > 0 else 0
 
@@ -276,6 +323,9 @@ class AutoSorterApp(ctk.CTk):
         self.execute_btn.configure(state="disabled" if has_errors else "normal")
         self.select_btn.configure(state="normal")
         self.render_tree()
+        
+        from app.core.cache import save_cache_async
+        save_cache_async(self.base_dir, self.analyzer.corpus, self.locked_files, self.analyzer.index_to_word)
 
     def render_tree(self):
         """Draw the plan on the Treeview, preserving expanded nodes."""
@@ -449,6 +499,9 @@ class AutoSorterApp(ctk.CTk):
             self.after(0, lambda: self.execute_btn.configure(state="disabled" if has_errors else "normal"))
 
             self.after(0, self.render_tree)
+            
+            from app.core.cache import save_cache_async
+            save_cache_async(self.base_dir, self.analyzer.corpus, self.locked_files, self.analyzer.index_to_word)
 
     def execute_sort(self) -> None:
         """Execute the physical file moving operations safely based on the generated plan."""
