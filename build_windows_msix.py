@@ -1,11 +1,13 @@
+"""Script to build Windows MSIX package."""
+
 import os
 import subprocess
-import shutil
+
 import tomllib
-import xml.etree.ElementTree as ET
-from pathlib import Path
+
 
 def get_version():
+    """Extract version from pyproject.toml."""
     with open("pyproject.toml", "rb") as f:
         data = tomllib.load(f)
     version = data.get("project", {}).get("version", "0.1.0")
@@ -15,6 +17,7 @@ def get_version():
     return ".".join(parts[:4])
 
 def create_assets(target_dir):
+    """Create necessary image assets for the MSIX package."""
     assets_dir = os.path.join(target_dir, "Assets")
     os.makedirs(assets_dir, exist_ok=True)
     
@@ -35,6 +38,7 @@ def create_assets(target_dir):
         img.save(os.path.join(assets_dir, name))
 
 def create_manifest(target_dir, version):
+    """Generate the AppxManifest.xml for the MSIX package."""
     manifest_content = f"""<?xml version="1.0" encoding="utf-8"?>
 <Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
          xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
@@ -77,6 +81,7 @@ def create_manifest(target_dir, version):
         f.write(manifest_content)
 
 def main():
+    """Build the executable and prepare MSIX package assets."""
     version = get_version()
     # Ensure pyinstaller output folder exists
     subprocess.run(["uv", "run", "pyinstaller", "--noconfirm", "--windowed", "--name", "smart-autosorter", "app/main.py"], check=True)
