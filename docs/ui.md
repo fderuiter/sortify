@@ -1,5 +1,3 @@
 # UI API Reference
 
-::: ui.app
-::: ui.console
-::: ui.dialogs
+::: app.ui.app
