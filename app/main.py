@@ -6,11 +6,11 @@ This script imports and runs the main application GUI or CLI demo.
 import argparse
 import logging
 
-from app.config import LOG_FILE
+from app.config import settings
 
 # Configure Centralized Logger
 logging.basicConfig(
-    filename=LOG_FILE,
+    filename=settings.LOG_FILE,
     level=logging.ERROR,
     format="%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s",
 )
