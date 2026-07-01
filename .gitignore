@@ -15,4 +15,6 @@ site/
 .ruff_cache/
 dist/
 *.spec
+settings.json
+.venv/
 sandbox/dataset/
