@@ -6,11 +6,14 @@ stop words.
 """
 
 import sys
+
 from pydantic import ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    """Application settings schema."""
+
     MAX_FOLDERS: int = 12
     MAX_WORKERS: int = 15
     LOG_FILE: str = "autosorter.log"
