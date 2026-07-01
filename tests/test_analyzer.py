@@ -76,7 +76,7 @@ def test_generate_sorting_plan_exception(mocker):
     assert plan == {}
 
 def test_naming_collision_resolution():
-    analyzer = IncrementalAnalyzer(max_folders=3)
+    analyzer = IncrementalAnalyzer(max_folders=3, stop_words={"the", "and"})
     # We want two topics to have the same primary keywords, but different term frequencies
     corpus = {
         "file1.txt": "apple banana apple banana apple orange",
