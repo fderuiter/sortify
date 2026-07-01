@@ -19,6 +19,7 @@ from app.core.db import db
 
 
 def get_file_hash(file_path: str) -> str:
+    """Calculate the SHA-256 hash of a file."""
     hasher = hashlib.sha256()
     try:
         with open(file_path, 'rb') as f:
