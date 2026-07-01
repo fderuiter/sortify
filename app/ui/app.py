@@ -14,6 +14,7 @@ from app.config import MAX_FOLDERS
 from app.core.analyzer import IncrementalAnalyzer
 from app.core.extractor import build_corpus_generator
 from app.core.mover import execute_moves
+from app.core.verifier import VerificationEngine
 
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
@@ -31,12 +32,14 @@ class AutoSorterApp(ctk.CTk):
         self.base_dir: str = ""
         self.plan: dict = {}
         self.locked_files: dict = {}
+        self.plan_errors: dict = {}
 
         self.total_files = 0
         self.completed_files = 0
         self.start_time: float = 0.0
 
         self.analyzer = None
+        self.verifier = VerificationEngine()
 
         self._debounce_timer = None
         self._update_lock = threading.Lock()
@@ -255,10 +258,12 @@ class AutoSorterApp(ctk.CTk):
 
     def _finalize_pipeline(self):
         """Execute final UI transition after all files are processed."""
+        self.plan_errors = self.verifier.verify_plan(self.base_dir, self.plan)
+        has_errors = bool(self.plan_errors)
         self.status_label.configure(
             text="AI Plan ready for review.", text_color="green"
         )
-        self.execute_btn.configure(state="normal")
+        self.execute_btn.configure(state="disabled" if has_errors else "normal")
         self.select_btn.configure(state="normal")
         self.render_tree()
 
@@ -277,20 +282,38 @@ class AutoSorterApp(ctk.CTk):
         for child in self.tree.get_children(item):
             self._save_expanded(child, expanded)
 
+    def _node_has_errors(self, plan_node):
+        if plan_node is None:
+            return False
+        for k, v in plan_node.items():
+            if v is None:
+                if k in self.plan_errors:
+                    return True
+            else:
+                if self._node_has_errors(v):
+                    return True
+        return False
+
     def _insert_nodes(self, parent_id, plan_node, expanded):
         if not isinstance(plan_node, dict):
             return
 
         for name, child_node in plan_node.items():
             if child_node is None:
+                error_msg = self.plan_errors.get(name)
+                icon = "❌ " if error_msg else "✅ "
+                text = f"{icon}{os.path.basename(name)}"
+                if error_msg:
+                    text += f" - {error_msg}"
                 self.tree.insert(
-                    parent_id, "end", iid=f"file:{name}", text=os.path.basename(name)
+                    parent_id, "end", iid=f"file:{name}", text=text
                 )
             else:
                 folder_id = f"folder:{name}" if not parent_id else f"{parent_id}/{name}"
                 count = self._count_files(child_node)
+                icon = "❌ " if self._node_has_errors(child_node) else "✅ "
                 self.tree.insert(
-                    parent_id, "end", iid=folder_id, text=f"📂 [{name}] ({count} items)"
+                    parent_id, "end", iid=folder_id, text=f"{icon}📂 [{name}] ({count} items)"
                 )
                 self._insert_nodes(folder_id, child_node, expanded)
 
@@ -344,6 +367,10 @@ class AutoSorterApp(ctk.CTk):
                 self.trigger_model_update(filename)
 
     def _update_folder_counts(self):
+        self.plan_errors = self.verifier.verify_plan(self.base_dir, self.plan)
+        has_errors = bool(self.plan_errors)
+        self.execute_btn.configure(state="disabled" if has_errors else "normal")
+        
         for item in self.tree.get_children(""):
             self._update_folder_count_recursive(item)
 
@@ -354,15 +381,25 @@ class AutoSorterApp(ctk.CTk):
                 folder_name = folder_name.split(":", 1)[1]
 
             count = 0
+            has_errors = False
             for child in self.tree.get_children(item):
                 if child.startswith("file:"):
                     count += 1
+                    file_key = child.split(":", 1)[1]
+                    if file_key in self.plan_errors:
+                        has_errors = True
                 elif child.startswith("folder:"):
-                    count += self._update_folder_count_recursive(child)
+                    c, e = self._update_folder_count_recursive(child)
+                    count += c
+                    if e:
+                        has_errors = True
 
-            self.tree.item(item, text=f"📂 [{folder_name}] ({count} items)")
-            return count
-        return 0
+            icon = "❌ " if has_errors else "✅ "
+            # Wait, previously the name was extracted like `folder_name`. Let's just strip the old icon if any.
+            # folder_name already has the icon stripped? No, `item.split("/")[-1]` gets the id which is `folder:XYZ`, so `folder_name` is `XYZ`.
+            self.tree.item(item, text=f"{icon}📂 [{folder_name}] ({count} items)")
+            return count, has_errors
+        return 0, False
 
     def trigger_model_update(self, moved_file: str):
         """Trigger an incremental update of the ML model after a file is moved."""
@@ -386,6 +423,12 @@ class AutoSorterApp(ctk.CTk):
             new_plan = self.analyzer.generate_sorting_plan()
             self._apply_locked_files(new_plan)
             self.plan = new_plan
+            
+            self.plan_errors = self.verifier.verify_plan(self.base_dir, self.plan)
+            has_errors = bool(self.plan_errors)
+            
+            # The background update might re-enable/disable the button depending on the resolution.
+            self.after(0, lambda: self.execute_btn.configure(state="disabled" if has_errors else "normal"))
 
             self.after(0, self.render_tree)
 
