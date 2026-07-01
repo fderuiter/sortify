@@ -1,9 +1,12 @@
+"""Local database management for autosorter."""
 import sqlite3
 
 import numpy as np
 
 
 class Database:
+    """SQLite database abstraction for persistent storage of document state."""
+
     CURRENT_VERSION = 1
     
     def __init__(self, db_path="autosorter.db"):
@@ -33,6 +36,7 @@ class Database:
             conn.commit()
 
     def get_document(self, base_dir, filepath):
+        """Retrieve a document by its base directory and filepath."""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.execute('SELECT file_hash, extracted_text, embedding FROM documents WHERE base_dir = ? AND filepath = ?', (base_dir, filepath))
             row = cursor.fetchone()
@@ -42,6 +46,7 @@ class Database:
             return None
 
     def upsert_document(self, base_dir, filepath, file_hash, extracted_text, embedding):
+        """Insert or update a document in the database."""
         with sqlite3.connect(self.db_path) as conn:
             if embedding is not None:
                 embedding_blob = embedding.astype(np.float32).tobytes()
@@ -58,6 +63,7 @@ class Database:
             conn.commit()
             
     def get_all_documents(self, base_dir):
+        """Retrieve all valid documents with embeddings for a given base directory."""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.execute('SELECT filepath, extracted_text, embedding FROM documents WHERE base_dir = ? AND embedding IS NOT NULL', (base_dir,))
             results = []
@@ -67,6 +73,7 @@ class Database:
             return results
 
     def clear(self):
+        """Clear all documents from the database."""
         with sqlite3.connect(self.db_path) as conn:
             conn.execute('DELETE FROM documents')
             conn.commit()
