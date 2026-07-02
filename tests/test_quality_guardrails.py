@@ -27,6 +27,16 @@ def test_semantic_quality_guardrails():
     ]
     files.sort()  # crucial for determinism
 
+    is_smoke_test = os.environ.get("SMOKE_TEST") == "1"
+    if is_smoke_test:
+        print("\nRunning in SMOKE TEST mode. Processing a 5% subset (25 documents).")
+        import random
+        random.seed(42)
+        files = random.sample(files, int(len(files) * 0.05))
+        files.sort()
+    else:
+        print("\nRunning in FULL TEST mode. Processing all 500 documents.")
+
     analyzer = IncrementalAnalyzer(max_folders=4, stop_words={"the", "and"})
     progress_callback = MagicMock()
 
@@ -53,6 +63,9 @@ def test_semantic_quality_guardrails():
     assert current_error > 0.0, (
         "Reconstruction error must be captured and greater than zero."
     )
+
+    if is_smoke_test:
+        return
 
     # Allow developers to update the baseline when algorithmic improvements are made
     update_baseline = os.environ.get("UPDATE_BASELINE") == "1"
