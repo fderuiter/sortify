@@ -62,10 +62,10 @@ def run_demo(settings):
 
         for i, chunk in enumerate(generator):
             print(f"    - Processing chunk {i + 1}...")
-            analyzer.partial_fit(chunk)
+            analyzer.partial_fit(temp_dir, chunk)
 
         print("[*] Generating sorting plan...")
-        plan = analyzer.generate_sorting_plan(settings)
+        plan = analyzer.generate_sorting_plan(temp_dir, settings)
 
         print("\n--- Generated Sorting Plan ---")
         print(json.dumps(plan, indent=2))
