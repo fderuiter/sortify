@@ -777,6 +777,7 @@ class AutoSorterApp(ctk.CTk):
         return flat
 
     def update_tree_view(self):
+        """Update the visible portion of the tree view based on scroll position."""
         self.tree.delete(*self.tree.get_children())
         total = len(self.flat_plan)
         if total == 0:
@@ -792,9 +793,11 @@ class AutoSorterApp(ctk.CTk):
                 icon = "❌ " if error_msg else "✅ "
                 display_name = item["node"].get("target_filename", item["name"]) if isinstance(item["node"], dict) else item["name"]
                 text = f"{indent}{icon}{display_name}"
-                if error_msg: text += f" - {error_msg}"
+                if error_msg:
+                    text += f" - {error_msg}"
                 status = item["node"].get("status", "Pending Move") if isinstance(item["node"], dict) else "Pending Move"
-                if status == "Already Sorted": text += " [Already Sorted]"
+                if status == "Already Sorted":
+                    text += " [Already Sorted]"
                 
                 self.tree.insert("", "end", iid=item["id"], text=text)
             else:
@@ -830,6 +833,7 @@ class AutoSorterApp(ctk.CTk):
         return 0
 
     def on_scroll(self, *args):
+        """Handle scroll events for the virtualized tree view."""
         if not self.flat_plan:
             return
         total = len(self.flat_plan)
@@ -842,6 +846,7 @@ class AutoSorterApp(ctk.CTk):
         self.update_tree_view()
 
     def on_mouse_wheel(self, event):
+        """Handle mouse wheel scroll events for the tree view."""
         if not self.flat_plan:
             return
         if event.num == 4 or event.delta > 0:
@@ -855,6 +860,7 @@ class AutoSorterApp(ctk.CTk):
         return "break"
 
     def on_tree_click(self, event):
+        """Handle click events on the tree view, expanding or collapsing folders."""
         item = self.tree.identify_row(event.y)
         if not item:
             return
@@ -866,6 +872,7 @@ class AutoSorterApp(ctk.CTk):
             self.render_tree()
 
     def get_node_parent(self, item_id):
+        """Retrieve the parent ID for a given node ID in the flattened plan."""
         for x in self.flat_plan:
             if x["id"] == item_id:
                 return x["parent_id"]
