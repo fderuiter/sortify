@@ -131,6 +131,7 @@ class SettingsView(ctk.CTkFrame):
         self.token_widget.pack(fill="both", expand=True, padx=20, pady=(0, 20))
         
     def update_ai_status(self):
+        """Update the AI model status UI based on model presence."""
         from app.config import get_app_dir
         model_dir = get_app_dir() / "model"
         if (model_dir / "config.json").exists():
@@ -141,6 +142,7 @@ class SettingsView(ctk.CTkFrame):
             self.ai_btn.configure(state="normal", text="Download AI Model")
 
     def download_ai_model(self):
+        """Launch the setup wizard to download the AI model."""
         from app.ui.wizard import SetupWizard
         
         def on_complete():
