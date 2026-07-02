@@ -1,0 +1,286 @@
+import sqlite3
+import json
+import uuid
+import os
+import time
+import logging
+import shutil
+from typing import List, Dict, Any
+
+from app.config import get_app_dir
+from app.core.db import db as db_instance
+
+class HistoryManager:
+    """Manages full directory snapshots and rollback functionality."""
+    
+    def __init__(self, db_path=None):
+        self.db_path = db_path or str(get_app_dir() / "history.db")
+        self._init_db()
+
+    def _init_db(self):
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS sessions (
+                    session_id TEXT PRIMARY KEY,
+                    timestamp REAL,
+                    base_dir TEXT,
+                    status TEXT
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS snapshot_files (
+                    session_id TEXT,
+                    original_rel_path TEXT,
+                    inode INTEGER,
+                    size INTEGER,
+                    mtime REAL,
+                    FOREIGN KEY(session_id) REFERENCES sessions(session_id)
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS snapshot_cache (
+                    session_id TEXT PRIMARY KEY,
+                    corpus TEXT,
+                    locked_files TEXT,
+                    index_to_word TEXT,
+                    manual_folders TEXT,
+                    FOREIGN KEY(session_id) REFERENCES sessions(session_id)
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS snapshot_documents (
+                    session_id TEXT,
+                    filepath TEXT,
+                    file_hash TEXT,
+                    extracted_text TEXT,
+                    embedding BLOB,
+                    FOREIGN KEY(session_id) REFERENCES sessions(session_id)
+                )
+            """)
+            conn.commit()
+
+    def create_snapshot(self, base_dir: str) -> str:
+        """Create a complete snapshot of the directory tree and its metadata."""
+        session_id = str(uuid.uuid4())
+        timestamp = time.time()
+
+        from app.core.scanner import get_files_recursively
+        files = get_files_recursively(base_dir)
+
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                "INSERT INTO sessions (session_id, timestamp, base_dir, status) VALUES (?, ?, ?, ?)",
+                (session_id, timestamp, base_dir, "active")
+            )
+            
+            # 1. Snapshot Files
+            file_records = []
+            for rel_path in files:
+                abs_path = os.path.join(base_dir, rel_path)
+                try:
+                    st = os.stat(abs_path)
+                    file_records.append((session_id, rel_path, st.st_ino, st.st_size, st.st_mtime))
+                except OSError:
+                    continue
+            if file_records:
+                conn.executemany(
+                    "INSERT INTO snapshot_files (session_id, original_rel_path, inode, size, mtime) VALUES (?, ?, ?, ?, ?)",
+                    file_records
+                )
+
+            # 2. Snapshot Cache
+            from app.core.cache import _get_conn as get_cache_conn
+            cache_conn = get_cache_conn()
+            cur = cache_conn.execute(
+                "SELECT corpus, locked_files, index_to_word, manual_folders FROM directory_cache WHERE source_directory = ?",
+                (base_dir,)
+            )
+            row = cur.fetchone()
+            cache_conn.close()
+            if row:
+                conn.execute(
+                    "INSERT INTO snapshot_cache (session_id, corpus, locked_files, index_to_word, manual_folders) VALUES (?, ?, ?, ?, ?)",
+                    (session_id, row[0], row[1], row[2], row[3])
+                )
+
+            # 3. Snapshot DB
+            docs = []
+            with sqlite3.connect(db_instance.db_path) as db_conn:
+                cur = db_conn.execute(
+                    "SELECT filepath, file_hash, extracted_text, embedding FROM documents WHERE base_dir = ?",
+                    (base_dir,)
+                )
+                for r in cur.fetchall():
+                    docs.append((session_id, r[0], r[1], r[2], r[3]))
+            if docs:
+                conn.executemany(
+                    "INSERT INTO snapshot_documents (session_id, filepath, file_hash, extracted_text, embedding) VALUES (?, ?, ?, ?, ?)",
+                    docs
+                )
+            
+            # Prune old snapshots to prevent excessive growth (keep last 10)
+            self._prune_snapshots(conn, limit=10)
+            
+            conn.commit()
+
+        return session_id
+
+    def _prune_snapshots(self, conn, limit=10):
+        cur = conn.execute("SELECT session_id FROM sessions ORDER BY timestamp DESC LIMIT -1 OFFSET ?", (limit,))
+        old_sessions = [row[0] for row in cur.fetchall()]
+        for sid in old_sessions:
+            conn.execute("DELETE FROM snapshot_files WHERE session_id = ?", (sid,))
+            conn.execute("DELETE FROM snapshot_cache WHERE session_id = ?", (sid,))
+            conn.execute("DELETE FROM snapshot_documents WHERE session_id = ?", (sid,))
+            conn.execute("DELETE FROM sessions WHERE session_id = ?", (sid,))
+
+    def get_sessions(self) -> List[Dict[str, Any]]:
+        with sqlite3.connect(self.db_path) as conn:
+            cur = conn.execute("SELECT session_id, timestamp, base_dir, status FROM sessions ORDER BY timestamp DESC")
+            return [{"session_id": r[0], "timestamp": r[1], "base_dir": r[2], "status": r[3]} for r in cur.fetchall()]
+
+    def check_missing_files(self, session_id: str) -> List[str]:
+        """Check if any files from the snapshot are missing from the disk."""
+        with sqlite3.connect(self.db_path) as conn:
+            cur = conn.execute("SELECT base_dir FROM sessions WHERE session_id = ?", (session_id,))
+            row = cur.fetchone()
+            if not row:
+                raise ValueError("Session not found")
+            base_dir = row[0]
+
+            cur = conn.execute("SELECT original_rel_path, inode, size, mtime FROM snapshot_files WHERE session_id = ?", (session_id,))
+            snapshot_files = cur.fetchall()
+
+        from app.core.scanner import get_files_recursively
+        current_files = get_files_recursively(base_dir)
+        
+        current_inodes = set()
+        current_sigs = set()
+        for rel_path in current_files:
+            abs_path = os.path.join(base_dir, rel_path)
+            try:
+                st = os.stat(abs_path)
+                current_inodes.add(st.st_ino)
+                current_sigs.add((st.st_size, st.st_mtime))
+            except OSError:
+                continue
+
+        missing = []
+        for rel_path, inode, size, mtime in snapshot_files:
+            # First check if the original path still exists with the same file
+            # or if the file exists *anywhere* in the base_dir
+            if inode in current_inodes:
+                continue
+            if (size, mtime) in current_sigs:
+                continue
+            missing.append(rel_path)
+
+        return missing
+
+    def rollback(self, session_id: str, ignore_missing: bool = False):
+        """Revert directory and metadata state to the snapshot."""
+        missing = self.check_missing_files(session_id)
+        if missing and not ignore_missing:
+            raise ValueError(f"Cannot rollback: {len(missing)} files from the snapshot are missing from the disk (e.g., {missing[0]}).")
+
+        with sqlite3.connect(self.db_path) as conn:
+            cur = conn.execute("SELECT base_dir FROM sessions WHERE session_id = ?", (session_id,))
+            row = cur.fetchone()
+            if not row:
+                raise ValueError("Session not found")
+            base_dir = row[0]
+
+            cur = conn.execute("SELECT original_rel_path, inode, size, mtime FROM snapshot_files WHERE session_id = ?", (session_id,))
+            snapshot_files = cur.fetchall()
+
+            from app.core.scanner import get_files_recursively
+            current_files = get_files_recursively(base_dir)
+            current_inodes = {}
+            current_sigs = {}
+            for rel_path in current_files:
+                abs_path = os.path.join(base_dir, rel_path)
+                try:
+                    st = os.stat(abs_path)
+                    current_inodes[st.st_ino] = abs_path
+                    current_sigs[(st.st_size, st.st_mtime)] = abs_path
+                except OSError:
+                    continue
+
+            # First compute all intended moves
+            moves = []
+            for rel_path, inode, size, mtime in snapshot_files:
+                target_abs = os.path.join(base_dir, rel_path)
+                current_abs = current_inodes.get(inode) or current_sigs.get((size, mtime))
+                if current_abs:
+                    if os.path.exists(current_abs) and not os.path.samefile(current_abs, target_abs) if os.path.exists(target_abs) else True:
+                        if current_abs != target_abs:
+                            moves.append((current_abs, target_abs))
+
+            # Execute moves safely to avoid overwriting during cyclic renames
+            temp_moves = []
+            for src, dst in moves:
+                os.makedirs(os.path.dirname(dst), exist_ok=True)
+                if os.path.exists(dst) and not os.path.samefile(src, dst):
+                    # Collision: move existing target out of the way temporarily
+                    temp_dst = dst + f".tmp.{uuid.uuid4().hex}"
+                    shutil.move(dst, temp_dst)
+                    # The file that was at dst is now at temp_dst. 
+                    # If this file is also part of our 'moves', we need to update its src in the 'moves' list.
+                    for i, (m_src, m_dst) in enumerate(moves):
+                        if m_src == dst:
+                            moves[i] = (temp_dst, m_dst)
+                    shutil.move(src, dst)
+                else:
+                    if not os.path.exists(dst):
+                        shutil.move(src, dst)
+
+            # Clean empty directories
+            from app.core.mover import _remove_empty_dirs
+            for entry in os.listdir(base_dir):
+                entry_path = os.path.join(base_dir, entry)
+                if os.path.isdir(entry_path):
+                    _remove_empty_dirs(entry_path)
+
+            # Restore Cache
+            cur = conn.execute("SELECT corpus, locked_files, index_to_word, manual_folders FROM snapshot_cache WHERE session_id = ?", (session_id,))
+            row = cur.fetchone()
+            from app.core.cache import _get_conn as get_cache_conn
+            cache_conn = get_cache_conn()
+            if row:
+                cache_conn.execute(
+                    """
+                    INSERT INTO directory_cache (source_directory, corpus, locked_files, index_to_word, manual_folders)
+                    VALUES (?, ?, ?, ?, ?)
+                    ON CONFLICT(source_directory) DO UPDATE SET
+                        corpus=excluded.corpus,
+                        locked_files=excluded.locked_files,
+                        index_to_word=excluded.index_to_word,
+                        manual_folders=excluded.manual_folders
+                    """,
+                    (base_dir, row[0], row[1], row[2], row[3])
+                )
+            else:
+                cache_conn.execute("DELETE FROM directory_cache WHERE source_directory = ?", (base_dir,))
+            cache_conn.commit()
+            cache_conn.close()
+
+            # Restore DB
+            with sqlite3.connect(db_instance.db_path) as db_conn:
+                db_conn.execute("DELETE FROM documents WHERE base_dir = ?", (base_dir,))
+                cur = conn.execute("SELECT filepath, file_hash, extracted_text, embedding FROM snapshot_documents WHERE session_id = ?", (session_id,))
+                docs = cur.fetchall()
+                if docs:
+                    insert_docs = [(base_dir, r[0], r[1], r[2], r[3]) for r in docs]
+                    db_conn.executemany(
+                        """
+                        INSERT INTO documents (base_dir, filepath, file_hash, extracted_text, embedding)
+                        VALUES (?, ?, ?, ?, ?)
+                        """,
+                        insert_docs
+                    )
+                db_conn.commit()
+
+            conn.execute("UPDATE sessions SET status = 'rolled_back' WHERE session_id = ?", (session_id,))
+            conn.commit()
+
+history_manager = HistoryManager()
