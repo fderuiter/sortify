@@ -38,7 +38,9 @@ def analyze_all():
     if not os.path.exists(SANDBOX_DIR):
         print("Sandbox dataset not found. Run reset first.")
         return
-    analyzer = IncrementalAnalyzer(max_folders=5)
+    analyzer = IncrementalAnalyzer(
+        max_folders=5, stop_words={"the", "and", "a", "an", "is"}
+    )
     corpus = {}
     for filename in os.listdir(SANDBOX_DIR):
         filepath = os.path.join(SANDBOX_DIR, filename)
@@ -46,8 +48,8 @@ def analyze_all():
             text = extract_file_text(filepath)
             corpus[filepath] = f"{filename} {text}"
 
-    analyzer.partial_fit(corpus)
-    plan = analyzer.generate_sorting_plan()
+    analyzer.partial_fit(SANDBOX_DIR, corpus)
+    plan = analyzer.generate_sorting_plan(SANDBOX_DIR)
     import json
 
     print("--- Analysis Sorting Plan ---")

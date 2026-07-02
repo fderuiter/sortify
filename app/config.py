@@ -9,7 +9,7 @@ import os
 import sys
 import threading
 from pathlib import Path
-from typing import Set, Union
+from typing import Set
 
 from pydantic import Field, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -30,8 +30,6 @@ class Settings(BaseSettings):
     MAX_WORKERS: int = Field(default=15, gt=0)
     MAX_DEPTH: int = Field(default=5, gt=0)
     MAX_FEATURES: int = Field(default=3, gt=0)
-    MIN_DF: Union[int, float] = Field(default=2, ge=0)
-    MAX_DF: float = Field(default=0.85, ge=0, le=1)
     LOG_FILE: str = Field(default=str(get_app_dir() / "autosorter.log"), min_length=1)
     STOP_WORDS: set[str] = {
         "the",
@@ -134,8 +132,6 @@ class AppSettings:
                 "MAX_WORKERS",
                 "MAX_DEPTH",
                 "MAX_FEATURES",
-                "MIN_DF",
-                "MAX_DF",
                 "LOG_FILE",
                 "CONTEXTUAL_RENAMING",
                 "PRESERVE_HIERARCHY",
@@ -174,8 +170,6 @@ class AppSettings:
                 "MAX_WORKERS": self._settings_model.MAX_WORKERS,
                 "MAX_DEPTH": self._settings_model.MAX_DEPTH,
                 "MAX_FEATURES": self._settings_model.MAX_FEATURES,
-                "MIN_DF": self._settings_model.MIN_DF,
-                "MAX_DF": self._settings_model.MAX_DF,
                 "LOG_FILE": self._settings_model.LOG_FILE,
                 "STOP_WORDS": list(self._settings_model.STOP_WORDS),
             }
@@ -243,26 +237,6 @@ class AppSettings:
     @MAX_FEATURES.setter
     def MAX_FEATURES(self, value: int):
         self._settings_model.MAX_FEATURES = value
-        self._trigger_save()
-
-    @property
-    def MIN_DF(self) -> Union[int, float]:
-        """Get the minimum document frequency."""
-        return self._settings_model.MIN_DF
-
-    @MIN_DF.setter
-    def MIN_DF(self, value: Union[int, float]):
-        self._settings_model.MIN_DF = value
-        self._trigger_save()
-
-    @property
-    def MAX_DF(self) -> float:
-        """Get the maximum document frequency."""
-        return self._settings_model.MAX_DF
-
-    @MAX_DF.setter
-    def MAX_DF(self, value: Union[int, float]):
-        self._settings_model.MAX_DF = value
         self._trigger_save()
 
     @property

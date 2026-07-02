@@ -10,15 +10,34 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 
 class ClusteringStrategy(Protocol):
     """Protocol for defining document clustering strategies."""
-    
-    def generate_plan(self, filenames: List[str], documents: List[str], embeddings: List[np.ndarray], max_folders: int, stop_words: set, max_depth: int = 5, max_features: int = 3) -> tuple[dict, float]:
+
+    def generate_plan(
+        self,
+        filenames: List[str],
+        documents: List[str],
+        embeddings: List[np.ndarray],
+        max_folders: int,
+        stop_words: set,
+        max_depth: int = 5,
+        max_features: int = 3,
+    ) -> tuple[dict, float]:
         """Return the clustering plan and the total reconstruction error."""
         ...
 
+
 class RecursiveKMeansStrategy:
     """Strategy that uses recursive KMeans to cluster documents."""
-    
-    def generate_plan(self, filenames: List[str], documents: List[str], embeddings: List[np.ndarray], max_folders: int, stop_words: set, max_depth: int = 5, max_features: int = 3) -> tuple[dict, float]:
+
+    def generate_plan(
+        self,
+        filenames: List[str],
+        documents: List[str],
+        embeddings: List[np.ndarray],
+        max_folders: int,
+        stop_words: set,
+        max_depth: int = 5,
+        max_features: int = 3,
+    ) -> tuple[dict, float]:
         """Return a hierarchical clustering plan and error using KMeans."""
         self.stop_words = stop_words
         self.max_folders = max_folders
@@ -32,12 +51,14 @@ class RecursiveKMeansStrategy:
         if not documents:
             return "Miscellaneous"
         try:
-            vectorizer = TfidfVectorizer(stop_words=list(self.stop_words), max_features=self.max_features)
+            vectorizer = TfidfVectorizer(
+                stop_words=list(self.stop_words), max_features=self.max_features
+            )
             X = vectorizer.fit_transform(documents)
             feature_names = vectorizer.get_feature_names_out()
             if len(feature_names) == 0:
                 return "Miscellaneous"
-            
+
             scores = np.asarray(X.sum(axis=0)).ravel()
             top_indices = scores.argsort()[::-1][:2]
             top_terms = [feature_names[i].capitalize() for i in top_indices]
@@ -45,9 +66,11 @@ class RecursiveKMeansStrategy:
         except Exception:
             return "Miscellaneous"
 
-    def _cluster_recursive(self, filenames: list, documents: list, embeddings: list, depth: int) -> dict:
+    def _cluster_recursive(
+        self, filenames: list, documents: list, embeddings: list, depth: int
+    ) -> dict:
         plan = {}
-        
+
         if depth >= self.max_depth or len(documents) < 3:
             for f in filenames:
                 plan[f] = None
@@ -70,7 +93,7 @@ class RecursiveKMeansStrategy:
             sub_filenames = [item[0] for item in group]
             sub_documents = [item[1] for item in group]
             sub_embeddings = [item[2] for item in group]
-            
+
             folder_name = self._get_cluster_keywords(sub_documents)
 
             if len(group) == len(documents):
@@ -79,15 +102,17 @@ class RecursiveKMeansStrategy:
                         plan[folder_name] = {}
                     plan[folder_name][f] = None
             else:
-                sub_plan = self._cluster_recursive(sub_filenames, sub_documents, sub_embeddings, depth + 1)
-                
+                sub_plan = self._cluster_recursive(
+                    sub_filenames, sub_documents, sub_embeddings, depth + 1
+                )
+
                 def deep_update(d, u):
                     for k, v in u.items():
                         if isinstance(v, dict) and k in d and isinstance(d[k], dict):
                             deep_update(d[k], v)
                         else:
                             d[k] = v
-                            
+
                 if folder_name not in plan:
                     plan[folder_name] = sub_plan
                 else:
@@ -95,9 +120,10 @@ class RecursiveKMeansStrategy:
 
         return plan
 
+
 class ClusteringRegistry:
     """Registry for managing and resolving clustering strategies by name."""
-    
+
     def __init__(self):
         """Initialize the clustering registry with an empty strategy map."""
         self._strategies = {}
@@ -109,6 +135,7 @@ class ClusteringRegistry:
     def get_strategy(self, name: str) -> ClusteringStrategy:
         """Retrieve a clustering strategy by name."""
         return self._strategies.get(name)
+
 
 clustering_registry = ClusteringRegistry()
 clustering_registry.register("default", RecursiveKMeansStrategy())

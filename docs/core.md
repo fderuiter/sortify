@@ -13,8 +13,8 @@ The system uses a two-phase pipeline to convert documents into structured sortin
 
 2. **Analysis (`app.core.analyzer`)**:
     - Extracted text chunks are fed incrementally into the `IncrementalAnalyzer`.
-    - A `HashingVectorizer` transforms the text into numerical feature vectors.
-    - `MiniBatchNMF` (Non-negative Matrix Factorization) is used to perform incremental topic modeling.
+    - `SentenceTransformer` transforms the text into dense numerical embeddings.
+    - `KMeans` is used to perform incremental topic modeling.
     - Finally, a recursive clustering function creates a hierarchical sorting plan based on the dominant topics, identifying sub-topics where appropriate.
 
 ## Verifier Logic
@@ -29,7 +29,3 @@ Before any files are moved, the `app.core.verifier` ensures the sorting plan is 
 
 ## Module Definitions
 
-::: app.core.extractor
-::: app.core.analyzer
-::: app.core.mover
-::: app.core.verifier

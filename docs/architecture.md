@@ -9,7 +9,7 @@ graph TD
     A[Directory Selection] --> B[File Extraction & Generator]
     B --> C[Chunked Yielding]
     C --> D[Incremental Analyzer (partial_fit)]
-    D --> E[MiniBatchNMF Clustering]
+    D --> E[SentenceTransformers & KMeans Clustering]
     E --> F[Recursive Topic Grouping]
     F --> G[Generate Sorting Plan]
     G --> H[UI Tree Rendering]
@@ -19,15 +19,12 @@ graph TD
 When a directory is selected, `build_corpus_generator` scans and extracts text from supported files (PDFs, DOCX, CSV, Excel, TXT).
 
 ### 2. ML Clustering & Recursive Analysis
-The `IncrementalAnalyzer` processes files using `HashingVectorizer` and `MiniBatchNMF`.
+::: app.core.analyzer.IncrementalAnalyzer
 
-**Core ML Constraints:**
-- **Minimum Documents:** A cluster requires a **minimum of 3 documents** to be split. If fewer documents are available, clustering terminates.
-- **Recursion Depth:** The algorithm stops subdividing groups when a **5-level recursion limit** is reached. At the top level (depth 1), fallback files go to the "Miscellaneous" folder.
-- **Word Constraints:** The system explicitly **ignores words with fewer than 3 characters** during vocabulary building and analysis.
+::: app.core.analyzer_strategies.RecursiveKMeansStrategy
 
 ### 3. Folder Naming Logic
-Folder names are generated dynamically using `MiniBatchNMF` components. The folder naming logic selects the top 2 terms for each topic and concatenates them with a hyphen (e.g., `Finance-Money`). Words are capitalized based on a reverse lookup from the HashingVectorizer indices.
+Folder names are generated dynamically using KMeans components. The folder naming logic selects the top 2 terms for each topic and concatenates them with a hyphen (e.g., `Finance-Money`). Words are capitalized based on a TF-IDF vectorizer of the cluster documents.
 
 ## Threading Model & UI Responsiveness
 
