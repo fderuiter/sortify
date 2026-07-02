@@ -104,6 +104,26 @@ class SettingsView(ctk.CTkFrame):
         )
         desc.pack(padx=20, pady=(0, 10), anchor="w")
 
+        # Cleanup Section
+        self.cleanup_frame = ctk.CTkFrame(self, fg_color="transparent")
+        self.cleanup_frame.pack(fill="x", padx=20, pady=(0, 10))
+        
+        cleanup_title = ctk.CTkLabel(
+            self.cleanup_frame, text="File Operations", font=("Roboto", 16, "bold")
+        )
+        cleanup_title.pack(anchor="w", pady=(0, 5))
+        
+        self.cleanup_switch = ctk.CTkSwitch(
+            self.cleanup_frame, 
+            text="Cleanup Empty Folders", 
+            command=self._on_cleanup_toggled
+        )
+        self.cleanup_switch.pack(anchor="w")
+        if getattr(self.settings, "CLEANUP_EMPTY_FOLDERS", True):
+            self.cleanup_switch.select()
+        else:
+            self.cleanup_switch.deselect()
+
         # Privacy Section
         self.privacy_frame = ctk.CTkFrame(self, fg_color="transparent")
         self.privacy_frame.pack(fill="x", padx=20, pady=(0, 10))
@@ -130,6 +150,9 @@ class SettingsView(ctk.CTkFrame):
         )
         self.token_widget.pack(fill="both", expand=True, padx=20, pady=(0, 20))
         
+    def _on_cleanup_toggled(self):
+        self.settings.CLEANUP_EMPTY_FOLDERS = bool(self.cleanup_switch.get())
+
     def update_ai_status(self):
         """Update the AI model status UI based on model presence."""
         from app.config import get_app_dir
