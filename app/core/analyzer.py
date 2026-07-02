@@ -61,8 +61,8 @@ class IncrementalAnalyzer:
             if not texts:
                 return
 
-            import pickle
             import hashlib
+            import pickle
             
             CACHE_FILE = ".embeddings_cache.pkl"
             cache = {}
