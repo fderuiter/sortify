@@ -79,7 +79,7 @@ class IncrementalAnalyzer:
         self.stop_words = new_stop_words
 
     def _inject_hierarchy(self, node: dict) -> dict:
-        """Transforms a flat mapping of files into a nested folder structure based on relative paths."""
+        """Transform a flat mapping of files into a nested folder structure based on relative paths."""
         if not isinstance(node, dict) or node.get("__type__") == "file":
             return node
             
