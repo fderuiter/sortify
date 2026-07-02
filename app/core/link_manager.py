@@ -1,5 +1,6 @@
 """Link management module."""
 import os
+from pathlib import Path
 
 try:
     import pylnk3
@@ -16,10 +17,11 @@ class LinkManager:
     def register_link(cls, base_dir: str, rel_path: str):
         """Identify and store the link's target if it's a symlink or .lnk file."""
         full_path = os.path.join(base_dir, rel_path)
+        posix_path = Path(full_path).as_posix()
         if os.path.islink(full_path):
             try:
                 target = os.readlink(full_path)
-                cls._registry[full_path] = {"type": "symlink", "target": target}
+                cls._registry[posix_path] = {"type": "symlink", "target": target}
             except OSError:
                 pass
         elif full_path.lower().endswith(".lnk"):
@@ -28,7 +30,7 @@ class LinkManager:
                     lnk = pylnk3.parse(full_path)
                     target = lnk.path
                     if target:
-                        cls._registry[full_path] = {"type": "lnk", "target": target}
+                        cls._registry[posix_path] = {"type": "lnk", "target": target}
                 except Exception:
                     pass
 
