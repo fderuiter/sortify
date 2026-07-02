@@ -4,14 +4,16 @@ import sqlite3
 
 import numpy as np
 
+from app.config import get_app_dir
+
 
 class Database:
     """SQLite database abstraction for persistent storage of document state."""
 
     CURRENT_VERSION = 1
 
-    def __init__(self, db_path="autosorter.db"):
-        self.db_path = db_path
+    def __init__(self, db_path=None):
+        self.db_path = db_path or str(get_app_dir() / "autosorter.db")
         self._init_db()
 
     def _init_db(self):
