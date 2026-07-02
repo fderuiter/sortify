@@ -1,26 +1,7 @@
 [
   {
     "iid": "folder:Work",
-    "text": "\u2705 \ud83d\udcc2 [Work] (1 moves)",
-    "children": [
-      {
-        "iid": "folder:Work/Projects",
-        "text": "\u2705 \ud83d\udcc2 [Projects] (1 moves)",
-        "children": [
-          {
-            "iid": "folder:Work/Projects/Project Alpha",
-            "text": "\u2705 \ud83d\udcc2 [Project Alpha] (1 moves)",
-            "children": [
-              {
-                "iid": "file:spec.docx",
-                "text": "\u2705 spec.docx",
-                "children": []
-              }
-            ]
-          }
-        ]
-      }
-    ],
-    "open": true
+    "text": "\u25b6 \u2705 \ud83d\udcc2 [Work] (1 moves)",
+    "children": []
   }
 ]

@@ -1,19 +1,7 @@
 [
   {
     "iid": "folder:Documents",
-    "text": "\u2705 \ud83d\udcc2 [Documents] (1 moves)",
-    "children": [
-      {
-        "iid": "file:report.txt",
-        "text": "\u2705 report.txt",
-        "children": []
-      },
-      {
-        "iid": "file:secret.txt",
-        "text": "\u2705 secret_override.txt [Already Sorted]",
-        "children": []
-      }
-    ],
-    "open": true
+    "text": "\u25b6 \u2705 \ud83d\udcc2 [Documents] (1 moves)",
+    "children": []
   }
 ]

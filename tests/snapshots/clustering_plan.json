@@ -1,29 +1,12 @@
 [
   {
     "iid": "folder:Finance Reports",
-    "text": "\u2705 \ud83d\udcc2 [Finance Reports] (2 moves)",
-    "children": [
-      {
-        "iid": "file:q1_report.pdf",
-        "text": "\u2705 q1_report.pdf",
-        "children": []
-      },
-      {
-        "iid": "file:q2_report.pdf",
-        "text": "\u2705 q2_report.pdf",
-        "children": []
-      }
-    ]
+    "text": "\u25b6 \u2705 \ud83d\udcc2 [Finance Reports] (2 moves)",
+    "children": []
   },
   {
     "iid": "folder:Images",
-    "text": "\u2705 \ud83d\udcc2 [Images] (1 moves)",
-    "children": [
-      {
-        "iid": "file:vacation.jpg",
-        "text": "\u2705 vacation.jpg",
-        "children": []
-      }
-    ]
+    "text": "\u25b6 \u2705 \ud83d\udcc2 [Images] (1 moves)",
+    "children": []
   }
 ]
