@@ -4,17 +4,13 @@ This module provides utilities to read text from various file formats.
 """
 
 import concurrent.futures
-import csv
 import hashlib
 import logging
 import os
 from typing import Callable, Tuple
 
-import pandas as pd
-import pypdf
-from docx import Document
-
 from app.core.db import db
+from app.core.extractor_strategies import registry
 
 
 def get_file_hash(file_path: str) -> str:
@@ -34,24 +30,9 @@ def extract_file_text(file_path: str) -> str:
     ext = os.path.splitext(file_path)[1].lower()
     text = ""
     try:
-        if ext == ".txt":
-            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                text = f.read()
-        elif ext == ".docx":
-            doc = Document(file_path)
-            text = "\n".join([p.text for p in doc.paragraphs])
-        elif ext == ".csv":
-            with open(file_path, newline="", encoding="utf-8", errors="ignore") as f:
-                reader = csv.reader(f)
-                text = " ".join([" ".join(row) for row in reader])
-        elif ext in [".xlsx", ".xls"]:
-            df = pd.read_excel(file_path)
-            text = df.to_string()
-        elif ext == ".pdf":
-            with open(file_path, "rb") as f:
-                reader = pypdf.PdfReader(f)
-                for page in reader.pages:
-                    text += page.extract_text() or ""
+        extractor = registry.get_extractor(ext)
+        if extractor:
+            text = extractor.extract(file_path)
     except Exception as e:
         logging.error(
             f"Failed to extract text from {file_path}. Error: {str(e)}", exc_info=True

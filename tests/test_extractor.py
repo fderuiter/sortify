@@ -25,7 +25,7 @@ def test_extract_txt(mock_txt_file):
 
 def test_extract_docx(mocker):
     mocker.patch("os.path.splitext", return_value=("file", ".docx"))
-    mock_doc = mocker.patch("app.core.extractor.Document")
+    mock_doc = mocker.patch("app.core.extractor_strategies.Document")
     mock_instance = mock_doc.return_value
     mock_instance.paragraphs = [
         MagicMock(text="Paragraph 1"),
@@ -40,7 +40,7 @@ def test_extract_csv(mocker):
     mocker.patch("os.path.splitext", return_value=("file", ".csv"))
     mocker.patch("builtins.open", mocker.mock_open(read_data="col1,col2\nval1,val2"))
     mocker.patch(
-        "app.core.extractor.csv.reader",
+        "app.core.extractor_strategies.csv.reader",
         return_value=[["col1", "col2"], ["val1", "val2"]],
     )
 
@@ -50,7 +50,7 @@ def test_extract_csv(mocker):
 
 def test_extract_excel(mocker):
     mocker.patch("os.path.splitext", return_value=("file", ".xlsx"))
-    mock_pd = mocker.patch("app.core.extractor.pd.read_excel")
+    mock_pd = mocker.patch("app.core.extractor_strategies.pd.read_excel")
     mock_df = mock_pd.return_value
     mock_df.to_string.return_value = "Excel content"
 
@@ -61,7 +61,7 @@ def test_extract_excel(mocker):
 def test_extract_pdf(mocker):
     mocker.patch("os.path.splitext", return_value=("file", ".pdf"))
     mocker.patch("builtins.open", mocker.mock_open())
-    mock_pdf = mocker.patch("app.core.extractor.pypdf.PdfReader")
+    mock_pdf = mocker.patch("app.core.extractor_strategies.pypdf.PdfReader")
     mock_instance = mock_pdf.return_value
     mock_page = MagicMock()
     mock_page.extract_text.return_value = "PDF text"
