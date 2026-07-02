@@ -31,5 +31,7 @@ jobs:
         uv run --all-extras ruff check .
         
     - name: Test with pytest
+      env:
+        SMOKE_TEST: "1"
       run: |
         uv run --all-extras pytest tests/
