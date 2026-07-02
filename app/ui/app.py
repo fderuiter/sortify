@@ -61,9 +61,18 @@ class AutoSorterApp(ctk.CTk):
         self.main_frame = ctk.CTkFrame(self, fg_color="transparent")
         self.settings_frame = ctk.CTkFrame(self, fg_color="transparent")
         
+        self._build_menu()
+        
         self._build_main_ui()
         self._build_settings_ui()
         self.show_main_view()
+
+    def _build_menu(self):
+        menubar = tk.Menu(self)
+        control_menu = tk.Menu(menubar, tearoff=0)
+        control_menu.add_command(label="Settings & Limits", command=self.show_settings_modal)
+        menubar.add_cascade(label="Control Center", menu=control_menu)
+        self.config(menu=menubar)
 
     def _build_main_ui(self):
 
@@ -145,7 +154,7 @@ class AutoSorterApp(ctk.CTk):
             from app.core.cache import save_cache_sync
             self.status_label.configure(text="Saving cache...", text_color="yellow")
             self.update()
-            save_cache_sync(self.base_dir, self.analyzer.corpus, self.locked_files, self.analyzer.index_to_word)
+            save_cache_sync(self.base_dir, self.analyzer.corpus, self.locked_files, self.analyzer.index_to_word, self.manual_folders)
         self.destroy()
 
     def _build_settings_ui(self):
@@ -212,35 +221,83 @@ class AutoSorterApp(ctk.CTk):
     def show_settings_modal(self) -> None:
         """Display a settings modal to configure dynamic limits."""
         settings_window = ctk.CTkToplevel(self)
-        settings_window.title("Settings")
-        settings_window.geometry("400x300")
+        settings_window.title("Control Center")
+        settings_window.geometry("500x650")
         settings_window.transient(self)
         settings_window.grab_set()
 
-        ctk.CTkLabel(settings_window, text="Max Folders:", font=("Roboto", 14)).pack(pady=(20, 5))
-        folders_slider = ctk.CTkSlider(settings_window, from_=2, to=30, number_of_steps=28)
-        folders_slider.set(self.settings.MAX_FOLDERS)
-        folders_slider.pack(pady=5)
-        
-        folders_val = ctk.CTkLabel(settings_window, text=str(self.settings.MAX_FOLDERS))
-        folders_val.pack()
-        folders_slider.configure(command=lambda v: folders_val.configure(text=str(int(v))))
+        frame = ctk.CTkScrollableFrame(settings_window)
+        frame.pack(fill="both", expand=True, padx=10, pady=10)
 
-        ctk.CTkLabel(settings_window, text="Max Background Workers:", font=("Roboto", 14)).pack(pady=(15, 5))
-        workers_slider = ctk.CTkSlider(settings_window, from_=1, to=32, number_of_steps=31)
-        workers_slider.set(self.settings.MAX_WORKERS)
-        workers_slider.pack(pady=5)
+        def create_slider_group(parent, label_text, from_val, to_val, num_steps, initial_val):
+            ctk.CTkLabel(parent, text=label_text, font=("Roboto", 14)).pack(pady=(10, 0))
+            
+            row = ctk.CTkFrame(parent, fg_color="transparent")
+            row.pack(fill="x", pady=5)
+            
+            slider = ctk.CTkSlider(row, from_=from_val, to=to_val, number_of_steps=num_steps)
+            slider.set(initial_val)
+            slider.pack(side="left", fill="x", expand=True, padx=(0, 10))
+            
+            entry_var = tk.StringVar(value=str(int(initial_val)))
+            entry = ctk.CTkEntry(row, textvariable=entry_var, width=50)
+            entry.pack(side="right")
+            
+            def on_slider(*args):
+                entry_var.set(str(int(slider.get())))
+                
+            slider.configure(command=on_slider)
+            
+            def on_entry(*args):
+                try:
+                    val = int(entry_var.get())
+                    if from_val <= val <= to_val:
+                        slider.set(val)
+                except ValueError:
+                    pass
+            entry_var.trace_add("write", on_entry)
+            
+            return slider, entry_var
+
+        folders_slider, folders_var = create_slider_group(frame, "Max Folders:", 2, 50, 48, self.settings.MAX_FOLDERS)
+        workers_slider, workers_var = create_slider_group(frame, "Max Background Workers:", 1, 64, 63, self.settings.MAX_WORKERS)
         
-        workers_val = ctk.CTkLabel(settings_window, text=str(self.settings.MAX_WORKERS))
-        workers_val.pack()
-        workers_slider.configure(command=lambda v: workers_val.configure(text=str(int(v))))
+        ctk.CTkLabel(frame, text="Advanced AI Parameters", font=("Roboto", 16, "bold")).pack(pady=(20, 5))
+        
+        depth_slider, depth_var = create_slider_group(frame, "Max Recursion Depth:", 1, 10, 9, self.settings.MAX_DEPTH)
+        features_slider, features_var = create_slider_group(frame, "Max Clustering Features:", 1, 10, 9, self.settings.MAX_FEATURES)
+
+        error_label = ctk.CTkLabel(frame, text="", text_color="red")
+        error_label.pack(pady=5)
+
+        def reset_ai_defaults():
+            depth_slider.set(5)
+            depth_var.set("5")
+            features_slider.set(3)
+            features_var.set("3")
+
+        ctk.CTkButton(frame, text="Reset AI Defaults", command=reset_ai_defaults, fg_color="gray").pack(pady=5)
 
         def apply_settings():
-            self.settings.MAX_FOLDERS = int(folders_slider.get())
-            self.settings.MAX_WORKERS = int(workers_slider.get())
+            try:
+                folders = int(folders_var.get())
+                workers = int(workers_var.get())
+                depth = int(depth_var.get())
+                features = int(features_var.get())
+                
+                if folders < 1 or workers < 1 or depth < 1 or features < 1:
+                    raise ValueError("Values must be positive integers.")
+            except ValueError:
+                error_label.configure(text="Invalid numeric limits provided.")
+                return
+
+            self.settings.MAX_FOLDERS = folders
+            self.settings.MAX_WORKERS = workers
+            self.settings.MAX_DEPTH = depth
+            self.settings.MAX_FEATURES = features
             
             if self.analyzer:
-                self.analyzer.update_config(self.settings.MAX_FOLDERS)
+                self.analyzer.max_folders = folders
                 # Re-generate plan with new limits if we have data
                 if self.analyzer.corpus:
                     self.status_label.configure(text="Applying new settings...", text_color="white")
@@ -249,7 +306,7 @@ class AutoSorterApp(ctk.CTk):
                     
             settings_window.destroy()
 
-        ctk.CTkButton(settings_window, text="Apply", command=apply_settings).pack(pady=20)
+        ctk.CTkButton(frame, text="Apply", command=apply_settings).pack(pady=20)
 
     def _apply_settings_worker(self):
         with self._update_lock:
@@ -296,11 +353,12 @@ class AutoSorterApp(ctk.CTk):
 
             # --- CACHE INTEGRATION ---
             from app.core.cache import load_cache
-            cached_corpus, cached_locked, cached_idx = load_cache(self.base_dir)
+            cached_corpus, cached_locked, cached_idx, cached_manual_folders = load_cache(self.base_dir)
             
             if cached_corpus is not None:
                 pruned_corpus = {k: v for k, v in cached_corpus.items() if k in items_to_sort}
                 self.locked_files = {k: v for k, v in cached_locked.items() if k in pruned_corpus}
+                self.manual_folders = cached_manual_folders if cached_manual_folders is not None else set()
                 self.analyzer.corpus = pruned_corpus
                 self.analyzer.index_to_word = cached_idx
 
@@ -501,7 +559,7 @@ class AutoSorterApp(ctk.CTk):
         self.render_tree()
         
         from app.core.cache import save_cache_async
-        save_cache_async(self.base_dir, self.analyzer.corpus, self.locked_files, self.analyzer.index_to_word)
+        save_cache_async(self.base_dir, self.analyzer.corpus, self.locked_files, self.analyzer.index_to_word, self.manual_folders)
 
     def render_tree(self):
         """Draw the plan on the Treeview, preserving expanded nodes."""
@@ -679,7 +737,7 @@ class AutoSorterApp(ctk.CTk):
             self.after(0, self.render_tree)
             
             from app.core.cache import save_cache_async
-            save_cache_async(self.base_dir, self.analyzer.corpus, self.locked_files, self.analyzer.index_to_word)
+            save_cache_async(self.base_dir, self.analyzer.corpus, self.locked_files, self.analyzer.index_to_word, self.manual_folders)
 
     def _prune_empty_folders(self, plan_node: dict) -> bool:
         if not isinstance(plan_node, dict) or plan_node.get("__type__") == "file":
@@ -775,6 +833,7 @@ class AutoSorterApp(ctk.CTk):
         parent_path = current_path_obj.parent.as_posix() if current_path_obj.parent.as_posix() != "." else ""
         
         dialog = ctk.CTkInputDialog(text="Enter new folder name:", title="Rename Folder")
+        dialog.transient(self)
         new_name = dialog.get_input()
         if not new_name:
             return
@@ -849,6 +908,7 @@ class AutoSorterApp(ctk.CTk):
             if depth >= 5:
                 return
         dialog = ctk.CTkInputDialog(text="Enter new folder name:", title="New Folder")
+        dialog.transient(self)
         new_name = dialog.get_input()
         if not new_name:
             return

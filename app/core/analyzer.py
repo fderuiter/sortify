@@ -99,7 +99,11 @@ class IncrementalAnalyzer:
             self._last_reconstruction_error = 0.0
             
             if self.strategy:
-                plan, error = self.strategy.generate_plan(filenames, documents, embeddings, self.max_folders, self.stop_words)
+                max_depth = getattr(runtime_settings, "MAX_DEPTH", 5) if runtime_settings else 5
+                max_features = getattr(runtime_settings, "MAX_FEATURES", 3) if runtime_settings else 3
+                plan, error = self.strategy.generate_plan(
+                    filenames, documents, embeddings, self.max_folders, self.stop_words, max_depth, max_features
+                )
                 self._last_reconstruction_error = error
             else:
                 plan = {}

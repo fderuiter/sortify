@@ -5,6 +5,8 @@ import platform
 import shutil
 from pathlib import Path
 
+from app.core.link_manager import LinkManager
+
 
 class VerificationEngine:
     """Engine to verify file operations before execution."""
@@ -57,8 +59,14 @@ class VerificationEngine:
 
     def _is_file_accessible(self, filepath: str | Path) -> bool:
         path = Path(filepath)
-        if not path.exists():
+        if not path.exists() and not path.is_symlink():
+
             return False
+        
+        # Don't try to open symlinks for appending
+        if path.is_symlink():
+            return os.access(path, os.R_OK)
+            
         try:
             with open(path, "a"):
                 pass
@@ -66,6 +74,23 @@ class VerificationEngine:
         except IOError:
             return False
         except PermissionError:
+            return False
+
+    def _check_symlink_privilege(self, test_dir: str | Path) -> bool:
+        """Test if the OS allows creating symbolic links."""
+        test_dir_path = Path(test_dir)
+        test_src = test_dir_path / ".test_symlink_src"
+        test_dst = test_dir_path / ".test_symlink_dst"
+        try:
+            with open(test_src, "w") as f:
+                f.write("test")
+            test_dst.symlink_to(test_src)
+            test_dst.unlink()
+            test_src.unlink()
+            return True
+        except Exception:
+            if test_src.exists():
+                test_src.unlink()
             return False
 
     def verify_plan(self, base_dir: str | Path, plan: dict) -> dict:
@@ -105,9 +130,21 @@ class VerificationEngine:
                     pass
 
         is_windows = platform.system() == "Windows"
+        
+        # Check if we have symlink capabilities if we are moving any symlinks
+        symlink_privilege = None
+        
         for rel_src, src, dst in moves:
             if rel_src in errors:
                 continue
+
+            link_info = LinkManager.get_link_info(src)
+            if link_info and link_info["type"] == "symlink":
+                if symlink_privilege is None:
+                    symlink_privilege = self._check_symlink_privilege(base_dir)
+                if not symlink_privilege:
+                    errors[rel_src] = "Operating system blocks link modification due to permission constraints"
+                    continue
 
             if is_windows:
                 if len(dst) >= 260:
