@@ -4,16 +4,18 @@
 #     "huggingface-hub",
 # ]
 # ///
+"""Utility script to prepare an offline deployment bundle."""
 
-import os
-import sys
-import subprocess
-import shutil
 import hashlib
 import json
+import os
+import shutil
+import subprocess
 from pathlib import Path
 
+
 def main():
+    """Prepare an offline bundle by downloading dependencies and model weights."""
     print("Preparing offline bundle...")
     bundle_dir = Path("offline_bundle")
     if bundle_dir.exists():
