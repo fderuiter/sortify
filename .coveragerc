@@ -1,0 +1,16 @@
+[run]
+source = app
+omit =
+    # Non-functional scripts and configurations
+    app/config.py
+    app/build.py
+    app/demo.py
+    app/main.py
+    # Tests and temporaries
+    tests/*
+    *.tmp
+    *__init__.py
+    */__pycache__/*
+
+[report]
+show_missing = True
