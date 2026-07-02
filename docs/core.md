@@ -29,7 +29,3 @@ Before any files are moved, the `app.core.verifier` ensures the sorting plan is 
 
 ## Module Definitions
 
-::: app.core.extractor
-::: app.core.analyzer
-::: app.core.mover
-::: app.core.verifier
