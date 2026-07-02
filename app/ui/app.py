@@ -98,6 +98,9 @@ class AutoSorterApp(ctk.CTk):
         control_menu.add_command(
             label="Settings & Limits", command=self.show_settings_modal
         )
+        control_menu.add_command(
+            label="History & Rollback", command=self.show_history_modal
+        )
         menubar.add_cascade(label="Control Center", menu=control_menu)
         self.config(menu=menubar)
 
@@ -474,6 +477,75 @@ class AutoSorterApp(ctk.CTk):
                 ),
             )
             self.after(0, self.render_tree)
+
+
+    def show_history_modal(self) -> None:
+        """Display the history and rollback modal."""
+        modal = tk.Toplevel(self)
+        modal.title("History & Rollbacks")
+        modal.geometry("600x400")
+        modal.transient(self)
+        modal.grab_set()
+
+        from app.core.history import history_manager
+        import datetime
+        from tkinter import messagebox
+
+        columns = ("session_id", "date", "status")
+        tree = ttk.Treeview(modal, columns=columns, show="headings")
+        tree.heading("session_id", text="Session ID")
+        tree.heading("date", text="Date")
+        tree.heading("status", text="Status")
+        
+        tree.column("session_id", width=150)
+        tree.column("date", width=150)
+        tree.column("status", width=100)
+
+        tree.pack(fill="both", expand=True, padx=10, pady=10)
+
+        sessions = history_manager.get_sessions()
+        for s in sessions:
+            dt = datetime.datetime.fromtimestamp(s["timestamp"]).strftime("%Y-%m-%d %H:%M:%S")
+            tree.insert("", "end", iid=s["session_id"], values=(s["session_id"][:8] + "...", dt, s["status"]))
+
+        def on_rollback():
+            selected = tree.selection()
+            if not selected:
+                messagebox.showwarning("Warning", "No session selected.", parent=modal)
+                return
+            session_id = selected[0]
+            s_data = next((x for x in sessions if x["session_id"] == session_id), None)
+            if s_data and s_data["status"] == "rolled_back":
+                messagebox.showinfo("Info", "Session already rolled back.", parent=modal)
+                return
+            
+            try:
+                missing = history_manager.check_missing_files(session_id)
+                if missing:
+                    msg = f"Cannot rollback! {len(missing)} files missing (e.g. {missing[0]}). Proceed?"
+                    ans = messagebox.askyesno("Missing Files Warning", msg, parent=modal)
+                    if not ans:
+                        return
+                
+                history_manager.rollback(session_id, ignore_missing=True)
+                messagebox.showinfo("Success", "Rollback successful!", parent=modal)
+                
+                modal.destroy()
+                
+                if self.base_dir == s_data["base_dir"]:
+                    self.plan = {}
+                    self.render_tree()
+                    self.execute_sort_btn.configure(state="disabled")
+
+            except Exception as e:
+                messagebox.showerror("Rollback Failed", str(e), parent=modal)
+
+        btn_frame = ctk.CTkFrame(modal)
+        btn_frame.pack(fill="x", padx=10, pady=10)
+
+        rollback_btn = ctk.CTkButton(btn_frame, text="Rollback Selected", command=on_rollback, fg_color="red", hover_color="darkred")
+        rollback_btn.pack(side="right")
+
 
     def show_help_modal(self) -> None:
         """Display a help modal containing system limits and file processing logic by opening the online documentation."""
