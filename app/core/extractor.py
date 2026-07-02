@@ -6,18 +6,19 @@ This module provides utilities to read text from various file formats.
 import concurrent.futures
 import hashlib
 import logging
-import os
+from pathlib import Path
 from typing import Callable, Tuple
 
 from app.core.db import db
 from app.core.extractor_strategies import registry
 
 
-def get_file_hash(file_path: str) -> str:
+def get_file_hash(file_path: str | Path) -> str:
     """Calculate the SHA-256 hash of a file."""
     hasher = hashlib.sha256()
     try:
-        with open(file_path, "rb") as f:
+        path = Path(file_path)
+        with path.open("rb") as f:
             for chunk in iter(lambda: f.read(4096), b""):
                 hasher.update(chunk)
     except Exception:
@@ -25,14 +26,15 @@ def get_file_hash(file_path: str) -> str:
     return hasher.hexdigest()
 
 
-def extract_file_text(file_path: str) -> str:
+def extract_file_text(file_path: str | Path) -> str:
     """Extract text content from a given file."""
-    ext = os.path.splitext(file_path)[1].lower()
+    path = Path(file_path)
+    ext = path.suffix.lower()
     text = ""
     try:
         extractor = registry.get_extractor(ext)
         if extractor:
-            text = extractor.extract(file_path)
+            text = extractor.extract(path.as_posix())
     except Exception as e:
         logging.error(
             f"Failed to extract text from {file_path}. Error: {str(e)}", exc_info=True
@@ -41,21 +43,21 @@ def extract_file_text(file_path: str) -> str:
 
 
 def process_item_worker(
-    base_dir: str, item: str, progress_callback: Callable
+    base_dir: str | Path, item: str, progress_callback: Callable
 ) -> Tuple[str, str, str]:
     """Process a single item, checking hash first, and extract its text content."""
     try:
-        item_path = os.path.join(base_dir, item)
-        if os.path.isfile(item_path):
+        item_path = Path(base_dir) / item
+        if item_path.is_file():
             file_hash = get_file_hash(item_path)
-            doc = db.get_document(base_dir, item)
+            doc = db.get_document(str(base_dir), item)
             if doc and doc["file_hash"] == file_hash and doc["embedding"] is not None:
                 # Skip extraction if unchanged
                 return item, doc["extracted_text"], file_hash
 
             text = extract_file_text(item_path)
             return item, text, file_hash
-        elif os.path.isdir(item_path):
+        elif item_path.is_dir():
             return item, item, ""
     except Exception as e:
         logging.error(

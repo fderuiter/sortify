@@ -1,28 +1,29 @@
 import os
 import random
+from pathlib import Path
 
 import pandas as pd
 from docx import Document
 
-CORPUS_DIR = "tests/corpus"
-LARGE_CORPUS_DIR = "tests/large_corpus"
+CORPUS_DIR = Path("tests/corpus")
+LARGE_CORPUS_DIR = Path("tests/large_corpus")
 
 
 def create_corpus():
-    os.makedirs(CORPUS_DIR, exist_ok=True)
+    CORPUS_DIR.mkdir(parents=True, exist_ok=True)
 
     # 1. Plain text files
-    with open(os.path.join(CORPUS_DIR, "finance_report.txt"), "w") as f:
+    with (CORPUS_DIR / "finance_report.txt").open("w") as f:
         f.write(
             "This is a detailed report on finance, money, investment, and banking strategies."
         )
 
-    with open(os.path.join(CORPUS_DIR, "tech_notes.txt"), "w") as f:
+    with (CORPUS_DIR / "tech_notes.txt").open("w") as f:
         f.write(
             "Notes on software engineering, computer science, algorithms, and technology."
         )
 
-    with open(os.path.join(CORPUS_DIR, "empty.txt"), "w") as f:
+    with (CORPUS_DIR / "empty.txt").open("w") as f:
         f.write("")
 
     # 2. Word document
@@ -30,7 +31,7 @@ def create_corpus():
     doc.add_paragraph(
         "Medical science, healthcare, doctor, patient, and clinical trials."
     )
-    doc.save(os.path.join(CORPUS_DIR, "health_doc.docx"))
+    doc.save(CORPUS_DIR / "health_doc.docx")
 
     # 3. CSV file
     df_csv = pd.DataFrame(
@@ -40,7 +41,7 @@ def create_corpus():
             "Description": ["investment strategies", "stock market trends"],
         }
     )
-    df_csv.to_csv(os.path.join(CORPUS_DIR, "finance_data.csv"), index=False)
+    df_csv.to_csv(CORPUS_DIR / "finance_data.csv", index=False)
 
     # 4. Excel file
     df_excel = pd.DataFrame(
@@ -50,12 +51,12 @@ def create_corpus():
             "Details": ["computer programming", "microchips and processors"],
         }
     )
-    df_excel.to_excel(os.path.join(CORPUS_DIR, "tech_data.xlsx"), index=False)
+    df_excel.to_excel(CORPUS_DIR / "tech_data.xlsx", index=False)
 
     # 5. Real PDF file using reportlab
     from reportlab.pdfgen import canvas
 
-    c = canvas.Canvas(os.path.join(CORPUS_DIR, "science_doc.pdf"))
+    c = canvas.Canvas(str(CORPUS_DIR / "science_doc.pdf"))
     c.drawString(
         100, 750, "Science, physics, chemistry, biology, and laboratory experiments."
     )
@@ -64,7 +65,7 @@ def create_corpus():
 
 def create_large_corpus(num_docs=500):
     """Generate a large synthetic dataset with distinct semantic themes."""
-    os.makedirs(LARGE_CORPUS_DIR, exist_ok=True)
+    LARGE_CORPUS_DIR.mkdir(parents=True, exist_ok=True)
 
     categories = {
         "Health": [
@@ -140,7 +141,7 @@ def create_large_corpus(num_docs=500):
         content = " ".join(words)
 
         filename = f"{cat.lower()}_doc_{i}.txt"
-        with open(os.path.join(LARGE_CORPUS_DIR, filename), "w") as f:
+        with (LARGE_CORPUS_DIR / filename).open("w") as f:
             f.write(content.capitalize() + ".")
 
 

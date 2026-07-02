@@ -9,6 +9,7 @@ import threading
 import time
 import tkinter as tk
 import webbrowser
+from pathlib import Path
 from tkinter import filedialog, ttk
 
 import customtkinter as ctk
@@ -447,26 +448,26 @@ class AutoSorterApp(ctk.CTk):
         for f, target_path in self.locked_files.items():
             self._remove_file_from_plan(new_plan, f)
 
-            parts = target_path.split("/")
+            parts = Path(target_path).parts
             current = new_plan
             for i, part in enumerate(parts):
                 if i == len(parts) - 1:
                     if part not in current or not isinstance(current[part], dict) or current[part].get("__type__") == "file":
                         current[part] = {}
                         
-                    filename = os.path.basename(f)
+                    filename = Path(f).name
                     target_filename = filename
                     if self.settings.CONTEXTUAL_RENAMING:
-                        parent_dir = os.path.dirname(f)
-                        if parent_dir:
-                            parent_folder = os.path.basename(parent_dir)
+                        parent_dir = Path(f).parent
+                        if parent_dir.as_posix() != ".":
+                            parent_folder = parent_dir.name
                             if parent_folder:
                                 safe_parent = re.sub(r'[^A-Za-z0-9]', '_', parent_folder)
                                 target_filename = f"{safe_parent}_{filename}"
 
-                    target_file_path = os.path.join(target_path, target_filename)
-                    norm_source = os.path.normpath(f)
-                    norm_target = os.path.normpath(target_file_path)
+                    target_file_path = Path(target_path) / target_filename
+                    norm_source = Path(f)
+                    norm_target = target_file_path
                     status = "Already Sorted" if norm_source == norm_target else "Pending Move"
                     
                     current[part][f] = {
@@ -481,7 +482,7 @@ class AutoSorterApp(ctk.CTk):
                     current = current[part]
 
         for folder_path in self.manual_folders:
-            parts = folder_path.split("/")
+            parts = Path(folder_path).parts
             current = new_plan
             for part in parts:
                 if part not in current or not isinstance(current[part], dict) or current[part].get("__type__") == "file":
@@ -537,7 +538,7 @@ class AutoSorterApp(ctk.CTk):
             if child_node is None or (isinstance(child_node, dict) and child_node.get("__type__") == "file"):
                 error_msg = self.plan_errors.get(name)
                 icon = "❌ " if error_msg else "✅ "
-                display_name = child_node.get("target_filename", os.path.basename(name)) if isinstance(child_node, dict) else os.path.basename(name)
+                display_name = child_node.get("target_filename", Path(name).name) if isinstance(child_node, dict) else Path(name).name
                 text = f"{icon}{display_name}"
                 if error_msg:
                     text += f" - {error_msg}"
@@ -745,7 +746,7 @@ class AutoSorterApp(ctk.CTk):
     def _get_node_by_path(self, path):
         if not path:
             return self.plan
-        parts = path.split("/")
+        parts = Path(path).parts
         current = self.plan
         for p in parts:
             if p in current and isinstance(current[p], dict) and current[p].get("__type__") != "file":
@@ -769,14 +770,15 @@ class AutoSorterApp(ctk.CTk):
         if not self.context_item:
             return
         current_path = self.context_item.split(":", 1)[1]
-        old_name = current_path.split("/")[-1]
-        parent_path = "/".join(current_path.split("/")[:-1])
+        current_path_obj = Path(current_path)
+        old_name = current_path_obj.name
+        parent_path = current_path_obj.parent.as_posix() if current_path_obj.parent.as_posix() != "." else ""
         
         dialog = ctk.CTkInputDialog(text="Enter new folder name:", title="Rename Folder")
         new_name = dialog.get_input()
         if not new_name:
             return
-        new_name = new_name.replace("/", "").replace("\\", "")
+        new_name = re.sub(r'[\\/]', '', new_name)
         if not new_name or new_name == old_name:
             return
             
@@ -784,7 +786,8 @@ class AutoSorterApp(ctk.CTk):
         if parent_node is not None and new_name in parent_node:
             return
 
-        new_path = f"{parent_path}/{new_name}" if parent_path else new_name
+        new_path_obj = Path(parent_path) / new_name if parent_path else Path(new_name)
+        new_path = new_path_obj.as_posix()
         
         node = self._get_node_by_path(current_path)
         self._lock_all_files_in_folder(node, new_path)
@@ -842,14 +845,14 @@ class AutoSorterApp(ctk.CTk):
 
     def _prompt_and_create_folder(self, parent_path):
         if parent_path:
-            depth = len(parent_path.split("/"))
+            depth = len(Path(parent_path).parts)
             if depth >= 5:
                 return
         dialog = ctk.CTkInputDialog(text="Enter new folder name:", title="New Folder")
         new_name = dialog.get_input()
         if not new_name:
             return
-        new_name = new_name.replace("/", "").replace("\\", "")
+        new_name = re.sub(r'[\\/]', '', new_name)
         if not new_name:
             return
         
@@ -857,7 +860,8 @@ class AutoSorterApp(ctk.CTk):
         if parent_node is not None and new_name in parent_node:
             return
 
-        new_path = f"{parent_path}/{new_name}" if parent_path else new_name
+        new_path_obj = Path(parent_path) / new_name if parent_path else Path(new_name)
+        new_path = new_path_obj.as_posix()
         self.manual_folders.add(new_path)
         self._rebuild_plan()
 

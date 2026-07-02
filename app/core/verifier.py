@@ -3,59 +3,64 @@
 import os
 import platform
 import shutil
+from pathlib import Path
 
 
 class VerificationEngine:
     """Engine to verify file operations before execution."""
 
     @staticmethod
-    def get_moves(base_dir: str, plan: dict, current_dest: str = "") -> list:
+    def get_moves(base_dir: str | Path, plan: dict, current_dest: str | Path = "") -> list:
         """Get a flat list of moves from the plan."""
+        base_path = Path(base_dir)
+        dest_path = Path(current_dest)
+        
         moves = []
         for key, content in plan.items():
             if content is None or (
                 isinstance(content, dict) and content.get("__type__") == "file"
             ):
-                source_path = os.path.join(base_dir, key)
+                source_path = base_path / key
 
                 if isinstance(content, dict) and "target_filename" in content:
                     filename = content["target_filename"]
                 else:
-                    filename = os.path.basename(key)
+                    filename = Path(key).name
 
-                dest_dir = os.path.join(base_dir, current_dest)
-                dest_path = os.path.join(dest_dir, filename)
-                moves.append((key, source_path, dest_path))
+                target_dir = base_path / dest_path
+                dest_file_path = target_dir / filename
+                moves.append((key, source_path.as_posix(), dest_file_path.as_posix()))
             else:
                 moves.extend(
                     VerificationEngine.get_moves(
-                        base_dir, content, os.path.join(current_dest, key)
+                        base_path, content, dest_path / key
                     )
                 )
         return moves
 
-    def _get_volume(self, path: str) -> str:
-        curr = os.path.abspath(path)
+    def _get_volume(self, path: str | Path) -> str:
+        curr = Path(path).resolve()
         if platform.system() == "Windows":
-            return os.path.splitdrive(curr)[0] + "\\"
+            return curr.drive + "\\"
         else:
-            while not os.path.exists(curr):
-                parent = os.path.dirname(curr)
+            while not curr.exists():
+                parent = curr.parent
                 if parent == curr:
                     break
                 curr = parent
-            while not os.path.ismount(curr):
-                parent = os.path.dirname(curr)
+            while not curr.is_mount():
+                parent = curr.parent
                 if parent == curr:
                     break
                 curr = parent
-            return curr
+            return curr.as_posix()
 
-    def _is_file_accessible(self, filepath: str) -> bool:
-        if not os.path.exists(filepath):
+    def _is_file_accessible(self, filepath: str | Path) -> bool:
+        path = Path(filepath)
+        if not path.exists():
             return False
         try:
-            with open(filepath, "a"):
+            with open(path, "a"):
                 pass
             return True
         except IOError:
@@ -63,7 +68,7 @@ class VerificationEngine:
         except PermissionError:
             return False
 
-    def verify_plan(self, base_dir: str, plan: dict) -> dict:
+    def verify_plan(self, base_dir: str | Path, plan: dict) -> dict:
         """Verify the execution plan against constraints."""
         errors = {}
         moves = self.get_moves(base_dir, plan)
@@ -73,7 +78,8 @@ class VerificationEngine:
             src_vol = self._get_volume(src)
             dst_vol = self._get_volume(dst)
 
-            size = os.path.getsize(src) if os.path.exists(src) else 0
+            src_path = Path(src)
+            size = src_path.stat().st_size if src_path.exists() else 0
 
             if src_vol not in volumes:
                 volumes[src_vol] = 0
@@ -107,7 +113,7 @@ class VerificationEngine:
                 if len(dst) >= 260:
                     errors[rel_src] = "Path exceeds 260 characters"
             else:
-                if len(os.path.basename(dst)) > 255:
+                if len(Path(dst).name) > 255:
                     errors[rel_src] = "Filename exceeds 255 characters"
                 elif len(dst) > 4096:
                     errors[rel_src] = "Path exceeds 4096 characters"

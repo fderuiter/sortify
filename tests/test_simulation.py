@@ -1,5 +1,5 @@
-import os
 import tempfile
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -26,7 +26,8 @@ def test_full_workflow_simulation():
     # Requirement: execute a complete simulation from file text extraction to sorting plan
     # Requirement: multiple document types including PDF, Word, plain text
 
-    files = [f for f in os.listdir(CORPUS_DIR) if f != "empty.txt" and f != "dummy.pdf"]
+    corpus_path = Path(CORPUS_DIR)
+    files = [f.name for f in corpus_path.iterdir() if f.name != "empty.txt" and f.name != "dummy.pdf"]
     analyzer = IncrementalAnalyzer(max_folders=3, stop_words={"the", "and"})
     progress_callback = MagicMock()
 
@@ -114,11 +115,12 @@ def test_concurrent_large_volume():
     progress_callback = MagicMock()
 
     with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
         # Create 25 files
         files_to_sort = []
         for i in range(25):
             fname = f"sim_file_{i}.txt"
-            with open(os.path.join(temp_dir, fname), "w") as f:
+            with (temp_path / fname).open("w") as f:
                 f.write(f"This is simulation file {i} about technology and computers.")
             files_to_sort.append(fname)
 

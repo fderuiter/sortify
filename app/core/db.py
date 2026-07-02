@@ -41,7 +41,7 @@ class Database:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.execute(
                 "SELECT file_hash, extracted_text, embedding FROM documents WHERE base_dir = ? AND filepath = ?",
-                (base_dir, filepath),
+                (str(base_dir), str(filepath)),
             )
             row = cursor.fetchone()
             if row:
@@ -69,7 +69,7 @@ class Database:
                     extracted_text = excluded.extracted_text,
                     embedding = excluded.embedding
             """,
-                (base_dir, filepath, file_hash, extracted_text, embedding_blob),
+                (str(base_dir), str(filepath), file_hash, extracted_text, embedding_blob),
             )
             conn.commit()
 
@@ -78,7 +78,7 @@ class Database:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.execute(
                 "SELECT filepath, extracted_text, embedding FROM documents WHERE base_dir = ? AND embedding IS NOT NULL",
-                (base_dir,),
+                (str(base_dir),),
             )
             results = []
             for row in cursor.fetchall():

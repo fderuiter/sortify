@@ -1,12 +1,13 @@
 import json
 import os
+from pathlib import Path
 from unittest.mock import MagicMock
 
 from app.core.analyzer import IncrementalAnalyzer
 from app.core.extractor import build_corpus_generator
 from tests.generate_corpus import LARGE_CORPUS_DIR, create_large_corpus
 
-BASELINE_FILE = os.path.join(os.path.dirname(__file__), "baseline_metrics.json")
+BASELINE_FILE = Path(__file__).parent / "baseline_metrics.json"
 
 
 def test_semantic_quality_guardrails():
@@ -20,10 +21,11 @@ def test_semantic_quality_guardrails():
     create_large_corpus(500)
 
     # 2. Set up deterministic sequential ingestion
+    corpus_path = Path(LARGE_CORPUS_DIR)
     files = [
-        f
-        for f in os.listdir(LARGE_CORPUS_DIR)
-        if os.path.isfile(os.path.join(LARGE_CORPUS_DIR, f))
+        f.name
+        for f in corpus_path.iterdir()
+        if f.is_file()
     ]
     files.sort()  # crucial for determinism
 
@@ -57,16 +59,16 @@ def test_semantic_quality_guardrails():
     # Allow developers to update the baseline when algorithmic improvements are made
     update_baseline = os.environ.get("UPDATE_BASELINE") == "1"
     if update_baseline:
-        with open(BASELINE_FILE, "w") as f:
+        with BASELINE_FILE.open("w") as f:
             json.dump({"reconstruction_error": current_error}, f, indent=4)
         return
 
-    assert os.path.exists(BASELINE_FILE), (
+    assert BASELINE_FILE.exists(), (
         "Baseline file not found. "
         "Run `UPDATE_BASELINE=1 pytest tests/test_quality_guardrails.py` to generate it."
     )
 
-    with open(BASELINE_FILE, "r") as f:
+    with BASELINE_FILE.open("r") as f:
         baseline_data = json.load(f)
 
     baseline_error = baseline_data.get("reconstruction_error")
