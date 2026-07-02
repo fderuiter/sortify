@@ -1,10 +1,13 @@
 """Link management module."""
 import os
+import logging
 
 try:
     import pylnk3
 except ImportError:
     pylnk3 = None
+
+logger = logging.getLogger(__name__)
 
 
 class LinkManager:
@@ -20,8 +23,8 @@ class LinkManager:
             try:
                 target = os.readlink(full_path)
                 cls._registry[full_path] = {"type": "symlink", "target": target}
-            except OSError:
-                pass
+            except OSError as e:
+                logger.error("Failed to read symlink for %s: %s", full_path, str(e), exc_info=True)
         elif full_path.lower().endswith(".lnk"):
             if pylnk3:
                 try:
@@ -29,8 +32,8 @@ class LinkManager:
                     target = lnk.path
                     if target:
                         cls._registry[full_path] = {"type": "lnk", "target": target}
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.error("Failed to parse Windows shortcut %s: %s", full_path, str(e), exc_info=True)
 
     @classmethod
     def get_link_info(cls, full_path: str):

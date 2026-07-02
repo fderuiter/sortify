@@ -3,8 +3,11 @@
 import os
 import platform
 import shutil
+import logging
 
 from app.core.link_manager import LinkManager
+
+logger = logging.getLogger(__name__)
 
 
 class VerificationEngine:
@@ -118,8 +121,8 @@ class VerificationEngine:
                                 and self._get_volume(src) != vol
                             ):
                                 errors[rel_src] = "Insufficient disk space"
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.error("Failed to check disk space for volume %s: %s", vol, str(e), exc_info=True)
 
         is_windows = platform.system() == "Windows"
         
