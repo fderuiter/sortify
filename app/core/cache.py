@@ -32,7 +32,11 @@ def _get_conn():
 
 
 def _save_cache_sync(
-    source_directory: str, corpus: dict, locked_files: dict, index_to_word: dict, manual_folders: set = None
+    source_directory: str,
+    corpus: dict,
+    locked_files: dict,
+    index_to_word: dict,
+    manual_folders: set = None,
 ):
     if manual_folders is None:
         manual_folders = set()
@@ -63,19 +67,34 @@ def _save_cache_sync(
 
 
 def save_cache_async(
-    source_directory: str, corpus: dict, locked_files: dict, index_to_word: dict, manual_folders: set = None
+    source_directory: str,
+    corpus: dict,
+    locked_files: dict,
+    index_to_word: dict,
+    manual_folders: set = None,
 ):
     """Save the current directory cache asynchronously to avoid blocking."""
     _executor.submit(
-        _save_cache_sync, source_directory, corpus, locked_files, index_to_word, manual_folders
+        _save_cache_sync,
+        source_directory,
+        corpus,
+        locked_files,
+        index_to_word,
+        manual_folders,
     )
 
 
 def save_cache_sync(
-    source_directory: str, corpus: dict, locked_files: dict, index_to_word: dict, manual_folders: set = None
+    source_directory: str,
+    corpus: dict,
+    locked_files: dict,
+    index_to_word: dict,
+    manual_folders: set = None,
 ):
     """Save the current directory cache synchronously."""
-    _save_cache_sync(source_directory, corpus, locked_files, index_to_word, manual_folders)
+    _save_cache_sync(
+        source_directory, corpus, locked_files, index_to_word, manual_folders
+    )
 
 
 def load_cache(source_directory: str):
@@ -93,7 +112,9 @@ def load_cache(source_directory: str):
             locked_files = json.loads(row[1])
             index_to_word = {int(k): v for k, v in json.loads(row[2]).items()}
             manual_folders_raw = row[3]
-            manual_folders = set(json.loads(manual_folders_raw)) if manual_folders_raw else set()
+            manual_folders = (
+                set(json.loads(manual_folders_raw)) if manual_folders_raw else set()
+            )
             return corpus, locked_files, index_to_word, manual_folders
     except Exception as e:
         logging.error(f"Failed to load cache: {e}")
