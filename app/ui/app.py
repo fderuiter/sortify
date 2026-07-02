@@ -68,6 +68,7 @@ class AutoSorterApp(ctk.CTk):
         self.check_setup_wizard()
 
     def check_setup_wizard(self):
+        """Check if the setup wizard needs to be run."""
         from app.config import get_app_dir
         from app.ui.wizard import SetupWizard
         

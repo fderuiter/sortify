@@ -1,12 +1,16 @@
-import os
+"""Setup wizard module for AI consent and downloading."""
+
 import threading
-import tkinter as tk
-from pathlib import Path
+
 import customtkinter as ctk
 from huggingface_hub import snapshot_download
+
 from app.config import get_app_dir
 
+
 class SetupWizard(ctk.CTkToplevel):
+    """Setup wizard window for downloading the AI model."""
+
     def __init__(self, parent, settings, on_complete):
         super().__init__(parent)
         self.settings = settings
@@ -42,6 +46,7 @@ class SetupWizard(ctk.CTkToplevel):
         self.protocol("WM_DELETE_WINDOW", self.decline)
 
     def accept(self):
+        """Handle accept action."""
         self.accept_btn.configure(state="disabled")
         self.decline_btn.configure(state="disabled")
         self.progress.pack(pady=10)
@@ -52,21 +57,25 @@ class SetupWizard(ctk.CTkToplevel):
         threading.Thread(target=self.download_model, daemon=True).start()
 
     def download_model(self):
+        """Download the model in a background thread."""
         try:
             model_dir = get_app_dir() / "model"
             snapshot_download(repo_id="sentence-transformers/all-MiniLM-L6-v2", local_dir=str(model_dir))
             self.settings.AI_CONSENT_GRANTED = True
             self.after(0, self.finish)
         except Exception as e:
-            self.after(0, lambda: self.status.configure(text=f"Download failed: {str(e)}", text_color="red"))
+            err_msg = str(e)
+            self.after(0, lambda msg=err_msg: self.status.configure(text=f"Download failed: {msg}", text_color="red"))
             self.after(0, self.progress.stop)
             self.after(0, lambda: self.accept_btn.configure(state="normal"))
             self.after(0, lambda: self.decline_btn.configure(state="normal"))
 
     def decline(self):
+        """Handle decline action."""
         self.settings.AI_CONSENT_GRANTED = False
         self.finish()
         
     def finish(self):
+        """Complete the wizard and close."""
         self.on_complete()
         self.destroy()
