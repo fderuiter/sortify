@@ -34,7 +34,7 @@ jobs:
       env:
         SMOKE_TEST: "1"
       run: |
-        uv run --all-extras pytest tests/
+        uv run --all-extras pytest --cov --cov-report=term tests/
 
     - name: Generate API Reference Docs
       run: |
