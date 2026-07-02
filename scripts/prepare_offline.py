@@ -1,0 +1,87 @@
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#     "huggingface-hub",
+# ]
+# ///
+
+import os
+import sys
+import subprocess
+import shutil
+import hashlib
+import json
+from pathlib import Path
+
+def main():
+    print("Preparing offline bundle...")
+    bundle_dir = Path("offline_bundle")
+    if bundle_dir.exists():
+        shutil.rmtree(bundle_dir)
+    bundle_dir.mkdir()
+    
+    wheels_dir = bundle_dir / "wheels"
+    wheels_dir.mkdir()
+    
+    model_dir = bundle_dir / "model"
+    model_dir.mkdir()
+
+    # 1. Compile requirements with CPU-only PyTorch
+    print("Compiling requirements...")
+    reqs_file = bundle_dir / "requirements.txt"
+    subprocess.run([
+        "uv", "pip", "compile", "pyproject.toml",
+        "--extra-index-url", "https://download.pytorch.org/whl/cpu",
+        "-o", str(reqs_file)
+    ], check=True)
+
+    # 2. Download wheels
+    print("Downloading Python dependencies...")
+    subprocess.run([
+        "uv", "venv", "--seed", ".tmp_seed_venv"
+    ], check=True)
+    
+    pip_path = ".tmp_seed_venv/bin/pip" if os.name != 'nt' else r".tmp_seed_venv\Scripts\pip.exe"
+    
+    subprocess.run([
+        pip_path, "download", "-r", str(reqs_file),
+        "--extra-index-url", "https://download.pytorch.org/whl/cpu",
+        "-d", str(wheels_dir)
+    ], check=True)
+    
+    shutil.rmtree(".tmp_seed_venv")
+
+    # 3. Download model
+    print("Downloading model weights...")
+    from huggingface_hub import snapshot_download
+    snapshot_download(
+        repo_id="sentence-transformers/all-MiniLM-L6-v2",
+        local_dir=str(model_dir),
+        ignore_patterns=["*.msgpack", "*.h5", "*.ot", "rust_model.ot"],
+        local_dir_use_symlinks=False
+    )
+    
+    # 4. Generate checksums for model files
+    print("Generating checksums...")
+    manifest = {}
+    for root, dirs, files in os.walk(model_dir):
+        for f in files:
+            filepath = os.path.join(root, f)
+            rel_path = os.path.relpath(filepath, model_dir)
+            with open(filepath, "rb") as file_obj:
+                file_hash = hashlib.sha256()
+                while chunk := file_obj.read(8192):
+                    file_hash.update(chunk)
+            manifest[rel_path] = file_hash.hexdigest()
+            
+    with open(bundle_dir / "model_manifest.json", "w") as f:
+        json.dump(manifest, f, indent=2)
+
+    # 5. Package bundle
+    print("Zipping bundle...")
+    shutil.make_archive("offline_bundle", "zip", "offline_bundle")
+    
+    print("Done! Transfer offline_bundle.zip to the isolated environment.")
+
+if __name__ == "__main__":
+    main()
