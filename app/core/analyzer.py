@@ -78,6 +78,29 @@ class IncrementalAnalyzer:
         """Reload stop words from config."""
         self.stop_words = new_stop_words
 
+    def _inject_hierarchy(self, node: dict) -> dict:
+        """Transforms a flat mapping of files into a nested folder structure based on relative paths."""
+        if not isinstance(node, dict) or node.get("__type__") == "file":
+            return node
+            
+        new_node = {}
+        for k, v in node.items():
+            if v is None or (isinstance(v, dict) and v.get("__type__") == "file"):
+                dirname = os.path.dirname(k)
+                if not dirname:
+                    new_node[k] = v
+                else:
+                    parts = dirname.replace("\\", "/").split("/")
+                    current = new_node
+                    for part in parts:
+                        if part not in current or current[part] is None or (isinstance(current[part], dict) and current[part].get("__type__") == "file"):
+                            current[part] = {}
+                        current = current[part]
+                    current[k] = v
+            else:
+                new_node[k] = self._inject_hierarchy(v)
+        return new_node
+
     def generate_sorting_plan(self, base_dir: str, runtime_settings=None) -> dict:
         """Generate a sorting plan based on the current model state.
         
@@ -105,6 +128,9 @@ class IncrementalAnalyzer:
                     filenames, documents, embeddings, self.max_folders, self.stop_words, max_depth, max_features
                 )
                 self._last_reconstruction_error = error
+
+                if runtime_settings and getattr(runtime_settings, "PRESERVE_HIERARCHY", False):
+                    plan = self._inject_hierarchy(plan)
             else:
                 plan = {}
             

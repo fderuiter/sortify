@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     """Application settings schema."""
 
     CONTEXTUAL_RENAMING: bool = Field(default=False)
+    PRESERVE_HIERARCHY: bool = Field(default=False)
     MAX_FOLDERS: int = Field(default=12, gt=0)
     MAX_WORKERS: int = Field(default=15, gt=0)
     MAX_DEPTH: int = Field(default=5, gt=0)
@@ -130,6 +131,7 @@ class AppSettings:
                 "MAX_DF",
                 "LOG_FILE",
                 "CONTEXTUAL_RENAMING",
+                "PRESERVE_HIERARCHY",
             ]:
                 if key in data:
                     try:
@@ -160,6 +162,7 @@ class AppSettings:
         with self._lock:
             data = {
                 "CONTEXTUAL_RENAMING": self._settings_model.CONTEXTUAL_RENAMING,
+                "PRESERVE_HIERARCHY": self._settings_model.PRESERVE_HIERARCHY,
                 "MAX_FOLDERS": self._settings_model.MAX_FOLDERS,
                 "MAX_WORKERS": self._settings_model.MAX_WORKERS,
                 "MAX_DEPTH": self._settings_model.MAX_DEPTH,
@@ -183,6 +186,16 @@ class AppSettings:
     @CONTEXTUAL_RENAMING.setter
     def CONTEXTUAL_RENAMING(self, value: bool):
         self._settings_model.CONTEXTUAL_RENAMING = value
+        self._trigger_save()
+
+    @property
+    def PRESERVE_HIERARCHY(self) -> bool:
+        """Get the preserve hierarchy flag."""
+        return self._settings_model.PRESERVE_HIERARCHY
+
+    @PRESERVE_HIERARCHY.setter
+    def PRESERVE_HIERARCHY(self, value: bool):
+        self._settings_model.PRESERVE_HIERARCHY = value
         self._trigger_save()
 
     @property

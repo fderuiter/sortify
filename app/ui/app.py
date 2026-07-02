@@ -138,6 +138,16 @@ class AutoSorterApp(ctk.CTk):
             command=self.toggle_contextual_rename
         )
         self.contextual_rename_switch.pack(pady=5)
+        
+        self.preserve_hierarchy_var = ctk.BooleanVar(value=self.settings.PRESERVE_HIERARCHY)
+        self.preserve_hierarchy_switch = ctk.CTkSwitch(
+            self,
+            text="Preserve Hierarchy",
+            variable=self.preserve_hierarchy_var,
+            command=self.toggle_preserve_hierarchy
+        )
+        self.preserve_hierarchy_switch.pack(pady=5)
+
         self.execute_btn.pack(pady=15)
 
         self.settings_btn = ctk.CTkButton(
@@ -198,6 +208,27 @@ class AutoSorterApp(ctk.CTk):
         self.settings.CONTEXTUAL_RENAMING = self.contextual_rename_var.get()
         if self.plan:
             self.status_label.configure(text="Updating plan for contextual renaming...", text_color="white")
+            self.execute_btn.configure(state="disabled")
+            
+            def _update():
+                new_plan = self.analyzer.generate_sorting_plan(self.base_dir, self.settings)
+                self._apply_locked_files(new_plan)
+                self.plan = new_plan
+                
+                self.plan_errors = self.verifier.verify_plan(self.base_dir, self.plan)
+                has_errors = bool(self.plan_errors)
+                
+                self.after(0, lambda: self.status_label.configure(text="AI Plan ready for review.", text_color="green"))
+                self.after(0, lambda: self.execute_btn.configure(state="disabled" if has_errors else "normal"))
+                self.after(0, self.render_tree)
+            
+            threading.Thread(target=_update, daemon=True).start()
+
+    def toggle_preserve_hierarchy(self) -> None:
+        """Toggle hierarchy preservation and refresh the plan if active."""
+        self.settings.PRESERVE_HIERARCHY = self.preserve_hierarchy_var.get()
+        if self.plan:
+            self.status_label.configure(text="Updating plan for hierarchy preservation...", text_color="white")
             self.execute_btn.configure(state="disabled")
             
             def _update():
