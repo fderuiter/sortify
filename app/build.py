@@ -1,7 +1,11 @@
-import PyInstaller.__main__
-import customtkinter
+"""Build script for the smart autosorter application."""
+
 import os
 import sys
+
+import customtkinter
+import PyInstaller.__main__
+
 
 def main():
     """Build the standalone executable."""
