@@ -1,0 +1,19 @@
+[
+  {
+    "iid": "folder:Invoices",
+    "text": "\u274c \ud83d\udcc2 [Invoices] (2 moves)",
+    "children": [
+      {
+        "iid": "file:invoice_101.pdf",
+        "text": "\u2705 invoice_101.pdf",
+        "children": []
+      },
+      {
+        "iid": "file:invoice_102.pdf",
+        "text": "\u274c invoice_102.pdf - File locked by another process",
+        "children": []
+      }
+    ],
+    "open": true
+  }
+]
