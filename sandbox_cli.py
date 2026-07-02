@@ -38,7 +38,9 @@ def analyze_all():
     if not os.path.exists(SANDBOX_DIR):
         print("Sandbox dataset not found. Run reset first.")
         return
-    analyzer = IncrementalAnalyzer(max_folders=5, stop_words={"the", "and", "a", "an", "is"})
+    analyzer = IncrementalAnalyzer(
+        max_folders=5, stop_words={"the", "and", "a", "an", "is"}
+    )
     corpus = {}
     for filename in os.listdir(SANDBOX_DIR):
         filepath = os.path.join(SANDBOX_DIR, filename)

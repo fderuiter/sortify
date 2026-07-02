@@ -57,11 +57,11 @@ class VerificationEngine:
     def _is_file_accessible(self, filepath: str) -> bool:
         if not os.path.lexists(filepath):
             return False
-        
+
         # Don't try to open symlinks for appending
         if os.path.islink(filepath):
             return os.access(filepath, os.R_OK)
-            
+
         try:
             with open(filepath, "a"):
                 pass
@@ -120,13 +120,16 @@ class VerificationEngine:
                             ):
                                 errors[rel_src] = "Insufficient disk space"
                 except Exception as e:
-                    logging.error(f"Failed to check disk space for volume {vol}: {e}", exc_info=True)
+                    logging.error(
+                        f"Failed to check disk space for volume {vol}: {e}",
+                        exc_info=True,
+                    )
 
         is_windows = platform.system() == "Windows"
-        
+
         # Check if we have symlink capabilities if we are moving any symlinks
         symlink_privilege = None
-        
+
         for rel_src, src, dst in moves:
             if rel_src in errors:
                 continue
@@ -136,7 +139,9 @@ class VerificationEngine:
                 if symlink_privilege is None:
                     symlink_privilege = self._check_symlink_privilege(base_dir)
                 if not symlink_privilege:
-                    errors[rel_src] = "Operating system blocks link modification due to permission constraints"
+                    errors[rel_src] = (
+                        "Operating system blocks link modification due to permission constraints"
+                    )
                     continue
 
             if is_windows:
