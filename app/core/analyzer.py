@@ -3,6 +3,7 @@
 This module provides topic modeling functionality.
 """
 
+import hashlib
 import logging
 import os
 import re
@@ -63,16 +64,41 @@ class IncrementalAnalyzer:
             if not texts:
                 return
 
-            embeddings = self.model.encode(texts, show_progress_bar=False)
+            texts_to_encode = []
+            indices_to_encode = []
+            embeddings = [None] * len(filepaths)
+
+            for i, (filepath, text, file_hash) in enumerate(
+                zip(filepaths, texts, hashes)
+            ):
+                # If we don't have a hash, fetch existing from DB so we don't overwrite it with empty
+                doc = db.get_document(base_dir, filepath)
+
+                # compute hash if not provided
+                if not file_hash:
+                    file_hash = hashlib.md5(text.encode("utf-8")).hexdigest()
+                    hashes[i] = file_hash
+
+                if (
+                    doc
+                    and doc["file_hash"] == file_hash
+                    and doc["embedding"] is not None
+                ):
+                    embeddings[i] = doc["embedding"]
+                else:
+                    texts_to_encode.append(text)
+                    indices_to_encode.append(i)
+
+            if texts_to_encode:
+                new_embeddings = self.model.encode(
+                    texts_to_encode, show_progress_bar=False
+                )
+                for idx, new_emb in zip(indices_to_encode, new_embeddings):
+                    embeddings[idx] = new_emb
 
             for filepath, text, file_hash, embedding in zip(
                 filepaths, texts, hashes, embeddings
             ):
-                # If we don't have a hash, fetch existing from DB so we don't overwrite it with empty
-                if not file_hash:
-                    doc = db.get_document(base_dir, filepath)
-                    if doc:
-                        file_hash = doc["file_hash"]
                 db.upsert_document(base_dir, filepath, file_hash, text, embedding)
 
         except Exception as e:

@@ -2,11 +2,12 @@
 
 import json
 import logging
-import pathlib
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 
-DB_PATH = pathlib.Path.home() / ".autosorter" / "cache.db"
+from app.config import get_app_dir
+
+DB_PATH = get_app_dir() / "cache.db"
 
 _executor = ThreadPoolExecutor(max_workers=1)
 

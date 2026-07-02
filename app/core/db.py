@@ -4,14 +4,16 @@ import sqlite3
 
 import numpy as np
 
+from app.config import get_app_dir
+
 
 class Database:
     """SQLite database abstraction for persistent storage of document state."""
 
     CURRENT_VERSION = 1
 
-    def __init__(self, db_path="autosorter.db"):
-        self.db_path = db_path
+    def __init__(self, db_path=None):
+        self.db_path = db_path or str(get_app_dir() / "autosorter.db")
         self._init_db()
 
     def _init_db(self):
@@ -86,10 +88,13 @@ class Database:
                 results.append((row[0], row[1], embedding))
             return results
 
-    def clear(self):
-        """Clear all documents from the database."""
+    def clear(self, base_dir=None):
+        """Clear documents from the database. If base_dir is provided, only clear those."""
         with sqlite3.connect(self.db_path) as conn:
-            conn.execute("DELETE FROM documents")
+            if base_dir:
+                conn.execute("DELETE FROM documents WHERE base_dir = ?", (base_dir,))
+            else:
+                conn.execute("DELETE FROM documents")
             conn.commit()
 
 

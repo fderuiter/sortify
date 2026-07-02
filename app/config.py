@@ -16,6 +16,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 def get_app_dir() -> Path:
+    """Get the app configuration directory path."""
     app_dir = Path.home() / ".autosorter"
     app_dir.mkdir(parents=True, exist_ok=True)
     return app_dir

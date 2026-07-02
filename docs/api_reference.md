@@ -2,6 +2,10 @@
 
 This document is automatically generated. Do not edit manually.
 
+## `app.build`
+
+::: app.build
+
 ## `app.config`
 
 ::: app.config

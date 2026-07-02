@@ -61,11 +61,11 @@ def test_partial_fit_exception(mocker):
     mocker.patch.object(analyzer.model, "encode", side_effect=Exception("Test error"))
     mock_logger = mocker.patch("app.core.analyzer.logging.error")
 
-    corpus = {"file.txt": "test content"}
+    corpus = {"unique_file_exception.txt": "unique test content exception"}
     analyzer.partial_fit("dummy_base", corpus)
 
     mock_logger.assert_called_once()
-    assert "file.txt" in analyzer.corpus  # Update still happened before exception
+    assert "unique_file_exception.txt" in analyzer.corpus  # Update still happened before exception
 
 
 def test_generate_sorting_plan_exception(mocker):
