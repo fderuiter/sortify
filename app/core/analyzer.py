@@ -61,50 +61,7 @@ class IncrementalAnalyzer:
             if not texts:
                 return
 
-            import hashlib
-            import pickle
-            
-            CACHE_FILE = ".embeddings_cache.pkl"
-            cache = {}
-            if os.path.exists(CACHE_FILE):
-                try:
-                    with open(CACHE_FILE, "rb") as f:
-                        cache = pickle.load(f)
-                except Exception:
-                    pass
-                    
-            model_version = 'all-MiniLM-L6-v2'
-            
-            texts_to_encode = []
-            indices_to_encode = []
-            embeddings = [None] * len(texts)
-            
-            for i, (filepath, text, file_hash) in enumerate(zip(filepaths, texts, hashes)):
-                current_hash = file_hash
-                if not current_hash:
-                    doc = db.get_document(base_dir, filepath)
-                    if doc and doc["file_hash"]:
-                        current_hash = doc["file_hash"]
-                    else:
-                        current_hash = hashlib.md5(text.encode('utf-8')).hexdigest()
-                    hashes[i] = current_hash
-                
-                cache_key = (filepath, current_hash, model_version)
-                if cache_key in cache:
-                    embeddings[i] = cache[cache_key]
-                else:
-                    texts_to_encode.append(text)
-                    indices_to_encode.append(i)
-                    
-            if texts_to_encode:
-                new_embeddings = self.model.encode(texts_to_encode, show_progress_bar=False)
-                for idx, new_emb in zip(indices_to_encode, new_embeddings):
-                    embeddings[idx] = new_emb
-                    cache_key = (filepaths[idx], hashes[idx], model_version)
-                    cache[cache_key] = new_emb
-                    
-                with open(CACHE_FILE, "wb") as f:
-                    pickle.dump(cache, f)
+            embeddings = self.model.encode(texts, show_progress_bar=False)
             
             for filepath, text, file_hash, embedding in zip(filepaths, texts, hashes, embeddings):
                 # If we don't have a hash, fetch existing from DB so we don't overwrite it with empty

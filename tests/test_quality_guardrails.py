@@ -19,80 +19,89 @@ def test_semantic_quality_guardrails():
     # 1. Generate large synthetic corpus for stress testing (500 documents across 4 themes)
     create_large_corpus(500)
 
-    # 2. Set up deterministic sequential ingestion
-    files = [
-        f
-        for f in os.listdir(LARGE_CORPUS_DIR)
-        if os.path.isfile(os.path.join(LARGE_CORPUS_DIR, f))
-    ]
-    files.sort()  # crucial for determinism
+    # Configure the DB to use a persistent test cache so it's not wiped by other tests
+    from app.core.db import db
+    old_db_path = db.db_path
+    db.db_path = "quality_guardrails_cache.db"
+    db._init_db()
 
-    is_smoke_test = os.environ.get("SMOKE_TEST") == "1"
-    if is_smoke_test:
-        print("\nRunning in SMOKE TEST mode. Processing a 5% subset (25 documents).")
-        import random
-        random.seed(42)
-        files = random.sample(files, int(len(files) * 0.05))
-        files.sort()
-    else:
-        print("\nRunning in FULL TEST mode. Processing all 500 documents.")
+    try:
+        # 2. Set up deterministic sequential ingestion
+        files = [
+            f
+            for f in os.listdir(LARGE_CORPUS_DIR)
+            if os.path.isfile(os.path.join(LARGE_CORPUS_DIR, f))
+        ]
+        files.sort()  # crucial for determinism
 
-    analyzer = IncrementalAnalyzer(max_folders=4, stop_words={"the", "and"})
-    progress_callback = MagicMock()
+        is_smoke_test = os.environ.get("SMOKE_TEST") == "1"
+        if is_smoke_test:
+            print("\nRunning in SMOKE TEST mode. Processing a 5% subset (25 documents).")
+            import random
+            random.seed(42)
+            files = random.sample(files, int(len(files) * 0.05))
+            files.sort()
+        else:
+            print("\nRunning in FULL TEST mode. Processing all 500 documents.")
 
-    generator = build_corpus_generator(
-        base_dir=LARGE_CORPUS_DIR,
-        items_to_sort=files,
-        progress_callback=progress_callback,
-        max_workers=1,
-        chunk_size=50,
-        sequential=True,
-    )
+        analyzer = IncrementalAnalyzer(max_folders=4, stop_words={"the", "and"})
+        progress_callback = MagicMock()
 
-    # 3. Ingest documents and build topic model
-    for chunk in generator:
-        analyzer.partial_fit(LARGE_CORPUS_DIR, chunk)
+        generator = build_corpus_generator(
+            base_dir=LARGE_CORPUS_DIR,
+            items_to_sort=files,
+            progress_callback=progress_callback,
+            max_workers=1,
+            chunk_size=50,
+            sequential=True,
+        )
 
-    # Generate the plan, which triggers the clustering and calculates reconstruction error
-    _ = analyzer.generate_sorting_plan(LARGE_CORPUS_DIR)
+        # 3. Ingest documents and build topic model
+        for chunk in generator:
+            analyzer.partial_fit(LARGE_CORPUS_DIR, chunk)
 
-    current_error = analyzer.last_reconstruction_error
-    if current_error == 0.0:
-        current_error = 1.0  # fallback for SentenceTransformer which doesn't have it
+        # Generate the plan, which triggers the clustering and calculates reconstruction error
+        _ = analyzer.generate_sorting_plan(LARGE_CORPUS_DIR)
 
-    assert current_error > 0.0, (
-        "Reconstruction error must be captured and greater than zero."
-    )
+        current_error = analyzer.last_reconstruction_error
+        if current_error == 0.0:
+            current_error = 1.0  # fallback for SentenceTransformer which doesn't have it
 
-    if is_smoke_test:
-        return
+        assert current_error > 0.0, (
+            "Reconstruction error must be captured and greater than zero."
+        )
 
-    # Allow developers to update the baseline when algorithmic improvements are made
-    update_baseline = os.environ.get("UPDATE_BASELINE") == "1"
-    if update_baseline:
-        with open(BASELINE_FILE, "w") as f:
-            json.dump({"reconstruction_error": current_error}, f, indent=4)
-        return
+        if is_smoke_test:
+            return
 
-    assert os.path.exists(BASELINE_FILE), (
-        "Baseline file not found. "
-        "Run `UPDATE_BASELINE=1 pytest tests/test_quality_guardrails.py` to generate it."
-    )
+        # Allow developers to update the baseline when algorithmic improvements are made
+        update_baseline = os.environ.get("UPDATE_BASELINE") == "1"
+        if update_baseline:
+            with open(BASELINE_FILE, "w") as f:
+                json.dump({"reconstruction_error": current_error}, f, indent=4)
+            return
 
-    with open(BASELINE_FILE, "r") as f:
-        baseline_data = json.load(f)
+        assert os.path.exists(BASELINE_FILE), (
+            "Baseline file not found. "
+            "Run `UPDATE_BASELINE=1 pytest tests/test_quality_guardrails.py` to generate it."
+        )
 
-    baseline_error = baseline_data.get("reconstruction_error")
-    assert baseline_error is not None, "Invalid baseline file."
+        with open(BASELINE_FILE, "r") as f:
+            baseline_data = json.load(f)
 
-    # 4. Compare current error against statistical tolerance interval (+/- 5%)
-    tolerance = 0.05
-    lower_bound = baseline_error * (1 - tolerance)
-    upper_bound = baseline_error * (1 + tolerance)
+        baseline_error = baseline_data.get("reconstruction_error")
+        assert baseline_error is not None, "Invalid baseline file."
 
-    assert lower_bound <= current_error <= upper_bound, (
-        f"Quality regression detected. "
-        f"Current error ({current_error:.4f}) is outside acceptable bounds "
-        f"({lower_bound:.4f} - {upper_bound:.4f}) of baseline ({baseline_error:.4f}). "
-        f"If this is expected, update baseline with UPDATE_BASELINE=1."
-    )
+        # 4. Compare current error against statistical tolerance interval (+/- 5%)
+        tolerance = 0.05
+        lower_bound = baseline_error * (1 - tolerance)
+        upper_bound = baseline_error * (1 + tolerance)
+
+        assert lower_bound <= current_error <= upper_bound, (
+            f"Quality regression detected. "
+            f"Current error ({current_error:.4f}) is outside acceptable bounds "
+            f"({lower_bound:.4f} - {upper_bound:.4f}) of baseline ({baseline_error:.4f}). "
+            f"If this is expected, update baseline with UPDATE_BASELINE=1."
+        )
+    finally:
+        db.db_path = old_db_path

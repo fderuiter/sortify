@@ -86,10 +86,13 @@ class Database:
                 results.append((row[0], row[1], embedding))
             return results
 
-    def clear(self):
-        """Clear all documents from the database."""
+    def clear(self, base_dir=None):
+        """Clear documents from the database. If base_dir is provided, only clear those."""
         with sqlite3.connect(self.db_path) as conn:
-            conn.execute("DELETE FROM documents")
+            if base_dir:
+                conn.execute("DELETE FROM documents WHERE base_dir = ?", (base_dir,))
+            else:
+                conn.execute("DELETE FROM documents")
             conn.commit()
 
 
