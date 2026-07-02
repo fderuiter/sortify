@@ -63,6 +63,10 @@ If you intentionally alter the structure of the sorting tree (e.g., adding new m
 UPDATE_SNAPSHOTS=1 uv run pytest tests/test_ui_snapshots.py
 ```
 Commit the updated JSON files located in `tests/snapshots/` so reviewers can verify the visual structure differences.
+## Security & Privacy
+
+For details regarding our security posture, vulnerability reporting, and network dependencies, please read our [Security Policy](SECURITY.md). 
+To understand how your data is processed locally and stored, please refer to our [Privacy Policy](PRIVACY.md).
 
 ## Documentation
 Check the `docs/` folder for the MkDocs configuration or run `tox -e docs` to build the site.
