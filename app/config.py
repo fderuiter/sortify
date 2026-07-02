@@ -8,10 +8,17 @@ import logging
 import os
 import sys
 import threading
+from pathlib import Path
 from typing import Set
 
 from pydantic import Field, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def get_app_dir() -> Path:
+    app_dir = Path.home() / ".autosorter"
+    app_dir.mkdir(parents=True, exist_ok=True)
+    return app_dir
 
 
 class Settings(BaseSettings):
@@ -23,7 +30,7 @@ class Settings(BaseSettings):
     MAX_WORKERS: int = Field(default=15, gt=0)
     MAX_DEPTH: int = Field(default=5, gt=0)
     MAX_FEATURES: int = Field(default=3, gt=0)
-    LOG_FILE: str = Field(default="autosorter.log", min_length=1)
+    LOG_FILE: str = Field(default=str(get_app_dir() / "autosorter.log"), min_length=1)
     STOP_WORDS: set[str] = {
         "the",
         "and",
@@ -97,8 +104,8 @@ class Settings(BaseSettings):
 class AppSettings:
     """A registry for application settings that provides persistence and validation."""
 
-    def __init__(self, filepath="settings.json"):
-        self._filepath = filepath
+    def __init__(self, filepath=None):
+        self._filepath = filepath or str(get_app_dir() / "settings.json")
         self._save_timer = None
         self._lock = threading.Lock()
 
