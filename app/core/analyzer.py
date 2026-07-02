@@ -4,6 +4,7 @@ This module provides topic modeling functionality.
 """
 
 import hashlib
+import json
 import logging
 import os
 import re
@@ -27,10 +28,46 @@ class IncrementalAnalyzer:
         self.max_folders = max_folders
         self.stop_words = stop_words
         self.strategy = clustering_registry.get_strategy(strategy_name)
-        # Use a small, fast model for embeddings
-        self.model = SentenceTransformer("all-MiniLM-L6-v2")
+        
+        # Check for side-loaded offline model package
+        offline_model_path = os.path.join(os.getcwd(), "offline_bundle", "model")
+        manifest_path = os.path.join(os.getcwd(), "offline_bundle", "model_manifest.json")
+        
+        if os.path.exists(offline_model_path) and os.path.exists(manifest_path):
+            logging.info("Detected side-loaded model weights. Verifying integrity...")
+            self._verify_offline_model(offline_model_path, manifest_path)
+            logging.info("Integrity verified. Loading side-loaded model...")
+            self.model = SentenceTransformer(offline_model_path)
+        else:
+            # Use a small, fast model for embeddings
+            self.model = SentenceTransformer("all-MiniLM-L6-v2")
+            
         self.corpus = {}
         self._last_reconstruction_error = 0.0
+
+    def _verify_offline_model(self, model_dir: str, manifest_path: str) -> None:
+        """Verify the checksums of the offline model against the manifest."""
+        try:
+            with open(manifest_path, "r") as f:
+                manifest = json.load(f)
+        except Exception as e:
+            raise RuntimeError(f"Failed to read model manifest: {e}")
+            
+        for rel_path, expected_hash in manifest.items():
+            filepath = os.path.join(model_dir, rel_path)
+            if not os.path.exists(filepath):
+                raise RuntimeError(f"Missing side-loaded model file: {rel_path}")
+                
+            file_hash = hashlib.sha256()
+            try:
+                with open(filepath, "rb") as file_obj:
+                    while chunk := file_obj.read(8192):
+                        file_hash.update(chunk)
+            except Exception as e:
+                raise RuntimeError(f"Failed to read model file {rel_path}: {e}")
+                
+            if file_hash.hexdigest() != expected_hash:
+                raise RuntimeError(f"Checksum mismatch for side-loaded model file: {rel_path}")
 
     @property
     def last_reconstruction_error(self):
