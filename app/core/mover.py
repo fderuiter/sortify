@@ -3,9 +3,9 @@
 This module is responsible for safely moving files to new directories.
 """
 
+import logging
 import os
 import shutil
-import logging
 
 from app.core.link_manager import LinkManager
 from app.core.verifier import VerificationEngine

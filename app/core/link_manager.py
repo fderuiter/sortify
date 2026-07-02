@@ -1,6 +1,6 @@
 """Link management module."""
-import os
 import logging
+import os
 
 try:
     import pylnk3
