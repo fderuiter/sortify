@@ -49,6 +49,11 @@ UPDATE_BASELINE=1 uv run pytest tests/test_quality_guardrails.py
 ```
 Commit the updated `tests/baseline_metrics.json` file to establish the new expected baseline.
 
+## Security & Privacy
+
+For details regarding our security posture, vulnerability reporting, and network dependencies, please read our [Security Policy](SECURITY.md). 
+To understand how your data is processed locally and stored, please refer to our [Privacy Policy](PRIVACY.md).
+
 ## Documentation
 Check the `docs/` folder for the MkDocs configuration or run `tox -e docs` to build the site.
 
