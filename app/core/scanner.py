@@ -5,8 +5,6 @@ import os
 
 from app.core.link_manager import LinkManager
 
-logger = logging.getLogger(__name__)
-
 
 def get_files_recursively(base: str, rel_path: str = "") -> list:
     """Recursively list all files in a directory deterministically."""
@@ -34,7 +32,7 @@ def get_files_recursively(base: str, rel_path: str = "") -> list:
                 else:
                     files.append(entry_rel_path)
     except Exception as e:
-        logger.error("Failed to scan directory %s: %s", os.path.join(base, rel_path), str(e), exc_info=True)
+        logging.error(f"Failed to scan directory {os.path.join(base, rel_path)}: {e}", exc_info=True)
 
     if rel_path == "":
         return sorted(files)
