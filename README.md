@@ -49,6 +49,20 @@ UPDATE_BASELINE=1 uv run pytest tests/test_quality_guardrails.py
 ```
 Commit the updated `tests/baseline_metrics.json` file to establish the new expected baseline.
 
+## Headless UI Snapshot Testing
+
+To catch UI structural regressions before they reach the user, we employ a headless snapshot testing framework. It simulates a virtual tree widget to capture changes without a display driver or active GUI.
+
+To run the UI snapshot tests:
+```bash
+uv run pytest tests/test_ui_snapshots.py
+```
+
+If you intentionally alter the structure of the sorting tree (e.g., adding new metadata or changing nested formats), you must update the golden UI snapshots:
+```bash
+UPDATE_SNAPSHOTS=1 uv run pytest tests/test_ui_snapshots.py
+```
+Commit the updated JSON files located in `tests/snapshots/` so reviewers can verify the visual structure differences.
 ## Security & Privacy
 
 For details regarding our security posture, vulnerability reporting, and network dependencies, please read our [Security Policy](SECURITY.md). 

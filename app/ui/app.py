@@ -609,6 +609,13 @@ class AutoSorterApp(ctk.CTk):
     def _node_has_errors(self, plan_node):
         if plan_node is None:
             return False
+        if isinstance(plan_node, dict) and plan_node.get("__type__") == "file":
+            # If it's a file dictionary, it doesn't contain children. Check if its name is in errors?
+            # Wait, the parent loop passes the child_node, so we don't have the key here easily.
+            # But the errors are checked by key before this method is called.
+            # So if it's a file dictionary, it has no nested errors.
+            return False
+            
         for k, v in plan_node.items():
             if v is None:
                 if k in self.plan_errors:
