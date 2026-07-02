@@ -1,10 +1,11 @@
-import tempfile
-import os
 import shutil
+import tempfile
 from pathlib import Path
+
 import pytest
 
 from app.core.db import db
+
 
 @pytest.fixture(scope="session", autouse=True)
 def isolate_test_environment(monkeypatch_session):
