@@ -1,5 +1,3 @@
-import json
-
 class HeadlessTreeview:
     def __init__(self, *args, **kwargs):
         self._nodes = {}  # iid -> { "text": ..., "parent": ..., "children": [], "open": ..., ... }

@@ -1,26 +1,45 @@
-import sys
 import json
 import os
-import pytest
+import sys
 from unittest.mock import MagicMock
+
+import pytest
 
 # --- HEADLESS GUI MOCKING ---
 from tests.mock_ui import HeadlessTreeview
 
-class DummyWidget:
-    def __init__(self, *args, **kwargs): pass
-    def __call__(self, *args, **kwargs): return self
-    def __getattr__(self, name): return MagicMock()
-    def pack(self, *args, **kwargs): pass
-    def configure(self, *args, **kwargs): pass
-    def delete(self, *args, **kwargs): pass
-    def insert(self, *args, **kwargs): pass
 
-class DummyCTk(DummyWidget): pass
+class DummyWidget:
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def __call__(self, *args, **kwargs):
+        return self
+
+    def __getattr__(self, name):
+        return MagicMock()
+
+    def pack(self, *args, **kwargs):
+        pass
+
+    def configure(self, *args, **kwargs):
+        pass
+
+    def delete(self, *args, **kwargs):
+        pass
+
+    def insert(self, *args, **kwargs):
+        pass
+
+class DummyCTk(DummyWidget):
+    pass
 
 class DummyVar(DummyWidget):
-    def get(self): return False
-    def set(self, val): pass
+    def get(self):
+        return False
+
+    def set(self, val):
+        pass
 
 mock_ctk = MagicMock()
 mock_ctk.CTk = DummyCTk
@@ -48,11 +67,12 @@ sys.modules['tkinter.filedialog'] = MagicMock()
 sys.modules['tkinter.messagebox'] = MagicMock()
 
 # Inject dummy settings
-from app.config import AppSettings
+from app.config import AppSettings  # noqa: E402
+
 dummy_settings = AppSettings()
 sys.modules['app.config'].settings = dummy_settings
 
-from app.ui.app import AutoSorterApp
+from app.ui.app import AutoSorterApp  # noqa: E402
 
 SNAPSHOT_DIR = os.path.join(os.path.dirname(__file__), "snapshots")
 
