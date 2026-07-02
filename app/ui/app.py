@@ -41,6 +41,10 @@ class AutoSorterApp(ctk.CTk):
         self.locked_files: dict = {}
         self.manual_folders: set = set()
         self.plan_errors: dict = {}
+        self.expanded_nodes = set()
+        self.flat_plan = []
+        self.current_start = 0
+        self.visible_items = 100
 
         self.total_files = 0
         self.completed_files = 0
@@ -118,10 +122,15 @@ class AutoSorterApp(ctk.CTk):
         self.tree.pack(fill="both", expand=True, side="left")
 
         self.scrollbar = ttk.Scrollbar(
-            self.tree_frame, orient="vertical", command=self.tree.yview
+            self.tree_frame, orient="vertical", command=self.on_scroll
         )
         self.scrollbar.pack(side="right", fill="y")
         self.tree.configure(yscrollcommand=self.scrollbar.set)
+
+        self.tree.bind("<MouseWheel>", self.on_mouse_wheel)
+        self.tree.bind("<Button-4>", self.on_mouse_wheel)
+        self.tree.bind("<Button-5>", self.on_mouse_wheel)
+        self.tree.bind("<ButtonRelease-1>", self.on_tree_click)
 
         self.tree.bind("<ButtonPress-1>", self.on_drag_start)
         self.tree.bind("<B1-Motion>", self.on_drag_motion)
@@ -452,15 +461,7 @@ class AutoSorterApp(ctk.CTk):
         """Open a directory selection dialog and initialize processing threads."""
         self.base_dir = filedialog.askdirectory(title="Select Directory")
         if self.base_dir:
-            items_to_sort = self._get_files_recursively(self.base_dir)
-            self.total_files = len(items_to_sort)
-
-            if self.total_files == 0:
-                self.status_label.configure(
-                    text="Selected directory is empty.", text_color="red"
-                )
-                return
-
+            self.total_files = 0
             self.completed_files = 0
             self._initial_cached_files = 0
             self.progress_bar.set(0)
@@ -470,64 +471,78 @@ class AutoSorterApp(ctk.CTk):
             self.locked_files = {}
             self.manual_folders = set()
             self.plan = {}
+            self.expanded_nodes = set()
+            self.flat_plan = []
+            self.current_start = 0
             self.tree.delete(*self.tree.get_children())
 
             self.analyzer = IncrementalAnalyzer(
                 self.settings.MAX_FOLDERS, self.settings.STOP_WORDS
             )
 
-            # --- CACHE INTEGRATION ---
-            from app.core.cache import load_cache
-
-            cached_corpus, cached_locked, cached_idx, cached_manual_folders = (
-                load_cache(self.base_dir)
-            )
-
-            if cached_corpus is not None:
-                pruned_corpus = {
-                    k: v for k, v in cached_corpus.items() if k in items_to_sort
-                }
-                self.locked_files = {
-                    k: v for k, v in cached_locked.items() if k in pruned_corpus
-                }
-                self.manual_folders = (
-                    cached_manual_folders
-                    if cached_manual_folders is not None
-                    else set()
-                )
-                self.analyzer.corpus = pruned_corpus
-                self.analyzer.index_to_word = cached_idx
-
-                self.completed_files = len(pruned_corpus)
-                self._initial_cached_files = self.completed_files
-                if self.total_files > 0:
-                    self.progress_bar.set(self.completed_files / self.total_files)
-
-                items_to_sort = [f for f in items_to_sort if f not in pruned_corpus]
-
-                if pruned_corpus:
-                    new_plan = self.analyzer.generate_sorting_plan(
-                        self.base_dir, self.settings
-                    )
-                    self._apply_locked_files(new_plan)
-                    self.plan = new_plan
-                    self.render_tree()
-                    self._update_progress_ui(self.completed_files / self.total_files)
-
-            if not items_to_sort:
-                self._finalize_pipeline()
-                return
-
             self.status_label.configure(
-                text="Scanning and modeling incrementally...", text_color="white"
+                text="Scanning directory...", text_color="white"
             )
-            self.start_time = time.time()
 
-            self._start_watcher()
+            threading.Thread(target=self._scan_and_process_worker, daemon=True).start()
 
-            threading.Thread(
-                target=self.pipeline_worker, args=(items_to_sort,), daemon=True
-            ).start()
+    def _scan_and_process_worker(self):
+        items_to_sort = self._get_files_recursively(self.base_dir)
+        self.total_files = len(items_to_sort)
+
+        if self.total_files == 0:
+            self.after(0, lambda: self.status_label.configure(
+                text="Selected directory is empty.", text_color="red"
+            ))
+            self.after(0, lambda: self.select_btn.configure(state="normal"))
+            return
+
+        from app.core.cache import load_cache
+        cached_corpus, cached_locked, cached_idx, cached_manual_folders = load_cache(self.base_dir)
+
+        if cached_corpus is not None:
+            pruned_corpus = {
+                k: v for k, v in cached_corpus.items() if k in items_to_sort
+            }
+            self.locked_files = {
+                k: v for k, v in cached_locked.items() if k in pruned_corpus
+            }
+            self.manual_folders = (
+                cached_manual_folders if cached_manual_folders is not None else set()
+            )
+            self.analyzer.corpus = pruned_corpus
+            self.analyzer.index_to_word = cached_idx
+
+            self.completed_files = len(pruned_corpus)
+            self._initial_cached_files = self.completed_files
+            if self.total_files > 0:
+                self.after(0, lambda: self.progress_bar.set(self.completed_files / self.total_files))
+
+            items_to_sort = [f for f in items_to_sort if f not in pruned_corpus]
+
+            if pruned_corpus:
+                new_plan = self.analyzer.generate_sorting_plan(
+                    self.base_dir, self.settings
+                )
+                self.after(0, lambda p=new_plan: self._apply_locked_files(p))
+                self.plan = new_plan
+                self.after(0, self.render_tree)
+                self.after(0, lambda: self._update_progress_ui(self.completed_files / self.total_files))
+
+        if not items_to_sort:
+            self.after(0, self._finalize_pipeline)
+            return
+
+        self.after(0, lambda: self.status_label.configure(
+            text="Scanning and modeling incrementally...", text_color="white"
+        ))
+        
+        # Move start_time here to track actual work
+        self.start_time = time.time()
+        self.after(0, self._start_watcher)
+        
+        # Run pipeline_worker in this background thread
+        self.pipeline_worker(items_to_sort)
 
     def _start_watcher(self):
         if self.observer:
@@ -737,27 +752,63 @@ class AutoSorterApp(ctk.CTk):
 
     def render_tree(self):
         """Draw the plan on the Treeview, preserving expanded nodes."""
-        expanded = set()
-        for item in self.tree.get_children(""):
-            self._save_expanded(item, expanded)
+        self.flat_plan = self._flatten(self.plan, "", 0)
+        self.update_tree_view()
 
+    def _flatten(self, node, path, depth):
+        flat = []
+        if not isinstance(node, dict) or node.get("__type__") == "file":
+            return flat
+        
+        for k, v in node.items():
+            is_file = (v is None) or (isinstance(v, dict) and v.get("__type__") == "file")
+            node_id = f"file:{k}" if is_file else (f"{path}/{k}" if path else f"folder:{k}")
+            
+            flat.append({
+                "id": node_id,
+                "name": k,
+                "node": v,
+                "depth": depth,
+                "is_file": is_file,
+                "parent_id": path or ""
+            })
+            if not is_file and node_id in self.expanded_nodes:
+                flat.extend(self._flatten(v, node_id, depth + 1))
+        return flat
+
+    def update_tree_view(self):
         self.tree.delete(*self.tree.get_children())
-        self._insert_nodes("", self.plan, expanded)
-
-    def _save_expanded(self, item, expanded):
-        if self.tree.item(item, "open"):
-            expanded.add(item)
-        for child in self.tree.get_children(item):
-            self._save_expanded(child, expanded)
+        total = len(self.flat_plan)
+        if total == 0:
+            return
+            
+        self.current_start = max(0, min(self.current_start, total - min(self.visible_items, total)))
+        visible = self.flat_plan[self.current_start : self.current_start + self.visible_items]
+        
+        for item in visible:
+            indent = "    " * item["depth"]
+            if item["is_file"]:
+                error_msg = self.plan_errors.get(item["name"])
+                icon = "❌ " if error_msg else "✅ "
+                display_name = item["node"].get("target_filename", item["name"]) if isinstance(item["node"], dict) else item["name"]
+                text = f"{indent}{icon}{display_name}"
+                if error_msg: text += f" - {error_msg}"
+                status = item["node"].get("status", "Pending Move") if isinstance(item["node"], dict) else "Pending Move"
+                if status == "Already Sorted": text += " [Already Sorted]"
+                
+                self.tree.insert("", "end", iid=item["id"], text=text)
+            else:
+                count = self._count_files(item["node"])
+                icon = "❌ " if self._node_has_errors(item["node"]) else "✅ "
+                chevron = "▼ " if item["id"] in self.expanded_nodes else "▶ "
+                self.tree.insert("", "end", iid=item["id"], text=f"{indent}{chevron}{icon}📂 [{item['name']}] ({count} moves)")
+                
+        self.scrollbar.set(self.current_start / total, (self.current_start + len(visible)) / total)
 
     def _node_has_errors(self, plan_node):
         if plan_node is None:
             return False
         if isinstance(plan_node, dict) and plan_node.get("__type__") == "file":
-            # If it's a file dictionary, it doesn't contain children. Check if its name is in errors?
-            # Wait, the parent loop passes the child_node, so we don't have the key here easily.
-            # But the errors are checked by key before this method is called.
-            # So if it's a file dictionary, it has no nested errors.
             return False
 
         for k, v in plan_node.items():
@@ -769,49 +820,6 @@ class AutoSorterApp(ctk.CTk):
                     return True
         return False
 
-    def _insert_nodes(self, parent_id, plan_node, expanded):
-        if not isinstance(plan_node, dict) or plan_node.get("__type__") == "file":
-            return
-
-        for name, child_node in plan_node.items():
-            if child_node is None or (
-                isinstance(child_node, dict) and child_node.get("__type__") == "file"
-            ):
-                error_msg = self.plan_errors.get(name)
-                icon = "❌ " if error_msg else "✅ "
-                display_name = (
-                    child_node.get("target_filename", os.path.basename(name))
-                    if isinstance(child_node, dict)
-                    else os.path.basename(name)
-                )
-                text = f"{icon}{display_name}"
-                if error_msg:
-                    text += f" - {error_msg}"
-
-                status = (
-                    child_node.get("status", "Pending Move")
-                    if isinstance(child_node, dict)
-                    else "Pending Move"
-                )
-                if status == "Already Sorted":
-                    text += " [Already Sorted]"
-
-                self.tree.insert(parent_id, "end", iid=f"file:{name}", text=text)
-            else:
-                folder_id = f"folder:{name}" if not parent_id else f"{parent_id}/{name}"
-                count = self._count_files(child_node)
-                icon = "❌ " if self._node_has_errors(child_node) else "✅ "
-                self.tree.insert(
-                    parent_id,
-                    "end",
-                    iid=folder_id,
-                    text=f"{icon}📂 [{name}] ({count} moves)",
-                )
-                self._insert_nodes(folder_id, child_node, expanded)
-
-                if folder_id in expanded or (not parent_id and len(plan_node) == 1):
-                    self.tree.item(folder_id, open=True)
-
     def _count_files(self, plan_node):
         if plan_node is None:
             return 1
@@ -820,6 +828,48 @@ class AutoSorterApp(ctk.CTk):
                 return 0 if plan_node.get("status") == "Already Sorted" else 1
             return sum(self._count_files(v) for v in plan_node.values())
         return 0
+
+    def on_scroll(self, *args):
+        if not self.flat_plan:
+            return
+        total = len(self.flat_plan)
+        if args[0] == "moveto":
+            self.current_start = int(float(args[1]) * total)
+        elif args[0] == "scroll":
+            self.current_start += int(args[1]) * (self.visible_items if args[2] == "pages" else 1)
+        
+        self.current_start = max(0, min(self.current_start, total - min(self.visible_items, total)))
+        self.update_tree_view()
+
+    def on_mouse_wheel(self, event):
+        if not self.flat_plan:
+            return
+        if event.num == 4 or event.delta > 0:
+            self.current_start -= 1
+        elif event.num == 5 or event.delta < 0:
+            self.current_start += 1
+            
+        total = len(self.flat_plan)
+        self.current_start = max(0, min(self.current_start, total - min(self.visible_items, total)))
+        self.update_tree_view()
+        return "break"
+
+    def on_tree_click(self, event):
+        item = self.tree.identify_row(event.y)
+        if not item:
+            return
+        if item.startswith("folder:") or "/" in item:
+            if item in self.expanded_nodes:
+                self.expanded_nodes.remove(item)
+            else:
+                self.expanded_nodes.add(item)
+            self.render_tree()
+
+    def get_node_parent(self, item_id):
+        for x in self.flat_plan:
+            if x["id"] == item_id:
+                return x["parent_id"]
+        return ""
 
     def on_drag_start(self, event):
         """Handle the start of a drag event in the tree view."""
@@ -846,13 +896,13 @@ class AutoSorterApp(ctk.CTk):
         if item.startswith("folder:"):
             target_folder = item.split(":", 1)[1]
         elif item.startswith("file:"):
-            parent = self.tree.parent(item)
-            if parent.startswith("folder:"):
-                target_folder = parent.split(":", 1)[1]
+            parent = self.get_node_parent(item)
+            if parent.startswith("folder:") or "/" in parent:
+                target_folder = parent.split(":", 1)[1] if ":" in parent else parent
 
         if target_folder:
             filename = self.dragged_item.split(":", 1)[1]
-            current_parent = self.tree.parent(self.dragged_item)
+            current_parent = self.get_node_parent(self.dragged_item)
             if current_parent != f"folder:{target_folder}":
                 self.tree.move(self.dragged_item, f"folder:{target_folder}", "end")
                 self.locked_files[filename] = target_folder
