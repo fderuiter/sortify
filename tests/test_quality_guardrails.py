@@ -44,7 +44,7 @@ def test_semantic_quality_guardrails():
         else:
             print("\nRunning in FULL TEST mode. Processing all 500 documents.")
 
-        analyzer = IncrementalAnalyzer(max_folders=4, stop_words={"the", "and"})
+        analyzer = IncrementalAnalyzer(max_folders=4, stop_words={"the", "and"}, model_path="all-MiniLM-L6-v2")
         progress_callback = MagicMock()
 
         generator = build_corpus_generator(

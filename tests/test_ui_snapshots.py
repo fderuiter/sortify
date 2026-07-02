@@ -73,6 +73,7 @@ sys.modules["tkinter.messagebox"] = MagicMock()
 from app.config import AppSettings  # noqa: E402
 
 dummy_settings = AppSettings()
+dummy_settings.AI_CONSENT_GRANTED = False
 sys.modules["app.config"].settings = dummy_settings
 
 from app.ui.app import AutoSorterApp  # noqa: E402

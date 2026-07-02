@@ -104,7 +104,46 @@ class SettingsView(ctk.CTkFrame):
         )
         desc.pack(padx=20, pady=(0, 10), anchor="w")
 
+        # Privacy Section
+        self.privacy_frame = ctk.CTkFrame(self, fg_color="transparent")
+        self.privacy_frame.pack(fill="x", padx=20, pady=(0, 10))
+        
+        privacy_title = ctk.CTkLabel(
+            self.privacy_frame, text="AI Features & Privacy", font=("Roboto", 16, "bold")
+        )
+        privacy_title.pack(anchor="w", pady=(0, 5))
+        
+        self.ai_status_label = ctk.CTkLabel(
+            self.privacy_frame, text="Checking AI model status...", text_color="gray"
+        )
+        self.ai_status_label.pack(anchor="w")
+        
+        self.ai_btn = ctk.CTkButton(
+            self.privacy_frame, text="Download AI Model", command=self.download_ai_model
+        )
+        self.ai_btn.pack(anchor="w", pady=(5, 10))
+        
+        self.update_ai_status()
+
         self.token_widget = TokenWidget(
             self, self.settings.STOP_WORDS, on_change=on_settings_changed
         )
         self.token_widget.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+        
+    def update_ai_status(self):
+        from app.config import get_app_dir
+        model_dir = get_app_dir() / "model"
+        if (model_dir / "config.json").exists():
+            self.ai_status_label.configure(text="AI Model: Downloaded & Ready", text_color="green")
+            self.ai_btn.configure(state="disabled", text="Model Installed")
+        else:
+            self.ai_status_label.configure(text="AI Model: Not Downloaded (Offline Mode Active)", text_color="orange")
+            self.ai_btn.configure(state="normal", text="Download AI Model")
+
+    def download_ai_model(self):
+        from app.ui.wizard import SetupWizard
+        
+        def on_complete():
+            self.update_ai_status()
+            
+        SetupWizard(self, self.settings, on_complete)

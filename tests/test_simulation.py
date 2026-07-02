@@ -27,7 +27,7 @@ def test_full_workflow_simulation():
     # Requirement: multiple document types including PDF, Word, plain text
 
     files = [f for f in os.listdir(CORPUS_DIR) if f != "empty.txt" and f != "dummy.pdf"]
-    analyzer = IncrementalAnalyzer(max_folders=3, stop_words={"the", "and"})
+    analyzer = IncrementalAnalyzer(max_folders=3, stop_words={"the", "and"}, model_path="all-MiniLM-L6-v2")
     progress_callback = MagicMock()
 
     # Process files asynchronously using the generator (which uses max workers)
@@ -80,7 +80,7 @@ def test_full_workflow_simulation():
 
 def test_small_dataset_fallback():
     # Requirement: Edge cases, small datasets produce fallback plans without errors
-    analyzer = IncrementalAnalyzer(max_folders=3, stop_words={"the", "and"})
+    analyzer = IncrementalAnalyzer(max_folders=3, stop_words={"the", "and"}, model_path="all-MiniLM-L6-v2")
 
     # Only 2 files
     corpus = {"file1.txt": "Some content here.", "file2.txt": "More content there."}
@@ -96,7 +96,7 @@ def test_small_dataset_fallback():
 
 def test_empty_files_handling():
     # Requirement: Edge cases, empty files produce expected fallback
-    analyzer = IncrementalAnalyzer(max_folders=3, stop_words={"the", "and"})
+    analyzer = IncrementalAnalyzer(max_folders=3, stop_words={"the", "and"}, model_path="all-MiniLM-L6-v2")
 
     corpus = {"empty1.txt": "", "empty2.txt": "", "empty3.txt": ""}
 
@@ -110,7 +110,7 @@ def test_empty_files_handling():
 
 def test_concurrent_large_volume():
     # Requirement: accurately simulates the asynchronous processing of at least 20 files simultaneously
-    analyzer = IncrementalAnalyzer(max_folders=5, stop_words={"the", "and"})
+    analyzer = IncrementalAnalyzer(max_folders=5, stop_words={"the", "and"}, model_path="all-MiniLM-L6-v2")
     progress_callback = MagicMock()
 
     with tempfile.TemporaryDirectory() as temp_dir:
