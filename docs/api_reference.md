@@ -34,6 +34,10 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.core.extractor_strategies
 
+## `app.core.history`
+
+::: app.core.history
+
 ## `app.core.link_manager`
 
 ::: app.core.link_manager

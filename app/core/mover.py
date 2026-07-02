@@ -7,9 +7,9 @@ import logging
 import os
 import shutil
 
+from app.core.history import history_manager
 from app.core.link_manager import LinkManager
 from app.core.verifier import VerificationEngine
-from app.core.history import history_manager
 
 try:
     import pylnk3
@@ -159,7 +159,6 @@ def _execute_moves_recursive(
 
 def execute_moves(base_dir: str, plan: dict) -> None:
     """Create directories and safely move files, tracking file-system errors."""
-    
     # Create a full snapshot of the directory tree and metadata before moving files
     session_id = history_manager.create_snapshot(base_dir)
     logging.info(f"Created snapshot session {session_id} for {base_dir}")

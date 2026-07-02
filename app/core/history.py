@@ -1,14 +1,15 @@
-import sqlite3
-import json
-import uuid
+"""History management module for snapshotting and rollback."""
+
 import os
-import time
-import logging
 import shutil
-from typing import List, Dict, Any
+import sqlite3
+import time
+import uuid
+from typing import Any, Dict, List
 
 from app.config import get_app_dir
 from app.core.db import db as db_instance
+
 
 class HistoryManager:
     """Manages full directory snapshots and rollback functionality."""
@@ -135,6 +136,7 @@ class HistoryManager:
             conn.execute("DELETE FROM sessions WHERE session_id = ?", (sid,))
 
     def get_sessions(self) -> List[Dict[str, Any]]:
+        """Retrieve a list of all historical sessions, ordered by time."""
         with sqlite3.connect(self.db_path) as conn:
             cur = conn.execute("SELECT session_id, timestamp, base_dir, status FROM sessions ORDER BY timestamp DESC")
             return [{"session_id": r[0], "timestamp": r[1], "base_dir": r[2], "status": r[3]} for r in cur.fetchall()]
@@ -217,7 +219,6 @@ class HistoryManager:
                             moves.append((current_abs, target_abs))
 
             # Execute moves safely to avoid overwriting during cyclic renames
-            temp_moves = []
             for src, dst in moves:
                 os.makedirs(os.path.dirname(dst), exist_ok=True)
                 if os.path.exists(dst) and not os.path.samefile(src, dst):
