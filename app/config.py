@@ -9,7 +9,6 @@ import os
 import sys
 import threading
 from pathlib import Path
-from typing import Set
 
 from pydantic import Field, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -158,11 +157,13 @@ class AppSettings:
             logging.error(f"Failed to save settings: {e}")
 
     def __getattr__(self, name):
+        """Get attribute dynamically from the settings model."""
         if hasattr(self._settings_model, name):
             return getattr(self._settings_model, name)
         raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
 
     def __setattr__(self, name, value):
+        """Set attribute dynamically and trigger a save."""
         if name in ("_filepath", "_lock", "_save_timer", "_settings_model"):
             super().__setattr__(name, value)
         else:
