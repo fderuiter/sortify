@@ -1,7 +1,7 @@
 """Directory scanning utility."""
 
-import os
 import logging
+import os
 
 from app.core.link_manager import LinkManager
 

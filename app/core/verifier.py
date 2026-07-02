@@ -1,9 +1,9 @@
 """Verification engine for proactive move validation."""
 
+import logging
 import os
 import platform
 import shutil
-import logging
 
 from app.core.link_manager import LinkManager
 
