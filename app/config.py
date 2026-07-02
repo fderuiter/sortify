@@ -128,26 +128,12 @@ class AppSettings:
             with open(self._filepath, "r") as f:
                 data = json.load(f)
 
-            for key in [
-                "MAX_FOLDERS",
-                "MAX_WORKERS",
-                "MAX_DEPTH",
-                "MAX_FEATURES",
-                "LOG_FILE",
-                "CONTEXTUAL_RENAMING",
-                "PRESERVE_HIERARCHY",
-            ]:
-                if key in data:
+            for key, value in data.items():
+                if hasattr(self._settings_model, key):
                     try:
-                        setattr(self._settings_model, key, data[key])
+                        setattr(self._settings_model, key, value)
                     except (ValueError, ValidationError) as e:
                         logging.warning(f"Invalid {key} in config, using default: {e}")
-
-            if "STOP_WORDS" in data:
-                try:
-                    self._settings_model.STOP_WORDS = set(data["STOP_WORDS"])
-                except (ValueError, ValidationError) as e:
-                    logging.warning(f"Invalid STOP_WORDS in config, using default: {e}")
 
         except Exception as e:
             logging.warning(f"Failed to load settings, using defaults: {e}")
@@ -164,103 +150,21 @@ class AppSettings:
 
     def _save(self):
         with self._lock:
-            data = {
-                "CONTEXTUAL_RENAMING": self._settings_model.CONTEXTUAL_RENAMING,
-                "PRESERVE_HIERARCHY": self._settings_model.PRESERVE_HIERARCHY,
-                "MAX_FOLDERS": self._settings_model.MAX_FOLDERS,
-                "MAX_WORKERS": self._settings_model.MAX_WORKERS,
-                "MAX_DEPTH": self._settings_model.MAX_DEPTH,
-                "MAX_FEATURES": self._settings_model.MAX_FEATURES,
-                "LOG_FILE": self._settings_model.LOG_FILE,
-                "STOP_WORDS": list(self._settings_model.STOP_WORDS),
-            }
+            data = self._settings_model.model_dump(mode='json')
         try:
             with open(self._filepath, "w") as f:
                 json.dump(data, f, indent=4)
         except Exception as e:
             logging.error(f"Failed to save settings: {e}")
 
-    @property
-    def CONTEXTUAL_RENAMING(self) -> bool:
-        """Get the contextual renaming flag."""
-        return self._settings_model.CONTEXTUAL_RENAMING
+    def __getattr__(self, name):
+        if hasattr(self._settings_model, name):
+            return getattr(self._settings_model, name)
+        raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
 
-    @CONTEXTUAL_RENAMING.setter
-    def CONTEXTUAL_RENAMING(self, value: bool):
-        self._settings_model.CONTEXTUAL_RENAMING = value
-        self._trigger_save()
-
-    @property
-    def PRESERVE_HIERARCHY(self) -> bool:
-        """Get the preserve hierarchy flag."""
-        return self._settings_model.PRESERVE_HIERARCHY
-
-    @PRESERVE_HIERARCHY.setter
-    def PRESERVE_HIERARCHY(self, value: bool):
-        self._settings_model.PRESERVE_HIERARCHY = value
-        self._trigger_save()
-
-    @property
-    def MAX_FOLDERS(self) -> int:
-        """Get the maximum number of folders."""
-        return self._settings_model.MAX_FOLDERS
-
-    @MAX_FOLDERS.setter
-    def MAX_FOLDERS(self, value: int):
-        self._settings_model.MAX_FOLDERS = value
-        self._trigger_save()
-
-    @property
-    def MAX_WORKERS(self) -> int:
-        """Get the maximum number of worker threads."""
-        return self._settings_model.MAX_WORKERS
-
-    @MAX_WORKERS.setter
-    def MAX_WORKERS(self, value: int):
-        self._settings_model.MAX_WORKERS = value
-        self._trigger_save()
-
-    @property
-    def MAX_DEPTH(self) -> int:
-        """Get the maximum recursion depth for sorting."""
-        return self._settings_model.MAX_DEPTH
-
-    @MAX_DEPTH.setter
-    def MAX_DEPTH(self, value: int):
-        self._settings_model.MAX_DEPTH = value
-        self._trigger_save()
-
-    @property
-    def MAX_FEATURES(self) -> int:
-        """Get the max features for clustering."""
-        return self._settings_model.MAX_FEATURES
-
-    @MAX_FEATURES.setter
-    def MAX_FEATURES(self, value: int):
-        self._settings_model.MAX_FEATURES = value
-        self._trigger_save()
-
-    @property
-    def LOG_FILE(self) -> str:
-        """Get the central log file path."""
-        return self._settings_model.LOG_FILE
-
-    @LOG_FILE.setter
-    def LOG_FILE(self, value: str):
-        self._settings_model.LOG_FILE = value
-        self._trigger_save()
-
-    @property
-    def STOP_WORDS(self) -> Set[str]:
-        """Get the set of stop words to filter out."""
-        return self._settings_model.STOP_WORDS
-
-    @STOP_WORDS.setter
-    def STOP_WORDS(self, value: Set[str]):
-        if not isinstance(value, set):
-            try:
-                value = set(value)
-            except Exception:
-                raise ValueError("STOP_WORDS must be a set of strings")
-        self._settings_model.STOP_WORDS = value
-        self._trigger_save()
+    def __setattr__(self, name, value):
+        if name in ("_filepath", "_lock", "_save_timer", "_settings_model"):
+            super().__setattr__(name, value)
+        else:
+            setattr(self._settings_model, name, value)
+            self._trigger_save()
