@@ -1,8 +1,11 @@
 """Directory scanning utility."""
 
 import os
+import logging
 
 from app.core.link_manager import LinkManager
+
+logger = logging.getLogger(__name__)
 
 
 def get_files_recursively(base: str, rel_path: str = "") -> list:
@@ -30,8 +33,8 @@ def get_files_recursively(base: str, rel_path: str = "") -> list:
                     files.extend(get_files_recursively(base, entry_rel_path))
                 else:
                     files.append(entry_rel_path)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.error("Failed to scan directory %s: %s", os.path.join(base, rel_path), str(e), exc_info=True)
 
     if rel_path == "":
         return sorted(files)

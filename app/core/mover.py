@@ -5,6 +5,7 @@ This module is responsible for safely moving files to new directories.
 
 import os
 import shutil
+import logging
 
 from app.core.link_manager import LinkManager
 from app.core.verifier import VerificationEngine
@@ -13,6 +14,8 @@ try:
     import pylnk3
 except ImportError:
     pylnk3 = None
+
+logger = logging.getLogger(__name__)
 
 
 def get_safe_path(dest_dir: str, filename: str, source_path: str = None) -> str:
@@ -25,8 +28,8 @@ def get_safe_path(dest_dir: str, filename: str, source_path: str = None) -> str:
             try:
                 if os.path.samefile(safe_path, source_path):
                     return safe_path
-            except OSError:
-                pass
+            except OSError as e:
+                logger.error("Failed to verify if paths conflict for %s and %s: %s", safe_path, source_path, str(e), exc_info=True)
         safe_path = os.path.join(dest_dir, f"{base}_{counter}{extension}")
         counter += 1
     return safe_path
@@ -126,8 +129,8 @@ def _execute_moves_recursive(base_dir: str, plan: dict, current_dest: str = "", 
                             if dest_path != source_path and os.path.exists(source_path):
                                 os.remove(source_path)
                             moved_as_link = True
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            logger.error("Failed to update Windows shortcut %s: %s", source_path, str(e), exc_info=True)
                             
             if dest_path == source_path:
                 continue
