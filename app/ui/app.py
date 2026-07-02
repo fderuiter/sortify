@@ -487,9 +487,10 @@ class AutoSorterApp(ctk.CTk):
         modal.transient(self)
         modal.grab_set()
 
-        from app.core.history import history_manager
         import datetime
         from tkinter import messagebox
+
+        from app.core.history import history_manager
 
         columns = ("session_id", "date", "status")
         tree = ttk.Treeview(modal, columns=columns, show="headings")
