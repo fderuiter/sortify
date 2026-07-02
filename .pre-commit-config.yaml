@@ -13,4 +13,14 @@ repos:
         entry: Cannot commit cache files, bytecode, or virtual environments. Please clean your workspace.
         language: fail
         files: '(\.pytest_cache/|\.venv/|\.coverage|htmlcov/|__pycache__/|.*\.py[co]$)'
+      - id: generate-api-docs
+        name: Generate API Reference Docs
+        entry: python3 scripts/generate_api_reference.py
+        language: system
+        pass_filenames: false
+      - id: mkdocs-build-strict
+        name: Validate Documentation Integrity
+        entry: bash -c "uv run mkdocs build --strict"
+        language: system
+        pass_filenames: false
 
