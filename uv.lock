@@ -2968,6 +2968,15 @@ wheels = [
 ]
 
 [[package]]
+name = "pylnk3"
+version = "0.4.3"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/b9/7c/8f824baeeb854ebb3c5f547c791cde05733a2e66ae4f249a70ff23c2b7ab/pylnk3-0.4.3.tar.gz", hash = "sha256:fbc5f512b581382c2a4c11e6df3796f9975bcfd99e3fca2afe531ea61b3c4ac2", size = 23324, upload-time = "2025-04-28T19:06:52.103Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/31/86/ed659fbdce3befc0ad059e7c8186b9fceff5b9301122a3930016747b2f9d/pylnk3-0.4.3-py3-none-any.whl", hash = "sha256:fafa9293290163fed30541fb38f7df21a0e3f6fcc8324597a898ce694c9a593d", size = 21952, upload-time = "2025-04-28T19:06:50.509Z" },
+]
+
+[[package]]
 name = "pymdown-extensions"
 version = "10.21.3"
 source = { registry = "https://pypi.org/simple" }
@@ -4206,6 +4215,7 @@ dependencies = [
     { name = "pandas", version = "3.0.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "pydantic-settings", version = "2.11.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
     { name = "pydantic-settings", version = "2.14.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
+    { name = "pylnk3" },
     { name = "pypdf" },
     { name = "pytest", version = "8.4.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
     { name = "pytest", version = "9.1.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
@@ -4255,6 +4265,7 @@ requires-dist = [
     { name = "pre-commit", marker = "extra == 'dev'" },
     { name = "pydantic-settings" },
     { name = "pyinstaller", marker = "extra == 'dev'" },
+    { name = "pylnk3", specifier = ">=0.4.2" },
     { name = "pypdf" },
     { name = "pytest", specifier = ">=8.4.2" },
     { name = "pytest", marker = "extra == 'dev'" },
