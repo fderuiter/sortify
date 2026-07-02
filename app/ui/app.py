@@ -64,7 +64,28 @@ class AutoSorterApp(ctk.CTk):
 
         self._build_main_ui()
         self._build_settings_ui()
-        self.show_main_view()
+        
+        self.check_setup_wizard()
+
+    def check_setup_wizard(self):
+        from app.config import get_app_dir
+        from app.ui.wizard import SetupWizard
+        
+        model_dir = get_app_dir() / "model"
+        
+        # If model already exists and we haven't explicitely denied, assume OK
+        if (model_dir / "config.json").exists():
+            if self.settings.AI_CONSENT_GRANTED is None:
+                self.settings.AI_CONSENT_GRANTED = True
+            self.show_main_view()
+            return
+            
+        if self.settings.AI_CONSENT_GRANTED is False:
+            self.show_main_view()
+            return
+            
+        # Needs setup
+        SetupWizard(self, self.settings, self.show_main_view)
 
     def _build_menu(self):
         menubar = tk.Menu(self)
@@ -472,8 +493,16 @@ class AutoSorterApp(ctk.CTk):
             self.plan = {}
             self.tree.delete(*self.tree.get_children())
 
+            from app.config import get_app_dir
+            user_model_path = get_app_dir() / "model"
+            
+            if self.settings.AI_CONSENT_GRANTED is True:
+                model_path = str(user_model_path)
+            else:
+                model_path = None
+                
             self.analyzer = IncrementalAnalyzer(
-                self.settings.MAX_FOLDERS, self.settings.STOP_WORDS
+                self.settings.MAX_FOLDERS, self.settings.STOP_WORDS, model_path=model_path
             )
 
             # --- CACHE INTEGRATION ---

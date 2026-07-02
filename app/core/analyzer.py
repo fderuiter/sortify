@@ -22,7 +22,7 @@ class IncrementalAnalyzer:
     """
 
     def __init__(
-        self, max_folders: int, stop_words: set, strategy_name: str = "default"
+        self, max_folders: int, stop_words: set, strategy_name: str = "default", model_path: str | None = None
     ) -> None:
         """Initialize the analyzer with the maximum number of folders."""
         self.max_folders = max_folders
@@ -30,20 +30,61 @@ class IncrementalAnalyzer:
         self.strategy = clustering_registry.get_strategy(strategy_name)
         
         # Check for side-loaded offline model package
+        from app.config import get_app_dir
+        
         offline_model_path = os.path.join(os.getcwd(), "offline_bundle", "model")
         manifest_path = os.path.join(os.getcwd(), "offline_bundle", "model_manifest.json")
+        user_model_path = get_app_dir() / "model"
         
         if os.path.exists(offline_model_path) and os.path.exists(manifest_path):
             logging.info("Detected side-loaded model weights. Verifying integrity...")
             self._verify_offline_model(offline_model_path, manifest_path)
             logging.info("Integrity verified. Loading side-loaded model...")
             self.model = SentenceTransformer(offline_model_path)
+        elif model_path is not None:
+            if str(model_path) == str(user_model_path):
+                hf_manifest = os.path.join(os.path.dirname(__file__), "hf_manifest.json")
+                if os.path.exists(hf_manifest):
+                    logging.info("Verifying user downloaded model integrity...")
+                    self._verify_hf_model(str(user_model_path), hf_manifest)
+            self.model = SentenceTransformer(model_path)
         else:
-            # Use a small, fast model for embeddings
-            self.model = SentenceTransformer("all-MiniLM-L6-v2")
+            # Model not downloaded yet (no consent or skipped)
+            self.model = None
             
         self.corpus = {}
         self._last_reconstruction_error = 0.0
+
+    def _verify_hf_model(self, model_dir: str, manifest_path: str) -> None:
+        """Verify the checksums of critical files in the downloaded HuggingFace model."""
+        try:
+            with open(manifest_path, "r") as f:
+                manifest = json.load(f)
+        except Exception as e:
+            raise RuntimeError(f"Failed to read model manifest: {e}")
+            
+        critical_files = ["config.json", "pytorch_model.bin", "model.safetensors", "tokenizer.json"]
+        
+        for rel_path, expected_hash in manifest.items():
+            if rel_path.startswith(".cache"):
+                continue
+                
+            filepath = os.path.join(model_dir, rel_path)
+            if not os.path.exists(filepath):
+                if rel_path in critical_files:
+                    raise RuntimeError(f"Missing critical model file: {rel_path}")
+                continue
+                
+            file_hash = hashlib.sha256()
+            try:
+                with open(filepath, "rb") as file_obj:
+                    while chunk := file_obj.read(8192):
+                        file_hash.update(chunk)
+            except Exception as e:
+                raise RuntimeError(f"Failed to read model file {rel_path}: {e}")
+                
+            if file_hash.hexdigest() != expected_hash:
+                raise RuntimeError(f"Checksum mismatch for downloaded model file: {rel_path}")
 
     def _verify_offline_model(self, model_dir: str, manifest_path: str) -> None:
         """Verify the checksums of the offline model against the manifest."""
@@ -127,9 +168,13 @@ class IncrementalAnalyzer:
                     indices_to_encode.append(i)
 
             if texts_to_encode:
-                new_embeddings = self.model.encode(
-                    texts_to_encode, show_progress_bar=False
-                )
+                if self.model is None:
+                    # Dummy embeddings if offline mode without model
+                    new_embeddings = [None] * len(texts_to_encode)
+                else:
+                    new_embeddings = self.model.encode(
+                        texts_to_encode, show_progress_bar=False
+                    )
                 for idx, new_emb in zip(indices_to_encode, new_embeddings):
                     embeddings[idx] = new_emb
 
@@ -195,7 +240,10 @@ class IncrementalAnalyzer:
 
             self._last_reconstruction_error = 0.0
 
-            if self.strategy:
+            if self.model is None:
+                # If no model, just create a flat unsorted plan
+                plan = {f: None for f in filenames}
+            elif self.strategy:
                 max_depth = (
                     getattr(runtime_settings, "MAX_DEPTH", 5) if runtime_settings else 5
                 )
