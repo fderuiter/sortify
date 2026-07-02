@@ -78,7 +78,7 @@ def _execute_moves_recursive(base_dir: str | Path, plan: dict, current_dest: str
 
             # It's a file, key is the original relative path
             source_path = base_path / key
-            if not source_path.exists():
+            if not source_path.exists() and not source_path.is_symlink():
                 continue
 
             if isinstance(content, dict) and "target_filename" in content:
@@ -102,7 +102,7 @@ def _execute_moves_recursive(base_dir: str | Path, plan: dict, current_dest: str
                 # Check if original_target is absolute
                 is_abs = Path(original_target).is_absolute()
                 if not is_abs:
-                    abs_target = (source_path.parent / original_target).resolve().as_posix()
+                    abs_target = Path(os.path.abspath(source_path.parent / original_target)).as_posix()
                     
                 new_abs_target = path_map.get(abs_target, abs_target)
                 
@@ -162,7 +162,7 @@ def execute_moves(base_dir: str | Path, plan: dict) -> None:
     moves_list = VerificationEngine.get_moves(base_path, plan)
     path_map = {}
     for rel_src, src, dst in moves_list:
-        path_map[Path(src).resolve().as_posix()] = Path(dst).resolve().as_posix()
+        path_map[Path(os.path.abspath(src)).as_posix()] = Path(os.path.abspath(dst)).as_posix()
         
     # Execute all moves first
     _execute_moves_recursive(base_path, plan, "", path_map)
