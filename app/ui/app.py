@@ -312,11 +312,17 @@ class AutoSorterApp(ctk.CTk):
         frame.pack(fill="both", expand=True, padx=10, pady=10)
 
         def create_slider_group(
-            parent, label_text, from_val, to_val, num_steps, initial_val
+            parent, label_text, from_val, to_val, num_steps, initial_val, help_url=None
         ):
-            ctk.CTkLabel(parent, text=label_text, font=("Roboto", 14)).pack(
-                pady=(10, 0)
-            )
+            header = ctk.CTkFrame(parent, fg_color="transparent")
+            header.pack(pady=(10, 0))
+            
+            ctk.CTkLabel(header, text=label_text, font=("Roboto", 14)).pack(side="left")
+            if help_url:
+                ctk.CTkButton(
+                    header, text="?", width=24, height=24,
+                    command=lambda url=help_url: webbrowser.open(url)
+                ).pack(side="left", padx=10)
 
             row = ctk.CTkFrame(parent, fg_color="transparent")
             row.pack(fill="x", pady=5)
@@ -349,7 +355,8 @@ class AutoSorterApp(ctk.CTk):
             return slider, entry_var
 
         folders_slider, folders_var = create_slider_group(
-            frame, "Max Folders:", 2, 50, 48, self.settings.MAX_FOLDERS
+            frame, "Max Folders:", 2, 50, 48, self.settings.MAX_FOLDERS,
+            help_url="https://docs.smartautosorter.com/user_guide/#system-limits"
         )
         workers_slider, workers_var = create_slider_group(
             frame, "Max Background Workers:", 1, 64, 63, self.settings.MAX_WORKERS

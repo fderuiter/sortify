@@ -21,10 +21,11 @@ plugins:
 nav:
   - User Guides: user_guide.md
   - Administrator Guide: admin_guide.md
-  - Architecture & Internals: architecture.md
-  - Contributor Guide: contributor.md
-  - Developer Guides:
-    - Core: core.md
-    - UI: ui.md
-    - Config: config.md
-  - API Reference: api_reference.md
+  - Developer Reference:
+    - API Reference: api_reference.md
+    - Architecture & Internals: architecture.md
+    - Contributor Guide: contributor.md
+    - Developer Guides:
+      - Core: core.md
+      - UI: ui.md
+      - Config: config.md
