@@ -57,13 +57,16 @@ def _execute_moves_recursive(
     if path_map is None:
         path_map = {}
 
-    if not isinstance(plan, dict) or plan.get("__type__") == "file":
+    if not isinstance(plan, dict) or plan.get("__type__") in ("file", "directory"):
         return
 
     for key, content in plan.items():
         if content is None or (
-            isinstance(content, dict) and content.get("__type__") == "file"
+            isinstance(content, dict) and content.get("__type__") in ("file", "directory")
         ):
+            if isinstance(content, dict) and content.get("__type__") == "directory":
+                continue
+                
             if isinstance(content, dict) and content.get("status") == "Already Sorted":
                 # Even if already sorted, the target might have moved, so we still process links
                 pass
@@ -156,7 +159,7 @@ def _execute_moves_recursive(
             )
 
 
-def execute_moves(base_dir: str, plan: dict) -> None:
+def execute_moves(base_dir: str, plan: dict, runtime_settings=None) -> dict:
     """Create directories and safely move files, tracking file-system errors."""
     # Build path mapping to track where targets move
     moves_list = VerificationEngine.get_moves(base_dir, plan)
@@ -167,9 +170,39 @@ def execute_moves(base_dir: str, plan: dict) -> None:
     # Execute all moves first
     _execute_moves_recursive(base_dir, plan, "", path_map)
 
-    # Then clean up empty source directories
-    for entry in os.listdir(base_dir):
-        entry_path = os.path.join(base_dir, entry)
-        if os.path.isdir(entry_path) and entry not in plan:
-            # Only clean up directories that weren't generated as top-level folders in the plan
-            _remove_empty_dirs(entry_path)
+    summary = {"deleted_folders": 0, "protected_folders": 0}
+    cleanup_enabled = getattr(runtime_settings, "CLEANUP_EMPTY_FOLDERS", True) if runtime_settings else True
+
+    # Find the directory nodes in the plan
+    dirs_to_process = []
+    
+    def _find_dir_nodes(node):
+        if not isinstance(node, dict) or node.get("__type__") in ("file", "directory"):
+            return
+        for k, v in node.items():
+            if isinstance(v, dict) and v.get("__type__") == "directory":
+                dirs_to_process.append(v)
+            elif isinstance(v, dict) and v.get("__type__") != "file":
+                _find_dir_nodes(v)
+                
+    _find_dir_nodes(plan)
+    
+    # Sort by descending depth to delete subdirectories before parents
+    dirs_to_process.sort(key=lambda x: len(x["source_path"].split(os.sep)), reverse=True)
+
+    if cleanup_enabled:
+        for node in dirs_to_process:
+            if node.get("protected"):
+                summary["protected_folders"] += 1
+            elif node.get("status") == "To Be Deleted":
+                try:
+                    if os.path.isdir(node["source_path"]) and not os.listdir(node["source_path"]):
+                        os.rmdir(node["source_path"])
+                        summary["deleted_folders"] += 1
+                except OSError:
+                    pass
+    else:
+        for node in dirs_to_process:
+            summary["protected_folders"] += 1
+
+    return summary

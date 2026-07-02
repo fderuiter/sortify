@@ -40,6 +40,7 @@ class AutoSorterApp(ctk.CTk):
         self.plan: dict = {}
         self.locked_files: dict = {}
         self.manual_folders: set = set()
+        self.protected_folders: set = set()
         self.plan_errors: dict = {}
         self.expanded_nodes = set()
         self.flat_plan = []
@@ -235,6 +236,8 @@ class AutoSorterApp(ctk.CTk):
         """Switch the main interface to the main sorting view."""
         self.settings_frame.pack_forget()
         self.main_frame.pack(fill="both", expand=True)
+        if self.plan:
+            self.render_tree()
 
     def show_settings_view(self):
         """Switch the main interface to the settings view."""
@@ -492,6 +495,7 @@ class AutoSorterApp(ctk.CTk):
 
             self.locked_files = {}
             self.manual_folders = set()
+            self.protected_folders = set()
             self.plan = {}
             self.expanded_nodes = set()
             self.flat_plan = []
@@ -758,6 +762,67 @@ class AutoSorterApp(ctk.CTk):
                 ):
                     current[part] = {}
                 current = current[part]
+                
+        self._inject_deletion_candidates(new_plan)
+
+    def _inject_deletion_candidates(self, plan):
+        """Find source directories that will be empty and add them to the plan."""
+        if not self.base_dir or not os.path.exists(self.base_dir):
+            return
+            
+        def _get_files_in_plan(node):
+            files = []
+            for k, v in node.items():
+                if isinstance(v, dict) and v.get("__type__") == "file":
+                    files.append(v)
+                elif isinstance(v, dict) and v.get("__type__") not in ("file", "directory"):
+                    files.extend(_get_files_in_plan(v))
+            return files
+            
+        plan_files = _get_files_in_plan(plan)
+        moving_sources = {f["source_path"] for f in plan_files if f.get("status") != "Already Sorted"}
+        
+        all_dirs = set()
+        files_remaining = set()
+        
+        for root, dirs, files in os.walk(self.base_dir):
+            rel_root = os.path.relpath(root, self.base_dir)
+            if rel_root == ".":
+                rel_root = ""
+            
+            for d in dirs:
+                path = os.path.normpath(os.path.join(rel_root, d)).replace("\\", "/") if rel_root else d
+                all_dirs.add(path)
+                    
+            for f in files:
+                path = os.path.normpath(os.path.join(rel_root, f)).replace("\\", "/") if rel_root else f
+                if path not in moving_sources:
+                    files_remaining.add(path)
+                    
+        non_empty_dirs = set()
+        for f in files_remaining:
+            p = os.path.dirname(f)
+            while p:
+                non_empty_dirs.add(p)
+                p = os.path.dirname(p)
+                
+        plan_keys = set(plan.keys())
+        
+        for d in all_dirs:
+            if d in non_empty_dirs:
+                continue
+                
+            top_level = d.split("/")[0]
+            if top_level in plan_keys:
+                continue
+                
+            protected = d in getattr(self, "protected_folders", set())
+            plan[d] = {
+                "__type__": "directory",
+                "status": "Kept" if protected else "To Be Deleted",
+                "protected": protected,
+                "source_path": os.path.join(self.base_dir, d),
+            }
 
     def _finalize_pipeline(self):
         """Execute final UI transition after all files are processed."""
@@ -787,11 +852,11 @@ class AutoSorterApp(ctk.CTk):
 
     def _flatten(self, node, path, depth):
         flat = []
-        if not isinstance(node, dict) or node.get("__type__") == "file":
+        if not isinstance(node, dict) or node.get("__type__") in ("file", "directory"):
             return flat
         
         for k, v in node.items():
-            is_file = (v is None) or (isinstance(v, dict) and v.get("__type__") == "file")
+            is_file = (v is None) or (isinstance(v, dict) and v.get("__type__") in ("file", "directory"))
             node_id = f"file:{k}" if is_file else (f"{path}/{k}" if path else f"folder:{k}")
             
             flat.append({
@@ -819,6 +884,22 @@ class AutoSorterApp(ctk.CTk):
         for item in visible:
             indent = "    " * item["depth"]
             if item["is_file"]:
+                node = item["node"]
+                if isinstance(node, dict) and node.get("__type__") == "directory":
+                    display_name = item["name"]
+                    status = node.get("status")
+                    if not getattr(self.settings, "CLEANUP_EMPTY_FOLDERS", True):
+                        icon = "📁 "
+                        text = f"{indent}{icon}{display_name} [Skipped by Settings]"
+                    elif status == "To Be Deleted":
+                        icon = "🗑️ "
+                        text = f"{indent}{icon}{display_name} [To Be Deleted]"
+                    else:
+                        icon = "📁 "
+                        text = f"{indent}{icon}{display_name} [Kept]"
+                    self.tree.insert("", "end", iid=item["id"], text=text)
+                    continue
+
                 error_msg = self.plan_errors.get(item["name"])
                 icon = "❌ " if error_msg else "✅ "
                 display_name = item["node"].get("target_filename", item["name"]) if isinstance(item["node"], dict) else item["name"]
@@ -841,7 +922,7 @@ class AutoSorterApp(ctk.CTk):
     def _node_has_errors(self, plan_node):
         if plan_node is None:
             return False
-        if isinstance(plan_node, dict) and plan_node.get("__type__") == "file":
+        if isinstance(plan_node, dict) and plan_node.get("__type__") in ("file", "directory"):
             return False
 
         for k, v in plan_node.items():
@@ -859,6 +940,8 @@ class AutoSorterApp(ctk.CTk):
         elif isinstance(plan_node, dict):
             if plan_node.get("__type__") == "file":
                 return 0 if plan_node.get("status") == "Already Sorted" else 1
+            if plan_node.get("__type__") == "directory":
+                return 0
             return sum(self._count_files(v) for v in plan_node.values())
         return 0
 
@@ -1030,7 +1113,7 @@ class AutoSorterApp(ctk.CTk):
             )
 
     def _prune_empty_folders(self, plan_node: dict) -> bool:
-        if not isinstance(plan_node, dict) or plan_node.get("__type__") == "file":
+        if not isinstance(plan_node, dict) or plan_node.get("__type__") in ("file", "directory"):
             return True
 
         keys_to_delete = []
@@ -1038,7 +1121,7 @@ class AutoSorterApp(ctk.CTk):
         for k, v in plan_node.items():
             if v is None:
                 has_content = True
-            elif not isinstance(v, dict) or v.get("__type__") == "file":
+            elif not isinstance(v, dict) or v.get("__type__") in ("file", "directory"):
                 has_content = True
             else:
                 keep = self._prune_empty_folders(v)
@@ -1062,13 +1145,16 @@ class AutoSorterApp(ctk.CTk):
             )
             self.execute_btn.configure(state="disabled")
 
-            execute_moves(self.base_dir, self.plan)
+            summary = execute_moves(self.base_dir, self.plan, self.settings)
+            
+            deleted = summary.get("deleted_folders", 0)
+            protected = summary.get("protected_folders", 0)
 
             self.status_label.configure(
                 text="Sorting complete! Check log for skipped/locked files.",
                 text_color="green",
             )
-            self.meta_label.configure(text="")
+            self.meta_label.configure(text=f"Cleanup Summary: {deleted} folders deleted | {protected} folders kept")
             self.tree.delete(*self.tree.get_children())
 
     def _create_context_menus(self):
@@ -1087,6 +1173,10 @@ class AutoSorterApp(ctk.CTk):
         self.bg_context_menu.add_command(
             label="Create Root Folder", command=self._create_root_folder
         )
+        self.candidate_context_menu = tk.Menu(self, tearoff=0)
+        self.candidate_context_menu.add_command(
+            label="Toggle Keep Folder", command=self._toggle_keep_folder
+        )
         self.context_item = None
 
     def on_right_click(self, event):
@@ -1095,8 +1185,32 @@ class AutoSorterApp(ctk.CTk):
         self.context_item = item
         if item and item.startswith("folder:"):
             self.context_menu.tk_popup(event.x_root, event.y_root)
+        elif item and item.startswith("file:"):
+            node = next((x["node"] for x in self.flat_plan if x["id"] == item), None)
+            if node and isinstance(node, dict) and node.get("__type__") == "directory":
+                self.candidate_context_menu.tk_popup(event.x_root, event.y_root)
         elif not item:
             self.bg_context_menu.tk_popup(event.x_root, event.y_root)
+
+    def _toggle_keep_folder(self):
+        if not self.context_item or not self.context_item.startswith("file:"):
+            return
+        
+        node = next((x["node"] for x in self.flat_plan if x["id"] == self.context_item), None)
+        if not node or not isinstance(node, dict) or node.get("__type__") != "directory":
+            return
+            
+        folder_path = self.context_item.split(":", 1)[1]
+        if folder_path in self.protected_folders:
+            self.protected_folders.remove(folder_path)
+            node["protected"] = False
+            node["status"] = "To Be Deleted"
+        else:
+            self.protected_folders.add(folder_path)
+            node["protected"] = True
+            node["status"] = "Kept"
+            
+        self.update_tree_view()
 
     def _get_node_by_path(self, path):
         if not path:
