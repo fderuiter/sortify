@@ -33,3 +33,23 @@ jobs:
     - name: Test with pytest
       run: |
         uv run --all-extras pytest tests/
+
+    - name: Generate API Reference Docs
+      run: |
+        python3 scripts/generate_api_reference.py
+        
+    - name: Enforce Documentation Synchronization
+      run: |
+        if [[ -n $(git status -s docs/api_reference.md) ]]; then
+          echo "Documentation is out of sync! Please run 'python3 scripts/generate_api_reference.py' and commit the changes."
+          exit 1
+        fi
+        
+    - name: Validate Documentation Integrity
+      run: |
+        uv run --all-extras mkdocs build --strict
+        
+    - name: Deploy Documentation
+      if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+      run: |
+        uv run --all-extras mkdocs gh-deploy --force

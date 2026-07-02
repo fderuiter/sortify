@@ -23,7 +23,8 @@ nav:
   - Administrator Guide: admin_guide.md
   - Architecture & Internals: architecture.md
   - Contributor Guide: contributor.md
-  - Developer Reference:
+  - Developer Guides:
     - Core: core.md
     - UI: ui.md
     - Config: config.md
+  - API Reference: api_reference.md
