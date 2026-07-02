@@ -11,17 +11,19 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 class ClusteringStrategy(Protocol):
     """Protocol for defining document clustering strategies."""
     
-    def generate_plan(self, filenames: List[str], documents: List[str], embeddings: List[np.ndarray], max_folders: int, stop_words: set) -> tuple[dict, float]:
+    def generate_plan(self, filenames: List[str], documents: List[str], embeddings: List[np.ndarray], max_folders: int, stop_words: set, max_depth: int = 5, max_features: int = 3) -> tuple[dict, float]:
         """Return the clustering plan and the total reconstruction error."""
         ...
 
 class RecursiveKMeansStrategy:
     """Strategy that uses recursive KMeans to cluster documents."""
     
-    def generate_plan(self, filenames: List[str], documents: List[str], embeddings: List[np.ndarray], max_folders: int, stop_words: set) -> tuple[dict, float]:
+    def generate_plan(self, filenames: List[str], documents: List[str], embeddings: List[np.ndarray], max_folders: int, stop_words: set, max_depth: int = 5, max_features: int = 3) -> tuple[dict, float]:
         """Return a hierarchical clustering plan and error using KMeans."""
         self.stop_words = stop_words
         self.max_folders = max_folders
+        self.max_depth = max_depth
+        self.max_features = max_features
         self._error = 0.0
         plan = self._cluster_recursive(filenames, documents, embeddings, depth=1)
         return plan, self._error
@@ -30,7 +32,7 @@ class RecursiveKMeansStrategy:
         if not documents:
             return "Miscellaneous"
         try:
-            vectorizer = TfidfVectorizer(stop_words=list(self.stop_words), max_features=3)
+            vectorizer = TfidfVectorizer(stop_words=list(self.stop_words), max_features=self.max_features)
             X = vectorizer.fit_transform(documents)
             feature_names = vectorizer.get_feature_names_out()
             if len(feature_names) == 0:
@@ -46,7 +48,7 @@ class RecursiveKMeansStrategy:
     def _cluster_recursive(self, filenames: list, documents: list, embeddings: list, depth: int) -> dict:
         plan = {}
         
-        if depth >= 5 or len(documents) < 3:
+        if depth >= self.max_depth or len(documents) < 3:
             for f in filenames:
                 plan[f] = None
             return {"Miscellaneous": plan} if depth == 1 else plan
