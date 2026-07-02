@@ -90,3 +90,8 @@ commands =
 dev = [
     "reportlab>=3.0",
 ]
+
+[tool.pytest.ini_options]
+pythonpath = [
+  "."
+]
