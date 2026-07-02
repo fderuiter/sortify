@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     CONTEXTUAL_RENAMING: bool = Field(default=False)
     MAX_FOLDERS: int = Field(default=12, gt=0)
     MAX_WORKERS: int = Field(default=15, gt=0)
+    MAX_DEPTH: int = Field(default=5, gt=0)
+    MAX_FEATURES: int = Field(default=3, gt=0)
     MIN_DF: Union[int, float] = Field(default=2, ge=0)
     MAX_DF: float = Field(default=0.85, ge=0, le=1)
     LOG_FILE: str = Field(default="autosorter.log", min_length=1)
@@ -122,6 +124,8 @@ class AppSettings:
             for key in [
                 "MAX_FOLDERS",
                 "MAX_WORKERS",
+                "MAX_DEPTH",
+                "MAX_FEATURES",
                 "MIN_DF",
                 "MAX_DF",
                 "LOG_FILE",
@@ -158,6 +162,8 @@ class AppSettings:
                 "CONTEXTUAL_RENAMING": self._settings_model.CONTEXTUAL_RENAMING,
                 "MAX_FOLDERS": self._settings_model.MAX_FOLDERS,
                 "MAX_WORKERS": self._settings_model.MAX_WORKERS,
+                "MAX_DEPTH": self._settings_model.MAX_DEPTH,
+                "MAX_FEATURES": self._settings_model.MAX_FEATURES,
                 "MIN_DF": self._settings_model.MIN_DF,
                 "MAX_DF": self._settings_model.MAX_DF,
                 "LOG_FILE": self._settings_model.LOG_FILE,
@@ -197,6 +203,26 @@ class AppSettings:
     @MAX_WORKERS.setter
     def MAX_WORKERS(self, value: int):
         self._settings_model.MAX_WORKERS = value
+        self._trigger_save()
+
+    @property
+    def MAX_DEPTH(self) -> int:
+        """Get the maximum recursion depth for sorting."""
+        return self._settings_model.MAX_DEPTH
+
+    @MAX_DEPTH.setter
+    def MAX_DEPTH(self, value: int):
+        self._settings_model.MAX_DEPTH = value
+        self._trigger_save()
+
+    @property
+    def MAX_FEATURES(self) -> int:
+        """Get the max features for clustering."""
+        return self._settings_model.MAX_FEATURES
+
+    @MAX_FEATURES.setter
+    def MAX_FEATURES(self, value: int):
+        self._settings_model.MAX_FEATURES = value
         self._trigger_save()
 
     @property
