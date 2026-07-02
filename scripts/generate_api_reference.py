@@ -1,7 +1,11 @@
-import os
+"""Automated API reference generator."""
+
 import glob
+import os
+
 
 def generate_api_docs():
+    """Generate API reference markdown from python modules."""
     app_dir = "app"
     output_file = os.path.join("docs", "api_reference.md")
     
