@@ -7,8 +7,6 @@ import shutil
 
 from app.core.link_manager import LinkManager
 
-logger = logging.getLogger(__name__)
-
 
 class VerificationEngine:
     """Engine to verify file operations before execution."""
@@ -122,7 +120,7 @@ class VerificationEngine:
                             ):
                                 errors[rel_src] = "Insufficient disk space"
                 except Exception as e:
-                    logger.error("Failed to check disk space for volume %s: %s", vol, str(e), exc_info=True)
+                    logging.error(f"Failed to check disk space for volume {vol}: {e}", exc_info=True)
 
         is_windows = platform.system() == "Windows"
         

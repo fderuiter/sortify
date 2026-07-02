@@ -7,8 +7,6 @@ try:
 except ImportError:
     pylnk3 = None
 
-logger = logging.getLogger(__name__)
-
 
 class LinkManager:
     """Manager for symbolic and shortcut links."""
@@ -24,7 +22,7 @@ class LinkManager:
                 target = os.readlink(full_path)
                 cls._registry[full_path] = {"type": "symlink", "target": target}
             except OSError as e:
-                logger.error("Failed to read symlink for %s: %s", full_path, str(e), exc_info=True)
+                logging.error(f"Failed to read symlink for {full_path}: {e}", exc_info=True)
         elif full_path.lower().endswith(".lnk"):
             if pylnk3:
                 try:
@@ -33,7 +31,7 @@ class LinkManager:
                     if target:
                         cls._registry[full_path] = {"type": "lnk", "target": target}
                 except Exception as e:
-                    logger.error("Failed to parse Windows shortcut %s: %s", full_path, str(e), exc_info=True)
+                    logging.error(f"Failed to parse Windows shortcut {full_path}: {e}", exc_info=True)
 
     @classmethod
     def get_link_info(cls, full_path: str):
