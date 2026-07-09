@@ -38,12 +38,12 @@ jobs:
 
     - name: Generate Documentation
       run: |
-        python3 scripts/generate_docs.py
+        uv run python3 scripts/generate_docs.py
         
     - name: Enforce Documentation Synchronization
       run: |
         if [[ -n $(git status -s docs/api_reference.md docs/admin_guide.md docs/ui.md SECURITY.md) ]]; then
-          echo "Documentation is out of sync! Please run 'python3 scripts/generate_docs.py' and commit the changes."
+          echo "Documentation is out of sync! Please run 'uv run python3 scripts/generate_docs.py' and commit the changes."
           exit 1
         fi
         
