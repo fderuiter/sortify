@@ -2,7 +2,6 @@
 
 import glob
 import os
-import re
 import sys
 from pathlib import Path
 
@@ -29,7 +28,7 @@ def generate_api_docs():
             f.write(f"::: {module_name}\n\n")
 
 def generate_ui_docs():
-    """Generate UI Reference from app/ui/*.py"""
+    """Generate UI Reference from app/ui/*.py."""
     app_dir = os.path.join("app", "ui")
     output_file = os.path.join("docs", "ui.md")
 
@@ -52,7 +51,6 @@ def generate_admin_guide():
     
     # Import config safely
     from app.config import Settings
-    settings = Settings()
     
     with open(output_file, "w") as f:
         f.write("# Administrator Guide\n\n")
@@ -96,8 +94,6 @@ def generate_admin_guide():
 
 def update_security_md():
     """Scan for network dependencies and update SECURITY.md."""
-    import re
-    
     network_deps = []
     
     # scan setup.sh
