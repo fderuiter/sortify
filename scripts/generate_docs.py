@@ -61,7 +61,7 @@ def generate_admin_guide():
         f.write("## Configuration Parameters\n\n")
         f.write("The following parameters are extracted directly from the application's configuration schema (`app.config.Settings`).\n\n")
         
-        for name, field in settings.model_fields.items():
+        for name, field in Settings.model_fields.items():
             default_val = field.default
             if isinstance(default_val, set):
                 default_val = sorted(list(default_val))

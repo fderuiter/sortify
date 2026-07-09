@@ -15,7 +15,7 @@ repos:
         files: '(\.pytest_cache/|\.venv/|\.coverage|htmlcov/|__pycache__/|.*\.py[co]$)'
       - id: generate-api-docs
         name: Generate API Reference Docs
-        entry: python3 scripts/generate_api_reference.py
+        entry: uv run python3 scripts/generate_docs.py
         language: system
         pass_filenames: false
       - id: mkdocs-build-strict
