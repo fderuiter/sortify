@@ -75,3 +75,32 @@ options:
 ### `scripts/prepare_offline.py`
 Utility script to prepare an offline deployment bundle.
 
+## Offline Sideloading Deployment
+
+To deploy the application in a completely offline environment, you must sideload the model bundle. The application will bypass the setup download prompt and activate semantic local sorting automatically if it detects a valid local bundle on startup.
+
+### Folder Layout Requirements
+
+The offline bundle must be extracted into the application's local configuration directory (e.g., `~/.autosorter/`). The directory structure must exactly match the following:
+
+```text
+~/.autosorter/
+├── model/
+│   ├── config.json
+│   ├── pytorch_model.bin
+│   ├── tokenizer.json
+│   └── ... (other model weights)
+└── model_manifest.json
+```
+
+### JSON Manifest Structure
+
+The `model_manifest.json` file must reside in the same parent directory as the `model/` folder. It maps the relative file paths of the model weights to their SHA256 checksums to guarantee integrity. The structure must be:
+
+```json
+{
+  "config.json": "e56f4d...",
+  "pytorch_model.bin": "a1b2c3..."
+}
+```
+
