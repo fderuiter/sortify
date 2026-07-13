@@ -1,6 +1,7 @@
 """Local database management for autosorter."""
 
 import sqlite3
+from contextlib import closing
 
 import numpy as np
 
@@ -17,7 +18,7 @@ class Database:
         self._init_db()
 
     def _init_db(self):
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             cursor = conn.cursor()
             cursor.execute("PRAGMA user_version")
             db_version = cursor.fetchone()[0]
@@ -36,11 +37,10 @@ class Database:
                 conn.execute(f"PRAGMA user_version = {self.CURRENT_VERSION}")
             elif db_version < self.CURRENT_VERSION:
                 pass
-            conn.commit()
 
     def get_document(self, base_dir, filepath):
         """Retrieve a document by its base directory and filepath."""
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             cursor = conn.execute(
                 "SELECT file_hash, extracted_text, embedding FROM documents WHERE base_dir = ? AND filepath = ?",
                 (base_dir, filepath),
@@ -57,7 +57,7 @@ class Database:
 
     def upsert_document(self, base_dir, filepath, file_hash, extracted_text, embedding):
         """Insert or update a document in the database."""
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             if embedding is not None:
                 embedding_blob = embedding.astype(np.float32).tobytes()
             else:
@@ -73,11 +73,10 @@ class Database:
             """,
                 (base_dir, filepath, file_hash, extracted_text, embedding_blob),
             )
-            conn.commit()
 
     def get_all_documents(self, base_dir):
         """Retrieve all valid documents with embeddings for a given base directory."""
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             cursor = conn.execute(
                 "SELECT filepath, extracted_text, embedding FROM documents WHERE base_dir = ? AND embedding IS NOT NULL",
                 (base_dir,),
@@ -90,12 +89,11 @@ class Database:
 
     def clear(self, base_dir=None):
         """Clear documents from the database. If base_dir is provided, only clear those."""
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             if base_dir:
                 conn.execute("DELETE FROM documents WHERE base_dir = ?", (base_dir,))
             else:
                 conn.execute("DELETE FROM documents")
-            conn.commit()
 
 
 db = Database()
