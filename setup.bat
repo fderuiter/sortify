@@ -30,28 +30,16 @@ if %ERRORLEVEL% NEQ 0 (
 :: Detect missing package manager and install uv
 where uv >nul 2>nul
 if %ERRORLEVEL% NEQ 0 (
-    echo uv package manager not found. Attempting to install...
-    
-    if "%OFFLINE_MODE%"=="1" (
-        echo Error: uv is not installed, but offline mode is active.
-        echo Please install uv manually before running this script offline.
-        exit /b 1
-    )
-
-    :: Check internet connection gracefully
-    powershell -NoProfile -Command "try { $response = Invoke-WebRequest -Uri 'https://astral.sh' -UseBasicParsing -TimeoutSec 5; exit 0 } catch { exit 1 }"
-    if %ERRORLEVEL% NEQ 0 (
-        echo Error: No internet connection available for the initial bootstrap.
-        exit /b 1
-    )
-    
-    powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
-    if %ERRORLEVEL% NEQ 0 (
-        echo Error: Failed to install uv.
-        exit /b 1
-    )
-    
-    set "PATH=%USERPROFILE%\.cargo\bin;%PATH%"
+    echo uv package manager not found.
+    echo Error: uv is not installed.
+    echo Please install uv manually before running this setup script.
+    echo.
+    echo Installation instructions:
+    echo Run the following command in PowerShell:
+    echo   powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+    echo.
+    echo Or refer to the official documentation: https://docs.astral.sh/uv/getting-started/installation/
+    exit /b 1
 )
 
 echo Synchronizing local environment...
