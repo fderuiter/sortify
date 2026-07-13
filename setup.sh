@@ -32,22 +32,16 @@ fi
 
 # Detect missing package manager and install uv
 if ! command -v uv >/dev/null 2>&1; then
-    echo "uv package manager not found. Attempting to install..."
-    
-    if [ "$OFFLINE_MODE" -eq 1 ]; then
-        echo "Error: uv is not installed, but offline mode is active."
-        echo "Please install uv manually before running this script offline."
-        exit 1
-    fi
-
-    # Check internet connection gracefully
-    if ! curl -Is https://astral.sh >/dev/null; then
-        echo "Error: No internet connection available for the initial bootstrap."
-        exit 1
-    fi
-    
-    curl -LsSf https://astral.sh/uv/install.sh | sh
-    export PATH="$HOME/.cargo/bin:$PATH"
+    echo "uv package manager not found."
+    echo "Error: uv is not installed."
+    echo "Please install uv manually before running this setup script."
+    echo ""
+    echo "Installation instructions:"
+    echo "Run the following command in your terminal:"
+    echo "  curl -LsSf https://astral.sh/uv/install.sh | sh"
+    echo ""
+    echo "Or refer to the official documentation: https://docs.astral.sh/uv/getting-started/installation/"
+    exit 1
 fi
 
 echo "Synchronizing local environment..."

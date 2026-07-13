@@ -1,4 +1,4 @@
-"""Build script for the smart autosorter application."""
+"""Build script for the smart autosorter application on macOS."""
 
 import os
 import sys
@@ -8,17 +8,17 @@ import PyInstaller.__main__
 
 
 def main():
-    """Build the standalone executable."""
+    """Build the standalone executable for macOS."""
     ctk_path = os.path.dirname(customtkinter.__file__)
     
-    # Bundle tcl/tk from virtual environment if they exist
+    # Bundle tcl/tk from virtual environment if they exist (macOS uses dylib)
     python_lib_dir = os.path.join(sys.base_prefix, 'lib')
     
     binaries = []
-    if os.path.exists(os.path.join(python_lib_dir, 'libtcl9.0.so')):
-        binaries.append(f"{os.path.join(python_lib_dir, 'libtcl9.0.so')}:.")
-    if os.path.exists(os.path.join(python_lib_dir, 'libtcl9tk9.0.so')):
-        binaries.append(f"{os.path.join(python_lib_dir, 'libtcl9tk9.0.so')}:.")
+    if os.path.exists(os.path.join(python_lib_dir, 'libtcl9.0.dylib')):
+        binaries.append(f"{os.path.join(python_lib_dir, 'libtcl9.0.dylib')}:.")
+    if os.path.exists(os.path.join(python_lib_dir, 'libtcl9tk9.0.dylib')):
+        binaries.append(f"{os.path.join(python_lib_dir, 'libtcl9tk9.0.dylib')}:.")
 
     cmd = [
         'app/main.py',
