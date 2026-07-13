@@ -107,16 +107,16 @@ class SettingsView(ctk.CTkFrame):
         # Cleanup Section
         self.cleanup_frame = ctk.CTkFrame(self, fg_color="transparent")
         self.cleanup_frame.pack(fill="x", padx=20, pady=(0, 10))
-        
+
         cleanup_title = ctk.CTkLabel(
             self.cleanup_frame, text="File Operations", font=("Roboto", 16, "bold")
         )
         cleanup_title.pack(anchor="w", pady=(0, 5))
-        
+
         self.cleanup_switch = ctk.CTkSwitch(
-            self.cleanup_frame, 
-            text="Cleanup Empty Folders", 
-            command=self._on_cleanup_toggled
+            self.cleanup_frame,
+            text="Cleanup Empty Folders",
+            command=self._on_cleanup_toggled,
         )
         self.cleanup_switch.pack(anchor="w")
         if getattr(self.settings, "CLEANUP_EMPTY_FOLDERS", True):
@@ -127,48 +127,82 @@ class SettingsView(ctk.CTkFrame):
         # Privacy Section
         self.privacy_frame = ctk.CTkFrame(self, fg_color="transparent")
         self.privacy_frame.pack(fill="x", padx=20, pady=(0, 10))
-        
+
         privacy_title = ctk.CTkLabel(
-            self.privacy_frame, text="AI Features & Privacy", font=("Roboto", 16, "bold")
+            self.privacy_frame,
+            text="AI Features & Privacy",
+            font=("Roboto", 16, "bold"),
         )
         privacy_title.pack(anchor="w", pady=(0, 5))
-        
+
         self.ai_status_label = ctk.CTkLabel(
             self.privacy_frame, text="Checking AI model status...", text_color="gray"
         )
         self.ai_status_label.pack(anchor="w")
-        
+
+        self.ai_btn_frame = ctk.CTkFrame(self.privacy_frame, fg_color="transparent")
+        self.ai_btn_frame.pack(anchor="w", pady=(5, 10))
+
         self.ai_btn = ctk.CTkButton(
-            self.privacy_frame, text="Download AI Model", command=self.download_ai_model
+            self.ai_btn_frame, text="Download AI Model", command=self.download_ai_model
         )
-        self.ai_btn.pack(anchor="w", pady=(5, 10))
-        
+        self.ai_btn.pack(side="left")
+
+        self.help_btn = ctk.CTkButton(
+            self.ai_btn_frame,
+            text="Troubleshooting",
+            command=self.open_troubleshooting,
+            fg_color="transparent",
+            border_width=1,
+            text_color=("black", "white"),
+        )
+        self.help_btn.pack(side="left", padx=(10, 0))
+
         self.update_ai_status()
 
         self.token_widget = TokenWidget(
             self, self.settings.STOP_WORDS, on_change=on_settings_changed
         )
         self.token_widget.pack(fill="both", expand=True, padx=20, pady=(0, 20))
-        
+
     def _on_cleanup_toggled(self):
         self.settings.CLEANUP_EMPTY_FOLDERS = bool(self.cleanup_switch.get())
 
     def update_ai_status(self):
         """Update the AI model status UI based on model presence."""
         from app.config import get_app_dir
+
         model_dir = get_app_dir() / "model"
         if (model_dir / "config.json").exists():
-            self.ai_status_label.configure(text="AI Model: Downloaded & Ready", text_color="green")
+            self.ai_status_label.configure(
+                text="AI Model: Downloaded & Ready", text_color="green"
+            )
             self.ai_btn.configure(state="disabled", text="Model Installed")
         else:
-            self.ai_status_label.configure(text="AI Model: Not Downloaded (Offline Mode Active)", text_color="orange")
+            self.ai_status_label.configure(
+                text="AI Model: Not Downloaded (Offline Mode Active)",
+                text_color="orange",
+            )
             self.ai_btn.configure(state="normal", text="Download AI Model")
+
+    def open_troubleshooting(self):
+        """Open the local troubleshooting guide."""
+        import os
+        import webbrowser
+        from pathlib import Path
+
+        docs_path = (
+            Path(os.path.abspath(__file__)).parent.parent.parent
+            / "docs"
+            / "troubleshooting.md"
+        )
+        webbrowser.open(docs_path.as_uri())
 
     def download_ai_model(self):
         """Launch the setup wizard to download the AI model."""
         from app.ui.wizard import SetupWizard
-        
+
         def on_complete():
             self.update_ai_status()
-            
+
         SetupWizard(self, self.settings, on_complete)
