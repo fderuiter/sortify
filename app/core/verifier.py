@@ -66,9 +66,9 @@ class VerificationEngine:
             with open(filepath, "a"):
                 pass
             return True
-        except IOError:
-            return False
         except PermissionError:
+            return False
+        except IOError:
             return False
 
     def _check_symlink_privilege(self, test_dir: str) -> bool:
