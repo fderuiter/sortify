@@ -2,11 +2,19 @@
 
 import glob
 import os
+import shutil
 import sys
 from pathlib import Path
 
 # Add project root to sys.path so we can import app modules
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
+def get_python_executable():
+    """Dynamically determine the best Python command/executable."""
+    for cmd in ("python3", "python"):
+        if shutil.which(cmd):
+            return cmd
+    return sys.executable
 
 def generate_api_docs():
     """Generate API reference markdown from python modules."""
@@ -23,7 +31,8 @@ def generate_api_docs():
         py_files.sort()
 
         for file_path in py_files:
-            module_name = file_path.replace(os.sep, ".").removesuffix(".py")
+            parts = Path(file_path).with_suffix("").parts
+            module_name = ".".join(parts)
             f.write(f"## `{module_name}`\n\n")
             f.write(f"::: {module_name}\n\n")
 
@@ -41,7 +50,8 @@ def generate_ui_docs():
         py_files.sort()
 
         for file_path in py_files:
-            module_name = file_path.replace(os.sep, ".").removesuffix(".py")
+            parts = Path(file_path).with_suffix("").parts
+            module_name = ".".join(parts)
             f.write(f"## `{module_name}`\n\n")
             f.write(f"::: {module_name}\n\n")
 
@@ -81,7 +91,8 @@ def generate_admin_guide():
         f.write("#### Usage\n```text\n")
         import subprocess
         try:
-            result = subprocess.run(["uv", "run", "python3", "sandbox_cli.py", "--help"], capture_output=True, text=True, check=True)
+            python_cmd = get_python_executable()
+            result = subprocess.run(["uv", "run", python_cmd, "sandbox_cli.py", "--help"], capture_output=True, text=True, check=True)
             f.write(result.stdout)
         except subprocess.CalledProcessError as e:
             f.write(f"Error capturing help: {e}\n")

@@ -8,7 +8,10 @@ on:
 
 jobs:
   build-and-test:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v4
     
@@ -16,6 +19,7 @@ jobs:
       uses: astral-sh/setup-uv@v5
       with:
         version: "latest"
+        enable-cache: true
         
     - name: Set up Python
       uses: actions/setup-python@v5
@@ -38,12 +42,13 @@ jobs:
 
     - name: Generate Documentation
       run: |
-        uv run python3 scripts/generate_docs.py
+        uv run python scripts/generate_docs.py
         
     - name: Enforce Documentation Synchronization
+      shell: bash
       run: |
         if [[ -n $(git status -s docs/api_reference.md docs/admin_guide.md docs/ui.md SECURITY.md) ]]; then
-          echo "Documentation is out of sync! Please run 'uv run python3 scripts/generate_docs.py' and commit the changes."
+          echo "Documentation is out of sync! Please run 'uv run python scripts/generate_docs.py' and commit the changes."
           exit 1
         fi
         
@@ -52,6 +57,6 @@ jobs:
         uv run --all-extras mkdocs build --strict
         
     - name: Deploy Documentation
-      if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+      if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && matrix.os == 'ubuntu-latest'
       run: |
         uv run --all-extras mkdocs gh-deploy --force
