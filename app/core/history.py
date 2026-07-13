@@ -5,6 +5,7 @@ import shutil
 import sqlite3
 import time
 import uuid
+from contextlib import closing
 from typing import Any, Dict, List
 
 from app.config import get_app_dir
@@ -19,7 +20,7 @@ class HistoryManager:
         self._init_db()
 
     def _init_db(self):
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS sessions (
                     session_id TEXT PRIMARY KEY,
@@ -58,7 +59,6 @@ class HistoryManager:
                     FOREIGN KEY(session_id) REFERENCES sessions(session_id)
                 )
             """)
-            conn.commit()
 
     def create_snapshot(self, base_dir: str) -> str:
         """Create a complete snapshot of the directory tree and its metadata."""
@@ -68,7 +68,7 @@ class HistoryManager:
         from app.core.scanner import get_files_recursively
         files = get_files_recursively(base_dir)
 
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             conn.execute(
                 "INSERT INTO sessions (session_id, timestamp, base_dir, status) VALUES (?, ?, ?, ?)",
                 (session_id, timestamp, base_dir, "active")
@@ -91,13 +91,12 @@ class HistoryManager:
 
             # 2. Snapshot Cache
             from app.core.cache import _get_conn as get_cache_conn
-            cache_conn = get_cache_conn()
-            cur = cache_conn.execute(
-                "SELECT corpus, locked_files, index_to_word, manual_folders FROM directory_cache WHERE source_directory = ?",
-                (base_dir,)
-            )
-            row = cur.fetchone()
-            cache_conn.close()
+            with closing(get_cache_conn()) as cache_conn, cache_conn:
+                cur = cache_conn.execute(
+                    "SELECT corpus, locked_files, index_to_word, manual_folders FROM directory_cache WHERE source_directory = ?",
+                    (base_dir,)
+                )
+                row = cur.fetchone()
             if row:
                 conn.execute(
                     "INSERT INTO snapshot_cache (session_id, corpus, locked_files, index_to_word, manual_folders) VALUES (?, ?, ?, ?, ?)",
@@ -106,7 +105,7 @@ class HistoryManager:
 
             # 3. Snapshot DB
             docs = []
-            with sqlite3.connect(db_instance.db_path) as db_conn:
+            with closing(sqlite3.connect(db_instance.db_path)) as db_conn, db_conn:
                 cur = db_conn.execute(
                     "SELECT filepath, file_hash, extracted_text, embedding FROM documents WHERE base_dir = ?",
                     (base_dir,)
@@ -121,8 +120,6 @@ class HistoryManager:
             
             # Prune old snapshots to prevent excessive growth (keep last 10)
             self._prune_snapshots(conn, limit=10)
-            
-            conn.commit()
 
         return session_id
 
@@ -137,13 +134,13 @@ class HistoryManager:
 
     def get_sessions(self) -> List[Dict[str, Any]]:
         """Retrieve a list of all historical sessions, ordered by time."""
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             cur = conn.execute("SELECT session_id, timestamp, base_dir, status FROM sessions ORDER BY timestamp DESC")
             return [{"session_id": r[0], "timestamp": r[1], "base_dir": r[2], "status": r[3]} for r in cur.fetchall()]
 
     def check_missing_files(self, session_id: str) -> List[str]:
         """Check if any files from the snapshot are missing from the disk."""
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             cur = conn.execute("SELECT base_dir FROM sessions WHERE session_id = ?", (session_id,))
             row = cur.fetchone()
             if not row:
@@ -185,7 +182,7 @@ class HistoryManager:
         if missing and not ignore_missing:
             raise ValueError(f"Cannot rollback: {len(missing)} files from the snapshot are missing from the disk (e.g., {missing[0]}).")
 
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             cur = conn.execute("SELECT base_dir FROM sessions WHERE session_id = ?", (session_id,))
             row = cur.fetchone()
             if not row:
@@ -246,27 +243,25 @@ class HistoryManager:
             cur = conn.execute("SELECT corpus, locked_files, index_to_word, manual_folders FROM snapshot_cache WHERE session_id = ?", (session_id,))
             row = cur.fetchone()
             from app.core.cache import _get_conn as get_cache_conn
-            cache_conn = get_cache_conn()
-            if row:
-                cache_conn.execute(
-                    """
-                    INSERT INTO directory_cache (source_directory, corpus, locked_files, index_to_word, manual_folders)
-                    VALUES (?, ?, ?, ?, ?)
-                    ON CONFLICT(source_directory) DO UPDATE SET
-                        corpus=excluded.corpus,
-                        locked_files=excluded.locked_files,
-                        index_to_word=excluded.index_to_word,
-                        manual_folders=excluded.manual_folders
-                    """,
-                    (base_dir, row[0], row[1], row[2], row[3])
-                )
-            else:
-                cache_conn.execute("DELETE FROM directory_cache WHERE source_directory = ?", (base_dir,))
-            cache_conn.commit()
-            cache_conn.close()
+            with closing(get_cache_conn()) as cache_conn, cache_conn:
+                if row:
+                    cache_conn.execute(
+                        """
+                        INSERT INTO directory_cache (source_directory, corpus, locked_files, index_to_word, manual_folders)
+                        VALUES (?, ?, ?, ?, ?)
+                        ON CONFLICT(source_directory) DO UPDATE SET
+                            corpus=excluded.corpus,
+                            locked_files=excluded.locked_files,
+                            index_to_word=excluded.index_to_word,
+                            manual_folders=excluded.manual_folders
+                        """,
+                        (base_dir, row[0], row[1], row[2], row[3])
+                    )
+                else:
+                    cache_conn.execute("DELETE FROM directory_cache WHERE source_directory = ?", (base_dir,))
 
             # Restore DB
-            with sqlite3.connect(db_instance.db_path) as db_conn:
+            with closing(sqlite3.connect(db_instance.db_path)) as db_conn, db_conn:
                 db_conn.execute("DELETE FROM documents WHERE base_dir = ?", (base_dir,))
                 cur = conn.execute("SELECT filepath, file_hash, extracted_text, embedding FROM snapshot_documents WHERE session_id = ?", (session_id,))
                 docs = cur.fetchall()
@@ -279,9 +274,7 @@ class HistoryManager:
                         """,
                         insert_docs
                     )
-                db_conn.commit()
 
             conn.execute("UPDATE sessions SET status = 'rolled_back' WHERE session_id = ?", (session_id,))
-            conn.commit()
 
 history_manager = HistoryManager()

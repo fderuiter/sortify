@@ -4,6 +4,7 @@ import json
 import logging
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import closing
 
 from app.config import get_app_dir
 
@@ -15,21 +16,25 @@ _executor = ThreadPoolExecutor(max_workers=1)
 def _get_conn():
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS directory_cache (
-            source_directory TEXT PRIMARY KEY,
-            corpus TEXT,
-            locked_files TEXT,
-            index_to_word TEXT,
-            manual_folders TEXT
-        )
-    """)
     try:
-        conn.execute("ALTER TABLE directory_cache ADD COLUMN manual_folders TEXT")
-    except sqlite3.OperationalError:
-        pass
-    conn.commit()
-    return conn
+        with conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS directory_cache (
+                    source_directory TEXT PRIMARY KEY,
+                    corpus TEXT,
+                    locked_files TEXT,
+                    index_to_word TEXT,
+                    manual_folders TEXT
+                )
+            """)
+            try:
+                conn.execute("ALTER TABLE directory_cache ADD COLUMN manual_folders TEXT")
+            except sqlite3.OperationalError:
+                pass
+        return conn
+    except Exception:
+        conn.close()
+        raise
 
 
 def _save_cache_sync(
@@ -42,27 +47,25 @@ def _save_cache_sync(
     if manual_folders is None:
         manual_folders = set()
     try:
-        conn = _get_conn()
-        conn.execute(
-            """
-            INSERT INTO directory_cache (source_directory, corpus, locked_files, index_to_word, manual_folders)
-            VALUES (?, ?, ?, ?, ?)
-            ON CONFLICT(source_directory) DO UPDATE SET
-                corpus=excluded.corpus,
-                locked_files=excluded.locked_files,
-                index_to_word=excluded.index_to_word,
-                manual_folders=excluded.manual_folders
-            """,
-            (
-                source_directory,
-                json.dumps(corpus),
-                json.dumps(locked_files),
-                json.dumps({str(k): v for k, v in index_to_word.items()}),
-                json.dumps(list(manual_folders)),
-            ),
-        )
-        conn.commit()
-        conn.close()
+        with closing(_get_conn()) as conn, conn:
+            conn.execute(
+                """
+                INSERT INTO directory_cache (source_directory, corpus, locked_files, index_to_word, manual_folders)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(source_directory) DO UPDATE SET
+                    corpus=excluded.corpus,
+                    locked_files=excluded.locked_files,
+                    index_to_word=excluded.index_to_word,
+                    manual_folders=excluded.manual_folders
+                """,
+                (
+                    source_directory,
+                    json.dumps(corpus),
+                    json.dumps(locked_files),
+                    json.dumps({str(k): v for k, v in index_to_word.items()}),
+                    json.dumps(list(manual_folders)),
+                ),
+            )
     except Exception as e:
         logging.error(f"Failed to save cache: {e}")
 
@@ -101,13 +104,13 @@ def save_cache_sync(
 def load_cache(source_directory: str):
     """Load the cache for a given source directory from SQLite database."""
     try:
-        conn = _get_conn()
-        cur = conn.execute(
-            "SELECT corpus, locked_files, index_to_word, manual_folders FROM directory_cache WHERE source_directory = ?",
-            (source_directory,),
-        )
-        row = cur.fetchone()
-        conn.close()
+        with closing(_get_conn()) as conn, conn:
+            cur = conn.execute(
+                "SELECT corpus, locked_files, index_to_word, manual_folders FROM directory_cache WHERE source_directory = ?",
+                (source_directory,),
+            )
+            row = cur.fetchone()
+            
         if row:
             corpus = json.loads(row[0])
             locked_files = json.loads(row[1])
