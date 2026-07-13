@@ -1,12 +1,10 @@
+import collections
 import ntpath
 import posixpath
-import collections
-from unittest.mock import patch, MagicMock
-
-import pytest
+from unittest.mock import MagicMock, patch
 
 from app.core.verifier import VerificationEngine
-from app.core.link_manager import LinkManager
+
 
 class VirtualFS:
     def __init__(self, os_system="Linux", base_dir=None):
