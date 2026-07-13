@@ -1,6 +1,8 @@
 import pytest
+
 from app.core.analyzer import IncrementalAnalyzer
 from app.core.db import db
+
 
 @pytest.fixture(autouse=True)
 def clean_db():
@@ -46,7 +48,8 @@ def test_keyword_rules():
                     return current_path
             else:
                 res = find_folder_for(filename, v, current_path + "/" + k if current_path else k)
-                if res: return res
+                if res:
+                    return res
         return None
 
     rep1_folder = find_folder_for("report1.txt", plan)

@@ -1,7 +1,6 @@
 """Build script for the smart autosorter application on Windows."""
 
 import os
-import sys
 
 import customtkinter
 import PyInstaller.__main__
