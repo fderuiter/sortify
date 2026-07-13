@@ -270,6 +270,42 @@ class IncrementalAnalyzer:
             else:
                 plan = {}
 
+            keyword_rules = getattr(runtime_settings, "KEYWORD_RULES", {}) if runtime_settings else {}
+            if keyword_rules:
+                text_map = {f: t for f, t in zip(filenames, documents)}
+                moved_files = []
+
+                def _extract_and_remove(node):
+                    keys_to_delete = []
+                    for k, v in node.items():
+                        if v is None or (isinstance(v, dict) and v.get("__type__") == "file"):
+                            filename = k
+                            text = text_map.get(filename, "")
+                            
+                            matched_target = None
+                            for keyword, target_folder in keyword_rules.items():
+                                if keyword.lower() in filename.lower() or keyword.lower() in text.lower():
+                                    matched_target = target_folder
+                                    break
+                            
+                            if matched_target:
+                                moved_files.append((filename, matched_target, v))
+                                keys_to_delete.append(k)
+                        elif isinstance(v, dict):
+                            _extract_and_remove(v)
+                            
+                    for k in keys_to_delete:
+                        del node[k]
+
+                _extract_and_remove(plan)
+
+                for filename, target_folder, val in moved_files:
+                    if target_folder not in plan:
+                        plan[target_folder] = {}
+                    if not isinstance(plan[target_folder], dict):
+                        plan[target_folder] = {"_original": plan[target_folder]}
+                    plan[target_folder][filename] = val
+
             def _annotate(node, current_path):
                 for k, v in list(node.items()):
                     if v is None:

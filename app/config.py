@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     MAX_DEPTH: int = Field(default=5, gt=0)
     MAX_FEATURES: int = Field(default=3, gt=0)
     CLEANUP_EMPTY_FOLDERS: bool = Field(default=True)
+    KEYWORD_RULES: dict = Field(default_factory=dict)
     AI_CONSENT_GRANTED: bool | None = Field(default=None)
     LOG_FILE: str = Field(default=str(get_app_dir() / "autosorter.log"), min_length=1)
     STOP_WORDS: set[str] = {
