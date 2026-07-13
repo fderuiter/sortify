@@ -1213,6 +1213,53 @@ class AutoSorterApp(ctk.CTk):
         if self.plan and self.base_dir:
             self._prune_empty_folders(self.plan)
 
+            if self.verifier.has_cloud_targets(self.base_dir, self.plan):
+                dialog = ctk.CTkToplevel(self)
+                dialog.title("Privacy Warning")
+                dialog.geometry("450x250")
+                dialog.transient(self)
+                dialog.grab_set()
+
+                label = ctk.CTkLabel(
+                    dialog,
+                    text="WARNING: Cloud Sync Detected!\n\nFiles moved to this location will be uploaded\nto third-party servers. This breaks the 100% local\nprivacy promise.\n\nDo you want to proceed?",
+                    font=("Roboto", 14),
+                    justify="center"
+                )
+                label.pack(pady=20)
+
+                result = tk.BooleanVar(value=False)
+
+                def on_proceed():
+                    result.set(True)
+                    dialog.destroy()
+
+                def on_cancel():
+                    result.set(False)
+                    dialog.destroy()
+
+                dialog.protocol("WM_DELETE_WINDOW", on_cancel)
+
+                btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+                btn_frame.pack(fill="x", pady=10)
+
+                proceed_btn = ctk.CTkButton(
+                    btn_frame, text="Proceed", command=on_proceed,
+                    fg_color="green", hover_color="darkgreen"
+                )
+                proceed_btn.pack(side="left", padx=30, expand=True)
+
+                cancel_btn = ctk.CTkButton(
+                    btn_frame, text="Cancel", command=on_cancel,
+                    fg_color="red", hover_color="darkred"
+                )
+                cancel_btn.pack(side="right", padx=30, expand=True)
+
+                self.wait_window(dialog)
+
+                if not result.get():
+                    return
+
             self.status_label.configure(
                 text="Moving files into position...", text_color="white"
             )
