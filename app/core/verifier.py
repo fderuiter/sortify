@@ -37,6 +37,36 @@ class VerificationEngine:
                 )
         return moves
 
+    @staticmethod
+    def is_cloud_path(path: str) -> bool:
+        """Check if the given path resides within a cloud-synced folder."""
+        norm_path = os.path.normpath(os.path.abspath(path)).lower()
+        sys_platform = platform.system()
+
+        if sys_platform == "Darwin":
+            if "library/mobile documents" in norm_path or "com~apple~clouddocs" in norm_path:
+                return True
+        elif sys_platform == "Windows":
+            env_vars = ["OneDrive", "OneDriveConsumer", "OneDriveCommercial"]
+            for var in env_vars:
+                env_val = os.environ.get(var)
+                if env_val:
+                    env_val_norm = os.path.normpath(os.path.abspath(env_val)).lower()
+                    if norm_path.startswith(env_val_norm + os.sep) or norm_path == env_val_norm:
+                        return True
+            # Fallback checks
+            if "\\onedrive\\" in norm_path or norm_path.endswith("\\onedrive"):
+                return True
+        return False
+
+    def has_cloud_targets(self, base_dir: str, plan: dict) -> bool:
+        """Check if any target path in the plan is a cloud-synced path."""
+        moves = self.get_moves(base_dir, plan)
+        for _, _, dst in moves:
+            if self.is_cloud_path(dst):
+                return True
+        return False
+
     def _get_volume(self, path: str) -> str:
         curr = os.path.abspath(path)
         if platform.system() == "Windows":
