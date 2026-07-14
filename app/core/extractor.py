@@ -9,6 +9,8 @@ import logging
 import os
 from typing import Callable, Tuple
 
+import pypdf.errors
+
 from app.core.db import db
 from app.core.extractor_strategies import registry
 
@@ -24,8 +26,6 @@ def get_file_hash(file_path: str) -> str:
         pass
     return hasher.hexdigest()
 
-
-import pypdf.errors
 
 def extract_file_text(file_path: str) -> str:
     """Extract text content from a given file."""
