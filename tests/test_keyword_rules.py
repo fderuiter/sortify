@@ -57,3 +57,42 @@ def test_keyword_rules():
     
     file1_folder = find_folder_for("file1.txt", plan)
     assert file1_folder != "Miscellaneous"
+
+def test_empty_keyword_rules_ignored():
+    analyzer = IncrementalAnalyzer(max_folders=3, stop_words={"the", "and"}, model_path=None)
+    
+    corpus = {
+        "file1.txt": "Semantic content here.",
+        "file2.txt": "Semantic content there."
+    }
+    
+    class MockSettings:
+        MAX_DEPTH = 5
+        MAX_FEATURES = 3
+        PRESERVE_HIERARCHY = False
+        CONTEXTUAL_RENAMING = False
+        KEYWORD_RULES = {"": "Empty Folder", "   ": "Whitespace Folder", "file1": "Valid Folder"}
+        
+    analyzer.partial_fit("dummy", corpus)
+    plan = analyzer.generate_sorting_plan("dummy", runtime_settings=MockSettings())
+    
+    def find_folder_for(filename, p, current_path=""):
+        if not isinstance(p, dict) or p.get("__type__") == "file":
+            return None
+        for k, v in p.items():
+            if v is None or (isinstance(v, dict) and v.get("__type__") == "file"):
+                if k == filename:
+                    return current_path
+            else:
+                res = find_folder_for(filename, v, current_path + "/" + k if current_path else k)
+                if res:
+                    return res
+        return None
+
+    file1_folder = find_folder_for("file1.txt", plan)
+    assert file1_folder == "Valid Folder"
+    
+    file2_folder = find_folder_for("file2.txt", plan)
+    # Since file2 has no valid matching rule, it shouldn't be in the empty or whitespace folder
+    assert file2_folder not in ("Empty Folder", "Whitespace Folder")
+

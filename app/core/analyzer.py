@@ -297,6 +297,8 @@ class IncrementalAnalyzer:
                             
                             matched_target = None
                             for keyword, target_folder in keyword_rules.items():
+                                if not keyword.strip():
+                                    continue
                                 if keyword.lower() in filename.lower() or keyword.lower() in text.lower():
                                     matched_target = target_folder
                                     break
