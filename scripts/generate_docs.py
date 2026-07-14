@@ -12,9 +12,6 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 def get_python_executable():
     """Dynamically determine the best Python command/executable."""
-    for cmd in ("python3", "python"):
-        if shutil.which(cmd):
-            return cmd
     return sys.executable
 
 
