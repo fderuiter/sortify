@@ -2,13 +2,15 @@ import json
 import os
 from unittest.mock import MagicMock
 
+import pytest
+
 from app.core.analyzer import IncrementalAnalyzer
 from app.core.extractor import build_corpus_generator
 from tests.generate_corpus import LARGE_CORPUS_DIR, create_large_corpus
 
 BASELINE_FILE = os.path.join(os.path.dirname(__file__), "baseline_metrics.json")
 
-
+@pytest.mark.timeout(120)
 def test_semantic_quality_guardrails():
     """
     Hybrid Quality Guardrail:
