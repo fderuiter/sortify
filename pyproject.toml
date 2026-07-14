@@ -16,9 +16,6 @@ dependencies = [
     "pypdf",
     "openpyxl",
     "pydantic-settings",
-    "pytest>=8.4.2",
-    "pytest-mock>=3.15.1",
-    "reportlab>=5.0.0",
     "watchdog>=6.0.0",
     "sentence-transformers>=5.1.2",
     "pylnk3>=0.4.2",
@@ -31,9 +28,9 @@ dev = [
     "mkdocstrings[python]",
     "ruff",
     "mypy",
-    "pytest",
-    "pytest-mock",
-    "reportlab",
+    "pytest>=8.4.2",
+    "pytest-mock>=3.15.1",
+    "reportlab>=5.0.0",
     "pyinstaller",
     "pre-commit"
 ]
@@ -91,7 +88,7 @@ commands =
 [dependency-groups]
 dev = [
     "pytest-cov>=7.1.0",
-    "reportlab>=3.0",
+    "reportlab>=5.0.0",
 ]
 
 [tool.pytest.ini_options]

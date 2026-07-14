@@ -4463,11 +4463,7 @@ dependencies = [
     { name = "pydantic-settings", version = "2.14.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
     { name = "pylnk3" },
     { name = "pypdf" },
-    { name = "pytest", version = "8.4.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
-    { name = "pytest", version = "9.1.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
-    { name = "pytest-mock" },
     { name = "python-docx" },
-    { name = "reportlab" },
     { name = "scikit-learn", version = "1.6.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
     { name = "scikit-learn", version = "1.7.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.10.*'" },
     { name = "scikit-learn", version = "1.9.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
@@ -4515,13 +4511,10 @@ requires-dist = [
     { name = "pyinstaller", marker = "extra == 'dev'" },
     { name = "pylnk3", specifier = ">=0.4.2" },
     { name = "pypdf" },
-    { name = "pytest", specifier = ">=8.4.2" },
-    { name = "pytest", marker = "extra == 'dev'" },
-    { name = "pytest-mock", specifier = ">=3.15.1" },
-    { name = "pytest-mock", marker = "extra == 'dev'" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.4.2" },
+    { name = "pytest-mock", marker = "extra == 'dev'", specifier = ">=3.15.1" },
     { name = "python-docx" },
-    { name = "reportlab", specifier = ">=5.0.0" },
-    { name = "reportlab", marker = "extra == 'dev'" },
+    { name = "reportlab", marker = "extra == 'dev'", specifier = ">=5.0.0" },
     { name = "ruff", marker = "extra == 'dev'" },
     { name = "scikit-learn" },
     { name = "sentence-transformers", specifier = ">=5.1.2" },
@@ -4532,7 +4525,7 @@ provides-extras = ["dev"]
 [package.metadata.requires-dev]
 dev = [
     { name = "pytest-cov", specifier = ">=7.1.0" },
-    { name = "reportlab", specifier = ">=3.0" },
+    { name = "reportlab", specifier = ">=5.0.0" },
 ]
 
 [[package]]
