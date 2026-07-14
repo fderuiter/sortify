@@ -237,12 +237,33 @@ class IncrementalAnalyzer:
             filenames = [d[0] for d in docs]
             documents = [d[1] for d in docs]
             embeddings = [d[2] for d in docs]
+            
+            keyword_rules = getattr(runtime_settings, "KEYWORD_RULES", {}) if runtime_settings else {}
+            
+            ai_filenames = []
+            ai_documents = []
+            ai_embeddings = []
+            keyword_plan_files = []
+            
+            for f, doc, emb in zip(filenames, documents, embeddings):
+                matched = False
+                if keyword_rules:
+                    filename_only = os.path.basename(f).lower()
+                    for keyword, target_folder in keyword_rules.items():
+                        if keyword.lower() in filename_only:
+                            keyword_plan_files.append((f, target_folder, keyword))
+                            matched = True
+                            break
+                if not matched:
+                    ai_filenames.append(f)
+                    ai_documents.append(doc)
+                    ai_embeddings.append(emb)
 
             self._last_reconstruction_error = 0.0
 
             if self.model is None:
                 # If no model, just create a flat unsorted plan
-                plan = {f: None for f in filenames}
+                plan = {f: None for f in ai_filenames}
             elif self.strategy:
                 max_depth = (
                     getattr(runtime_settings, "MAX_DEPTH", 5) if runtime_settings else 5
@@ -253,9 +274,9 @@ class IncrementalAnalyzer:
                     else 3
                 )
                 plan, error = self.strategy.generate_plan(
-                    filenames,
-                    documents,
-                    embeddings,
+                    ai_filenames,
+                    ai_documents,
+                    ai_embeddings,
                     self.max_folders,
                     self.stop_words,
                     max_depth,
@@ -270,45 +291,24 @@ class IncrementalAnalyzer:
             else:
                 plan = {}
 
-            keyword_rules = getattr(runtime_settings, "KEYWORD_RULES", {}) if runtime_settings else {}
-            if keyword_rules:
-                text_map = {f: t for f, t in zip(filenames, documents)}
-                moved_files = []
-
-                def _extract_and_remove(node):
-                    keys_to_delete = []
-                    for k, v in node.items():
-                        if v is None or (isinstance(v, dict) and v.get("__type__") == "file"):
-                            filename = k
-                            text = text_map.get(filename, "")
-                            
-                            matched_target = None
-                            for keyword, target_folder in keyword_rules.items():
-                                if keyword.lower() in filename.lower() or keyword.lower() in text.lower():
-                                    matched_target = target_folder
-                                    break
-                            
-                            if matched_target:
-                                moved_files.append((filename, matched_target, v))
-                                keys_to_delete.append(k)
-                        elif isinstance(v, dict):
-                            _extract_and_remove(v)
-                            
-                    for k in keys_to_delete:
-                        del node[k]
-
-                _extract_and_remove(plan)
-
-                for filename, target_folder, val in moved_files:
-                    if target_folder not in plan:
-                        plan[target_folder] = {}
-                    if not isinstance(plan[target_folder], dict):
-                        plan[target_folder] = {"_original": plan[target_folder]}
-                    plan[target_folder][filename] = val
+            # Inject keyword routed files back into the plan
+            for f, target_folder, keyword in keyword_plan_files:
+                # Support nested paths if target_folder has slashes
+                parts = target_folder.replace("\\", "/").split("/")
+                current = plan
+                for i, part in enumerate(parts):
+                    if part not in current:
+                        current[part] = {}
+                    if not isinstance(current[part], dict):
+                        current[part] = {"_original": current[part]}
+                    if i == len(parts) - 1:
+                        current[part][f] = {"routed_by": "keyword", "keyword": keyword}
+                    else:
+                        current = current[part]
 
             def _annotate(node, current_path):
                 for k, v in list(node.items()):
-                    if v is None:
+                    if v is None or (isinstance(v, dict) and v.get("routed_by")):
                         filename = os.path.basename(k)
                         target_filename = filename
 
@@ -341,12 +341,16 @@ class IncrementalAnalyzer:
                             else "Pending Move"
                         )
 
-                        node[k] = {
+                        file_dict = {
                             "__type__": "file",
                             "status": status,
                             "source_path": k,
                             "target_filename": target_filename,
                         }
+                        if isinstance(v, dict) and v.get("routed_by"):
+                            file_dict.update(v)
+
+                        node[k] = file_dict
                     elif isinstance(v, dict):
                         _annotate(v, os.path.join(current_path, k))
 

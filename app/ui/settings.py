@@ -1,6 +1,105 @@
 """Settings view and widgets for application configuration."""
 
+from tkinter import filedialog
 import customtkinter as ctk
+
+
+class KeywordRoutingWidget(ctk.CTkFrame):
+    """Widget to manage static keyword-to-directory routing rules."""
+
+    def __init__(self, master, settings, on_change=None, **kwargs):
+        super().__init__(master, **kwargs)
+        self.settings = settings
+        self.rules = getattr(self.settings, "KEYWORD_RULES", {}).copy()
+        self.on_change = on_change
+        
+        title = ctk.CTkLabel(self, text="Static Keyword Routing Rules", font=("Roboto", 16, "bold"))
+        title.pack(anchor="w", padx=10, pady=(10, 5))
+        
+        desc = ctk.CTkLabel(self, text="Map specific filename keywords to target directories.", text_color="gray")
+        desc.pack(anchor="w", padx=10, pady=(0, 10))
+        
+        self.add_frame = ctk.CTkFrame(self, fg_color="transparent")
+        self.add_frame.pack(fill="x", padx=10, pady=(0, 10))
+        
+        self.kw_entry = ctk.CTkEntry(self.add_frame, placeholder_text="Keyword (e.g. invoice)")
+        self.kw_entry.pack(side="left", padx=(0, 10), fill="x", expand=True)
+        
+        self.path_entry = ctk.CTkEntry(self.add_frame, placeholder_text="Target Directory")
+        self.path_entry.pack(side="left", padx=(0, 10), fill="x", expand=True)
+        
+        self.browse_btn = ctk.CTkButton(self.add_frame, text="Browse", width=60, command=self._browse_dir)
+        self.browse_btn.pack(side="left", padx=(0, 10))
+        
+        self.add_btn = ctk.CTkButton(self.add_frame, text="Add Rule", width=80, command=self._add_rule)
+        self.add_btn.pack(side="left")
+        
+        self.error_label = ctk.CTkLabel(self, text="", text_color="red")
+        self.error_label.pack(anchor="w", padx=10)
+        
+        self.scroll_frame = ctk.CTkScrollableFrame(self)
+        self.scroll_frame.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+        
+        self._render_rules()
+
+    def _browse_dir(self):
+        directory = filedialog.askdirectory(title="Select Target Directory")
+        if directory:
+            self.path_entry.delete(0, "end")
+            self.path_entry.insert(0, directory)
+            
+    def _add_rule(self, event=None):
+        kw = self.kw_entry.get().strip()
+        path = self.path_entry.get().strip()
+        
+        if not kw or not path:
+            self.error_label.configure(text="Keyword and Target Directory cannot be empty.")
+            return
+            
+        kw_lower = kw.lower()
+        existing_lower = {k.lower(): k for k in self.rules.keys()}
+        if kw_lower in existing_lower:
+            self.error_label.configure(text="A rule for this keyword already exists.")
+            return
+            
+        self.error_label.configure(text="")
+        self.rules[kw] = path
+        
+        self.kw_entry.delete(0, "end")
+        self.path_entry.delete(0, "end")
+        self._save_and_render()
+        
+    def _remove_rule(self, kw):
+        if kw in self.rules:
+            del self.rules[kw]
+            self._save_and_render()
+            
+    def _save_and_render(self):
+        self.settings.KEYWORD_RULES = self.rules.copy()
+        if self.on_change:
+            self.on_change()
+        self._render_rules()
+        
+    def _render_rules(self):
+        for widget in self.scroll_frame.winfo_children():
+            widget.destroy()
+            
+        for i, (kw, path) in enumerate(self.rules.items()):
+            frame = ctk.CTkFrame(self.scroll_frame, fg_color=("gray75", "gray30"), corner_radius=5)
+            frame.pack(fill="x", pady=2, padx=2)
+            
+            lbl_kw = ctk.CTkLabel(frame, text=kw, font=("Roboto", 12, "bold"), width=120, anchor="w")
+            lbl_kw.pack(side="left", padx=10, pady=5)
+            
+            lbl_path = ctk.CTkLabel(frame, text=path, font=("Roboto", 12))
+            lbl_path.pack(side="left", padx=10, pady=5, fill="x", expand=True)
+            
+            btn_del = ctk.CTkButton(
+                frame, text="×", width=30, height=30, fg_color="transparent", 
+                text_color=("black", "white"), hover_color="#c9302c", 
+                command=lambda k=kw: self._remove_rule(k)
+            )
+            btn_del.pack(side="right", padx=5, pady=5)
 
 
 class TokenWidget(ctk.CTkFrame):
@@ -159,6 +258,11 @@ class SettingsView(ctk.CTkFrame):
         self.help_btn.pack(side="left", padx=(10, 0))
 
         self.update_ai_status()
+
+        self.kw_widget = KeywordRoutingWidget(
+            self, self.settings, on_change=lambda: on_settings_changed(self.settings.STOP_WORDS) if on_settings_changed else None
+        )
+        self.kw_widget.pack(fill="both", expand=True, padx=20, pady=(0, 10))
 
         self.token_widget = TokenWidget(
             self, self.settings.STOP_WORDS, on_change=on_settings_changed
