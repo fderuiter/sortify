@@ -11,7 +11,14 @@ if [ -f "offline_bundle.zip" ]; then
     if command -v unzip >/dev/null 2>&1; then
         unzip -q -o offline_bundle.zip -d offline_bundle
     elif command -v python >/dev/null 2>&1 || command -v python3 >/dev/null 2>&1; then
-        ${PYTHON:-python} -m zipfile -e offline_bundle.zip offline_bundle
+        if command -v python3 >/dev/null 2>&1; then
+            DEFAULT_PYTHON="python3"
+        elif command -v python >/dev/null 2>&1; then
+            DEFAULT_PYTHON="python"
+        else
+            DEFAULT_PYTHON="python"
+        fi
+        ${PYTHON:-$DEFAULT_PYTHON} -m zipfile -e offline_bundle.zip offline_bundle
     else
         echo "Error: unzip or Python required to extract offline_bundle.zip."
         exit 1
