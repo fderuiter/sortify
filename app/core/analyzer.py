@@ -8,6 +8,10 @@ import json
 import logging
 import os
 import re
+import torch
+
+# Explicitly limit ML engine to 2 threads to prevent CPU starvation
+torch.set_num_threads(2)
 
 from sentence_transformers import SentenceTransformer
 
