@@ -1,10 +1,11 @@
 import json
 import logging
-from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
 from app.config import AppSettings, Settings
+
 
 def test_valid_relative_paths():
     """Valid relative paths should be accepted without validation warnings."""
