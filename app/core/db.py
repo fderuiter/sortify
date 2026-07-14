@@ -75,15 +75,15 @@ class Database:
             )
 
     def get_all_documents(self, base_dir):
-        """Retrieve all valid documents with embeddings for a given base directory."""
+        """Retrieve all valid documents for a given base directory."""
         with closing(sqlite3.connect(self.db_path)) as conn, conn:
             cursor = conn.execute(
-                "SELECT filepath, extracted_text, embedding FROM documents WHERE base_dir = ? AND embedding IS NOT NULL",
+                "SELECT filepath, extracted_text, embedding FROM documents WHERE base_dir = ?",
                 (base_dir,),
             )
             results = []
             for row in cursor.fetchall():
-                embedding = np.frombuffer(row[2], dtype=np.float32)
+                embedding = np.frombuffer(row[2], dtype=np.float32) if row[2] is not None else None
                 results.append((row[0], row[1], embedding))
             return results
 
