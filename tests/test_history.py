@@ -1,13 +1,14 @@
 import os
 import shutil
 import sqlite3
-import pytest
-import uuid
 from contextlib import closing
 from unittest.mock import patch
 
-from app.core.history import history_manager
+import pytest
+
 from app.core.db import db
+from app.core.history import history_manager
+
 
 @pytest.fixture
 def setup_history_env(tmp_path):
@@ -28,8 +29,10 @@ def test_incremental_sync_and_stop_on_failure(setup_history_env):
     # Create two files
     file1_src = os.path.join(base_dir, "file1.txt")
     file2_src = os.path.join(base_dir, "file2.txt")
-    with open(file1_src, "w") as f: f.write("file1")
-    with open(file2_src, "w") as f: f.write("file2")
+    with open(file1_src, "w") as f:
+        f.write("file1")
+    with open(file2_src, "w") as f:
+        f.write("file2")
 
     # Upsert to DB
     db.upsert_document(base_dir, "file1.txt", "hash1", "text1", None)
@@ -92,8 +95,10 @@ def test_rollback_cyclic_collision(setup_history_env):
     
     file1_src = os.path.join(base_dir, "A.txt")
     file2_src = os.path.join(base_dir, "B.txt")
-    with open(file1_src, "w") as f: f.write("A")
-    with open(file2_src, "w") as f: f.write("B")
+    with open(file1_src, "w") as f:
+        f.write("A")
+    with open(file2_src, "w") as f:
+        f.write("B")
 
     db.upsert_document(base_dir, "A.txt", "hashA", "textA", None)
     db.upsert_document(base_dir, "B.txt", "hashB", "textB", None)
@@ -115,8 +120,10 @@ def test_rollback_cyclic_collision(setup_history_env):
     history_manager.rollback(session_id)
 
     # Verify files restored
-    with open(file1_src, "r") as f: assert f.read() == "A"
-    with open(file2_src, "r") as f: assert f.read() == "B"
+    with open(file1_src, "r") as f:
+        assert f.read() == "A"
+    with open(file2_src, "r") as f:
+        assert f.read() == "B"
 
     # Verify db restored
     docA = db.get_document(base_dir, "A.txt")
