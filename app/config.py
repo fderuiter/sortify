@@ -10,7 +10,7 @@ import sys
 import threading
 from pathlib import Path
 
-from pydantic import Field, ValidationError
+from pydantic import Field, ValidationError, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -32,6 +32,30 @@ class Settings(BaseSettings):
     MAX_FEATURES: int = Field(default=3, gt=0)
     CLEANUP_EMPTY_FOLDERS: bool = Field(default=True)
     KEYWORD_RULES: dict = Field(default_factory=dict)
+
+    @field_validator("KEYWORD_RULES")
+    @classmethod
+    def validate_keyword_rules(cls, v: dict) -> dict:
+        illegal_chars = set('<>:"|?*')
+        for keyword, target_path in v.items():
+            if not isinstance(target_path, str):
+                raise ValueError(f"Target path for keyword '{keyword}' must be a string.")
+            
+            # Check for illegal OS characters
+            if any(char in illegal_chars for char in target_path):
+                raise ValueError(f"Target path '{target_path}' contains illegal characters.")
+            
+            # Check for absolute path roots (/ or \)
+            if target_path.startswith("/") or target_path.startswith("\\"):
+                raise ValueError(f"Target path '{target_path}' is an absolute path.")
+            
+            # Check for directory traversal segments (..)
+            segments = target_path.replace("\\", "/").split("/")
+            if ".." in segments:
+                raise ValueError(f"Target path '{target_path}' contains directory traversal segments.")
+                
+        return v
+
     AI_CONSENT_GRANTED: bool | None = Field(default=None)
     LOG_FILE: str = Field(default=str(get_app_dir() / "autosorter.log"), min_length=1)
     STOP_WORDS: set[str] = {
