@@ -12,7 +12,7 @@ repos:
         name: Block cache files, virtual environments, and bytecode
         entry: Cannot commit cache files, bytecode, or virtual environments. Please clean your workspace.
         language: fail
-        files: '(\.pytest_cache/|\.venv/|\.coverage|htmlcov/|__pycache__/|.*\.py[co]$)'
+        files: '(\.pytest_cache/|\.venv/|\.coverage$|htmlcov/|__pycache__/|.*\.py[co]$)'
       - id: generate-api-docs
         name: Generate API Reference Docs
         entry: uv run python scripts/generate_docs.py
