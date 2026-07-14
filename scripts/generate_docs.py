@@ -34,7 +34,7 @@ def generate_api_docs():
             for p in py_files
             if not p.endswith("__init__.py") and "/ui/" not in p and "\\ui\\" not in p
         ]
-        py_files.sort()
+        py_files.sort(key=lambda p: Path(p).parts)
 
         for file_path in py_files:
             parts = Path(file_path).with_suffix("").parts
@@ -54,7 +54,7 @@ def generate_ui_docs():
 
         py_files = glob.glob(os.path.join(app_dir, "*.py"))
         py_files = [p for p in py_files if not p.endswith("__init__.py")]
-        py_files.sort()
+        py_files.sort(key=lambda p: Path(p).parts)
 
         for file_path in py_files:
             parts = Path(file_path).with_suffix("").parts
@@ -86,7 +86,7 @@ def generate_admin_guide():
             elif isinstance(default_val, str):
                 home_dir = str(Path.home())
                 if default_val.startswith(home_dir):
-                    default_val = default_val.replace(home_dir, "~")
+                    default_val = default_val.replace(home_dir, "~").replace("\\", "/")
 
             f.write(f"### `{name}`\n")
             f.write(f"- **Default**: `{default_val}`\n")
