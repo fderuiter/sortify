@@ -532,17 +532,18 @@ class AutoSorterApp(ctk.CTk):
                         return
                 
                 history_manager.rollback(session_id, ignore_missing=True)
-                messagebox.showinfo("Success", "Rollback successful!", parent=modal)
-                
-                modal.destroy()
-                
-                if self.base_dir == s_data["base_dir"]:
-                    self.plan = {}
-                    self.render_tree()
-                    self.execute_sort_btn.configure(state="disabled")
-
             except Exception as e:
                 messagebox.showerror("Rollback Failed", str(e), parent=modal)
+                return
+                
+            messagebox.showinfo("Success", "Rollback successful!", parent=modal)
+            
+            modal.destroy()
+            
+            if self.base_dir == s_data["base_dir"]:
+                self.plan = {}
+                self.render_tree()
+                self.execute_btn.configure(state="disabled")
 
         btn_frame = ctk.CTkFrame(modal)
         btn_frame.pack(fill="x", padx=10, pady=10)
