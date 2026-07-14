@@ -25,6 +25,8 @@ def get_file_hash(file_path: str) -> str:
     return hasher.hexdigest()
 
 
+import pypdf.errors
+
 def extract_file_text(file_path: str) -> str:
     """Extract text content from a given file."""
     ext = os.path.splitext(file_path)[1].lower()
@@ -33,10 +35,18 @@ def extract_file_text(file_path: str) -> str:
         extractor = registry.get_extractor(ext)
         if extractor:
             text = extractor.extract(file_path)
+            if not text.strip():
+                if os.path.getsize(file_path) > 0:
+                    text = "[STATUS:EMPTY]"
+        else:
+            text = "[STATUS:UNSUPPORTED]"
+    except pypdf.errors.FileNotDecryptedError:
+        text = "[STATUS:ENCRYPTED]"
     except Exception as e:
         logging.error(
             f"Failed to extract text from {file_path}. Error: {str(e)}", exc_info=True
         )
+        text = "[STATUS:FAILED]"
     return text
 
 
@@ -110,7 +120,7 @@ def build_corpus_generator(
                 # Already processed and unchanged, no need to yield to analyzer
                 continue
 
-            chunk[item_name] = {"text": item_name + " " + item_text, "hash": file_hash}
+            chunk[item_name] = {"text": item_text if item_text.startswith("[STATUS:") else item_name + " " + item_text, "hash": file_hash}
             if len(chunk) >= chunk_size:
                 yield chunk
                 chunk = {}
@@ -137,7 +147,7 @@ def build_corpus_generator(
                     continue
 
                 chunk[item_name] = {
-                    "text": item_name + " " + item_text,
+                    "text": item_text if item_text.startswith("[STATUS:") else item_name + " " + item_text,
                     "hash": file_hash,
                 }
                 if len(chunk) >= chunk_size:

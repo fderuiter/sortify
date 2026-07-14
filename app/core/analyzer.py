@@ -163,6 +163,8 @@ class IncrementalAnalyzer:
                     and doc["embedding"] is not None
                 ):
                     embeddings[i] = doc["embedding"]
+                elif text.startswith("[STATUS:"):
+                    embeddings[i] = None
                 else:
                     texts_to_encode.append(text)
                     indices_to_encode.append(i)
@@ -234,46 +236,58 @@ class IncrementalAnalyzer:
             if not docs:
                 return {}
 
-            from app.core.extractor_strategies import registry
-            supported_exts = set(registry._extractors.keys())
-
-            supported_docs = []
-            unsupported_filenames = []
-
-            for d in docs:
-                ext = os.path.splitext(d[0])[1].lower()
-                if ext in supported_exts:
-                    supported_docs.append(d)
-                else:
-                    unsupported_filenames.append(d[0])
-
-            filenames = [d[0] for d in supported_docs]
-            documents = [d[1] for d in supported_docs]
-            embeddings = [d[2] for d in supported_docs]
-            
             keyword_rules = getattr(runtime_settings, "KEYWORD_RULES", {}) if runtime_settings else {}
+            learned_rules = getattr(runtime_settings, "LEARNED_RULES", {}) if runtime_settings else {}
             
             ai_filenames = []
             ai_documents = []
             ai_embeddings = []
             keyword_plan_files = []
+            unsupported_files = []
             
-            for f, doc, emb in zip(filenames, documents, embeddings):
+            from app.core.extractor_strategies import registry
+            supported_exts = set(registry._extractors.keys())
+
+            for d in docs:
+                f, doc, emb = d[0], d[1], d[2]
+                filename_only = os.path.basename(f).lower()
+                doc_lower = doc.lower() if doc else ""
+                
+                status_match = None
+                if doc and doc.startswith("[STATUS:"):
+                    status_match = doc[8:-1] # e.g. EMPTY, ENCRYPTED, UNSUPPORTED, FAILED
+                    
+                ext = os.path.splitext(f)[1].lower()
+                if ext not in supported_exts and not status_match:
+                    status_match = "UNSUPPORTED"
+                    
                 matched = False
                 if keyword_rules:
-                    filename_only = os.path.basename(f).lower()
-                    doc_lower = doc.lower() if doc else ""
                     for keyword, target_folder in keyword_rules.items():
                         if not keyword.strip():
                             continue
-                        if keyword.lower() in filename_only or keyword.lower() in doc_lower:
-                            keyword_plan_files.append((f, target_folder, keyword))
+                        text_to_search = filename_only if status_match else (filename_only + " " + doc_lower)
+                        if keyword.lower() in text_to_search:
+                            keyword_plan_files.append((f, target_folder, keyword, "keyword", status_match))
                             matched = True
                             break
+                            
+                if not matched and status_match and learned_rules:
+                    for keyword, target_folder in learned_rules.items():
+                        if not keyword.strip():
+                            continue
+                        if keyword.lower() in filename_only:
+                            keyword_plan_files.append((f, target_folder, keyword, "pattern", status_match))
+                            matched = True
+                            break
+
                 if not matched:
-                    ai_filenames.append(f)
-                    ai_documents.append(doc)
-                    ai_embeddings.append(emb)
+                    if status_match:
+                        unsupported_files.append((f, status_match))
+                    else:
+                        ai_filenames.append(f)
+                        ai_documents.append(doc)
+                        ai_embeddings.append(emb)
 
             self._last_reconstruction_error = 0.0
 
@@ -308,7 +322,7 @@ class IncrementalAnalyzer:
                 plan = {}
 
             # Inject keyword routed files back into the plan
-            for f, target_folder, keyword in keyword_plan_files:
+            for f, target_folder, keyword, routed_by, ext_status in keyword_plan_files:
                 # Support nested paths if target_folder has slashes
                 parts = target_folder.replace("\\", "/").split("/")
                 current = plan
@@ -318,21 +332,21 @@ class IncrementalAnalyzer:
                     if not isinstance(current[part], dict):
                         current[part] = {"_original": current[part]}
                     if i == len(parts) - 1:
-                        current[part][f] = {"routed_by": "keyword", "keyword": keyword}
+                        current[part][f] = {"routed_by": routed_by, "keyword": keyword, "extraction_status": ext_status}
                     else:
                         current = current[part]
 
-            if unsupported_filenames:
+            if unsupported_files:
                 if "Miscellaneous" not in plan:
                     plan["Miscellaneous"] = {}
                 elif not isinstance(plan["Miscellaneous"], dict):
                     plan["Miscellaneous"] = {"_original": plan["Miscellaneous"]}
-                for f in unsupported_filenames:
-                    plan["Miscellaneous"][f] = None
+                for f, ext_status in unsupported_files:
+                    plan["Miscellaneous"][f] = {"extraction_status": ext_status}
 
             def _annotate(node, current_path):
                 for k, v in list(node.items()):
-                    if v is None or (isinstance(v, dict) and v.get("routed_by")):
+                    if v is None or (isinstance(v, dict) and (v.get("routed_by") or v.get("extraction_status"))):
                         filename = os.path.basename(k)
                         target_filename = filename
 
