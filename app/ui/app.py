@@ -978,6 +978,9 @@ class AutoSorterApp(ctk.CTk):
                 icon = "❌ " if error_msg else "✅ "
                 display_name = item["node"].get("target_filename", item["name"]) if isinstance(item["node"], dict) else item["name"]
                 text = f"{indent}{icon}{display_name}"
+                if isinstance(item["node"], dict) and item["node"].get("routed_by") == "keyword":
+                    kw = item["node"].get("keyword", "")
+                    text += f" [Keyword: {kw}]"
                 if error_msg:
                     text += f" - {error_msg}"
                 status = item["node"].get("status", "Pending Move") if isinstance(item["node"], dict) else "Pending Move"
