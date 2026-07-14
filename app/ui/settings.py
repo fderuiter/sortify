@@ -1,6 +1,7 @@
 """Settings view and widgets for application configuration."""
 
 from tkinter import filedialog
+
 import customtkinter as ctk
 
 

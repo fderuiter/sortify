@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-import urllib.request
-import urllib.error
-import re
-import sys
+"""Script to validate external links in repository files."""
 import argparse
 import concurrent.futures
-from urllib.parse import urlparse
+import re
 import socket
+import sys
+import urllib.error
+import urllib.request
+from urllib.parse import urlparse
 
 TARGET_FILES = [
     "setup.sh",
@@ -19,6 +20,7 @@ URL_REGEX = re.compile(r'https?://[^\s\'"<>]+')
 TIMEOUT = 3.0
 
 def validate_url(url: str, bypass_domains: set):
+    """Validate a single URL using HEAD with a fallback to GET."""
     parsed = urlparse(url)
     if parsed.netloc in bypass_domains:
         return True, f"Bypassed ({parsed.netloc})", False
@@ -56,6 +58,7 @@ def validate_url(url: str, bypass_domains: set):
         return False, f"Unexpected Error: {str(e)}", False
 
 def main():
+    """Parse arguments and run concurrent URL validation."""
     parser = argparse.ArgumentParser(description="Local-First Python Link Validator")
     parser.add_argument("--bypass", nargs="*", default=[], help="Domains to bypass")
     args = parser.parse_args()

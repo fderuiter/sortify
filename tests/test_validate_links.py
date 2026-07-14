@@ -1,14 +1,14 @@
-import pytest
-from unittest.mock import patch, MagicMock
-import urllib.error
+import os
 import socket
 import sys
-import os
+import urllib.error
+from unittest.mock import MagicMock, patch
 
 # Add scripts to path so we can import it
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from scripts.validate_links import validate_url, URL_REGEX
+from scripts.validate_links import URL_REGEX, validate_url
+
 
 def test_url_extraction():
     content = """

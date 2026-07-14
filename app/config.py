@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     @field_validator("KEYWORD_RULES")
     @classmethod
     def validate_keyword_rules(cls, v: dict) -> dict:
+        """Validate keyword routing rules ensuring valid target paths."""
         illegal_chars = set('<>:"|?*')
         for keyword, target_path in v.items():
             if not isinstance(target_path, str):
