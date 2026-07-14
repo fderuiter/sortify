@@ -234,9 +234,22 @@ class IncrementalAnalyzer:
             if not docs:
                 return {}
 
-            filenames = [d[0] for d in docs]
-            documents = [d[1] for d in docs]
-            embeddings = [d[2] for d in docs]
+            from app.core.extractor_strategies import registry
+            supported_exts = set(registry._extractors.keys())
+
+            supported_docs = []
+            unsupported_filenames = []
+
+            for d in docs:
+                ext = os.path.splitext(d[0])[1].lower()
+                if ext in supported_exts:
+                    supported_docs.append(d)
+                else:
+                    unsupported_filenames.append(d[0])
+
+            filenames = [d[0] for d in supported_docs]
+            documents = [d[1] for d in supported_docs]
+            embeddings = [d[2] for d in supported_docs]
             
             keyword_rules = getattr(runtime_settings, "KEYWORD_RULES", {}) if runtime_settings else {}
             
@@ -249,8 +262,11 @@ class IncrementalAnalyzer:
                 matched = False
                 if keyword_rules:
                     filename_only = os.path.basename(f).lower()
+                    doc_lower = doc.lower() if doc else ""
                     for keyword, target_folder in keyword_rules.items():
-                        if keyword.lower() in filename_only:
+                        if not keyword.strip():
+                            continue
+                        if keyword.lower() in filename_only or keyword.lower() in doc_lower:
                             keyword_plan_files.append((f, target_folder, keyword))
                             matched = True
                             break
@@ -305,6 +321,14 @@ class IncrementalAnalyzer:
                         current[part][f] = {"routed_by": "keyword", "keyword": keyword}
                     else:
                         current = current[part]
+
+            if unsupported_filenames:
+                if "Miscellaneous" not in plan:
+                    plan["Miscellaneous"] = {}
+                elif not isinstance(plan["Miscellaneous"], dict):
+                    plan["Miscellaneous"] = {"_original": plan["Miscellaneous"]}
+                for f in unsupported_filenames:
+                    plan["Miscellaneous"][f] = None
 
             def _annotate(node, current_path):
                 for k, v in list(node.items()):
