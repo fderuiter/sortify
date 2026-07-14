@@ -42,16 +42,16 @@ def test_incremental_sync_and_stop_on_failure(setup_history_env):
     session_id = history_manager.create_snapshot(base_dir)
 
     # Move files and update DB to simulate organization
-    file1_dst = os.path.join(base_dir, "folder/file1.txt")
-    file2_dst = os.path.join(base_dir, "folder/file2.txt")
+    file1_dst = os.path.join(base_dir, "folder", "file1.txt")
+    file2_dst = os.path.join(base_dir, "folder", "file2.txt")
     os.makedirs(os.path.dirname(file1_dst), exist_ok=True)
     shutil.move(file1_src, file1_dst)
     shutil.move(file2_src, file2_dst)
 
     with closing(sqlite3.connect(db.db_path)) as conn, conn:
         conn.execute("DELETE FROM documents WHERE base_dir = ?", (base_dir,))
-    db.upsert_document(base_dir, "folder/file1.txt", "hash1", "text1", None)
-    db.upsert_document(base_dir, "folder/file2.txt", "hash2", "text2", None)
+    db.upsert_document(base_dir, os.path.join("folder", "file1.txt"), "hash1", "text1", None)
+    db.upsert_document(base_dir, os.path.join("folder", "file2.txt"), "hash2", "text2", None)
 
     # Mock shutil.move to fail on the second file
     original_move = shutil.move
@@ -79,8 +79,8 @@ def test_incremental_sync_and_stop_on_failure(setup_history_env):
         filepaths = {r[0] for r in cur.fetchall()}
     
     assert "file1.txt" in filepaths
-    assert "folder/file2.txt" in filepaths
-    assert "folder/file1.txt" not in filepaths
+    assert os.path.join("folder", "file2.txt") in filepaths
+    assert os.path.join("folder", "file1.txt") not in filepaths
     assert "file2.txt" not in filepaths
 
     # 4. Session status should be 'failed'
