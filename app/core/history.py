@@ -215,22 +215,89 @@ class HistoryManager:
                         if current_abs != target_abs:
                             moves.append((current_abs, target_abs))
 
+            planned_source_rels = [os.path.relpath(m[0], base_dir) for m in moves]
+            planned_target_rels = [os.path.relpath(m[1], base_dir) for m in moves]
+
+            cur = conn.execute("SELECT filepath, file_hash, extracted_text, embedding FROM snapshot_documents WHERE session_id = ?", (session_id,))
+            snapshot_docs = cur.fetchall()
+            snapshot_docs_dict = {r[0]: r for r in snapshot_docs}
+            snapshot_filepaths = set(snapshot_docs_dict.keys())
+
+            # 1. Pre-Move Synchronization
+            with closing(sqlite3.connect(db_instance.db_path)) as db_conn, db_conn:
+                cur_docs = db_conn.execute("SELECT filepath FROM documents WHERE base_dir = ?", (base_dir,))
+                current_filepaths = [row[0] for row in cur_docs.fetchall()]
+
+                to_delete = []
+                for fp in current_filepaths:
+                    if fp not in snapshot_filepaths and fp not in planned_source_rels:
+                        to_delete.append((base_dir, fp))
+                if to_delete:
+                    db_conn.executemany("DELETE FROM documents WHERE base_dir = ? AND filepath = ?", to_delete)
+
+                docs_to_upsert = []
+                for fp, r in snapshot_docs_dict.items():
+                    if fp not in planned_target_rels:
+                        docs_to_upsert.append((base_dir, r[0], r[1], r[2], r[3]))
+                if docs_to_upsert:
+                    db_conn.executemany(
+                        """
+                        INSERT INTO documents (base_dir, filepath, file_hash, extracted_text, embedding)
+                        VALUES (?, ?, ?, ?, ?)
+                        ON CONFLICT(base_dir, filepath) DO UPDATE SET
+                            file_hash=excluded.file_hash,
+                            extracted_text=excluded.extracted_text,
+                            embedding=excluded.embedding
+                        """,
+                        docs_to_upsert
+                    )
+
             # Execute moves safely to avoid overwriting during cyclic renames
-            for src, dst in moves:
-                os.makedirs(os.path.dirname(dst), exist_ok=True)
-                if os.path.exists(dst) and not os.path.samefile(src, dst):
-                    # Collision: move existing target out of the way temporarily
-                    temp_dst = dst + f".tmp.{uuid.uuid4().hex}"
-                    shutil.move(dst, temp_dst)
-                    # The file that was at dst is now at temp_dst. 
-                    # If this file is also part of our 'moves', we need to update its src in the 'moves' list.
-                    for i, (m_src, m_dst) in enumerate(moves):
-                        if m_src == dst:
-                            moves[i] = (temp_dst, m_dst)
-                    shutil.move(src, dst)
-                else:
-                    if not os.path.exists(dst):
+            try:
+                for src, dst in moves:
+                    os.makedirs(os.path.dirname(dst), exist_ok=True)
+                    rel_src = os.path.relpath(src, base_dir)
+                    rel_dst = os.path.relpath(dst, base_dir)
+
+                    if os.path.exists(dst) and not os.path.samefile(src, dst):
+                        # Collision: move existing target out of the way temporarily
+                        temp_dst = dst + f".tmp.{uuid.uuid4().hex}"
+                        shutil.move(dst, temp_dst)
+                        
+                        rel_temp_dst = os.path.relpath(temp_dst, base_dir)
+
+                        with closing(sqlite3.connect(db_instance.db_path)) as db_conn, db_conn:
+                            db_conn.execute("UPDATE documents SET filepath = ? WHERE base_dir = ? AND filepath = ?", (rel_temp_dst, base_dir, rel_dst))
+
+                        # The file that was at dst is now at temp_dst. 
+                        # If this file is also part of our 'moves', we need to update its src in the 'moves' list.
+                        for i, (m_src, m_dst) in enumerate(moves):
+                            if m_src == dst:
+                                moves[i] = (temp_dst, m_dst)
                         shutil.move(src, dst)
+                    else:
+                        if not os.path.exists(dst):
+                            shutil.move(src, dst)
+
+                    with closing(sqlite3.connect(db_instance.db_path)) as db_conn, db_conn:
+                        db_conn.execute("DELETE FROM documents WHERE base_dir = ? AND filepath = ?", (base_dir, rel_src))
+                        snapshot_doc = snapshot_docs_dict.get(rel_dst)
+                        if snapshot_doc:
+                            db_conn.execute(
+                                """
+                                INSERT INTO documents (base_dir, filepath, file_hash, extracted_text, embedding)
+                                VALUES (?, ?, ?, ?, ?)
+                                ON CONFLICT(base_dir, filepath) DO UPDATE SET
+                                    file_hash=excluded.file_hash,
+                                    extracted_text=excluded.extracted_text,
+                                    embedding=excluded.embedding
+                                """,
+                                (base_dir, rel_dst, snapshot_doc[1], snapshot_doc[2], snapshot_doc[3])
+                            )
+            except Exception as e:
+                conn.execute("UPDATE sessions SET status = 'failed' WHERE session_id = ?", (session_id,))
+                conn.commit()
+                raise e
 
             # Clean empty directories
             from app.core.mover import _remove_empty_dirs
@@ -260,20 +327,7 @@ class HistoryManager:
                 else:
                     cache_conn.execute("DELETE FROM directory_cache WHERE source_directory = ?", (base_dir,))
 
-            # Restore DB
-            with closing(sqlite3.connect(db_instance.db_path)) as db_conn, db_conn:
-                db_conn.execute("DELETE FROM documents WHERE base_dir = ?", (base_dir,))
-                cur = conn.execute("SELECT filepath, file_hash, extracted_text, embedding FROM snapshot_documents WHERE session_id = ?", (session_id,))
-                docs = cur.fetchall()
-                if docs:
-                    insert_docs = [(base_dir, r[0], r[1], r[2], r[3]) for r in docs]
-                    db_conn.executemany(
-                        """
-                        INSERT INTO documents (base_dir, filepath, file_hash, extracted_text, embedding)
-                        VALUES (?, ?, ?, ?, ?)
-                        """,
-                        insert_docs
-                    )
+
 
             conn.execute("UPDATE sessions SET status = 'rolled_back' WHERE session_id = ?", (session_id,))
 
