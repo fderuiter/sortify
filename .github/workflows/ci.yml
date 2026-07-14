@@ -34,6 +34,10 @@ jobs:
       run: |
         uv run --all-extras ruff check .
         
+    - name: Validate External Links
+      run: |
+        uv run python scripts/validate_links.py
+        
     - name: Test with pytest
       env:
         SMOKE_TEST: "1"
