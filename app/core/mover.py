@@ -119,7 +119,7 @@ def _execute_moves_recursive(
                         if dest_path == source_path:
                             os.remove(source_path)
                         os.symlink(final_target, dest_path)
-                        if dest_path != source_path and os.path.exists(source_path):
+                        if dest_path != source_path:
                             os.remove(source_path)
                         moved_as_link = True
 
@@ -140,7 +140,7 @@ def _execute_moves_recursive(
                             pylnk3.for_file(
                                 new_abs_target, lnk_name=dest_path, **kwargs
                             )
-                            if dest_path != source_path and os.path.exists(source_path):
+                            if dest_path != source_path:
                                 os.remove(source_path)
                             moved_as_link = True
                         except Exception as e:
@@ -162,8 +162,7 @@ def _execute_moves_recursive(
                 
             # Update filepath in database
             rel_dest = os.path.relpath(dest_path, base_dir)
-            if key != rel_dest:
-                db.update_document_path(base_dir, key, rel_dest)
+            db.update_document_path(base_dir, key, rel_dest)
         else:
             # It's a folder
             _execute_moves_recursive(
@@ -217,6 +216,12 @@ def execute_moves(base_dir: str, plan: dict, runtime_settings=None) -> dict:
                         summary["deleted_folders"] += 1
                 except OSError:
                     pass
+                    
+        # Guarantee complete cleanup of empty directories after all explicit plan folders are processed
+        for entry in os.listdir(base_dir):
+            entry_path = os.path.join(base_dir, entry)
+            if os.path.isdir(entry_path):
+                _remove_empty_dirs(entry_path)
     else:
         for node in dirs_to_process:
             summary["protected_folders"] += 1

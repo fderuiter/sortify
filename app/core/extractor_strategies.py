@@ -49,8 +49,10 @@ class XlsxExtractor:
 
     def extract(self, file_path: str) -> str:
         """Extract text from an Excel file."""
-        df = pd.read_excel(file_path)
-        return df.to_string()
+        dfs = pd.read_excel(file_path, sheet_name=None)
+        if isinstance(dfs, dict):
+            return "\n".join(df.to_string() for df in dfs.values())
+        return dfs.to_string()
 
 
 class PdfExtractor:
