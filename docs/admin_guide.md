@@ -19,7 +19,7 @@ The following parameters are extracted directly from the application's configura
 - **Required**: `False`
 
 ### `MAX_WORKERS`
-- **Default**: `15`
+- **Default**: `4`
 - **Required**: `False`
 
 ### `MAX_DEPTH`

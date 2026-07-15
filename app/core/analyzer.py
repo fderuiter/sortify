@@ -9,10 +9,14 @@ import logging
 import os
 import re
 
+import torch
 from sentence_transformers import SentenceTransformer
 
 from app.core.analyzer_strategies import clustering_registry
 from app.core.db import db
+
+# Explicitly limit ML engine to 2 threads to prevent CPU starvation
+torch.set_num_threads(2)
 
 
 class IncrementalAnalyzer:
@@ -273,6 +277,9 @@ class IncrementalAnalyzer:
             if not docs:
                 return {}
 
+            from app.core.extractor_strategies import registry
+            supported_exts = set(registry._extractors.keys())
+
             keyword_rules = getattr(runtime_settings, "KEYWORD_RULES", {}) if runtime_settings else {}
             learned_rules = getattr(runtime_settings, "LEARNED_RULES", {}) if runtime_settings else {}
             
@@ -281,22 +288,34 @@ class IncrementalAnalyzer:
             ai_embeddings = []
             keyword_plan_files = []
             unsupported_files = []
-            
-            from app.core.extractor_strategies import registry
-            supported_exts = set(registry._extractors.keys())
+            historical_overrides = {}
+
+            # Map file hashes to their historical targets
+            hash_to_target = {}
+            for d in docs:
+                if len(d) > 4 and d[4] is not None:
+                    hash_to_target[d[3]] = d[4]
 
             for d in docs:
                 f, doc, emb = d[0], d[1], d[2]
+                file_hash = d[3] if len(d) > 3 else None
+                assigned_folder = d[4] if len(d) > 4 else None
+                
+                target = assigned_folder if assigned_folder is not None else hash_to_target.get(file_hash)
+                
                 filename_only = os.path.basename(f).lower()
                 doc_lower = doc.lower() if doc else ""
                 
                 status_match = None
                 if doc and doc.startswith("[STATUS:"):
-                    status_match = doc[8:-1] # e.g. EMPTY, ENCRYPTED, UNSUPPORTED, FAILED
+                    status_match = doc[8:-1]
                     
                 ext = os.path.splitext(f)[1].lower()
                 if ext not in supported_exts and not status_match:
                     status_match = "UNSUPPORTED"
+                    
+                if target is not None:
+                    historical_overrides[f] = (target, status_match)
                     
                 matched = False
                 if keyword_rules:
@@ -329,17 +348,10 @@ class IncrementalAnalyzer:
             self._last_reconstruction_error = 0.0
 
             if self.model is None:
-                # If no model, just create a flat unsorted plan
                 plan = {f: None for f in ai_filenames}
             elif self.strategy:
-                max_depth = (
-                    getattr(runtime_settings, "MAX_DEPTH", 5) if runtime_settings else 5
-                )
-                max_features = (
-                    getattr(runtime_settings, "MAX_FEATURES", 3)
-                    if runtime_settings
-                    else 3
-                )
+                max_depth = getattr(runtime_settings, "MAX_DEPTH", 5) if runtime_settings else 5
+                max_features = getattr(runtime_settings, "MAX_FEATURES", 3) if runtime_settings else 3
                 plan, error = self.strategy.generate_plan(
                     ai_filenames,
                     ai_documents,
@@ -351,16 +363,13 @@ class IncrementalAnalyzer:
                 )
                 self._last_reconstruction_error = error
 
-                if runtime_settings and getattr(
-                    runtime_settings, "PRESERVE_HIERARCHY", False
-                ):
+                if runtime_settings and getattr(runtime_settings, "PRESERVE_HIERARCHY", False):
                     plan = self._inject_hierarchy(plan)
             else:
                 plan = {}
 
             # Inject keyword routed files back into the plan
             for f, target_folder, keyword, routed_by, ext_status in keyword_plan_files:
-                # Support nested paths if target_folder has slashes
                 parts = target_folder.replace("\\", "/").split("/")
                 current = plan
                 for i, part in enumerate(parts):
@@ -380,6 +389,48 @@ class IncrementalAnalyzer:
                     plan["Miscellaneous"] = {"_original": plan["Miscellaneous"]}
                 for f, ext_status in unsupported_files:
                     plan["Miscellaneous"][f] = {"extraction_status": ext_status}
+
+            def remove_from_plan(node, target_f):
+                for k, v in list(node.items()):
+                    if k == target_f:
+                        if v is None or (isinstance(v, dict) and (v.get("routed_by") or v.get("extraction_status"))):
+                            return node.pop(k)
+                        elif isinstance(v, dict) and "_original" in v:
+                            val = v.pop("_original")
+                            if not v:
+                                node.pop(k)
+                            return val
+                    if isinstance(v, dict):
+                        res = remove_from_plan(v, target_f)
+                        if res is not None:
+                            if not v:
+                                node.pop(k)
+                            return res
+                return None
+
+            for f, override_data in historical_overrides.items():
+                target_folder, ext_status = override_data
+                remove_from_plan(plan, f)
+                
+                info_dict = {"routed_by": "historical"}
+                if ext_status:
+                    info_dict["extraction_status"] = ext_status
+                    
+                if not target_folder:
+                    plan[f] = info_dict
+                    continue
+                
+                parts = target_folder.replace("\\", "/").split("/")
+                current = plan
+                for i, part in enumerate(parts):
+                    if part not in current:
+                        current[part] = {}
+                    if not isinstance(current[part], dict):
+                        current[part] = {"_original": current[part]}
+                    if i == len(parts) - 1:
+                        current[part][f] = info_dict
+                    else:
+                        current = current[part]
 
             def _annotate(node, current_path):
                 for k, v in list(node.items()):

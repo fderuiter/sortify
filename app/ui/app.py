@@ -721,6 +721,14 @@ class AutoSorterApp(ctk.CTk):
                 if not event.is_directory:
                     self.app._queue_file(event.src_path)
 
+            def on_moved(self, event):
+                if not event.is_directory:
+                    self.app._queue_move(event.src_path, event.dest_path)
+
+            def on_deleted(self, event):
+                if not event.is_directory:
+                    self.app._queue_delete(event.src_path)
+
         self.observer = Observer()
         self.observer.schedule(Handler(self), self.base_dir, recursive=True)
         self.observer.start()
@@ -734,6 +742,49 @@ class AutoSorterApp(ctk.CTk):
             with self._update_lock:
                 self._pending_files.add(rel_path)
 
+            if self._fs_debounce_timer:
+                self._fs_debounce_timer.cancel()
+            self._fs_debounce_timer = threading.Timer(2.0, self._process_pending_files)
+            self._fs_debounce_timer.start()
+        except Exception:
+            pass
+
+    def _queue_move(self, src_path, dest_path):
+        try:
+            from app.core.db import db
+            rel_src = os.path.relpath(src_path, self.base_dir)
+            rel_dest = os.path.relpath(dest_path, self.base_dir)
+            if rel_src.startswith(".") or rel_dest.startswith("."):
+                return
+            
+            with self._update_lock:
+                if self.analyzer and rel_src in self.analyzer.corpus:
+                    self.analyzer.corpus[rel_dest] = self.analyzer.corpus.pop(rel_src)
+                if rel_src in self.locked_files:
+                    self.locked_files[rel_dest] = self.locked_files.pop(rel_src)
+            
+            db.update_document_path(self.base_dir, rel_src, rel_dest)
+            
+            # Re-run plan generation
+            self._queue_file(dest_path)
+        except Exception:
+            pass
+
+    def _queue_delete(self, file_path):
+        try:
+            from app.core.db import db
+            rel_path = os.path.relpath(file_path, self.base_dir)
+            if rel_path.startswith("."):
+                return
+            
+            with self._update_lock:
+                if self.analyzer and rel_path in self.analyzer.corpus:
+                    del self.analyzer.corpus[rel_path]
+                if rel_path in self.locked_files:
+                    del self.locked_files[rel_path]
+            
+            db.remove_document(self.base_dir, rel_path)
+            
             if self._fs_debounce_timer:
                 self._fs_debounce_timer.cancel()
             self._fs_debounce_timer = threading.Timer(2.0, self._process_pending_files)
@@ -1407,7 +1458,16 @@ class AutoSorterApp(ctk.CTk):
             )
             self.execute_btn.configure(state="disabled")
 
+            # Pause filesystem observer so execution moves aren't tracked as manual moves
+            if self.observer:
+                self.observer.stop()
+                self.observer.join()
+                self.observer = None
+
             summary = execute_moves(self.base_dir, self.plan, self.settings)
+            
+            # Restart observer
+            self._start_watcher()
 
             deleted = summary.get("deleted_folders", 0)
             protected = summary.get("protected_folders", 0)
