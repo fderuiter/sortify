@@ -34,8 +34,9 @@ class IncrementalAnalyzer:
         self.strategy = clustering_registry.get_strategy(strategy_name)
         
         # Check for side-loaded offline model package
-        from app.config import get_app_dir
         import sys
+        
+        from app.config import get_app_dir
         
         if getattr(sys, 'frozen', False):
             base_path = os.path.dirname(sys.executable)
