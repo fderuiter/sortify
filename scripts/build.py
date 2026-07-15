@@ -1,11 +1,12 @@
 """Unified build script for smart autosorter application on Windows, macOS, and Linux."""
 
 import os
-import sys
 import platform
+import sys
 
 import customtkinter
 import PyInstaller.__main__
+
 
 def main():
     """Build the standalone executable."""
