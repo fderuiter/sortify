@@ -11,7 +11,7 @@ from app.config import get_app_dir
 class Database:
     """SQLite database abstraction for persistent storage of document state."""
 
-    CURRENT_VERSION = 1
+    CURRENT_VERSION = 2
 
     def __init__(self, db_path=None):
         self.db_path = db_path or str(get_app_dir() / "autosorter.db")
@@ -31,12 +31,15 @@ class Database:
                         file_hash TEXT,
                         extracted_text TEXT,
                         embedding BLOB,
+                        user_verified_target_path TEXT,
                         PRIMARY KEY (base_dir, filepath)
                     )
                 """)
                 conn.execute(f"PRAGMA user_version = {self.CURRENT_VERSION}")
             elif db_version < self.CURRENT_VERSION:
-                pass
+                if db_version == 1:
+                    conn.execute("ALTER TABLE documents ADD COLUMN user_verified_target_path TEXT")
+                    conn.execute(f"PRAGMA user_version = {self.CURRENT_VERSION}")
 
     def get_document(self, base_dir, filepath):
         """Retrieve a document by its base directory and filepath."""
@@ -78,14 +81,37 @@ class Database:
         """Retrieve all valid documents for a given base directory."""
         with closing(sqlite3.connect(self.db_path)) as conn, conn:
             cursor = conn.execute(
-                "SELECT filepath, extracted_text, embedding FROM documents WHERE base_dir = ?",
+                "SELECT filepath, extracted_text, embedding, file_hash, user_verified_target_path FROM documents WHERE base_dir = ?",
                 (base_dir,),
             )
             results = []
             for row in cursor.fetchall():
                 embedding = np.frombuffer(row[2], dtype=np.float32) if row[2] is not None else None
-                results.append((row[0], row[1], embedding))
+                results.append((row[0], row[1], embedding, row[3], row[4]))
             return results
+
+    def set_user_verified_target(self, base_dir, file_hash, target_path):
+        """Record the historical folder assignment for a specific document hash."""
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
+            conn.execute(
+                "UPDATE documents SET user_verified_target_path = ? WHERE base_dir = ? AND file_hash = ?",
+                (target_path, base_dir, file_hash),
+            )
+
+    def remove_document(self, base_dir, filepath):
+        """Remove a document and its historical assignments when deleted."""
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
+            conn.execute("DELETE FROM documents WHERE base_dir = ? AND filepath = ?", (base_dir, filepath))
+
+    def update_document_path(self, base_dir, old_filepath, new_filepath):
+        """Update a document's path and historical assignment when moved."""
+        import os
+        new_dir = os.path.dirname(new_filepath).replace("\\", "/")
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
+            conn.execute(
+                "UPDATE documents SET filepath = ?, user_verified_target_path = ? WHERE base_dir = ? AND filepath = ?",
+                (new_filepath, new_dir, base_dir, old_filepath)
+            )
 
     def clear(self, base_dir=None):
         """Clear documents from the database. If base_dir is provided, only clear those."""
