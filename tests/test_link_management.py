@@ -12,6 +12,8 @@ except ImportError:
 
 
 def test_relative_symlink_update(tmp_path):
+    if __import__("sys").platform == "win32":
+        __import__("pytest").skip("Windows requires admin privileges to create symlinks")
     # Setup
     base_dir = str(tmp_path)
 

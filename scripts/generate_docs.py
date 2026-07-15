@@ -172,7 +172,7 @@ def update_security_md():
             )
 
     sec_file = "SECURITY.md"
-    with open(sec_file, "r") as f:
+    with open(sec_file, "r", encoding="utf-8") as f:
         lines = f.readlines()
 
     out_lines = []
