@@ -21,6 +21,7 @@ from app.core.mover import execute_moves
 from app.core.scanner import get_files_recursively
 from app.core.verifier import VerificationEngine
 from app.ui.settings import SettingsView
+from pydantic import ValidationError
 
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
@@ -69,27 +70,27 @@ class AutoSorterApp(ctk.CTk):
 
         self._build_main_ui()
         self._build_settings_ui()
-        
+
         self.check_setup_wizard()
 
     def check_setup_wizard(self):
         """Check if the setup wizard needs to be run."""
         from app.config import get_app_dir
         from app.ui.wizard import SetupWizard
-        
+
         model_dir = get_app_dir() / "model"
-        
+
         # If model already exists and we haven't explicitely denied, assume OK
         if (model_dir / "config.json").exists():
             if self.settings.AI_CONSENT_GRANTED is None:
                 self.settings.AI_CONSENT_GRANTED = True
             self.show_main_view()
             return
-            
+
         if self.settings.AI_CONSENT_GRANTED is False:
             self.show_main_view()
             return
-            
+
         # Needs setup
         SetupWizard(self, self.settings, self.show_main_view)
 
@@ -354,12 +355,15 @@ class AutoSorterApp(ctk.CTk):
         ):
             header = ctk.CTkFrame(parent, fg_color="transparent")
             header.pack(pady=(10, 0))
-            
+
             ctk.CTkLabel(header, text=label_text, font=("Roboto", 14)).pack(side="left")
             if help_url:
                 ctk.CTkButton(
-                    header, text="?", width=24, height=24,
-                    command=lambda url=help_url: webbrowser.open(url)
+                    header,
+                    text="?",
+                    width=24,
+                    height=24,
+                    command=lambda url=help_url: webbrowser.open(url),
                 ).pack(side="left", padx=10)
 
             row = ctk.CTkFrame(parent, fg_color="transparent")
@@ -393,8 +397,13 @@ class AutoSorterApp(ctk.CTk):
             return slider, entry_var
 
         folders_slider, folders_var = create_slider_group(
-            frame, "Max Folders:", 2, 50, 48, self.settings.MAX_FOLDERS,
-            help_url="https://docs.smartautosorter.com/user_guide/#system-limits"
+            frame,
+            "Max Folders:",
+            2,
+            50,
+            48,
+            self.settings.MAX_FOLDERS,
+            help_url="https://docs.smartautosorter.com/user_guide/#system-limits",
         )
         workers_slider, workers_var = create_slider_group(
             frame, "Max Background Workers:", 1, 64, 63, self.settings.MAX_WORKERS
@@ -433,14 +442,20 @@ class AutoSorterApp(ctk.CTk):
 
                 if folders < 1 or workers < 1 or depth < 1 or features < 1:
                     raise ValueError("Values must be positive integers.")
+
+                self.settings.MAX_FOLDERS = folders
+                self.settings.MAX_WORKERS = workers
+                self.settings.MAX_DEPTH = depth
+                self.settings.MAX_FEATURES = features
+
+            except ValidationError as e:
+                error_label.configure(
+                    text=f"Configuration rejected: {e.errors()[0]['msg']}"
+                )
+                return
             except ValueError:
                 error_label.configure(text="Invalid numeric limits provided.")
                 return
-
-            self.settings.MAX_FOLDERS = folders
-            self.settings.MAX_WORKERS = workers
-            self.settings.MAX_DEPTH = depth
-            self.settings.MAX_FEATURES = features
 
             if self.analyzer:
                 self.analyzer.max_folders = folders
@@ -481,7 +496,6 @@ class AutoSorterApp(ctk.CTk):
             )
             self.after(0, self.render_tree)
 
-
     def show_history_modal(self) -> None:
         """Display the history and rollback modal."""
         modal = tk.Toplevel(self)
@@ -500,7 +514,7 @@ class AutoSorterApp(ctk.CTk):
         tree.heading("session_id", text="Session ID")
         tree.heading("date", text="Date")
         tree.heading("status", text="Status")
-        
+
         tree.column("session_id", width=150)
         tree.column("date", width=150)
         tree.column("status", width=100)
@@ -509,8 +523,15 @@ class AutoSorterApp(ctk.CTk):
 
         sessions = history_manager.get_sessions()
         for s in sessions:
-            dt = datetime.datetime.fromtimestamp(s["timestamp"]).strftime("%Y-%m-%d %H:%M:%S")
-            tree.insert("", "end", iid=s["session_id"], values=(s["session_id"][:8] + "...", dt, s["status"]))
+            dt = datetime.datetime.fromtimestamp(s["timestamp"]).strftime(
+                "%Y-%m-%d %H:%M:%S"
+            )
+            tree.insert(
+                "",
+                "end",
+                iid=s["session_id"],
+                values=(s["session_id"][:8] + "...", dt, s["status"]),
+            )
 
         def on_rollback():
             selected = tree.selection()
@@ -520,26 +541,30 @@ class AutoSorterApp(ctk.CTk):
             session_id = selected[0]
             s_data = next((x for x in sessions if x["session_id"] == session_id), None)
             if s_data and s_data["status"] == "rolled_back":
-                messagebox.showinfo("Info", "Session already rolled back.", parent=modal)
+                messagebox.showinfo(
+                    "Info", "Session already rolled back.", parent=modal
+                )
                 return
-            
+
             try:
                 missing = history_manager.check_missing_files(session_id)
                 if missing:
                     msg = f"Cannot rollback! {len(missing)} files missing (e.g. {missing[0]}). Proceed?"
-                    ans = messagebox.askyesno("Missing Files Warning", msg, parent=modal)
+                    ans = messagebox.askyesno(
+                        "Missing Files Warning", msg, parent=modal
+                    )
                     if not ans:
                         return
-                
+
                 history_manager.rollback(session_id, ignore_missing=True)
             except Exception as e:
                 messagebox.showerror("Rollback Failed", str(e), parent=modal)
                 return
-                
+
             messagebox.showinfo("Success", "Rollback successful!", parent=modal)
-            
+
             modal.destroy()
-            
+
             if self.base_dir == s_data["base_dir"]:
                 self.plan = {}
                 self.render_tree()
@@ -548,9 +573,14 @@ class AutoSorterApp(ctk.CTk):
         btn_frame = ctk.CTkFrame(modal)
         btn_frame.pack(fill="x", padx=10, pady=10)
 
-        rollback_btn = ctk.CTkButton(btn_frame, text="Rollback Selected", command=on_rollback, fg_color="red", hover_color="darkred")
+        rollback_btn = ctk.CTkButton(
+            btn_frame,
+            text="Rollback Selected",
+            command=on_rollback,
+            fg_color="red",
+            hover_color="darkred",
+        )
         rollback_btn.pack(side="right")
-
 
     def show_help_modal(self) -> None:
         """Display a help modal containing system limits and file processing logic by opening the online documentation."""
@@ -577,15 +607,18 @@ class AutoSorterApp(ctk.CTk):
             self.tree.delete(*self.tree.get_children())
 
             from app.config import get_app_dir
+
             user_model_path = get_app_dir() / "model"
-            
+
             if self.settings.AI_CONSENT_GRANTED is True:
                 model_path = str(user_model_path)
             else:
                 model_path = None
-                
+
             self.analyzer = IncrementalAnalyzer(
-                self.settings.MAX_FOLDERS, self.settings.STOP_WORDS, model_path=model_path
+                self.settings.MAX_FOLDERS,
+                self.settings.STOP_WORDS,
+                model_path=model_path,
             )
 
             self.status_label.configure(
@@ -599,14 +632,20 @@ class AutoSorterApp(ctk.CTk):
         self.total_files = len(items_to_sort)
 
         if self.total_files == 0:
-            self.after(0, lambda: self.status_label.configure(
-                text="Selected directory is empty.", text_color="red"
-            ))
+            self.after(
+                0,
+                lambda: self.status_label.configure(
+                    text="Selected directory is empty.", text_color="red"
+                ),
+            )
             self.after(0, lambda: self.select_btn.configure(state="normal"))
             return
 
         from app.core.cache import load_cache
-        cached_corpus, cached_locked, cached_idx, cached_manual_folders = load_cache(self.base_dir)
+
+        cached_corpus, cached_locked, cached_idx, cached_manual_folders = load_cache(
+            self.base_dir
+        )
 
         if cached_corpus is not None:
             pruned_corpus = {
@@ -624,7 +663,12 @@ class AutoSorterApp(ctk.CTk):
             self.completed_files = len(pruned_corpus)
             self._initial_cached_files = self.completed_files
             if self.total_files > 0:
-                self.after(0, lambda: self.progress_bar.set(self.completed_files / self.total_files))
+                self.after(
+                    0,
+                    lambda: self.progress_bar.set(
+                        self.completed_files / self.total_files
+                    ),
+                )
 
             items_to_sort = [f for f in items_to_sort if f not in pruned_corpus]
 
@@ -635,20 +679,28 @@ class AutoSorterApp(ctk.CTk):
                 self.after(0, lambda p=new_plan: self._apply_locked_files(p))
                 self.plan = new_plan
                 self.after(0, self.render_tree)
-                self.after(0, lambda: self._update_progress_ui(self.completed_files / self.total_files))
+                self.after(
+                    0,
+                    lambda: self._update_progress_ui(
+                        self.completed_files / self.total_files
+                    ),
+                )
 
         if not items_to_sort:
             self.after(0, self._finalize_pipeline)
             return
 
-        self.after(0, lambda: self.status_label.configure(
-            text="Scanning and modeling incrementally...", text_color="white"
-        ))
-        
+        self.after(
+            0,
+            lambda: self.status_label.configure(
+                text="Scanning and modeling incrementally...", text_color="white"
+            ),
+        )
+
         # Move start_time here to track actual work
         self.start_time = time.time()
         self.after(0, self._start_watcher)
-        
+
         # Run pipeline_worker in this background thread
         self.pipeline_worker(items_to_sort)
 
@@ -887,60 +939,73 @@ class AutoSorterApp(ctk.CTk):
                 ):
                     current[part] = {}
                 current = current[part]
-                
+
         self._inject_deletion_candidates(new_plan)
 
     def _inject_deletion_candidates(self, plan):
         """Find source directories that will be empty and add them to the plan."""
         if not self.base_dir or not os.path.exists(self.base_dir):
             return
-            
+
         def _get_files_in_plan(node):
             files = []
             for k, v in node.items():
                 if isinstance(v, dict) and v.get("__type__") == "file":
                     files.append(v)
-                elif isinstance(v, dict) and v.get("__type__") not in ("file", "directory"):
+                elif isinstance(v, dict) and v.get("__type__") not in (
+                    "file",
+                    "directory",
+                ):
                     files.extend(_get_files_in_plan(v))
             return files
-            
+
         plan_files = _get_files_in_plan(plan)
-        moving_sources = {f["source_path"] for f in plan_files if f.get("status") != "Already Sorted"}
-        
+        moving_sources = {
+            f["source_path"] for f in plan_files if f.get("status") != "Already Sorted"
+        }
+
         all_dirs = set()
         files_remaining = set()
-        
+
         for root, dirs, files in os.walk(self.base_dir):
             rel_root = os.path.relpath(root, self.base_dir)
             if rel_root == ".":
                 rel_root = ""
-            
+
             for d in dirs:
-                path = os.path.normpath(os.path.join(rel_root, d)).replace("\\", "/") if rel_root else d
+                path = (
+                    os.path.normpath(os.path.join(rel_root, d)).replace("\\", "/")
+                    if rel_root
+                    else d
+                )
                 all_dirs.add(path)
-                    
+
             for f in files:
-                path = os.path.normpath(os.path.join(rel_root, f)).replace("\\", "/") if rel_root else f
+                path = (
+                    os.path.normpath(os.path.join(rel_root, f)).replace("\\", "/")
+                    if rel_root
+                    else f
+                )
                 if path not in moving_sources:
                     files_remaining.add(path)
-                    
+
         non_empty_dirs = set()
         for f in files_remaining:
             p = os.path.dirname(f)
             while p:
                 non_empty_dirs.add(p)
                 p = os.path.dirname(p)
-                
+
         plan_keys = set(plan.keys())
-        
+
         for d in all_dirs:
             if d in non_empty_dirs:
                 continue
-                
+
             top_level = d.split("/")[0]
             if top_level in plan_keys:
                 continue
-                
+
             protected = d in getattr(self, "protected_folders", set())
             plan[d] = {
                 "__type__": "directory",
@@ -979,19 +1044,25 @@ class AutoSorterApp(ctk.CTk):
         flat = []
         if not isinstance(node, dict) or node.get("__type__") in ("file", "directory"):
             return flat
-        
+
         for k, v in node.items():
-            is_file = (v is None) or (isinstance(v, dict) and v.get("__type__") in ("file", "directory"))
-            node_id = f"file:{k}" if is_file else (f"{path}/{k}" if path else f"folder:{k}")
-            
-            flat.append({
-                "id": node_id,
-                "name": k,
-                "node": v,
-                "depth": depth,
-                "is_file": is_file,
-                "parent_id": path or ""
-            })
+            is_file = (v is None) or (
+                isinstance(v, dict) and v.get("__type__") in ("file", "directory")
+            )
+            node_id = (
+                f"file:{k}" if is_file else (f"{path}/{k}" if path else f"folder:{k}")
+            )
+
+            flat.append(
+                {
+                    "id": node_id,
+                    "name": k,
+                    "node": v,
+                    "depth": depth,
+                    "is_file": is_file,
+                    "parent_id": path or "",
+                }
+            )
             if not is_file and node_id in self.expanded_nodes:
                 flat.extend(self._flatten(v, node_id, depth + 1))
         return flat
@@ -1002,10 +1073,14 @@ class AutoSorterApp(ctk.CTk):
         total = len(self.flat_plan)
         if total == 0:
             return
-            
-        self.current_start = max(0, min(self.current_start, total - min(self.visible_items, total)))
-        visible = self.flat_plan[self.current_start : self.current_start + self.visible_items]
-        
+
+        self.current_start = max(
+            0, min(self.current_start, total - min(self.visible_items, total))
+        )
+        visible = self.flat_plan[
+            self.current_start : self.current_start + self.visible_items
+        ]
+
         for item in visible:
             indent = "    " * item["depth"]
             if item["is_file"]:
@@ -1027,30 +1102,51 @@ class AutoSorterApp(ctk.CTk):
 
                 error_msg = self.plan_errors.get(item["name"])
                 icon = "❌ " if error_msg else "✅ "
-                display_name = item["node"].get("target_filename", item["name"]) if isinstance(item["node"], dict) else item["name"]
+                display_name = (
+                    item["node"].get("target_filename", item["name"])
+                    if isinstance(item["node"], dict)
+                    else item["name"]
+                )
                 text = f"{indent}{icon}{display_name}"
-                if isinstance(item["node"], dict) and item["node"].get("routed_by") == "keyword":
+                if (
+                    isinstance(item["node"], dict)
+                    and item["node"].get("routed_by") == "keyword"
+                ):
                     kw = item["node"].get("keyword", "")
                     text += f" [Keyword: {kw}]"
                 if error_msg:
                     text += f" - {error_msg}"
-                status = item["node"].get("status", "Pending Move") if isinstance(item["node"], dict) else "Pending Move"
+                status = (
+                    item["node"].get("status", "Pending Move")
+                    if isinstance(item["node"], dict)
+                    else "Pending Move"
+                )
                 if status == "Already Sorted":
                     text += " [Already Sorted]"
-                
+
                 self.tree.insert("", "end", iid=item["id"], text=text)
             else:
                 count = self._count_files(item["node"])
                 icon = "❌ " if self._node_has_errors(item["node"]) else "✅ "
                 chevron = "▼ " if item["id"] in self.expanded_nodes else "▶ "
-                self.tree.insert("", "end", iid=item["id"], text=f"{indent}{chevron}{icon}📂 [{item['name']}] ({count} moves)")
-                
-        self.scrollbar.set(self.current_start / total, (self.current_start + len(visible)) / total)
+                self.tree.insert(
+                    "",
+                    "end",
+                    iid=item["id"],
+                    text=f"{indent}{chevron}{icon}📂 [{item['name']}] ({count} moves)",
+                )
+
+        self.scrollbar.set(
+            self.current_start / total, (self.current_start + len(visible)) / total
+        )
 
     def _node_has_errors(self, plan_node):
         if plan_node is None:
             return False
-        if isinstance(plan_node, dict) and plan_node.get("__type__") in ("file", "directory"):
+        if isinstance(plan_node, dict) and plan_node.get("__type__") in (
+            "file",
+            "directory",
+        ):
             return False
 
         for k, v in plan_node.items():
@@ -1081,9 +1177,13 @@ class AutoSorterApp(ctk.CTk):
         if args[0] == "moveto":
             self.current_start = int(float(args[1]) * total)
         elif args[0] == "scroll":
-            self.current_start += int(args[1]) * (self.visible_items if args[2] == "pages" else 1)
-        
-        self.current_start = max(0, min(self.current_start, total - min(self.visible_items, total)))
+            self.current_start += int(args[1]) * (
+                self.visible_items if args[2] == "pages" else 1
+            )
+
+        self.current_start = max(
+            0, min(self.current_start, total - min(self.visible_items, total))
+        )
         self.update_tree_view()
 
     def on_mouse_wheel(self, event):
@@ -1094,9 +1194,11 @@ class AutoSorterApp(ctk.CTk):
             self.current_start -= 1
         elif event.num == 5 or event.delta < 0:
             self.current_start += 1
-            
+
         total = len(self.flat_plan)
-        self.current_start = max(0, min(self.current_start, total - min(self.visible_items, total)))
+        self.current_start = max(
+            0, min(self.current_start, total - min(self.visible_items, total))
+        )
         self.update_tree_view()
         return "break"
 
@@ -1241,7 +1343,10 @@ class AutoSorterApp(ctk.CTk):
             )
 
     def _prune_empty_folders(self, plan_node: dict) -> bool:
-        if not isinstance(plan_node, dict) or plan_node.get("__type__") in ("file", "directory"):
+        if not isinstance(plan_node, dict) or plan_node.get("__type__") in (
+            "file",
+            "directory",
+        ):
             return True
 
         keys_to_delete = []
@@ -1279,7 +1384,7 @@ class AutoSorterApp(ctk.CTk):
                     dialog,
                     text="WARNING: Cloud Sync Detected!\n\nFiles moved to this location will be uploaded\nto third-party servers. This breaks the 100% local\nprivacy promise.\n\nDo you want to proceed?",
                     font=("Roboto", 14),
-                    justify="center"
+                    justify="center",
                 )
                 label.pack(pady=20)
 
@@ -1299,14 +1404,20 @@ class AutoSorterApp(ctk.CTk):
                 btn_frame.pack(fill="x", pady=10)
 
                 proceed_btn = ctk.CTkButton(
-                    btn_frame, text="Proceed", command=on_proceed,
-                    fg_color="green", hover_color="darkgreen"
+                    btn_frame,
+                    text="Proceed",
+                    command=on_proceed,
+                    fg_color="green",
+                    hover_color="darkgreen",
                 )
                 proceed_btn.pack(side="left", padx=30, expand=True)
 
                 cancel_btn = ctk.CTkButton(
-                    btn_frame, text="Cancel", command=on_cancel,
-                    fg_color="red", hover_color="darkred"
+                    btn_frame,
+                    text="Cancel",
+                    command=on_cancel,
+                    fg_color="red",
+                    hover_color="darkred",
                 )
                 cancel_btn.pack(side="right", padx=30, expand=True)
 
@@ -1338,7 +1449,9 @@ class AutoSorterApp(ctk.CTk):
                 text="Sorting complete! Check log for skipped/locked files.",
                 text_color="green",
             )
-            self.meta_label.configure(text=f"Cleanup Summary: {deleted} folders deleted | {protected} folders kept")
+            self.meta_label.configure(
+                text=f"Cleanup Summary: {deleted} folders deleted | {protected} folders kept"
+            )
             self.tree.delete(*self.tree.get_children())
 
     def _create_context_menus(self):
@@ -1379,11 +1492,17 @@ class AutoSorterApp(ctk.CTk):
     def _toggle_keep_folder(self):
         if not self.context_item or not self.context_item.startswith("file:"):
             return
-        
-        node = next((x["node"] for x in self.flat_plan if x["id"] == self.context_item), None)
-        if not node or not isinstance(node, dict) or node.get("__type__") != "directory":
+
+        node = next(
+            (x["node"] for x in self.flat_plan if x["id"] == self.context_item), None
+        )
+        if (
+            not node
+            or not isinstance(node, dict)
+            or node.get("__type__") != "directory"
+        ):
             return
-            
+
         folder_path = self.context_item.split(":", 1)[1]
         if folder_path in self.protected_folders:
             self.protected_folders.remove(folder_path)
@@ -1393,7 +1512,7 @@ class AutoSorterApp(ctk.CTk):
             self.protected_folders.add(folder_path)
             node["protected"] = True
             node["status"] = "Kept"
-            
+
         self.update_tree_view()
 
     def _get_node_by_path(self, path):

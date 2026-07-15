@@ -26,34 +26,41 @@ class Settings(BaseSettings):
 
     CONTEXTUAL_RENAMING: bool = Field(default=False)
     PRESERVE_HIERARCHY: bool = Field(default=False)
-    MAX_FOLDERS: int = Field(default=12, gt=0)
-    MAX_WORKERS: int = Field(default=15, gt=0)
-    MAX_DEPTH: int = Field(default=5, gt=0)
-    MAX_FEATURES: int = Field(default=3, gt=0)
+    MAX_FOLDERS: int = Field(default=12, gt=0, le=50)
+    MAX_WORKERS: int = Field(default=15, gt=0, le=64)
+    MAX_DEPTH: int = Field(default=5, gt=0, le=10)
+    MAX_FEATURES: int = Field(default=3, gt=0, le=10)
     CLEANUP_EMPTY_FOLDERS: bool = Field(default=True)
     KEYWORD_RULES: dict = Field(default_factory=dict)
 
     @field_validator("KEYWORD_RULES")
     @classmethod
     def validate_keyword_rules(cls, v: dict) -> dict:
+        """Validate keyword rules for validity."""
         illegal_chars = set('<>:"|?*')
         for keyword, target_path in v.items():
             if not isinstance(target_path, str):
-                raise ValueError(f"Target path for keyword '{keyword}' must be a string.")
-            
+                raise ValueError(
+                    f"Target path for keyword '{keyword}' must be a string."
+                )
+
             # Check for illegal OS characters
             if any(char in illegal_chars for char in target_path):
-                raise ValueError(f"Target path '{target_path}' contains illegal characters.")
-            
+                raise ValueError(
+                    f"Target path '{target_path}' contains illegal characters."
+                )
+
             # Check for absolute path roots (/ or \)
             if target_path.startswith("/") or target_path.startswith("\\"):
                 raise ValueError(f"Target path '{target_path}' is an absolute path.")
-            
+
             # Check for directory traversal segments (..)
             segments = target_path.replace("\\", "/").split("/")
             if ".." in segments:
-                raise ValueError(f"Target path '{target_path}' contains directory traversal segments.")
-                
+                raise ValueError(
+                    f"Target path '{target_path}' contains directory traversal segments."
+                )
+
         return v
 
     AI_CONSENT_GRANTED: bool | None = Field(default=None)
@@ -176,7 +183,7 @@ class AppSettings:
 
     def _save(self):
         with self._lock:
-            data = self._settings_model.model_dump(mode='json')
+            data = self._settings_model.model_dump(mode="json")
         try:
             with open(self._filepath, "w") as f:
                 json.dump(data, f, indent=4)
@@ -187,7 +194,9 @@ class AppSettings:
         """Get attribute dynamically from the settings model."""
         if hasattr(self._settings_model, name):
             return getattr(self._settings_model, name)
-        raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
+        raise AttributeError(
+            f"'{self.__class__.__name__}' object has no attribute '{name}'"
+        )
 
     def __setattr__(self, name, value):
         """Set attribute dynamically and trigger a save."""
