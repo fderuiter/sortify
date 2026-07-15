@@ -9,10 +9,14 @@ import logging
 import os
 import re
 
+import torch
 from sentence_transformers import SentenceTransformer
 
 from app.core.analyzer_strategies import clustering_registry
 from app.core.db import db
+
+# Explicitly limit ML engine to 2 threads to prevent CPU starvation
+torch.set_num_threads(2)
 
 
 class IncrementalAnalyzer:

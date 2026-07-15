@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     CONTEXTUAL_RENAMING: bool = Field(default=False)
     PRESERVE_HIERARCHY: bool = Field(default=False)
     MAX_FOLDERS: int = Field(default=12, gt=0, le=50)
-    MAX_WORKERS: int = Field(default=15, gt=0, le=64)
+    MAX_WORKERS: int = Field(default=4, gt=0, le=64)
     MAX_DEPTH: int = Field(default=5, gt=0, le=10)
     MAX_FEATURES: int = Field(default=3, gt=0, le=10)
     CLEANUP_EMPTY_FOLDERS: bool = Field(default=True)
@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     @field_validator("KEYWORD_RULES")
     @classmethod
     def validate_keyword_rules(cls, v: dict) -> dict:
-        """Validate keyword rules for validity."""
+        """Validate that keyword rules have valid target paths."""
         illegal_chars = set('<>:"|?*')
         for keyword, target_path in v.items():
             if not isinstance(target_path, str):
