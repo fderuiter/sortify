@@ -23,4 +23,10 @@ repos:
         entry: bash -c "uv run mkdocs build --strict"
         language: system
         pass_filenames: false
+      - id: validate-links
+        name: Validate External Links
+        entry: uv run python scripts/validate_links.py
+        language: system
+        files: '^(setup\.sh|setup\.bat|app/ui/app\.py|scripts/prepare_offline\.py)$'
+        pass_filenames: false
 
