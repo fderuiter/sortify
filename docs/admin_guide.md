@@ -38,6 +38,10 @@ The following parameters are extracted directly from the application's configura
 - **Default**: `PydanticUndefined`
 - **Required**: `False`
 
+### `LEARNED_RULES`
+- **Default**: `PydanticUndefined`
+- **Required**: `False`
+
 ### `AI_CONSENT_GRANTED`
 - **Default**: `None`
 - **Required**: `False`
