@@ -60,6 +60,7 @@ def analyze_all():
 def main():
     """Execute the main CLI logic for the sandbox tool."""
     parser = argparse.ArgumentParser(
+        prog="sandbox_cli.py",
         description="Sandbox CLI Tool for ML Accuracy Verification"
     )
     subparsers = parser.add_subparsers(dest="command", help="Available commands")

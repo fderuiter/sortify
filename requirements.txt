@@ -10,10 +10,14 @@ certifi==2026.6.17
     # via
     #   httpcore
     #   httpx
+cffi==2.1.0
+    # via cryptography
 click==8.4.2
     # via
     #   huggingface-hub
     #   typer
+cryptography==49.0.0
+    # via smart-autosorter (pyproject.toml)
 cuda-bindings==13.3.1
     # via torch
 cuda-pathfinder==1.5.6
@@ -126,6 +130,8 @@ packaging==26.2
     #   transformers
 pandas==3.0.3
     # via smart-autosorter (pyproject.toml)
+pycparser==3.0
+    # via cffi
 pydantic==2.13.4
     # via pydantic-settings
 pydantic-core==2.46.4

@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     @field_validator("KEYWORD_RULES", "LEARNED_RULES")
     @classmethod
     def validate_keyword_rules(cls, v: dict) -> dict:
-        """Validate keyword rules and learned rules to ensure correct format and valid paths."""
+        """Validate that keyword routing rules and learned rules have valid target paths."""
         illegal_chars = set('<>:"|?*')
         for keyword, target_path in v.items():
             if not isinstance(target_path, str):
