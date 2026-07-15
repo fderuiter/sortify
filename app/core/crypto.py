@@ -21,12 +21,15 @@ def get_cipher():
         db_path = get_app_dir() / "autosorter.db"
         if db_path.exists():
             try:
-                with sqlite3.connect(db_path) as conn:
+                conn = sqlite3.connect(db_path)
+                try:
                     cursor = conn.execute("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='documents'")
                     if cursor.fetchone()[0] > 0:
                         cursor = conn.execute("SELECT count(*) FROM documents")
                         if cursor.fetchone()[0] > 0:
                             raise RuntimeError("Database accessed but key file is missing.")
+                finally:
+                    conn.close()
             except sqlite3.Error:
                 pass
         

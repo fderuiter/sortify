@@ -33,6 +33,7 @@ def test_missing_key_with_existing_db(tmp_path, monkeypatch):
     with sqlite3.connect(db_path) as conn:
         conn.execute("CREATE TABLE documents (id INTEGER PRIMARY KEY)")
         conn.execute("INSERT INTO documents (id) VALUES (1)")
+    conn.close()
         
     # Attempting to get cipher should now fail because key is missing but DB has data
     with pytest.raises(RuntimeError, match="Database accessed but key file is missing."):
@@ -47,6 +48,7 @@ def test_missing_key_with_empty_db(tmp_path, monkeypatch):
     # Create fake DB with NO data
     with sqlite3.connect(db_path) as conn:
         conn.execute("CREATE TABLE documents (id INTEGER PRIMARY KEY)")
+    conn.close()
         
     # Should automatically generate key without error
     cipher = crypto.get_cipher()
