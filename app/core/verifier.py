@@ -17,8 +17,11 @@ class VerificationEngine:
         moves = []
         for key, content in plan.items():
             if content is None or (
-                isinstance(content, dict) and content.get("__type__") == "file"
+                isinstance(content, dict) and content.get("__type__") in ("file", "directory")
             ):
+                if isinstance(content, dict) and content.get("__type__") == "directory":
+                    continue
+                
                 source_path = os.path.join(base_dir, key)
 
                 if isinstance(content, dict) and "target_filename" in content:
