@@ -1,8 +1,8 @@
 import os
-from pathlib import Path
-import pytest
+
 from app.core.mover import execute_moves
 from app.core.verifier import VerificationEngine
+
 
 def test_physical_move(tmp_path):
     """Test that files are physically relocated from local source to local destination."""
