@@ -1,16 +1,24 @@
-import os
-import shutil
-import sqlite3
 import hashlib
+import os
 from unittest import mock
 
-import pytest
+import numpy as np
 import pypdf
 
-from app.core.extractor import get_file_hash, extract_file_text, process_item_worker, build_corpus_generator
-from app.core.mover import get_safe_path, _remove_empty_dirs, _execute_moves_recursive, execute_moves
 from app.core.db import db
-from app.core.extractor_strategies import registry
+from app.core.extractor import (
+    build_corpus_generator,
+    extract_file_text,
+    get_file_hash,
+    process_item_worker,
+)
+from app.core.mover import (
+    _execute_moves_recursive,
+    _remove_empty_dirs,
+    execute_moves,
+    get_safe_path,
+)
+
 
 def test_get_file_hash_exception(tmp_path):
     with mock.patch("builtins.open", side_effect=PermissionError):
@@ -42,7 +50,7 @@ def test_extract_file_text_exception(tmp_path):
         text = extract_file_text("dummy.txt")
         assert text == "[STATUS:FAILED]"
 
-import numpy as np
+
 
 def test_process_item_worker_already_processed(tmp_path):
     file_path = tmp_path / "test.txt"
@@ -344,6 +352,7 @@ def test_mover_import_error():
     with mock.patch.dict("sys.modules", {"pylnk3": None}):
         # reload app.core.mover to trigger import error
         import importlib
+
         import app.core.mover
         importlib.reload(app.core.mover)
         assert app.core.mover.pylnk3 is None
