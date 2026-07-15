@@ -12,6 +12,7 @@ import webbrowser
 from tkinter import filedialog, ttk
 
 import customtkinter as ctk
+from pydantic import ValidationError
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
@@ -21,7 +22,6 @@ from app.core.mover import execute_moves
 from app.core.scanner import get_files_recursively
 from app.core.verifier import VerificationEngine
 from app.ui.settings import SettingsView
-from pydantic import ValidationError
 
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
