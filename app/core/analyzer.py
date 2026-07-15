@@ -44,20 +44,38 @@ class IncrementalAnalyzer:
             logging.info("Detected side-loaded model weights. Verifying integrity...")
             self._verify_offline_model(offline_model_path, manifest_path)
             logging.info("Integrity verified. Loading side-loaded model...")
-            self.model = SentenceTransformer(offline_model_path)
+            backend = self._detect_backend(offline_model_path)
+            self.model = SentenceTransformer(offline_model_path, backend=backend)
         elif model_path is not None:
             if str(model_path) == str(user_model_path):
                 hf_manifest = os.path.join(os.path.dirname(__file__), "hf_manifest.json")
                 if os.path.exists(hf_manifest):
                     logging.info("Verifying user downloaded model integrity...")
                     self._verify_hf_model(str(user_model_path), hf_manifest)
-            self.model = SentenceTransformer(model_path)
+            backend = self._detect_backend(model_path)
+            self.model = SentenceTransformer(model_path, backend=backend)
         else:
             # Model not downloaded yet (no consent or skipped)
             self.model = None
             
         self.corpus = {}
         self._last_reconstruction_error = 0.0
+
+    def _detect_backend(self, model_dir: str) -> str:
+        """Detect the appropriate backend for the model based on available weights."""
+        if not os.path.exists(model_dir):
+            return "torch"
+            
+        has_torch = os.path.exists(os.path.join(model_dir, "pytorch_model.bin")) or \
+                    os.path.exists(os.path.join(model_dir, "model.safetensors"))
+        if has_torch:
+            return "torch"
+            
+        for root, _, files in os.walk(model_dir):
+            if any(f.endswith(".onnx") for f in files):
+                return "onnx"
+                
+        return "torch"
 
     def _verify_hf_model(self, model_dir: str, manifest_path: str) -> None:
         """Verify the checksums of critical files in the downloaded HuggingFace model."""
@@ -67,7 +85,9 @@ class IncrementalAnalyzer:
         except Exception as e:
             raise RuntimeError(f"Failed to read model manifest: {e}")
             
-        critical_files = ["config.json", "pytorch_model.bin", "model.safetensors", "tokenizer.json"]
+        critical_files = ["config.json", "tokenizer.json"]
+        
+        valid_weight_found = False
         
         for rel_path, expected_hash in manifest.items():
             if rel_path.startswith(".cache"):
@@ -78,6 +98,9 @@ class IncrementalAnalyzer:
                 if rel_path in critical_files:
                     raise RuntimeError(f"Missing critical model file: {rel_path}")
                 continue
+                
+            if rel_path in ["pytorch_model.bin", "model.safetensors"] or rel_path.endswith(".onnx"):
+                valid_weight_found = True
                 
             file_hash = hashlib.sha256()
             try:
@@ -90,6 +113,9 @@ class IncrementalAnalyzer:
             if file_hash.hexdigest() != expected_hash:
                 raise RuntimeError(f"Checksum mismatch for downloaded model file: {rel_path}")
 
+        if not valid_weight_found:
+            raise RuntimeError("No valid weight formats found (PyTorch, SafeTensors, or ONNX).")
+
     def _verify_offline_model(self, model_dir: str, manifest_path: str) -> None:
         """Verify the checksums of the offline model against the manifest."""
         try:
@@ -98,10 +124,18 @@ class IncrementalAnalyzer:
         except Exception as e:
             raise RuntimeError(f"Failed to read model manifest: {e}")
             
+        critical_files = ["config.json", "tokenizer.json"]
+        valid_weight_found = False
+        
         for rel_path, expected_hash in manifest.items():
             filepath = os.path.join(model_dir, rel_path)
             if not os.path.exists(filepath):
-                raise RuntimeError(f"Missing side-loaded model file: {rel_path}")
+                if rel_path in critical_files:
+                    raise RuntimeError(f"Missing critical model file: {rel_path}")
+                continue
+                
+            if rel_path in ["pytorch_model.bin", "model.safetensors"] or rel_path.endswith(".onnx"):
+                valid_weight_found = True
                 
             file_hash = hashlib.sha256()
             try:
@@ -113,6 +147,9 @@ class IncrementalAnalyzer:
                 
             if file_hash.hexdigest() != expected_hash:
                 raise RuntimeError(f"Checksum mismatch for side-loaded model file: {rel_path}")
+                
+        if not valid_weight_found:
+            raise RuntimeError("No valid weight formats found (PyTorch, SafeTensors, or ONNX).")
 
     @property
     def last_reconstruction_error(self):
