@@ -10,7 +10,7 @@ jobs:
   build-and-test:
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v4
@@ -31,10 +31,12 @@ jobs:
         uv sync --all-extras
         
     - name: Lint with Ruff
+      if: matrix.os == 'ubuntu-latest'
       run: |
         uv run --all-extras ruff check .
         
     - name: Validate External Links
+      if: matrix.os == 'ubuntu-latest'
       run: |
         uv run python scripts/validate_links.py
         
@@ -45,10 +47,12 @@ jobs:
         uv run --all-extras pytest --cov --cov-report=term tests/
 
     - name: Generate Documentation
+      if: matrix.os == 'ubuntu-latest'
       run: |
         uv run python scripts/generate_docs.py
         
     - name: Enforce Documentation Synchronization
+      if: matrix.os == 'ubuntu-latest'
       shell: bash
       run: |
         if [[ -n $(git status -s docs/api_reference.md docs/admin_guide.md docs/ui.md SECURITY.md) ]]; then
@@ -57,6 +61,7 @@ jobs:
         fi
         
     - name: Validate Documentation Integrity
+      if: matrix.os == 'ubuntu-latest'
       run: |
         uv run --all-extras mkdocs build --strict
         

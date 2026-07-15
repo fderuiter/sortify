@@ -18,6 +18,8 @@ jobs:
             artifact_name: smart-autosorter-Windows.zip
           - os: ubuntu-latest
             artifact_name: smart-autosorter-Linux.tar.gz
+          - os: macos-latest
+            artifact_name: smart-autosorter-macOS.tar.gz
             
     steps:
       - name: Checkout repository
@@ -37,23 +39,17 @@ jobs:
         run: |
           uv sync --all-extras
           
-      - name: Build executable (Windows)
-        if: runner.os == 'Windows'
+      - name: Build executable
         run: |
-          uv run python app/build_windows.py
-
-      - name: Build executable (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          uv run pyinstaller app/main.py --name smart-autosorter --noconfirm --onedir --windowed --add-data="$(uv run python -c 'import os, customtkinter; print(os.path.dirname(customtkinter.__file__))'):customtkinter" --clean
+          uv run python scripts/build.py
 
       - name: Package as Archive (Windows)
         if: runner.os == 'Windows'
         run: |
           Compress-Archive -Path dist\smart-autosorter -DestinationPath dist\${{ matrix.artifact_name }}
 
-      - name: Package as Archive (Linux)
-        if: runner.os == 'Linux'
+      - name: Package as Archive (Unix)
+        if: runner.os != 'Windows'
         run: |
           tar -czf dist/${{ matrix.artifact_name }} -C dist smart-autosorter
 
@@ -63,11 +59,11 @@ jobs:
           $hash = Get-FileHash -Path dist\${{ matrix.artifact_name }} -Algorithm SHA256
           $hash.Hash + "  ${{ matrix.artifact_name }}" | Out-File -FilePath dist\${{ matrix.artifact_name }}.sha256 -Encoding ascii
 
-      - name: Generate Checksum (Linux)
-        if: runner.os == 'Linux'
+      - name: Generate Checksum (Unix)
+        if: runner.os != 'Windows'
         run: |
           cd dist
-          sha256sum ${{ matrix.artifact_name }} > ${{ matrix.artifact_name }}.sha256
+          shasum -a 256 ${{ matrix.artifact_name }} > ${{ matrix.artifact_name }}.sha256
           cd ..
 
       - name: Upload Release Artifacts

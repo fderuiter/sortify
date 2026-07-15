@@ -38,8 +38,6 @@ dev = [
 
 [project.scripts]
 smart-autosorter = "app.main:main"
-build-windows = "app.build_windows:main"
-build-macos = "app.build_macos:main"
 docs = "mkdocs:build"
 
 [tool.hatch.build.targets.wheel]
