@@ -19,7 +19,9 @@ def generate_api_docs():
     app_dir = "app"
     output_file = os.path.join("docs", "api_reference.md")
 
+
     with open(output_file, "w", encoding="utf-8", newline="\n") as f:
+    
         f.write("# API Reference\n\n")
         f.write("This document is automatically generated. Do not edit manually.\n\n")
 
@@ -44,7 +46,9 @@ def generate_ui_docs():
     app_dir = os.path.join("app", "ui")
     output_file = os.path.join("docs", "ui.md")
 
+
     with open(output_file, "w", encoding="utf-8", newline="\n") as f:
+    
         f.write("# UI API Reference\n\n")
         f.write("This document is automatically generated. Do not edit manually.\n\n")
 
@@ -66,7 +70,9 @@ def generate_admin_guide():
     # Import config safely
     from app.config import Settings
 
+
     with open(output_file, "w", encoding="utf-8", newline="\n") as f:
+    
         f.write("# Administrator Guide\n\n")
         f.write("This document is automatically generated. Do not edit manually.\n\n")
 
@@ -198,6 +204,7 @@ def update_security_md():
 
         if not in_network_section:
             out_lines.append(line)
+
 
     with open(sec_file, "w", encoding="utf-8", newline="\n") as f:
         f.writelines(out_lines)

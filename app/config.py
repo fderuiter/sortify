@@ -32,11 +32,12 @@ class Settings(BaseSettings):
     MAX_FEATURES: int = Field(default=3, gt=0, le=10)
     CLEANUP_EMPTY_FOLDERS: bool = Field(default=True)
     KEYWORD_RULES: dict = Field(default_factory=dict)
+    LEARNED_RULES: dict = Field(default_factory=dict)
 
-    @field_validator("KEYWORD_RULES")
+    @field_validator("KEYWORD_RULES", "LEARNED_RULES")
     @classmethod
     def validate_keyword_rules(cls, v: dict) -> dict:
-        """Validate that keyword routing rules have valid target paths."""
+        """Validate that keyword routing rules and learned rules have valid target paths."""
         illegal_chars = set('<>:"|?*')
         for keyword, target_path in v.items():
             if not isinstance(target_path, str):

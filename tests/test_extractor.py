@@ -74,7 +74,7 @@ def test_extract_pdf(mocker):
 def test_extract_unsupported(mocker):
     mocker.patch("os.path.splitext", return_value=("file", ".unknown"))
     text = extract_file_text("dummy.unknown")
-    assert text == ""
+    assert text == "[STATUS:UNSUPPORTED]"
 
 
 def test_process_item_worker_file(mocker):

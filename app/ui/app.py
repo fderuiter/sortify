@@ -1108,12 +1108,24 @@ class AutoSorterApp(ctk.CTk):
                     else item["name"]
                 )
                 text = f"{indent}{icon}{display_name}"
-                if (
-                    isinstance(item["node"], dict)
-                    and item["node"].get("routed_by") == "keyword"
-                ):
-                    kw = item["node"].get("keyword", "")
-                    text += f" [Keyword: {kw}]"
+                if isinstance(item["node"], dict):
+                    routed_by = item["node"].get("routed_by")
+                    if routed_by == "keyword":
+                        kw = item["node"].get("keyword", "")
+                        text += f" [Keyword: {kw}]"
+                    elif routed_by == "pattern":
+                        kw = item["node"].get("keyword", "")
+                        text += f" [Pattern: {kw}]"
+                    
+                    ext_status = item["node"].get("extraction_status")
+                    if ext_status == "EMPTY":
+                        text += " [No text found]"
+                    elif ext_status == "ENCRYPTED":
+                        text += " [Encrypted]"
+                    elif ext_status == "UNSUPPORTED":
+                        text += " [Unsupported format: Files of this type cannot be read]"
+                    elif ext_status == "FAILED":
+                        text += " [Extraction failed]"
                 if error_msg:
                     text += f" - {error_msg}"
                 status = (
@@ -1311,9 +1323,24 @@ class AutoSorterApp(ctk.CTk):
 
         with self._update_lock:
             if moved_file in self.analyzer.corpus:
+                text = self.analyzer.corpus[moved_file]
                 self.analyzer.partial_fit(
-                    self.base_dir, {moved_file: self.analyzer.corpus[moved_file]}
+                    self.base_dir, {moved_file: text}
                 )
+                
+                if text.startswith("[STATUS:") or text == "":
+                    base_name = os.path.basename(moved_file)
+                    name_without_ext = os.path.splitext(base_name)[0]
+                    import re
+                    words = re.findall(r'[a-zA-Z0-9]+', name_without_ext)
+                    words = [w.lower() for w in words if len(w) > 2 and w.lower() not in self.settings.STOP_WORDS]
+                    
+                    target = self.locked_files.get(moved_file)
+                    if target and words:
+                        learned_rules = dict(getattr(self.settings, "LEARNED_RULES", {}))
+                        for w in words:
+                            learned_rules[w] = target
+                        self.settings.LEARNED_RULES = learned_rules
 
             new_plan = self.analyzer.generate_sorting_plan(self.base_dir, self.settings)
             self._apply_locked_files(new_plan)
