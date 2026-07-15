@@ -7,6 +7,7 @@ import logging
 import os
 import shutil
 
+from app.core.db import db
 from app.core.history import history_manager
 from app.core.link_manager import LinkManager
 from app.core.verifier import VerificationEngine
@@ -148,11 +149,21 @@ def _execute_moves_recursive(
                                 exc_info=True,
                             )
 
+            # Record user verified target
+            doc = db.get_document(base_dir, key)
+            if doc and doc.get("file_hash"):
+                db.set_user_verified_target(base_dir, doc["file_hash"], current_dest.replace("\\", "/"))
+
             if dest_path == source_path:
                 continue
 
             if not moved_as_link:
                 shutil.move(source_path, dest_path)
+                
+            # Update filepath in database
+            rel_dest = os.path.relpath(dest_path, base_dir)
+            if key != rel_dest:
+                db.update_document_path(base_dir, key, rel_dest)
         else:
             # It's a folder
             _execute_moves_recursive(

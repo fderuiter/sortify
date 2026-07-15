@@ -9,10 +9,14 @@ import logging
 import os
 import re
 
+import torch
 from sentence_transformers import SentenceTransformer
 
 from app.core.analyzer_strategies import clustering_registry
 from app.core.db import db
+
+# Explicitly limit ML engine to 2 threads to prevent CPU starvation
+torch.set_num_threads(2)
 
 
 class IncrementalAnalyzer:
@@ -276,11 +280,21 @@ class IncrementalAnalyzer:
 
             supported_docs = []
             unsupported_filenames = []
+            historical_overrides = {}
+
+            # Map file hashes to their historical targets
+            hash_to_target = {}
+            for d in docs:
+                if len(d) > 4 and d[4] is not None:
+                    hash_to_target[d[3]] = d[4]
 
             for d in docs:
                 ext = os.path.splitext(d[0])[1].lower()
                 if ext in supported_exts:
                     supported_docs.append(d)
+                    target = d[4] if (len(d) > 4 and d[4] is not None) else hash_to_target.get(d[3])
+                    if target is not None:
+                        historical_overrides[d[0]] = target
                 else:
                     unsupported_filenames.append(d[0])
 
@@ -356,6 +370,42 @@ class IncrementalAnalyzer:
                         current[part] = {"_original": current[part]}
                     if i == len(parts) - 1:
                         current[part][f] = {"routed_by": "keyword", "keyword": keyword}
+                    else:
+                        current = current[part]
+
+            def remove_from_plan(node, target_f):
+                for k, v in list(node.items()):
+                    if k == target_f:
+                        if v is None or (isinstance(v, dict) and v.get("routed_by")):
+                            return node.pop(k)
+                        elif isinstance(v, dict) and "_original" in v:
+                            val = v.pop("_original")
+                            if not v:
+                                node.pop(k)
+                            return val
+                    if isinstance(v, dict):
+                        res = remove_from_plan(v, target_f)
+                        if res is not None:
+                            if not v:
+                                node.pop(k)
+                            return res
+                return None
+
+            for f, target_folder in historical_overrides.items():
+                remove_from_plan(plan, f)
+                if not target_folder:
+                    plan[f] = {"routed_by": "historical"}
+                    continue
+                
+                parts = target_folder.replace("\\", "/").split("/")
+                current = plan
+                for i, part in enumerate(parts):
+                    if part not in current:
+                        current[part] = {}
+                    if not isinstance(current[part], dict):
+                        current[part] = {"_original": current[part]}
+                    if i == len(parts) - 1:
+                        current[part][f] = {"routed_by": "historical"}
                     else:
                         current = current[part]
 
