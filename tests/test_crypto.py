@@ -18,9 +18,10 @@ def test_key_generation_and_permissions(tmp_path, monkeypatch):
     key_path = tmp_path / "secret.key"
     assert key_path.exists()
     
-    # Check permissions (0o600)
-    stat = os.stat(key_path)
-    assert oct(stat.st_mode)[-3:] == "600"
+    # Check permissions (0o600) on non-Windows platforms
+    if os.name != "nt":
+        stat = os.stat(key_path)
+        assert oct(stat.st_mode)[-3:] == "600"
     
 def test_missing_key_with_existing_db(tmp_path, monkeypatch):
     monkeypatch.setattr(crypto, "_fernet_instance", None)
