@@ -849,6 +849,8 @@ class AutoSorterApp(ctk.CTk):
             self.item_completed_callback,
             max_workers=self.settings.MAX_WORKERS,
             chunk_size=50,
+            active_model_name=self.analyzer.active_model_name,
+            active_dimension=self.analyzer.active_dimension,
         ):
             self.analyzer.partial_fit(self.base_dir, chunk)
 

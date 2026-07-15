@@ -58,6 +58,8 @@ def run_demo(settings):
             progress_callback,
             chunk_size=2,
             max_workers=settings.MAX_WORKERS,
+            active_model_name=analyzer.active_model_name,
+            active_dimension=analyzer.active_dimension,
         )
 
         for i, chunk in enumerate(generator):

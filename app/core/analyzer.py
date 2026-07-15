@@ -46,6 +46,7 @@ class IncrementalAnalyzer:
             logging.info("Integrity verified. Loading side-loaded model...")
             backend = self._detect_backend(offline_model_path)
             self.model = SentenceTransformer(offline_model_path, backend=backend)
+            self.model_name = "offline_model"
         elif model_path is not None:
             if str(model_path) == str(user_model_path):
                 hf_manifest = os.path.join(os.path.dirname(__file__), "hf_manifest.json")
@@ -54,9 +55,11 @@ class IncrementalAnalyzer:
                     self._verify_hf_model(str(user_model_path), hf_manifest)
             backend = self._detect_backend(model_path)
             self.model = SentenceTransformer(model_path, backend=backend)
+            self.model_name = str(model_path)
         else:
             # Model not downloaded yet (no consent or skipped)
             self.model = None
+            self.model_name = None
             
         self.corpus = {}
         self._last_reconstruction_error = 0.0
@@ -152,6 +155,18 @@ class IncrementalAnalyzer:
             raise RuntimeError("No valid weight formats found (PyTorch, SafeTensors, or ONNX).")
 
     @property
+    def active_model_name(self):
+        """Get the name of the currently active model."""
+        return self.model_name
+
+    @property
+    def active_dimension(self):
+        """Get the vector dimension of the currently active model."""
+        if self.model:
+            return getattr(self.model, "get_embedding_dimension", self.model.get_sentence_embedding_dimension)()
+        return None
+
+    @property
     def last_reconstruction_error(self):
         """Get the last reconstruction error from the underlying model.
 
@@ -202,6 +217,8 @@ class IncrementalAnalyzer:
                     doc
                     and doc["file_hash"] == file_hash
                     and doc["embedding"] is not None
+                    and doc.get("model_name") == self.active_model_name
+                    and doc.get("vector_dimension") == self.active_dimension
                 ):
                     embeddings[i] = doc["embedding"]
                 else:
@@ -222,7 +239,15 @@ class IncrementalAnalyzer:
             for filepath, text, file_hash, embedding in zip(
                 filepaths, texts, hashes, embeddings
             ):
-                db.upsert_document(base_dir, filepath, file_hash, text, embedding)
+                db.upsert_document(
+                    base_dir,
+                    filepath,
+                    file_hash,
+                    text,
+                    embedding,
+                    self.active_model_name,
+                    self.active_dimension
+                )
 
         except Exception as e:
             logging.error(f"Failed during partial_fit. Error: {str(e)}", exc_info=True)

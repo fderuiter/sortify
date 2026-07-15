@@ -33,6 +33,34 @@ def test_partial_fit_empty():
     analyzer.partial_fit("dummy_base", {})
     assert len(analyzer.corpus) == 0
 
+def test_mismatch_reembedding(mocker):
+    # Setup first model
+    analyzer1 = IncrementalAnalyzer(max_folders=3, stop_words=set(), model_path="all-MiniLM-L6-v2")
+    corpus = {"test_doc.txt": "This is a test document."}
+    
+    # Spy on model.encode to see if it's called
+    spy1 = mocker.spy(analyzer1.model, "encode")
+    analyzer1.partial_fit("mismatch_base", corpus)
+    assert spy1.call_count == 1
+    
+    # Verify it was saved with analyzer1's model name
+    doc = db.get_document("mismatch_base", "test_doc.txt")
+    assert doc is not None
+    assert doc["model_name"] == "all-MiniLM-L6-v2"
+    
+    # Setup second model (simulating a model change)
+    analyzer2 = IncrementalAnalyzer(max_folders=3, stop_words=set(), model_path="paraphrase-MiniLM-L3-v2")
+    spy2 = mocker.spy(analyzer2.model, "encode")
+    
+    # Feed same corpus to partial_fit. In a normal cache hit, encode() is not called.
+    # But since the model_name differs, it should call encode().
+    analyzer2.partial_fit("mismatch_base", corpus)
+    assert spy2.call_count == 1
+    
+    # Verify it updated the DB with the new model name
+    doc = db.get_document("mismatch_base", "test_doc.txt")
+    assert doc["model_name"] == "paraphrase-MiniLM-L3-v2"
+
 
 def test_generate_sorting_plan_empty():
     analyzer = IncrementalAnalyzer(max_folders=3, stop_words={"the", "and"}, model_path="all-MiniLM-L6-v2")

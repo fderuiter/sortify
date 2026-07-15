@@ -74,6 +74,8 @@ def build_corpus_generator(
     max_workers: int,
     chunk_size: int = 50,
     sequential: bool = False,
+    active_model_name: str | None = None,
+    active_dimension: int | None = None,
 ):
     """Map every item to its text payload asynchronously and yield chunks.
 
@@ -106,7 +108,13 @@ def build_corpus_generator(
             )
 
             doc = db.get_document(base_dir, item_name)
-            if doc and doc["file_hash"] == file_hash and doc["embedding"] is not None:
+            if (
+                doc
+                and doc["file_hash"] == file_hash
+                and doc["embedding"] is not None
+                and doc.get("model_name") == active_model_name
+                and doc.get("vector_dimension") == active_dimension
+            ):
                 # Already processed and unchanged, no need to yield to analyzer
                 continue
 
@@ -133,6 +141,8 @@ def build_corpus_generator(
                     doc
                     and doc["file_hash"] == file_hash
                     and doc["embedding"] is not None
+                    and doc.get("model_name") == active_model_name
+                    and doc.get("vector_dimension") == active_dimension
                 ):
                     continue
 
