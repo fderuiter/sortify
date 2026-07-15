@@ -47,7 +47,7 @@ class VerificationEngine:
         sys_platform = platform.system()
 
         if sys_platform == "Darwin":
-            if "library/mobile documents" in norm_path or "com~apple~clouddocs" in norm_path:
+            if f"library{os.sep}mobile documents" in norm_path or "com~apple~clouddocs" in norm_path:
                 return True
         elif sys_platform == "Windows":
             env_vars = ["OneDrive", "OneDriveConsumer", "OneDriveCommercial"]
@@ -58,7 +58,7 @@ class VerificationEngine:
                     if norm_path.startswith(env_val_norm + os.sep) or norm_path == env_val_norm:
                         return True
             # Fallback checks
-            if "\\onedrive\\" in norm_path or norm_path.endswith("\\onedrive"):
+            if f"{os.sep}onedrive{os.sep}" in norm_path or norm_path.endswith(f"{os.sep}onedrive"):
                 return True
         return False
 
