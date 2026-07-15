@@ -35,9 +35,15 @@ class IncrementalAnalyzer:
         
         # Check for side-loaded offline model package
         from app.config import get_app_dir
+        import sys
         
-        offline_model_path = os.path.join(os.getcwd(), "offline_bundle", "model")
-        manifest_path = os.path.join(os.getcwd(), "offline_bundle", "model_manifest.json")
+        if getattr(sys, 'frozen', False):
+            base_path = os.path.dirname(sys.executable)
+        else:
+            base_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            
+        offline_model_path = os.path.join(base_path, "offline_bundle", "model")
+        manifest_path = os.path.join(base_path, "offline_bundle", "model_manifest.json")
         user_model_path = get_app_dir() / "model"
         
         if os.path.exists(offline_model_path) and os.path.exists(manifest_path):
