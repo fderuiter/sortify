@@ -81,8 +81,9 @@ def generate_admin_guide():
                 default_val = sorted(list(default_val))
             elif isinstance(default_val, str):
                 home_dir = str(Path.home())
-                if default_val.startswith(home_dir):
-                    default_val = default_val.replace(home_dir, "~").replace("\\", "/")
+                if default_val.lower().startswith(home_dir.lower()):
+                    # Use the actual matched length from default_val to preserve the rest of the string exactly
+                    default_val = "~" + default_val[len(home_dir):].replace("\\", "/")
 
             f.write(f"### `{name}`\n")
             f.write(f"- **Default**: `{default_val}`\n")
@@ -99,14 +100,13 @@ def generate_admin_guide():
         import subprocess
 
         try:
-            python_cmd = get_python_executable()
             result = subprocess.run(
-                ["uv", "run", python_cmd, "sandbox_cli.py", "--help"],
+                ["uv", "run", "python", "sandbox_cli.py", "--help"],
                 capture_output=True,
                 text=True,
                 check=True,
             )
-            f.write(result.stdout)
+            f.write(result.stdout.replace("\r\n", "\n"))
         except subprocess.CalledProcessError as e:
             f.write(f"Error capturing help: {e}\n")
         f.write("```\n\n")
