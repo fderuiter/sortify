@@ -144,3 +144,34 @@ def test_build_corpus_generator(mocker):
     assert "file1.txt" in chunks[0] or "file1.txt" in chunks[1]
     assert len(chunks[0]) == 2
     assert len(chunks[1]) == 1
+
+def test_build_corpus_generator_model_mismatch(mocker):
+    mocker.patch(
+        "app.core.extractor.process_item_worker",
+        return_value=("file1.txt", "cached_text", "hash1")
+    )
+    # Simulate DB having a different model name
+    mocker.patch("app.core.extractor.db.get_document", return_value={
+        "file_hash": "hash1", 
+        "embedding": b"fake_embedding",
+        "model_name": "old-model",
+        "vector_dimension": 384
+    })
+    
+    mock_callback = MagicMock()
+    # 1. Matching model (should skip)
+    gen_match = build_corpus_generator(
+        "/base", ["file1.txt"], mock_callback, max_workers=1, chunk_size=2,
+        active_model_name="old-model", active_dimension=384
+    )
+    assert len(list(gen_match)) == 0
+    
+    # 2. Mismatched model (should yield text for re-embedding)
+    gen_mismatch = build_corpus_generator(
+        "/base", ["file1.txt"], mock_callback, max_workers=1, chunk_size=2,
+        active_model_name="new-model", active_dimension=768
+    )
+    chunks = list(gen_mismatch)
+    assert len(chunks) == 1
+    assert "file1.txt" in chunks[0]
+    assert chunks[0]["file1.txt"]["text"] == "file1.txt cached_text"

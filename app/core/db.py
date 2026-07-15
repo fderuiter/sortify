@@ -17,7 +17,7 @@ from app.core.crypto import (
 class Database:
     """SQLite database abstraction for persistent storage of document state."""
 
-    CURRENT_VERSION = 2
+    CURRENT_VERSION = 3
 
     def __init__(self, db_path=None):
         self.db_path = db_path or str(get_app_dir() / "autosorter.db")
@@ -38,6 +38,8 @@ class Database:
                         extracted_text TEXT,
                         embedding BLOB,
                         user_verified_target_path TEXT,
+                        model_name TEXT,
+                        vector_dimension INTEGER,
                         PRIMARY KEY (base_dir, filepath)
                     )
                 """)
@@ -45,13 +47,16 @@ class Database:
             elif db_version < self.CURRENT_VERSION:
                 if db_version == 1:
                     conn.execute("ALTER TABLE documents ADD COLUMN user_verified_target_path TEXT")
-                    conn.execute(f"PRAGMA user_version = {self.CURRENT_VERSION}")
+                if db_version <= 2:
+                    conn.execute("ALTER TABLE documents ADD COLUMN model_name TEXT")
+                    conn.execute("ALTER TABLE documents ADD COLUMN vector_dimension INTEGER")
+                conn.execute(f"PRAGMA user_version = {self.CURRENT_VERSION}")
 
     def get_document(self, base_dir, filepath):
         """Retrieve a document by its base directory and filepath."""
         with closing(sqlite3.connect(self.db_path)) as conn, conn:
             cursor = conn.execute(
-                "SELECT file_hash, extracted_text, embedding FROM documents WHERE base_dir = ? AND filepath = ?",
+                "SELECT file_hash, extracted_text, embedding, model_name, vector_dimension FROM documents WHERE base_dir = ? AND filepath = ?",
                 (base_dir, filepath),
             )
             row = cursor.fetchone()
@@ -63,10 +68,12 @@ class Database:
                     "file_hash": row[0],
                     "extracted_text": decrypted_text,
                     "embedding": embedding,
+                    "model_name": row[3],
+                    "vector_dimension": row[4],
                 }
             return None
 
-    def upsert_document(self, base_dir, filepath, file_hash, extracted_text, embedding):
+    def upsert_document(self, base_dir, filepath, file_hash, extracted_text, embedding, model_name=None, vector_dimension=None):
         """Insert or update a document in the database."""
         with closing(sqlite3.connect(self.db_path)) as conn, conn:
             if embedding is not None:
@@ -78,21 +85,23 @@ class Database:
             
             conn.execute(
                 """
-                INSERT INTO documents (base_dir, filepath, file_hash, extracted_text, embedding)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO documents (base_dir, filepath, file_hash, extracted_text, embedding, model_name, vector_dimension)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(base_dir, filepath) DO UPDATE SET
                     file_hash = excluded.file_hash,
                     extracted_text = excluded.extracted_text,
-                    embedding = excluded.embedding
+                    embedding = excluded.embedding,
+                    model_name = excluded.model_name,
+                    vector_dimension = excluded.vector_dimension
             """,
-                (base_dir, filepath, file_hash, enc_text, embedding_blob),
+                (base_dir, filepath, file_hash, enc_text, embedding_blob, model_name, vector_dimension),
             )
 
     def get_all_documents(self, base_dir):
         """Retrieve all valid documents for a given base directory."""
         with closing(sqlite3.connect(self.db_path)) as conn, conn:
             cursor = conn.execute(
-                "SELECT filepath, extracted_text, embedding, file_hash, user_verified_target_path FROM documents WHERE base_dir = ?",
+                "SELECT filepath, extracted_text, embedding, file_hash, user_verified_target_path, model_name, vector_dimension FROM documents WHERE base_dir = ?",
                 (base_dir,),
             )
             results = []
@@ -100,7 +109,7 @@ class Database:
                 decrypted_text = decrypt_text(row[1]) if row[1] is not None else None
                 decrypted_emb_bytes = decrypt_embedding(row[2]) if row[2] is not None else None
                 embedding = np.frombuffer(decrypted_emb_bytes, dtype=np.float32) if decrypted_emb_bytes is not None else None
-                results.append((row[0], decrypted_text, embedding, row[3], row[4]))
+                results.append((row[0], decrypted_text, embedding, row[3], row[4], row[5], row[6]))
             return results
 
     def set_user_verified_target(self, base_dir, file_hash, target_path):
