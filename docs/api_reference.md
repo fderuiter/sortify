@@ -26,6 +26,10 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.core.cache
 
+## `app.core.crypto`
+
+::: app.core.crypto
+
 ## `app.core.db`
 
 ::: app.core.db

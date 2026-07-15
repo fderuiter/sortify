@@ -6,6 +6,12 @@ from contextlib import closing
 import numpy as np
 
 from app.config import get_app_dir
+from app.core.crypto import (
+    decrypt_embedding,
+    decrypt_text,
+    encrypt_embedding,
+    encrypt_text,
+)
 
 
 class Database:
@@ -55,10 +61,12 @@ class Database:
             )
             row = cursor.fetchone()
             if row:
-                embedding = np.frombuffer(row[2], dtype=np.float32) if row[2] else None
+                decrypted_text = decrypt_text(row[1]) if row[1] is not None else None
+                decrypted_emb_bytes = decrypt_embedding(row[2]) if row[2] is not None else None
+                embedding = np.frombuffer(decrypted_emb_bytes, dtype=np.float32) if decrypted_emb_bytes else None
                 return {
                     "file_hash": row[0],
-                    "extracted_text": row[1],
+                    "extracted_text": decrypted_text,
                     "embedding": embedding,
                     "model_name": row[3],
                     "vector_dimension": row[4],
@@ -69,9 +77,12 @@ class Database:
         """Insert or update a document in the database."""
         with closing(sqlite3.connect(self.db_path)) as conn, conn:
             if embedding is not None:
-                embedding_blob = embedding.astype(np.float32).tobytes()
+                embedding_blob = encrypt_embedding(embedding.astype(np.float32).tobytes())
             else:
                 embedding_blob = None
+                
+            enc_text = encrypt_text(extracted_text) if extracted_text is not None else None
+            
             conn.execute(
                 """
                 INSERT INTO documents (base_dir, filepath, file_hash, extracted_text, embedding, model_name, vector_dimension)
@@ -83,7 +94,7 @@ class Database:
                     model_name = excluded.model_name,
                     vector_dimension = excluded.vector_dimension
             """,
-                (base_dir, filepath, file_hash, extracted_text, embedding_blob, model_name, vector_dimension),
+                (base_dir, filepath, file_hash, enc_text, embedding_blob, model_name, vector_dimension),
             )
 
     def get_all_documents(self, base_dir):
@@ -95,8 +106,10 @@ class Database:
             )
             results = []
             for row in cursor.fetchall():
-                embedding = np.frombuffer(row[2], dtype=np.float32) if row[2] is not None else None
-                results.append((row[0], row[1], embedding, row[3], row[4], row[5], row[6]))
+                decrypted_text = decrypt_text(row[1]) if row[1] is not None else None
+                decrypted_emb_bytes = decrypt_embedding(row[2]) if row[2] is not None else None
+                embedding = np.frombuffer(decrypted_emb_bytes, dtype=np.float32) if decrypted_emb_bytes is not None else None
+                results.append((row[0], decrypted_text, embedding, row[3], row[4], row[5], row[6]))
             return results
 
     def set_user_verified_target(self, base_dir, file_hash, target_path):

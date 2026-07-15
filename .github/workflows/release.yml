@@ -37,9 +37,15 @@ jobs:
         run: |
           uv sync --all-extras
           
-      - name: Build executable
+      - name: Build executable (Windows)
+        if: runner.os == 'Windows'
         run: |
-          uv run python app/build.py
+          uv run python app/build_windows.py
+
+      - name: Build executable (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          uv run pyinstaller app/main.py --name smart-autosorter --noconfirm --onedir --windowed --add-data="$(uv run python -c 'import os, customtkinter; print(os.path.dirname(customtkinter.__file__))'):customtkinter" --clean
 
       - name: Package as Archive (Windows)
         if: runner.os == 'Windows'
