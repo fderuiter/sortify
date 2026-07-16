@@ -27,7 +27,7 @@ class IncrementalAnalyzer:
     """
 
     def __init__(
-        self, max_folders: int, stop_words: set, strategy_name: str = "default", model_path: str | None = None
+        self, max_folders: int, stop_words: set, strategy_name: str = "generative", model_path: str | None = None
     ) -> None:
         """Initialize the analyzer with the maximum number of folders."""
         self.max_folders = max_folders
@@ -345,6 +345,7 @@ class IncrementalAnalyzer:
             keyword_plan_files = []
             unsupported_files = []
             historical_overrides = {}
+            folder_profiles = {}
 
             # Map file hashes to their historical targets
             hash_to_target = {}
@@ -372,6 +373,10 @@ class IncrementalAnalyzer:
                     
                 if target is not None:
                     historical_overrides[f] = (target, status_match)
+                    if emb is not None:
+                        if target not in folder_profiles:
+                            folder_profiles[target] = []
+                        folder_profiles[target].append(emb)
                     
                 matched = False
                 if keyword_rules:
@@ -400,6 +405,49 @@ class IncrementalAnalyzer:
                         ai_filenames.append(f)
                         ai_documents.append(doc)
                         ai_embeddings.append(emb)
+
+            folder_centroids = {}
+            for folder, embs in folder_profiles.items():
+                if embs:
+                    centroid = np.mean(embs, axis=0)
+                    norm = np.linalg.norm(centroid)
+                    if norm > 0:
+                        centroid = centroid / norm
+                    folder_centroids[folder] = centroid
+
+            SIMILARITY_THRESHOLD = 0.65
+            if folder_centroids and ai_embeddings:
+                remaining_filenames = []
+                remaining_documents = []
+                remaining_embeddings = []
+                
+                for f, doc_text, emb in zip(ai_filenames, ai_documents, ai_embeddings):
+                    routed = False
+                    if emb is not None:
+                        best_folder = None
+                        best_score = -1.0
+                        
+                        norm_emb = np.linalg.norm(emb)
+                        emb_normalized = emb / norm_emb if norm_emb > 0 else emb
+                        
+                        for folder, centroid in folder_centroids.items():
+                            score = np.dot(emb_normalized, centroid)
+                            if score > best_score:
+                                best_score = score
+                                best_folder = folder
+                                
+                        if best_folder and best_score >= SIMILARITY_THRESHOLD:
+                            keyword_plan_files.append((f, best_folder, "similarity", "heuristic", None))
+                            routed = True
+                            
+                    if not routed:
+                        remaining_filenames.append(f)
+                        remaining_documents.append(doc_text)
+                        remaining_embeddings.append(emb)
+                        
+                ai_filenames = remaining_filenames
+                ai_documents = remaining_documents
+                ai_embeddings = remaining_embeddings
 
             self._last_reconstruction_error = 0.0
 
