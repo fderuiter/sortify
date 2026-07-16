@@ -1491,28 +1491,31 @@ class AutoSorterApp(ctk.CTk):
             )
             self.execute_btn.configure(state="disabled")
 
-            # Pause filesystem observer so execution moves aren't tracked as manual moves
-            if self.observer:
-                self.observer.stop()
-                self.observer.join()
-                self.observer = None
+            def _do_execute():
+                # Pause filesystem observer so execution moves aren't tracked as manual moves
+                if self.observer:
+                    self.observer.stop()
+                    self.observer.join()
+                    self.observer = None
 
-            summary = execute_moves(self.base_dir, self.plan, self.settings)
-            
-            # Restart observer
-            self._start_watcher()
+                summary = execute_moves(self.base_dir, self.plan, self.settings)
+                
+                # Restart observer
+                self._start_watcher()
 
-            deleted = summary.get("deleted_folders", 0)
-            protected = summary.get("protected_folders", 0)
+                deleted = summary.get("deleted_folders", 0)
+                protected = summary.get("protected_folders", 0)
 
-            self.status_label.configure(
-                text="Sorting complete! Check log for skipped/locked files.",
-                text_color="green",
-            )
-            self.meta_label.configure(
-                text=f"Cleanup Summary: {deleted} folders deleted | {protected} folders kept"
-            )
-            self.tree.delete(*self.tree.get_children())
+                self.after(0, lambda: self.status_label.configure(
+                    text="Sorting complete! Check log for skipped/locked files.",
+                    text_color="green",
+                ))
+                self.after(0, lambda: self.meta_label.configure(
+                    text=f"Cleanup Summary: {deleted} folders deleted | {protected} folders kept"
+                ))
+                self.after(0, lambda: self.tree.delete(*self.tree.get_children()))
+
+            threading.Thread(target=_do_execute, daemon=True).start()
 
     def _create_context_menus(self):
         self.context_menu = tk.Menu(self, tearoff=0)

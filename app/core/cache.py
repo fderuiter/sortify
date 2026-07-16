@@ -4,21 +4,18 @@ import json
 import logging
 import sqlite3
 from app.core.db_conn import get_db_connection
-from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 
 from app.config import get_app_dir
+from app.core.db_worker import worker
 
 DB_PATH = get_app_dir() / "cache.db"
 
-_executor = ThreadPoolExecutor(max_workers=1)
 
-
-def _get_conn():
+def init_cache_db():
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = get_db_connection(DB_PATH)
     try:
-        with conn:
+        with closing(get_db_connection(DB_PATH)) as conn, conn:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS directory_cache (
                     source_directory TEXT PRIMARY KEY,
@@ -30,12 +27,14 @@ def _get_conn():
             """)
             try:
                 conn.execute("ALTER TABLE directory_cache ADD COLUMN manual_folders TEXT")
-            except sqlite3.OperationalError:
+            except Exception:
                 pass
-        return conn
-    except Exception:
-        conn.close()
-        raise
+    except Exception as e:
+        logging.error(f"Failed to init cache db: {e}")
+
+
+def _get_conn():
+    return get_db_connection(DB_PATH)
 
 
 def _save_cache_sync(
@@ -47,28 +46,31 @@ def _save_cache_sync(
 ):
     if manual_folders is None:
         manual_folders = set()
-    try:
-        with closing(_get_conn()) as conn, conn:
-            conn.execute(
-                """
-                INSERT INTO directory_cache (source_directory, corpus, locked_files, index_to_word, manual_folders)
-                VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT(source_directory) DO UPDATE SET
-                    corpus=excluded.corpus,
-                    locked_files=excluded.locked_files,
-                    index_to_word=excluded.index_to_word,
-                    manual_folders=excluded.manual_folders
-                """,
-                (
-                    source_directory,
-                    json.dumps(corpus),
-                    json.dumps(locked_files),
-                    json.dumps({str(k): v for k, v in index_to_word.items()}),
-                    json.dumps(list(manual_folders)),
-                ),
-            )
-    except Exception as e:
-        logging.error(f"Failed to save cache: {e}")
+    def _write():
+        try:
+            with closing(_get_conn()) as conn, conn:
+                conn.execute(
+                    """
+                    INSERT INTO directory_cache (source_directory, corpus, locked_files, index_to_word, manual_folders)
+                    VALUES (?, ?, ?, ?, ?)
+                    ON CONFLICT(source_directory) DO UPDATE SET
+                        corpus=excluded.corpus,
+                        locked_files=excluded.locked_files,
+                        index_to_word=excluded.index_to_word,
+                        manual_folders=excluded.manual_folders
+                    """,
+                    (
+                        source_directory,
+                        json.dumps(corpus),
+                        json.dumps(locked_files),
+                        json.dumps({str(k): v for k, v in index_to_word.items()}),
+                        json.dumps(list(manual_folders)),
+                    ),
+                )
+        except Exception as e:
+            logging.error(f"Failed to save cache: {e}")
+            raise
+    worker.execute_write(_write)
 
 
 def save_cache_async(
@@ -79,14 +81,32 @@ def save_cache_async(
     manual_folders: set = None,
 ):
     """Save the current directory cache asynchronously to avoid blocking."""
-    _executor.submit(
-        _save_cache_sync,
-        source_directory,
-        corpus,
-        locked_files,
-        index_to_word,
-        manual_folders,
-    )
+    if manual_folders is None:
+        manual_folders = set()
+    def _write():
+        try:
+            with closing(_get_conn()) as conn, conn:
+                conn.execute(
+                    """
+                    INSERT INTO directory_cache (source_directory, corpus, locked_files, index_to_word, manual_folders)
+                    VALUES (?, ?, ?, ?, ?)
+                    ON CONFLICT(source_directory) DO UPDATE SET
+                        corpus=excluded.corpus,
+                        locked_files=excluded.locked_files,
+                        index_to_word=excluded.index_to_word,
+                        manual_folders=excluded.manual_folders
+                    """,
+                    (
+                        source_directory,
+                        json.dumps(corpus),
+                        json.dumps(locked_files),
+                        json.dumps({str(k): v for k, v in index_to_word.items()}),
+                        json.dumps(list(manual_folders)),
+                    ),
+                )
+        except Exception as e:
+            logging.error(f"Failed to save cache async: {e}")
+    worker.execute_write_async(_write)
 
 
 def save_cache_sync(
