@@ -2,8 +2,8 @@ import shutil
 import tempfile
 from pathlib import Path
 
-import pytest
 import keyring
+import pytest
 from keyring.backend import KeyringBackend
 
 from app.core.db import db
