@@ -1,14 +1,16 @@
 """Cryptographic management for envelope encryption."""
 
-import os
 import sqlite3
 from app.core.db_conn import get_db_connection
 
+import keyring
 from cryptography.fernet import Fernet
 
 from app.config import get_app_dir
 
 _fernet_instance = None
+_SERVICE_NAME = "autosorter"
+_ACCOUNT_NAME = "database_encryption_key"
 
 def get_cipher():
     """Get or initialize the Fernet cipher instance."""
@@ -16,9 +18,12 @@ def get_cipher():
     if _fernet_instance is not None:
         return _fernet_instance
 
-    key_path = get_app_dir() / "secret.key"
+    try:
+        key_str = keyring.get_password(_SERVICE_NAME, _ACCOUNT_NAME)
+    except Exception as e:
+        raise RuntimeError("Failed to access system keychain.") from e
     
-    if not key_path.exists():
+    if not key_str:
         db_path = get_app_dir() / "autosorter.db"
         if db_path.exists():
             try:
@@ -28,28 +33,29 @@ def get_cipher():
                     if cursor.fetchone()[0] > 0:
                         cursor = conn.execute("SELECT count(*) FROM documents")
                         if cursor.fetchone()[0] > 0:
-                            raise RuntimeError("Database accessed but key file is missing.")
+                            raise RuntimeError("Database accessed but encryption key is missing from keychain.")
                 finally:
                     conn.close()
             except sqlite3.Error:
                 pass
         
-        # Generate new key with strict permissions
+        # Generate new key
         key = Fernet.generate_key()
-        fd = os.open(key_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        with os.fdopen(fd, 'wb') as f:
-            f.write(key)
+        key_str = key.decode("utf-8")
+        try:
+            keyring.set_password(_SERVICE_NAME, _ACCOUNT_NAME, key_str)
+        except Exception as e:
+            raise RuntimeError("Failed to store encryption key in system keychain.") from e
             
-    if not key_path.exists():
-        raise RuntimeError("Database accessed but key file is missing.")
+    if not key_str:
+        raise RuntimeError("Database accessed but encryption key is missing from keychain.")
 
     try:
-        with open(key_path, "rb") as f:
-            key = f.read().strip()
+        key = key_str.encode("utf-8")
         _fernet_instance = Fernet(key)
         return _fernet_instance
     except Exception as e:
-        raise RuntimeError("Database accessed but key file is missing or invalid.") from e
+        raise RuntimeError("Database accessed but encryption key is missing or invalid.") from e
 
 def encrypt_text(text: str) -> bytes:
     """Encrypt a string and return bytes."""

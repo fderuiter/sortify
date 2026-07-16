@@ -160,10 +160,27 @@ class VerificationEngine:
 
         # Check if we have symlink capabilities if we are moving any symlinks
         symlink_privilege = None
+        
+        from app.core.path_utils import is_valid_name
 
         for rel_src, src, dst in moves:
             if rel_src in errors:
                 continue
+                
+            if is_windows:
+                # Fallback validation for Windows invalid characters and reserved names
+                # Split the relative path components to check each directory and file name
+                import ntpath
+                rel_dst = ntpath.relpath(dst, base_dir)
+                parts = rel_dst.replace("\\", "/").split("/")
+                invalid_found = False
+                for part in parts:
+                    if part and not is_valid_name(part):
+                        invalid_found = True
+                        break
+                if invalid_found:
+                    errors[rel_src] = "Path contains invalid characters or reserved names"
+                    continue
 
             link_info = LinkManager.get_link_info(src)
             if link_info and link_info["type"] == "symlink":
