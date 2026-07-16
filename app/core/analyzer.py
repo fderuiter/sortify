@@ -11,7 +11,6 @@ import re
 from typing import Any, Dict, List, Tuple
 
 import numpy as np
-
 from app.core.analyzer_strategies import clustering_registry
 from app.core.db import db
 
@@ -84,7 +83,6 @@ def _worker_generate_plan(
     except Exception as e:
         logging.error(f"Error generating plan in worker: {e}")
         raise e
-
 
 class IncrementalAnalyzer:
     """Stateful ML analyzer using incremental topic modeling.
