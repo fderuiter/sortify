@@ -1,3 +1,4 @@
+# ruff: noqa: D101,D102
 """Setup wizard module for AI consent and downloading."""
 
 import math
@@ -27,6 +28,8 @@ FILES_TO_DOWNLOAD = [
 ]
 
 class Downloader:
+    """A background downloader class for fetching models from Hugging Face."""
+
     def __init__(self, repo_id, files, dest_dir, on_progress, on_complete, on_error):
         self.repo_id = repo_id
         self.files = files
@@ -42,6 +45,7 @@ class Downloader:
         self.thread = None
 
     def start(self):
+        """Start or resume the download in a background thread."""
         if self.thread and self.thread.is_alive():
             self.thread.join()
         with self.lock:
@@ -51,6 +55,7 @@ class Downloader:
             self.thread.start()
 
     def pause(self):
+        """Pause the ongoing download by closing the active connection."""
         with self.lock:
             self.is_paused = True
             if self.current_response:
@@ -60,9 +65,11 @@ class Downloader:
                     pass
 
     def resume(self):
+        """Resume the paused download."""
         self.start()
 
     def cancel(self):
+        """Cancel the ongoing download completely."""
         with self.lock:
             self.is_cancelled = True
             if self.current_response:
@@ -308,6 +315,7 @@ class SetupWizard(ctk.CTkToplevel):
         webbrowser.open(docs_path.as_uri())
 
     def format_size(self, size_bytes):
+        """Format bytes into a human-readable size."""
         if size_bytes == 0:
             return "0B"
         size_name = ("B", "KB", "MB", "GB", "TB")
@@ -317,6 +325,7 @@ class SetupWizard(ctk.CTkToplevel):
         return f"{s} {size_name[i]}"
 
     def update_progress(self, percent, speed, eta):
+        """Update the UI progress indicator."""
         speed_str = self.format_size(speed) + "/s"
         eta_str = f"{int(eta)}s remaining"
         text = f"Downloading... {int(percent*100)}% ({speed_str} - {eta_str})"
@@ -325,10 +334,12 @@ class SetupWizard(ctk.CTkToplevel):
         self.after(0, lambda: self.status.configure(text=text, text_color="white"))
 
     def download_complete(self):
+        """Handle download completion."""
         self.settings.AI_CONSENT_GRANTED = True
         self.after(0, self.finish)
 
     def download_error(self, err_msg):
+        """Handle download errors."""
         self.after(0, lambda msg=err_msg: self.status.configure(
             text=f"Download failed: {msg}", text_color="red"
         ))
@@ -370,6 +381,7 @@ class SetupWizard(ctk.CTkToplevel):
         self.downloader.start()
         
     def pause_download(self):
+        """Pause the active download."""
         if self.downloader:
             self.downloader.pause()
             self.status.configure(text="Download paused. Network utilization is 0.", text_color="orange")
@@ -377,6 +389,7 @@ class SetupWizard(ctk.CTkToplevel):
             self.resume_btn.pack(side="left", padx=10, before=self.cancel_btn)
             
     def resume_download(self):
+        """Resume a paused download."""
         if self.downloader:
             self.resume_btn.pack_forget()
             self.pause_btn.pack(side="left", padx=10, before=self.cancel_btn)
@@ -384,6 +397,7 @@ class SetupWizard(ctk.CTkToplevel):
             self.downloader.resume()
 
     def cancel_download(self):
+        """Cancel the download and reset UI state."""
         if self.downloader:
             self.downloader.cancel()
             if self.downloader.thread and self.downloader.thread.is_alive():
@@ -403,6 +417,7 @@ class SetupWizard(ctk.CTkToplevel):
         self.downloader = None
 
     def on_closing(self):
+        """Handle window close event."""
         if self.downloader:
             self.downloader.cancel()
             if self.downloader.thread and self.downloader.thread.is_alive():

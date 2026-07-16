@@ -20,7 +20,7 @@ dependencies = [
     "sentence-transformers>=5.1.2",
     "pylnk3>=0.4.2",
     "cryptography>=41.0.0",
-    "keyring>=25.7.0",
+    "keyring>=24.0.0",
 ]
 
 [project.optional-dependencies]
