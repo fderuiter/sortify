@@ -2,9 +2,6 @@
 
 import os
 import shutil
-import sqlite3
-from app.core.db_conn import get_db_connection
-from app.core.db_worker import worker
 import time
 import uuid
 from contextlib import closing
@@ -12,9 +9,12 @@ from typing import Any, Dict, List
 
 from app.config import get_app_dir
 from app.core.db import db as db_instance
+from app.core.db_conn import get_db_connection
+from app.core.db_worker import worker
 
 
 def init_history_db(db_path=None):
+    """Initialize the history database."""
     db_path = db_path or str(get_app_dir() / "history.db")
     with closing(get_db_connection(db_path)) as conn, conn:
         conn.execute("""

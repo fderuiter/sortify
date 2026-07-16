@@ -1,9 +1,12 @@
-import sqlite3
+"""Background worker queue for serialized database write operations."""
+
 import queue
 import threading
-from contextlib import contextmanager
+
 
 class DBWorker:
+    """A worker that sequentially executes database write operations on a background thread."""
+
     def __init__(self):
         self.q = queue.Queue()
         self.thread = threading.Thread(target=self._run, daemon=True)
@@ -25,11 +28,13 @@ class DBWorker:
                 self.q.task_done()
 
     def submit_write(self, func, *args, **kwargs):
+        """Submit a database write operation to the queue without waiting for completion."""
         result_q = queue.Queue()
         self.q.put((func, args, kwargs, result_q))
         return result_q
         
     def execute_write(self, func, *args, **kwargs):
+        """Submit a database write operation and synchronously block until it completes."""
         result_q = self.submit_write(func, *args, **kwargs)
         status, result = result_q.get()
         if status == "error":
@@ -37,6 +42,7 @@ class DBWorker:
         return result
 
     def execute_write_async(self, func, *args, **kwargs):
+        """Submit a database write operation to the queue asynchronously and return immediately."""
         self.q.put((func, args, kwargs, None))
 
 worker = DBWorker()

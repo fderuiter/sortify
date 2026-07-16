@@ -1,7 +1,5 @@
 """Local database management for autosorter."""
 
-import sqlite3
-from app.core.db_conn import get_db_connection
 from contextlib import closing
 
 import numpy as np
@@ -13,6 +11,7 @@ from app.core.crypto import (
     encrypt_embedding,
     encrypt_text,
 )
+from app.core.db_conn import get_db_connection
 from app.core.db_worker import worker
 
 
@@ -25,6 +24,7 @@ class Database:
         self.db_path = db_path or str(get_app_dir() / "autosorter.db")
 
     def init_db(self):
+        """Initialize the core database and create tables if they do not exist."""
         with closing(get_db_connection(self.db_path)) as conn, conn:
             cursor = conn.cursor()
             cursor.execute("PRAGMA user_version")

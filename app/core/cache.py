@@ -2,17 +2,17 @@
 
 import json
 import logging
-import sqlite3
-from app.core.db_conn import get_db_connection
 from contextlib import closing
 
 from app.config import get_app_dir
+from app.core.db_conn import get_db_connection
 from app.core.db_worker import worker
 
 DB_PATH = get_app_dir() / "cache.db"
 
 
 def init_cache_db():
+    """Initialize the cache database."""
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     try:
         with closing(get_db_connection(DB_PATH)) as conn, conn:
