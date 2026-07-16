@@ -22,7 +22,20 @@ def test_semantic_quality_guardrails():
     create_large_corpus(500)
 
     # Configure the DB to use a persistent test cache so it's not wiped by other tests
-    from app.core.db import db
+    
+import tempfile
+from pathlib import Path
+from app.core.db import Database
+from app.core.cache import CacheManager
+from app.core.history import HistoryManager
+
+_test_dir = tempfile.mkdtemp()
+db = Database(Path(_test_dir) / "test.db")
+cache_manager = CacheManager(str(Path(_test_dir) / "cache.db"))
+history_manager = HistoryManager(db, cache_manager, str(Path(_test_dir) / "history.db"))
+def save_cache_sync(*args, **kwargs):
+    cache_manager.save_cache_sync(*args, **kwargs)
+
     old_db_path = db.db_path
     # Use a persistent path within the isolated test environment tmpdir instead of CWD
     import tempfile
@@ -55,14 +68,11 @@ def test_semantic_quality_guardrails():
         else:
             print("\nRunning in FULL TEST mode. Processing all 500 documents.")
 
-        analyzer = IncrementalAnalyzer(max_folders=4, stop_words={"the", "and"}, model_path="all-MiniLM-L6-v2")
+        analyzer = IncrementalAnalyzer(max_folders=4, stop_words={"the", "and"}, db=db, model_path="all-MiniLM-L6-v2")
         progress_callback = MagicMock()
 
         generator = build_corpus_generator(
-            base_dir=LARGE_CORPUS_DIR,
-            items_to_sort=files,
-            progress_callback=progress_callback,
-            max_workers=1,
+            base_dir=LARGE_CORPUS_DIR, items_to_sort=files, progress_callback=progress_callback, max_workers=1, db=db,
             chunk_size=50,
             sequential=True,
         )

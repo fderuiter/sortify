@@ -5,7 +5,20 @@ from unittest import mock
 import numpy as np
 import pypdf
 
-from app.core.db import db
+
+import tempfile
+from pathlib import Path
+from app.core.db import Database
+from app.core.cache import CacheManager
+from app.core.history import HistoryManager
+
+_test_dir = tempfile.mkdtemp()
+db = Database(Path(_test_dir) / "test.db")
+cache_manager = CacheManager(str(Path(_test_dir) / "cache.db"))
+history_manager = HistoryManager(db, cache_manager, str(Path(_test_dir) / "history.db"))
+def save_cache_sync(*args, **kwargs):
+    cache_manager.save_cache_sync(*args, **kwargs)
+
 from app.core.extractor import (
     build_corpus_generator,
     extract_file_text,
@@ -59,7 +72,7 @@ def test_process_item_worker_already_processed(tmp_path):
     db.upsert_document(str(tmp_path), "test.txt", file_hash, "hello", np.array([0.1, 0.2]))
     
     cb = mock.MagicMock()
-    item, text, h = process_item_worker(str(tmp_path), "test.txt", cb)
+    item, text, h = process_item_worker(str(tmp_path), "test.txt", cb, db)
     assert text == "hello"
     assert h == file_hash
     cb.assert_called_once()
@@ -69,7 +82,7 @@ def test_process_item_worker_isdir(tmp_path):
     test_dir.mkdir()
     
     cb = mock.MagicMock()
-    item, text, h = process_item_worker(str(tmp_path), "my_dir", cb)
+    item, text, h = process_item_worker(str(tmp_path), "my_dir", cb, db)
     assert text == "my_dir"
     assert h == ""
     cb.assert_called_once()
@@ -77,7 +90,7 @@ def test_process_item_worker_isdir(tmp_path):
 def test_process_item_worker_exception(tmp_path):
     cb = mock.MagicMock()
     with mock.patch("app.core.extractor.os.path.join", side_effect=Exception("Boom")):
-        item, text, h = process_item_worker(str(tmp_path), "test.txt", cb)
+        item, text, h = process_item_worker(str(tmp_path), "test.txt", cb, db)
         assert item == "test.txt"
         assert text == ""
         assert h == ""
@@ -90,13 +103,13 @@ def test_build_corpus_generator_sequential_continue(tmp_path):
     db.upsert_document(str(tmp_path), "test.txt", file_hash, "hello", np.array([0.1, 0.2]), model_name="test_model", vector_dimension=10)
     
     gen = build_corpus_generator(
-        str(tmp_path), ["test.txt"], mock.MagicMock(), 1, chunk_size=1, sequential=True, active_model_name="test_model", active_dimension=10
+        str(tmp_path), ["test.txt"], mock.MagicMock(), 1, chunk_size=1, sequential=True, active_model_name="test_model", active_dimension=10, db=db
     )
     chunks = list(gen)
     assert len(chunks) == 0
 
     gen2 = build_corpus_generator(
-        str(tmp_path), ["test.txt"], mock.MagicMock(), 1, chunk_size=2, sequential=True, active_model_name="other_model", active_dimension=10
+        str(tmp_path), ["test.txt"], mock.MagicMock(), 1, chunk_size=2, sequential=True, active_model_name="other_model", active_dimension=10, db=db
     )
     chunks2 = list(gen2)
     assert len(chunks2) == 1
@@ -108,13 +121,13 @@ def test_build_corpus_generator_parallel_continue(tmp_path):
     db.upsert_document(str(tmp_path), "test.txt", file_hash, "hello", np.array([0.1, 0.2]), model_name="test_model", vector_dimension=10)
     
     gen = build_corpus_generator(
-        str(tmp_path), ["test.txt"], mock.MagicMock(), 1, chunk_size=1, sequential=False, active_model_name="test_model", active_dimension=10
+        str(tmp_path), ["test.txt"], mock.MagicMock(), 1, chunk_size=1, sequential=False, active_model_name="test_model", active_dimension=10, db=db
     )
     chunks = list(gen)
     assert len(chunks) == 0
 
     gen2 = build_corpus_generator(
-        str(tmp_path), ["test.txt"], mock.MagicMock(), 1, chunk_size=2, sequential=False, active_model_name="other_model", active_dimension=10
+        str(tmp_path), ["test.txt"], mock.MagicMock(), 1, chunk_size=2, sequential=False, active_model_name="other_model", active_dimension=10, db=db
     )
     chunks2 = list(gen2)
     assert len(chunks2) == 1
@@ -136,15 +149,14 @@ def test_execute_moves_recursive_dict_directory_and_invalid(tmp_path):
     plan = {
         "__type__": "directory"
     }
-    _execute_moves_recursive(str(tmp_path), plan)
+    _execute_moves_recursive(str(tmp_path), plan, db)
     
     plan2 = {
         "folder": {
-            "__type__": "directory",
-            "file": None
+            "__type__": "directory", "file": None
         }
     }
-    _execute_moves_recursive(str(tmp_path), plan2)
+    _execute_moves_recursive(str(tmp_path), plan2, db)
 
 def test_execute_moves_recursive_no_target_filename(tmp_path):
     f1 = tmp_path / "test.txt"
@@ -155,7 +167,7 @@ def test_execute_moves_recursive_no_target_filename(tmp_path):
             "status": "Moved"
         }
     }
-    _execute_moves_recursive(str(tmp_path), plan, "dest")
+    _execute_moves_recursive(str(tmp_path), plan, db, "dest")
     assert (tmp_path / "dest" / "test.txt").exists()
     assert not f1.exists()
 
@@ -175,7 +187,7 @@ def test_execute_moves_recursive_symlink(tmp_path):
             }
         }
         dest = tmp_path / "dest"
-        _execute_moves_recursive(str(tmp_path), plan, "dest")
+        _execute_moves_recursive(str(tmp_path), plan, db, "dest")
         assert (dest / "link.txt").is_symlink()
         assert not sym.exists()
 
@@ -195,7 +207,7 @@ def test_execute_moves_recursive_symlink_update_in_place(tmp_path):
             }
         }
         path_map = {os.path.abspath(f1): os.path.abspath(tmp_path / "new_target.txt")}
-        _execute_moves_recursive(str(tmp_path), plan, "", path_map=path_map)
+        _execute_moves_recursive(str(tmp_path), plan, db, "", path_map=path_map)
         assert sym.is_symlink()
 
 def test_execute_moves_recursive_pylnk3(tmp_path):
@@ -214,7 +226,7 @@ def test_execute_moves_recursive_pylnk3(tmp_path):
                     "target_filename": "link.lnk"
                 }
             }
-            _execute_moves_recursive(str(tmp_path), plan, "dest")
+            _execute_moves_recursive(str(tmp_path), plan, db, "dest")
             assert not f1.exists()
 
 def test_execute_moves_recursive_pylnk3_exception(tmp_path):
@@ -234,7 +246,7 @@ def test_execute_moves_recursive_pylnk3_exception(tmp_path):
                     "target_filename": "link2.lnk"
                 }
             }
-            _execute_moves_recursive(str(tmp_path), plan, "dest")
+            _execute_moves_recursive(str(tmp_path), plan, db, "dest")
             assert (tmp_path / "dest" / "link2.lnk").exists()
 
 def test_execute_moves_recursive_rel_dest_key(tmp_path):
@@ -247,7 +259,7 @@ def test_execute_moves_recursive_rel_dest_key(tmp_path):
             "target_filename": "file.txt"
         }
     }
-    _execute_moves_recursive(str(tmp_path), plan, "")
+    _execute_moves_recursive(str(tmp_path), plan, db, "")
     assert f1.exists()
 
 def test_extract_file_text_empty_file(tmp_path):
@@ -259,7 +271,7 @@ def test_extract_file_text_empty_file(tmp_path):
 
 def test_process_item_worker_missing_file(tmp_path):
     cb = mock.MagicMock()
-    item, text, h = process_item_worker(str(tmp_path), "does_not_exist", cb)
+    item, text, h = process_item_worker(str(tmp_path), "does_not_exist", cb, db)
     assert text == ""
     assert h == ""
 
@@ -317,7 +329,7 @@ def test_execute_moves_recursive_symlink_no_update(tmp_path):
             }
         }
         with mock.patch("app.core.link_manager.LinkManager.get_link_info", return_value={"type": "symlink", "target": "target.txt"}):
-            _execute_moves_recursive(str(tmp_path), plan, "")
+            _execute_moves_recursive(str(tmp_path), plan, db, "")
         assert sym.is_symlink()
 
 def test_execute_moves_cleanup_disabled(tmp_path):
@@ -332,7 +344,7 @@ def test_execute_moves_cleanup_disabled(tmp_path):
     class MockSettings:
         CLEANUP_EMPTY_FOLDERS = False
     
-    execute_moves(str(tmp_path), plan, MockSettings())
+    execute_moves(str(tmp_path), plan, db, history_manager, MockSettings())
 
 def test_execute_moves_protected_folder(tmp_path):
     plan = {
@@ -346,7 +358,7 @@ def test_execute_moves_protected_folder(tmp_path):
     class MockSettings:
         CLEANUP_EMPTY_FOLDERS = True
     
-    execute_moves(str(tmp_path), plan, MockSettings())
+    execute_moves(str(tmp_path), plan, db, history_manager, MockSettings())
 
 def test_mover_import_error():
     with mock.patch.dict("sys.modules", {"pylnk3": None}):
@@ -364,7 +376,7 @@ def test_mover_import_error():
         importlib.reload(app.core.mover)
 
 def test_execute_moves_non_dict_plan(tmp_path):
-    _execute_moves_recursive(str(tmp_path), "invalid_plan", "")
+    _execute_moves_recursive(str(tmp_path), "invalid_plan", db, "")
 
 def test_mover_remove_empty_dirs_recursive(tmp_path):
     d1 = tmp_path / "dir1"
@@ -394,7 +406,7 @@ def test_execute_moves_recursive_symlink_needs_update(tmp_path):
         # new_abs_target differs so it updates
         path_map = {os.path.abspath(f1): os.path.abspath(tmp_path / "new_target.txt")}
         with mock.patch("app.core.link_manager.LinkManager.get_link_info", return_value={"type": "symlink", "target": str(f1)}):
-            _execute_moves_recursive(str(tmp_path), plan, "dest", path_map=path_map)
+            _execute_moves_recursive(str(tmp_path), plan, db, "dest", path_map=path_map)
 
 def test_execute_moves_recursive_db_doc_update(tmp_path):
     f1 = tmp_path / "test.txt"
@@ -410,7 +422,7 @@ def test_execute_moves_recursive_db_doc_update(tmp_path):
     file_hash = "fake_hash"
     db.upsert_document(str(tmp_path), "test.txt", file_hash, "data", np.array([0.1, 0.2]))
     
-    _execute_moves_recursive(str(tmp_path), plan, "dest")
+    _execute_moves_recursive(str(tmp_path), plan, db, "dest")
     assert (tmp_path / "dest" / "test2.txt").exists()
 
 def test_execute_moves_recursive_symlink_needs_update_relative(tmp_path):
@@ -433,7 +445,7 @@ def test_execute_moves_recursive_symlink_needs_update_relative(tmp_path):
         # new_abs_target differs so it updates
         path_map = {os.path.abspath(f1): os.path.abspath(tmp_path / "new_target.txt")}
         with mock.patch("app.core.link_manager.LinkManager.get_link_info", return_value={"type": "symlink", "target": "target.txt"}):
-            _execute_moves_recursive(str(tmp_path), plan, "", path_map=path_map)
+            _execute_moves_recursive(str(tmp_path), plan, db, "", path_map=path_map)
 
 def test_execute_moves_recursive_pylnk3_in_place(tmp_path):
     with mock.patch.dict("sys.modules", {"pylnk3": mock.MagicMock()}):
@@ -452,7 +464,7 @@ def test_execute_moves_recursive_pylnk3_in_place(tmp_path):
                 }
             }
             path_map = {os.path.abspath(tmp_path / "target.txt"): os.path.abspath(tmp_path / "new.txt")}
-            _execute_moves_recursive(str(tmp_path), plan, "", path_map=path_map)
+            _execute_moves_recursive(str(tmp_path), plan, db, "", path_map=path_map)
 
 def test_execute_moves_loop_skip(tmp_path):
     plan = {
@@ -473,12 +485,12 @@ def test_execute_moves_loop_skip(tmp_path):
         CLEANUP_EMPTY_FOLDERS = True
     
     with mock.patch("app.core.verifier.VerificationEngine.get_moves", return_value=[]):
-        execute_moves(str(tmp_path), plan, MockSettings())
+        execute_moves(str(tmp_path), plan, db, history_manager, MockSettings())
 
     class MockSettingsFalse:
         CLEANUP_EMPTY_FOLDERS = False
     with mock.patch("app.core.verifier.VerificationEngine.get_moves", return_value=[]):
-        execute_moves(str(tmp_path), plan, MockSettingsFalse())
+        execute_moves(str(tmp_path), plan, db, history_manager, MockSettingsFalse())
 
 def test_execute_moves_find_dir_nodes_list(tmp_path):
     plan = {
@@ -491,7 +503,7 @@ def test_execute_moves_find_dir_nodes_list(tmp_path):
         CLEANUP_EMPTY_FOLDERS = False
     
     with mock.patch("app.core.verifier.VerificationEngine.get_moves", return_value=[]):
-        execute_moves(str(tmp_path), plan, MockSettings())
+        execute_moves(str(tmp_path), plan, db, history_manager, MockSettings())
 
 def test_remove_empty_dirs_exception(tmp_path):
     d1 = tmp_path / "delme"
@@ -508,6 +520,6 @@ def test_remove_empty_dirs_exception(tmp_path):
 
     with mock.patch("os.rmdir", side_effect=OSError("Busy")):
         try:
-            execute_moves(str(tmp_path), plan, MockSettings())
+            execute_moves(str(tmp_path), plan, db, history_manager, MockSettings())
         except OSError:
             pass

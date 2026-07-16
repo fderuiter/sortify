@@ -3,16 +3,11 @@
 import sqlite3
 from app.core.db_conn import get_db_connection
 from contextlib import closing
+from pathlib import Path
 
 import numpy as np
 
-from app.config import get_app_dir
-from app.core.crypto import (
-    decrypt_embedding,
-    decrypt_text,
-    encrypt_embedding,
-    encrypt_text,
-)
+from app.core.crypto import SessionCrypto
 
 
 class Database:
@@ -20,8 +15,10 @@ class Database:
 
     CURRENT_VERSION = 4
 
-    def __init__(self, db_path=None):
-        self.db_path = db_path or str(get_app_dir() / "autosorter.db")
+    def __init__(self, db_path: Path):
+        self.db_path = str(db_path)
+        key_path = Path(db_path).parent / "secret.key"
+        self.crypto = SessionCrypto(key_path, Path(db_path))
         self._init_db()
 
     def _init_db(self):
@@ -65,8 +62,8 @@ class Database:
             )
             row = cursor.fetchone()
             if row:
-                decrypted_text = decrypt_text(row[1]) if row[1] is not None else None
-                decrypted_emb_bytes = decrypt_embedding(row[2]) if row[2] is not None else None
+                decrypted_text = self.crypto.decrypt_text(row[1]) if row[1] is not None else None
+                decrypted_emb_bytes = self.crypto.decrypt_embedding(row[2]) if row[2] is not None else None
                 embedding = np.frombuffer(decrypted_emb_bytes, dtype=np.float32) if decrypted_emb_bytes else None
                 return {
                     "file_hash": row[0],
@@ -92,11 +89,11 @@ class Database:
                 base_dir, filepath, file_hash, extracted_text, embedding, model_name, vector_dimension = doc
                 
                 if embedding is not None:
-                    embedding_blob = encrypt_embedding(embedding.astype(np.float32).tobytes())
+                    embedding_blob = self.crypto.encrypt_embedding(embedding.astype(np.float32).tobytes())
                 else:
                     embedding_blob = None
                     
-                enc_text = encrypt_text(extracted_text) if extracted_text is not None else None
+                enc_text = self.crypto.encrypt_text(extracted_text) if extracted_text is not None else None
                 
                 rows_to_insert.append(
                     (base_dir, filepath, file_hash, enc_text, embedding_blob, model_name, vector_dimension)
@@ -128,8 +125,8 @@ class Database:
             import concurrent.futures
             
             def _decrypt_row(row):
-                decrypted_text = decrypt_text(row[1]) if row[1] is not None else None
-                decrypted_emb_bytes = decrypt_embedding(row[2]) if row[2] is not None else None
+                decrypted_text = self.crypto.decrypt_text(row[1]) if row[1] is not None else None
+                decrypted_emb_bytes = self.crypto.decrypt_embedding(row[2]) if row[2] is not None else None
                 embedding = np.frombuffer(decrypted_emb_bytes, dtype=np.float32) if decrypted_emb_bytes is not None else None
                 return (row[0], decrypted_text, embedding, row[3], row[4], row[5], row[6])
                 
@@ -170,6 +167,3 @@ class Database:
                 conn.execute("DELETE FROM documents WHERE base_dir = ?", (base_dir,))
             else:
                 conn.execute("DELETE FROM documents")
-
-
-db = Database()

@@ -11,7 +11,7 @@ import re
 
 import numpy as np
 from app.core.analyzer_strategies import clustering_registry
-from app.core.db import db
+
 
 
 class IncrementalAnalyzer:
@@ -21,8 +21,9 @@ class IncrementalAnalyzer:
     """
 
     def __init__(
-        self, max_folders: int, stop_words: set, strategy_name: str = "generative", model_path: str | None = None
+        self, max_folders: int, stop_words: set, db, strategy_name: str = "generative", model_path: str | None = None
     ) -> None:
+        self.db = db
         """Initialize the analyzer with the maximum number of folders."""
         self.max_folders = max_folders
         self.stop_words = stop_words
@@ -224,7 +225,7 @@ class IncrementalAnalyzer:
                 zip(filepaths, texts, hashes)
             ):
                 # If we don't have a hash, fetch existing from DB so we don't overwrite it with empty
-                doc = db.get_document(base_dir, filepath)
+                doc = self.db.get_document(base_dir, filepath)
 
                 # compute hash if not provided
                 if not file_hash:
@@ -284,7 +285,7 @@ class IncrementalAnalyzer:
                     (base_dir, filepath, file_hash, text, embedding, self.active_model_name, self.active_dimension)
                 )
                 
-            db.upsert_documents(documents_to_upsert)
+            self.db.upsert_documents(documents_to_upsert)
 
         except Exception as e:
             logging.error(f"Failed during partial_fit. Error: {str(e)}", exc_info=True)
@@ -323,7 +324,7 @@ class IncrementalAnalyzer:
                 new_node[k] = self._inject_hierarchy(v)
         return new_node
 
-    def generate_sorting_plan(self, base_dir: str, runtime_settings=None) -> dict:
+    def generate_sorting_plan(self, base_dir: str, runtime_settings=None, locked_files: dict = None) -> dict:
         """Generate a sorting plan based on the current model state.
 
         Returns
@@ -333,7 +334,7 @@ class IncrementalAnalyzer:
             either dicts (subfolders) or file metadata dicts.
         """
         try:
-            docs = db.get_all_documents(base_dir)
+            docs = self.db.get_all_documents(base_dir)
             if not docs:
                 return {}
 
@@ -516,8 +517,9 @@ class IncrementalAnalyzer:
                             return res
                 return None
 
-            from app.core.cache import load_cache
-            _, locked_files, _, _ = load_cache(base_dir)
+            
+            if locked_files is None:
+                locked_files = {}
             if locked_files is None:
                 locked_files = {}
 
@@ -634,7 +636,7 @@ class IncrementalAnalyzer:
             # Generate vector for the search query
             query_embedding = self.model.encode([query_text], show_progress_bar=False)[0]
             
-            docs = db.get_all_documents(base_dir)
+            docs = self.db.get_all_documents(base_dir)
             if not docs:
                 return []
                 

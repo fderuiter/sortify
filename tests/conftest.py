@@ -6,9 +6,6 @@ import keyring
 import pytest
 from keyring.backend import KeyringBackend
 
-from app.core.db import db
-
-
 class MemoryKeyring(KeyringBackend):
     priority = 1
     def __init__(self):
@@ -26,7 +23,6 @@ _memory_keyring = MemoryKeyring()
 @pytest.fixture(autouse=True)
 def reset_memory_keyring():
     _memory_keyring.passwords.clear()
-
 @pytest.fixture(scope="session", autouse=True)
 def isolate_test_environment(monkeypatch_session):
     # Use in-memory keyring for all tests
@@ -41,18 +37,8 @@ def isolate_test_environment(monkeypatch_session):
     import app.config
     monkeypatch_session.setattr(app.config, "get_app_dir", mock_get_app_dir)
     
-    # Also update the db singleton since it was initialized at import time
-    old_db_path = db.db_path
-    db.db_path = str(mock_get_app_dir() / "autosorter.db")
-    db._init_db()
-    
-    # Also update cache module since it was evaluated at import time
-    import app.core.cache
-    app.core.cache.DB_PATH = mock_get_app_dir() / "cache.db"
-    
     yield
     
-    db.db_path = old_db_path
     shutil.rmtree(temp_dir, ignore_errors=True)
 
 @pytest.fixture(scope="session")
@@ -61,4 +47,3 @@ def monkeypatch_session():
     mpatch = MonkeyPatch()
     yield mpatch
     mpatch.undo()
-

@@ -10,14 +10,17 @@ from contextlib import closing
 from typing import Any, Dict, List
 
 from app.config import get_app_dir
-from app.core.db import db as db_instance
+from app.core.db import Database
 
 
 class HistoryManager:
     """Manages full directory snapshots and rollback functionality."""
     
-    def __init__(self, db_path=None):
-        self.db_path = db_path or str(get_app_dir() / "history.db")
+    def __init__(self, db, cache_manager, db_path=None):
+        from pathlib import Path
+        self.db = db
+        self.cache_manager = cache_manager
+        self.db_path = db_path or str(Path(db.db_path).parent / "history.db")
         self._init_db()
 
     def _init_db(self):
@@ -91,8 +94,7 @@ class HistoryManager:
                 )
 
             # 2. Snapshot Cache
-            from app.core.cache import _get_conn as get_cache_conn
-            with closing(get_cache_conn()) as cache_conn, cache_conn:
+            with closing(self.cache_manager._get_conn()) as cache_conn, cache_conn:
                 cur = cache_conn.execute(
                     "SELECT corpus, locked_files, index_to_word, manual_folders FROM directory_cache WHERE source_directory = ?",
                     (base_dir,)
@@ -106,7 +108,7 @@ class HistoryManager:
 
             # 3. Snapshot DB
             docs = []
-            with closing(get_db_connection(db_instance.db_path)) as db_conn, db_conn:
+            with closing(get_db_connection(self.db.db_path)) as db_conn, db_conn:
                 cur = db_conn.execute(
                     "SELECT filepath, file_hash, extracted_text, embedding FROM documents WHERE base_dir = ?",
                     (base_dir,)
@@ -293,7 +295,7 @@ class HistoryManager:
             snapshot_filepaths = set(snapshot_docs_dict.keys())
 
             # 1. Pre-Move Synchronization
-            with closing(get_db_connection(db_instance.db_path)) as db_conn, db_conn:
+            with closing(get_db_connection(self.db.db_path)) as db_conn, db_conn:
                 cur_docs = db_conn.execute("SELECT filepath FROM documents WHERE base_dir = ?", (base_dir,))
                 current_filepaths = [row[0] for row in cur_docs.fetchall()]
 
@@ -337,7 +339,7 @@ class HistoryManager:
                         
                         rel_temp_dst = os.path.relpath(temp_dst, base_dir)
 
-                        with closing(get_db_connection(db_instance.db_path)) as db_conn, db_conn:
+                        with closing(get_db_connection(self.db.db_path)) as db_conn, db_conn:
                             db_conn.execute("UPDATE documents SET filepath = ? WHERE base_dir = ? AND filepath = ?", (rel_temp_dst, base_dir, rel_dst))
 
                         # The file that was at dst is now at temp_dst. 
@@ -350,7 +352,7 @@ class HistoryManager:
                         if not os.path.exists(dst):
                             shutil.move(src, dst)
 
-                    with closing(get_db_connection(db_instance.db_path)) as db_conn, db_conn:
+                    with closing(get_db_connection(self.db.db_path)) as db_conn, db_conn:
                         db_conn.execute("DELETE FROM documents WHERE base_dir = ? AND filepath = ?", (base_dir, rel_src))
                         snapshot_doc = snapshot_docs_dict.get(rel_dst)
                         if snapshot_doc:
@@ -385,8 +387,7 @@ class HistoryManager:
             # Restore Cache
             cur = conn.execute("SELECT corpus, locked_files, index_to_word, manual_folders FROM snapshot_cache WHERE session_id = ?", (session_id,))
             row = cur.fetchone()
-            from app.core.cache import _get_conn as get_cache_conn
-            with closing(get_cache_conn()) as cache_conn, cache_conn:
+            with closing(self.cache_manager._get_conn()) as cache_conn, cache_conn:
                 if row:
                     cache_conn.execute(
                         """
@@ -407,4 +408,3 @@ class HistoryManager:
 
             conn.execute("UPDATE sessions SET status = 'rolled_back' WHERE session_id = ?", (session_id,))
 
-history_manager = HistoryManager()

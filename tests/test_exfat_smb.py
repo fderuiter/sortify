@@ -4,8 +4,9 @@ from unittest.mock import patch
 
 import pytest
 
-from app.core.db import db
-from app.core.history import history_manager
+from app.core.db import Database
+from app.core.cache import CacheManager
+from app.core.history import HistoryManager
 
 
 @pytest.fixture
@@ -13,16 +14,18 @@ def setup_history_env(tmp_path):
     base_dir = str(tmp_path / "test_base")
     os.makedirs(base_dir, exist_ok=True)
     
-    db.db_path = str(tmp_path / "test_docs.db")
-    db._init_db()
+    db_path = tmp_path / "test_docs.db"
+    db = Database(db_path)
     
-    history_manager.db_path = str(tmp_path / "test_history.db")
-    history_manager._init_db()
+    cache_path = tmp_path / "test_cache.db"
+    cache = CacheManager(str(cache_path))
+    
+    history_manager = HistoryManager(db, cache, str(tmp_path / "test_history.db"))
 
-    yield base_dir
+    yield base_dir, db, history_manager
 
 def test_rollback_zero_inode(setup_history_env):
-    base_dir = setup_history_env
+    base_dir, db, history_manager = setup_history_env
     
     file1_src = os.path.join(base_dir, "doc1.txt")
     file2_src = os.path.join(base_dir, "doc2.txt")

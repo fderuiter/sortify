@@ -53,6 +53,12 @@ class AutoSorterApp(ctk.CTk):
         self._initial_cached_files = 0
         self.start_time: float = 0.0
 
+        self.session_id = None
+        self.session_dir = None
+        self.db = None
+        self.cache_manager = None
+        self.history_manager = None
+
         self.analyzer = None
         self.verifier = VerificationEngine()
 
@@ -213,17 +219,15 @@ class AutoSorterApp(ctk.CTk):
     def on_close(self):
         """Handle application close event by saving the cache synchronously."""
         if self.base_dir and self.analyzer:
-            from app.core.cache import save_cache_sync
+            if self.cache_manager:
+                self.cache_manager.save_cache_sync(self.base_dir, self.analyzer.corpus, self.locked_files, self.analyzer.index_to_word, self.manual_folders)
 
             self.status_label.configure(text="Saving cache...", text_color="yellow")
             self.update()
-            save_cache_sync(
-                self.base_dir,
-                self.analyzer.corpus,
-                self.locked_files,
-                self.analyzer.index_to_word,
-                self.manual_folders,
-            )
+            
+        if self.session_dir:
+            import shutil
+            shutil.rmtree(self.session_dir, ignore_errors=True)
         self.destroy()
 
     def _build_settings_ui(self):
@@ -507,8 +511,7 @@ class AutoSorterApp(ctk.CTk):
         import datetime
         from tkinter import messagebox
 
-        from app.core.history import history_manager
-
+        
         columns = ("session_id", "date", "status")
         tree = ttk.Treeview(modal, columns=columns, show="headings")
         tree.heading("session_id", text="Session ID")
@@ -521,7 +524,12 @@ class AutoSorterApp(ctk.CTk):
 
         tree.pack(fill="both", expand=True, padx=10, pady=10)
 
-        sessions = history_manager.get_sessions()
+        if not self.history_manager:
+            import tkinter.messagebox
+            tkinter.messagebox.showwarning('Warning', 'No active session.', parent=modal)
+            modal.destroy()
+            return
+        sessions = self.history_manager.get_sessions()
         for s in sessions:
             dt = datetime.datetime.fromtimestamp(s["timestamp"]).strftime(
                 "%Y-%m-%d %H:%M:%S"
@@ -547,7 +555,7 @@ class AutoSorterApp(ctk.CTk):
                 return
 
             try:
-                missing = history_manager.check_missing_files(session_id)
+                missing = self.history_manager.check_missing_files(session_id)
                 if missing:
                     msg = f"Cannot rollback! {len(missing)} files missing (e.g. {missing[0]}). Proceed?"
                     ans = messagebox.askyesno(
@@ -556,7 +564,7 @@ class AutoSorterApp(ctk.CTk):
                     if not ans:
                         return
 
-                history_manager.rollback(session_id, ignore_missing=True)
+                self.history_manager.rollback(session_id, ignore_missing=True)
             except Exception as e:
                 messagebox.showerror("Rollback Failed", str(e), parent=modal)
                 return
@@ -614,9 +622,27 @@ class AutoSorterApp(ctk.CTk):
                 self.flat_plan = []
                 self.current_start = 0
                 self.tree.delete(*self.tree.get_children())
-
+                
+                import uuid
+                import tempfile
+                from pathlib import Path
+                import shutil
+                from app.core.db import Database
+                from app.core.cache import CacheManager
+                from app.core.history import HistoryManager
+                
+                if self.session_dir and os.path.exists(self.session_dir):
+                    shutil.rmtree(self.session_dir, ignore_errors=True)
+                    
+                self.session_id = str(uuid.uuid4())
+                self.session_dir = Path(tempfile.gettempdir()) / "autosorter_sessions" / self.session_id
+                self.session_dir.mkdir(parents=True, exist_ok=True)
+                
+                self.db = Database(self.session_dir / "autosorter.db")
+                self.cache_manager = CacheManager(str(self.session_dir / "cache.db"))
+                self.history_manager = HistoryManager(self.db, self.cache_manager, str(self.session_dir / "history.db"))
+                
                 from app.config import get_app_dir
-
                 user_model_path = get_app_dir() / "model"
 
                 if self.settings.AI_CONSENT_GRANTED is True:
@@ -627,6 +653,7 @@ class AutoSorterApp(ctk.CTk):
                 self.analyzer = IncrementalAnalyzer(
                     self.settings.MAX_FOLDERS,
                     self.settings.STOP_WORDS,
+                    self.db,
                     model_path=model_path,
                 )
 
@@ -652,11 +679,7 @@ class AutoSorterApp(ctk.CTk):
             self.after(0, lambda: self.select_btn.configure(state="normal"))
             return
 
-        from app.core.cache import load_cache
-
-        cached_corpus, cached_locked, cached_idx, cached_manual_folders = load_cache(
-            self.base_dir
-        )
+        cached_corpus, cached_locked, cached_idx, cached_manual_folders = self.cache_manager.load_cache(self.base_dir)
 
         if cached_corpus is not None:
             pruned_corpus = {
@@ -762,7 +785,6 @@ class AutoSorterApp(ctk.CTk):
 
     def _queue_move(self, src_path, dest_path):
         try:
-            from app.core.db import db
             rel_src = os.path.relpath(src_path, self.base_dir)
             rel_dest = os.path.relpath(dest_path, self.base_dir)
             if rel_src.startswith(".") or rel_dest.startswith("."):
@@ -774,7 +796,7 @@ class AutoSorterApp(ctk.CTk):
                 if rel_src in self.locked_files:
                     self.locked_files[rel_dest] = self.locked_files.pop(rel_src)
             
-            db.update_document_path(self.base_dir, rel_src, rel_dest)
+            if self.db: self.db.update_document_path(self.base_dir, rel_src, rel_dest)
             
             # Re-run plan generation
             self._queue_file(dest_path)
@@ -783,7 +805,6 @@ class AutoSorterApp(ctk.CTk):
 
     def _queue_delete(self, file_path):
         try:
-            from app.core.db import db
             rel_path = os.path.relpath(file_path, self.base_dir)
             if rel_path.startswith("."):
                 return
@@ -794,7 +815,7 @@ class AutoSorterApp(ctk.CTk):
                 if rel_path in self.locked_files:
                     del self.locked_files[rel_path]
             
-            db.remove_document(self.base_dir, rel_path)
+            if self.db: self.db.remove_document(self.base_dir, rel_path)
             
             if self._fs_debounce_timer:
                 self._fs_debounce_timer.cancel()
@@ -859,6 +880,7 @@ class AutoSorterApp(ctk.CTk):
             items_to_sort,
             self.item_completed_callback,
             max_workers=self.settings.MAX_WORKERS,
+            db=self.db,
             chunk_size=50,
             active_model_name=self.analyzer.active_model_name,
             active_dimension=self.analyzer.active_dimension,
@@ -1038,9 +1060,7 @@ class AutoSorterApp(ctk.CTk):
         self.select_btn.configure(state="normal")
         self.render_tree()
 
-        from app.core.cache import save_cache_async
-
-        save_cache_async(
+        self.cache_manager.save_cache_async(
             self.base_dir,
             self.analyzer.corpus,
             self.locked_files,
@@ -1392,9 +1412,7 @@ class AutoSorterApp(ctk.CTk):
 
             self.after(0, self.render_tree)
 
-            from app.core.cache import save_cache_async
-
-            save_cache_async(
+            self.cache_manager.save_cache_async(
                 self.base_dir,
                 self.analyzer.corpus,
                 self.locked_files,
@@ -1497,7 +1515,7 @@ class AutoSorterApp(ctk.CTk):
                 self.observer.join()
                 self.observer = None
 
-            summary = execute_moves(self.base_dir, self.plan, self.settings)
+            summary = execute_moves(self.base_dir, self.plan, self.db, self.history_manager, self.settings)
             
             # Restart observer
             self._start_watcher()
@@ -1566,8 +1584,7 @@ class AutoSorterApp(ctk.CTk):
     def _resolve_conflict(self, item, selected_path):
         filename = item.split(":", 1)[1]
         self.locked_files[filename] = selected_path
-        from app.core.cache import save_cache_async
-        save_cache_async(
+        self.cache_manager.save_cache_async(
             self.base_dir,
             self.analyzer.corpus,
             self.locked_files,

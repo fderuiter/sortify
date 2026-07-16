@@ -2,7 +2,7 @@
 import numpy as np
 
 from app.core.analyzer import IncrementalAnalyzer
-from app.core.db import db
+from app.core.db import Database
 
 
 def test_find_similar(tmp_path):
@@ -13,7 +13,8 @@ def test_find_similar(tmp_path):
         def get_embedding_dimension(self):
             return 3
             
-    analyzer = IncrementalAnalyzer(max_folders=5, stop_words=set())
+    db = Database(tmp_path / "test_docs.db")
+    analyzer = IncrementalAnalyzer(max_folders=5, stop_words=set(), db=db)
     analyzer.model = MockModel()
     analyzer.model_name = "test_model"
     
