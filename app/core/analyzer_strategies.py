@@ -9,10 +9,8 @@ from contextlib import contextmanager
 from typing import List, Protocol
 
 import numpy as np
-import torch
 from sklearn.cluster import MiniBatchKMeans
 from sklearn.feature_extraction.text import TfidfVectorizer
-from transformers import AutoModelForCausalLM, AutoModelForSeq2SeqLM, AutoTokenizer, pipeline
 
 
 @contextmanager
@@ -186,6 +184,14 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
 
         try:
             with block_external_network():
+                import torch
+                from transformers import (
+                    AutoModelForCausalLM,
+                    AutoModelForSeq2SeqLM,
+                    AutoTokenizer,
+                    pipeline,
+                )
+
                 torch.set_num_threads(2)
 
                 tokenizer = AutoTokenizer.from_pretrained(
@@ -225,6 +231,8 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
             prompt = f"Generate a short, descriptive natural language folder name (1 to 4 words) for a folder containing these documents. Do not use hyphens. Return only the name.\nDocuments: {doc_text}\nFolder Name:"
 
             with block_external_network():
+                import torch
+
                 torch.set_num_threads(2)
 
                 if self.task == "text-generation":

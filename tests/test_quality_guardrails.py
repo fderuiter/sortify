@@ -28,6 +28,8 @@ def test_semantic_quality_guardrails():
     if os.path.exists("quality_guardrails_cache.db"):
         os.remove("quality_guardrails_cache.db")
     db.db_path = "quality_guardrails_cache.db"
+    if os.path.exists(db.db_path):
+        os.remove(db.db_path)
     db._init_db()
 
     try:

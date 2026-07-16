@@ -2,6 +2,7 @@
 """Validate the application configuration schema."""
 
 import sys
+
 from pydantic import ValidationError
 
 try:
