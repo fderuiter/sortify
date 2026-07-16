@@ -2,6 +2,7 @@
 
 import os
 import sqlite3
+from app.core.db_conn import get_db_connection
 
 from cryptography.fernet import Fernet
 
@@ -34,7 +35,7 @@ def get_cipher():
         db_path = get_app_dir() / "autosorter.db"
         if db_path.exists():
             try:
-                conn = sqlite3.connect(db_path)
+                conn = get_db_connection(db_path)
                 try:
                     cursor = conn.execute(
                         "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='documents'"
