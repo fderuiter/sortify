@@ -9,6 +9,7 @@ import logging
 import os
 import re
 
+import numpy as np
 from app.core.analyzer_strategies import clustering_registry
 from app.core.db import db
 
@@ -20,7 +21,7 @@ class IncrementalAnalyzer:
     """
 
     def __init__(
-        self, max_folders: int, stop_words: set, strategy_name: str = "default", model_path: str | None = None
+        self, max_folders: int, stop_words: set, strategy_name: str = "generative", model_path: str | None = None
     ) -> None:
         """Initialize the analyzer with the maximum number of folders."""
         self.max_folders = max_folders
@@ -174,7 +175,10 @@ class IncrementalAnalyzer:
     def active_dimension(self):
         """Get the vector dimension of the currently active model."""
         if self.model:
-            return getattr(self.model, "get_embedding_dimension", self.model.get_sentence_embedding_dimension)()
+            if hasattr(self.model, "get_embedding_dimension"):
+                return self.model.get_embedding_dimension()
+            elif hasattr(self.model, "get_sentence_embedding_dimension"):
+                return self.model.get_sentence_embedding_dimension()
         return None
 
     @property
@@ -188,7 +192,7 @@ class IncrementalAnalyzer:
         """
         return self._last_reconstruction_error
 
-    def partial_fit(self, base_dir: str, new_corpus: dict) -> None:
+    def partial_fit(self, base_dir: str, new_corpus: dict, runtime_settings=None) -> None:
         """Update the ML model incrementally with new documents."""
         try:
             # new_corpus is now dict[item_name, dict[text, hash]] or dict[item_name, text]
@@ -212,6 +216,9 @@ class IncrementalAnalyzer:
             texts_to_encode = []
             indices_to_encode = []
             embeddings = [None] * len(filepaths)
+            
+            keyword_rules = getattr(runtime_settings, "KEYWORD_RULES", {}) if runtime_settings else {}
+            learned_rules = getattr(runtime_settings, "LEARNED_RULES", {}) if runtime_settings else {}
 
             for i, (filepath, text, file_hash) in enumerate(
                 zip(filepaths, texts, hashes)
@@ -224,6 +231,24 @@ class IncrementalAnalyzer:
                     file_hash = hashlib.md5(text.encode("utf-8")).hexdigest()
                     hashes[i] = file_hash
 
+                is_lexical_match = False
+                filename_only = os.path.basename(filepath).lower()
+                doc_lower = text.lower() if text else ""
+                text_to_search = filename_only + " " + doc_lower
+
+                for keyword in keyword_rules.keys():
+                    if keyword.strip() and keyword.lower() in text_to_search:
+                        is_lexical_match = True
+                        break
+
+                if not is_lexical_match and learned_rules:
+                    for keyword in learned_rules.keys():
+                        if keyword.strip() and keyword.lower() in filename_only:
+                            is_lexical_match = True
+                            break
+                            
+                has_historical_target = doc and doc.get("user_verified_target_path")
+
                 if (
                     doc
                     and doc["file_hash"] == file_hash
@@ -233,6 +258,8 @@ class IncrementalAnalyzer:
                 ):
                     embeddings[i] = doc["embedding"]
                 elif text.startswith("[STATUS:"):
+                    embeddings[i] = None
+                elif is_lexical_match or has_historical_target:
                     embeddings[i] = None
                 else:
                     texts_to_encode.append(text)
@@ -249,18 +276,15 @@ class IncrementalAnalyzer:
                 for idx, new_emb in zip(indices_to_encode, new_embeddings):
                     embeddings[idx] = new_emb
 
+            documents_to_upsert = []
             for filepath, text, file_hash, embedding in zip(
                 filepaths, texts, hashes, embeddings
             ):
-                db.upsert_document(
-                    base_dir,
-                    filepath,
-                    file_hash,
-                    text,
-                    embedding,
-                    self.active_model_name,
-                    self.active_dimension
+                documents_to_upsert.append(
+                    (base_dir, filepath, file_hash, text, embedding, self.active_model_name, self.active_dimension)
                 )
+                
+            db.upsert_documents(documents_to_upsert)
 
         except Exception as e:
             logging.error(f"Failed during partial_fit. Error: {str(e)}", exc_info=True)
@@ -325,6 +349,7 @@ class IncrementalAnalyzer:
             keyword_plan_files = []
             unsupported_files = []
             historical_overrides = {}
+            folder_profiles = {}
 
             # Map file hashes to their historical targets
             hash_to_target = {}
@@ -352,6 +377,10 @@ class IncrementalAnalyzer:
                     
                 if target is not None:
                     historical_overrides[f] = (target, status_match)
+                    if emb is not None:
+                        if target not in folder_profiles:
+                            folder_profiles[target] = []
+                        folder_profiles[target].append(emb)
                     
                 matched = False
                 if keyword_rules:
@@ -380,6 +409,49 @@ class IncrementalAnalyzer:
                         ai_filenames.append(f)
                         ai_documents.append(doc)
                         ai_embeddings.append(emb)
+
+            folder_centroids = {}
+            for folder, embs in folder_profiles.items():
+                if embs:
+                    centroid = np.mean(embs, axis=0)
+                    norm = np.linalg.norm(centroid)
+                    if norm > 0:
+                        centroid = centroid / norm
+                    folder_centroids[folder] = centroid
+
+            SIMILARITY_THRESHOLD = 0.65
+            if folder_centroids and ai_embeddings:
+                remaining_filenames = []
+                remaining_documents = []
+                remaining_embeddings = []
+                
+                for f, doc_text, emb in zip(ai_filenames, ai_documents, ai_embeddings):
+                    routed = False
+                    if emb is not None:
+                        best_folder = None
+                        best_score = -1.0
+                        
+                        norm_emb = np.linalg.norm(emb)
+                        emb_normalized = emb / norm_emb if norm_emb > 0 else emb
+                        
+                        for folder, centroid in folder_centroids.items():
+                            score = np.dot(emb_normalized, centroid)
+                            if score > best_score:
+                                best_score = score
+                                best_folder = folder
+                                
+                        if best_folder and best_score >= SIMILARITY_THRESHOLD:
+                            keyword_plan_files.append((f, best_folder, "similarity", "heuristic", None))
+                            routed = True
+                            
+                    if not routed:
+                        remaining_filenames.append(f)
+                        remaining_documents.append(doc_text)
+                        remaining_embeddings.append(emb)
+                        
+                ai_filenames = remaining_filenames
+                ai_documents = remaining_documents
+                ai_embeddings = remaining_embeddings
 
             self._last_reconstruction_error = 0.0
 
@@ -548,3 +620,58 @@ class IncrementalAnalyzer:
                 f"Failed during generate_sorting_plan. Error: {str(e)}", exc_info=True
             )
             return {}
+
+    def find_similar(self, base_dir: str, query_text: str, top_k: int = 5) -> list[dict]:
+        """Find the most similar documents to a query string using vector search.
+        
+        Retrieves stored embeddings from the local SQLite database (decrypting them in memory),
+        computes pairwise similarity against the query vector, and returns the top matches.
+        """
+        if not self.model or not query_text.strip():
+            return []
+            
+        try:
+            # Generate vector for the search query
+            query_embedding = self.model.encode([query_text], show_progress_bar=False)[0]
+            
+            docs = db.get_all_documents(base_dir)
+            if not docs:
+                return []
+                
+            results = []
+            
+            # Extract and filter records with valid compatible embeddings
+            for doc in docs:
+                # db.get_all_documents returns: (filepath, extracted_text, embedding, file_hash, user_verified_target_path, model_name, vector_dimension)
+                filepath, extracted_text, embedding, file_hash, user_verified_target, model_name, vector_dimension = doc
+                
+                if (embedding is not None 
+                    and model_name == self.active_model_name 
+                    and vector_dimension == self.active_dimension):
+                    
+                    # Compute Cosine Similarity
+                    dot_product = np.dot(query_embedding, embedding)
+                    norm_q = np.linalg.norm(query_embedding)
+                    norm_e = np.linalg.norm(embedding)
+                    
+                    if norm_q > 0 and norm_e > 0:
+                        similarity = dot_product / (norm_q * norm_e)
+                    else:
+                        similarity = 0.0
+                        
+                    results.append({
+                        "filepath": filepath,
+                        "file_hash": file_hash,
+                        "similarity": float(similarity),
+                        "extracted_text": extracted_text,
+                        "assigned_folder": user_verified_target
+                    })
+                    
+            # Sort by highest similarity
+            results.sort(key=lambda x: x["similarity"], reverse=True)
+            
+            return results[:top_k]
+            
+        except Exception as e:
+            logging.error(f"Failed during vector search. Error: {str(e)}", exc_info=True)
+            return []
