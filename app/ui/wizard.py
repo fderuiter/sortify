@@ -99,7 +99,10 @@ class SetupWizard(ctk.CTkToplevel):
     def download_model(self):
         """Download the model in a background thread."""
         try:
+            import shutil
             model_dir = get_app_dir() / "model"
+            if model_dir.exists():
+                shutil.rmtree(model_dir)
             snapshot_download(
                 repo_id="sentence-transformers/all-MiniLM-L6-v2",
                 local_dir=str(model_dir),

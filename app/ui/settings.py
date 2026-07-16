@@ -278,11 +278,26 @@ class SettingsView(ctk.CTkFrame):
         from app.config import get_app_dir
 
         model_dir = get_app_dir() / "model"
-        if (model_dir / "config.json").exists():
+        
+        has_config = (model_dir / "config.json").exists()
+        has_tokenizer = (model_dir / "tokenizer.json").exists()
+        has_weights = (model_dir / "pytorch_model.bin").exists() or \
+                      (model_dir / "model.safetensors").exists() or \
+                      bool(list(model_dir.glob("*.onnx")))
+                      
+        is_valid = has_config and has_tokenizer and has_weights
+        
+        if is_valid:
             self.ai_status_label.configure(
                 text="AI Model: Downloaded & Ready", text_color="green"
             )
             self.ai_btn.configure(state="disabled", text="Model Installed")
+        elif has_config or has_tokenizer or has_weights:
+            self.ai_status_label.configure(
+                text="AI Model: Corrupted/Incomplete (Click to Repair)",
+                text_color="orange",
+            )
+            self.ai_btn.configure(state="normal", text="Repair AI Model")
         else:
             self.ai_status_label.configure(
                 text="AI Model: Not Downloaded (Offline Mode Active)",
