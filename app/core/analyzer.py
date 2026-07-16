@@ -184,7 +184,7 @@ class IncrementalAnalyzer:
         """
         return self._last_reconstruction_error
 
-    def partial_fit(self, base_dir: str, new_corpus: dict) -> None:
+    def partial_fit(self, base_dir: str, new_corpus: dict, runtime_settings=None) -> None:
         """Update the ML model incrementally with new documents."""
         try:
             # new_corpus is now dict[item_name, dict[text, hash]] or dict[item_name, text]
@@ -208,6 +208,9 @@ class IncrementalAnalyzer:
             texts_to_encode = []
             indices_to_encode = []
             embeddings = [None] * len(filepaths)
+            
+            keyword_rules = getattr(runtime_settings, "KEYWORD_RULES", {}) if runtime_settings else {}
+            learned_rules = getattr(runtime_settings, "LEARNED_RULES", {}) if runtime_settings else {}
 
             for i, (filepath, text, file_hash) in enumerate(
                 zip(filepaths, texts, hashes)
@@ -220,6 +223,24 @@ class IncrementalAnalyzer:
                     file_hash = hashlib.md5(text.encode("utf-8")).hexdigest()
                     hashes[i] = file_hash
 
+                is_lexical_match = False
+                filename_only = os.path.basename(filepath).lower()
+                doc_lower = text.lower() if text else ""
+                text_to_search = filename_only + " " + doc_lower
+
+                for keyword in keyword_rules.keys():
+                    if keyword.strip() and keyword.lower() in text_to_search:
+                        is_lexical_match = True
+                        break
+
+                if not is_lexical_match and learned_rules:
+                    for keyword in learned_rules.keys():
+                        if keyword.strip() and keyword.lower() in filename_only:
+                            is_lexical_match = True
+                            break
+                            
+                has_historical_target = doc and doc.get("user_verified_target_path")
+
                 if (
                     doc
                     and doc["file_hash"] == file_hash
@@ -229,6 +250,8 @@ class IncrementalAnalyzer:
                 ):
                     embeddings[i] = doc["embedding"]
                 elif text.startswith("[STATUS:"):
+                    embeddings[i] = None
+                elif is_lexical_match or has_historical_target:
                     embeddings[i] = None
                 else:
                     texts_to_encode.append(text)
@@ -245,18 +268,15 @@ class IncrementalAnalyzer:
                 for idx, new_emb in zip(indices_to_encode, new_embeddings):
                     embeddings[idx] = new_emb
 
+            documents_to_upsert = []
             for filepath, text, file_hash, embedding in zip(
                 filepaths, texts, hashes, embeddings
             ):
-                db.upsert_document(
-                    base_dir,
-                    filepath,
-                    file_hash,
-                    text,
-                    embedding,
-                    self.active_model_name,
-                    self.active_dimension
+                documents_to_upsert.append(
+                    (base_dir, filepath, file_hash, text, embedding, self.active_model_name, self.active_dimension)
                 )
+                
+            db.upsert_documents(documents_to_upsert)
 
         except Exception as e:
             logging.error(f"Failed during partial_fit. Error: {str(e)}", exc_info=True)
