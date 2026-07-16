@@ -52,6 +52,7 @@ class AutoSorterApp(ctk.CTk):
         self.completed_files = 0
         self._initial_cached_files = 0
         self.start_time: float = 0.0
+        self._cancel_analysis_flag = False
 
         self.analyzer = None
         self.verifier = VerificationEngine()
@@ -136,6 +137,19 @@ class AutoSorterApp(ctk.CTk):
         self.progress_bar = ctk.CTkProgressBar(self.main_frame, width=500)
         self.progress_bar.set(0)
         self.progress_bar.pack(pady=10)
+
+        self.cancel_btn = ctk.CTkButton(
+            self.main_frame,
+            text="Cancel Analysis",
+            command=self.cancel_analysis,
+            fg_color="red",
+            hover_color="darkred",
+            width=120,
+            height=28
+        )
+        self.cancel_btn.pack(pady=2)
+        # Initially hide the cancel button or disable it
+        self.cancel_btn.pack_forget()
 
         self.meta_label = ctk.CTkLabel(
             self.main_frame, text="", font=("Roboto", 12, "italic"), text_color="cyan"
@@ -235,6 +249,14 @@ class AutoSorterApp(ctk.CTk):
             fg_color="transparent",
         )
         self.settings_view.pack(fill="both", expand=True)
+
+    def cancel_analysis(self):
+        """Cancel the ongoing background analysis task."""
+        self._cancel_analysis_flag = True
+        self.status_label.configure(text="Cancelling...", text_color="red")
+        self.cancel_btn.configure(state="disabled")
+        if self.analyzer:
+            self.analyzer.terminate()
 
     def show_main_view(self):
         """Switch the main interface to the main sorting view."""
@@ -593,6 +615,10 @@ class AutoSorterApp(ctk.CTk):
             self.total_files = 0
             self.completed_files = 0
             self._initial_cached_files = 0
+            self._cancel_analysis_flag = False
+            self.cancel_btn.pack(after=self.progress_bar, pady=5)
+            self.cancel_btn.configure(state="normal")
+            
             self.progress_bar.set(0)
             self.select_btn.configure(state="disabled")
             self.execute_btn.configure(state="disabled")
@@ -851,8 +877,15 @@ class AutoSorterApp(ctk.CTk):
             chunk_size=50,
             active_model_name=self.analyzer.active_model_name,
             active_dimension=self.analyzer.active_dimension,
+            cancel_check=lambda: getattr(self, "_cancel_analysis_flag", False)
         ):
+            if getattr(self, "_cancel_analysis_flag", False):
+                break
+                
             self.analyzer.partial_fit(self.base_dir, chunk)
+
+            if getattr(self, "_cancel_analysis_flag", False):
+                break
 
             new_plan = self.analyzer.generate_sorting_plan(self.base_dir, self.settings)
             self._apply_locked_files(new_plan)
@@ -1018,6 +1051,16 @@ class AutoSorterApp(ctk.CTk):
 
     def _finalize_pipeline(self):
         """Execute final UI transition after all files are processed."""
+        if hasattr(self, "cancel_btn"):
+            self.cancel_btn.pack_forget()
+            
+        if getattr(self, "_cancel_analysis_flag", False):
+            self.status_label.configure(text="Analysis cancelled.", text_color="red")
+            self.execute_btn.configure(state="disabled")
+            self.select_btn.configure(state="normal")
+            self.meta_label.configure(text="")
+            return
+            
         self.plan_errors = self.verifier.verify_plan(self.base_dir, self.plan)
         has_errors = bool(self.plan_errors)
         self.status_label.configure(
