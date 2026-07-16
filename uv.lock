@@ -5185,7 +5185,7 @@ dev = [
 requires-dist = [
     { name = "cryptography", specifier = ">=41.0.0" },
     { name = "customtkinter" },
-    { name = "keyring", specifier = ">=25.7.0" },
+    { name = "keyring", specifier = ">=24.0.0" },
     { name = "mkdocs", marker = "extra == 'dev'" },
     { name = "mkdocs-material", marker = "extra == 'dev'" },
     { name = "mkdocstrings", extras = ["python"], marker = "extra == 'dev'" },

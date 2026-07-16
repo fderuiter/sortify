@@ -610,48 +610,60 @@ class AutoSorterApp(ctk.CTk):
 
     def select_directory(self) -> None:
         """Open a directory selection dialog and initialize processing threads."""
-        self.base_dir = filedialog.askdirectory(title="Select Directory")
-        if self.base_dir:
-            self.total_files = 0
-            self.completed_files = 0
-            self._initial_cached_files = 0
-            self._cancel_analysis_flag = False
-            self.cancel_btn.pack(after=self.progress_bar, pady=5)
-            self.cancel_btn.configure(state="normal")
-            
-            self.progress_bar.set(0)
+        from app.ui.dialog_helper import ask_directory_async
+
+        def disable_ui():
             self.select_btn.configure(state="disabled")
-            self.execute_btn.configure(state="disabled")
 
-            self.locked_files = {}
-            self.manual_folders = set()
-            self.protected_folders = set()
-            self.plan = {}
-            self.expanded_nodes = set()
-            self.flat_plan = []
-            self.current_start = 0
-            self.tree.delete(*self.tree.get_children())
+        def enable_ui():
+            self.select_btn.configure(state="normal")
 
-            from app.config import get_app_dir
+        def on_selected(path):
+            if path:
+                self.base_dir = path
+                self.total_files = 0
+                self.completed_files = 0
+                self._initial_cached_files = 0
+                
+                self._cancel_analysis_flag = False
+                self.cancel_btn.pack(after=self.progress_bar, pady=5)
+                self.cancel_btn.configure(state="normal")
+                
+                self.progress_bar.set(0)
+                self.select_btn.configure(state="disabled")
+                self.execute_btn.configure(state="disabled")
 
-            user_model_path = get_app_dir() / "model"
+                self.locked_files = {}
+                self.manual_folders = set()
+                self.protected_folders = set()
+                self.plan = {}
+                self.expanded_nodes = set()
+                self.flat_plan = []
+                self.current_start = 0
+                self.tree.delete(*self.tree.get_children())
 
-            if self.settings.AI_CONSENT_GRANTED is True:
-                model_path = str(user_model_path)
-            else:
-                model_path = None
+                from app.config import get_app_dir
 
-            self.analyzer = IncrementalAnalyzer(
-                self.settings.MAX_FOLDERS,
-                self.settings.STOP_WORDS,
-                model_path=model_path,
-            )
+                user_model_path = get_app_dir() / "model"
 
-            self.status_label.configure(
-                text="Scanning directory...", text_color="white"
-            )
+                if self.settings.AI_CONSENT_GRANTED is True:
+                    model_path = str(user_model_path)
+                else:
+                    model_path = None
 
-            threading.Thread(target=self._scan_and_process_worker, daemon=True).start()
+                self.analyzer = IncrementalAnalyzer(
+                    self.settings.MAX_FOLDERS,
+                    self.settings.STOP_WORDS,
+                    model_path=model_path,
+                )
+
+                self.status_label.configure(
+                    text="Scanning directory...", text_color="white"
+                )
+
+                threading.Thread(target=self._scan_and_process_worker, daemon=True).start()
+
+        ask_directory_async(self, "Select Directory", on_selected, disable_ui, enable_ui)
 
     def _scan_and_process_worker(self):
         items_to_sort = self._get_files_recursively(self.base_dir)
