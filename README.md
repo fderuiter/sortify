@@ -29,7 +29,7 @@ Smart AutoSorter AI Pro is distributed as a zero-config standalone executable. Y
 2. Make the file executable: `chmod +x SmartAutoSorter-Linux`
 3. Run the application: `./SmartAutoSorter-Linux`
 
-For development, you can still run the application from source using `uv run app/main.py`.
+For core contributors and development setup, please refer to the [Contributor Guide](docs/contributor.md).
 
 ## Architecture
 
