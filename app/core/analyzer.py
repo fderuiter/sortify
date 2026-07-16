@@ -440,13 +440,38 @@ class IncrementalAnalyzer:
                             return res
                 return None
 
+            from app.core.cache import load_cache
+            _, locked_files, _, _ = load_cache(base_dir)
+            if locked_files is None:
+                locked_files = {}
+
+            compliance_targets = {f: target_folder for f, target_folder, keyword, routed_by, ext_status in keyword_plan_files}
+
             for f, override_data in historical_overrides.items():
                 target_folder, ext_status = override_data
+                
+                is_conflicted = False
+                compliance_path = None
+                
+                if f in compliance_targets and compliance_targets[f] != target_folder:
+                    compliance_path = compliance_targets[f]
+                    
+                    if f in locked_files and locked_files[f] in (target_folder, compliance_path):
+                        # User already resolved this conflict
+                        target_folder = locked_files[f]
+                    else:
+                        is_conflicted = True
+
                 remove_from_plan(plan, f)
                 
                 info_dict = {"routed_by": "historical"}
                 if ext_status:
                     info_dict["extraction_status"] = ext_status
+                    
+                if is_conflicted:
+                    info_dict["is_conflicted"] = True
+                    info_dict["compliance_path"] = compliance_path
+                    info_dict["historical_path"] = target_folder
                     
                 if not target_folder:
                     plan[f] = info_dict

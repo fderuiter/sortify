@@ -1111,6 +1111,11 @@ class AutoSorterApp(ctk.CTk):
                 )
                 text = f"{indent}{icon}{display_name}"
                 if isinstance(item["node"], dict):
+                    if item["node"].get("is_conflicted"):
+                        compliance = item["node"].get("compliance_path", "Unknown")
+                        historical = item["node"].get("historical_path", "Unknown")
+                        text += f" [⚠️ CONFLICT: Compliance={compliance} | Historical={historical}]"
+                        
                     routed_by = item["node"].get("routed_by")
                     if routed_by == "keyword":
                         kw = item["node"].get("keyword", "")
@@ -1217,16 +1222,31 @@ class AutoSorterApp(ctk.CTk):
         return "break"
 
     def on_tree_click(self, event):
-        """Handle click events on the tree view, expanding or collapsing folders."""
+        """Handle click events on the tree view, expanding or collapsing folders, or showing conflict menu."""
         item = self.tree.identify_row(event.y)
         if not item:
             return
-        if item.startswith("folder:") or "/" in item:
+        if item.startswith("folder:") or ("/" in item and not item.startswith("file:")):
             if item in self.expanded_nodes:
                 self.expanded_nodes.remove(item)
             else:
                 self.expanded_nodes.add(item)
             self.render_tree()
+        elif item.startswith("file:"):
+            node = next((x["node"] for x in self.flat_plan if x["id"] == item), None)
+            if node and isinstance(node, dict) and node.get("is_conflicted"):
+                conflict_menu = tk.Menu(self, tearoff=0)
+                compliance_path = node.get("compliance_path", "Unknown")
+                historical_path = node.get("historical_path", "Unknown")
+                conflict_menu.add_command(
+                    label=f"Route to Compliance: {compliance_path}",
+                    command=lambda p=compliance_path: self._resolve_conflict(item, p)
+                )
+                conflict_menu.add_command(
+                    label=f"Route to Historical: {historical_path}",
+                    command=lambda p=historical_path: self._resolve_conflict(item, p)
+                )
+                conflict_menu.tk_popup(event.x_root, event.y_root)
 
     def get_node_parent(self, item_id):
         """Retrieve the parent ID for a given node ID in the flattened plan."""
@@ -1513,10 +1533,37 @@ class AutoSorterApp(ctk.CTk):
             self.context_menu.tk_popup(event.x_root, event.y_root)
         elif item and item.startswith("file:"):
             node = next((x["node"] for x in self.flat_plan if x["id"] == item), None)
-            if node and isinstance(node, dict) and node.get("__type__") == "directory":
-                self.candidate_context_menu.tk_popup(event.x_root, event.y_root)
+            if node and isinstance(node, dict):
+                if node.get("is_conflicted"):
+                    conflict_menu = tk.Menu(self, tearoff=0)
+                    compliance_path = node.get("compliance_path", "Unknown")
+                    historical_path = node.get("historical_path", "Unknown")
+                    conflict_menu.add_command(
+                        label=f"Route to Compliance: {compliance_path}",
+                        command=lambda p=compliance_path: self._resolve_conflict(item, p)
+                    )
+                    conflict_menu.add_command(
+                        label=f"Route to Historical: {historical_path}",
+                        command=lambda p=historical_path: self._resolve_conflict(item, p)
+                    )
+                    conflict_menu.tk_popup(event.x_root, event.y_root)
+                elif node.get("__type__") == "directory":
+                    self.candidate_context_menu.tk_popup(event.x_root, event.y_root)
         elif not item:
             self.bg_context_menu.tk_popup(event.x_root, event.y_root)
+
+    def _resolve_conflict(self, item, selected_path):
+        filename = item.split(":", 1)[1]
+        self.locked_files[filename] = selected_path
+        from app.core.cache import save_cache_async
+        save_cache_async(
+            self.base_dir,
+            self.analyzer.corpus,
+            self.locked_files,
+            self.analyzer.index_to_word,
+            self.manual_folders,
+        )
+        self._rebuild_plan()
 
     def _toggle_keep_folder(self):
         if not self.context_item or not self.context_item.startswith("file:"):
