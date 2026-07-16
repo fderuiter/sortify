@@ -1,11 +1,9 @@
-"""Database connection utility for autosorter."""
-
 import sqlite3
-
 
 def get_db_connection(db_path: str) -> sqlite3.Connection:
     """Create and configure a new database connection with performance parameters."""
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, check_same_thread=False)
+    
     # Enable Write-Ahead Logging (WAL) for simultaneous reads and writes
     conn.execute("PRAGMA journal_mode = WAL")
     # Increase the database in-memory page cache to hold vector embeddings
@@ -18,4 +16,25 @@ def get_db_connection(db_path: str) -> sqlite3.Connection:
     )  # 64MB limit for WAL/rollback logs
     # Set synchronous mode to NORMAL for WAL
     conn.execute("PRAGMA synchronous = NORMAL")
+    
+    conn.enable_load_extension(True)
+    try:
+        conn.load_extension("sqlcipher")
+    except sqlite3.OperationalError:
+        try:
+            conn.load_extension("libsqlcipher")
+        except sqlite3.OperationalError:
+            pass
+            
+    from app.config import get_app_dir
+    key_path = get_app_dir() / "autosorter.key"
+    if key_path.exists():
+        try:
+            with open(key_path, "r", encoding="utf-8") as f:
+                key = f.read().strip()
+            if key:
+                conn.execute(f"PRAGMA key = '{key}';")
+        except Exception:
+            pass
+
     return conn
