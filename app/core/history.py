@@ -153,26 +153,60 @@ class HistoryManager:
         from app.core.scanner import get_files_recursively
         current_files = get_files_recursively(base_dir)
         
-        current_inodes = set()
-        current_sigs = set()
+        inode_counts = {}
+        current_inodes = {}
+        active_files_by_rel_path = {}
+        active_files_by_sig = {}
+        inodes_reliable = True
+
         for rel_path in current_files:
             abs_path = os.path.join(base_dir, rel_path)
             try:
                 st = os.stat(abs_path)
-                current_inodes.add(st.st_ino)
-                current_sigs.add((st.st_size, st.st_mtime))
             except OSError:
                 continue
+                
+            ino = st.st_ino
+            size = st.st_size
+            mtime = st.st_mtime
+            
+            inode_counts[ino] = inode_counts.get(ino, 0) + 1
+            if ino == 0 or inode_counts[ino] > 1:
+                inodes_reliable = False
+                
+            current_inodes[ino] = abs_path
+            active_files_by_rel_path[rel_path] = (size, mtime)
+            
+            sig = (size, mtime)
+            if sig not in active_files_by_sig:
+                active_files_by_sig[sig] = []
+            active_files_by_sig[sig].append(abs_path)
 
         missing = []
         for rel_path, inode, size, mtime in snapshot_files:
-            # First check if the original path still exists with the same file
-            # or if the file exists *anywhere* in the base_dir
-            if inode in current_inodes:
-                continue
-            if (size, mtime) in current_sigs:
-                continue
-            missing.append(rel_path)
+            found = False
+            
+            if inodes_reliable and inode in current_inodes:
+                abs_path = current_inodes[inode]
+                del current_inodes[inode] # consume it
+                found = True
+            else:
+                # Fallback Step A
+                curr_sig = active_files_by_rel_path.get(rel_path)
+                if curr_sig == (size, mtime):
+                    abs_path = os.path.join(base_dir, rel_path)
+                    if curr_sig in active_files_by_sig and abs_path in active_files_by_sig[curr_sig]:
+                        active_files_by_sig[curr_sig].remove(abs_path)
+                    found = True
+                else:
+                    # Fallback Step B
+                    sig = (size, mtime)
+                    if sig in active_files_by_sig and active_files_by_sig[sig]:
+                        active_files_by_sig[sig].pop(0)
+                        found = True
+            
+            if not found:
+                missing.append(rel_path)
 
         return missing
 
@@ -194,22 +228,56 @@ class HistoryManager:
 
             from app.core.scanner import get_files_recursively
             current_files = get_files_recursively(base_dir)
+            
+            inode_counts = {}
             current_inodes = {}
-            current_sigs = {}
+            active_files_by_rel_path = {}
+            active_files_by_sig = {}
+            inodes_reliable = True
+            
             for rel_path in current_files:
                 abs_path = os.path.join(base_dir, rel_path)
                 try:
                     st = os.stat(abs_path)
-                    current_inodes[st.st_ino] = abs_path
-                    current_sigs[(st.st_size, st.st_mtime)] = abs_path
                 except OSError:
                     continue
+                    
+                ino = st.st_ino
+                size = st.st_size
+                mtime = st.st_mtime
+                
+                inode_counts[ino] = inode_counts.get(ino, 0) + 1
+                if ino == 0 or inode_counts[ino] > 1:
+                    inodes_reliable = False
+                    
+                current_inodes[ino] = abs_path
+                active_files_by_rel_path[rel_path] = (size, mtime)
+                
+                sig = (size, mtime)
+                if sig not in active_files_by_sig:
+                    active_files_by_sig[sig] = []
+                active_files_by_sig[sig].append(abs_path)
 
             # First compute all intended moves
             moves = []
             for rel_path, inode, size, mtime in snapshot_files:
                 target_abs = os.path.join(base_dir, rel_path)
-                current_abs = current_inodes.get(inode) or current_sigs.get((size, mtime))
+                current_abs = None
+                
+                if inodes_reliable and inode in current_inodes:
+                    current_abs = current_inodes[inode]
+                    del current_inodes[inode]
+                else:
+                    curr_sig = active_files_by_rel_path.get(rel_path)
+                    if curr_sig == (size, mtime):
+                        current_abs = target_abs
+                        if curr_sig in active_files_by_sig and current_abs in active_files_by_sig[curr_sig]:
+                            active_files_by_sig[curr_sig].remove(current_abs)
+                    else:
+                        sig = (size, mtime)
+                        if sig in active_files_by_sig and active_files_by_sig[sig]:
+                            current_abs = active_files_by_sig[sig].pop(0)
+
                 if current_abs:
                     if os.path.exists(current_abs) and not os.path.samefile(current_abs, target_abs) if os.path.exists(target_abs) else True:
                         if current_abs != target_abs:
@@ -253,6 +321,7 @@ class HistoryManager:
                     )
 
             # Execute moves safely to avoid overwriting during cyclic renames
+            created_temps = []
             try:
                 for src, dst in moves:
                     os.makedirs(os.path.dirname(dst), exist_ok=True)
@@ -263,6 +332,7 @@ class HistoryManager:
                         # Collision: move existing target out of the way temporarily
                         temp_dst = dst + f".tmp.{uuid.uuid4().hex}"
                         shutil.move(dst, temp_dst)
+                        created_temps.append(temp_dst)
                         
                         rel_temp_dst = os.path.relpath(temp_dst, base_dir)
 
@@ -294,6 +364,11 @@ class HistoryManager:
                                 """,
                                 (base_dir, rel_dst, snapshot_doc[1], snapshot_doc[2], snapshot_doc[3])
                             )
+                            
+                for tmp in created_temps:
+                    if os.path.exists(tmp):
+                        os.remove(tmp)
+                        
             except Exception as e:
                 conn.execute("UPDATE sessions SET status = 'failed' WHERE session_id = ?", (session_id,))
                 conn.commit()
