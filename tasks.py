@@ -10,7 +10,9 @@ import subprocess
 import sys
 import zipfile
 
+
 def get_uv_cmd():
+    """Retrieve the path to the uv executable or exit if not found."""
     uv_cmd = shutil.which("uv")
     if not uv_cmd:
         cargo_uv = os.path.expanduser("~/.cargo/bin/uv")
@@ -224,6 +226,7 @@ def offline_install(args):
     print("Offline installation complete.")
 
 def main():
+    """Execute the task runner."""
     parser = argparse.ArgumentParser(description="Task runner for Smart AutoSorter AI Pro setup.")
     subparsers = parser.add_subparsers(dest="command", required=True)
     

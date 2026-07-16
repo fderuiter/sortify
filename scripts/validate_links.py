@@ -10,8 +10,7 @@ import urllib.request
 from urllib.parse import urlparse
 
 TARGET_FILES = [
-    "setup.sh",
-    "setup.bat",
+    "tasks.py",
     "app/ui/app.py",
     "scripts/prepare_offline.py",
 ]

@@ -75,7 +75,6 @@ Check the `docs/` folder for the MkDocs configuration or run `tox -e docs` to bu
 
 This repository strictly separates the presentation layer from business logic.
 
-*   **`main.py`**: The application launcher and entry point. It initializes the app via `run_app()` from the UI package.
 *   **`config.py`**: Defines global configuration constants, machine learning parameters, and NLP stop words.
 
 ### `core/` Package (Business Logic & Intelligence)
