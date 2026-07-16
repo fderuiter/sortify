@@ -27,7 +27,7 @@ class IncrementalAnalyzer:
     """
 
     def __init__(
-        self, max_folders: int, stop_words: set, strategy_name: str = "default", model_path: str | None = None
+        self, max_folders: int, stop_words: set, strategy_name: str = "generative", model_path: str | None = None
     ) -> None:
         """Initialize the analyzer with the maximum number of folders."""
         self.max_folders = max_folders
