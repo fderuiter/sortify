@@ -752,19 +752,20 @@ class AutoSorterApp(ctk.CTk):
     def _queue_move(self, src_path, dest_path):
         try:
             from app.core.db import db
+
             rel_src = os.path.relpath(src_path, self.base_dir)
             rel_dest = os.path.relpath(dest_path, self.base_dir)
             if rel_src.startswith(".") or rel_dest.startswith("."):
                 return
-            
+
             with self._update_lock:
                 if self.analyzer and rel_src in self.analyzer.corpus:
                     self.analyzer.corpus[rel_dest] = self.analyzer.corpus.pop(rel_src)
                 if rel_src in self.locked_files:
                     self.locked_files[rel_dest] = self.locked_files.pop(rel_src)
-            
+
             db.update_document_path(self.base_dir, rel_src, rel_dest)
-            
+
             # Re-run plan generation
             self._queue_file(dest_path)
         except Exception:
@@ -773,18 +774,19 @@ class AutoSorterApp(ctk.CTk):
     def _queue_delete(self, file_path):
         try:
             from app.core.db import db
+
             rel_path = os.path.relpath(file_path, self.base_dir)
             if rel_path.startswith("."):
                 return
-            
+
             with self._update_lock:
                 if self.analyzer and rel_path in self.analyzer.corpus:
                     del self.analyzer.corpus[rel_path]
                 if rel_path in self.locked_files:
                     del self.locked_files[rel_path]
-            
+
             db.remove_document(self.base_dir, rel_path)
-            
+
             if self._fs_debounce_timer:
                 self._fs_debounce_timer.cancel()
             self._fs_debounce_timer = threading.Timer(2.0, self._process_pending_files)
@@ -853,9 +855,11 @@ class AutoSorterApp(ctk.CTk):
                 active_model_name=self.analyzer.active_model_name,
                 active_dimension=self.analyzer.active_dimension,
             ):
-                self.analyzer.partial_fit(self.base_dir, chunk)
+                self.analyzer.partial_fit(self.base_dir, chunk, self.settings)
 
-                new_plan = self.analyzer.generate_sorting_plan(self.base_dir, self.settings)
+                new_plan = self.analyzer.generate_sorting_plan(
+                    self.base_dir, self.settings
+                )
                 self._apply_locked_files(new_plan)
                 self.plan = new_plan
 
@@ -864,7 +868,12 @@ class AutoSorterApp(ctk.CTk):
             self.after(0, self._finalize_pipeline)
         except RuntimeError as e:
             if "worker process crashed" in str(e):
-                self.after(0, lambda e=e: self.status_label.configure(text=f"Error: {str(e)}", text_color="red"))
+                self.after(
+                    0,
+                    lambda e=e: self.status_label.configure(
+                        text=f"Error: {str(e)}", text_color="red"
+                    ),
+                )
                 self.after(0, lambda: self.execute_btn.configure(state="disabled"))
                 self.after(0, lambda: self.select_btn.configure(state="normal"))
                 if self.observer:
@@ -1127,7 +1136,7 @@ class AutoSorterApp(ctk.CTk):
                         compliance = item["node"].get("compliance_path", "Unknown")
                         historical = item["node"].get("historical_path", "Unknown")
                         text += f" [⚠️ CONFLICT: Compliance={compliance} | Historical={historical}]"
-                        
+
                     routed_by = item["node"].get("routed_by")
                     if routed_by == "keyword":
                         kw = item["node"].get("keyword", "")
@@ -1135,14 +1144,16 @@ class AutoSorterApp(ctk.CTk):
                     elif routed_by == "pattern":
                         kw = item["node"].get("keyword", "")
                         text += f" [Pattern: {kw}]"
-                    
+
                     ext_status = item["node"].get("extraction_status")
                     if ext_status == "EMPTY":
                         text += " [No text found]"
                     elif ext_status == "ENCRYPTED":
                         text += " [Encrypted]"
                     elif ext_status == "UNSUPPORTED":
-                        text += " [Unsupported format: Files of this type cannot be read]"
+                        text += (
+                            " [Unsupported format: Files of this type cannot be read]"
+                        )
                     elif ext_status == "FAILED":
                         text += " [Extraction failed]"
                 if error_msg:
@@ -1252,11 +1263,11 @@ class AutoSorterApp(ctk.CTk):
                 historical_path = node.get("historical_path", "Unknown")
                 conflict_menu.add_command(
                     label=f"Route to Compliance: {compliance_path}",
-                    command=lambda p=compliance_path: self._resolve_conflict(item, p)
+                    command=lambda p=compliance_path: self._resolve_conflict(item, p),
                 )
                 conflict_menu.add_command(
                     label=f"Route to Historical: {historical_path}",
-                    command=lambda p=historical_path: self._resolve_conflict(item, p)
+                    command=lambda p=historical_path: self._resolve_conflict(item, p),
                 )
                 conflict_menu.tk_popup(event.x_root, event.y_root)
 
@@ -1359,19 +1370,26 @@ class AutoSorterApp(ctk.CTk):
             if moved_file in self.analyzer.corpus:
                 text = self.analyzer.corpus[moved_file]
                 self.analyzer.partial_fit(
-                    self.base_dir, {moved_file: text}
+                    self.base_dir, {moved_file: text}, self.settings
                 )
-                
+
                 if text.startswith("[STATUS:") or text == "":
                     base_name = os.path.basename(moved_file)
                     name_without_ext = os.path.splitext(base_name)[0]
                     import re
-                    words = re.findall(r'[a-zA-Z0-9]+', name_without_ext)
-                    words = [w.lower() for w in words if len(w) > 2 and w.lower() not in self.settings.STOP_WORDS]
-                    
+
+                    words = re.findall(r"[a-zA-Z0-9]+", name_without_ext)
+                    words = [
+                        w.lower()
+                        for w in words
+                        if len(w) > 2 and w.lower() not in self.settings.STOP_WORDS
+                    ]
+
                     target = self.locked_files.get(moved_file)
                     if target and words:
-                        learned_rules = dict(getattr(self.settings, "LEARNED_RULES", {}))
+                        learned_rules = dict(
+                            getattr(self.settings, "LEARNED_RULES", {})
+                        )
                         for w in words:
                             learned_rules[w] = target
                         self.settings.LEARNED_RULES = learned_rules
@@ -1499,7 +1517,7 @@ class AutoSorterApp(ctk.CTk):
                 self.observer = None
 
             summary = execute_moves(self.base_dir, self.plan, self.settings)
-            
+
             # Restart observer
             self._start_watcher()
 
@@ -1552,11 +1570,15 @@ class AutoSorterApp(ctk.CTk):
                     historical_path = node.get("historical_path", "Unknown")
                     conflict_menu.add_command(
                         label=f"Route to Compliance: {compliance_path}",
-                        command=lambda p=compliance_path: self._resolve_conflict(item, p)
+                        command=lambda p=compliance_path: self._resolve_conflict(
+                            item, p
+                        ),
                     )
                     conflict_menu.add_command(
                         label=f"Route to Historical: {historical_path}",
-                        command=lambda p=historical_path: self._resolve_conflict(item, p)
+                        command=lambda p=historical_path: self._resolve_conflict(
+                            item, p
+                        ),
                     )
                     conflict_menu.tk_popup(event.x_root, event.y_root)
                 elif node.get("__type__") == "directory":
@@ -1568,6 +1590,7 @@ class AutoSorterApp(ctk.CTk):
         filename = item.split(":", 1)[1]
         self.locked_files[filename] = selected_path
         from app.core.cache import save_cache_async
+
         save_cache_async(
             self.base_dir,
             self.analyzer.corpus,
@@ -1646,7 +1669,11 @@ class AutoSorterApp(ctk.CTk):
         new_name = dialog.get_input()
         if not new_name:
             return
-        new_name = new_name.replace("/", "").replace("\\", "")
+
+        from app.core.path_utils import sanitize_name
+
+        new_name = sanitize_name(new_name)
+
         if not new_name or new_name == old_name:
             return
 
@@ -1724,7 +1751,11 @@ class AutoSorterApp(ctk.CTk):
         new_name = dialog.get_input()
         if not new_name:
             return
-        new_name = new_name.replace("/", "").replace("\\", "")
+
+        from app.core.path_utils import sanitize_name
+
+        new_name = sanitize_name(new_name)
+
         if not new_name:
             return
 
