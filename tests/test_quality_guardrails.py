@@ -24,6 +24,13 @@ def test_semantic_quality_guardrails():
     # Configure the DB to use a persistent test cache so it's not wiped by other tests
     from app.core.db import db
     old_db_path = db.db_path
+    
+    if os.path.exists("quality_guardrails_cache.db"):
+        try:
+            os.remove("quality_guardrails_cache.db")
+        except OSError:
+            pass
+            
     db.db_path = "quality_guardrails_cache.db"
     db._init_db()
 
