@@ -852,7 +852,7 @@ class AutoSorterApp(ctk.CTk):
             active_model_name=self.analyzer.active_model_name,
             active_dimension=self.analyzer.active_dimension,
         ):
-            self.analyzer.partial_fit(self.base_dir, chunk)
+            self.analyzer.partial_fit(self.base_dir, chunk, self.settings)
 
             new_plan = self.analyzer.generate_sorting_plan(self.base_dir, self.settings)
             self._apply_locked_files(new_plan)
@@ -1347,7 +1347,7 @@ class AutoSorterApp(ctk.CTk):
             if moved_file in self.analyzer.corpus:
                 text = self.analyzer.corpus[moved_file]
                 self.analyzer.partial_fit(
-                    self.base_dir, {moved_file: text}
+                    self.base_dir, {moved_file: text}, self.settings
                 )
                 
                 if text.startswith("[STATUS:") or text == "":
