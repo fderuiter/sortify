@@ -3,6 +3,7 @@
 import os
 import shutil
 import sqlite3
+from app.core.db_conn import get_db_connection
 import time
 import uuid
 from contextlib import closing
@@ -20,7 +21,7 @@ class HistoryManager:
         self._init_db()
 
     def _init_db(self):
-        with closing(sqlite3.connect(self.db_path)) as conn, conn:
+        with closing(get_db_connection(self.db_path)) as conn, conn:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS sessions (
                     session_id TEXT PRIMARY KEY,
@@ -68,7 +69,7 @@ class HistoryManager:
         from app.core.scanner import get_files_recursively
         files = get_files_recursively(base_dir)
 
-        with closing(sqlite3.connect(self.db_path)) as conn, conn:
+        with closing(get_db_connection(self.db_path)) as conn, conn:
             conn.execute(
                 "INSERT INTO sessions (session_id, timestamp, base_dir, status) VALUES (?, ?, ?, ?)",
                 (session_id, timestamp, base_dir, "active")
@@ -105,7 +106,7 @@ class HistoryManager:
 
             # 3. Snapshot DB
             docs = []
-            with closing(sqlite3.connect(db_instance.db_path)) as db_conn, db_conn:
+            with closing(get_db_connection(db_instance.db_path)) as db_conn, db_conn:
                 cur = db_conn.execute(
                     "SELECT filepath, file_hash, extracted_text, embedding FROM documents WHERE base_dir = ?",
                     (base_dir,)
@@ -134,13 +135,13 @@ class HistoryManager:
 
     def get_sessions(self) -> List[Dict[str, Any]]:
         """Retrieve a list of all historical sessions, ordered by time."""
-        with closing(sqlite3.connect(self.db_path)) as conn, conn:
+        with closing(get_db_connection(self.db_path)) as conn, conn:
             cur = conn.execute("SELECT session_id, timestamp, base_dir, status FROM sessions ORDER BY timestamp DESC")
             return [{"session_id": r[0], "timestamp": r[1], "base_dir": r[2], "status": r[3]} for r in cur.fetchall()]
 
     def check_missing_files(self, session_id: str) -> List[str]:
         """Check if any files from the snapshot are missing from the disk."""
-        with closing(sqlite3.connect(self.db_path)) as conn, conn:
+        with closing(get_db_connection(self.db_path)) as conn, conn:
             cur = conn.execute("SELECT base_dir FROM sessions WHERE session_id = ?", (session_id,))
             row = cur.fetchone()
             if not row:
@@ -182,7 +183,7 @@ class HistoryManager:
         if missing and not ignore_missing:
             raise ValueError(f"Cannot rollback: {len(missing)} files from the snapshot are missing from the disk (e.g., {missing[0]}).")
 
-        with closing(sqlite3.connect(self.db_path)) as conn, conn:
+        with closing(get_db_connection(self.db_path)) as conn, conn:
             cur = conn.execute("SELECT base_dir FROM sessions WHERE session_id = ?", (session_id,))
             row = cur.fetchone()
             if not row:
@@ -224,7 +225,7 @@ class HistoryManager:
             snapshot_filepaths = set(snapshot_docs_dict.keys())
 
             # 1. Pre-Move Synchronization
-            with closing(sqlite3.connect(db_instance.db_path)) as db_conn, db_conn:
+            with closing(get_db_connection(db_instance.db_path)) as db_conn, db_conn:
                 cur_docs = db_conn.execute("SELECT filepath FROM documents WHERE base_dir = ?", (base_dir,))
                 current_filepaths = [row[0] for row in cur_docs.fetchall()]
 
@@ -266,7 +267,7 @@ class HistoryManager:
                         
                         rel_temp_dst = os.path.relpath(temp_dst, base_dir)
 
-                        with closing(sqlite3.connect(db_instance.db_path)) as db_conn, db_conn:
+                        with closing(get_db_connection(db_instance.db_path)) as db_conn, db_conn:
                             db_conn.execute("UPDATE documents SET filepath = ? WHERE base_dir = ? AND filepath = ?", (rel_temp_dst, base_dir, rel_dst))
 
                         # The file that was at dst is now at temp_dst. 
@@ -279,7 +280,7 @@ class HistoryManager:
                         if not os.path.exists(dst):
                             shutil.move(src, dst)
 
-                    with closing(sqlite3.connect(db_instance.db_path)) as db_conn, db_conn:
+                    with closing(get_db_connection(db_instance.db_path)) as db_conn, db_conn:
                         db_conn.execute("DELETE FROM documents WHERE base_dir = ? AND filepath = ?", (base_dir, rel_src))
                         snapshot_doc = snapshot_docs_dict.get(rel_dst)
                         if snapshot_doc:

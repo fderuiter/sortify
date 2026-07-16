@@ -3,6 +3,7 @@
 import json
 import logging
 import sqlite3
+from app.core.db_conn import get_db_connection
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 
@@ -15,7 +16,7 @@ _executor = ThreadPoolExecutor(max_workers=1)
 
 def _get_conn():
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db_connection(DB_PATH)
     try:
         with conn:
             conn.execute("""
