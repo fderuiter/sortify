@@ -4,6 +4,7 @@ import logging
 import os
 import platform
 import shutil
+import tempfile
 
 from app.core.link_manager import LinkManager
 
@@ -91,12 +92,12 @@ class VerificationEngine:
         if not os.path.lexists(filepath):
             return False
 
-        # Don't try to open symlinks for appending
+        # Don't try to open symlinks for reading
         if os.path.islink(filepath):
             return os.access(filepath, os.R_OK)
 
         try:
-            with open(filepath, "a"):
+            with open(filepath, "rb"):
                 pass
             return True
         except PermissionError:
@@ -104,20 +105,17 @@ class VerificationEngine:
         except IOError:
             return False
 
-    def _check_symlink_privilege(self, test_dir: str) -> bool:
+    def _check_symlink_privilege(self) -> bool:
         """Test if the OS allows creating symbolic links."""
-        test_src = os.path.join(test_dir, ".test_symlink_src")
-        test_dst = os.path.join(test_dir, ".test_symlink_dst")
         try:
-            with open(test_src, "w") as f:
-                f.write("test")
-            os.symlink(test_src, test_dst)
-            os.remove(test_dst)
-            os.remove(test_src)
-            return True
+            with tempfile.TemporaryDirectory() as temp_dir:
+                test_src = os.path.join(temp_dir, ".test_symlink_src")
+                test_dst = os.path.join(temp_dir, ".test_symlink_dst")
+                with open(test_src, "w") as f:
+                    f.write("test")
+                os.symlink(test_src, test_dst)
+                return True
         except Exception:
-            if os.path.exists(test_src):
-                os.remove(test_src)
             return False
 
     def verify_plan(self, base_dir: str, plan: dict) -> dict:
@@ -170,7 +168,7 @@ class VerificationEngine:
             link_info = LinkManager.get_link_info(src)
             if link_info and link_info["type"] == "symlink":
                 if symlink_privilege is None:
-                    symlink_privilege = self._check_symlink_privilege(base_dir)
+                    symlink_privilege = self._check_symlink_privilege()
                 if not symlink_privilege:
                     errors[rel_src] = (
                         "Operating system blocks link modification due to permission constraints"
