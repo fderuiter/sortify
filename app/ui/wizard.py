@@ -1,3 +1,4 @@
+# ruff: noqa: D101,D102
 """Setup wizard module for AI consent and downloading."""
 
 import math

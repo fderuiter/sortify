@@ -1,5 +1,5 @@
-import sqlite3
 import os
+import sqlite3
 
 import numpy as np
 import pytest
@@ -26,7 +26,10 @@ def test_key_generation(tmp_path, monkeypatch):
     assert key_str is not None
     assert len(key_str) > 0
 
-
+    # Check permissions (0o600) on non-Windows platforms
+    if os.name != "nt":
+        stat = os.stat(key_path)
+        assert oct(stat.st_mode)[-3:] == "600"
 def test_missing_key_with_existing_db(tmp_path, monkeypatch):
     monkeypatch.setattr(crypto, "_fernet_instance", None)
     monkeypatch.setattr(crypto, "get_app_dir", lambda: tmp_path)
@@ -44,13 +47,8 @@ def test_missing_key_with_existing_db(tmp_path, monkeypatch):
     conn.close()
 
     # Attempting to get cipher should now fail because key is missing but DB has data
-    with pytest.raises(
-        RuntimeError,
-        match="Database accessed but encryption key is missing from keychain.",
-    ):
+    with pytest.raises(RuntimeError, match="Database accessed but key file is missing."):
         crypto.get_cipher()
-
-
 def test_missing_key_with_empty_db(tmp_path, monkeypatch):
     monkeypatch.setattr(crypto, "_fernet_instance", None)
     monkeypatch.setattr(crypto, "get_app_dir", lambda: tmp_path)
@@ -70,8 +68,6 @@ def test_missing_key_with_empty_db(tmp_path, monkeypatch):
     cipher = crypto.get_cipher()
     assert cipher is not None
     assert key_path.exists()
-
-
 def test_encryption_decryption(tmp_path, monkeypatch):
     monkeypatch.setattr(crypto, "_fernet_instance", None)
     monkeypatch.setattr(crypto, "get_app_dir", lambda: tmp_path)
@@ -100,8 +96,5 @@ def test_invalid_key(tmp_path, monkeypatch):
     with open(key_path, "w", encoding="utf-8") as f:
         f.write("invalid_key_data_that_is_too_short")
 
-    with pytest.raises(
-        RuntimeError,
-        match="Database accessed but encryption key is missing or invalid.",
-    ):
+    with pytest.raises(RuntimeError, match="Database accessed but key file is missing or invalid."):
         crypto.get_cipher()

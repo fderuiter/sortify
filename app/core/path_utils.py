@@ -1,5 +1,4 @@
 """Utility functions for handling paths and sanitizing filenames."""
-
 import re
 
 RESERVED_NAMES = {
