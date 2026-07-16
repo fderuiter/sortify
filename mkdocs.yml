@@ -29,4 +29,3 @@ nav:
     - Developer Guides:
       - Core: core.md
       - UI: ui.md
-      - Config: config.md
