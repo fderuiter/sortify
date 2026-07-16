@@ -21,6 +21,7 @@ plugins:
 nav:
   - User Guides: user_guide.md
   - Administrator Guide: admin_guide.md
+  - Troubleshooting: troubleshooting.md
   - Developer Reference:
     - API Reference: api_reference.md
     - Architecture & Internals: architecture.md
