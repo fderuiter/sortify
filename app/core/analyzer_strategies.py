@@ -121,6 +121,9 @@ class RecursiveKMeansStrategy:
             sub_embeddings = [item[2] for item in group]
 
             folder_name = self._get_cluster_keywords(sub_documents)
+            
+            from app.core.path_utils import sanitize_name
+            folder_name = sanitize_name(folder_name)
 
             if len(group) == len(documents):
                 for f in sub_filenames:

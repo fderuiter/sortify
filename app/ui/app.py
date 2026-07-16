@@ -1634,7 +1634,10 @@ class AutoSorterApp(ctk.CTk):
         new_name = dialog.get_input()
         if not new_name:
             return
-        new_name = new_name.replace("/", "").replace("\\", "")
+            
+        from app.core.path_utils import sanitize_name
+        new_name = sanitize_name(new_name)
+        
         if not new_name or new_name == old_name:
             return
 
@@ -1712,7 +1715,10 @@ class AutoSorterApp(ctk.CTk):
         new_name = dialog.get_input()
         if not new_name:
             return
-        new_name = new_name.replace("/", "").replace("\\", "")
+            
+        from app.core.path_utils import sanitize_name
+        new_name = sanitize_name(new_name)
+        
         if not new_name:
             return
 
