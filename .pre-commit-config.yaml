@@ -29,4 +29,10 @@ repos:
         language: system
         files: '^(setup\.sh|setup\.bat|app/ui/app\.py|scripts/prepare_offline\.py)$'
         pass_filenames: false
+      - id: validate-config-schema
+        name: Validate Configuration Schema
+        entry: uv run python scripts/validate_config.py
+        language: system
+        files: '^app/config\.py$'
+        pass_filenames: false
 

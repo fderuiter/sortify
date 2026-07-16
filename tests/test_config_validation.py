@@ -84,3 +84,41 @@ def test_runtime_validation_trigger(tmp_path):
     # Cleanup the timer to avoid background thread noise in pytest
     if app_settings._save_timer:
         app_settings._save_timer.cancel()
+
+def test_config_parameter_bounds():
+    """Test that out-of-bounds configuration values are rejected."""
+    # MAX_WORKERS: 1 to 64
+    with pytest.raises(ValidationError):
+        Settings(MAX_WORKERS=0)
+    with pytest.raises(ValidationError):
+        Settings(MAX_WORKERS=65)
+    assert Settings(MAX_WORKERS=1).MAX_WORKERS == 1
+    assert Settings(MAX_WORKERS=64).MAX_WORKERS == 64
+
+    # MAX_FOLDERS: 1 to 50
+    with pytest.raises(ValidationError):
+        Settings(MAX_FOLDERS=0)
+    with pytest.raises(ValidationError):
+        Settings(MAX_FOLDERS=51)
+    
+    # MAX_DEPTH: 1 to 10
+    with pytest.raises(ValidationError):
+        Settings(MAX_DEPTH=0)
+    with pytest.raises(ValidationError):
+        Settings(MAX_DEPTH=11)
+        
+    # MAX_FEATURES: 1 to 10
+    with pytest.raises(ValidationError):
+        Settings(MAX_FEATURES=0)
+    with pytest.raises(ValidationError):
+        Settings(MAX_FEATURES=11)
+
+def test_config_invalid_structures():
+    """Test that invalid types/structures are rejected."""
+    with pytest.raises(ValidationError):
+        Settings(KEYWORD_RULES=[1, 2, 3])  # Should be a dict
+    with pytest.raises(ValidationError):
+        Settings(MAX_WORKERS="not an int")
+    with pytest.raises(ValidationError):
+        Settings(CLEANUP_EMPTY_FOLDERS="invalid bool")
+
