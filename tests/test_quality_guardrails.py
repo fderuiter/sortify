@@ -25,6 +25,8 @@ def test_semantic_quality_guardrails():
     from app.core.db import db
     old_db_path = db.db_path
     db.db_path = "quality_guardrails_cache.db"
+    if os.path.exists(db.db_path):
+        os.remove(db.db_path)
     db._init_db()
 
     try:

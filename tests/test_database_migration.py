@@ -26,7 +26,7 @@ def test_migration_from_v1(tmp_path):
     with sqlite3.connect(db_path) as conn:
         cursor = conn.cursor()
         cursor.execute("PRAGMA user_version")
-        assert cursor.fetchone()[0] == 3
+        assert cursor.fetchone()[0] == Database.CURRENT_VERSION
         
         cursor.execute("PRAGMA table_info(documents)")
         columns = [row[1] for row in cursor.fetchall()]
@@ -60,7 +60,7 @@ def test_migration_from_v2(tmp_path):
     with sqlite3.connect(db_path) as conn:
         cursor = conn.cursor()
         cursor.execute("PRAGMA user_version")
-        assert cursor.fetchone()[0] == 3
+        assert cursor.fetchone()[0] == Database.CURRENT_VERSION
         
         cursor.execute("PRAGMA table_info(documents)")
         columns = [row[1] for row in cursor.fetchall()]
@@ -79,7 +79,7 @@ def test_migration_from_empty(tmp_path):
     with sqlite3.connect(db_path) as conn:
         cursor = conn.cursor()
         cursor.execute("PRAGMA user_version")
-        assert cursor.fetchone()[0] == 3
+        assert cursor.fetchone()[0] == Database.CURRENT_VERSION
         
         cursor.execute("PRAGMA table_info(documents)")
         columns = [row[1] for row in cursor.fetchall()]
