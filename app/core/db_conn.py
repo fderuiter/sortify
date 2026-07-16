@@ -1,4 +1,7 @@
+"""Database connection module."""
+
 import sqlite3
+
 
 def get_db_connection(db_path: str) -> sqlite3.Connection:
     """Create and configure a new database connection with performance parameters."""
@@ -17,14 +20,18 @@ def get_db_connection(db_path: str) -> sqlite3.Connection:
     # Set synchronous mode to NORMAL for WAL
     conn.execute("PRAGMA synchronous = NORMAL")
     
-    conn.enable_load_extension(True)
     try:
-        conn.load_extension("sqlcipher")
-    except sqlite3.OperationalError:
+        conn.enable_load_extension(True)
         try:
-            conn.load_extension("libsqlcipher")
+            conn.load_extension("sqlcipher")
         except sqlite3.OperationalError:
-            pass
+            try:
+                conn.load_extension("libsqlcipher")
+            except sqlite3.OperationalError:
+                pass
+    except AttributeError:
+        # SQLite wasn't compiled with enable_load_extension
+        pass
             
     from app.config import get_app_dir
     key_path = get_app_dir() / "autosorter.key"

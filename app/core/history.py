@@ -8,8 +8,8 @@ from contextlib import closing
 from typing import Any, Dict, List
 
 from app.config import get_app_dir
-from app.core.db_conn import get_db_connection
 from app.core.db import db as db_instance
+from app.core.db_conn import get_db_connection
 
 
 class HistoryManager:

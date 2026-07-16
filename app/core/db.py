@@ -1,14 +1,19 @@
-import sqlite3
-from contextlib import closing
-import numpy as np
-import threading
-import queue
+"""Database module for managing application state."""
+
 import os
+import queue
+import threading
+from contextlib import closing
+
+import numpy as np
 
 from app.config import get_app_dir
 from app.core.db_conn import get_db_connection
 
+
 class Database:
+    """Manages the application database and schema."""
+
     CURRENT_VERSION = 4
 
     def __init__(self, db_path=None):
@@ -76,6 +81,7 @@ class Database:
                 conn.execute(f"PRAGMA user_version = {self.CURRENT_VERSION}")
 
     def get_document(self, base_dir, filepath):
+        """Retrieve a specific document from the database."""
         with closing(get_db_connection(self.db_path)) as conn, conn:
             cursor = conn.execute(
                 "SELECT file_hash, extracted_text, embedding, model_name, vector_dimension FROM documents WHERE base_dir = ? AND filepath = ?",
@@ -96,6 +102,7 @@ class Database:
             return None
 
     def upsert_document(self, base_dir, filepath, file_hash, extracted_text, embedding, model_name=None, vector_dimension=None):
+        """Insert or update a single document."""
         self.upsert_documents([(base_dir, filepath, file_hash, extracted_text, embedding, model_name, vector_dimension)])
 
     def _upsert_documents_sync(self, documents):
@@ -123,9 +130,11 @@ class Database:
             )
 
     def upsert_documents(self, documents):
+        """Insert or update multiple documents."""
         self._execute_write(self._upsert_documents_sync, documents)
 
     def get_all_documents(self, base_dir):
+        """Retrieve all documents for a given base directory."""
         with closing(get_db_connection(self.db_path)) as conn, conn:
             cursor = conn.execute(
                 "SELECT filepath, extracted_text, embedding, file_hash, user_verified_target_path, model_name, vector_dimension FROM documents WHERE base_dir = ?",
@@ -154,6 +163,7 @@ class Database:
             )
 
     def set_user_verified_target(self, base_dir, file_hash, target_path):
+        """Update the user-verified target path for a document."""
         self._execute_write(self._set_user_verified_target_sync, base_dir, file_hash, target_path)
 
     def _remove_document_sync(self, base_dir, filepath):
@@ -161,6 +171,7 @@ class Database:
             conn.execute("DELETE FROM documents WHERE base_dir = ? AND filepath = ?", (base_dir, filepath))
 
     def remove_document(self, base_dir, filepath):
+        """Delete a document from the database."""
         self._execute_write(self._remove_document_sync, base_dir, filepath)
 
     def _update_document_path_sync(self, base_dir, old_filepath, new_filepath):
@@ -172,6 +183,7 @@ class Database:
             )
 
     def update_document_path(self, base_dir, old_filepath, new_filepath):
+        """Update the path of an existing document."""
         self._execute_write(self._update_document_path_sync, base_dir, old_filepath, new_filepath)
 
     def _clear_sync(self, base_dir=None):
@@ -182,6 +194,7 @@ class Database:
                 conn.execute("DELETE FROM documents")
 
     def clear(self, base_dir=None):
+        """Clear documents from the database."""
         self._execute_write(self._clear_sync, base_dir)
 
 
