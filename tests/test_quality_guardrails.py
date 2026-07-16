@@ -25,7 +25,7 @@ def test_semantic_quality_guardrails():
     from app.core.db import db
     old_db_path = db.db_path
     db.db_path = "quality_guardrails_cache.db"
-    db._init_db()
+    db.init_db()
 
     try:
         # 2. Set up deterministic sequential ingestion
