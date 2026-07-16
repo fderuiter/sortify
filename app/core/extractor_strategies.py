@@ -15,6 +15,7 @@ _vision_model_loaded = False
 
 
 def get_vision_model():
+    """Lazily load and return the vision-language model pipeline."""
     global _vision_model, _vision_model_loaded
     if not _vision_model_loaded:
         _vision_model_loaded = True
