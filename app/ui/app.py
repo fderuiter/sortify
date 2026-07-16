@@ -9,7 +9,7 @@ import threading
 import time
 import tkinter as tk
 import webbrowser
-from tkinter import filedialog, ttk
+from tkinter import ttk
 
 import customtkinter as ctk
 from pydantic import ValidationError
