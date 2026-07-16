@@ -1,9 +1,10 @@
 from unittest.mock import MagicMock
+
 import pytest
-import sys
 
 from app.core.extractor import extract_file_text
-from app.core.extractor_strategies import get_vision_model, ImageExtractor, PdfExtractor
+from app.core.extractor_strategies import get_vision_model
+
 
 @pytest.fixture(autouse=True)
 def reset_vision_model(monkeypatch):
