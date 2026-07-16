@@ -2,13 +2,35 @@ import shutil
 import tempfile
 from pathlib import Path
 
+import keyring
+from keyring.backend import KeyringBackend
 import pytest
 
 from app.core.db import db
 
+class MemoryKeyring(KeyringBackend):
+    priority = 1
+    def __init__(self):
+        self.passwords = {}
+    def get_password(self, service, username):
+        return self.passwords.get(service, {}).get(username)
+    def set_password(self, service, username, password):
+        self.passwords.setdefault(service, {})[username] = password
+    def delete_password(self, service, username):
+        if service in self.passwords and username in self.passwords[service]:
+            del self.passwords[service][username]
+
+_memory_keyring = MemoryKeyring()
+
+@pytest.fixture(autouse=True)
+def reset_memory_keyring():
+    _memory_keyring.passwords.clear()
 
 @pytest.fixture(scope="session", autouse=True)
 def isolate_test_environment(monkeypatch_session):
+    # Use in-memory keyring for all tests
+    keyring.set_keyring(_memory_keyring)
+    
     # Use a temporary directory for all app data during tests
     temp_dir = tempfile.mkdtemp(prefix="test_autosorter_appdir_")
     

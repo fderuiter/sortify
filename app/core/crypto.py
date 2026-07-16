@@ -2,12 +2,16 @@
 
 import os
 import sqlite3
+import keyring
 
 from cryptography.fernet import Fernet
 
 from app.config import get_app_dir
 
 _fernet_instance = None
+
+KEYRING_SERVICE = "AutoSorter"
+KEYRING_ACCOUNT = "DatabaseDecryptionKey"
 
 def get_cipher():
     """Get or initialize the Fernet cipher instance."""
@@ -16,8 +20,35 @@ def get_cipher():
         return _fernet_instance
 
     key_path = get_app_dir() / "secret.key"
+    key = None
     
-    if not key_path.exists():
+    # 1. Try loading from Keyring
+    try:
+        key_str = keyring.get_password(KEYRING_SERVICE, KEYRING_ACCOUNT)
+        if key_str:
+            key = key_str.encode("utf-8")
+    except Exception:
+        pass
+
+    # 2. Check for Legacy Plaintext File
+    if key is None and key_path.exists():
+        try:
+            with open(key_path, "rb") as f:
+                key = f.read().strip()
+            
+            # Try to migrate to keyring
+            try:
+                keyring.set_password(KEYRING_SERVICE, KEYRING_ACCOUNT, key.decode("utf-8"))
+                verify_str = keyring.get_password(KEYRING_SERVICE, KEYRING_ACCOUNT)
+                if verify_str and verify_str.encode("utf-8") == key:
+                    os.unlink(key_path)  # Securely delete legacy file
+            except Exception:
+                pass # Fallback to keeping it in the file
+        except Exception:
+            pass
+
+    # 3. Database Guard
+    if key is None:
         db_path = get_app_dir() / "autosorter.db"
         if db_path.exists():
             try:
@@ -33,18 +64,27 @@ def get_cipher():
             except sqlite3.Error:
                 pass
         
-        # Generate new key with strict permissions
+        # 4. Generate new key
         key = Fernet.generate_key()
-        fd = os.open(key_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        with os.fdopen(fd, 'wb') as f:
-            f.write(key)
+        saved_to_keyring = False
+        try:
+            keyring.set_password(KEYRING_SERVICE, KEYRING_ACCOUNT, key.decode("utf-8"))
+            verify_str = keyring.get_password(KEYRING_SERVICE, KEYRING_ACCOUNT)
+            if verify_str and verify_str.encode("utf-8") == key:
+                saved_to_keyring = True
+        except Exception:
+            pass
             
-    if not key_path.exists():
+        if not saved_to_keyring:
+            # Fallback to local file with strict permissions
+            fd = os.open(key_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, 'wb') as f:
+                f.write(key)
+            
+    if key is None:
         raise RuntimeError("Database accessed but key file is missing.")
 
     try:
-        with open(key_path, "rb") as f:
-            key = f.read().strip()
         _fernet_instance = Fernet(key)
         return _fernet_instance
     except Exception as e:
