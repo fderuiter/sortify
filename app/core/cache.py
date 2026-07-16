@@ -2,20 +2,26 @@
 
 import json
 import logging
-import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 
 from app.config import get_app_dir
+from app.core.db import get_connection, sqlite3
 
 DB_PATH = get_app_dir() / "cache.db"
 
 _executor = ThreadPoolExecutor(max_workers=1)
 
 
+_cached_conn = None
+
 def _get_conn():
+    global _cached_conn
+    if _cached_conn is not None:
+        return _cached_conn
+        
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_connection(DB_PATH)
     try:
         with conn:
             conn.execute("""
@@ -31,11 +37,11 @@ def _get_conn():
                 conn.execute("ALTER TABLE directory_cache ADD COLUMN manual_folders TEXT")
             except sqlite3.OperationalError:
                 pass
+        _cached_conn = conn
         return conn
     except Exception:
         conn.close()
         raise
-
 
 def _save_cache_sync(
     source_directory: str,
@@ -47,7 +53,8 @@ def _save_cache_sync(
     if manual_folders is None:
         manual_folders = set()
     try:
-        with closing(_get_conn()) as conn, conn:
+        conn = _get_conn()
+        with conn:
             conn.execute(
                 """
                 INSERT INTO directory_cache (source_directory, corpus, locked_files, index_to_word, manual_folders)
@@ -104,12 +111,12 @@ def save_cache_sync(
 def load_cache(source_directory: str):
     """Load the cache for a given source directory from SQLite database."""
     try:
-        with closing(_get_conn()) as conn, conn:
-            cur = conn.execute(
-                "SELECT corpus, locked_files, index_to_word, manual_folders FROM directory_cache WHERE source_directory = ?",
-                (source_directory,),
-            )
-            row = cur.fetchone()
+        conn = _get_conn()
+        cur = conn.execute(
+            "SELECT corpus, locked_files, index_to_word, manual_folders FROM directory_cache WHERE source_directory = ?",
+            (source_directory,),
+        )
+        row = cur.fetchone()
             
         if row:
             corpus = json.loads(row[0])

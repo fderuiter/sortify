@@ -1,6 +1,6 @@
 """Local database management for autosorter."""
 
-import sqlite3
+import sys
 from contextlib import closing
 
 import numpy as np
@@ -11,8 +11,38 @@ from app.core.crypto import (
     decrypt_text,
     encrypt_embedding,
     encrypt_text,
+    get_cipher,
+    get_raw_key
 )
 
+def get_sqlite_engine():
+    import importlib
+    
+    if hasattr(sys, '_MEIPASS'):
+        import os
+        sys.path.insert(0, sys._MEIPASS)
+        
+    try:
+        # Dynamically import to hide from PyInstaller, preventing standard compiler errors
+        return importlib.import_module("sqlcipher3.dbapi2")
+    except ImportError:
+        import sqlite3
+        return sqlite3
+
+sqlite3 = get_sqlite_engine()
+
+def get_connection(db_path):
+    conn = sqlite3.connect(db_path, check_same_thread=False)
+    try:
+        # Use Fernet key as SQLCipher password since it is consistent and securely generated
+        raw_key = get_raw_key()
+        conn.execute(f"PRAGMA key = '{raw_key}'")
+    except Exception as e:
+        print('GET CONNECTION EXCEPTION:', e)
+        import traceback; traceback.print_exc()
+        # If cipher fails to load, just let it be unencrypted (e.g. before key is generated)
+        pass
+    return conn
 
 class Database:
     """SQLite database abstraction for persistent storage of document state."""
@@ -21,10 +51,17 @@ class Database:
 
     def __init__(self, db_path=None):
         self.db_path = db_path or str(get_app_dir() / "autosorter.db")
+        self._conn = None
         self._init_db()
 
+    def _get_cached_conn(self):
+        if self._conn is None:
+            self._conn = get_connection(self.db_path)
+        return self._conn
+
     def _init_db(self):
-        with closing(sqlite3.connect(self.db_path)) as conn, conn:
+        conn = self._get_cached_conn()
+        with conn:
             cursor = conn.cursor()
             cursor.execute("PRAGMA user_version")
             db_version = cursor.fetchone()[0]
@@ -54,7 +91,8 @@ class Database:
 
     def get_document(self, base_dir, filepath):
         """Retrieve a document by its base directory and filepath."""
-        with closing(sqlite3.connect(self.db_path)) as conn, conn:
+        conn = self._get_cached_conn()
+        with conn:
             cursor = conn.execute(
                 "SELECT file_hash, extracted_text, embedding, model_name, vector_dimension FROM documents WHERE base_dir = ? AND filepath = ?",
                 (base_dir, filepath),
@@ -75,7 +113,8 @@ class Database:
 
     def upsert_document(self, base_dir, filepath, file_hash, extracted_text, embedding, model_name=None, vector_dimension=None):
         """Insert or update a document in the database."""
-        with closing(sqlite3.connect(self.db_path)) as conn, conn:
+        conn = self._get_cached_conn()
+        with conn:
             if embedding is not None:
                 embedding_blob = encrypt_embedding(embedding.astype(np.float32).tobytes())
             else:
@@ -99,7 +138,8 @@ class Database:
 
     def get_all_documents(self, base_dir):
         """Retrieve all valid documents for a given base directory."""
-        with closing(sqlite3.connect(self.db_path)) as conn, conn:
+        conn = self._get_cached_conn()
+        with conn:
             cursor = conn.execute(
                 "SELECT filepath, extracted_text, embedding, file_hash, user_verified_target_path, model_name, vector_dimension FROM documents WHERE base_dir = ?",
                 (base_dir,),
@@ -114,7 +154,8 @@ class Database:
 
     def set_user_verified_target(self, base_dir, file_hash, target_path):
         """Record the historical folder assignment for a specific document hash."""
-        with closing(sqlite3.connect(self.db_path)) as conn, conn:
+        conn = self._get_cached_conn()
+        with conn:
             conn.execute(
                 "UPDATE documents SET user_verified_target_path = ? WHERE base_dir = ? AND file_hash = ?",
                 (target_path, base_dir, file_hash),
@@ -122,14 +163,16 @@ class Database:
 
     def remove_document(self, base_dir, filepath):
         """Remove a document and its historical assignments when deleted."""
-        with closing(sqlite3.connect(self.db_path)) as conn, conn:
+        conn = self._get_cached_conn()
+        with conn:
             conn.execute("DELETE FROM documents WHERE base_dir = ? AND filepath = ?", (base_dir, filepath))
 
     def update_document_path(self, base_dir, old_filepath, new_filepath):
         """Update a document's path and historical assignment when moved."""
         import os
         new_dir = os.path.dirname(new_filepath).replace("\\", "/")
-        with closing(sqlite3.connect(self.db_path)) as conn, conn:
+        conn = self._get_cached_conn()
+        with conn:
             conn.execute(
                 "UPDATE documents SET filepath = ?, user_verified_target_path = ? WHERE base_dir = ? AND filepath = ?",
                 (new_filepath, new_dir, base_dir, old_filepath)
@@ -137,7 +180,8 @@ class Database:
 
     def clear(self, base_dir=None):
         """Clear documents from the database. If base_dir is provided, only clear those."""
-        with closing(sqlite3.connect(self.db_path)) as conn, conn:
+        conn = self._get_cached_conn()
+        with conn:
             if base_dir:
                 conn.execute("DELETE FROM documents WHERE base_dir = ?", (base_dir,))
             else:

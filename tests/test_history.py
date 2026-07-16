@@ -1,3 +1,4 @@
+from app.core.db import get_connection
 import os
 import shutil
 import sqlite3
@@ -48,7 +49,8 @@ def test_incremental_sync_and_stop_on_failure(setup_history_env):
     shutil.move(file1_src, file1_dst)
     shutil.move(file2_src, file2_dst)
 
-    with closing(sqlite3.connect(db.db_path)) as conn, conn:
+    conn = db._get_cached_conn()
+    with conn:
         conn.execute("DELETE FROM documents WHERE base_dir = ?", (base_dir,))
     db.upsert_document(base_dir, os.path.join("folder", "file1.txt"), "hash1", "text1", None)
     db.upsert_document(base_dir, os.path.join("folder", "file2.txt"), "hash2", "text2", None)
@@ -74,7 +76,8 @@ def test_incremental_sync_and_stop_on_failure(setup_history_env):
     assert not os.path.exists(file2_src)
 
     # 3. Database should reflect file1 at 'file1.txt' and file2 at 'folder/file2.txt'
-    with closing(sqlite3.connect(db.db_path)) as conn, conn:
+    conn = db._get_cached_conn()
+    with conn:
         cur = conn.execute("SELECT filepath FROM documents WHERE base_dir = ?", (base_dir,))
         filepaths = {r[0] for r in cur.fetchall()}
     
@@ -84,7 +87,8 @@ def test_incremental_sync_and_stop_on_failure(setup_history_env):
     assert "file2.txt" not in filepaths
 
     # 4. Session status should be 'failed'
-    with closing(sqlite3.connect(history_manager.db_path)) as conn, conn:
+    conn = history_manager._get_cached_conn()
+    with conn:
         cur = conn.execute("SELECT status FROM sessions WHERE session_id = ?", (session_id,))
         status = cur.fetchone()[0]
     
@@ -111,7 +115,8 @@ def test_rollback_cyclic_collision(setup_history_env):
     shutil.move(file2_src, file1_src)
     shutil.move(temp, file2_src)
 
-    with closing(sqlite3.connect(db.db_path)) as conn, conn:
+    conn = db._get_cached_conn()
+    with conn:
         conn.execute("DELETE FROM documents WHERE base_dir = ?", (base_dir,))
     db.upsert_document(base_dir, "A.txt", "hashB", "textB", None)
     db.upsert_document(base_dir, "B.txt", "hashA", "textA", None)

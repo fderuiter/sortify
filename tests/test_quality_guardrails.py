@@ -10,6 +10,7 @@ from tests.generate_corpus import LARGE_CORPUS_DIR, create_large_corpus
 
 BASELINE_FILE = os.path.join(os.path.dirname(__file__), "baseline_metrics.json")
 
+
 @pytest.mark.timeout(120)
 def test_semantic_quality_guardrails():
     """
@@ -23,8 +24,10 @@ def test_semantic_quality_guardrails():
 
     # Configure the DB to use a persistent test cache so it's not wiped by other tests
     from app.core.db import db
+
     old_db_path = db.db_path
     db.db_path = "quality_guardrails_cache.db"
+    db._conn = None
     db._init_db()
 
     try:
@@ -38,15 +41,20 @@ def test_semantic_quality_guardrails():
 
         is_smoke_test = os.environ.get("SMOKE_TEST") == "1"
         if is_smoke_test:
-            print("\nRunning in SMOKE TEST mode. Processing a 5% subset (25 documents).")
+            print(
+                "\nRunning in SMOKE TEST mode. Processing a 5% subset (25 documents)."
+            )
             import random
+
             random.seed(42)
             files = random.sample(files, int(len(files) * 0.05))
             files.sort()
         else:
             print("\nRunning in FULL TEST mode. Processing all 500 documents.")
 
-        analyzer = IncrementalAnalyzer(max_folders=4, stop_words={"the", "and"}, model_path="all-MiniLM-L6-v2")
+        analyzer = IncrementalAnalyzer(
+            max_folders=4, stop_words={"the", "and"}, model_path="all-MiniLM-L6-v2"
+        )
         progress_callback = MagicMock()
 
         generator = build_corpus_generator(
@@ -67,7 +75,9 @@ def test_semantic_quality_guardrails():
 
         current_error = analyzer.last_reconstruction_error
         if current_error == 0.0:
-            current_error = 1.0  # fallback for SentenceTransformer which doesn't have it
+            current_error = (
+                1.0  # fallback for SentenceTransformer which doesn't have it
+            )
 
         assert current_error > 0.0, (
             "Reconstruction error must be captured and greater than zero."
@@ -107,3 +117,5 @@ def test_semantic_quality_guardrails():
         )
     finally:
         db.db_path = old_db_path
+        db._conn = None
+        db._init_db()

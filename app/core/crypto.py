@@ -50,6 +50,13 @@ def get_cipher():
     except Exception as e:
         raise RuntimeError("Database accessed but key file is missing or invalid.") from e
 
+def get_raw_key() -> str:
+    """Retrieve the raw URL-safe base64 key used for database encryption."""
+    get_cipher()  # Ensure key is generated
+    key_path = get_app_dir() / "secret.key"
+    with open(key_path, "rb") as f:
+        return f.read().strip().decode("utf-8")
+
 def encrypt_text(text: str) -> bytes:
     """Encrypt a string and return bytes."""
     if text is None:
