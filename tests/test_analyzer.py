@@ -1,8 +1,10 @@
-from app.core.analyzer import IncrementalAnalyzer
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
 
-
+from app.core.analyzer import IncrementalAnalyzer
+from app.core.cache import save_cache_sync
 from app.core.db import db
 
 
@@ -130,9 +132,6 @@ def test_naming_collision_resolution():
     assert "Miscellaneous" not in folder_names or len(folder_names) > 1
 
 
-from app.core.db import db
-from app.core.cache import save_cache_sync
-from types import SimpleNamespace
 
 def test_conflict_detection():
     db.clear("test_conflict_base")
