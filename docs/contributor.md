@@ -2,6 +2,20 @@
 
 Welcome to the Smart AutoSorter AI Pro project! This guide will help you get started with testing and contributing.
 
+## Development Setup
+
+To set up your local development environment and sync dependencies, run the workspace setup task:
+
+```bash
+python tasks.py setup
+```
+
+Once the setup is complete, verify your environment by running the test suite:
+
+```bash
+python tasks.py test
+```
+
 ## Interactive CLI Demo Mode
 
 To help new developers quickly understand the end-to-end data flow without reviewing source code, the system includes an interactive demo mode.
@@ -10,13 +24,7 @@ To help new developers quickly understand the end-to-end data flow without revie
 
 The demo automatically generates a sample corpus of documents that meet the pipeline requirements (minimum of 3 documents). It then simulates the background extraction and clustering logic, ultimately printing the resulting sorting plan.
 
-To run the interactive demo, use the following command in a standard terminal:
-
-```bash
-python -m app.main --demo
-```
-
-Alternatively, if you are using `uv`:
+To run the interactive demo, use the following command:
 
 ```bash
 uv run smart-autosorter --demo
