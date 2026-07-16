@@ -12,7 +12,6 @@ from typing import Any, Dict, List, Tuple
 
 import numpy as np
 
-
 from app.core.analyzer_strategies import clustering_registry
 from app.core.db import db
 

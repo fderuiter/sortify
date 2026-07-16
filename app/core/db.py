@@ -1,7 +1,5 @@
 """Local database management for autosorter."""
 
-import sqlite3
-from app.core.db_conn import get_db_connection
 from contextlib import closing
 
 import numpy as np
@@ -13,6 +11,7 @@ from app.core.crypto import (
     encrypt_embedding,
     encrypt_text,
 )
+from app.core.db_conn import get_db_connection
 
 
 class Database:

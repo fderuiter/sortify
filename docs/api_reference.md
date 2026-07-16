@@ -26,6 +26,10 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.core.db
 
+## `app.core.db_conn`
+
+::: app.core.db_conn
+
 ## `app.core.extractor`
 
 ::: app.core.extractor

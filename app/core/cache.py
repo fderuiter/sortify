@@ -3,11 +3,11 @@
 import json
 import logging
 import sqlite3
-from app.core.db_conn import get_db_connection
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 
 from app.config import get_app_dir
+from app.core.db_conn import get_db_connection
 
 DB_PATH = get_app_dir() / "cache.db"
 
