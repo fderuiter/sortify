@@ -54,6 +54,18 @@ The following parameters are extracted directly from the application's configura
 - **Default**: `['about', 'all', 'also', 'and', 'are', 'because', 'been', 'but', 'can', 'com', 'could', 'csv', 'docx', 'don', 'for', 'from', 'get', 'has', 'have', 'how', 'inc', 'into', 'like', 'much', 'nan', 'not', 'only', 'other', 'out', 'over', 'page', 'pdf', 'should', 'site', 'some', 'team', 'than', 'that', 'the', 'their', 'there', 'these', 'this', 'through', 'txt', 'unnamed', 'was', 'well', 'what', 'when', 'where', 'which', 'who', 'will', 'with', 'would', 'xls', 'xlsx', 'your']`
 - **Required**: `False`
 
+## Precedence Rules
+
+The application evaluates configuration parameters using a strict precedence hierarchy to determine how settings interact. The priority is applied as follows, from highest to lowest:
+
+1. **Local Settings File (`~/.autosorter/settings.json`):** This local configuration file takes absolute priority. Any parameters defined here will override environment variables and default properties.
+2. **Environment Variables (or `.env` file):** Variables configured in the environment take precedence over default parameters.
+3. **Default Parameters:** Base defaults are used as fallbacks if a setting is not explicitly defined in the local file or environment.
+
+## Dynamic Configuration Saves
+
+System settings modified during runtime are dynamically saved to the local JSON configuration file (`~/.autosorter/settings.json`) located in the user's home directory. To ensure stability and prevent excessive disk writes, these dynamic changes are saved with a short debounced delay of 0.5 seconds.
+
 ## Maintenance Scripts and CLI Commands
 
 ### `sandbox_cli.py`

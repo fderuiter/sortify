@@ -96,6 +96,25 @@ def generate_admin_guide():
             f.write(f"- **Default**: `{default_val}`\n")
             f.write(f"- **Required**: `{field.is_required()}`\n\n")
 
+        f.write("## Precedence Rules\n\n")
+        f.write(
+            "The application evaluates configuration parameters using a strict precedence hierarchy to determine how settings interact. The priority is applied as follows, from highest to lowest:\n\n"
+        )
+        f.write(
+            "1. **Local Settings File (`~/.autosorter/settings.json`):** This local configuration file takes absolute priority. Any parameters defined here will override environment variables and default properties.\n"
+        )
+        f.write(
+            "2. **Environment Variables (or `.env` file):** Variables configured in the environment take precedence over default parameters.\n"
+        )
+        f.write(
+            "3. **Default Parameters:** Base defaults are used as fallbacks if a setting is not explicitly defined in the local file or environment.\n\n"
+        )
+
+        f.write("## Dynamic Configuration Saves\n\n")
+        f.write(
+            "System settings modified during runtime are dynamically saved to the local JSON configuration file (`~/.autosorter/settings.json`) located in the user's home directory. To ensure stability and prevent excessive disk writes, these dynamic changes are saved with a short debounced delay of 0.5 seconds.\n\n"
+        )
+
         f.write("## Maintenance Scripts and CLI Commands\n\n")
 
         # sandbox_cli.py
