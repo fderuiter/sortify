@@ -9,6 +9,7 @@ import logging
 import os
 import re
 
+import numpy as np
 import torch
 from sentence_transformers import SentenceTransformer
 
@@ -170,7 +171,10 @@ class IncrementalAnalyzer:
     def active_dimension(self):
         """Get the vector dimension of the currently active model."""
         if self.model:
-            return getattr(self.model, "get_embedding_dimension", self.model.get_sentence_embedding_dimension)()
+            if hasattr(self.model, "get_embedding_dimension"):
+                return self.model.get_embedding_dimension()
+            elif hasattr(self.model, "get_sentence_embedding_dimension"):
+                return self.model.get_sentence_embedding_dimension()
         return None
 
     @property
@@ -564,3 +568,58 @@ class IncrementalAnalyzer:
                 f"Failed during generate_sorting_plan. Error: {str(e)}", exc_info=True
             )
             return {}
+
+    def find_similar(self, base_dir: str, query_text: str, top_k: int = 5) -> list[dict]:
+        """Find the most similar documents to a query string using vector search.
+        
+        Retrieves stored embeddings from the local SQLite database (decrypting them in memory),
+        computes pairwise similarity against the query vector, and returns the top matches.
+        """
+        if not self.model or not query_text.strip():
+            return []
+            
+        try:
+            # Generate vector for the search query
+            query_embedding = self.model.encode([query_text], show_progress_bar=False)[0]
+            
+            docs = db.get_all_documents(base_dir)
+            if not docs:
+                return []
+                
+            results = []
+            
+            # Extract and filter records with valid compatible embeddings
+            for doc in docs:
+                # db.get_all_documents returns: (filepath, extracted_text, embedding, file_hash, user_verified_target_path, model_name, vector_dimension)
+                filepath, extracted_text, embedding, file_hash, user_verified_target, model_name, vector_dimension = doc
+                
+                if (embedding is not None 
+                    and model_name == self.active_model_name 
+                    and vector_dimension == self.active_dimension):
+                    
+                    # Compute Cosine Similarity
+                    dot_product = np.dot(query_embedding, embedding)
+                    norm_q = np.linalg.norm(query_embedding)
+                    norm_e = np.linalg.norm(embedding)
+                    
+                    if norm_q > 0 and norm_e > 0:
+                        similarity = dot_product / (norm_q * norm_e)
+                    else:
+                        similarity = 0.0
+                        
+                    results.append({
+                        "filepath": filepath,
+                        "file_hash": file_hash,
+                        "similarity": float(similarity),
+                        "extracted_text": extracted_text,
+                        "assigned_folder": user_verified_target
+                    })
+                    
+            # Sort by highest similarity
+            results.sort(key=lambda x: x["similarity"], reverse=True)
+            
+            return results[:top_k]
+            
+        except Exception as e:
+            logging.error(f"Failed during vector search. Error: {str(e)}", exc_info=True)
+            return []
