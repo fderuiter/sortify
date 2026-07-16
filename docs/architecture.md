@@ -19,9 +19,10 @@ graph TD
 When a directory is selected, `build_corpus_generator` scans and extracts text from supported files (PDFs, DOCX, CSV, Excel, TXT).
 
 ### 2. ML Clustering & Recursive Analysis
-::: app.core.analyzer.IncrementalAnalyzer
 
-::: app.core.analyzer_strategies.RecursiveKMeansStrategy
+See [IncrementalAnalyzer][app.core.analyzer.IncrementalAnalyzer] for details on the core incremental ingestion logic.
+
+See [RecursiveKMeansStrategy][app.core.analyzer_strategies.RecursiveKMeansStrategy] for details on the hierarchical clustering approach used for deep folder structures.
 
 ### 3. Folder Naming Logic
 Folder names are generated dynamically using KMeans components. The folder naming logic selects the top 2 terms for each topic and concatenates them with a hyphen (e.g., `Finance-Money`). Words are capitalized based on a TF-IDF vectorizer of the cluster documents.
