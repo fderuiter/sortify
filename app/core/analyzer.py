@@ -13,7 +13,7 @@ import torch
 from sentence_transformers import SentenceTransformer
 
 from app.core.analyzer_strategies import clustering_registry
-from app.core.db import db
+
 
 # Explicitly limit ML engine to 2 threads to prevent CPU starvation
 torch.set_num_threads(2)
@@ -26,8 +26,9 @@ class IncrementalAnalyzer:
     """
 
     def __init__(
-        self, max_folders: int, stop_words: set, strategy_name: str = "default", model_path: str | None = None
+        self, max_folders: int, stop_words: set, db, strategy_name: str = "default", model_path: str | None = None
     ) -> None:
+        self.db = db
         """Initialize the analyzer with the maximum number of folders."""
         self.max_folders = max_folders
         self.stop_words = stop_words
@@ -213,7 +214,7 @@ class IncrementalAnalyzer:
                 zip(filepaths, texts, hashes)
             ):
                 # If we don't have a hash, fetch existing from DB so we don't overwrite it with empty
-                doc = db.get_document(base_dir, filepath)
+                doc = self.db.get_document(base_dir, filepath)
 
                 # compute hash if not provided
                 if not file_hash:
@@ -248,7 +249,7 @@ class IncrementalAnalyzer:
             for filepath, text, file_hash, embedding in zip(
                 filepaths, texts, hashes, embeddings
             ):
-                db.upsert_document(
+                self.db.upsert_document(
                     base_dir,
                     filepath,
                     file_hash,
@@ -295,7 +296,7 @@ class IncrementalAnalyzer:
                 new_node[k] = self._inject_hierarchy(v)
         return new_node
 
-    def generate_sorting_plan(self, base_dir: str, runtime_settings=None) -> dict:
+    def generate_sorting_plan(self, base_dir: str, runtime_settings=None, locked_files: dict = None) -> dict:
         """Generate a sorting plan based on the current model state.
 
         Returns
@@ -305,7 +306,7 @@ class IncrementalAnalyzer:
             either dicts (subfolders) or file metadata dicts.
         """
         try:
-            docs = db.get_all_documents(base_dir)
+            docs = self.db.get_all_documents(base_dir)
             if not docs:
                 return {}
 
@@ -440,8 +441,9 @@ class IncrementalAnalyzer:
                             return res
                 return None
 
-            from app.core.cache import load_cache
-            _, locked_files, _, _ = load_cache(base_dir)
+            
+            if locked_files is None:
+                locked_files = {}
             if locked_files is None:
                 locked_files = {}
 

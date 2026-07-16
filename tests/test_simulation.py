@@ -4,8 +4,22 @@ from unittest.mock import MagicMock
 
 import pytest
 
+import tempfile
+from pathlib import Path
+from app.core.db import Database
+from app.core.cache import CacheManager
+from app.core.history import HistoryManager
+
+_test_dir = tempfile.mkdtemp()
+db = Database(Path(_test_dir) / "test.db")
+cache_manager = CacheManager(str(Path(_test_dir) / "cache.db"))
+history_manager = HistoryManager(db, cache_manager, str(Path(_test_dir) / "history.db"))
+def save_cache_sync(*args, **kwargs):
+    cache_manager.save_cache_sync(*args, **kwargs)
+
+
 from app.core.analyzer import IncrementalAnalyzer
-from app.core.db import db
+
 from app.core.extractor import build_corpus_generator
 from tests.generate_corpus import CORPUS_DIR, create_corpus
 
@@ -27,12 +41,12 @@ def test_full_workflow_simulation():
     # Requirement: multiple document types including PDF, Word, plain text
 
     files = [f for f in os.listdir(CORPUS_DIR) if f != "empty.txt" and f != "dummy.pdf"]
-    analyzer = IncrementalAnalyzer(max_folders=3, stop_words={"the", "and"}, model_path="all-MiniLM-L6-v2")
+    analyzer = IncrementalAnalyzer(max_folders=3, stop_words={"the", "and"}, model_path="all-MiniLM-L6-v2", db=db)
     progress_callback = MagicMock()
 
     # Process files asynchronously using the generator (which uses max workers)
     generator = build_corpus_generator(
-        CORPUS_DIR, files, progress_callback, max_workers=4, chunk_size=50
+        CORPUS_DIR, files, progress_callback, max_workers=4, db=db, chunk_size=50,
     )
 
     for chunk in generator:
@@ -80,7 +94,7 @@ def test_full_workflow_simulation():
 
 def test_small_dataset_fallback():
     # Requirement: Edge cases, small datasets produce fallback plans without errors
-    analyzer = IncrementalAnalyzer(max_folders=3, stop_words={"the", "and"}, model_path="all-MiniLM-L6-v2")
+    analyzer = IncrementalAnalyzer(max_folders=3, stop_words={"the", "and"}, model_path="all-MiniLM-L6-v2", db=db)
 
     # Only 2 files
     corpus = {"file1.txt": "Some content here.", "file2.txt": "More content there."}
@@ -96,7 +110,7 @@ def test_small_dataset_fallback():
 
 def test_empty_files_handling():
     # Requirement: Edge cases, empty files produce expected fallback
-    analyzer = IncrementalAnalyzer(max_folders=3, stop_words={"the", "and"}, model_path="all-MiniLM-L6-v2")
+    analyzer = IncrementalAnalyzer(max_folders=3, stop_words={"the", "and"}, model_path="all-MiniLM-L6-v2", db=db)
 
     corpus = {"empty1.txt": "", "empty2.txt": "", "empty3.txt": ""}
 
@@ -110,7 +124,7 @@ def test_empty_files_handling():
 
 def test_concurrent_large_volume():
     # Requirement: accurately simulates the asynchronous processing of at least 20 files simultaneously
-    analyzer = IncrementalAnalyzer(max_folders=5, stop_words={"the", "and"}, model_path="all-MiniLM-L6-v2")
+    analyzer = IncrementalAnalyzer(max_folders=5, stop_words={"the", "and"}, model_path="all-MiniLM-L6-v2", db=db)
     progress_callback = MagicMock()
 
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -123,7 +137,7 @@ def test_concurrent_large_volume():
             files_to_sort.append(fname)
 
         generator = build_corpus_generator(
-            temp_dir, files_to_sort, progress_callback, max_workers=4, chunk_size=10
+            temp_dir, files_to_sort, progress_callback, max_workers=4, db=db, chunk_size=10,
         )
 
         for chunk in generator:

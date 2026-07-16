@@ -1,7 +1,20 @@
 import pytest
 
 from app.core.analyzer import IncrementalAnalyzer
-from app.core.db import db
+
+import tempfile
+from pathlib import Path
+from app.core.db import Database
+from app.core.cache import CacheManager
+from app.core.history import HistoryManager
+
+_test_dir = tempfile.mkdtemp()
+db = Database(Path(_test_dir) / "test.db")
+cache_manager = CacheManager(str(Path(_test_dir) / "cache.db"))
+history_manager = HistoryManager(db, cache_manager, str(Path(_test_dir) / "history.db"))
+def save_cache_sync(*args, **kwargs):
+    cache_manager.save_cache_sync(*args, **kwargs)
+
 
 
 @pytest.fixture(autouse=True)
@@ -10,7 +23,7 @@ def clean_db():
     yield
 
 def test_keyword_rules():
-    analyzer = IncrementalAnalyzer(max_folders=3, stop_words={"the", "and"}, model_path=None)
+    analyzer = IncrementalAnalyzer(max_folders=3, stop_words={"the", "and"}, db=db, model_path=None)
     
     corpus = {
         "file1.txt": "Semantic content here.",
@@ -32,7 +45,7 @@ def test_keyword_rules():
         
     # Since model is None, it returns a flat dict if no keyword rules apply. 
     # Let's use a real model or a mock strategy.
-    analyzer = IncrementalAnalyzer(max_folders=3, stop_words={"the", "and"}, model_path="all-MiniLM-L6-v2")
+    analyzer = IncrementalAnalyzer(max_folders=3, stop_words={"the", "and"}, db=db, model_path="all-MiniLM-L6-v2")
     analyzer.partial_fit("dummy", corpus)
     plan = analyzer.generate_sorting_plan("dummy", runtime_settings=MockSettings())
     
@@ -59,7 +72,7 @@ def test_keyword_rules():
     assert file1_folder != "Miscellaneous"
 
 def test_empty_keyword_rules_ignored():
-    analyzer = IncrementalAnalyzer(max_folders=3, stop_words={"the", "and"}, model_path=None)
+    analyzer = IncrementalAnalyzer(max_folders=3, stop_words={"the", "and"}, db=db, model_path=None)
     
     corpus = {
         "file1.txt": "Semantic content here.",

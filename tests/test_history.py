@@ -6,8 +6,21 @@ from unittest.mock import patch
 
 import pytest
 
-from app.core.db import db
-from app.core.history import history_manager
+
+import tempfile
+from pathlib import Path
+from app.core.db import Database
+from app.core.cache import CacheManager
+from app.core.history import HistoryManager
+
+_test_dir = tempfile.mkdtemp()
+db = Database(Path(_test_dir) / "test.db")
+cache_manager = CacheManager(str(Path(_test_dir) / "cache.db"))
+history_manager = HistoryManager(db, cache_manager, str(Path(_test_dir) / "history.db"))
+def save_cache_sync(*args, **kwargs):
+    cache_manager.save_cache_sync(*args, **kwargs)
+
+from app.core.history import HistoryManager
 
 
 @pytest.fixture

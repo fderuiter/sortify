@@ -1,82 +1,77 @@
 import os
 import sqlite3
+from pathlib import Path
 
-import numpy as np
 import pytest
+from cryptography.fernet import Fernet
 
-from app.core import crypto
+from app.core.crypto import SessionCrypto
 
 
-def test_key_generation_and_permissions(tmp_path, monkeypatch):
-    monkeypatch.setattr(crypto, "_fernet_instance", None)
-    monkeypatch.setattr(crypto, "get_app_dir", lambda: tmp_path)
-    
-    # Trigger key generation
-    cipher = crypto.get_cipher()
-    assert cipher is not None
-    
+def test_key_generation_and_permissions(tmp_path):
     key_path = tmp_path / "secret.key"
-    assert key_path.exists()
+    db_path = tmp_path / "autosorter.db"
     
-    # Check permissions (0o600) on non-Windows platforms
+    crypto = SessionCrypto(key_path, db_path)
+    cipher = crypto.get_cipher()
+    
+    assert key_path.exists()
+    assert isinstance(cipher, Fernet)
+    
+    # Check strict permissions
     if os.name != "nt":
         stat = os.stat(key_path)
-        assert oct(stat.st_mode)[-3:] == "600"
-    
-def test_missing_key_with_existing_db(tmp_path, monkeypatch):
-    monkeypatch.setattr(crypto, "_fernet_instance", None)
-    monkeypatch.setattr(crypto, "get_app_dir", lambda: tmp_path)
-    
-    db_path = tmp_path / "autosorter.db"
-    
-    # Create fake DB with documents table and some data
-    with sqlite3.connect(db_path) as conn:
-        conn.execute("CREATE TABLE documents (id INTEGER PRIMARY KEY)")
-        conn.execute("INSERT INTO documents (id) VALUES (1)")
-    conn.close()
-        
-    # Attempting to get cipher should now fail because key is missing but DB has data
-    with pytest.raises(RuntimeError, match="Database accessed but key file is missing."):
-        crypto.get_cipher()
-        
-def test_missing_key_with_empty_db(tmp_path, monkeypatch):
-    monkeypatch.setattr(crypto, "_fernet_instance", None)
-    monkeypatch.setattr(crypto, "get_app_dir", lambda: tmp_path)
-    
-    db_path = tmp_path / "autosorter.db"
-    
-    # Create fake DB with NO data
-    with sqlite3.connect(db_path) as conn:
-        conn.execute("CREATE TABLE documents (id INTEGER PRIMARY KEY)")
-    conn.close()
-        
-    # Should automatically generate key without error
-    cipher = crypto.get_cipher()
-    assert cipher is not None
-    assert (tmp_path / "secret.key").exists()
+        assert (stat.st_mode & 0o777) == 0o600
 
-def test_encryption_decryption(tmp_path, monkeypatch):
-    monkeypatch.setattr(crypto, "_fernet_instance", None)
-    monkeypatch.setattr(crypto, "get_app_dir", lambda: tmp_path)
-    
-    original_text = "This is a sensitive document."
-    enc_text = crypto.encrypt_text(original_text)
-    assert enc_text != original_text.encode('utf-8')
-    assert crypto.decrypt_text(enc_text) == original_text
-    
-    # Embeddings
-    original_emb = np.array([0.1, 0.2, 0.3], dtype=np.float32).tobytes()
-    enc_emb = crypto.encrypt_embedding(original_emb)
-    assert enc_emb != original_emb
-    assert crypto.decrypt_embedding(enc_emb) == original_emb
-
-def test_invalid_key(tmp_path, monkeypatch):
-    monkeypatch.setattr(crypto, "_fernet_instance", None)
-    monkeypatch.setattr(crypto, "get_app_dir", lambda: tmp_path)
-    
+def test_missing_key_with_existing_db(tmp_path):
     key_path = tmp_path / "secret.key"
-    with open(key_path, "wb") as f:
-        f.write(b"invalid_key_data_that_is_too_short")
-        
-    with pytest.raises(RuntimeError, match="Database accessed but key file is missing or invalid."):
+    db_path = tmp_path / "autosorter.db"
+    
+    conn = sqlite3.connect(str(db_path))
+    conn.execute("CREATE TABLE documents (id TEXT)")
+    conn.execute("INSERT INTO documents VALUES ('test')")
+    conn.commit()
+    conn.close()
+
+    crypto = SessionCrypto(key_path, db_path)
+    
+    with pytest.raises(RuntimeError, match="Database accessed but key file is missing"):
+        crypto.get_cipher()
+
+def test_missing_key_with_empty_db(tmp_path):
+    key_path = tmp_path / "secret.key"
+    db_path = tmp_path / "autosorter.db"
+    
+    conn = sqlite3.connect(str(db_path))
+    conn.execute("CREATE TABLE documents (id TEXT)")
+    conn.commit()
+    conn.close()
+
+    crypto = SessionCrypto(key_path, db_path)
+    cipher = crypto.get_cipher()
+    
+    assert key_path.exists()
+    assert isinstance(cipher, Fernet)
+
+def test_encryption_decryption(tmp_path):
+    key_path = tmp_path / "secret.key"
+    db_path = tmp_path / "autosorter.db"
+    
+    crypto = SessionCrypto(key_path, db_path)
+    
+    text = "Hello, privacy!"
+    encrypted = crypto.encrypt_text(text)
+    assert encrypted != text.encode()
+    
+    decrypted = crypto.decrypt_text(encrypted)
+    assert decrypted == text
+
+def test_invalid_key(tmp_path):
+    key_path = tmp_path / "secret.key"
+    db_path = tmp_path / "autosorter.db"
+    
+    key_path.write_text("invalid_key_data")
+    
+    crypto = SessionCrypto(key_path, db_path)
+    with pytest.raises(RuntimeError, match="key file is missing or invalid"):
         crypto.get_cipher()

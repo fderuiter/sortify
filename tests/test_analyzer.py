@@ -4,8 +4,21 @@ import numpy as np
 import pytest
 
 from app.core.analyzer import IncrementalAnalyzer
-from app.core.cache import save_cache_sync
-from app.core.db import db
+from app.core.cache import CacheManager
+
+import tempfile
+from pathlib import Path
+from app.core.db import Database
+from app.core.cache import CacheManager
+from app.core.history import HistoryManager
+
+_test_dir = tempfile.mkdtemp()
+db = Database(Path(_test_dir) / "test.db")
+cache_manager = CacheManager(str(Path(_test_dir) / "cache.db"))
+history_manager = HistoryManager(db, cache_manager, str(Path(_test_dir) / "history.db"))
+def save_cache_sync(*args, **kwargs):
+    cache_manager.save_cache_sync(*args, **kwargs)
+
 
 
 @pytest.fixture(autouse=True)
@@ -15,13 +28,13 @@ def clean_db():
 
 
 def test_incremental_analyzer_init():
-    analyzer = IncrementalAnalyzer(max_folders=5, stop_words={"the", "and"}, model_path="all-MiniLM-L6-v2")
+    analyzer = IncrementalAnalyzer(max_folders=5, stop_words={"the", "and"}, db=db, model_path="all-MiniLM-L6-v2")
     assert analyzer.max_folders == 5
     assert analyzer.corpus == {}
 
 
 def test_partial_fit():
-    analyzer = IncrementalAnalyzer(max_folders=3, stop_words={"the", "and"}, model_path="all-MiniLM-L6-v2")
+    analyzer = IncrementalAnalyzer(max_folders=3, stop_words={"the", "and"}, db=db, model_path="all-MiniLM-L6-v2")
     corpus = {
         "file1.txt": "This is a document about finance and money.",
         "file2.txt": "Science and technology are great.",
@@ -33,13 +46,13 @@ def test_partial_fit():
 
 
 def test_partial_fit_empty():
-    analyzer = IncrementalAnalyzer(max_folders=3, stop_words={"the", "and"}, model_path="all-MiniLM-L6-v2")
+    analyzer = IncrementalAnalyzer(max_folders=3, stop_words={"the", "and"}, db=db, model_path="all-MiniLM-L6-v2")
     analyzer.partial_fit("dummy_base", {})
     assert len(analyzer.corpus) == 0
 
 def test_mismatch_reembedding(mocker):
     # Setup first model
-    analyzer1 = IncrementalAnalyzer(max_folders=3, stop_words=set(), model_path="all-MiniLM-L6-v2")
+    analyzer1 = IncrementalAnalyzer(max_folders=3, stop_words=set(), db=db, model_path="all-MiniLM-L6-v2")
     corpus = {"test_doc.txt": "This is a test document."}
     
     # Spy on model.encode to see if it's called
@@ -53,7 +66,7 @@ def test_mismatch_reembedding(mocker):
     assert doc["model_name"] == "all-MiniLM-L6-v2"
     
     # Setup second model (simulating a model change)
-    analyzer2 = IncrementalAnalyzer(max_folders=3, stop_words=set(), model_path="paraphrase-MiniLM-L3-v2")
+    analyzer2 = IncrementalAnalyzer(max_folders=3, stop_words=set(), db=db, model_path="paraphrase-MiniLM-L3-v2")
     spy2 = mocker.spy(analyzer2.model, "encode")
     
     # Feed same corpus to partial_fit. In a normal cache hit, encode() is not called.
@@ -67,13 +80,13 @@ def test_mismatch_reembedding(mocker):
 
 
 def test_generate_sorting_plan_empty():
-    analyzer = IncrementalAnalyzer(max_folders=3, stop_words={"the", "and"}, model_path="all-MiniLM-L6-v2")
+    analyzer = IncrementalAnalyzer(max_folders=3, stop_words={"the", "and"}, db=db, model_path="all-MiniLM-L6-v2")
     plan = analyzer.generate_sorting_plan("dummy_base")
     assert plan == {}
 
 
 def test_generate_sorting_plan():
-    analyzer = IncrementalAnalyzer(max_folders=2, stop_words={"the", "and"}, model_path="all-MiniLM-L6-v2")
+    analyzer = IncrementalAnalyzer(max_folders=2, stop_words={"the", "and"}, db=db, model_path="all-MiniLM-L6-v2")
     corpus = {
         "finance1.txt": "money bank finance investment",
         "finance2.txt": "investment stock market money",
@@ -89,7 +102,7 @@ def test_generate_sorting_plan():
 
 
 def test_partial_fit_exception(mocker):
-    analyzer = IncrementalAnalyzer(max_folders=2, stop_words={"the", "and"}, model_path="all-MiniLM-L6-v2")
+    analyzer = IncrementalAnalyzer(max_folders=2, stop_words={"the", "and"}, db=db, model_path="all-MiniLM-L6-v2")
     mocker.patch.object(analyzer.model, "encode", side_effect=Exception("Test error"))
     mock_logger = mocker.patch("app.core.analyzer.logging.error")
 
@@ -101,13 +114,11 @@ def test_partial_fit_exception(mocker):
 
 
 def test_generate_sorting_plan_exception(mocker):
-    analyzer = IncrementalAnalyzer(max_folders=2, stop_words={"the", "and"}, model_path="all-MiniLM-L6-v2")
+    analyzer = IncrementalAnalyzer(max_folders=2, stop_words={"the", "and"}, db=db, model_path="all-MiniLM-L6-v2")
     corpus = {"file.txt": "test content"}
     analyzer.partial_fit("dummy_base", corpus)
 
-    mocker.patch(
-        "app.core.db.db.get_all_documents", side_effect=Exception("Test error")
-    )
+    mocker.patch.object(db, "get_all_documents", side_effect=Exception("Test error"))
     mock_logger = mocker.patch("app.core.analyzer.logging.error")
 
     plan = analyzer.generate_sorting_plan("dummy_base")
@@ -117,7 +128,7 @@ def test_generate_sorting_plan_exception(mocker):
 
 
 def test_naming_collision_resolution():
-    analyzer = IncrementalAnalyzer(max_folders=3, stop_words={"the"}, model_path="all-MiniLM-L6-v2")
+    analyzer = IncrementalAnalyzer(max_folders=3, stop_words={"the"}, db=db, model_path="all-MiniLM-L6-v2")
     # We want two topics to have the same primary keywords, but different term frequencies
     corpus = {
         "file1.txt": "apple banana apple banana apple orange",
@@ -139,7 +150,7 @@ def test_conflict_detection():
     # keyword rule: "invoice" -> "Accounting"
     # historical override: "Archive"
     
-    analyzer = IncrementalAnalyzer(max_folders=2, stop_words={"the", "and"})
+    analyzer = IncrementalAnalyzer(max_folders=2, stop_words={"the", "and"}, db=db)
     corpus = {"invoice_2025.txt": "Some invoice text"}
     
     # Put document in DB with an assigned folder (historical override)
@@ -162,7 +173,7 @@ def test_conflict_detection():
 def test_conflict_resolution():
     db.clear("test_conflict_res_base")
     
-    analyzer = IncrementalAnalyzer(max_folders=2, stop_words={"the", "and"})
+    analyzer = IncrementalAnalyzer(max_folders=2, stop_words={"the", "and"}, db=db)
     corpus = {"invoice_2025.txt": "Some invoice text"}
     
     db.upsert_document("test_conflict_res_base", "invoice_2025.txt", "hash123", "Some invoice text", np.array([0.1]*384))
@@ -176,7 +187,7 @@ def test_conflict_resolution():
     
     settings = SimpleNamespace(KEYWORD_RULES={"invoice": "Accounting"})
     
-    plan = analyzer.generate_sorting_plan("test_conflict_res_base", settings)
+    plan = analyzer.generate_sorting_plan("test_conflict_res_base", settings, locked_files)
     
     # Since it was resolved to 'Accounting', it should be in Accounting and no longer flagged as conflicted
     assert "Accounting" in plan

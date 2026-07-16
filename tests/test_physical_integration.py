@@ -1,6 +1,20 @@
 import os
 
 from app.core.mover import execute_moves
+
+import tempfile
+from pathlib import Path
+from app.core.db import Database
+from app.core.cache import CacheManager
+from app.core.history import HistoryManager
+
+_test_dir = tempfile.mkdtemp()
+db = Database(Path(_test_dir) / "test.db")
+cache_manager = CacheManager(str(Path(_test_dir) / "cache.db"))
+history_manager = HistoryManager(db, cache_manager, str(Path(_test_dir) / "history.db"))
+def save_cache_sync(*args, **kwargs):
+    cache_manager.save_cache_sync(*args, **kwargs)
+
 from app.core.verifier import VerificationEngine
 
 
@@ -18,7 +32,7 @@ def test_physical_move(tmp_path):
         }
     }
     
-    execute_moves(str(tmp_path), plan)
+    execute_moves(str(tmp_path), plan, db, history_manager)
     
     assert not os.path.exists(source_file)
     assert os.path.exists(tmp_path / "target_folder" / "source.txt")
@@ -45,7 +59,7 @@ def test_naming_collision_resolution(tmp_path):
         }
     }
     
-    execute_moves(str(tmp_path), plan)
+    execute_moves(str(tmp_path), plan, db, history_manager)
     
     # Both files should exist in the target folder
     assert target_file.read_text() == "existing content"
@@ -93,7 +107,7 @@ def test_empty_source_folder_cleanup(tmp_path):
         }
     }
     
-    summary = execute_moves(str(tmp_path), plan)
+    summary = execute_moves(str(tmp_path), plan, db, history_manager)
     
     # The target file should exist
     assert (tmp_path / "target_folder" / "move_me.txt").exists()

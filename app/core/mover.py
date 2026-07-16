@@ -7,8 +7,8 @@ import logging
 import os
 import shutil
 
-from app.core.db import db
-from app.core.history import history_manager
+
+
 from app.core.link_manager import LinkManager
 from app.core.verifier import VerificationEngine
 
@@ -53,7 +53,7 @@ def _remove_empty_dirs(path: str):
 
 
 def _execute_moves_recursive(
-    base_dir: str, plan: dict, current_dest: str = "", path_map: dict = None
+    base_dir: str, plan: dict, db, current_dest: str = "", path_map: dict = None
 ) -> None:
     """Recursively move files according to the plan."""
     if path_map is None:
@@ -165,12 +165,10 @@ def _execute_moves_recursive(
             db.update_document_path(base_dir, key, rel_dest)
         else:
             # It's a folder
-            _execute_moves_recursive(
-                base_dir, content, os.path.join(current_dest, key), path_map
-            )
+            _execute_moves_recursive(base_dir, content, db, os.path.join(current_dest, key), path_map)
 
 
-def execute_moves(base_dir: str, plan: dict, runtime_settings=None) -> dict:
+def execute_moves(base_dir: str, plan: dict, db, history_manager, runtime_settings=None) -> dict:
     """Create directories and safely move files, tracking file-system errors."""
     # Create a full snapshot of the directory tree and metadata before moving files
     session_id = history_manager.create_snapshot(base_dir)
@@ -183,7 +181,7 @@ def execute_moves(base_dir: str, plan: dict, runtime_settings=None) -> dict:
         path_map[os.path.abspath(src)] = os.path.abspath(dst)
 
     # Execute all moves first
-    _execute_moves_recursive(base_dir, plan, "", path_map)
+    _execute_moves_recursive(base_dir, plan, db, "", path_map)
 
     summary = {"deleted_folders": 0, "protected_folders": 0}
     cleanup_enabled = getattr(runtime_settings, "CLEANUP_EMPTY_FOLDERS", True) if runtime_settings else True
