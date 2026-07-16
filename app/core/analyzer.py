@@ -8,15 +8,73 @@ import json
 import logging
 import os
 import re
+from typing import Any, Dict, List, Tuple
 
-import torch
-from sentence_transformers import SentenceTransformer
+import numpy as np
 
 from app.core.analyzer_strategies import clustering_registry
 from app.core.db import db
 
-# Explicitly limit ML engine to 2 threads to prevent CPU starvation
-torch.set_num_threads(2)
+
+_worker_model = None
+
+
+def _worker_init(model_path: str | None, backend: str):
+    global _worker_model
+    import torch
+    # Explicitly limit ML engine to 2 threads to prevent CPU starvation
+    torch.set_num_threads(2)
+    
+    if model_path is not None:
+        try:
+            from sentence_transformers import SentenceTransformer
+            _worker_model = SentenceTransformer(model_path, backend=backend)
+        except Exception as e:
+            logging.error(f"Failed to load model in worker: {e}")
+            _worker_model = None
+    else:
+        _worker_model = None
+
+
+def _worker_encode(texts: List[str]) -> List[np.ndarray | None]:
+    global _worker_model
+    import torch
+    torch.set_num_threads(2)
+    if _worker_model is None:
+        return [None] * len(texts)
+    try:
+        # Some models return numpy arrays, others return tensors
+        embeddings = _worker_model.encode(texts, show_progress_bar=False)
+        return [np.array(e) for e in embeddings]
+    except Exception as e:
+        logging.error(f"Error encoding texts in worker: {e}")
+        raise e
+
+
+def _worker_generate_plan(
+    strategy_name: str,
+    filenames: List[str],
+    documents: List[str],
+    embeddings: List[np.ndarray],
+    max_folders: int,
+    stop_words: set,
+    max_depth: int,
+    max_features: int,
+) -> Tuple[Dict[str, Any], float]:
+    import torch
+    torch.set_num_threads(2)
+    
+    strategy = clustering_registry.get_strategy(strategy_name)
+    if not strategy:
+        return {}, 0.0
+        
+    try:
+        return strategy.generate_plan(
+            filenames, documents, embeddings, max_folders, stop_words, max_depth, max_features
+        )
+    except Exception as e:
+        logging.error(f"Error generating plan in worker: {e}")
+        raise e
 
 
 class IncrementalAnalyzer:
@@ -31,7 +89,8 @@ class IncrementalAnalyzer:
         """Initialize the analyzer with the maximum number of folders."""
         self.max_folders = max_folders
         self.stop_words = stop_words
-        self.strategy = clustering_registry.get_strategy(strategy_name)
+        self.strategy_name = strategy_name
+        self.model_path = model_path
         
         # Check for side-loaded offline model package
         import sys
@@ -47,13 +106,18 @@ class IncrementalAnalyzer:
         manifest_path = os.path.join(base_path, "offline_bundle", "model_manifest.json")
         user_model_path = get_app_dir() / "model"
         
+        self.model_name = None
+        backend = "torch"
+        self._model_dir_for_config = None
+        
         if os.path.exists(offline_model_path) and os.path.exists(manifest_path):
             logging.info("Detected side-loaded model weights. Verifying integrity...")
             self._verify_offline_model(offline_model_path, manifest_path)
-            logging.info("Integrity verified. Loading side-loaded model...")
+            logging.info("Integrity verified. Loading side-loaded model in worker...")
             backend = self._detect_backend(offline_model_path)
-            self.model = SentenceTransformer(offline_model_path, backend=backend)
             self.model_name = "offline_model"
+            self._model_dir_for_config = offline_model_path
+            self.model_path = offline_model_path
         elif model_path is not None:
             if str(model_path) == str(user_model_path):
                 hf_manifest = os.path.join(os.path.dirname(__file__), "hf_manifest.json")
@@ -61,15 +125,21 @@ class IncrementalAnalyzer:
                     logging.info("Verifying user downloaded model integrity...")
                     self._verify_hf_model(str(user_model_path), hf_manifest)
             backend = self._detect_backend(model_path)
-            self.model = SentenceTransformer(model_path, backend=backend)
             self.model_name = str(model_path)
-        else:
-            # Model not downloaded yet (no consent or skipped)
-            self.model = None
-            self.model_name = None
-            
+            self._model_dir_for_config = str(model_path)
+        
         self.corpus = {}
         self._last_reconstruction_error = 0.0
+        
+        import concurrent.futures
+        import multiprocessing
+        context = multiprocessing.get_context("spawn")
+        self.executor = concurrent.futures.ProcessPoolExecutor(
+            max_workers=1,
+            mp_context=context,
+            initializer=_worker_init,
+            initargs=(self.model_path, backend) if self.model_path else (None, "torch")
+        )
 
     def _detect_backend(self, model_dir: str) -> str:
         """Detect the appropriate backend for the model based on available weights."""
@@ -169,9 +239,24 @@ class IncrementalAnalyzer:
     @property
     def active_dimension(self):
         """Get the vector dimension of the currently active model."""
-        if self.model:
-            return getattr(self.model, "get_embedding_dimension", self.model.get_sentence_embedding_dimension)()
-        return None
+        if self.model_name is None:
+            return None
+        if hasattr(self, "_cached_dimension"):
+            return self._cached_dimension
+            
+        if self._model_dir_for_config and os.path.exists(self._model_dir_for_config):
+            config_path = os.path.join(self._model_dir_for_config, "config.json")
+            if os.path.exists(config_path):
+                try:
+                    with open(config_path, "r") as f:
+                        c = json.load(f)
+                        self._cached_dimension = c.get("hidden_size", c.get("d_model", 384))
+                        return self._cached_dimension
+                except Exception:
+                    pass
+        
+        self._cached_dimension = 384
+        return 384
 
     @property
     def last_reconstruction_error(self):
@@ -235,13 +320,13 @@ class IncrementalAnalyzer:
                     indices_to_encode.append(i)
 
             if texts_to_encode:
-                if self.model is None:
+                if self.model_name is None:
                     # Dummy embeddings if offline mode without model
                     new_embeddings = [None] * len(texts_to_encode)
                 else:
-                    new_embeddings = self.model.encode(
-                        texts_to_encode, show_progress_bar=False
-                    )
+                    future = self.executor.submit(_worker_encode, texts_to_encode)
+                    new_embeddings = future.result()
+                    
                 for idx, new_emb in zip(indices_to_encode, new_embeddings):
                     embeddings[idx] = new_emb
 
@@ -260,6 +345,9 @@ class IncrementalAnalyzer:
 
         except Exception as e:
             logging.error(f"Failed during partial_fit. Error: {str(e)}", exc_info=True)
+            import concurrent.futures.process
+            if isinstance(e, concurrent.futures.process.BrokenProcessPool):
+                raise RuntimeError("Background worker process crashed or ran out of memory.") from e
 
     def reload_stop_words(self, new_stop_words: set) -> None:
         """Reload stop words from config."""
@@ -379,12 +467,15 @@ class IncrementalAnalyzer:
 
             self._last_reconstruction_error = 0.0
 
-            if self.model is None:
+            if self.model_name is None:
                 plan = {f: None for f in ai_filenames}
-            elif self.strategy:
+            elif self.strategy_name:
                 max_depth = getattr(runtime_settings, "MAX_DEPTH", 5) if runtime_settings else 5
                 max_features = getattr(runtime_settings, "MAX_FEATURES", 3) if runtime_settings else 3
-                plan, error = self.strategy.generate_plan(
+                
+                future = self.executor.submit(
+                    _worker_generate_plan,
+                    self.strategy_name,
                     ai_filenames,
                     ai_documents,
                     ai_embeddings,
@@ -393,6 +484,7 @@ class IncrementalAnalyzer:
                     max_depth,
                     max_features,
                 )
+                plan, error = future.result()
                 self._last_reconstruction_error = error
 
                 if runtime_settings and getattr(runtime_settings, "PRESERVE_HIERARCHY", False):
@@ -543,4 +635,7 @@ class IncrementalAnalyzer:
             logging.error(
                 f"Failed during generate_sorting_plan. Error: {str(e)}", exc_info=True
             )
+            import concurrent.futures.process
+            if isinstance(e, concurrent.futures.process.BrokenProcessPool):
+                raise RuntimeError("Background worker process crashed or ran out of memory.") from e
             return {}

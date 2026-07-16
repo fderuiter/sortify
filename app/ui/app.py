@@ -843,24 +843,36 @@ class AutoSorterApp(ctk.CTk):
 
     def pipeline_worker(self, items_to_sort: list) -> None:
         """Run the data collection and ML algorithm incrementally in a background thread."""
-        for chunk in build_corpus_generator(
-            self.base_dir,
-            items_to_sort,
-            self.item_completed_callback,
-            max_workers=self.settings.MAX_WORKERS,
-            chunk_size=50,
-            active_model_name=self.analyzer.active_model_name,
-            active_dimension=self.analyzer.active_dimension,
-        ):
-            self.analyzer.partial_fit(self.base_dir, chunk)
+        try:
+            for chunk in build_corpus_generator(
+                self.base_dir,
+                items_to_sort,
+                self.item_completed_callback,
+                max_workers=self.settings.MAX_WORKERS,
+                chunk_size=50,
+                active_model_name=self.analyzer.active_model_name,
+                active_dimension=self.analyzer.active_dimension,
+            ):
+                self.analyzer.partial_fit(self.base_dir, chunk)
 
-            new_plan = self.analyzer.generate_sorting_plan(self.base_dir, self.settings)
-            self._apply_locked_files(new_plan)
-            self.plan = new_plan
+                new_plan = self.analyzer.generate_sorting_plan(self.base_dir, self.settings)
+                self._apply_locked_files(new_plan)
+                self.plan = new_plan
 
-            self.after(0, self.render_tree)
+                self.after(0, self.render_tree)
 
-        self.after(0, self._finalize_pipeline)
+            self.after(0, self._finalize_pipeline)
+        except RuntimeError as e:
+            if "worker process crashed" in str(e):
+                self.after(0, lambda e=e: self.status_label.configure(text=f"Error: {str(e)}", text_color="red"))
+                self.after(0, lambda: self.execute_btn.configure(state="disabled"))
+                self.after(0, lambda: self.select_btn.configure(state="normal"))
+                if self.observer:
+                    self.observer.stop()
+                    self.observer.join()
+                    self.observer = None
+            else:
+                raise
 
     def _remove_file_from_plan(self, plan_node, filename: str) -> bool:
         """Recursively removes a file from the plan. Returns True if removed."""
