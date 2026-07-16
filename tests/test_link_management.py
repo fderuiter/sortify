@@ -1,12 +1,14 @@
 import os
-from unittest.mock import MagicMock, patch
-
-
 import tempfile
 from pathlib import Path
-from app.core.db import Database
+from unittest.mock import MagicMock, patch
+
 from app.core.cache import CacheManager
+from app.core.db import Database
 from app.core.history import HistoryManager
+from app.core.link_manager import LinkManager
+from app.core.mover import execute_moves
+from app.core.scanner import get_files_recursively
 
 _test_dir = tempfile.mkdtemp()
 db = Database(Path(_test_dir) / "test.db")
@@ -14,10 +16,6 @@ cache_manager = CacheManager(str(Path(_test_dir) / "cache.db"))
 history_manager = HistoryManager(db, cache_manager, str(Path(_test_dir) / "history.db"))
 def save_cache_sync(*args, **kwargs):
     cache_manager.save_cache_sync(*args, **kwargs)
-
-from app.core.link_manager import LinkManager
-from app.core.mover import execute_moves
-from app.core.scanner import get_files_recursively
 
 try:
     import pylnk3

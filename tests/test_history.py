@@ -1,16 +1,15 @@
 import os
 import shutil
 import sqlite3
+import tempfile
 from contextlib import closing
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
-
-import tempfile
-from pathlib import Path
-from app.core.db import Database
 from app.core.cache import CacheManager
+from app.core.db import Database
 from app.core.history import HistoryManager
 
 _test_dir = tempfile.mkdtemp()
@@ -19,8 +18,6 @@ cache_manager = CacheManager(str(Path(_test_dir) / "cache.db"))
 history_manager = HistoryManager(db, cache_manager, str(Path(_test_dir) / "history.db"))
 def save_cache_sync(*args, **kwargs):
     cache_manager.save_cache_sync(*args, **kwargs)
-
-from app.core.history import HistoryManager
 
 
 @pytest.fixture

@@ -1,16 +1,19 @@
 """Cryptographic management for envelope encryption."""
 
+import hashlib
 import os
 import sqlite3
 from pathlib import Path
-import hashlib
 
 import keyring
 from cryptography.fernet import Fernet
+
 from app.core.db_conn import get_db_connection
 
 
 class SessionCrypto:
+    """Manages encryption and decryption of data per session."""
+
     def __init__(self, key_path: Path, db_path: Path):
         self.key_path = key_path
         self.db_path = db_path

@@ -11,7 +11,6 @@ from typing import Callable, Tuple
 
 import pypdf.errors
 
-
 from app.core.extractor_strategies import registry
 
 

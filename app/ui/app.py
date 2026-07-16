@@ -9,7 +9,7 @@ import threading
 import time
 import tkinter as tk
 import webbrowser
-from tkinter import filedialog, ttk
+from tkinter import ttk
 
 import customtkinter as ctk
 from pydantic import ValidationError
@@ -623,12 +623,13 @@ class AutoSorterApp(ctk.CTk):
                 self.current_start = 0
                 self.tree.delete(*self.tree.get_children())
                 
-                import uuid
-                import tempfile
-                from pathlib import Path
                 import shutil
-                from app.core.db import Database
+                import tempfile
+                import uuid
+                from pathlib import Path
+
                 from app.core.cache import CacheManager
+                from app.core.db import Database
                 from app.core.history import HistoryManager
                 
                 if self.session_dir and os.path.exists(self.session_dir):
@@ -796,7 +797,8 @@ class AutoSorterApp(ctk.CTk):
                 if rel_src in self.locked_files:
                     self.locked_files[rel_dest] = self.locked_files.pop(rel_src)
             
-            if self.db: self.db.update_document_path(self.base_dir, rel_src, rel_dest)
+            if self.db:
+                self.db.update_document_path(self.base_dir, rel_src, rel_dest)
             
             # Re-run plan generation
             self._queue_file(dest_path)
@@ -815,7 +817,8 @@ class AutoSorterApp(ctk.CTk):
                 if rel_path in self.locked_files:
                     del self.locked_files[rel_path]
             
-            if self.db: self.db.remove_document(self.base_dir, rel_path)
+            if self.db:
+                self.db.remove_document(self.base_dir, rel_path)
             
             if self._fs_debounce_timer:
                 self._fs_debounce_timer.cancel()

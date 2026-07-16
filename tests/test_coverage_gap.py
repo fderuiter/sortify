@@ -1,16 +1,27 @@
 import hashlib
 import os
+import tempfile
+from pathlib import Path
 from unittest import mock
 
 import numpy as np
 import pypdf
 
-
-import tempfile
-from pathlib import Path
-from app.core.db import Database
 from app.core.cache import CacheManager
+from app.core.db import Database
+from app.core.extractor import (
+    build_corpus_generator,
+    extract_file_text,
+    get_file_hash,
+    process_item_worker,
+)
 from app.core.history import HistoryManager
+from app.core.mover import (
+    _execute_moves_recursive,
+    _remove_empty_dirs,
+    execute_moves,
+    get_safe_path,
+)
 
 _test_dir = tempfile.mkdtemp()
 db = Database(Path(_test_dir) / "test.db")
@@ -18,19 +29,6 @@ cache_manager = CacheManager(str(Path(_test_dir) / "cache.db"))
 history_manager = HistoryManager(db, cache_manager, str(Path(_test_dir) / "history.db"))
 def save_cache_sync(*args, **kwargs):
     cache_manager.save_cache_sync(*args, **kwargs)
-
-from app.core.extractor import (
-    build_corpus_generator,
-    extract_file_text,
-    get_file_hash,
-    process_item_worker,
-)
-from app.core.mover import (
-    _execute_moves_recursive,
-    _remove_empty_dirs,
-    execute_moves,
-    get_safe_path,
-)
 
 
 def test_get_file_hash_exception(tmp_path):

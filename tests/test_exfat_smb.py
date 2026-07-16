@@ -4,8 +4,8 @@ from unittest.mock import patch
 
 import pytest
 
-from app.core.db import Database
 from app.core.cache import CacheManager
+from app.core.db import Database
 from app.core.history import HistoryManager
 
 

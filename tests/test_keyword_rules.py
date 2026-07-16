@@ -1,11 +1,11 @@
+import tempfile
+from pathlib import Path
+
 import pytest
 
 from app.core.analyzer import IncrementalAnalyzer
-
-import tempfile
-from pathlib import Path
-from app.core.db import Database
 from app.core.cache import CacheManager
+from app.core.db import Database
 from app.core.history import HistoryManager
 
 _test_dir = tempfile.mkdtemp()

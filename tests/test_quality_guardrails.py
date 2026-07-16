@@ -1,12 +1,24 @@
 import json
 import os
+import tempfile
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
 
 from app.core.analyzer import IncrementalAnalyzer
+from app.core.cache import CacheManager
+from app.core.db import Database
 from app.core.extractor import build_corpus_generator
+from app.core.history import HistoryManager
 from tests.generate_corpus import LARGE_CORPUS_DIR, create_large_corpus
+
+_test_dir = tempfile.mkdtemp()
+db = Database(Path(_test_dir) / "test.db")
+cache_manager = CacheManager(str(Path(_test_dir) / "cache.db"))
+history_manager = HistoryManager(db, cache_manager, str(Path(_test_dir) / "history.db"))
+def save_cache_sync(*args, **kwargs):
+    cache_manager.save_cache_sync(*args, **kwargs)
 
 BASELINE_FILE = os.path.join(os.path.dirname(__file__), "baseline_metrics.json")
 
@@ -22,20 +34,6 @@ def test_semantic_quality_guardrails():
     create_large_corpus(500)
 
     # Configure the DB to use a persistent test cache so it's not wiped by other tests
-    
-import tempfile
-from pathlib import Path
-from app.core.db import Database
-from app.core.cache import CacheManager
-from app.core.history import HistoryManager
-
-_test_dir = tempfile.mkdtemp()
-db = Database(Path(_test_dir) / "test.db")
-cache_manager = CacheManager(str(Path(_test_dir) / "cache.db"))
-history_manager = HistoryManager(db, cache_manager, str(Path(_test_dir) / "history.db"))
-def save_cache_sync(*args, **kwargs):
-    cache_manager.save_cache_sync(*args, **kwargs)
-
     old_db_path = db.db_path
     # Use a persistent path within the isolated test environment tmpdir instead of CWD
     import tempfile

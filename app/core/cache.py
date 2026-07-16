@@ -3,13 +3,16 @@
 import json
 import logging
 import sqlite3
-from app.core.db_conn import get_db_connection
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 from pathlib import Path
 
+from app.core.db_conn import get_db_connection
+
 
 class CacheManager:
+    """Manages the persistence of cached extraction data to an SQLite database."""
+
     def __init__(self, db_path: str):
         self.db_path = db_path
         self._executor = ThreadPoolExecutor(max_workers=1)
@@ -83,6 +86,7 @@ class CacheManager:
         index_to_word: dict,
         manual_folders: set = None,
     ):
+        """Asynchronously save analysis results to the database."""
         self._executor.submit(
             self._save_cache_sync,
             source_directory,
@@ -100,11 +104,13 @@ class CacheManager:
         index_to_word: dict,
         manual_folders: set = None,
     ):
+        """Save analysis results to the database synchronously."""
         self._save_cache_sync(
             source_directory, corpus, locked_files, index_to_word, manual_folders
         )
 
     def load_cache(self, source_directory: str):
+        """Load cached analysis results from the database for a specific directory."""
         try:
             with closing(self._get_conn()) as conn, conn:
                 cur = conn.execute(

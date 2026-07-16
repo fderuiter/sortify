@@ -7,8 +7,6 @@ import logging
 import os
 import shutil
 
-
-
 from app.core.link_manager import LinkManager
 from app.core.verifier import VerificationEngine
 

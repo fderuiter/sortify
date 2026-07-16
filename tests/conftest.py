@@ -6,6 +6,7 @@ import keyring
 import pytest
 from keyring.backend import KeyringBackend
 
+
 class MemoryKeyring(KeyringBackend):
     priority = 1
     def __init__(self):

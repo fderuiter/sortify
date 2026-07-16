@@ -1,3 +1,5 @@
+import tempfile
+from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -5,11 +7,7 @@ import pytest
 
 from app.core.analyzer import IncrementalAnalyzer
 from app.core.cache import CacheManager
-
-import tempfile
-from pathlib import Path
 from app.core.db import Database
-from app.core.cache import CacheManager
 from app.core.history import HistoryManager
 
 _test_dir = tempfile.mkdtemp()

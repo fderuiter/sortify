@@ -1,14 +1,16 @@
 import os
 import tempfile
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
 
-import tempfile
-from pathlib import Path
-from app.core.db import Database
+from app.core.analyzer import IncrementalAnalyzer
 from app.core.cache import CacheManager
+from app.core.db import Database
+from app.core.extractor import build_corpus_generator
 from app.core.history import HistoryManager
+from tests.generate_corpus import CORPUS_DIR, create_corpus
 
 _test_dir = tempfile.mkdtemp()
 db = Database(Path(_test_dir) / "test.db")
@@ -16,12 +18,6 @@ cache_manager = CacheManager(str(Path(_test_dir) / "cache.db"))
 history_manager = HistoryManager(db, cache_manager, str(Path(_test_dir) / "history.db"))
 def save_cache_sync(*args, **kwargs):
     cache_manager.save_cache_sync(*args, **kwargs)
-
-
-from app.core.analyzer import IncrementalAnalyzer
-
-from app.core.extractor import build_corpus_generator
-from tests.generate_corpus import CORPUS_DIR, create_corpus
 
 
 @pytest.fixture(scope="function", autouse=True)

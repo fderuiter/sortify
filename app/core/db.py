@@ -1,13 +1,12 @@
 """Local database management for autosorter."""
 
-import sqlite3
-from app.core.db_conn import get_db_connection
 from contextlib import closing
 from pathlib import Path
 
 import numpy as np
 
 from app.core.crypto import SessionCrypto
+from app.core.db_conn import get_db_connection
 
 
 class Database:
