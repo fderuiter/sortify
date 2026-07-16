@@ -24,7 +24,6 @@ def test_semantic_quality_guardrails():
     # Configure the DB to use a persistent test cache so it's not wiped by other tests
     from app.core.db import db
     old_db_path = db.db_path
-    
     # Use a persistent path within the isolated test environment tmpdir instead of CWD
     import tempfile
     temp_dir = tempfile.gettempdir()
