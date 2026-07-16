@@ -9,14 +9,8 @@ import logging
 import os
 import re
 
-import torch
-from sentence_transformers import SentenceTransformer
-
 from app.core.analyzer_strategies import clustering_registry
 from app.core.db import db
-
-# Explicitly limit ML engine to 2 threads to prevent CPU starvation
-torch.set_num_threads(2)
 
 
 class IncrementalAnalyzer:
@@ -52,6 +46,11 @@ class IncrementalAnalyzer:
             self._verify_offline_model(offline_model_path, manifest_path)
             logging.info("Integrity verified. Loading side-loaded model...")
             backend = self._detect_backend(offline_model_path)
+            
+            import torch
+            from sentence_transformers import SentenceTransformer
+            torch.set_num_threads(2)
+            
             self.model = SentenceTransformer(offline_model_path, backend=backend)
             self.model_name = "offline_model"
         elif model_path is not None:
@@ -61,6 +60,11 @@ class IncrementalAnalyzer:
                     logging.info("Verifying user downloaded model integrity...")
                     self._verify_hf_model(str(user_model_path), hf_manifest)
             backend = self._detect_backend(model_path)
+            
+            import torch
+            from sentence_transformers import SentenceTransformer
+            torch.set_num_threads(2)
+            
             self.model = SentenceTransformer(model_path, backend=backend)
             self.model_name = str(model_path)
         else:
