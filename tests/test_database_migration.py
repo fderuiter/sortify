@@ -1,6 +1,7 @@
 import sqlite3
-import pytest
+
 from app.core.db import Database
+
 
 def test_migration_from_v1(tmp_path):
     db_path = tmp_path / "test_v1.db"
