@@ -3,8 +3,38 @@ import tempfile
 from pathlib import Path
 
 import pytest
+import keyring
+from keyring.backend import KeyringBackend
 
 from app.core.db import db
+
+
+class InMemoryKeyring(KeyringBackend):
+    priority = 1
+
+    def __init__(self):
+        self.passwords = {}
+
+    def get_password(self, servicename, username):
+        return self.passwords.get((servicename, username))
+
+    def set_password(self, servicename, username, password):
+        self.passwords[(servicename, username)] = password
+
+    def delete_password(self, servicename, username):
+        if (servicename, username) in self.passwords:
+            del self.passwords[(servicename, username)]
+        else:
+            from keyring.errors import PasswordDeleteError
+            raise PasswordDeleteError("Password not found")
+
+@pytest.fixture(scope="session", autouse=True)
+def mock_keyring():
+    original_keyring = keyring.get_keyring()
+    mock_backend = InMemoryKeyring()
+    keyring.set_keyring(mock_backend)
+    yield mock_backend
+    keyring.set_keyring(original_keyring)
 
 
 @pytest.fixture(scope="session", autouse=True)
