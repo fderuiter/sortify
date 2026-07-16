@@ -1,6 +1,8 @@
+from app.core.analyzer import IncrementalAnalyzer
+import numpy as np
 import pytest
 
-from app.core.analyzer import IncrementalAnalyzer
+
 from app.core.db import db
 
 
@@ -126,3 +128,59 @@ def test_naming_collision_resolution():
 
     folder_names = list(plan.keys())
     assert "Miscellaneous" not in folder_names or len(folder_names) > 1
+
+
+from app.core.db import db
+from app.core.cache import save_cache_sync
+from types import SimpleNamespace
+
+def test_conflict_detection():
+    db.clear("test_conflict_base")
+    # File matches both a keyword rule and has a historical override
+    # keyword rule: "invoice" -> "Accounting"
+    # historical override: "Archive"
+    
+    analyzer = IncrementalAnalyzer(max_folders=2, stop_words={"the", "and"})
+    corpus = {"invoice_2025.txt": "Some invoice text"}
+    
+    # Put document in DB with an assigned folder (historical override)
+    db.upsert_document("test_conflict_base", "invoice_2025.txt", "hash123", "Some invoice text", np.array([0.1]*384))
+    db.set_user_verified_target("test_conflict_base", "hash123", "Archive")
+    
+    analyzer.partial_fit("test_conflict_base", corpus)
+    
+    settings = SimpleNamespace(KEYWORD_RULES={"invoice": "Accounting"})
+    
+    plan = analyzer.generate_sorting_plan("test_conflict_base", settings)
+    
+    # invoice_2025.txt should be in the plan under 'Archive' and flagged as conflicted
+    assert "Archive" in plan
+    file_info = plan["Archive"]["invoice_2025.txt"]
+    assert file_info.get("is_conflicted") is True
+    assert file_info.get("compliance_path") == "Accounting"
+    assert file_info.get("historical_path") == "Archive"
+
+def test_conflict_resolution():
+    db.clear("test_conflict_res_base")
+    
+    analyzer = IncrementalAnalyzer(max_folders=2, stop_words={"the", "and"})
+    corpus = {"invoice_2025.txt": "Some invoice text"}
+    
+    db.upsert_document("test_conflict_res_base", "invoice_2025.txt", "hash123", "Some invoice text", np.array([0.1]*384))
+    db.set_user_verified_target("test_conflict_res_base", "hash123", "Archive")
+    
+    analyzer.partial_fit("test_conflict_res_base", corpus)
+    
+    # Pre-populate session cache with a locked choice
+    locked_files = {"invoice_2025.txt": "Accounting"} # user chose compliance path
+    save_cache_sync("test_conflict_res_base", corpus, locked_files, {}, set())
+    
+    settings = SimpleNamespace(KEYWORD_RULES={"invoice": "Accounting"})
+    
+    plan = analyzer.generate_sorting_plan("test_conflict_res_base", settings)
+    
+    # Since it was resolved to 'Accounting', it should be in Accounting and no longer flagged as conflicted
+    assert "Accounting" in plan
+    file_info = plan["Accounting"]["invoice_2025.txt"]
+    assert file_info.get("is_conflicted", False) is False
+
