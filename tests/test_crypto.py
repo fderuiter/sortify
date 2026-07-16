@@ -1,7 +1,7 @@
 import os
 import sqlite3
-import keyring
 
+import keyring
 import numpy as np
 import pytest
 

@@ -3,10 +3,11 @@ import tempfile
 from pathlib import Path
 
 import keyring
-from keyring.backend import KeyringBackend
 import pytest
+from keyring.backend import KeyringBackend
 
 from app.core.db import db
+
 
 class MemoryKeyring(KeyringBackend):
     priority = 1

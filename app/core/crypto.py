@@ -2,8 +2,8 @@
 
 import os
 import sqlite3
-import keyring
 
+import keyring
 from cryptography.fernet import Fernet
 
 from app.config import get_app_dir
