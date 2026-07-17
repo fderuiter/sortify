@@ -14,6 +14,7 @@ DB_PATH = get_app_dir() / "cache.db"
 def init_cache_db():
     """Initialize the cache database."""
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+
     try:
         with closing(get_db_connection(DB_PATH)) as conn, conn:
             conn.execute("""

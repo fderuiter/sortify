@@ -651,11 +651,18 @@ class AutoSorterApp(ctk.CTk):
                 else:
                     model_path = None
 
-                self.analyzer = IncrementalAnalyzer(
-                    self.settings.MAX_FOLDERS,
-                    self.settings.STOP_WORDS,
-                    model_path=model_path,
-                )
+                try:
+                    self.analyzer = IncrementalAnalyzer(
+                        self.settings.MAX_FOLDERS,
+                        self.settings.STOP_WORDS,
+                        model_path=model_path,
+                    )
+                except Exception as e:
+                    from tkinter import messagebox
+                    self.select_btn.configure(state="normal")
+                    messagebox.showerror("Model Loading Error", f"Failed to initialize AI model:\n{e}\n\nPlease check your internet connection or repair the model download in Settings.")
+                    self.status_label.configure(text="Ready", text_color="white")
+                    return
 
                 self.status_label.configure(
                     text="Scanning directory...", text_color="white"

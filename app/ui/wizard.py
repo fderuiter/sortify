@@ -363,8 +363,12 @@ class SetupWizard(ctk.CTkToplevel):
         self.status.pack(pady=5)
         self.status.configure(text="Starting download...", text_color="white")
 
+        import shutil
         model_dir = get_app_dir() / "model"
         
+        if model_dir.exists():
+            shutil.rmtree(model_dir)
+            
         if not self.downloader:
             self.downloader = Downloader(
                 repo_id="sentence-transformers/all-MiniLM-L6-v2",
