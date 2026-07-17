@@ -1,8 +1,5 @@
-from app.core.db import get_connection
 import os
 import shutil
-import sqlite3
-from contextlib import closing
 from unittest.mock import patch
 
 import pytest

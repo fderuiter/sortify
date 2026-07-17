@@ -3,7 +3,6 @@
 import json
 import logging
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import closing
 
 from app.config import get_app_dir
 from app.core.db import get_connection, sqlite3
@@ -13,13 +12,7 @@ DB_PATH = get_app_dir() / "cache.db"
 _executor = ThreadPoolExecutor(max_workers=1)
 
 
-_cached_conn = None
-
 def _get_conn():
-    global _cached_conn
-    if _cached_conn is not None:
-        return _cached_conn
-        
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = get_connection(DB_PATH)
     try:
@@ -37,10 +30,9 @@ def _get_conn():
                 conn.execute("ALTER TABLE directory_cache ADD COLUMN manual_folders TEXT")
             except sqlite3.OperationalError:
                 pass
-        _cached_conn = conn
         return conn
     except Exception:
-        conn.close()
+        # We don't close the connection here because it's managed by the global cache
         raise
 
 def _save_cache_sync(

@@ -4,12 +4,11 @@ import os
 import shutil
 import time
 import uuid
-from contextlib import closing
 from typing import Any, Dict, List
 
 from app.config import get_app_dir
 from app.core.db import db as db_instance
-from app.core.db import get_connection, sqlite3
+from app.core.db import get_connection
 
 
 class HistoryManager:
@@ -17,13 +16,10 @@ class HistoryManager:
 
     def __init__(self, db_path=None):
         self.db_path = db_path or str(get_app_dir() / "history.db")
-        self._conn = None
         self._init_db()
 
     def _get_cached_conn(self):
-        if self._conn is None:
-            self._conn = get_connection(self.db_path)
-        return self._conn
+        return get_connection(self.db_path)
 
     def _init_db(self):
         conn = self._get_cached_conn()

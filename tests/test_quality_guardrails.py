@@ -23,11 +23,12 @@ def test_semantic_quality_guardrails():
     create_large_corpus(500)
 
     # Configure the DB to use a persistent test cache so it's not wiped by other tests
+    import app.core.db as core_db
     from app.core.db import db
 
     old_db_path = db.db_path
     db.db_path = "quality_guardrails_cache.db"
-    db._conn = None
+    core_db.clear_connection_cache()
     db._init_db()
 
     try:
@@ -117,5 +118,5 @@ def test_semantic_quality_guardrails():
         )
     finally:
         db.db_path = old_db_path
-        db._conn = None
+        core_db.clear_connection_cache()
         db._init_db()

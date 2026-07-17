@@ -10,8 +10,8 @@ import PyInstaller.__main__
 
 def main():
     """Build the standalone executable."""
-    import subprocess
     import shutil
+    import subprocess
     
     # Download precompiled sqlcipher3-wheels for the current platform
     print("Downloading precompiled SQLCipher shared libraries...")

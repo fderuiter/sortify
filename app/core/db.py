@@ -1,7 +1,6 @@
 """Local database management for autosorter."""
 
 import sys
-from contextlib import closing
 
 import numpy as np
 
@@ -11,37 +10,41 @@ from app.core.crypto import (
     decrypt_text,
     encrypt_embedding,
     encrypt_text,
-    get_cipher,
-    get_raw_key
+    get_raw_key,
 )
+
 
 def get_sqlite_engine():
     import importlib
     
     if hasattr(sys, '_MEIPASS'):
-        import os
         sys.path.insert(0, sys._MEIPASS)
         
-    try:
-        # Dynamically import to hide from PyInstaller, preventing standard compiler errors
-        return importlib.import_module("sqlcipher3.dbapi2")
-    except ImportError:
-        import sqlite3
-        return sqlite3
+    # Dynamically import to hide from PyInstaller, preventing standard compiler errors
+    return importlib.import_module("sqlcipher3.dbapi2")
 
 sqlite3 = get_sqlite_engine()
 
+_connection_cache = {}
+
+def clear_connection_cache():
+    global _connection_cache
+    for conn in _connection_cache.values():
+        conn.close()
+    _connection_cache.clear()
+
 def get_connection(db_path):
+    import os
+    abs_path = os.path.abspath(db_path)
+    if abs_path in _connection_cache:
+        return _connection_cache[abs_path]
+
     conn = sqlite3.connect(db_path, check_same_thread=False)
-    try:
-        # Use Fernet key as SQLCipher password since it is consistent and securely generated
-        raw_key = get_raw_key()
-        conn.execute(f"PRAGMA key = '{raw_key}'")
-    except Exception as e:
-        print('GET CONNECTION EXCEPTION:', e)
-        import traceback; traceback.print_exc()
-        # If cipher fails to load, just let it be unencrypted (e.g. before key is generated)
-        pass
+    # Use Fernet key as SQLCipher password since it is consistent and securely generated
+    raw_key = get_raw_key()
+    conn.execute(f"PRAGMA key = '{raw_key}'")
+    
+    _connection_cache[abs_path] = conn
     return conn
 
 class Database:
@@ -51,13 +54,10 @@ class Database:
 
     def __init__(self, db_path=None):
         self.db_path = db_path or str(get_app_dir() / "autosorter.db")
-        self._conn = None
         self._init_db()
 
     def _get_cached_conn(self):
-        if self._conn is None:
-            self._conn = get_connection(self.db_path)
-        return self._conn
+        return get_connection(self.db_path)
 
     def _init_db(self):
         conn = self._get_cached_conn()
