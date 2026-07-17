@@ -16,8 +16,6 @@ from pydantic import ValidationError
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
-from app.core.extractor import build_corpus_generator
-from app.core.scanner import get_files_recursively
 from app.core.session import AppSession
 from app.core.verifier import VerificationEngine
 from app.ui.settings import SettingsView
@@ -351,7 +349,7 @@ class AutoSorterApp(ctk.CTk):
             threading.Thread(target=_update, daemon=True).start()
 
     def _get_files_recursively(self, base: str, rel_path: str = "") -> list:
-        return get_files_recursively(base, rel_path)
+        return self.app_session.get_files_recursively(rel_path)
 
     def show_settings_modal(self) -> None:
         """Display a settings modal to configure dynamic limits."""
@@ -858,26 +856,20 @@ class AutoSorterApp(ctk.CTk):
 
     def pipeline_worker(self, items_to_sort: list) -> None:
         """Run the data collection and ML algorithm incrementally in a background thread."""
-        for chunk in build_corpus_generator(
-            self.base_dir,
+        for chunk in self.app_session.process_items(
             items_to_sort,
             self.item_completed_callback,
-            max_workers=self.settings.MAX_WORKERS,
-            db=self.app_session.db,
-            chunk_size=50,
-            active_model_name=self.app_session.analyzer.active_model_name,
-            active_dimension=self.app_session.analyzer.active_dimension,
             cancel_check=lambda: getattr(self, "_cancel_analysis_flag", False)
         ):
             if getattr(self, "_cancel_analysis_flag", False):
                 break
                 
-            self.app_session.analyzer.partial_fit(self.base_dir, chunk, self.settings)
+            self.app_session.partial_fit(chunk)
 
             if getattr(self, "_cancel_analysis_flag", False):
                 break
 
-            new_plan = self.app_session.analyzer.generate_sorting_plan(self.base_dir, self.settings)
+            new_plan = self.app_session.generate_sorting_plan()
             self._apply_locked_files(new_plan)
             self.plan = new_plan
 

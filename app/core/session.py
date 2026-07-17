@@ -47,6 +47,43 @@ class AppSession:
             self.base_dir, self.analyzer.corpus, locked_files, self.analyzer.index_to_word, manual_folders
         )
 
+    def get_files_recursively(self, rel_path: str = "") -> list:
+        """Scan directory for files."""
+        if not self.base_dir:
+            return []
+        from app.core.scanner import get_files_recursively
+        return get_files_recursively(self.base_dir, rel_path)
+
+    def process_items(self, items_to_sort, callback, cancel_check):
+        """Build corpus generator for files."""
+        if not self.base_dir:
+            return
+        from app.core.extractor import build_corpus_generator
+        for chunk in build_corpus_generator(
+            self.base_dir,
+            items_to_sort,
+            callback,
+            max_workers=self.settings.MAX_WORKERS,
+            db=self.db,
+            chunk_size=50,
+            active_model_name=self.analyzer.active_model_name,
+            active_dimension=self.analyzer.active_dimension,
+            cancel_check=cancel_check
+        ):
+            yield chunk
+
+    def partial_fit(self, chunk):
+        """Incrementally train the analyzer."""
+        if not self.base_dir:
+            return
+        self.analyzer.partial_fit(self.base_dir, chunk, self.settings)
+
+    def generate_sorting_plan(self):
+        """Generate sorting plan from analyzer."""
+        if not self.base_dir:
+            return {}
+        return self.analyzer.generate_sorting_plan(self.base_dir, self.settings)
+
     def save_cache_async(self, locked_files, manual_folders):
         """Save the cache asynchronously."""
         if not self.base_dir:
