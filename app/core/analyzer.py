@@ -6,19 +6,22 @@ This module provides topic modeling functionality.
 import hashlib
 import json
 import logging
+import multiprocessing as mp
 import os
 import re
-import multiprocessing as mp
+
 import numpy as np
 
 from app.core.analyzer_strategies import clustering_registry
 from app.core.db import db
 
+
 def gguf_worker_process(model_path: str, q_in: mp.Queue, q_out: mp.Queue):
     """Subprocess for handling GGUF inference in isolation."""
     try:
-        from llama_cpp import Llama
         import os
+
+        from llama_cpp import Llama
         cpu_count = os.cpu_count() or 4
         n_threads = max(1, int(cpu_count * 0.75))
         
@@ -135,6 +138,7 @@ class IncrementalAnalyzer:
         self._gguf_process.start()
 
     def terminate(self):
+        """Terminate the background GGUF inference process safely."""
         if self._gguf_process and self._gguf_process.is_alive():
             self._gguf_process.terminate()
             self._gguf_process.join()
