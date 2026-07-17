@@ -11,7 +11,7 @@ from app.core import crypto
 def test_key_generation_keyring(tmp_path, monkeypatch):
     monkeypatch.setattr(crypto, "_fernet_instance", None)
     monkeypatch.setattr(crypto, "_raw_key", None)
-    monkeypatch.setattr(crypto, "get_app_dir", lambda: tmp_path)
+    monkeypatch.setattr("app.config.get_app_dir", lambda: tmp_path)
     
     # Trigger key generation
     cipher = crypto.get_cipher()
@@ -27,7 +27,7 @@ def test_key_generation_keyring(tmp_path, monkeypatch):
 def test_key_generation_fallback(tmp_path, monkeypatch):
     monkeypatch.setattr(crypto, "_fernet_instance", None)
     monkeypatch.setattr(crypto, "_raw_key", None)
-    monkeypatch.setattr(crypto, "get_app_dir", lambda: tmp_path)
+    monkeypatch.setattr("app.config.get_app_dir", lambda: tmp_path)
     
     # Force keyring failure
     def mock_set_password(*args, **kwargs):
@@ -49,7 +49,7 @@ def test_key_generation_fallback(tmp_path, monkeypatch):
 def test_legacy_key_migration(tmp_path, monkeypatch):
     monkeypatch.setattr(crypto, "_fernet_instance", None)
     monkeypatch.setattr(crypto, "_raw_key", None)
-    monkeypatch.setattr(crypto, "get_app_dir", lambda: tmp_path)
+    monkeypatch.setattr("app.config.get_app_dir", lambda: tmp_path)
     
     from cryptography.fernet import Fernet
     legacy_key = Fernet.generate_key()
@@ -70,7 +70,7 @@ def test_legacy_key_migration(tmp_path, monkeypatch):
 def test_missing_key_with_existing_db(tmp_path, monkeypatch):
     monkeypatch.setattr(crypto, "_fernet_instance", None)
     monkeypatch.setattr(crypto, "_raw_key", None)
-    monkeypatch.setattr(crypto, "get_app_dir", lambda: tmp_path)
+    monkeypatch.setattr("app.config.get_app_dir", lambda: tmp_path)
     
     db_path = tmp_path / "autosorter.db"
     
@@ -87,7 +87,7 @@ def test_missing_key_with_existing_db(tmp_path, monkeypatch):
 def test_missing_key_with_empty_db(tmp_path, monkeypatch):
     monkeypatch.setattr(crypto, "_fernet_instance", None)
     monkeypatch.setattr(crypto, "_raw_key", None)
-    monkeypatch.setattr(crypto, "get_app_dir", lambda: tmp_path)
+    monkeypatch.setattr("app.config.get_app_dir", lambda: tmp_path)
     
     db_path = tmp_path / "autosorter.db"
     
@@ -105,7 +105,7 @@ def test_missing_key_with_empty_db(tmp_path, monkeypatch):
 def test_encryption_decryption(tmp_path, monkeypatch):
     monkeypatch.setattr(crypto, "_fernet_instance", None)
     monkeypatch.setattr(crypto, "_raw_key", None)
-    monkeypatch.setattr(crypto, "get_app_dir", lambda: tmp_path)
+    monkeypatch.setattr("app.config.get_app_dir", lambda: tmp_path)
     
     original_text = "This is a sensitive document."
     enc_text = crypto.encrypt_text(original_text)
@@ -121,7 +121,7 @@ def test_encryption_decryption(tmp_path, monkeypatch):
 def test_invalid_key(tmp_path, monkeypatch):
     monkeypatch.setattr(crypto, "_fernet_instance", None)
     monkeypatch.setattr(crypto, "_raw_key", None)
-    monkeypatch.setattr(crypto, "get_app_dir", lambda: tmp_path)
+    monkeypatch.setattr("app.config.get_app_dir", lambda: tmp_path)
     
     # Put invalid key in keyring directly to test invalid key behavior
     keyring.set_password(crypto.KEYRING_SERVICE, crypto.KEYRING_ACCOUNT, "invalid_key_data_that_is_too_short")

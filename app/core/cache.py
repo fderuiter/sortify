@@ -3,11 +3,11 @@
 import json
 import logging
 
-from app.config import get_app_dir
+import app.config
 from app.core.db_conn import get_db_connection
 from app.core.db_worker import worker
 
-DB_PATH = get_app_dir() / "cache.db"
+DB_PATH = app.config.get_app_dir() / "cache.db"
 
 def _get_conn():
     return get_db_connection(DB_PATH)

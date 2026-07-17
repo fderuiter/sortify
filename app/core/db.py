@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from app.config import get_app_dir
+import app.config
 from app.core.crypto import (
     decrypt_embedding,
     decrypt_text,
@@ -21,7 +21,7 @@ class Database:
     CURRENT_VERSION = 4
 
     def __init__(self, db_path=None):
-        self.db_path = db_path or str(get_app_dir() / "autosorter.db")
+        self.db_path = db_path or str(app.config.get_app_dir() / "autosorter.db")
 
     def init_db(self):
         """Initialize the core database and create tables if they do not exist."""

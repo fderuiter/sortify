@@ -6,7 +6,7 @@ import time
 import uuid
 from typing import Any, Dict, List
 
-from app.config import get_app_dir
+import app.config
 from app.core.db import db as db_instance
 from app.core.db_conn import get_db_connection
 from app.core.db_worker import worker
@@ -14,7 +14,7 @@ from app.core.db_worker import worker
 
 def init_history_db(db_path=None):
     """Initialize the history database."""
-    db_path = db_path or str(get_app_dir() / "history.db")
+    db_path = db_path or str(app.config.get_app_dir() / "history.db")
     conn = get_db_connection(db_path)
     with conn:
         conn.execute("""
@@ -60,7 +60,7 @@ class HistoryManager:
     """Manages full directory snapshots and rollback functionality."""
 
     def __init__(self, db_path=None):
-        self.db_path = db_path or str(get_app_dir() / "history.db")
+        self.db_path = db_path or str(app.config.get_app_dir() / "history.db")
         self._initialized = False
 
     def _ensure_init(self):

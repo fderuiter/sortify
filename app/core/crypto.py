@@ -6,7 +6,7 @@ import sqlite3
 import keyring
 from cryptography.fernet import Fernet
 
-from app.config import get_app_dir
+import app.config
 
 _fernet_instance = None
 _raw_key = None
@@ -20,7 +20,7 @@ def get_cipher():
     if _fernet_instance is not None:
         return _fernet_instance
 
-    key_path = get_app_dir() / "secret.key"
+    key_path = app.config.get_app_dir() / "secret.key"
     key = None
     
     # 1. Try loading from Keyring
@@ -50,7 +50,7 @@ def get_cipher():
 
     # 3. Database Guard
     if key is None:
-        db_path = get_app_dir() / "autosorter.db"
+        db_path = app.config.get_app_dir() / "autosorter.db"
         if db_path.exists():
             try:
                 conn = sqlite3.connect(db_path)
