@@ -137,11 +137,49 @@ class IncrementalAnalyzer:
         )
         self._gguf_process.start()
 
-    def terminate(self):
-        """Terminate the GGUF background process if running."""
-        if self._gguf_process and self._gguf_process.is_alive():
+    def close(self):
+        """Cleanly terminate the background GGUF worker process and close queues."""
+        if hasattr(self, '_q_in') and self._q_in:
+            try:
+                self._q_in.put(None)
+            except Exception:
+                pass
+        
+        if hasattr(self, '_gguf_process') and self._gguf_process and self._gguf_process.is_alive():
             self._gguf_process.terminate()
-            self._gguf_process.join()
+            self._gguf_process.join(timeout=1.0)
+            
+        if hasattr(self, '_q_in') and self._q_in:
+            self._q_in.close()
+        if hasattr(self, '_q_out') and self._q_out:
+            self._q_out.close()
+
+    def __del__(self):
+        """Ensure background processes and queues are cleaned up on garbage collection."""
+        self.terminate()
+        
+    def terminate(self):
+        """Terminate the GGUF background process if running and close queues."""
+        if hasattr(self, '_q_in') and self._q_in:
+            try:
+                self._q_in.put(None)
+            except Exception:
+                pass
+
+        if hasattr(self, '_gguf_process') and self._gguf_process and self._gguf_process.is_alive():
+            self._gguf_process.terminate()
+            self._gguf_process.join(timeout=1.0)
+            
+        if hasattr(self, '_q_in') and self._q_in:
+            try:
+                self._q_in.close()
+            except Exception:
+                pass
+        if hasattr(self, '_q_out') and self._q_out:
+            try:
+                self._q_out.close()
+            except Exception:
+                pass
 
     def _detect_backend(self, model_dir: str) -> str:
         """Detect the appropriate backend for the model based on available weights."""

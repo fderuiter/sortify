@@ -135,6 +135,8 @@ class AppSession:
 
     def close(self):
         """Cleanup session directory."""
+        if hasattr(self, "analyzer") and self.analyzer:
+            self.analyzer.terminate()
         if hasattr(self, "db_worker") and self.db_worker:
             self.db_worker.stop()
         if self.session_dir and os.path.exists(self.session_dir):

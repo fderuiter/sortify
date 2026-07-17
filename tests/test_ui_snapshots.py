@@ -107,7 +107,8 @@ def headless_app():
     app = AutoSorterApp(dummy_settings)
     app.plan = {}
     app.plan_errors = {}
-    return app
+    yield app
+    app.on_close()
 
 
 def test_empty_plan_rendering(headless_app):
