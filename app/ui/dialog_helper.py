@@ -7,8 +7,7 @@ from tkinter import filedialog
 
 
 def ask_directory_async(parent, title, callback, disable_ui_callback, enable_ui_callback):
-    """
-    Launch native OS directory selector asynchronously to prevent blocking the web UI execution thread.
+    """Launch native OS directory selector asynchronously to prevent blocking the web UI execution thread.
 
     Force the native OS window manager to bring the newly opened folder picker window to the front.
     """

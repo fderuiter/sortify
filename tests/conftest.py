@@ -44,11 +44,16 @@ def isolate_test_environment(monkeypatch_session):
     # Also update the db singleton since it was initialized at import time
     old_db_path = db.db_path
     db.db_path = str(mock_get_app_dir() / "autosorter.db")
-    db._init_db()
     
     # Also update cache module since it was evaluated at import time
     import app.core.cache
     app.core.cache.DB_PATH = mock_get_app_dir() / "cache.db"
+
+    import app.core.history
+    app.core.history.history_manager.db_path = str(mock_get_app_dir() / "history.db")
+    
+    from app.core.db_init import init_databases
+    init_databases()
     
     yield
     
