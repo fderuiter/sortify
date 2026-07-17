@@ -21,12 +21,12 @@ def test_semantic_quality_guardrails():
     # 1. Generate large synthetic corpus for stress testing (500 documents across 4 themes)
     create_large_corpus(500)
 
+    import tempfile
+    
     # Configure the DB to use a persistent test cache so it's not wiped by other tests
     from app.core.db import db
     old_db_path = db.db_path
-    # Use a persistent path within the isolated test environment tmpdir instead of CWD
     import os
-    import tempfile
     
     # Wipe legacy locks to prevent token decryption failures across disparate test sessions
     legacy_path = "quality_guardrails_cache.db"

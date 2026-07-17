@@ -6,6 +6,7 @@ This module provides topic modeling functionality.
 import hashlib
 import json
 import logging
+import multiprocessing as mp
 import os
 import re
 from typing import Any, Dict, List, Tuple
@@ -86,6 +87,42 @@ def _worker_generate_plan(
         raise e
 
 
+def gguf_worker_process(model_path: str, q_in: mp.Queue, q_out: mp.Queue):
+    """Subprocess for handling GGUF inference in isolation."""
+    try:
+        import os
+
+        from llama_cpp import Llama
+        cpu_count = os.cpu_count() or 4
+        n_threads = max(1, int(cpu_count * 0.75))
+        
+        model = Llama(
+            model_path=model_path,
+            n_ctx=512,
+            n_batch=128,
+            n_threads=n_threads,
+            embedding=True,
+            verbose=False
+        )
+        
+        while True:
+            task = q_in.get()
+            if task is None:
+                break
+                
+            texts_to_encode = task
+            embeddings = []
+            for text in texts_to_encode:
+                res = model.create_embedding(text)
+                if 'data' in res and len(res['data']) > 0:
+                    embeddings.append(res['data'][0]['embedding'])
+                else:
+                    embeddings.append(None)
+            q_out.put(embeddings)
+    except Exception as e:
+        import logging
+        logging.error(f"GGUF worker crashed: {e}")
+        q_out.put(None)
 
 class IncrementalAnalyzer:
     """Stateful ML analyzer using incremental topic modeling.
@@ -125,12 +162,19 @@ class IncrementalAnalyzer:
         self.model_name = None
         backend = "torch"
         self._model_dir_for_config = None
-
+        self._gguf_process = None
+        self._q_in = None
+        self._q_out = None
+        self.corpus = {}
+        self._last_reconstruction_error = 0.0
+        self._active_dimension = None
         if os.path.exists(offline_model_path) and os.path.exists(manifest_path):
             logging.info("Detected side-loaded model weights. Verifying integrity...")
             self._verify_offline_model(offline_model_path, manifest_path)
             logging.info("Integrity verified. Loading side-loaded model in worker...")
             backend = self._detect_backend(offline_model_path)
+            if backend == "gguf":
+                self._start_gguf_worker(offline_model_path)
             self.model_name = "offline_model"
             self._model_dir_for_config = offline_model_path
             self.model_path = offline_model_path
@@ -143,11 +187,10 @@ class IncrementalAnalyzer:
                     logging.info("Verifying user downloaded model integrity...")
                     self._verify_hf_model(str(user_model_path), hf_manifest)
             backend = self._detect_backend(model_path)
+            if backend == "gguf":
+                self._start_gguf_worker(model_path)
             self.model_name = str(model_path)
             self._model_dir_for_config = str(model_path)
-
-        self.corpus = {}
-        self._last_reconstruction_error = 0.0
 
         import concurrent.futures
         import multiprocessing
@@ -159,6 +202,32 @@ class IncrementalAnalyzer:
             initializer=_worker_init,
             initargs=(self.model_path, backend) if self.model_path else (None, "torch"),
         )
+    def _start_gguf_worker(self, path):
+        gguf_file = path
+        if os.path.isdir(path):
+            for root, _, files in os.walk(path):
+                for f in files:
+                    if f.endswith(".gguf"):
+                        gguf_file = os.path.join(root, f)
+                        break
+        
+        self._q_in = mp.Queue()
+        self._q_out = mp.Queue()
+        self._gguf_process = mp.Process(
+            target=gguf_worker_process,
+            args=(gguf_file, self._q_in, self._q_out),
+            daemon=True
+        )
+        self._gguf_process.start()
+
+    def terminate(self):
+        """Terminate background processes."""
+        if self._gguf_process and self._gguf_process.is_alive():
+            self._gguf_process.terminate()
+            self._gguf_process.join()
+        if hasattr(self, 'executor'):
+            self.executor.shutdown(wait=False)
+
 
     def _detect_backend(self, model_dir: str) -> str:
         """Detect the appropriate backend for the model based on available weights."""
@@ -392,6 +461,9 @@ class IncrementalAnalyzer:
                 if self.model_name is None:
                     # Dummy embeddings if offline mode without model
                     new_embeddings = [None] * len(texts_to_encode)
+                elif self._gguf_process and self._gguf_process.is_alive():
+                    self._q_in.put(texts_to_encode)
+                    new_embeddings = self._q_out.get()
                 else:
                     future = self.executor.submit(_worker_encode, texts_to_encode)
                     new_embeddings = future.result()
@@ -829,8 +901,12 @@ class IncrementalAnalyzer:
 
         try:
             # Generate vector for the search query
-            future = self.executor.submit(_worker_encode, [query_text])
-            query_embedding = future.result()[0]
+            if self._gguf_process and self._gguf_process.is_alive():
+                self._q_in.put([query_text])
+                query_embedding = self._q_out.get()[0]
+            else:
+                future = self.executor.submit(_worker_encode, [query_text])
+                query_embedding = future.result()[0]
 
             docs = db.get_all_documents(base_dir)
             if not docs:
