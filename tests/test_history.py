@@ -1,7 +1,6 @@
 import os
 import shutil
 import sqlite3
-import tempfile
 from contextlib import closing
 from pathlib import Path
 from unittest.mock import patch
@@ -12,29 +11,25 @@ from app.core.cache import CacheManager
 from app.core.db import Database
 from app.core.history import HistoryManager
 
-_test_dir = tempfile.mkdtemp()
-db = Database(Path(_test_dir) / "test.db")
-cache_manager = CacheManager(str(Path(_test_dir) / "cache.db"))
-history_manager = HistoryManager(db, cache_manager, str(Path(_test_dir) / "history.db"))
-def save_cache_sync(*args, **kwargs):
-    cache_manager.save_cache_sync(*args, **kwargs)
-
 
 @pytest.fixture
 def setup_history_env(tmp_path):
     base_dir = str(tmp_path / "test_base")
     os.makedirs(base_dir, exist_ok=True)
     
-    db.db_path = str(tmp_path / "test_docs.db")
-    db._init_db()
+    db_path = tmp_path / "test_docs.db"
+    db = Database(db_path)
     
-    history_manager.db_path = str(tmp_path / "test_history.db")
-    history_manager._init_db()
+    cache_path = tmp_path / "test_cache.db"
+    cache = CacheManager(str(cache_path))
+    
+    history_manager = HistoryManager(db, cache, str(tmp_path / "test_history.db"))
 
-    yield base_dir
+    yield base_dir, db, history_manager
+
 
 def test_incremental_sync_and_stop_on_failure(setup_history_env):
-    base_dir = setup_history_env
+    base_dir, db, history_manager = setup_history_env
     
     # Create two files
     file1_src = os.path.join(base_dir, "file1.txt")
@@ -58,8 +53,11 @@ def test_incremental_sync_and_stop_on_failure(setup_history_env):
     shutil.move(file1_src, file1_dst)
     shutil.move(file2_src, file2_dst)
 
-    with closing(sqlite3.connect(db.db_path)) as conn, conn:
-        conn.execute("DELETE FROM documents WHERE base_dir = ?", (base_dir,))
+    from app.core.db_worker import worker
+    def _delete():
+        with closing(sqlite3.connect(db.db_path)) as conn, conn:
+            conn.execute("DELETE FROM documents WHERE base_dir = ?", (base_dir,))
+    worker.execute_write(_delete)
     db.upsert_document(base_dir, os.path.join("folder", "file1.txt"), "hash1", "text1", None)
     db.upsert_document(base_dir, os.path.join("folder", "file2.txt"), "hash2", "text2", None)
 
@@ -101,7 +99,7 @@ def test_incremental_sync_and_stop_on_failure(setup_history_env):
     assert status == "failed"
 
 def test_rollback_cyclic_collision(setup_history_env):
-    base_dir = setup_history_env
+    base_dir, db, history_manager = setup_history_env
     
     file1_src = os.path.join(base_dir, "A.txt")
     file2_src = os.path.join(base_dir, "B.txt")
@@ -121,8 +119,11 @@ def test_rollback_cyclic_collision(setup_history_env):
     shutil.move(file2_src, file1_src)
     shutil.move(temp, file2_src)
 
-    with closing(sqlite3.connect(db.db_path)) as conn, conn:
-        conn.execute("DELETE FROM documents WHERE base_dir = ?", (base_dir,))
+    from app.core.db_worker import worker
+    def _delete():
+        with closing(sqlite3.connect(db.db_path)) as conn, conn:
+            conn.execute("DELETE FROM documents WHERE base_dir = ?", (base_dir,))
+    worker.execute_write(_delete)
     db.upsert_document(base_dir, "A.txt", "hashB", "textB", None)
     db.upsert_document(base_dir, "B.txt", "hashA", "textA", None)
 
@@ -141,4 +142,3 @@ def test_rollback_cyclic_collision(setup_history_env):
 
     docB = db.get_document(base_dir, "B.txt")
     assert docB["file_hash"] == "hashB"
-

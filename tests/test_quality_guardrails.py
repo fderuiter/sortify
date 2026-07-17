@@ -34,18 +34,10 @@ def test_semantic_quality_guardrails():
     create_large_corpus(500)
 
     # Configure the DB to use a persistent test cache so it's not wiped by other tests
-    old_db_path = db.db_path
-    # Use a persistent path within the isolated test environment tmpdir instead of CWD
     import tempfile
-    temp_dir = tempfile.gettempdir()
-    cache_path = os.path.join(temp_dir, "quality_guardrails_cache.db")
-    if os.path.exists(cache_path):
-        try:
-            os.remove(cache_path)
-        except OSError:
-            pass
-    db.db_path = cache_path
-    db._init_db()
+    temp_dir = tempfile.mkdtemp()
+    quality_db_path = Path(temp_dir) / "quality_guardrails_cache.db"
+    test_db = Database(quality_db_path)
 
     try:
         # 2. Set up deterministic sequential ingestion
@@ -66,11 +58,11 @@ def test_semantic_quality_guardrails():
         else:
             print("\nRunning in FULL TEST mode. Processing all 500 documents.")
 
-        analyzer = IncrementalAnalyzer(max_folders=4, stop_words={"the", "and"}, db=db, model_path="all-MiniLM-L6-v2")
+        analyzer = IncrementalAnalyzer(max_folders=4, stop_words={"the", "and"}, db=test_db, model_path="all-MiniLM-L6-v2")
         progress_callback = MagicMock()
 
         generator = build_corpus_generator(
-            base_dir=LARGE_CORPUS_DIR, items_to_sort=files, progress_callback=progress_callback, max_workers=1, db=db,
+            base_dir=LARGE_CORPUS_DIR, items_to_sort=files, progress_callback=progress_callback, max_workers=1, db=test_db,
             chunk_size=50,
             sequential=True,
         )
@@ -123,4 +115,4 @@ def test_semantic_quality_guardrails():
             f"If this is expected, update baseline with UPDATE_BASELINE=1."
         )
     finally:
-        db.db_path = old_db_path
+        pass
