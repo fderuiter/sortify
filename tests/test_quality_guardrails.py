@@ -34,7 +34,6 @@ def test_semantic_quality_guardrails():
     create_large_corpus(500)
 
     # Configure the DB to use a persistent test cache so it's not wiped by other tests
-    import tempfile
     temp_dir = tempfile.mkdtemp()
     quality_db_path = Path(temp_dir) / "quality_guardrails_cache.db"
     test_db = Database(quality_db_path)

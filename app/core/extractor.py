@@ -86,6 +86,7 @@ def build_corpus_generator(
     sequential: bool = False,
     active_model_name: str | None = None,
     active_dimension: int | None = None,
+    cancel_check: Callable | None = None,
 ):
     """Map every item to its text payload asynchronously and yield chunks.
 
@@ -113,7 +114,11 @@ def build_corpus_generator(
     chunk = {}
     if sequential:
         for item in items_to_sort:
-            item_name, item_text, file_hash = process_item_worker(base_dir, item, progress_callback, db)
+            if cancel_check and cancel_check():
+                break
+            item_name, item_text, file_hash = process_item_worker(
+                base_dir, item, progress_callback, db
+            )
 
             doc = db.get_document(base_dir, item_name)
             if (
@@ -141,6 +146,11 @@ def build_corpus_generator(
                 for item in items_to_sort
             }
             for item in items_to_sort:
+                if cancel_check and cancel_check():
+                    # Attempt to cancel remaining futures
+                    for fut in item_to_future.values():
+                        fut.cancel()
+                    break
                 future = item_to_future[item]
                 item_name, item_text, file_hash = future.result()
 
