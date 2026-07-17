@@ -1,4 +1,3 @@
-from app.core.db_conn import get_db_connection
 import os
 import shutil
 from unittest.mock import patch
@@ -6,6 +5,7 @@ from unittest.mock import patch
 import pytest
 
 from app.core.db import db
+from app.core.db_conn import get_db_connection
 from app.core.history import history_manager
 
 

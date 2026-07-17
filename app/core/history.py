@@ -11,6 +11,7 @@ from app.core.db import db as db_instance
 from app.core.db_conn import get_db_connection
 from app.core.db_worker import worker
 
+
 def init_history_db(db_path=None):
     """Initialize the history database."""
     db_path = db_path or str(get_app_dir() / "history.db")

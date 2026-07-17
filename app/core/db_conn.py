@@ -2,9 +2,12 @@
 
 import os
 import sys
+
 from app.core.crypto import get_raw_key
 
+
 def get_sqlite_engine():
+    """Dynamically determine and return the correct SQLite engine module."""
     import importlib
     if hasattr(sys, '_MEIPASS'):
         sys.path.insert(0, sys._MEIPASS)
@@ -16,6 +19,7 @@ sqlite3 = get_sqlite_engine()
 _connection_cache = {}
 
 def clear_connection_cache():
+    """Clear all cached database connections."""
     global _connection_cache
     for conn in _connection_cache.values():
         conn.close()
