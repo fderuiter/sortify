@@ -42,8 +42,8 @@ def test_mismatch_reembedding(mocker):
     analyzer1 = IncrementalAnalyzer(max_folders=3, stop_words=set(), model_path="all-MiniLM-L6-v2")
     corpus = {"test_doc.txt": "This is a test document."}
     
-    # Spy on model.encode to see if it's called
-    spy1 = mocker.spy(analyzer1.model, "encode")
+    # Spy on executor.submit to see if it's called
+    spy1 = mocker.spy(analyzer1.executor, "submit")
     analyzer1.partial_fit("mismatch_base", corpus)
     assert spy1.call_count == 1
     
@@ -54,10 +54,10 @@ def test_mismatch_reembedding(mocker):
     
     # Setup second model (simulating a model change)
     analyzer2 = IncrementalAnalyzer(max_folders=3, stop_words=set(), model_path="paraphrase-MiniLM-L3-v2")
-    spy2 = mocker.spy(analyzer2.model, "encode")
+    spy2 = mocker.spy(analyzer2.executor, "submit")
     
-    # Feed same corpus to partial_fit. In a normal cache hit, encode() is not called.
-    # But since the model_name differs, it should call encode().
+    # Feed same corpus to partial_fit. In a normal cache hit, submit() is not called.
+    # But since the model_name differs, it should call submit().
     analyzer2.partial_fit("mismatch_base", corpus)
     assert spy2.call_count == 1
     
@@ -90,7 +90,7 @@ def test_generate_sorting_plan():
 
 def test_partial_fit_exception(mocker):
     analyzer = IncrementalAnalyzer(max_folders=2, stop_words={"the", "and"}, model_path="all-MiniLM-L6-v2")
-    mocker.patch.object(analyzer.model, "encode", side_effect=Exception("Test error"))
+    mocker.patch.object(analyzer.executor, "submit", side_effect=Exception("Test error"))
     mock_logger = mocker.patch("app.core.analyzer.logging.error")
 
     corpus = {"unique_file_exception.txt": "unique test content exception"}
