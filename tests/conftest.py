@@ -1,10 +1,14 @@
 import shutil
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 import keyring
+import numpy as np
 import pytest
 from keyring.backend import KeyringBackend
+
+from app.core.analyzer import IncrementalAnalyzer
 
 
 class MemoryKeyring(KeyringBackend):
@@ -50,11 +54,6 @@ def monkeypatch_session():
     mpatch = MonkeyPatch()
     yield mpatch
     mpatch.undo()
-import pytest
-from unittest.mock import patch
-from app.core.analyzer import IncrementalAnalyzer
-import concurrent.futures
-import numpy as np
 
 class DummyFuture:
     def __init__(self, result):
