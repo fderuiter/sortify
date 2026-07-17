@@ -9,7 +9,7 @@ import threading
 import time
 import tkinter as tk
 import webbrowser
-from tkinter import filedialog, ttk
+from tkinter import ttk
 
 import customtkinter as ctk
 from pydantic import ValidationError
@@ -52,6 +52,7 @@ class AutoSorterApp(ctk.CTk):
         self.completed_files = 0
         self._initial_cached_files = 0
         self.start_time: float = 0.0
+        self._cancel_analysis_flag = False
 
         self.analyzer = None
         self.verifier = VerificationEngine()
@@ -136,6 +137,19 @@ class AutoSorterApp(ctk.CTk):
         self.progress_bar = ctk.CTkProgressBar(self.main_frame, width=500)
         self.progress_bar.set(0)
         self.progress_bar.pack(pady=10)
+
+        self.cancel_btn = ctk.CTkButton(
+            self.main_frame,
+            text="Cancel Analysis",
+            command=self.cancel_analysis,
+            fg_color="red",
+            hover_color="darkred",
+            width=120,
+            height=28
+        )
+        self.cancel_btn.pack(pady=2)
+        # Initially hide the cancel button or disable it
+        self.cancel_btn.pack_forget()
 
         self.meta_label = ctk.CTkLabel(
             self.main_frame, text="", font=("Roboto", 12, "italic"), text_color="cyan"
@@ -235,6 +249,14 @@ class AutoSorterApp(ctk.CTk):
             fg_color="transparent",
         )
         self.settings_view.pack(fill="both", expand=True)
+
+    def cancel_analysis(self):
+        """Cancel the ongoing background analysis task."""
+        self._cancel_analysis_flag = True
+        self.status_label.configure(text="Cancelling...", text_color="red")
+        self.cancel_btn.configure(state="disabled")
+        if self.analyzer:
+            self.analyzer.terminate()
 
     def show_main_view(self):
         """Switch the main interface to the main sorting view."""
@@ -588,44 +610,60 @@ class AutoSorterApp(ctk.CTk):
 
     def select_directory(self) -> None:
         """Open a directory selection dialog and initialize processing threads."""
-        self.base_dir = filedialog.askdirectory(title="Select Directory")
-        if self.base_dir:
-            self.total_files = 0
-            self.completed_files = 0
-            self._initial_cached_files = 0
-            self.progress_bar.set(0)
+        from app.ui.dialog_helper import ask_directory_async
+
+        def disable_ui():
             self.select_btn.configure(state="disabled")
-            self.execute_btn.configure(state="disabled")
 
-            self.locked_files = {}
-            self.manual_folders = set()
-            self.protected_folders = set()
-            self.plan = {}
-            self.expanded_nodes = set()
-            self.flat_plan = []
-            self.current_start = 0
-            self.tree.delete(*self.tree.get_children())
+        def enable_ui():
+            self.select_btn.configure(state="normal")
 
-            from app.config import get_app_dir
+        def on_selected(path):
+            if path:
+                self.base_dir = path
+                self.total_files = 0
+                self.completed_files = 0
+                self._initial_cached_files = 0
+                
+                self._cancel_analysis_flag = False
+                self.cancel_btn.pack(after=self.progress_bar, pady=5)
+                self.cancel_btn.configure(state="normal")
+                
+                self.progress_bar.set(0)
+                self.select_btn.configure(state="disabled")
+                self.execute_btn.configure(state="disabled")
 
-            user_model_path = get_app_dir() / "model"
+                self.locked_files = {}
+                self.manual_folders = set()
+                self.protected_folders = set()
+                self.plan = {}
+                self.expanded_nodes = set()
+                self.flat_plan = []
+                self.current_start = 0
+                self.tree.delete(*self.tree.get_children())
 
-            if self.settings.AI_CONSENT_GRANTED is True:
-                model_path = str(user_model_path)
-            else:
-                model_path = None
+                from app.config import get_app_dir
 
-            self.analyzer = IncrementalAnalyzer(
-                self.settings.MAX_FOLDERS,
-                self.settings.STOP_WORDS,
-                model_path=model_path,
-            )
+                user_model_path = get_app_dir() / "model"
 
-            self.status_label.configure(
-                text="Scanning directory...", text_color="white"
-            )
+                if self.settings.AI_CONSENT_GRANTED is True:
+                    model_path = str(user_model_path)
+                else:
+                    model_path = None
 
-            threading.Thread(target=self._scan_and_process_worker, daemon=True).start()
+                self.analyzer = IncrementalAnalyzer(
+                    self.settings.MAX_FOLDERS,
+                    self.settings.STOP_WORDS,
+                    model_path=model_path,
+                )
+
+                self.status_label.configure(
+                    text="Scanning directory...", text_color="white"
+                )
+
+                threading.Thread(target=self._scan_and_process_worker, daemon=True).start()
+
+        ask_directory_async(self, "Select Directory", on_selected, disable_ui, enable_ui)
 
     def _scan_and_process_worker(self):
         items_to_sort = self._get_files_recursively(self.base_dir)
@@ -851,8 +889,15 @@ class AutoSorterApp(ctk.CTk):
             chunk_size=50,
             active_model_name=self.analyzer.active_model_name,
             active_dimension=self.analyzer.active_dimension,
+            cancel_check=lambda: getattr(self, "_cancel_analysis_flag", False)
         ):
-            self.analyzer.partial_fit(self.base_dir, chunk)
+            if getattr(self, "_cancel_analysis_flag", False):
+                break
+                
+            self.analyzer.partial_fit(self.base_dir, chunk, self.settings)
+
+            if getattr(self, "_cancel_analysis_flag", False):
+                break
 
             new_plan = self.analyzer.generate_sorting_plan(self.base_dir, self.settings)
             self._apply_locked_files(new_plan)
@@ -1018,6 +1063,16 @@ class AutoSorterApp(ctk.CTk):
 
     def _finalize_pipeline(self):
         """Execute final UI transition after all files are processed."""
+        if hasattr(self, "cancel_btn"):
+            self.cancel_btn.pack_forget()
+            
+        if getattr(self, "_cancel_analysis_flag", False):
+            self.status_label.configure(text="Analysis cancelled.", text_color="red")
+            self.execute_btn.configure(state="disabled")
+            self.select_btn.configure(state="normal")
+            self.meta_label.configure(text="")
+            return
+            
         self.plan_errors = self.verifier.verify_plan(self.base_dir, self.plan)
         has_errors = bool(self.plan_errors)
         self.status_label.configure(
@@ -1347,7 +1402,7 @@ class AutoSorterApp(ctk.CTk):
             if moved_file in self.analyzer.corpus:
                 text = self.analyzer.corpus[moved_file]
                 self.analyzer.partial_fit(
-                    self.base_dir, {moved_file: text}
+                    self.base_dir, {moved_file: text}, self.settings
                 )
                 
                 if text.startswith("[STATUS:") or text == "":
@@ -1480,28 +1535,31 @@ class AutoSorterApp(ctk.CTk):
             )
             self.execute_btn.configure(state="disabled")
 
-            # Pause filesystem observer so execution moves aren't tracked as manual moves
-            if self.observer:
-                self.observer.stop()
-                self.observer.join()
-                self.observer = None
+            def _do_execute():
+                # Pause filesystem observer so execution moves aren't tracked as manual moves
+                if self.observer:
+                    self.observer.stop()
+                    self.observer.join()
+                    self.observer = None
 
-            summary = execute_moves(self.base_dir, self.plan, self.settings)
-            
-            # Restart observer
-            self._start_watcher()
+                summary = execute_moves(self.base_dir, self.plan, self.settings)
+                
+                # Restart observer
+                self._start_watcher()
 
-            deleted = summary.get("deleted_folders", 0)
-            protected = summary.get("protected_folders", 0)
+                deleted = summary.get("deleted_folders", 0)
+                protected = summary.get("protected_folders", 0)
 
-            self.status_label.configure(
-                text="Sorting complete! Check log for skipped/locked files.",
-                text_color="green",
-            )
-            self.meta_label.configure(
-                text=f"Cleanup Summary: {deleted} folders deleted | {protected} folders kept"
-            )
-            self.tree.delete(*self.tree.get_children())
+                self.after(0, lambda: self.status_label.configure(
+                    text="Sorting complete! Check log for skipped/locked files.",
+                    text_color="green",
+                ))
+                self.after(0, lambda: self.meta_label.configure(
+                    text=f"Cleanup Summary: {deleted} folders deleted | {protected} folders kept"
+                ))
+                self.after(0, lambda: self.tree.delete(*self.tree.get_children()))
+
+            threading.Thread(target=_do_execute, daemon=True).start()
 
     def _create_context_menus(self):
         self.context_menu = tk.Menu(self, tearoff=0)
@@ -1634,7 +1692,10 @@ class AutoSorterApp(ctk.CTk):
         new_name = dialog.get_input()
         if not new_name:
             return
-        new_name = new_name.replace("/", "").replace("\\", "")
+            
+        from app.core.path_utils import sanitize_name
+        new_name = sanitize_name(new_name)
+        
         if not new_name or new_name == old_name:
             return
 
@@ -1712,7 +1773,10 @@ class AutoSorterApp(ctk.CTk):
         new_name = dialog.get_input()
         if not new_name:
             return
-        new_name = new_name.replace("/", "").replace("\\", "")
+            
+        from app.core.path_utils import sanitize_name
+        new_name = sanitize_name(new_name)
+        
         if not new_name:
             return
 

@@ -1,11 +1,42 @@
 """Defines clustering strategies for grouping documents."""
 
+import logging
+import os
+import socket
+import sys
 from collections import defaultdict
+from contextlib import contextmanager
 from typing import List, Protocol
 
 import numpy as np
+import torch
 from sklearn.cluster import MiniBatchKMeans
 from sklearn.feature_extraction.text import TfidfVectorizer
+from transformers import (
+    AutoModelForCausalLM,
+    AutoModelForSeq2SeqLM,
+    AutoTokenizer,
+    pipeline,
+)
+
+
+@contextmanager
+def block_external_network():
+    """Block outgoing non-localhost network traffic during naming generation."""
+    original_connect = socket.socket.connect
+
+    def safe_connect(self, address):
+        if isinstance(address, tuple):
+            host = address[0]
+            if host not in ("127.0.0.1", "localhost", "::1", "0.0.0.0"):
+                raise PermissionError(f"External network connections are blocked during folder naming: {host}")
+        return original_connect(self, address)
+
+    socket.socket.connect = safe_connect
+    try:
+        yield
+    finally:
+        socket.socket.connect = original_connect
 
 
 class ClusteringStrategy(Protocol):
@@ -95,6 +126,9 @@ class RecursiveKMeansStrategy:
             sub_embeddings = [item[2] for item in group]
 
             folder_name = self._get_cluster_keywords(sub_documents)
+            
+            from app.core.path_utils import sanitize_name
+            folder_name = sanitize_name(folder_name)
 
             if len(group) == len(documents):
                 for f in sub_filenames:
@@ -121,6 +155,107 @@ class RecursiveKMeansStrategy:
         return plan
 
 
+class GenerativeNamingStrategy(RecursiveKMeansStrategy):
+    """Strategy that uses a generative model to create descriptive folder names."""
+
+    def __init__(self, model_path: str = None):
+        self.generator = None
+        self.task = None
+
+        if getattr(sys, "frozen", False):
+            base_path = os.path.dirname(sys.executable)
+        else:
+            base_path = os.path.dirname(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            )
+
+        offline_gen_path = os.path.join(base_path, "offline_bundle", "generative_model")
+
+        self.model_path = model_path
+        if not self.model_path:
+            if os.path.exists(offline_gen_path):
+                self.model_path = offline_gen_path
+            else:
+                from app.config import get_app_dir
+
+                self.model_path = str(get_app_dir() / "generative_model")
+
+        self._init_model()
+
+    def _init_model(self):
+        if not self.model_path or not os.path.exists(self.model_path):
+            logging.info(
+                "Generative model not found locally. Falling back to deterministic rules."
+            )
+            return
+
+        try:
+            with block_external_network():
+                torch.set_num_threads(2)
+
+                tokenizer = AutoTokenizer.from_pretrained(
+                    self.model_path, local_files_only=True
+                )
+                try:
+                    model = AutoModelForSeq2SeqLM.from_pretrained(
+                        self.model_path, local_files_only=True
+                    )
+                    self.task = "text2text-generation"
+                except Exception:
+                    model = AutoModelForCausalLM.from_pretrained(
+                        self.model_path, local_files_only=True
+                    )
+                    self.task = "text-generation"
+
+                quantized_model = torch.quantization.quantize_dynamic(
+                    model, {torch.nn.Linear}, dtype=torch.qint8
+                )
+
+                self.generator = pipeline(
+                    self.task, model=quantized_model, tokenizer=tokenizer, device=-1
+                )
+        except Exception as e:
+            logging.error(f"Failed to load generative model: {e}")
+            self.generator = None
+
+    def _get_cluster_keywords(self, documents: list) -> str:
+        if not documents:
+            return "Miscellaneous"
+
+        if self.generator is None:
+            return super()._get_cluster_keywords(documents)
+
+        try:
+            doc_text = " ".join(documents)[:1000]
+            prompt = f"Generate a short, descriptive natural language folder name (1 to 4 words) for a folder containing these documents. Do not use hyphens. Return only the name.\nDocuments: {doc_text}\nFolder Name:"
+
+            with block_external_network():
+                torch.set_num_threads(2)
+
+                if self.task == "text-generation":
+                    res = self.generator(
+                        prompt,
+                        max_new_tokens=15,
+                        num_return_sequences=1,
+                        return_full_text=False,
+                    )
+                else:
+                    res = self.generator(
+                        prompt, max_new_tokens=15, num_return_sequences=1
+                    )
+
+                name = res[0]["generated_text"].strip()
+
+                if not name or len(name) < 2:
+                    return super()._get_cluster_keywords(documents)
+
+                name = name.replace('"', "").replace("-", " ").strip()
+                return name
+        except Exception as e:
+            logging.error(f"Generative naming failed: {e}")
+            return super()._get_cluster_keywords(documents)
+
+
 class ClusteringRegistry:
     """Registry for managing and resolving clustering strategies by name."""
 
@@ -139,3 +274,4 @@ class ClusteringRegistry:
 
 clustering_registry = ClusteringRegistry()
 clustering_registry.register("default", RecursiveKMeansStrategy())
+clustering_registry.register("generative", GenerativeNamingStrategy())

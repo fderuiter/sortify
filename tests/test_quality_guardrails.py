@@ -22,14 +22,24 @@ def test_semantic_quality_guardrails():
     # 1. Generate large synthetic corpus for stress testing (500 documents across 4 themes)
     create_large_corpus(500)
 
+    import tempfile
+    
     # Configure the DB to use a persistent test cache so it's not wiped by other tests
-    import app.core.db as core_db
     from app.core.db import db
+    from app.core.db_conn import clear_connection_cache
 
     old_db_path = db.db_path
-    db.db_path = "quality_guardrails_cache.db"
-    core_db.clear_connection_cache()
-    db._init_db()
+    
+    test_db_path = os.path.join(tempfile.gettempdir(), "quality_guardrails_cache.db")
+    if os.path.exists(test_db_path):
+        try:
+            os.remove(test_db_path)
+        except OSError:
+            pass
+            
+    db.db_path = test_db_path
+    clear_connection_cache()
+    db.init_db()
 
     try:
         # 2. Set up deterministic sequential ingestion
@@ -118,5 +128,5 @@ def test_semantic_quality_guardrails():
         )
     finally:
         db.db_path = old_db_path
-        core_db.clear_connection_cache()
-        db._init_db()
+        clear_connection_cache()
+        db.init_db()

@@ -1,3 +1,4 @@
+from app.core.db_conn import get_db_connection
 import os
 import shutil
 from unittest.mock import patch
@@ -13,13 +14,20 @@ def setup_history_env(tmp_path):
     base_dir = str(tmp_path / "test_base")
     os.makedirs(base_dir, exist_ok=True)
     
+    old_db_path = db.db_path
+    old_hist_path = history_manager.db_path
+
     db.db_path = str(tmp_path / "test_docs.db")
-    db._init_db()
+    db.init_db()
     
     history_manager.db_path = str(tmp_path / "test_history.db")
-    history_manager._init_db()
+    from app.core.history import init_history_db
+    init_history_db(history_manager.db_path)
 
     yield base_dir
+    
+    db.db_path = old_db_path
+    history_manager.db_path = old_hist_path
 
 def test_incremental_sync_and_stop_on_failure(setup_history_env):
     base_dir = setup_history_env
@@ -46,7 +54,7 @@ def test_incremental_sync_and_stop_on_failure(setup_history_env):
     shutil.move(file1_src, file1_dst)
     shutil.move(file2_src, file2_dst)
 
-    conn = db._get_cached_conn()
+    conn = get_db_connection(db.db_path)
     with conn:
         conn.execute("DELETE FROM documents WHERE base_dir = ?", (base_dir,))
     db.upsert_document(base_dir, os.path.join("folder", "file1.txt"), "hash1", "text1", None)
@@ -73,7 +81,7 @@ def test_incremental_sync_and_stop_on_failure(setup_history_env):
     assert not os.path.exists(file2_src)
 
     # 3. Database should reflect file1 at 'file1.txt' and file2 at 'folder/file2.txt'
-    conn = db._get_cached_conn()
+    conn = get_db_connection(db.db_path)
     with conn:
         cur = conn.execute("SELECT filepath FROM documents WHERE base_dir = ?", (base_dir,))
         filepaths = {r[0] for r in cur.fetchall()}
@@ -84,7 +92,7 @@ def test_incremental_sync_and_stop_on_failure(setup_history_env):
     assert "file2.txt" not in filepaths
 
     # 4. Session status should be 'failed'
-    conn = history_manager._get_cached_conn()
+    conn = get_db_connection(history_manager.db_path)
     with conn:
         cur = conn.execute("SELECT status FROM sessions WHERE session_id = ?", (session_id,))
         status = cur.fetchone()[0]
@@ -112,7 +120,7 @@ def test_rollback_cyclic_collision(setup_history_env):
     shutil.move(file2_src, file1_src)
     shutil.move(temp, file2_src)
 
-    conn = db._get_cached_conn()
+    conn = get_db_connection(db.db_path)
     with conn:
         conn.execute("DELETE FROM documents WHERE base_dir = ?", (base_dir,))
     db.upsert_document(base_dir, "A.txt", "hashB", "textB", None)

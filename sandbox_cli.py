@@ -59,6 +59,8 @@ def analyze_all():
 
 def main():
     """Execute the main CLI logic for the sandbox tool."""
+    from app.core.db_init import init_databases
+    init_databases()
     parser = argparse.ArgumentParser(
         prog="sandbox_cli.py",
         description="Sandbox CLI Tool for ML Accuracy Verification"

@@ -1,6 +1,5 @@
 """Settings view and widgets for application configuration."""
 
-from tkinter import filedialog
 
 import customtkinter as ctk
 
@@ -44,10 +43,20 @@ class KeywordRoutingWidget(ctk.CTkFrame):
         self._render_rules()
 
     def _browse_dir(self):
-        directory = filedialog.askdirectory(title="Select Target Directory")
-        if directory:
-            self.path_entry.delete(0, "end")
-            self.path_entry.insert(0, directory)
+        from app.ui.dialog_helper import ask_directory_async
+
+        def disable_ui():
+            self.browse_btn.configure(state="disabled")
+
+        def enable_ui():
+            self.browse_btn.configure(state="normal")
+
+        def on_selected(directory):
+            if directory:
+                self.path_entry.delete(0, "end")
+                self.path_entry.insert(0, directory)
+
+        ask_directory_async(self, "Select Target Directory", on_selected, disable_ui, enable_ui)
             
     def _add_rule(self, event=None):
         kw = self.kw_entry.get().strip()
