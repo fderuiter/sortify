@@ -13,13 +13,20 @@ def setup_history_env(tmp_path):
     base_dir = str(tmp_path / "test_base")
     os.makedirs(base_dir, exist_ok=True)
     
+    old_db = db.db_path
+    old_hist = history_manager.db_path
+    
     db.db_path = str(tmp_path / "test_docs.db")
-    db._init_db()
+    db.init_db()
     
     history_manager.db_path = str(tmp_path / "test_history.db")
-    history_manager._init_db()
+    from app.core.history import init_history_db
+    init_history_db(history_manager.db_path)
 
     yield base_dir
+    
+    db.db_path = old_db
+    history_manager.db_path = old_hist
 
 def test_rollback_zero_inode(setup_history_env):
     base_dir = setup_history_env

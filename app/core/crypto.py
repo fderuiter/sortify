@@ -7,6 +7,7 @@ import keyring
 from cryptography.fernet import Fernet
 
 from app.config import get_app_dir
+from app.core.db_conn import get_db_connection
 
 _fernet_instance = None
 
@@ -52,7 +53,7 @@ def get_cipher():
         db_path = get_app_dir() / "autosorter.db"
         if db_path.exists():
             try:
-                conn = sqlite3.connect(db_path)
+                conn = get_db_connection(db_path)
                 try:
                     cursor = conn.execute("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='documents'")
                     if cursor.fetchone()[0] > 0:
