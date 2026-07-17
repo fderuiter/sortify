@@ -223,6 +223,9 @@ class AutoSorterApp(ctk.CTk):
 
     def on_close(self):
         """Handle application close event by saving the cache synchronously."""
+        if self.observer:
+            self.observer.stop()
+            self.observer.join()
         if self.app_session:
             self.status_label.configure(text="Saving cache...", text_color="yellow")
             self.update()
