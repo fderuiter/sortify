@@ -5,7 +5,7 @@ import sqlite3
 
 def get_db_connection(db_path: str) -> sqlite3.Connection:
     """Create and configure a new database connection with performance parameters."""
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, timeout=5.0)
     # Enable Write-Ahead Logging (WAL) for simultaneous reads and writes
     conn.execute("PRAGMA journal_mode = WAL")
     # Increase the database in-memory page cache to hold vector embeddings

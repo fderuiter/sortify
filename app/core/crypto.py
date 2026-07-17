@@ -2,12 +2,12 @@
 
 import os
 import sqlite3
-from app.core.db_conn import get_db_connection
 
 import keyring
 from cryptography.fernet import Fernet
 
 from app.config import get_app_dir
+from app.core.db_conn import get_db_connection
 
 _fernet_instance = None
 
