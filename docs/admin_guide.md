@@ -73,7 +73,19 @@ CLI tool for testing ML extraction and analysis in an isolated sandbox environme
 
 #### Usage
 ```text
-Error capturing help: Command '['uv', 'run', 'python', 'sandbox_cli.py', '--help']' returned non-zero exit status 1.
+usage: sandbox_cli.py [-h] {reset,extract,analyze} ...
+
+Sandbox CLI Tool for ML Accuracy Verification
+
+positional arguments:
+  {reset,extract,analyze}
+                        Available commands
+    reset               Reset the sandbox dataset to its golden state
+    extract             Extract text from a specific sandbox file
+    analyze             Run the analysis pipeline on all sandbox files
+
+options:
+  -h, --help            show this help message and exit
 ```
 
 ### `scripts/prepare_offline.py`

@@ -62,6 +62,10 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.core.scanner
 
+## `app.core.session`
+
+::: app.core.session
+
 ## `app.core.verifier`
 
 ::: app.core.verifier
