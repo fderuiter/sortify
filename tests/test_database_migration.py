@@ -1,4 +1,5 @@
 import sqlite3
+from contextlib import closing
 
 from app.core.db import Database
 from app.core.db_worker import DBWorker
@@ -8,7 +9,7 @@ def test_migration_from_v1(tmp_path):
     db_path = tmp_path / "test_v1.db"
     
     # Create v1 database
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn, conn:
         conn.execute("PRAGMA user_version = 1")
         conn.execute("""
             CREATE TABLE documents (
@@ -28,7 +29,7 @@ def test_migration_from_v1(tmp_path):
     db.init_db()
     
     # Verify migration
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn, conn:
         cursor = conn.cursor()
         cursor.execute("PRAGMA user_version")
         assert cursor.fetchone()[0] == 4
@@ -47,7 +48,7 @@ def test_migration_from_v2(tmp_path):
     db_path = tmp_path / "test_v2.db"
     
     # Create v2 database
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn, conn:
         conn.execute("PRAGMA user_version = 2")
         conn.execute("""
             CREATE TABLE documents (
@@ -68,7 +69,7 @@ def test_migration_from_v2(tmp_path):
     db.init_db()
     
     # Verify migration
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn, conn:
         cursor = conn.cursor()
         cursor.execute("PRAGMA user_version")
         assert cursor.fetchone()[0] == 4
@@ -93,7 +94,7 @@ def test_migration_from_empty(tmp_path):
     db.init_db()
     
     # Verify creation
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn, conn:
         cursor = conn.cursor()
         cursor.execute("PRAGMA user_version")
         assert cursor.fetchone()[0] == 4

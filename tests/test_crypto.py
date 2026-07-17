@@ -1,5 +1,6 @@
 import os
 import sqlite3
+from contextlib import closing
 
 import keyring
 import numpy as np
@@ -73,10 +74,9 @@ def test_missing_key_with_existing_db(tmp_path):
     db_path = tmp_path / "autosorter.db"
     
     # Create fake DB with documents table and some data
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn, conn:
         conn.execute("CREATE TABLE documents (id INTEGER PRIMARY KEY)")
         conn.execute("INSERT INTO documents (id) VALUES (1)")
-    conn.close()
         
     crypto = SessionCrypto(key_path, db_path)
     
@@ -90,9 +90,8 @@ def test_missing_key_with_empty_db(tmp_path):
     db_path = tmp_path / "autosorter.db"
     
     # Create fake DB with NO data
-    with sqlite3.connect(db_path) as conn:
+    with closing(sqlite3.connect(db_path)) as conn, conn:
         conn.execute("CREATE TABLE documents (id INTEGER PRIMARY KEY)")
-    conn.close()
         
     crypto = SessionCrypto(key_path, db_path)
     
