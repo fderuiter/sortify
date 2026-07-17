@@ -5,7 +5,6 @@ import argparse
 import os
 import shutil
 
-from app.core.analyzer import IncrementalAnalyzer
 from app.core.extractor import extract_file_text
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))

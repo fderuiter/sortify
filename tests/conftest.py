@@ -1,5 +1,3 @@
-import json
-import os
 import shutil
 import tempfile
 from pathlib import Path
@@ -7,6 +5,7 @@ from pathlib import Path
 import keyring
 import pytest
 from keyring.backend import KeyringBackend
+
 
 class MemoryKeyring(KeyringBackend):
     priority = 1
