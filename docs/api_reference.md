@@ -30,10 +30,6 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.core.db_conn
 
-## `app.core.db_init`
-
-::: app.core.db_init
-
 ## `app.core.db_worker`
 
 ::: app.core.db_worker
@@ -65,6 +61,10 @@ This document is automatically generated. Do not edit manually.
 ## `app.core.scanner`
 
 ::: app.core.scanner
+
+## `app.core.session`
+
+::: app.core.session
 
 ## `app.core.verifier`
 

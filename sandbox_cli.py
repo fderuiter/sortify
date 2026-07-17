@@ -5,7 +5,6 @@ import argparse
 import os
 import shutil
 
-from app.core.analyzer import IncrementalAnalyzer
 from app.core.extractor import extract_file_text
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -38,9 +37,16 @@ def analyze_all():
     if not os.path.exists(SANDBOX_DIR):
         print("Sandbox dataset not found. Run reset first.")
         return
-    analyzer = IncrementalAnalyzer(
-        max_folders=5, stop_words={"the", "and", "a", "an", "is"}
-    )
+        
+    class MockSettings:
+        AI_CONSENT_GRANTED = False
+        MAX_FOLDERS = 5
+        STOP_WORDS = {"the", "and", "a", "an", "is"}
+        
+    from app.core.session import AppSession
+    session = AppSession(MockSettings(), base_dir=SANDBOX_DIR)
+    analyzer = session.analyzer
+
     corpus = {}
     for filename in os.listdir(SANDBOX_DIR):
         filepath = os.path.join(SANDBOX_DIR, filename)
@@ -48,10 +54,12 @@ def analyze_all():
             text = extract_file_text(filepath)
             corpus[filepath] = f"{filename} {text}"
 
-    analyzer.partial_fit(SANDBOX_DIR, corpus)
-    plan = analyzer.generate_sorting_plan(SANDBOX_DIR)
+    analyzer.partial_fit(SANDBOX_DIR, corpus, MockSettings())
+    plan = analyzer.generate_sorting_plan(SANDBOX_DIR, MockSettings())
+    
+    session.close()
+    
     import json
-
     print("--- Analysis Sorting Plan ---")
     print(json.dumps(plan, indent=2))
     print("-" * 40)
@@ -59,8 +67,6 @@ def analyze_all():
 
 def main():
     """Execute the main CLI logic for the sandbox tool."""
-    from app.core.db_init import init_databases
-    init_databases()
     parser = argparse.ArgumentParser(
         prog="sandbox_cli.py",
         description="Sandbox CLI Tool for ML Accuracy Verification"

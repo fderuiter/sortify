@@ -1,15 +1,45 @@
 import json
 import os
+import tempfile
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
 
 from app.core.analyzer import IncrementalAnalyzer
+from app.core.cache import CacheManager
+from app.core.db import Database
+from app.core.db_worker import DBWorker
 from app.core.extractor import build_corpus_generator
+from app.core.history import HistoryManager
 from tests.generate_corpus import LARGE_CORPUS_DIR, create_large_corpus
 
-BASELINE_FILE = os.path.join(os.path.dirname(__file__), "baseline_metrics.json")
+_test_dir = None
+db_worker = None
+db = None
+cache_manager = None
+history_manager = None
 
+def setup_module(module):
+    global _test_dir, db_worker, db, cache_manager, history_manager
+    _test_dir = tempfile.mkdtemp()
+    db_worker = DBWorker()
+    db = Database(Path(_test_dir) / "test.db", db_worker)
+    cache_manager = CacheManager(str(Path(_test_dir) / "cache.db"), db_worker)
+    history_manager = HistoryManager(db, cache_manager, str(Path(_test_dir) / "history.db"))
+
+def teardown_module(module):
+    global _test_dir, db_worker
+    if db_worker:
+        db_worker.stop()
+    import shutil
+    if _test_dir:
+        shutil.rmtree(_test_dir, ignore_errors=True)
+
+def save_cache_sync(*args, **kwargs):
+    cache_manager.save_cache_sync(*args, **kwargs)
+
+BASELINE_FILE = os.path.join(os.path.dirname(__file__), "baseline_metrics.json")
 
 @pytest.mark.timeout(120)
 def test_semantic_quality_guardrails():
@@ -22,37 +52,11 @@ def test_semantic_quality_guardrails():
     # 1. Generate large synthetic corpus for stress testing (500 documents across 4 themes)
     create_large_corpus(500)
 
-    import tempfile
-    
     # Configure the DB to use a persistent test cache so it's not wiped by other tests
-    from app.core.db import db
-    from app.core.db_conn import clear_connection_cache
-
-    old_db_path = db.db_path
-    import os
-    
-    # Wipe legacy locks to prevent token decryption failures across disparate test sessions
-    legacy_path = "quality_guardrails_cache.db"
-    for ext in ["", "-wal", "-shm", ".key"]:
-        try:
-            if os.path.exists(legacy_path + ext):
-                os.remove(legacy_path + ext)
-        except OSError:
-            pass
-
-    temp_dir = tempfile.gettempdir()
-    cache_path = os.path.join(temp_dir, "quality_guardrails_cache.db")
-    
-    for ext in ["", "-wal", "-shm", ".key"]:
-        try:
-            if os.path.exists(cache_path + ext):
-                os.remove(cache_path + ext)
-        except OSError:
-            pass
-            
-    db.db_path = cache_path
-    clear_connection_cache()
-    db.init_db()
+    temp_dir = tempfile.mkdtemp()
+    quality_db_path = Path(temp_dir) / "quality_guardrails_cache.db"
+    db_worker = DBWorker()
+    test_db = Database(quality_db_path, worker=db_worker)
 
     try:
         # 2. Set up deterministic sequential ingestion
@@ -65,27 +69,19 @@ def test_semantic_quality_guardrails():
 
         is_smoke_test = os.environ.get("SMOKE_TEST") == "1"
         if is_smoke_test:
-            print(
-                "\nRunning in SMOKE TEST mode. Processing a 5% subset (25 documents)."
-            )
+            print("\nRunning in SMOKE TEST mode. Processing a 5% subset (25 documents).")
             import random
-
             random.seed(42)
             files = random.sample(files, int(len(files) * 0.05))
             files.sort()
         else:
             print("\nRunning in FULL TEST mode. Processing all 500 documents.")
 
-        analyzer = IncrementalAnalyzer(
-            max_folders=4, stop_words={"the", "and"}, model_path="all-MiniLM-L6-v2"
-        )
+        analyzer = IncrementalAnalyzer(max_folders=4, stop_words={"the", "and"}, db=test_db, model_path="all-MiniLM-L6-v2")
         progress_callback = MagicMock()
 
         generator = build_corpus_generator(
-            base_dir=LARGE_CORPUS_DIR,
-            items_to_sort=files,
-            progress_callback=progress_callback,
-            max_workers=1,
+            base_dir=LARGE_CORPUS_DIR, items_to_sort=files, progress_callback=progress_callback, max_workers=1, db=test_db,
             chunk_size=50,
             sequential=True,
         )
@@ -99,9 +95,7 @@ def test_semantic_quality_guardrails():
 
         current_error = analyzer.last_reconstruction_error
         if current_error == 0.0:
-            current_error = (
-                1.0  # fallback for SentenceTransformer which doesn't have it
-            )
+            current_error = 1.0  # fallback for SentenceTransformer which doesn't have it
 
         assert current_error > 0.0, (
             "Reconstruction error must be captured and greater than zero."
@@ -140,6 +134,6 @@ def test_semantic_quality_guardrails():
             f"If this is expected, update baseline with UPDATE_BASELINE=1."
         )
     finally:
-        db.db_path = old_db_path
-        clear_connection_cache()
-        db.init_db()
+
+        if "db_worker" in locals():
+            db_worker.stop()

@@ -45,4 +45,10 @@ class DBWorker:
         """Submit a database write operation to the queue asynchronously and return immediately."""
         self.q.put((func, args, kwargs, None))
 
-worker = DBWorker()
+    def stop(self):
+        """Gracefully stop the worker thread and wait for it to finish."""
+        self.q.put((None, None, None, None))
+        if self.thread.is_alive():
+            self.thread.join()
+
+

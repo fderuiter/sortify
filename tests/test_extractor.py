@@ -1,12 +1,43 @@
+import tempfile
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
 
+from app.core.cache import CacheManager
+from app.core.db import Database
+from app.core.db_worker import DBWorker
 from app.core.extractor import (
     build_corpus_generator,
     extract_file_text,
     process_item_worker,
 )
+from app.core.history import HistoryManager
+
+_test_dir = None
+db_worker = None
+db = None
+cache_manager = None
+history_manager = None
+
+def setup_module(module):
+    global _test_dir, db_worker, db, cache_manager, history_manager
+    _test_dir = tempfile.mkdtemp()
+    db_worker = DBWorker()
+    db = Database(Path(_test_dir) / "test.db", db_worker)
+    cache_manager = CacheManager(str(Path(_test_dir) / "cache.db"), db_worker)
+    history_manager = HistoryManager(db, cache_manager, str(Path(_test_dir) / "history.db"))
+
+def teardown_module(module):
+    global _test_dir, db_worker
+    if db_worker:
+        db_worker.stop()
+    import shutil
+    if _test_dir:
+        shutil.rmtree(_test_dir, ignore_errors=True)
+
+def save_cache_sync(*args, **kwargs):
+    cache_manager.save_cache_sync(*args, **kwargs)
 
 
 @pytest.fixture
@@ -80,11 +111,11 @@ def test_extract_unsupported(mocker):
 def test_process_item_worker_file(mocker):
     mocker.patch("os.path.isfile", return_value=True)
     mocker.patch("app.core.extractor.get_file_hash", return_value="hash1")
-    mocker.patch("app.core.extractor.db.get_document", return_value=None)
+    mocker.patch.object(db, "get_document", return_value=None)
     mocker.patch("app.core.extractor.extract_file_text", return_value="worker text")
 
     mock_callback = MagicMock()
-    item, text, fhash = process_item_worker("/base", "file.txt", mock_callback)
+    item, text, fhash = process_item_worker("/base", "file.txt", mock_callback, db)
 
     assert item == "file.txt"
     assert text == "worker text"
@@ -97,7 +128,7 @@ def test_process_item_worker_dir(mocker):
     mocker.patch("os.path.isdir", return_value=True)
 
     mock_callback = MagicMock()
-    item, text, fhash = process_item_worker("/base", "subdir", mock_callback)
+    item, text, fhash = process_item_worker("/base", "subdir", mock_callback, db)
 
     assert item == "subdir"
     assert text == "subdir"
@@ -110,7 +141,7 @@ def test_process_item_worker_exception(mocker):
     mock_logger = mocker.patch("app.core.extractor.logging.error")
 
     mock_callback = MagicMock()
-    item, text, fhash = process_item_worker("/base", "error.txt", mock_callback)
+    item, text, fhash = process_item_worker("/base", "error.txt", mock_callback, db)
 
     assert item == "error.txt"
     assert text == ""
@@ -128,7 +159,7 @@ def test_build_corpus_generator(mocker):
             ("file3.txt", "text3", "h3"),
         ],
     )
-    mocker.patch("app.core.extractor.db.get_document", return_value=None)
+    mocker.patch.object(db, "get_document", return_value=None)
 
     mock_callback = MagicMock()
     generator = build_corpus_generator(
@@ -136,7 +167,7 @@ def test_build_corpus_generator(mocker):
         ["file1.txt", "file2.txt", "file3.txt"],
         mock_callback,
         max_workers=2,
-        chunk_size=2,
+        chunk_size=2, db=db
     )
 
     chunks = list(generator)
@@ -151,7 +182,7 @@ def test_build_corpus_generator_model_mismatch(mocker):
         return_value=("file1.txt", "cached_text", "hash1")
     )
     # Simulate DB having a different model name
-    mocker.patch("app.core.extractor.db.get_document", return_value={
+    db.get_document = mocker.MagicMock(return_value={
         "file_hash": "hash1", 
         "embedding": b"fake_embedding",
         "model_name": "old-model",
@@ -161,14 +192,14 @@ def test_build_corpus_generator_model_mismatch(mocker):
     mock_callback = MagicMock()
     # 1. Matching model (should skip)
     gen_match = build_corpus_generator(
-        "/base", ["file1.txt"], mock_callback, max_workers=1, chunk_size=2,
+        "/base", ["file1.txt"], mock_callback, max_workers=1, db=db, chunk_size=2,
         active_model_name="old-model", active_dimension=384
     )
     assert len(list(gen_match)) == 0
     
     # 2. Mismatched model (should yield text for re-embedding)
     gen_mismatch = build_corpus_generator(
-        "/base", ["file1.txt"], mock_callback, max_workers=1, chunk_size=2,
+        "/base", ["file1.txt"], mock_callback, max_workers=1, db=db, chunk_size=2,
         active_model_name="new-model", active_dimension=768
     )
     chunks = list(gen_mismatch)

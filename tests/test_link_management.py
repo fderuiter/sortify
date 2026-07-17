@@ -1,9 +1,40 @@
 import os
+import tempfile
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+from app.core.cache import CacheManager
+from app.core.db import Database
+from app.core.db_worker import DBWorker
+from app.core.history import HistoryManager
 from app.core.link_manager import LinkManager
 from app.core.mover import execute_moves
 from app.core.scanner import get_files_recursively
+
+_test_dir = None
+db_worker = None
+db = None
+cache_manager = None
+history_manager = None
+
+def setup_module(module):
+    global _test_dir, db_worker, db, cache_manager, history_manager
+    _test_dir = tempfile.mkdtemp()
+    db_worker = DBWorker()
+    db = Database(Path(_test_dir) / "test.db", db_worker)
+    cache_manager = CacheManager(str(Path(_test_dir) / "cache.db"), db_worker)
+    history_manager = HistoryManager(db, cache_manager, str(Path(_test_dir) / "history.db"))
+
+def teardown_module(module):
+    global _test_dir, db_worker
+    if db_worker:
+        db_worker.stop()
+    import shutil
+    if _test_dir:
+        shutil.rmtree(_test_dir, ignore_errors=True)
+
+def save_cache_sync(*args, **kwargs):
+    cache_manager.save_cache_sync(*args, **kwargs)
 
 try:
     import pylnk3
@@ -45,7 +76,7 @@ def test_relative_symlink_update(tmp_path):
         "target_dir": {"data.txt": None},
     }
 
-    execute_moves(base_dir, plan)
+    execute_moves(base_dir, plan, db, history_manager)
 
     # Verify link was moved and updated
     new_symlink_path = os.path.join(base_dir, "deeper_dir", "link.txt")
@@ -91,7 +122,7 @@ def test_windows_shortcut_update_mocked(tmp_path):
     with patch("app.core.link_manager.pylnk3", mock_pylnk3), \
          patch("app.core.mover.pylnk3", mock_pylnk3), \
          patch("app.core.mover.os.path.exists") as mock_exists, \
-         patch("app.core.mover.history_manager.create_snapshot"), \
+         patch.object(history_manager, "create_snapshot"), \
          patch("app.core.mover.os.remove") as mock_remove, \
          patch("app.core.mover.shutil.move") as mock_shutil_move:
          
@@ -130,7 +161,7 @@ def test_windows_shortcut_update_mocked(tmp_path):
         }
 
         # 3. Execute move
-        execute_moves(base_dir, plan)
+        execute_moves(base_dir, plan, db, history_manager)
         
         print("MOCK CALLED WITH:", mock_pylnk3.for_file.call_args)
         print("SHUTIL MOVE CALLED WITH:", mock_shutil_move.call_args)
@@ -193,7 +224,7 @@ def test_windows_shortcut_update_in_place_mocked(tmp_path):
          patch("app.core.mover.pylnk3", mock_pylnk3), \
          patch("app.core.mover.os.path.exists") as mock_exists, \
          patch("app.core.mover.os.path.samefile") as mock_samefile, \
-         patch("app.core.mover.history_manager.create_snapshot"), \
+         patch.object(history_manager, "create_snapshot"), \
          patch("app.core.mover.shutil.move"), \
          patch("app.core.mover.os.remove") as mock_remove:
          
@@ -241,7 +272,7 @@ def test_windows_shortcut_update_in_place_mocked(tmp_path):
         # so we need to be careful that our mock doesn't fail. The real `for_file` would recreate it.
         # However, the script checks if dest_path != source_path at the end to delete the original.
         
-        execute_moves(base_dir, plan)
+        execute_moves(base_dir, plan, db, history_manager)
 
         # verify that for_file was called with the new target path
         mock_pylnk3.for_file.assert_called_with(
@@ -282,7 +313,7 @@ def test_windows_shortcut_update_exception(tmp_path, caplog):
          patch("app.core.mover.pylnk3", mock_pylnk3), \
          patch("app.core.mover.os.path.exists") as mock_exists, \
          patch("app.core.mover.os.path.samefile") as mock_samefile, \
-         patch("app.core.mover.history_manager.create_snapshot"), \
+         patch.object(history_manager, "create_snapshot"), \
          patch("app.core.mover.shutil.move"), \
          patch("app.core.mover.os.remove") as mock_remove:
          
@@ -319,7 +350,7 @@ def test_windows_shortcut_update_exception(tmp_path, caplog):
             }
         }
         
-        execute_moves(base_dir, plan)
+        execute_moves(base_dir, plan, db, history_manager)
         
         assert "Failed to update Windows shortcut" in caplog.text
         assert "Mocked Windows shortcut exception" in caplog.text

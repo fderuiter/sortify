@@ -16,10 +16,7 @@ from pydantic import ValidationError
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
-from app.core.analyzer import IncrementalAnalyzer
-from app.core.extractor import build_corpus_generator
-from app.core.mover import execute_moves
-from app.core.scanner import get_files_recursively
+from app.core.session import AppSession
 from app.core.verifier import VerificationEngine
 from app.ui.settings import SettingsView
 
@@ -54,7 +51,7 @@ class AutoSorterApp(ctk.CTk):
         self.start_time: float = 0.0
         self._cancel_analysis_flag = False
 
-        self.analyzer = None
+        self.app_session = None
         self.verifier = VerificationEngine()
 
         self._debounce_timer = None
@@ -226,18 +223,14 @@ class AutoSorterApp(ctk.CTk):
 
     def on_close(self):
         """Handle application close event by saving the cache synchronously."""
-        if self.base_dir and self.analyzer:
-            from app.core.cache import save_cache_sync
-
+        if self.observer:
+            self.observer.stop()
+            self.observer.join()
+        if self.app_session:
             self.status_label.configure(text="Saving cache...", text_color="yellow")
             self.update()
-            save_cache_sync(
-                self.base_dir,
-                self.analyzer.corpus,
-                self.locked_files,
-                self.analyzer.index_to_word,
-                self.manual_folders,
-            )
+            self.app_session.save_cache_sync(self.locked_files, self.manual_folders)
+            self.app_session.close()
         self.destroy()
 
     def _build_settings_ui(self):
@@ -274,7 +267,7 @@ class AutoSorterApp(ctk.CTk):
         """Handle updates to application settings like stop words."""
         self.settings.STOP_WORDS = new_stop_words
 
-        if self.analyzer:
+        if self.app_session:
             if self._debounce_timer:
                 self._debounce_timer.cancel()
             self._debounce_timer = threading.Timer(
@@ -283,9 +276,9 @@ class AutoSorterApp(ctk.CTk):
             self._debounce_timer.start()
 
     def _background_settings_update(self):
-        if self.analyzer:
-            self.analyzer.reload_stop_words()
-            if self.analyzer.corpus:
+        if self.app_session:
+            self.app_session.analyzer.reload_stop_words()
+            if self.app_session.analyzer.corpus:
                 self._background_model_update(None)
 
     def toggle_contextual_rename(self) -> None:
@@ -298,7 +291,7 @@ class AutoSorterApp(ctk.CTk):
             self.execute_btn.configure(state="disabled")
 
             def _update():
-                new_plan = self.analyzer.generate_sorting_plan(
+                new_plan = self.app_session.analyzer.generate_sorting_plan(
                     self.base_dir, self.settings
                 )
                 self._apply_locked_files(new_plan)
@@ -333,7 +326,7 @@ class AutoSorterApp(ctk.CTk):
             self.execute_btn.configure(state="disabled")
 
             def _update():
-                new_plan = self.analyzer.generate_sorting_plan(
+                new_plan = self.app_session.analyzer.generate_sorting_plan(
                     self.base_dir, self.settings
                 )
                 self._apply_locked_files(new_plan)
@@ -359,7 +352,7 @@ class AutoSorterApp(ctk.CTk):
             threading.Thread(target=_update, daemon=True).start()
 
     def _get_files_recursively(self, base: str, rel_path: str = "") -> list:
-        return get_files_recursively(base, rel_path)
+        return self.app_session.get_files_recursively(rel_path)
 
     def show_settings_modal(self) -> None:
         """Display a settings modal to configure dynamic limits."""
@@ -479,10 +472,10 @@ class AutoSorterApp(ctk.CTk):
                 error_label.configure(text="Invalid numeric limits provided.")
                 return
 
-            if self.analyzer:
-                self.analyzer.max_folders = folders
+            if self.app_session:
+                self.app_session.analyzer.max_folders = folders
                 # Re-generate plan with new limits if we have data
-                if self.analyzer.corpus:
+                if self.app_session.analyzer.corpus:
                     self.status_label.configure(
                         text="Applying new settings...", text_color="white"
                     )
@@ -497,7 +490,7 @@ class AutoSorterApp(ctk.CTk):
 
     def _apply_settings_worker(self):
         with self._update_lock:
-            new_plan = self.analyzer.generate_sorting_plan(self.base_dir, self.settings)
+            new_plan = self.app_session.analyzer.generate_sorting_plan(self.base_dir, self.settings)
             self._apply_locked_files(new_plan)
             self.plan = new_plan
 
@@ -529,8 +522,7 @@ class AutoSorterApp(ctk.CTk):
         import datetime
         from tkinter import messagebox
 
-        from app.core.history import history_manager
-
+        
         columns = ("session_id", "date", "status")
         tree = ttk.Treeview(modal, columns=columns, show="headings")
         tree.heading("session_id", text="Session ID")
@@ -543,7 +535,12 @@ class AutoSorterApp(ctk.CTk):
 
         tree.pack(fill="both", expand=True, padx=10, pady=10)
 
-        sessions = history_manager.get_sessions()
+        if not self.app_session:
+            import tkinter.messagebox
+            tkinter.messagebox.showwarning('Warning', 'No active session.', parent=modal)
+            modal.destroy()
+            return
+        sessions = self.app_session.get_sessions()
         for s in sessions:
             dt = datetime.datetime.fromtimestamp(s["timestamp"]).strftime(
                 "%Y-%m-%d %H:%M:%S"
@@ -569,7 +566,7 @@ class AutoSorterApp(ctk.CTk):
                 return
 
             try:
-                missing = history_manager.check_missing_files(session_id)
+                missing = self.app_session.check_missing_files(session_id)
                 if missing:
                     msg = f"Cannot rollback! {len(missing)} files missing (e.g. {missing[0]}). Proceed?"
                     ans = messagebox.askyesno(
@@ -578,7 +575,7 @@ class AutoSorterApp(ctk.CTk):
                     if not ans:
                         return
 
-                history_manager.rollback(session_id, ignore_missing=True)
+                self.app_session.rollback(session_id, ignore_missing=True)
             except Exception as e:
                 messagebox.showerror("Rollback Failed", str(e), parent=modal)
                 return
@@ -641,28 +638,10 @@ class AutoSorterApp(ctk.CTk):
                 self.flat_plan = []
                 self.current_start = 0
                 self.tree.delete(*self.tree.get_children())
-
-                from app.config import get_app_dir
-
-                user_model_path = get_app_dir() / "model"
-
-                if self.settings.AI_CONSENT_GRANTED is True:
-                    model_path = str(user_model_path)
-                else:
-                    model_path = None
-
-                try:
-                    self.analyzer = IncrementalAnalyzer(
-                        self.settings.MAX_FOLDERS,
-                        self.settings.STOP_WORDS,
-                        model_path=model_path,
-                    )
-                except Exception as e:
-                    from tkinter import messagebox
-                    self.select_btn.configure(state="normal")
-                    messagebox.showerror("Model Loading Error", f"Failed to initialize AI model:\n{e}\n\nPlease check your internet connection or repair the model download in Settings.")
-                    self.status_label.configure(text="Ready", text_color="white")
-                    return
+                
+                if getattr(self, "app_session", None):
+                    self.app_session.close()
+                self.app_session = AppSession(self.settings, self.base_dir)
 
                 self.status_label.configure(
                     text="Scanning directory...", text_color="white"
@@ -686,11 +665,7 @@ class AutoSorterApp(ctk.CTk):
             self.after(0, lambda: self.select_btn.configure(state="normal"))
             return
 
-        from app.core.cache import load_cache
-
-        cached_corpus, cached_locked, cached_idx, cached_manual_folders = load_cache(
-            self.base_dir
-        )
+        cached_corpus, cached_locked, cached_idx, cached_manual_folders = self.app_session.load_cache()
 
         if cached_corpus is not None:
             pruned_corpus = {
@@ -702,8 +677,8 @@ class AutoSorterApp(ctk.CTk):
             self.manual_folders = (
                 cached_manual_folders if cached_manual_folders is not None else set()
             )
-            self.analyzer.corpus = pruned_corpus
-            self.analyzer.index_to_word = cached_idx
+            self.app_session.analyzer.corpus = pruned_corpus
+            self.app_session.analyzer.index_to_word = cached_idx
 
             self.completed_files = len(pruned_corpus)
             self._initial_cached_files = self.completed_files
@@ -718,7 +693,7 @@ class AutoSorterApp(ctk.CTk):
             items_to_sort = [f for f in items_to_sort if f not in pruned_corpus]
 
             if pruned_corpus:
-                new_plan = self.analyzer.generate_sorting_plan(
+                new_plan = self.app_session.analyzer.generate_sorting_plan(
                     self.base_dir, self.settings
                 )
                 self.after(0, lambda p=new_plan: self._apply_locked_files(p))
@@ -796,21 +771,18 @@ class AutoSorterApp(ctk.CTk):
 
     def _queue_move(self, src_path, dest_path):
         try:
-            from app.core.db import db
-
             rel_src = os.path.relpath(src_path, self.base_dir)
             rel_dest = os.path.relpath(dest_path, self.base_dir)
             if rel_src.startswith(".") or rel_dest.startswith("."):
                 return
-
+            
             with self._update_lock:
-                if self.analyzer and rel_src in self.analyzer.corpus:
-                    self.analyzer.corpus[rel_dest] = self.analyzer.corpus.pop(rel_src)
                 if rel_src in self.locked_files:
                     self.locked_files[rel_dest] = self.locked_files.pop(rel_src)
-
-            db.update_document_path(self.base_dir, rel_src, rel_dest)
-
+            
+            if self.app_session:
+                self.app_session.update_document_path(rel_src, rel_dest)
+            
             # Re-run plan generation
             self._queue_file(dest_path)
         except Exception:
@@ -818,20 +790,17 @@ class AutoSorterApp(ctk.CTk):
 
     def _queue_delete(self, file_path):
         try:
-            from app.core.db import db
-
             rel_path = os.path.relpath(file_path, self.base_dir)
             if rel_path.startswith("."):
                 return
-
+            
             with self._update_lock:
-                if self.analyzer and rel_path in self.analyzer.corpus:
-                    del self.analyzer.corpus[rel_path]
                 if rel_path in self.locked_files:
                     del self.locked_files[rel_path]
-
-            db.remove_document(self.base_dir, rel_path)
-
+            
+            if self.app_session:
+                self.app_session.remove_document(rel_path)
+            
             if self._fs_debounce_timer:
                 self._fs_debounce_timer.cancel()
             self._fs_debounce_timer = threading.Timer(2.0, self._process_pending_files)
@@ -891,25 +860,20 @@ class AutoSorterApp(ctk.CTk):
     def pipeline_worker(self, items_to_sort: list) -> None:
         """Run the data collection and ML algorithm incrementally in a background thread."""
         try:
-            for chunk in build_corpus_generator(
-                self.base_dir,
+            for chunk in self.app_session.process_items(
                 items_to_sort,
                 self.item_completed_callback,
-                max_workers=self.settings.MAX_WORKERS,
-                chunk_size=50,
-                active_model_name=self.analyzer.active_model_name,
-                active_dimension=self.analyzer.active_dimension,
                 cancel_check=lambda: getattr(self, "_cancel_analysis_flag", False)
             ):
                 if getattr(self, "_cancel_analysis_flag", False):
                     break
-
-                self.analyzer.partial_fit(self.base_dir, chunk, self.settings)
+                    
+                self.app_session.partial_fit(chunk)
 
                 if getattr(self, "_cancel_analysis_flag", False):
                     break
 
-                new_plan = self.analyzer.generate_sorting_plan(self.base_dir, self.settings)
+                new_plan = self.app_session.generate_sorting_plan()
                 self._apply_locked_files(new_plan)
                 self.plan = new_plan
 
@@ -920,16 +884,10 @@ class AutoSorterApp(ctk.CTk):
             if "worker process crashed" in str(e):
                 self.after(
                     0,
-                    lambda e=e: self.status_label.configure(
-                        text=f"Error: {str(e)}", text_color="red"
+                    lambda err=e: self.status_label.configure(
+                        text=f"Error: {str(err)}", text_color="red"
                     ),
                 )
-                self.after(0, lambda: self.execute_btn.configure(state="disabled"))
-                self.after(0, lambda: self.select_btn.configure(state="normal"))
-                if self.observer:
-                    self.observer.stop()
-                    self.observer.join()
-                    self.observer = None
             else:
                 raise
 
@@ -1108,15 +1066,8 @@ class AutoSorterApp(ctk.CTk):
         self.select_btn.configure(state="normal")
         self.render_tree()
 
-        from app.core.cache import save_cache_async
-
-        save_cache_async(
-            self.base_dir,
-            self.analyzer.corpus,
-            self.locked_files,
-            self.analyzer.index_to_word,
-            self.manual_folders,
-        )
+        if self.app_session:
+            self.app_session.save_cache_async(self.locked_files, self.manual_folders)
 
     def render_tree(self):
         """Draw the plan on the Treeview, preserving expanded nodes."""
@@ -1196,7 +1147,7 @@ class AutoSorterApp(ctk.CTk):
                         compliance = item["node"].get("compliance_path", "Unknown")
                         historical = item["node"].get("historical_path", "Unknown")
                         text += f" [⚠️ CONFLICT: Compliance={compliance} | Historical={historical}]"
-
+                        
                     routed_by = item["node"].get("routed_by")
                     if routed_by == "keyword":
                         kw = item["node"].get("keyword", "")
@@ -1204,16 +1155,14 @@ class AutoSorterApp(ctk.CTk):
                     elif routed_by == "pattern":
                         kw = item["node"].get("keyword", "")
                         text += f" [Pattern: {kw}]"
-
+                    
                     ext_status = item["node"].get("extraction_status")
                     if ext_status == "EMPTY":
                         text += " [No text found]"
                     elif ext_status == "ENCRYPTED":
                         text += " [Encrypted]"
                     elif ext_status == "UNSUPPORTED":
-                        text += (
-                            " [Unsupported format: Files of this type cannot be read]"
-                        )
+                        text += " [Unsupported format: Files of this type cannot be read]"
                     elif ext_status == "FAILED":
                         text += " [Extraction failed]"
                 if error_msg:
@@ -1323,11 +1272,11 @@ class AutoSorterApp(ctk.CTk):
                 historical_path = node.get("historical_path", "Unknown")
                 conflict_menu.add_command(
                     label=f"Route to Compliance: {compliance_path}",
-                    command=lambda p=compliance_path: self._resolve_conflict(item, p),
+                    command=lambda p=compliance_path: self._resolve_conflict(item, p)
                 )
                 conflict_menu.add_command(
                     label=f"Route to Historical: {historical_path}",
-                    command=lambda p=historical_path: self._resolve_conflict(item, p),
+                    command=lambda p=historical_path: self._resolve_conflict(item, p)
                 )
                 conflict_menu.tk_popup(event.x_root, event.y_root)
 
@@ -1427,34 +1376,27 @@ class AutoSorterApp(ctk.CTk):
             return
 
         with self._update_lock:
-            if moved_file in self.analyzer.corpus:
-                text = self.analyzer.corpus[moved_file]
-                self.analyzer.partial_fit(
+            if moved_file in self.app_session.analyzer.corpus:
+                text = self.app_session.analyzer.corpus[moved_file]
+                self.app_session.analyzer.partial_fit(
                     self.base_dir, {moved_file: text}, self.settings
                 )
-
+                
                 if text.startswith("[STATUS:") or text == "":
                     base_name = os.path.basename(moved_file)
                     name_without_ext = os.path.splitext(base_name)[0]
                     import re
-
-                    words = re.findall(r"[a-zA-Z0-9]+", name_without_ext)
-                    words = [
-                        w.lower()
-                        for w in words
-                        if len(w) > 2 and w.lower() not in self.settings.STOP_WORDS
-                    ]
-
+                    words = re.findall(r'[a-zA-Z0-9]+', name_without_ext)
+                    words = [w.lower() for w in words if len(w) > 2 and w.lower() not in self.settings.STOP_WORDS]
+                    
                     target = self.locked_files.get(moved_file)
                     if target and words:
-                        learned_rules = dict(
-                            getattr(self.settings, "LEARNED_RULES", {})
-                        )
+                        learned_rules = dict(getattr(self.settings, "LEARNED_RULES", {}))
                         for w in words:
                             learned_rules[w] = target
                         self.settings.LEARNED_RULES = learned_rules
 
-            new_plan = self.analyzer.generate_sorting_plan(self.base_dir, self.settings)
+            new_plan = self.app_session.analyzer.generate_sorting_plan(self.base_dir, self.settings)
             self._apply_locked_files(new_plan)
             self.plan = new_plan
 
@@ -1471,15 +1413,8 @@ class AutoSorterApp(ctk.CTk):
 
             self.after(0, self.render_tree)
 
-            from app.core.cache import save_cache_async
-
-            save_cache_async(
-                self.base_dir,
-                self.analyzer.corpus,
-                self.locked_files,
-                self.analyzer.index_to_word,
-                self.manual_folders,
-            )
+            if self.app_session:
+                self.app_session.save_cache_async(self.locked_files, self.manual_folders)
 
     def _prune_empty_folders(self, plan_node: dict) -> bool:
         if not isinstance(plan_node, dict) or plan_node.get("__type__") in (
@@ -1577,8 +1512,8 @@ class AutoSorterApp(ctk.CTk):
                     self.observer.join()
                     self.observer = None
 
-                summary = execute_moves(self.base_dir, self.plan, self.settings)
-
+                summary = self.app_session.execute_moves(self.plan)
+                
                 # Restart observer
                 self._start_watcher()
 
@@ -1633,15 +1568,11 @@ class AutoSorterApp(ctk.CTk):
                     historical_path = node.get("historical_path", "Unknown")
                     conflict_menu.add_command(
                         label=f"Route to Compliance: {compliance_path}",
-                        command=lambda p=compliance_path: self._resolve_conflict(
-                            item, p
-                        ),
+                        command=lambda p=compliance_path: self._resolve_conflict(item, p)
                     )
                     conflict_menu.add_command(
                         label=f"Route to Historical: {historical_path}",
-                        command=lambda p=historical_path: self._resolve_conflict(
-                            item, p
-                        ),
+                        command=lambda p=historical_path: self._resolve_conflict(item, p)
                     )
                     conflict_menu.tk_popup(event.x_root, event.y_root)
                 elif node.get("__type__") == "directory":
@@ -1652,15 +1583,8 @@ class AutoSorterApp(ctk.CTk):
     def _resolve_conflict(self, item, selected_path):
         filename = item.split(":", 1)[1]
         self.locked_files[filename] = selected_path
-        from app.core.cache import save_cache_async
-
-        save_cache_async(
-            self.base_dir,
-            self.analyzer.corpus,
-            self.locked_files,
-            self.analyzer.index_to_word,
-            self.manual_folders,
-        )
+        if self.app_session:
+            self.app_session.save_cache_async(self.locked_files, self.manual_folders)
         self._rebuild_plan()
 
     def _toggle_keep_folder(self):
@@ -1732,11 +1656,10 @@ class AutoSorterApp(ctk.CTk):
         new_name = dialog.get_input()
         if not new_name:
             return
-
+            
         from app.core.path_utils import sanitize_name
-
         new_name = sanitize_name(new_name)
-
+        
         if not new_name or new_name == old_name:
             return
 
@@ -1814,11 +1737,10 @@ class AutoSorterApp(ctk.CTk):
         new_name = dialog.get_input()
         if not new_name:
             return
-
+            
         from app.core.path_utils import sanitize_name
-
         new_name = sanitize_name(new_name)
-
+        
         if not new_name:
             return
 
@@ -1831,8 +1753,8 @@ class AutoSorterApp(ctk.CTk):
         self._rebuild_plan()
 
     def _rebuild_plan(self):
-        if self.analyzer:
-            new_plan = self.analyzer.generate_sorting_plan(self.base_dir, self.settings)
+        if self.app_session:
+            new_plan = self.app_session.analyzer.generate_sorting_plan(self.base_dir, self.settings)
             self._apply_locked_files(new_plan)
             self.plan = new_plan
             self.plan_errors = self.verifier.verify_plan(self.base_dir, self.plan)

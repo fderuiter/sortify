@@ -3,7 +3,8 @@
 import os
 import sys
 
-from app.core.crypto import get_raw_key
+from app.core.crypto import SessionCrypto
+from pathlib import Path
 
 
 def get_sqlite_engine():
@@ -34,7 +35,8 @@ def get_db_connection(db_path: str):
     conn = sqlite3.connect(db_path, timeout=5.0, check_same_thread=False)
     
     # Apply SQLCipher encryption immediately
-    raw_key = get_raw_key()
+    crypto = SessionCrypto(Path(db_path).parent / "secret.key", Path(db_path))
+    raw_key = crypto.get_raw_key()
     conn.execute(f"PRAGMA key = '{raw_key}'")
     
     # Enable Write-Ahead Logging (WAL) for simultaneous reads and writes

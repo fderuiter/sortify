@@ -11,7 +11,6 @@ from typing import Callable, Tuple
 
 import pypdf.errors
 
-from app.core.db import db
 from app.core.extractor_strategies import registry
 
 
@@ -51,7 +50,7 @@ def extract_file_text(file_path: str) -> str:
 
 
 def process_item_worker(
-    base_dir: str, item: str, progress_callback: Callable
+    base_dir: str, item: str, progress_callback: Callable, db
 ) -> Tuple[str, str, str]:
     """Process a single item, checking hash first, and extract its text content."""
     try:
@@ -82,6 +81,7 @@ def build_corpus_generator(
     items_to_sort: list,
     progress_callback: Callable,
     max_workers: int,
+    db,
     chunk_size: int = 50,
     sequential: bool = False,
     active_model_name: str | None = None,
@@ -117,7 +117,7 @@ def build_corpus_generator(
             if cancel_check and cancel_check():
                 break
             item_name, item_text, file_hash = process_item_worker(
-                base_dir, item, progress_callback
+                base_dir, item, progress_callback, db
             )
 
             doc = db.get_document(base_dir, item_name)
@@ -141,7 +141,7 @@ def build_corpus_generator(
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             item_to_future = {
                 item: executor.submit(
-                    process_item_worker, base_dir, item, progress_callback
+                    process_item_worker, base_dir, item, progress_callback, db
                 )
                 for item in items_to_sort
             }

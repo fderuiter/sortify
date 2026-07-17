@@ -1,13 +1,16 @@
+from app.core.db_conn import get_db_connection
+from contextlib import closing
+from app.core.db_conn import clear_connection_cache
 
 from app.core.db import Database
+from app.core.db_worker import DBWorker
 
 
 def test_migration_from_v1(tmp_path):
     db_path = tmp_path / "test_v1.db"
     
     # Create v1 database
-    from app.core.db_conn import get_db_connection
-    with get_db_connection(db_path) as conn:
+    with closing(get_db_connection(db_path)) as conn, conn:
         conn.execute("PRAGMA user_version = 1")
         conn.execute("""
             CREATE TABLE documents (
@@ -20,13 +23,15 @@ def test_migration_from_v1(tmp_path):
             )
         """)
         
+    clear_connection_cache()
     # Initialize Database, which should trigger migration
-    db = Database(db_path=str(db_path))
+    db_worker = DBWorker()
+    db = Database(db_path=str(db_path), worker=db_worker)
+    db_worker.stop()
     db.init_db()
     
     # Verify migration
-    from app.core.db_conn import get_db_connection
-    with get_db_connection(db_path) as conn:
+    with closing(get_db_connection(db_path)) as conn, conn:
         cursor = conn.cursor()
         cursor.execute("PRAGMA user_version")
         assert cursor.fetchone()[0] == Database.CURRENT_VERSION
@@ -45,8 +50,7 @@ def test_migration_from_v2(tmp_path):
     db_path = tmp_path / "test_v2.db"
     
     # Create v2 database
-    from app.core.db_conn import get_db_connection
-    with get_db_connection(db_path) as conn:
+    with closing(get_db_connection(db_path)) as conn, conn:
         conn.execute("PRAGMA user_version = 2")
         conn.execute("""
             CREATE TABLE documents (
@@ -60,13 +64,15 @@ def test_migration_from_v2(tmp_path):
             )
         """)
         
+    clear_connection_cache()
     # Initialize Database, which should trigger migration
-    db = Database(db_path=str(db_path))
+    db_worker = DBWorker()
+    db = Database(db_path=str(db_path), worker=db_worker)
+    db_worker.stop()
     db.init_db()
     
     # Verify migration
-    from app.core.db_conn import get_db_connection
-    with get_db_connection(db_path) as conn:
+    with closing(get_db_connection(db_path)) as conn, conn:
         cursor = conn.cursor()
         cursor.execute("PRAGMA user_version")
         assert cursor.fetchone()[0] == Database.CURRENT_VERSION
@@ -85,12 +91,13 @@ def test_migration_from_empty(tmp_path):
     db_path = tmp_path / "test_empty.db"
     
     # Initialize Database on empty file
-    db = Database(db_path=str(db_path))
+    db_worker = DBWorker()
+    db = Database(db_path=str(db_path), worker=db_worker)
+    db_worker.stop()
     db.init_db()
     
     # Verify creation
-    from app.core.db_conn import get_db_connection
-    with get_db_connection(db_path) as conn:
+    with closing(get_db_connection(db_path)) as conn, conn:
         cursor = conn.cursor()
         cursor.execute("PRAGMA user_version")
         assert cursor.fetchone()[0] == Database.CURRENT_VERSION

@@ -14,7 +14,6 @@ from typing import Any, Dict, List, Tuple
 import numpy as np
 
 from app.core.analyzer_strategies import clustering_registry
-from app.core.db import db
 
 _worker_model = None
 
@@ -133,9 +132,11 @@ class IncrementalAnalyzer:
         self,
         max_folders: int,
         stop_words: set,
+        db,
         strategy_name: str = "generative",
         model_path: str | None = None,
     ) -> None:
+        self.db = db
         """Initialize the analyzer with the maximum number of folders."""
         self.max_folders = max_folders
         self.stop_words = stop_words
@@ -218,6 +219,30 @@ class IncrementalAnalyzer:
             daemon=True
         )
         self._gguf_process.start()
+
+    
+    def close(self):
+        """Cleanly terminate the background processes and close queues."""
+        if hasattr(self, '_q_in') and self._q_in:
+            try:
+                self._q_in.put(None)
+            except Exception:
+                pass
+        self.terminate()
+        if hasattr(self, '_q_in') and self._q_in:
+            try:
+                self._q_in.close()
+            except Exception:
+                pass
+        if hasattr(self, '_q_out') and self._q_out:
+            try:
+                self._q_out.close()
+            except Exception:
+                pass
+
+    def __del__(self):
+        """Ensure background processes and queues are cleaned up on garbage collection."""
+        self.terminate()
 
     def terminate(self):
         """Terminate background processes."""
@@ -415,7 +440,7 @@ class IncrementalAnalyzer:
                 zip(filepaths, texts, hashes)
             ):
                 # If we don't have a hash, fetch existing from DB so we don't overwrite it with empty
-                doc = db.get_document(base_dir, filepath)
+                doc = self.db.get_document(base_dir, filepath)
 
                 # compute hash if not provided
                 if not file_hash:
@@ -486,7 +511,7 @@ class IncrementalAnalyzer:
                     )
                 )
 
-            db.upsert_documents(documents_to_upsert)
+            self.db.upsert_documents(documents_to_upsert)
 
         except Exception as e:
             logging.error(f"Failed during partial_fit. Error: {str(e)}", exc_info=True)
@@ -531,7 +556,7 @@ class IncrementalAnalyzer:
                 new_node[k] = self._inject_hierarchy(v)
         return new_node
 
-    def generate_sorting_plan(self, base_dir: str, runtime_settings=None) -> dict:
+    def generate_sorting_plan(self, base_dir: str, runtime_settings=None, locked_files: dict = None) -> dict:
         """Generate a sorting plan based on the current model state.
 
         Returns
@@ -541,7 +566,7 @@ class IncrementalAnalyzer:
             either dicts (subfolders) or file metadata dicts.
         """
         try:
-            docs = db.get_all_documents(base_dir)
+            docs = self.db.get_all_documents(base_dir)
             if not docs:
                 return {}
 
@@ -766,9 +791,6 @@ class IncrementalAnalyzer:
                             return res
                 return None
 
-            from app.core.cache import load_cache
-
-            _, locked_files, _, _ = load_cache(base_dir)
             if locked_files is None:
                 locked_files = {}
 
@@ -907,7 +929,7 @@ class IncrementalAnalyzer:
                 future = self.executor.submit(_worker_encode, [query_text])
                 query_embedding = future.result()[0]
 
-            docs = db.get_all_documents(base_dir)
+            docs = self.db.get_all_documents(base_dir)
             if not docs:
                 return []
 
@@ -915,7 +937,7 @@ class IncrementalAnalyzer:
 
             # Extract and filter records with valid compatible embeddings
             for doc in docs:
-                # db.get_all_documents returns: (filepath, extracted_text, embedding, file_hash, user_verified_target_path, model_name, vector_dimension)
+                # self.db.get_all_documents returns: (filepath, extracted_text, embedding, file_hash, user_verified_target_path, model_name, vector_dimension)
                 (
                     filepath,
                     extracted_text,

@@ -4,73 +4,66 @@ import os
 import shutil
 import time
 import uuid
+from contextlib import closing
 from typing import Any, Dict, List
 
-import app.config
-from app.core.db import db as db_instance
 from app.core.db_conn import get_db_connection
-from app.core.db_worker import worker
 
-
-def init_history_db(db_path=None):
-    """Initialize the history database."""
-    db_path = db_path or str(app.config.get_app_dir() / "history.db")
-    conn = get_db_connection(db_path)
-    with conn:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS sessions (
-                session_id TEXT PRIMARY KEY,
-                timestamp REAL,
-                base_dir TEXT,
-                status TEXT
-            )
-        """)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS snapshot_files (
-                session_id TEXT,
-                original_rel_path TEXT,
-                inode INTEGER,
-                size INTEGER,
-                mtime REAL,
-                FOREIGN KEY(session_id) REFERENCES sessions(session_id)
-            )
-        """)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS snapshot_cache (
-                session_id TEXT PRIMARY KEY,
-                corpus TEXT,
-                locked_files TEXT,
-                index_to_word TEXT,
-                manual_folders TEXT,
-                FOREIGN KEY(session_id) REFERENCES sessions(session_id)
-            )
-        """)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS snapshot_documents (
-                session_id TEXT,
-                filepath TEXT,
-                file_hash TEXT,
-                extracted_text TEXT,
-                embedding BLOB,
-                FOREIGN KEY(session_id) REFERENCES sessions(session_id)
-            )
-        """)
 
 class HistoryManager:
     """Manages full directory snapshots and rollback functionality."""
+    
+    def __init__(self, db, cache_manager, db_path=None):
+        from pathlib import Path
+        self.db = db
+        self.cache_manager = cache_manager
+        self.db_path = db_path or str(Path(db.db_path).parent / "history.db")
+        self._init_db()
 
-    def __init__(self, db_path=None):
-        self.db_path = db_path or str(app.config.get_app_dir() / "history.db")
-        self._initialized = False
-
-    def _ensure_init(self):
-        if not self._initialized:
-            init_history_db(self.db_path)
-            self._initialized = True
+    def _init_db(self):
+        conn = get_db_connection(self.db_path)
+        with conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS sessions (
+                    session_id TEXT PRIMARY KEY,
+                    timestamp REAL,
+                    base_dir TEXT,
+                    status TEXT
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS snapshot_files (
+                    session_id TEXT,
+                    original_rel_path TEXT,
+                    inode INTEGER,
+                    size INTEGER,
+                    mtime REAL,
+                    FOREIGN KEY(session_id) REFERENCES sessions(session_id)
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS snapshot_cache (
+                    session_id TEXT PRIMARY KEY,
+                    corpus TEXT,
+                    locked_files TEXT,
+                    index_to_word TEXT,
+                    manual_folders TEXT,
+                    FOREIGN KEY(session_id) REFERENCES sessions(session_id)
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS snapshot_documents (
+                    session_id TEXT,
+                    filepath TEXT,
+                    file_hash TEXT,
+                    extracted_text TEXT,
+                    embedding BLOB,
+                    FOREIGN KEY(session_id) REFERENCES sessions(session_id)
+                )
+            """)
 
     def create_snapshot(self, base_dir: str) -> str:
         """Create a complete snapshot of the directory tree and its metadata."""
-        self._ensure_init()
         def _write():
             session_id = str(uuid.uuid4())
             timestamp = time.time()
@@ -101,8 +94,7 @@ class HistoryManager:
                     )
 
                 # 2. Snapshot Cache
-                from app.core.cache import _get_conn as get_cache_conn
-                cache_conn = get_cache_conn()
+                cache_conn = self.cache_manager._get_conn()
                 with cache_conn:
                     cur = cache_conn.execute(
                         "SELECT corpus, locked_files, index_to_word, manual_folders FROM directory_cache WHERE source_directory = ?",
@@ -117,7 +109,7 @@ class HistoryManager:
 
                 # 3. Snapshot DB
                 docs = []
-                db_conn = get_db_connection(db_instance.db_path)
+                db_conn = get_db_connection(self.db.db_path)
                 with db_conn:
                     cur = db_conn.execute(
                         "SELECT filepath, file_hash, extracted_text, embedding FROM documents WHERE base_dir = ?",
@@ -135,13 +127,10 @@ class HistoryManager:
                 self._prune_snapshots(conn, limit=10)
 
             return session_id
-        return worker.execute_write(_write)
+        return self.db.worker.execute_write(_write)
 
     def _prune_snapshots(self, conn, limit=10):
-        cur = conn.execute(
-            "SELECT session_id FROM sessions ORDER BY timestamp DESC LIMIT -1 OFFSET ?",
-            (limit,),
-        )
+        cur = conn.execute("SELECT session_id FROM sessions ORDER BY timestamp DESC LIMIT -1 OFFSET ?", (limit,))
         old_sessions = [row[0] for row in cur.fetchall()]
         for sid in old_sessions:
             conn.execute("DELETE FROM snapshot_files WHERE session_id = ?", (sid,))
@@ -151,7 +140,6 @@ class HistoryManager:
 
     def get_sessions(self) -> List[Dict[str, Any]]:
         """Retrieve a list of all historical sessions, ordered by time."""
-        self._ensure_init()
         conn = get_db_connection(self.db_path)
         with conn:
             cur = conn.execute("SELECT session_id, timestamp, base_dir, status FROM sessions ORDER BY timestamp DESC")
@@ -159,7 +147,6 @@ class HistoryManager:
 
     def check_missing_files(self, session_id: str) -> List[str]:
         """Check if any files from the snapshot are missing from the disk."""
-        self._ensure_init()
         conn = get_db_connection(self.db_path)
         with conn:
             cur = conn.execute("SELECT base_dir FROM sessions WHERE session_id = ?", (session_id,))
@@ -212,6 +199,7 @@ class HistoryManager:
                 del current_inodes[inode] # consume it
                 found = True
             else:
+                # Fallback Step A
                 curr_sig = active_files_by_rel_path.get(rel_path)
                 if curr_sig == (size, mtime):
                     abs_path = os.path.join(base_dir, rel_path)
@@ -219,6 +207,7 @@ class HistoryManager:
                         active_files_by_sig[curr_sig].remove(abs_path)
                     found = True
                 else:
+                    # Fallback Step B
                     sig = (size, mtime)
                     if sig in active_files_by_sig and active_files_by_sig[sig]:
                         active_files_by_sig[sig].pop(0)
@@ -231,7 +220,6 @@ class HistoryManager:
 
     def rollback(self, session_id: str, ignore_missing: bool = False):
         """Revert directory and metadata state to the snapshot."""
-        self._ensure_init()
         def _write():
             missing = self.check_missing_files(session_id)
             if missing and not ignore_missing:
@@ -314,7 +302,7 @@ class HistoryManager:
                 snapshot_filepaths = set(snapshot_docs_dict.keys())
 
                 # 1. Pre-Move Synchronization
-                db_conn = get_db_connection(db_instance.db_path)
+                db_conn = get_db_connection(self.db.db_path)
                 with db_conn:
                     cur_docs = db_conn.execute("SELECT filepath FROM documents WHERE base_dir = ?", (base_dir,))
                     current_filepaths = [row[0] for row in cur_docs.fetchall()]
@@ -352,16 +340,19 @@ class HistoryManager:
                         rel_dst = os.path.relpath(dst, base_dir)
 
                         if os.path.exists(dst) and not os.path.samefile(src, dst):
+                            # Collision: move existing target out of the way temporarily
                             temp_dst = dst + f".tmp.{uuid.uuid4().hex}"
                             shutil.move(dst, temp_dst)
                             created_temps.append(temp_dst)
                         
                             rel_temp_dst = os.path.relpath(temp_dst, base_dir)
 
-                            db_conn = get_db_connection(db_instance.db_path)
+                            db_conn = get_db_connection(self.db.db_path)
                             with db_conn:
                                 db_conn.execute("UPDATE documents SET filepath = ? WHERE base_dir = ? AND filepath = ?", (rel_temp_dst, base_dir, rel_dst))
 
+                            # The file that was at dst is now at temp_dst. 
+                            # If this file is also part of our 'moves', we need to update its src in the 'moves' list.
                             for i, (m_src, m_dst) in enumerate(moves):
                                 if m_src == dst:
                                     moves[i] = (temp_dst, m_dst)
@@ -370,7 +361,7 @@ class HistoryManager:
                             if not os.path.exists(dst):
                                 shutil.move(src, dst)
 
-                        db_conn = get_db_connection(db_instance.db_path)
+                        db_conn = get_db_connection(self.db.db_path)
                         with db_conn:
                             db_conn.execute("DELETE FROM documents WHERE base_dir = ? AND filepath = ?", (base_dir, rel_src))
                             snapshot_doc = snapshot_docs_dict.get(rel_dst)
@@ -406,8 +397,7 @@ class HistoryManager:
                 # Restore Cache
                 cur = conn.execute("SELECT corpus, locked_files, index_to_word, manual_folders FROM snapshot_cache WHERE session_id = ?", (session_id,))
                 row = cur.fetchone()
-                from app.core.cache import _get_conn as get_cache_conn
-                cache_conn = get_cache_conn()
+                cache_conn = self.cache_manager._get_conn()
                 with cache_conn:
                     if row:
                         cache_conn.execute(
@@ -425,7 +415,8 @@ class HistoryManager:
                     else:
                         cache_conn.execute("DELETE FROM directory_cache WHERE source_directory = ?", (base_dir,))
 
-                conn.execute("UPDATE sessions SET status = 'rolled_back' WHERE session_id = ?", (session_id,))
-        return worker.execute_write(_write)
 
-history_manager = HistoryManager()
+
+                conn.execute("UPDATE sessions SET status = 'rolled_back' WHERE session_id = ?", (session_id,))
+
+        return self.db.worker.execute_write(_write)

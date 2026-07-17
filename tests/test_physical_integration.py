@@ -1,7 +1,38 @@
 import os
+import tempfile
+from pathlib import Path
 
+from app.core.cache import CacheManager
+from app.core.db import Database
+from app.core.db_worker import DBWorker
+from app.core.history import HistoryManager
 from app.core.mover import execute_moves
 from app.core.verifier import VerificationEngine
+
+_test_dir = None
+db_worker = None
+db = None
+cache_manager = None
+history_manager = None
+
+def setup_module(module):
+    global _test_dir, db_worker, db, cache_manager, history_manager
+    _test_dir = tempfile.mkdtemp()
+    db_worker = DBWorker()
+    db = Database(Path(_test_dir) / "test.db", db_worker)
+    cache_manager = CacheManager(str(Path(_test_dir) / "cache.db"), db_worker)
+    history_manager = HistoryManager(db, cache_manager, str(Path(_test_dir) / "history.db"))
+
+def teardown_module(module):
+    global _test_dir, db_worker
+    if db_worker:
+        db_worker.stop()
+    import shutil
+    if _test_dir:
+        shutil.rmtree(_test_dir, ignore_errors=True)
+
+def save_cache_sync(*args, **kwargs):
+    cache_manager.save_cache_sync(*args, **kwargs)
 
 
 def test_physical_move(tmp_path):
@@ -18,7 +49,7 @@ def test_physical_move(tmp_path):
         }
     }
     
-    execute_moves(str(tmp_path), plan)
+    execute_moves(str(tmp_path), plan, db, history_manager)
     
     assert not os.path.exists(source_file)
     assert os.path.exists(tmp_path / "target_folder" / "source.txt")
@@ -45,7 +76,7 @@ def test_naming_collision_resolution(tmp_path):
         }
     }
     
-    execute_moves(str(tmp_path), plan)
+    execute_moves(str(tmp_path), plan, db, history_manager)
     
     # Both files should exist in the target folder
     assert target_file.read_text() == "existing content"
@@ -93,7 +124,7 @@ def test_empty_source_folder_cleanup(tmp_path):
         }
     }
     
-    summary = execute_moves(str(tmp_path), plan)
+    summary = execute_moves(str(tmp_path), plan, db, history_manager)
     
     # The target file should exist
     assert (tmp_path / "target_folder" / "move_me.txt").exists()

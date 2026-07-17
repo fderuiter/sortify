@@ -1,18 +1,13 @@
 """Local database management for autosorter."""
 
+from contextlib import closing
+from pathlib import Path
+
 import numpy as np
 
-import app.config
-from app.core.crypto import (
-    decrypt_embedding,
-    decrypt_text,
-    encrypt_embedding,
-    encrypt_text,
-)
-from app.core.db_conn import clear_connection_cache, get_db_connection
-
-__all__ = ["Database", "db", "clear_connection_cache"]
-from app.core.db_worker import worker
+from app.core.crypto import SessionCrypto
+from app.core.db_conn import get_db_connection
+from app.core.db_worker import DBWorker
 
 
 class Database:
@@ -20,8 +15,12 @@ class Database:
 
     CURRENT_VERSION = 4
 
-    def __init__(self, db_path=None):
-        self.db_path = db_path or str(app.config.get_app_dir() / "autosorter.db")
+    def __init__(self, db_path: Path, worker: DBWorker):
+        self.db_path = str(db_path)
+        self.worker = worker
+        key_path = Path(db_path).parent / "secret.key"
+        self.crypto = SessionCrypto(key_path, Path(db_path))
+        self.init_db()
 
     def init_db(self):
         """Initialize the core database and create tables if they do not exist."""
@@ -67,8 +66,8 @@ class Database:
             )
             row = cursor.fetchone()
             if row:
-                decrypted_text = decrypt_text(row[1]) if row[1] is not None else None
-                decrypted_emb_bytes = decrypt_embedding(row[2]) if row[2] is not None else None
+                decrypted_text = self.crypto.decrypt_text(row[1]) if row[1] is not None else None
+                decrypted_emb_bytes = self.crypto.decrypt_embedding(row[2]) if row[2] is not None else None
                 embedding = np.frombuffer(decrypted_emb_bytes, dtype=np.float32) if decrypted_emb_bytes else None
                 return {
                     "file_hash": row[0],
@@ -96,11 +95,11 @@ class Database:
                     base_dir, filepath, file_hash, extracted_text, embedding, model_name, vector_dimension = doc
                     
                     if embedding is not None:
-                        embedding_blob = encrypt_embedding(embedding.astype(np.float32).tobytes())
+                        embedding_blob = self.crypto.encrypt_embedding(embedding.astype(np.float32).tobytes())
                     else:
                         embedding_blob = None
                         
-                    enc_text = encrypt_text(extracted_text) if extracted_text is not None else None
+                    enc_text = self.crypto.encrypt_text(extracted_text) if extracted_text is not None else None
                     
                     rows_to_insert.append(
                         (base_dir, filepath, file_hash, enc_text, embedding_blob, model_name, vector_dimension)
@@ -119,7 +118,7 @@ class Database:
                 """,
                     rows_to_insert,
                 )
-        worker.execute_write(_write)
+        self.worker.execute_write(_write)
 
     def get_all_documents(self, base_dir):
         """Retrieve all valid documents for a given base directory."""
@@ -134,8 +133,8 @@ class Database:
             import concurrent.futures
             
             def _decrypt_row(row):
-                decrypted_text = decrypt_text(row[1]) if row[1] is not None else None
-                decrypted_emb_bytes = decrypt_embedding(row[2]) if row[2] is not None else None
+                decrypted_text = self.crypto.decrypt_text(row[1]) if row[1] is not None else None
+                decrypted_emb_bytes = self.crypto.decrypt_embedding(row[2]) if row[2] is not None else None
                 embedding = np.frombuffer(decrypted_emb_bytes, dtype=np.float32) if decrypted_emb_bytes is not None else None
                 return (row[0], decrypted_text, embedding, row[3], row[4], row[5], row[6])
                 
@@ -155,7 +154,7 @@ class Database:
                     "UPDATE documents SET user_verified_target_path = ? WHERE base_dir = ? AND file_hash = ?",
                     (target_path, base_dir, file_hash),
                 )
-        worker.execute_write(_write)
+        self.worker.execute_write(_write)
 
     def remove_document(self, base_dir, filepath):
         """Remove a document and its historical assignments when deleted."""
@@ -163,7 +162,7 @@ class Database:
             conn = get_db_connection(self.db_path)
             with conn:
                 conn.execute("DELETE FROM documents WHERE base_dir = ? AND filepath = ?", (base_dir, filepath))
-        worker.execute_write(_write)
+        self.worker.execute_write(_write)
 
     def update_document_path(self, base_dir, old_filepath, new_filepath):
         """Update a document's path and historical assignment when moved."""
@@ -176,7 +175,7 @@ class Database:
                     "UPDATE documents SET filepath = ?, user_verified_target_path = ? WHERE base_dir = ? AND filepath = ?",
                     (new_filepath, new_dir, base_dir, old_filepath)
                 )
-        worker.execute_write(_write)
+        self.worker.execute_write(_write)
 
     def clear(self, base_dir=None):
         """Clear documents from the database. If base_dir is provided, only clear those."""
@@ -187,7 +186,4 @@ class Database:
                     conn.execute("DELETE FROM documents WHERE base_dir = ?", (base_dir,))
                 else:
                     conn.execute("DELETE FROM documents")
-        worker.execute_write(_write)
-
-
-db = Database()
+        self.worker.execute_write(_write)
