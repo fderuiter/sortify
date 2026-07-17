@@ -1,11 +1,42 @@
 """Database connection module."""
 
-import sqlite3
+import os
+import sys
+
+from app.core.crypto import get_raw_key
 
 
-def get_db_connection(db_path: str) -> sqlite3.Connection:
+def get_sqlite_engine():
+    """Dynamically determine and return the correct SQLite engine module."""
+    import importlib
+    if hasattr(sys, '_MEIPASS'):
+        sys.path.insert(0, sys._MEIPASS)
+    # Dynamically import to hide from PyInstaller, preventing standard compiler errors
+    return importlib.import_module("sqlcipher3.dbapi2")
+
+sqlite3 = get_sqlite_engine()
+
+_connection_cache = {}
+
+def clear_connection_cache():
+    """Clear all cached database connections."""
+    global _connection_cache
+    for conn in _connection_cache.values():
+        conn.close()
+    _connection_cache.clear()
+
+def get_db_connection(db_path: str):
     """Create and configure a new database connection with performance parameters."""
+    abs_path = os.path.abspath(db_path)
+    if abs_path in _connection_cache:
+        return _connection_cache[abs_path]
+
     conn = sqlite3.connect(db_path, timeout=5.0, check_same_thread=False)
+    
+    # Apply SQLCipher encryption immediately
+    raw_key = get_raw_key()
+    conn.execute(f"PRAGMA key = '{raw_key}'")
+    
     # Enable Write-Ahead Logging (WAL) for simultaneous reads and writes
     conn.execute("PRAGMA journal_mode = WAL")
     # Increase the database in-memory page cache to hold vector embeddings
@@ -19,28 +50,6 @@ def get_db_connection(db_path: str) -> sqlite3.Connection:
     # Set synchronous mode to NORMAL for WAL
     conn.execute("PRAGMA synchronous = NORMAL")
     
-    try:
-        conn.enable_load_extension(True)
-        try:
-            conn.load_extension("sqlcipher")
-        except sqlite3.OperationalError:
-            try:
-                conn.load_extension("libsqlcipher")
-            except sqlite3.OperationalError:
-                pass
-    except AttributeError:
-        # SQLite wasn't compiled with enable_load_extension
-        pass
-            
-    from app.config import get_app_dir
-    key_path = get_app_dir() / "autosorter.key"
-    if key_path.exists():
-        try:
-            with open(key_path, "r", encoding="utf-8") as f:
-                key = f.read().strip()
-            if key:
-                conn.execute(f"PRAGMA key = '{key}';")
-        except Exception:
-            pass
-
+    _connection_cache[abs_path] = conn
     return conn
+

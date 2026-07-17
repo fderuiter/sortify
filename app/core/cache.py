@@ -2,21 +2,23 @@
 
 import json
 import logging
-from contextlib import closing
 
-from app.config import get_app_dir
+import app.config
 from app.core.db_conn import get_db_connection
 from app.core.db_worker import worker
 
-DB_PATH = get_app_dir() / "cache.db"
+DB_PATH = app.config.get_app_dir() / "cache.db"
 
+def _get_conn():
+    return get_db_connection(DB_PATH)
 
 def init_cache_db():
     """Initialize the cache database."""
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
     try:
-        with closing(get_db_connection(DB_PATH)) as conn, conn:
+        conn = _get_conn()
+        with conn:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS directory_cache (
                     source_directory TEXT PRIMARY KEY,
@@ -30,13 +32,9 @@ def init_cache_db():
                 conn.execute("ALTER TABLE directory_cache ADD COLUMN manual_folders TEXT")
             except Exception:
                 pass
+        return conn
     except Exception as e:
         logging.error(f"Failed to init cache db: {e}")
-
-
-def _get_conn():
-    return get_db_connection(DB_PATH)
-
 
 def _save_cache_sync(
     source_directory: str,
@@ -49,7 +47,8 @@ def _save_cache_sync(
         manual_folders = set()
     def _write():
         try:
-            with closing(_get_conn()) as conn, conn:
+            conn = _get_conn()
+            with conn:
                 conn.execute(
                     """
                     INSERT INTO directory_cache (source_directory, corpus, locked_files, index_to_word, manual_folders)
@@ -73,7 +72,6 @@ def _save_cache_sync(
             raise
     worker.execute_write(_write)
 
-
 def save_cache_async(
     source_directory: str,
     corpus: dict,
@@ -86,7 +84,8 @@ def save_cache_async(
         manual_folders = set()
     def _write():
         try:
-            with closing(_get_conn()) as conn, conn:
+            conn = _get_conn()
+            with conn:
                 conn.execute(
                     """
                     INSERT INTO directory_cache (source_directory, corpus, locked_files, index_to_word, manual_folders)
@@ -109,7 +108,6 @@ def save_cache_async(
             logging.error(f"Failed to save cache async: {e}")
     worker.execute_write_async(_write)
 
-
 def save_cache_sync(
     source_directory: str,
     corpus: dict,
@@ -122,16 +120,15 @@ def save_cache_sync(
         source_directory, corpus, locked_files, index_to_word, manual_folders
     )
 
-
 def load_cache(source_directory: str):
     """Load the cache for a given source directory from SQLite database."""
     try:
-        with closing(_get_conn()) as conn, conn:
-            cur = conn.execute(
-                "SELECT corpus, locked_files, index_to_word, manual_folders FROM directory_cache WHERE source_directory = ?",
-                (source_directory,),
-            )
-            row = cur.fetchone()
+        conn = _get_conn()
+        cur = conn.execute(
+            "SELECT corpus, locked_files, index_to_word, manual_folders FROM directory_cache WHERE source_directory = ?",
+            (source_directory,),
+        )
+        row = cur.fetchone()
             
         if row:
             corpus = json.loads(row[0])

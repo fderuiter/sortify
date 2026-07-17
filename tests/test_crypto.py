@@ -9,8 +9,9 @@ from app.core import crypto
 
 def test_key_generation(tmp_path, monkeypatch):
     monkeypatch.setattr(crypto, "_fernet_instance", None)
-    monkeypatch.setattr(crypto, "get_app_dir", lambda: tmp_path)
-
+    monkeypatch.setattr(crypto, "_raw_key", None)
+    monkeypatch.setattr("app.config.get_app_dir", lambda: tmp_path)
+    
     key_path = tmp_path / "autosorter.key"
     if key_path.exists():
         key_path.unlink()
@@ -30,9 +31,11 @@ def test_key_generation(tmp_path, monkeypatch):
     if os.name != "nt":
         stat = os.stat(key_path)
         assert oct(stat.st_mode)[-3:] == "600"
+
 def test_missing_key_with_existing_db(tmp_path, monkeypatch):
     monkeypatch.setattr(crypto, "_fernet_instance", None)
-    monkeypatch.setattr(crypto, "get_app_dir", lambda: tmp_path)
+    monkeypatch.setattr(crypto, "_raw_key", None)
+    monkeypatch.setattr("app.config.get_app_dir", lambda: tmp_path)
     
     key_path = tmp_path / "autosorter.key"
     if key_path.exists():
@@ -51,7 +54,8 @@ def test_missing_key_with_existing_db(tmp_path, monkeypatch):
         crypto.get_cipher()
 def test_missing_key_with_empty_db(tmp_path, monkeypatch):
     monkeypatch.setattr(crypto, "_fernet_instance", None)
-    monkeypatch.setattr(crypto, "get_app_dir", lambda: tmp_path)
+    monkeypatch.setattr(crypto, "_raw_key", None)
+    monkeypatch.setattr("app.config.get_app_dir", lambda: tmp_path)
     
     key_path = tmp_path / "autosorter.key"
     if key_path.exists():
@@ -70,7 +74,8 @@ def test_missing_key_with_empty_db(tmp_path, monkeypatch):
     assert key_path.exists()
 def test_encryption_decryption(tmp_path, monkeypatch):
     monkeypatch.setattr(crypto, "_fernet_instance", None)
-    monkeypatch.setattr(crypto, "get_app_dir", lambda: tmp_path)
+    monkeypatch.setattr(crypto, "_raw_key", None)
+    monkeypatch.setattr("app.config.get_app_dir", lambda: tmp_path)
     
     key_path = tmp_path / "autosorter.key"
     if key_path.exists():
@@ -90,7 +95,8 @@ def test_encryption_decryption(tmp_path, monkeypatch):
 
 def test_invalid_key(tmp_path, monkeypatch):
     monkeypatch.setattr(crypto, "_fernet_instance", None)
-    monkeypatch.setattr(crypto, "get_app_dir", lambda: tmp_path)
+    monkeypatch.setattr(crypto, "_raw_key", None)
+    monkeypatch.setattr("app.config.get_app_dir", lambda: tmp_path)
     
     key_path = tmp_path / "autosorter.key"
     with open(key_path, "w", encoding="utf-8") as f:

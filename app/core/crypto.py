@@ -5,24 +5,21 @@ import sqlite3
 
 from cryptography.fernet import Fernet
 
-from app.config import get_app_dir
-from app.core.db_conn import get_db_connection
+import app.config
 
 _fernet_instance = None
+_raw_key = None
 
 KEYRING_SERVICE = "AutoSorter"
 KEYRING_ACCOUNT = "DatabaseDecryptionKey"
 
-def _get_key_path():
-    return get_app_dir() / "autosorter.key"
-
 def get_cipher():
     """Get or initialize the Fernet cipher instance."""
-    global _fernet_instance
+    global _fernet_instance, _raw_key
     if _fernet_instance is not None:
         return _fernet_instance
 
-    key_path = _get_key_path()
+    key_path = app.config.get_app_dir() / "autosorter.key"
     key = None
     if key_path.exists():
         try:
@@ -31,11 +28,12 @@ def get_cipher():
         except Exception as e:
             raise RuntimeError("Failed to access key file.") from e
 
+    # 3. Database Guard
     if not key:
-        db_path = get_app_dir() / "autosorter.db"
+        db_path = app.config.get_app_dir() / "autosorter.db"
         if db_path.exists():
             try:
-                conn = get_db_connection(db_path)
+                conn = sqlite3.connect(db_path)
                 try:
                     cursor = conn.execute(
                         "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='documents'"
@@ -58,11 +56,17 @@ def get_cipher():
         except Exception as e:
             raise RuntimeError("Failed to store encryption key.") from e
 
+    _raw_key = key.decode("utf-8")
     try:
         _fernet_instance = Fernet(key)
         return _fernet_instance
     except Exception as e:
         raise RuntimeError("Database accessed but key file is missing or invalid.") from e
+
+def get_raw_key() -> str:
+    """Retrieve the raw URL-safe base64 key used for database encryption."""
+    get_cipher()  # Ensure key is generated
+    return _raw_key
 
 def encrypt_text(text: str) -> bytes:
     """Encrypt a string and return bytes."""

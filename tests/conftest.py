@@ -20,6 +20,9 @@ def isolate_test_environment(monkeypatch_session):
     monkeypatch_session.setattr(app.config, "get_app_dir", mock_get_app_dir)
 
     # Also update the db singleton since it was initialized at import time
+    import app.core.db
+    app.core.db.clear_connection_cache()
+    
     old_db_path = db.db_path
     db.db_path = str(mock_get_app_dir() / "autosorter.db")
     
@@ -33,6 +36,10 @@ def isolate_test_environment(monkeypatch_session):
     
     from app.core.db_init import init_databases
     init_databases()
+    
+    import app.core.history
+    app.core.history.history_manager.db_path = str(mock_get_app_dir() / "history.db")
+    app.core.history.init_history_db(app.core.history.history_manager.db_path)
     
     yield
 

@@ -86,7 +86,6 @@ def _worker_generate_plan(
         logging.error(f"Error generating plan in worker: {e}")
         raise e
 
-
 def gguf_worker_process(model_path: str, q_in: mp.Queue, q_out: mp.Queue):
     """Subprocess for handling GGUF inference in isolation."""
     try:

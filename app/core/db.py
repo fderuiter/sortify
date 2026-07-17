@@ -1,17 +1,17 @@
 """Local database management for autosorter."""
 
-from contextlib import closing
-
 import numpy as np
 
-from app.config import get_app_dir
+import app.config
 from app.core.crypto import (
     decrypt_embedding,
     decrypt_text,
     encrypt_embedding,
     encrypt_text,
 )
-from app.core.db_conn import get_db_connection
+from app.core.db_conn import clear_connection_cache, get_db_connection
+
+__all__ = ["Database", "db", "clear_connection_cache"]
 from app.core.db_worker import worker
 
 
@@ -21,11 +21,12 @@ class Database:
     CURRENT_VERSION = 4
 
     def __init__(self, db_path=None):
-        self.db_path = db_path or str(get_app_dir() / "autosorter.db")
+        self.db_path = db_path or str(app.config.get_app_dir() / "autosorter.db")
 
     def init_db(self):
         """Initialize the core database and create tables if they do not exist."""
-        with closing(get_db_connection(self.db_path)) as conn, conn:
+        conn = get_db_connection(self.db_path)
+        with conn:
             cursor = conn.cursor()
             cursor.execute("PRAGMA user_version")
             db_version = cursor.fetchone()[0]
@@ -58,7 +59,8 @@ class Database:
 
     def get_document(self, base_dir, filepath):
         """Retrieve a document by its base directory and filepath."""
-        with closing(get_db_connection(self.db_path)) as conn, conn:
+        conn = get_db_connection(self.db_path)
+        with conn:
             cursor = conn.execute(
                 "SELECT file_hash, extracted_text, embedding, model_name, vector_dimension FROM documents WHERE base_dir = ? AND filepath = ?",
                 (base_dir, filepath),
@@ -87,7 +89,8 @@ class Database:
             return
             
         def _write():
-            with closing(get_db_connection(self.db_path)) as conn, conn:
+            conn = get_db_connection(self.db_path)
+            with conn:
                 rows_to_insert = []
                 for doc in documents:
                     base_dir, filepath, file_hash, extracted_text, embedding, model_name, vector_dimension = doc
@@ -120,7 +123,8 @@ class Database:
 
     def get_all_documents(self, base_dir):
         """Retrieve all valid documents for a given base directory."""
-        with closing(get_db_connection(self.db_path)) as conn, conn:
+        conn = get_db_connection(self.db_path)
+        with conn:
             cursor = conn.execute(
                 "SELECT filepath, extracted_text, embedding, file_hash, user_verified_target_path, model_name, vector_dimension FROM documents WHERE base_dir = ?",
                 (base_dir,),
@@ -145,7 +149,8 @@ class Database:
     def set_user_verified_target(self, base_dir, file_hash, target_path):
         """Record the historical folder assignment for a specific document hash."""
         def _write():
-            with closing(get_db_connection(self.db_path)) as conn, conn:
+            conn = get_db_connection(self.db_path)
+            with conn:
                 conn.execute(
                     "UPDATE documents SET user_verified_target_path = ? WHERE base_dir = ? AND file_hash = ?",
                     (target_path, base_dir, file_hash),
@@ -155,7 +160,8 @@ class Database:
     def remove_document(self, base_dir, filepath):
         """Remove a document and its historical assignments when deleted."""
         def _write():
-            with closing(get_db_connection(self.db_path)) as conn, conn:
+            conn = get_db_connection(self.db_path)
+            with conn:
                 conn.execute("DELETE FROM documents WHERE base_dir = ? AND filepath = ?", (base_dir, filepath))
         worker.execute_write(_write)
 
@@ -164,7 +170,8 @@ class Database:
         import os
         new_dir = os.path.dirname(new_filepath).replace("\\", "/")
         def _write():
-            with closing(get_db_connection(self.db_path)) as conn, conn:
+            conn = get_db_connection(self.db_path)
+            with conn:
                 conn.execute(
                     "UPDATE documents SET filepath = ?, user_verified_target_path = ? WHERE base_dir = ? AND filepath = ?",
                     (new_filepath, new_dir, base_dir, old_filepath)
@@ -174,7 +181,8 @@ class Database:
     def clear(self, base_dir=None):
         """Clear documents from the database. If base_dir is provided, only clear those."""
         def _write():
-            with closing(get_db_connection(self.db_path)) as conn, conn:
+            conn = get_db_connection(self.db_path)
+            with conn:
                 if base_dir:
                     conn.execute("DELETE FROM documents WHERE base_dir = ?", (base_dir,))
                 else:

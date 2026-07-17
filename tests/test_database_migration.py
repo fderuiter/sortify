@@ -1,4 +1,3 @@
-import sqlite3
 
 from app.core.db import Database
 
@@ -7,7 +6,8 @@ def test_migration_from_v1(tmp_path):
     db_path = tmp_path / "test_v1.db"
     
     # Create v1 database
-    with sqlite3.connect(db_path) as conn:
+    from app.core.db_conn import get_db_connection
+    with get_db_connection(db_path) as conn:
         conn.execute("PRAGMA user_version = 1")
         conn.execute("""
             CREATE TABLE documents (
@@ -25,7 +25,8 @@ def test_migration_from_v1(tmp_path):
     db.init_db()
     
     # Verify migration
-    with sqlite3.connect(db_path) as conn:
+    from app.core.db_conn import get_db_connection
+    with get_db_connection(db_path) as conn:
         cursor = conn.cursor()
         cursor.execute("PRAGMA user_version")
         assert cursor.fetchone()[0] == Database.CURRENT_VERSION
@@ -44,7 +45,8 @@ def test_migration_from_v2(tmp_path):
     db_path = tmp_path / "test_v2.db"
     
     # Create v2 database
-    with sqlite3.connect(db_path) as conn:
+    from app.core.db_conn import get_db_connection
+    with get_db_connection(db_path) as conn:
         conn.execute("PRAGMA user_version = 2")
         conn.execute("""
             CREATE TABLE documents (
@@ -63,7 +65,8 @@ def test_migration_from_v2(tmp_path):
     db.init_db()
     
     # Verify migration
-    with sqlite3.connect(db_path) as conn:
+    from app.core.db_conn import get_db_connection
+    with get_db_connection(db_path) as conn:
         cursor = conn.cursor()
         cursor.execute("PRAGMA user_version")
         assert cursor.fetchone()[0] == Database.CURRENT_VERSION
@@ -86,7 +89,8 @@ def test_migration_from_empty(tmp_path):
     db.init_db()
     
     # Verify creation
-    with sqlite3.connect(db_path) as conn:
+    from app.core.db_conn import get_db_connection
+    with get_db_connection(db_path) as conn:
         cursor = conn.cursor()
         cursor.execute("PRAGMA user_version")
         assert cursor.fetchone()[0] == Database.CURRENT_VERSION
