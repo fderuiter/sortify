@@ -2,9 +2,9 @@
 
 import os
 import sys
+from pathlib import Path
 
 from app.core.crypto import SessionCrypto
-from pathlib import Path
 
 
 def get_sqlite_engine():

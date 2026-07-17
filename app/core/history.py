@@ -4,7 +4,6 @@ import os
 import shutil
 import time
 import uuid
-from contextlib import closing
 from typing import Any, Dict, List
 
 from app.core.db_conn import get_db_connection

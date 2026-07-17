@@ -9,7 +9,6 @@ import keyring
 from cryptography.fernet import Fernet
 
 
-
 class SessionCrypto:
     """Manages encryption and decryption of data per session."""
 

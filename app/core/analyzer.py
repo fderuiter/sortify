@@ -222,7 +222,7 @@ class IncrementalAnalyzer:
 
     
     def close(self):
-        """Cleanly terminate the background processes and close queues."""
+        """Terminate the background processes and close queues cleanly."""
         if hasattr(self, '_q_in') and self._q_in:
             try:
                 self._q_in.put(None)
