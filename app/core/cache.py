@@ -38,12 +38,10 @@ class CacheManager:
                 """)
                 try:
                     conn.execute("ALTER TABLE directory_cache ADD COLUMN manual_folders TEXT")
-                except sqlite3.OperationalError:
+                except Exception:
                     pass
         except Exception:
             raise
-        finally:
-            conn.close()
 
     def _save_cache_sync(
         self,
@@ -58,7 +56,8 @@ class CacheManager:
             
         def _write():
             try:
-                with closing(self._get_conn()) as conn, conn:
+                conn = self._get_conn()
+                with conn:
                     conn.execute(
                         """
                         INSERT INTO directory_cache (source_directory, corpus, locked_files, index_to_word, manual_folders)
@@ -96,7 +95,8 @@ class CacheManager:
             
         def _write():
             try:
-                with closing(self._get_conn()) as conn, conn:
+                conn = self._get_conn()
+                with conn:
                     conn.execute(
                         """
                         INSERT INTO directory_cache (source_directory, corpus, locked_files, index_to_word, manual_folders)
@@ -135,7 +135,8 @@ class CacheManager:
     def load_cache(self, source_directory: str):
         """Load cached analysis results from the database for a specific directory."""
         try:
-            with closing(self._get_conn()) as conn, conn:
+            conn = self._get_conn()
+            with conn:
                 cur = conn.execute(
                     "SELECT corpus, locked_files, index_to_word, manual_folders FROM directory_cache WHERE source_directory = ?",
                     (source_directory,),

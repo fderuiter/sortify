@@ -8,7 +8,6 @@ from pathlib import Path
 import keyring
 from cryptography.fernet import Fernet
 
-from app.core.db_conn import get_db_connection
 
 
 class SessionCrypto:
@@ -54,22 +53,28 @@ class SessionCrypto:
             except Exception:
                 pass
 
+
         # 3. Database Guard
         if key is None:
             if self.db_path.exists():
                 try:
-                    conn = get_db_connection(str(self.db_path))
+                    conn = sqlite3.connect(str(self.db_path))
                     try:
                         cursor = conn.execute("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='documents'")
                         if cursor.fetchone()[0] > 0:
+                            # It might be encrypted, so query will fail, but if it's plaintext, it will succeed
                             cursor = conn.execute("SELECT count(*) FROM documents")
                             if cursor.fetchone()[0] > 0:
                                 raise RuntimeError("Database accessed but key file is missing.")
                     finally:
                         conn.close()
+                except sqlite3.DatabaseError:
+                    # If it's encrypted with SQLCipher, sqlite3 will fail with "file is not a database"
+                    # which means it's an existing DB! We cannot read it without a key.
+                    raise RuntimeError("Database accessed but key file is missing.")
                 except sqlite3.Error:
                     pass
-            
+
             # 4. Generate new key
             key = Fernet.generate_key()
             saved_to_keyring = False
@@ -95,6 +100,26 @@ class SessionCrypto:
             return self._cipher
         except Exception as e:
             raise RuntimeError("Database accessed but key file is missing or invalid.") from e
+
+    
+    def get_raw_key(self) -> str:
+        """Get the raw key string for SQLCipher."""
+        if self._cipher is None:
+            self.get_cipher()
+        # Since _cipher is initialized, we can fetch it again using get_cipher logic, but we need the raw bytes.
+        # Actually, self._cipher._signing_key + self._cipher._encryption_key is the raw key, but let's just 
+        # extract it the same way.
+        key = None
+        try:
+            key_str = keyring.get_password(self.keyring_service, self.keyring_account)
+            if key_str:
+                key = key_str.encode("utf-8")
+        except Exception:
+            pass
+        if key is None and self.key_path.exists():
+            with open(self.key_path, "rb") as f:
+                key = f.read().strip()
+        return key.decode("utf-8") if key else None
 
     def encrypt_text(self, text: str) -> bytes:
         """Encrypt a string and return bytes."""

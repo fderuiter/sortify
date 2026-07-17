@@ -1,5 +1,6 @@
-import sqlite3
+from app.core.db_conn import get_db_connection
 from contextlib import closing
+from app.core.db_conn import clear_connection_cache
 
 from app.core.db import Database
 from app.core.db_worker import DBWorker
@@ -9,7 +10,7 @@ def test_migration_from_v1(tmp_path):
     db_path = tmp_path / "test_v1.db"
     
     # Create v1 database
-    with closing(sqlite3.connect(db_path)) as conn, conn:
+    with closing(get_db_connection(db_path)) as conn, conn:
         conn.execute("PRAGMA user_version = 1")
         conn.execute("""
             CREATE TABLE documents (
@@ -22,6 +23,7 @@ def test_migration_from_v1(tmp_path):
             )
         """)
         
+    clear_connection_cache()
     # Initialize Database, which should trigger migration
     db_worker = DBWorker()
     db = Database(db_path=str(db_path), worker=db_worker)
@@ -29,10 +31,10 @@ def test_migration_from_v1(tmp_path):
     db.init_db()
     
     # Verify migration
-    with closing(sqlite3.connect(db_path)) as conn, conn:
+    with closing(get_db_connection(db_path)) as conn, conn:
         cursor = conn.cursor()
         cursor.execute("PRAGMA user_version")
-        assert cursor.fetchone()[0] == 4
+        assert cursor.fetchone()[0] == Database.CURRENT_VERSION
         
         cursor.execute("PRAGMA table_info(documents)")
         columns = [row[1] for row in cursor.fetchall()]
@@ -48,7 +50,7 @@ def test_migration_from_v2(tmp_path):
     db_path = tmp_path / "test_v2.db"
     
     # Create v2 database
-    with closing(sqlite3.connect(db_path)) as conn, conn:
+    with closing(get_db_connection(db_path)) as conn, conn:
         conn.execute("PRAGMA user_version = 2")
         conn.execute("""
             CREATE TABLE documents (
@@ -62,6 +64,7 @@ def test_migration_from_v2(tmp_path):
             )
         """)
         
+    clear_connection_cache()
     # Initialize Database, which should trigger migration
     db_worker = DBWorker()
     db = Database(db_path=str(db_path), worker=db_worker)
@@ -69,10 +72,10 @@ def test_migration_from_v2(tmp_path):
     db.init_db()
     
     # Verify migration
-    with closing(sqlite3.connect(db_path)) as conn, conn:
+    with closing(get_db_connection(db_path)) as conn, conn:
         cursor = conn.cursor()
         cursor.execute("PRAGMA user_version")
-        assert cursor.fetchone()[0] == 4
+        assert cursor.fetchone()[0] == Database.CURRENT_VERSION
         
         cursor.execute("PRAGMA table_info(documents)")
         columns = [row[1] for row in cursor.fetchall()]
@@ -94,10 +97,10 @@ def test_migration_from_empty(tmp_path):
     db.init_db()
     
     # Verify creation
-    with closing(sqlite3.connect(db_path)) as conn, conn:
+    with closing(get_db_connection(db_path)) as conn, conn:
         cursor = conn.cursor()
         cursor.execute("PRAGMA user_version")
-        assert cursor.fetchone()[0] == 4
+        assert cursor.fetchone()[0] == Database.CURRENT_VERSION
         
         cursor.execute("PRAGMA table_info(documents)")
         columns = [row[1] for row in cursor.fetchall()]

@@ -27,7 +27,7 @@ keyring.set_keyring(_memory_keyring)
 
 @pytest.fixture(autouse=True)
 def reset_memory_keyring():
-    _memory_keyring.clear()
+    pass # _memory_keyring.clear() removed to preserve session scoped keys in tests
 
 @pytest.fixture(scope="session", autouse=True)
 def isolate_test_environment(monkeypatch_session):

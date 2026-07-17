@@ -82,7 +82,8 @@ class AppSession:
         """Generate sorting plan from analyzer."""
         if not self.base_dir:
             return {}
-        return self.analyzer.generate_sorting_plan(self.base_dir, self.settings)
+        _, locked, _, _ = self.cache_manager.load_cache(self.base_dir)
+        return self.analyzer.generate_sorting_plan(self.base_dir, self.settings, locked_files=locked)
 
     def save_cache_async(self, locked_files, manual_folders):
         """Save the cache asynchronously."""

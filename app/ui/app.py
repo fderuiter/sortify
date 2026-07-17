@@ -859,26 +859,37 @@ class AutoSorterApp(ctk.CTk):
 
     def pipeline_worker(self, items_to_sort: list) -> None:
         """Run the data collection and ML algorithm incrementally in a background thread."""
-        for chunk in self.app_session.process_items(
-            items_to_sort,
-            self.item_completed_callback,
-            cancel_check=lambda: getattr(self, "_cancel_analysis_flag", False)
-        ):
-            if getattr(self, "_cancel_analysis_flag", False):
-                break
-                
-            self.app_session.partial_fit(chunk)
+        try:
+            for chunk in self.app_session.process_items(
+                items_to_sort,
+                self.item_completed_callback,
+                cancel_check=lambda: getattr(self, "_cancel_analysis_flag", False)
+            ):
+                if getattr(self, "_cancel_analysis_flag", False):
+                    break
+                    
+                self.app_session.partial_fit(chunk)
 
-            if getattr(self, "_cancel_analysis_flag", False):
-                break
+                if getattr(self, "_cancel_analysis_flag", False):
+                    break
 
-            new_plan = self.app_session.generate_sorting_plan()
-            self._apply_locked_files(new_plan)
-            self.plan = new_plan
+                new_plan = self.app_session.generate_sorting_plan()
+                self._apply_locked_files(new_plan)
+                self.plan = new_plan
 
-            self.after(0, self.render_tree)
+                self.after(0, self.render_tree)
 
-        self.after(0, self._finalize_pipeline)
+            self.after(0, self._finalize_pipeline)
+        except RuntimeError as e:
+            if "worker process crashed" in str(e):
+                self.after(
+                    0,
+                    lambda err=e: self.status_label.configure(
+                        text=f"Error: {str(err)}", text_color="red"
+                    ),
+                )
+            else:
+                raise
 
     def _remove_file_from_plan(self, plan_node, filename: str) -> bool:
         """Recursively removes a file from the plan. Returns True if removed."""

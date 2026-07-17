@@ -1,13 +1,12 @@
 import os
 import shutil
-import sqlite3
-from contextlib import closing
 from unittest.mock import patch
 
 import pytest
 
 from app.core.cache import CacheManager
 from app.core.db import Database
+from app.core.db_conn import get_db_connection
 from app.core.db_worker import DBWorker
 from app.core.history import HistoryManager
 
@@ -55,9 +54,9 @@ def test_incremental_sync_and_stop_on_failure(setup_history_env):
     shutil.move(file1_src, file1_dst)
     shutil.move(file2_src, file2_dst)
 
-    
     def _delete():
-        with closing(sqlite3.connect(db.db_path)) as conn, conn:
+        conn = get_db_connection(db.db_path)
+        with conn:
             conn.execute("DELETE FROM documents WHERE base_dir = ?", (base_dir,))
     db.worker.execute_write(_delete)
     db.upsert_document(base_dir, os.path.join("folder", "file1.txt"), "hash1", "text1", None)
@@ -84,7 +83,8 @@ def test_incremental_sync_and_stop_on_failure(setup_history_env):
     assert not os.path.exists(file2_src)
 
     # 3. Database should reflect file1 at 'file1.txt' and file2 at 'folder/file2.txt'
-    with closing(sqlite3.connect(db.db_path)) as conn, conn:
+    conn = get_db_connection(db.db_path)
+    with conn:
         cur = conn.execute("SELECT filepath FROM documents WHERE base_dir = ?", (base_dir,))
         filepaths = {r[0] for r in cur.fetchall()}
     
@@ -94,7 +94,8 @@ def test_incremental_sync_and_stop_on_failure(setup_history_env):
     assert "file2.txt" not in filepaths
 
     # 4. Session status should be 'failed'
-    with closing(sqlite3.connect(history_manager.db_path)) as conn, conn:
+    conn = get_db_connection(history_manager.db_path)
+    with conn:
         cur = conn.execute("SELECT status FROM sessions WHERE session_id = ?", (session_id,))
         status = cur.fetchone()[0]
     
@@ -121,9 +122,9 @@ def test_rollback_cyclic_collision(setup_history_env):
     shutil.move(file2_src, file1_src)
     shutil.move(temp, file2_src)
 
-    
     def _delete():
-        with closing(sqlite3.connect(db.db_path)) as conn, conn:
+        conn = get_db_connection(db.db_path)
+        with conn:
             conn.execute("DELETE FROM documents WHERE base_dir = ?", (base_dir,))
     db.worker.execute_write(_delete)
     db.upsert_document(base_dir, "A.txt", "hashB", "textB", None)
