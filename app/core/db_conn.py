@@ -1,4 +1,4 @@
-"""Database connection utility for autosorter."""
+"""Database connection module."""
 
 import os
 import sys

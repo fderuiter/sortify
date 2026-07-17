@@ -29,15 +29,28 @@ def test_semantic_quality_guardrails():
     from app.core.db_conn import clear_connection_cache
 
     old_db_path = db.db_path
+    import os
     
-    test_db_path = os.path.join(tempfile.gettempdir(), "quality_guardrails_cache.db")
-    if os.path.exists(test_db_path):
+    # Wipe legacy locks to prevent token decryption failures across disparate test sessions
+    legacy_path = "quality_guardrails_cache.db"
+    for ext in ["", "-wal", "-shm", ".key"]:
         try:
-            os.remove(test_db_path)
+            if os.path.exists(legacy_path + ext):
+                os.remove(legacy_path + ext)
+        except OSError:
+            pass
+
+    temp_dir = tempfile.gettempdir()
+    cache_path = os.path.join(temp_dir, "quality_guardrails_cache.db")
+    
+    for ext in ["", "-wal", "-shm", ".key"]:
+        try:
+            if os.path.exists(cache_path + ext):
+                os.remove(cache_path + ext)
         except OSError:
             pass
             
-    db.db_path = test_db_path
+    db.db_path = cache_path
     clear_connection_cache()
     db.init_db()
 
