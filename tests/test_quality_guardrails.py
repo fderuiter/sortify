@@ -21,10 +21,20 @@ def test_semantic_quality_guardrails():
     # 1. Generate large synthetic corpus for stress testing (500 documents across 4 themes)
     create_large_corpus(500)
 
+    import tempfile
+    
     # Configure the DB to use a persistent test cache so it's not wiped by other tests
     from app.core.db import db
     old_db_path = db.db_path
-    db.db_path = "quality_guardrails_cache.db"
+    
+    test_db_path = os.path.join(tempfile.gettempdir(), "quality_guardrails_cache.db")
+    if os.path.exists(test_db_path):
+        try:
+            os.remove(test_db_path)
+        except OSError:
+            pass
+            
+    db.db_path = test_db_path
     db.init_db()
 
     try:
