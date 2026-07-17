@@ -48,7 +48,7 @@ def test_semantic_quality_guardrails():
             pass
             
     db.db_path = cache_path
-    db._init_db()
+    db.init_db()
 
     try:
         # 2. Set up deterministic sequential ingestion

@@ -21,13 +21,14 @@ def test_migration_from_v1(tmp_path):
         """)
         
     # Initialize Database, which should trigger migration
-    Database(db_path=str(db_path))
+    db = Database(db_path=str(db_path))
+    db.init_db()
     
     # Verify migration
     with sqlite3.connect(db_path) as conn:
         cursor = conn.cursor()
         cursor.execute("PRAGMA user_version")
-        assert cursor.fetchone()[0] == Database.CURRENT_VERSION
+        assert cursor.fetchone()[0] == 4
         
         cursor.execute("PRAGMA table_info(documents)")
         columns = [row[1] for row in cursor.fetchall()]
@@ -55,13 +56,14 @@ def test_migration_from_v2(tmp_path):
         """)
         
     # Initialize Database, which should trigger migration
-    Database(db_path=str(db_path))
+    db = Database(db_path=str(db_path))
+    db.init_db()
     
     # Verify migration
     with sqlite3.connect(db_path) as conn:
         cursor = conn.cursor()
         cursor.execute("PRAGMA user_version")
-        assert cursor.fetchone()[0] == Database.CURRENT_VERSION
+        assert cursor.fetchone()[0] == 4
         
         cursor.execute("PRAGMA table_info(documents)")
         columns = [row[1] for row in cursor.fetchall()]
@@ -74,13 +76,14 @@ def test_migration_from_empty(tmp_path):
     db_path = tmp_path / "test_empty.db"
     
     # Initialize Database on empty file
-    Database(db_path=str(db_path))
+    db = Database(db_path=str(db_path))
+    db.init_db()
     
     # Verify creation
     with sqlite3.connect(db_path) as conn:
         cursor = conn.cursor()
         cursor.execute("PRAGMA user_version")
-        assert cursor.fetchone()[0] == Database.CURRENT_VERSION
+        assert cursor.fetchone()[0] == 4
         
         cursor.execute("PRAGMA table_info(documents)")
         columns = [row[1] for row in cursor.fetchall()]

@@ -1,54 +1,30 @@
-"""Database module for managing application state."""
+"""Local database management for autosorter."""
 
-import os
-import queue
-import threading
 from contextlib import closing
 
 import numpy as np
 
 from app.config import get_app_dir
+from app.core.crypto import (
+    decrypt_embedding,
+    decrypt_text,
+    encrypt_embedding,
+    encrypt_text,
+)
 from app.core.db_conn import get_db_connection
+from app.core.db_worker import worker
 
 
 class Database:
-    """Manages the application database and schema."""
+    """SQLite database abstraction for persistent storage of document state."""
 
     CURRENT_VERSION = 4
 
     def __init__(self, db_path=None):
         self.db_path = db_path or str(get_app_dir() / "autosorter.db")
-        self._write_queue = queue.Queue()
-        self._worker_thread = threading.Thread(target=self._write_worker, daemon=True)
-        self._worker_thread.start()
-        # Initialize DB synchronously to ensure it's ready
-        self._execute_write(self._init_db_sync)
 
-    def _write_worker(self):
-        while True:
-            task = self._write_queue.get()
-            if task is None:
-                break
-            func, args, kwargs, res_q = task
-            try:
-                res = func(*args, **kwargs)
-                res_q.put((True, res))
-            except Exception as e:
-                res_q.put((False, e))
-            self._write_queue.task_done()
-
-    def _execute_write(self, func, *args, **kwargs):
-        res_q = queue.Queue()
-        self._write_queue.put((func, args, kwargs, res_q))
-        success, res = res_q.get()
-        if not success:
-            raise res
-        return res
-
-    def _init_db(self):
-        self._execute_write(self._init_db_sync)
-
-    def _init_db_sync(self):
+    def init_db(self):
+        """Initialize the core database and create tables if they do not exist."""
         with closing(get_db_connection(self.db_path)) as conn, conn:
             cursor = conn.cursor()
             cursor.execute("PRAGMA user_version")
@@ -81,7 +57,7 @@ class Database:
                 conn.execute(f"PRAGMA user_version = {self.CURRENT_VERSION}")
 
     def get_document(self, base_dir, filepath):
-        """Retrieve a specific document from the database."""
+        """Retrieve a document by its base directory and filepath."""
         with closing(get_db_connection(self.db_path)) as conn, conn:
             cursor = conn.execute(
                 "SELECT file_hash, extracted_text, embedding, model_name, vector_dimension FROM documents WHERE base_dir = ? AND filepath = ?",
@@ -89,12 +65,12 @@ class Database:
             )
             row = cursor.fetchone()
             if row:
-                text = row[1]
-                emb_bytes = row[2]
-                embedding = np.frombuffer(emb_bytes, dtype=np.float32) if emb_bytes else None
+                decrypted_text = decrypt_text(row[1]) if row[1] is not None else None
+                decrypted_emb_bytes = decrypt_embedding(row[2]) if row[2] is not None else None
+                embedding = np.frombuffer(decrypted_emb_bytes, dtype=np.float32) if decrypted_emb_bytes else None
                 return {
                     "file_hash": row[0],
-                    "extracted_text": text,
+                    "extracted_text": decrypted_text,
                     "embedding": embedding,
                     "model_name": row[3],
                     "vector_dimension": row[4],
@@ -102,39 +78,48 @@ class Database:
             return None
 
     def upsert_document(self, base_dir, filepath, file_hash, extracted_text, embedding, model_name=None, vector_dimension=None):
-        """Insert or update a single document."""
+        """Insert or update a document in the database."""
         self.upsert_documents([(base_dir, filepath, file_hash, extracted_text, embedding, model_name, vector_dimension)])
 
-    def _upsert_documents_sync(self, documents):
+    def upsert_documents(self, documents):
+        """Insert or update multiple documents in the database."""
         if not documents:
             return
-        with closing(get_db_connection(self.db_path)) as conn, conn:
-            rows_to_insert = []
-            for doc in documents:
-                base_dir, filepath, file_hash, extracted_text, embedding, model_name, vector_dimension = doc
-                embedding_blob = embedding.astype(np.float32).tobytes() if embedding is not None else None
-                rows_to_insert.append((base_dir, filepath, file_hash, extracted_text, embedding_blob, model_name, vector_dimension))
-                
-            conn.executemany(
-                """
-                INSERT INTO documents (base_dir, filepath, file_hash, extracted_text, embedding, model_name, vector_dimension)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(base_dir, filepath) DO UPDATE SET
-                    file_hash = excluded.file_hash,
-                    extracted_text = excluded.extracted_text,
-                    embedding = excluded.embedding,
-                    model_name = excluded.model_name,
-                    vector_dimension = excluded.vector_dimension
-            """,
-                rows_to_insert,
-            )
-
-    def upsert_documents(self, documents):
-        """Insert or update multiple documents."""
-        self._execute_write(self._upsert_documents_sync, documents)
+            
+        def _write():
+            with closing(get_db_connection(self.db_path)) as conn, conn:
+                rows_to_insert = []
+                for doc in documents:
+                    base_dir, filepath, file_hash, extracted_text, embedding, model_name, vector_dimension = doc
+                    
+                    if embedding is not None:
+                        embedding_blob = encrypt_embedding(embedding.astype(np.float32).tobytes())
+                    else:
+                        embedding_blob = None
+                        
+                    enc_text = encrypt_text(extracted_text) if extracted_text is not None else None
+                    
+                    rows_to_insert.append(
+                        (base_dir, filepath, file_hash, enc_text, embedding_blob, model_name, vector_dimension)
+                    )
+                    
+                conn.executemany(
+                    """
+                    INSERT INTO documents (base_dir, filepath, file_hash, extracted_text, embedding, model_name, vector_dimension)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(base_dir, filepath) DO UPDATE SET
+                        file_hash = excluded.file_hash,
+                        extracted_text = excluded.extracted_text,
+                        embedding = excluded.embedding,
+                        model_name = excluded.model_name,
+                        vector_dimension = excluded.vector_dimension
+                """,
+                    rows_to_insert,
+                )
+        worker.execute_write(_write)
 
     def get_all_documents(self, base_dir):
-        """Retrieve all documents for a given base directory."""
+        """Retrieve all valid documents for a given base directory."""
         with closing(get_db_connection(self.db_path)) as conn, conn:
             cursor = conn.execute(
                 "SELECT filepath, extracted_text, embedding, file_hash, user_verified_target_path, model_name, vector_dimension FROM documents WHERE base_dir = ?",
@@ -143,59 +128,58 @@ class Database:
             rows = cursor.fetchall()
 
             import concurrent.futures
-            def _map_row(row):
-                text = row[1]
-                emb_bytes = row[2]
-                embedding = np.frombuffer(emb_bytes, dtype=np.float32) if emb_bytes is not None else None
-                return (row[0], text, embedding, row[3], row[4], row[5], row[6])
+            
+            def _decrypt_row(row):
+                decrypted_text = decrypt_text(row[1]) if row[1] is not None else None
+                decrypted_emb_bytes = decrypt_embedding(row[2]) if row[2] is not None else None
+                embedding = np.frombuffer(decrypted_emb_bytes, dtype=np.float32) if decrypted_emb_bytes is not None else None
+                return (row[0], decrypted_text, embedding, row[3], row[4], row[5], row[6])
                 
             results = []
             if rows:
                 with concurrent.futures.ThreadPoolExecutor() as executor:
-                    results = list(executor.map(_map_row, rows))
+                    results = list(executor.map(_decrypt_row, rows))
+                    
             return results
 
-    def _set_user_verified_target_sync(self, base_dir, file_hash, target_path):
-        with closing(get_db_connection(self.db_path)) as conn, conn:
-            conn.execute(
-                "UPDATE documents SET user_verified_target_path = ? WHERE base_dir = ? AND file_hash = ?",
-                (target_path, base_dir, file_hash),
-            )
-
     def set_user_verified_target(self, base_dir, file_hash, target_path):
-        """Update the user-verified target path for a document."""
-        self._execute_write(self._set_user_verified_target_sync, base_dir, file_hash, target_path)
-
-    def _remove_document_sync(self, base_dir, filepath):
-        with closing(get_db_connection(self.db_path)) as conn, conn:
-            conn.execute("DELETE FROM documents WHERE base_dir = ? AND filepath = ?", (base_dir, filepath))
+        """Record the historical folder assignment for a specific document hash."""
+        def _write():
+            with closing(get_db_connection(self.db_path)) as conn, conn:
+                conn.execute(
+                    "UPDATE documents SET user_verified_target_path = ? WHERE base_dir = ? AND file_hash = ?",
+                    (target_path, base_dir, file_hash),
+                )
+        worker.execute_write(_write)
 
     def remove_document(self, base_dir, filepath):
-        """Delete a document from the database."""
-        self._execute_write(self._remove_document_sync, base_dir, filepath)
-
-    def _update_document_path_sync(self, base_dir, old_filepath, new_filepath):
-        new_dir = os.path.dirname(new_filepath).replace("\\", "/")
-        with closing(get_db_connection(self.db_path)) as conn, conn:
-            conn.execute(
-                "UPDATE documents SET filepath = ?, user_verified_target_path = ? WHERE base_dir = ? AND filepath = ?",
-                (new_filepath, new_dir, base_dir, old_filepath)
-            )
+        """Remove a document and its historical assignments when deleted."""
+        def _write():
+            with closing(get_db_connection(self.db_path)) as conn, conn:
+                conn.execute("DELETE FROM documents WHERE base_dir = ? AND filepath = ?", (base_dir, filepath))
+        worker.execute_write(_write)
 
     def update_document_path(self, base_dir, old_filepath, new_filepath):
-        """Update the path of an existing document."""
-        self._execute_write(self._update_document_path_sync, base_dir, old_filepath, new_filepath)
-
-    def _clear_sync(self, base_dir=None):
-        with closing(get_db_connection(self.db_path)) as conn, conn:
-            if base_dir:
-                conn.execute("DELETE FROM documents WHERE base_dir = ?", (base_dir,))
-            else:
-                conn.execute("DELETE FROM documents")
+        """Update a document's path and historical assignment when moved."""
+        import os
+        new_dir = os.path.dirname(new_filepath).replace("\\", "/")
+        def _write():
+            with closing(get_db_connection(self.db_path)) as conn, conn:
+                conn.execute(
+                    "UPDATE documents SET filepath = ?, user_verified_target_path = ? WHERE base_dir = ? AND filepath = ?",
+                    (new_filepath, new_dir, base_dir, old_filepath)
+                )
+        worker.execute_write(_write)
 
     def clear(self, base_dir=None):
-        """Clear documents from the database."""
-        self._execute_write(self._clear_sync, base_dir)
+        """Clear documents from the database. If base_dir is provided, only clear those."""
+        def _write():
+            with closing(get_db_connection(self.db_path)) as conn, conn:
+                if base_dir:
+                    conn.execute("DELETE FROM documents WHERE base_dir = ?", (base_dir,))
+                else:
+                    conn.execute("DELETE FROM documents")
+        worker.execute_write(_write)
 
 
 db = Database()
