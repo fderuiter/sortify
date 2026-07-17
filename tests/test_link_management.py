@@ -5,15 +5,34 @@ from unittest.mock import MagicMock, patch
 
 from app.core.cache import CacheManager
 from app.core.db import Database
+from app.core.db_worker import DBWorker
 from app.core.history import HistoryManager
 from app.core.link_manager import LinkManager
 from app.core.mover import execute_moves
 from app.core.scanner import get_files_recursively
 
-_test_dir = tempfile.mkdtemp()
-db = Database(Path(_test_dir) / "test.db")
-cache_manager = CacheManager(str(Path(_test_dir) / "cache.db"))
-history_manager = HistoryManager(db, cache_manager, str(Path(_test_dir) / "history.db"))
+_test_dir = None
+db_worker = None
+db = None
+cache_manager = None
+history_manager = None
+
+def setup_module(module):
+    global _test_dir, db_worker, db, cache_manager, history_manager
+    _test_dir = tempfile.mkdtemp()
+    db_worker = DBWorker()
+    db = Database(Path(_test_dir) / "test.db", db_worker)
+    cache_manager = CacheManager(str(Path(_test_dir) / "cache.db"), db_worker)
+    history_manager = HistoryManager(db, cache_manager, str(Path(_test_dir) / "history.db"))
+
+def teardown_module(module):
+    global _test_dir, db_worker
+    if db_worker:
+        db_worker.stop()
+    import shutil
+    if _test_dir:
+        shutil.rmtree(_test_dir, ignore_errors=True)
+
 def save_cache_sync(*args, **kwargs):
     cache_manager.save_cache_sync(*args, **kwargs)
 

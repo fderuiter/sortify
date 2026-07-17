@@ -7,14 +7,15 @@ from contextlib import closing
 from pathlib import Path
 
 from app.core.db_conn import get_db_connection
-from app.core.db_worker import worker
+from app.core.db_worker import DBWorker
 
 
 class CacheManager:
     """Manages the persistence of cached extraction data to an SQLite database."""
 
-    def __init__(self, db_path: str):
+    def __init__(self, db_path: str, worker: DBWorker):
         self.db_path = db_path
+        self.worker = worker
         self._init_db()
 
     def _get_conn(self):
@@ -79,7 +80,7 @@ class CacheManager:
             except Exception as e:
                 logging.error(f"Failed to save cache: {e}")
                 raise
-        worker.execute_write(_write)
+        self.worker.execute_write(_write)
 
     def save_cache_async(
         self,
@@ -116,7 +117,7 @@ class CacheManager:
                     )
             except Exception as e:
                 logging.error(f"Failed to save cache async: {e}")
-        worker.execute_write_async(_write)
+        self.worker.execute_write_async(_write)
 
     def save_cache_sync(
         self,

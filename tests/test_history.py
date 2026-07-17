@@ -2,13 +2,13 @@ import os
 import shutil
 import sqlite3
 from contextlib import closing
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
 from app.core.cache import CacheManager
 from app.core.db import Database
+from app.core.db_worker import DBWorker
 from app.core.history import HistoryManager
 
 
@@ -17,15 +17,17 @@ def setup_history_env(tmp_path):
     base_dir = str(tmp_path / "test_base")
     os.makedirs(base_dir, exist_ok=True)
     
+    db_worker = DBWorker()
     db_path = tmp_path / "test_docs.db"
-    db = Database(db_path)
+    db = Database(db_path, worker=db_worker)
     
     cache_path = tmp_path / "test_cache.db"
-    cache = CacheManager(str(cache_path))
+    cache = CacheManager(str(cache_path), worker=db_worker)
     
     history_manager = HistoryManager(db, cache, str(tmp_path / "test_history.db"))
 
     yield base_dir, db, history_manager
+    db_worker.stop()
 
 
 def test_incremental_sync_and_stop_on_failure(setup_history_env):
@@ -53,11 +55,11 @@ def test_incremental_sync_and_stop_on_failure(setup_history_env):
     shutil.move(file1_src, file1_dst)
     shutil.move(file2_src, file2_dst)
 
-    from app.core.db_worker import worker
+    
     def _delete():
         with closing(sqlite3.connect(db.db_path)) as conn, conn:
             conn.execute("DELETE FROM documents WHERE base_dir = ?", (base_dir,))
-    worker.execute_write(_delete)
+    db.worker.execute_write(_delete)
     db.upsert_document(base_dir, os.path.join("folder", "file1.txt"), "hash1", "text1", None)
     db.upsert_document(base_dir, os.path.join("folder", "file2.txt"), "hash2", "text2", None)
 
@@ -119,11 +121,11 @@ def test_rollback_cyclic_collision(setup_history_env):
     shutil.move(file2_src, file1_src)
     shutil.move(temp, file2_src)
 
-    from app.core.db_worker import worker
+    
     def _delete():
         with closing(sqlite3.connect(db.db_path)) as conn, conn:
             conn.execute("DELETE FROM documents WHERE base_dir = ?", (base_dir,))
-    worker.execute_write(_delete)
+    db.worker.execute_write(_delete)
     db.upsert_document(base_dir, "A.txt", "hashB", "textB", None)
     db.upsert_document(base_dir, "B.txt", "hashA", "textA", None)
 

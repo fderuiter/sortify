@@ -7,7 +7,7 @@ import numpy as np
 
 from app.core.crypto import SessionCrypto
 from app.core.db_conn import get_db_connection
-from app.core.db_worker import worker
+from app.core.db_worker import DBWorker
 
 
 class Database:
@@ -15,8 +15,9 @@ class Database:
 
     CURRENT_VERSION = 4
 
-    def __init__(self, db_path: Path):
+    def __init__(self, db_path: Path, worker: DBWorker):
         self.db_path = str(db_path)
+        self.worker = worker
         key_path = Path(db_path).parent / "secret.key"
         self.crypto = SessionCrypto(key_path, Path(db_path))
         self.init_db()
@@ -114,7 +115,7 @@ class Database:
                 """,
                     rows_to_insert,
                 )
-        worker.execute_write(_write)
+        self.worker.execute_write(_write)
 
     def get_all_documents(self, base_dir):
         """Retrieve all valid documents for a given base directory."""
@@ -148,14 +149,14 @@ class Database:
                     "UPDATE documents SET user_verified_target_path = ? WHERE base_dir = ? AND file_hash = ?",
                     (target_path, base_dir, file_hash),
                 )
-        worker.execute_write(_write)
+        self.worker.execute_write(_write)
 
     def remove_document(self, base_dir, filepath):
         """Remove a document and its historical assignments when deleted."""
         def _write():
             with closing(get_db_connection(self.db_path)) as conn, conn:
                 conn.execute("DELETE FROM documents WHERE base_dir = ? AND filepath = ?", (base_dir, filepath))
-        worker.execute_write(_write)
+        self.worker.execute_write(_write)
 
     def update_document_path(self, base_dir, old_filepath, new_filepath):
         """Update a document's path and historical assignment when moved."""
@@ -167,7 +168,7 @@ class Database:
                     "UPDATE documents SET filepath = ?, user_verified_target_path = ? WHERE base_dir = ? AND filepath = ?",
                     (new_filepath, new_dir, base_dir, old_filepath)
                 )
-        worker.execute_write(_write)
+        self.worker.execute_write(_write)
 
     def clear(self, base_dir=None):
         """Clear documents from the database. If base_dir is provided, only clear those."""
@@ -177,4 +178,4 @@ class Database:
                     conn.execute("DELETE FROM documents WHERE base_dir = ?", (base_dir,))
                 else:
                     conn.execute("DELETE FROM documents")
-        worker.execute_write(_write)
+        self.worker.execute_write(_write)

@@ -23,8 +23,10 @@ class AppSession:
         self.session_dir = Path(tempfile.gettempdir()) / "autosorter_sessions" / self.session_id
         self.session_dir.mkdir(parents=True, exist_ok=True)
         
-        self.db = Database(self.session_dir / "autosorter.db")
-        self.cache_manager = CacheManager(str(self.session_dir / "cache.db"))
+        from app.core.db_worker import DBWorker
+        self.db_worker = DBWorker()
+        self.db = Database(self.session_dir / "autosorter.db", self.db_worker)
+        self.cache_manager = CacheManager(str(self.session_dir / "cache.db"), self.db_worker)
         self.history_manager = HistoryManager(self.db, self.cache_manager, str(self.session_dir / "history.db"))
         
         user_model_path = get_app_dir() / "model"
@@ -96,5 +98,7 @@ class AppSession:
 
     def close(self):
         """Cleanup session directory."""
+        if hasattr(self, "db_worker") and self.db_worker:
+            self.db_worker.stop()
         if self.session_dir and os.path.exists(self.session_dir):
             shutil.rmtree(self.session_dir, ignore_errors=True)

@@ -8,7 +8,6 @@ from contextlib import closing
 from typing import Any, Dict, List
 
 from app.core.db_conn import get_db_connection
-from app.core.db_worker import worker
 
 
 class HistoryManager:
@@ -124,7 +123,7 @@ class HistoryManager:
                 self._prune_snapshots(conn, limit=10)
 
             return session_id
-        return worker.execute_write(_write)
+        return self.db.worker.execute_write(_write)
 
     def _prune_snapshots(self, conn, limit=10):
         cur = conn.execute("SELECT session_id FROM sessions ORDER BY timestamp DESC LIMIT -1 OFFSET ?", (limit,))
@@ -409,4 +408,4 @@ class HistoryManager:
 
                 conn.execute("UPDATE sessions SET status = 'rolled_back' WHERE session_id = ?", (session_id,))
 
-        return worker.execute_write(_write)
+        return self.db.worker.execute_write(_write)

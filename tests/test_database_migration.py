@@ -1,6 +1,7 @@
 import sqlite3
 
 from app.core.db import Database
+from app.core.db_worker import DBWorker
 
 
 def test_migration_from_v1(tmp_path):
@@ -21,7 +22,9 @@ def test_migration_from_v1(tmp_path):
         """)
         
     # Initialize Database, which should trigger migration
-    db = Database(db_path=str(db_path))
+    db_worker = DBWorker()
+    db = Database(db_path=str(db_path), worker=db_worker)
+    db_worker.stop()
     db.init_db()
     
     # Verify migration
@@ -59,7 +62,9 @@ def test_migration_from_v2(tmp_path):
         """)
         
     # Initialize Database, which should trigger migration
-    db = Database(db_path=str(db_path))
+    db_worker = DBWorker()
+    db = Database(db_path=str(db_path), worker=db_worker)
+    db_worker.stop()
     db.init_db()
     
     # Verify migration
@@ -82,7 +87,9 @@ def test_migration_from_empty(tmp_path):
     db_path = tmp_path / "test_empty.db"
     
     # Initialize Database on empty file
-    db = Database(db_path=str(db_path))
+    db_worker = DBWorker()
+    db = Database(db_path=str(db_path), worker=db_worker)
+    db_worker.stop()
     db.init_db()
     
     # Verify creation

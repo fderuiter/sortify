@@ -6,6 +6,7 @@ import pytest
 
 from app.core.cache import CacheManager
 from app.core.db import Database
+from app.core.db_worker import DBWorker
 from app.core.history import HistoryManager
 
 
@@ -14,15 +15,17 @@ def setup_history_env(tmp_path):
     base_dir = str(tmp_path / "test_base")
     os.makedirs(base_dir, exist_ok=True)
     
+    db_worker = DBWorker()
     db_path = tmp_path / "test_docs.db"
-    db = Database(db_path)
+    db = Database(db_path, worker=db_worker)
     
     cache_path = tmp_path / "test_cache.db"
-    cache = CacheManager(str(cache_path))
+    cache = CacheManager(str(cache_path), worker=db_worker)
     
     history_manager = HistoryManager(db, cache, str(tmp_path / "test_history.db"))
 
     yield base_dir, db, history_manager
+    db_worker.stop()
 
 def test_rollback_zero_inode(setup_history_env):
     base_dir, db, history_manager = setup_history_env

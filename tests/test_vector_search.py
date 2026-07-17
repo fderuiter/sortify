@@ -1,8 +1,8 @@
-
 import numpy as np
 
 from app.core.analyzer import IncrementalAnalyzer
 from app.core.db import Database
+from app.core.db_worker import DBWorker
 
 
 def test_find_similar(tmp_path):
@@ -13,7 +13,9 @@ def test_find_similar(tmp_path):
         def get_embedding_dimension(self):
             return 3
             
-    db = Database(tmp_path / "test_docs.db")
+    db_worker = DBWorker()
+            
+    db = Database(tmp_path / "test_docs.db", worker=db_worker)
     analyzer = IncrementalAnalyzer(max_folders=5, stop_words=set(), db=db)
     analyzer.model = MockModel()
     analyzer.model_name = "test_model"
@@ -30,3 +32,4 @@ def test_find_similar(tmp_path):
     assert results[0]["similarity"] > 0.99
     assert results[1]["filepath"] == "doc3.txt"
     assert results[1]["similarity"] > 0.7  # cos(45 deg) ~ 0.707
+    db_worker.stop()
