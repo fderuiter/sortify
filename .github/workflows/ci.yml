@@ -46,12 +46,10 @@ jobs:
         uv run python scripts/validate_architecture.py
         
     - name: Validate Configuration Schema
-      if: matrix.os == 'ubuntu-latest'
       run: |
         uv run python scripts/validate_config.py
         
     - name: CLI Smoke Tests
-      if: matrix.os == 'ubuntu-latest'
       run: |
         uv run python scripts/test_cli.py
         

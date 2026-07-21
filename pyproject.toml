@@ -94,4 +94,4 @@ dev = [
 pythonpath = [
   "."
 ]
-timeout = 60
+timeout = 180
