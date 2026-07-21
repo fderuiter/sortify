@@ -40,9 +40,14 @@ jobs:
       run: |
         uv run python scripts/validate_links.py
         
+    - name: Validate Architectural Guardrails
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        uv run python scripts/validate_architecture.py
+        
     - name: Test with pytest
       env:
-        SMOKE_TEST: "1"
+        SMOKE_TEST: "0"
       run: |
         uv run pytest --cov --cov-report=term tests/
 
