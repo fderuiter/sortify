@@ -50,28 +50,6 @@ docstring-code-format = true
 [tool.mypy]
 ignore_missing_imports = true
 
-[tool.tox]
-legacy_tox_ini = """
-[tox]
-envlist = lint, docs
-
-[testenv:lint]
-deps =
-    ruff
-    mypy
-commands =
-    ruff check .
-    mypy app
-
-[testenv:docs]
-deps =
-    mkdocs
-    mkdocs-material
-    mkdocstrings[python]
-commands =
-    mkdocs build
-"""
-
 [dependency-groups]
 dev = [
     "mkdocs",
