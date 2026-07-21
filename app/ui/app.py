@@ -16,9 +16,9 @@ from pydantic import ValidationError
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
+from app.core.extractor_strategies import registry
 from app.core.session import AppSession
 from app.core.verifier import VerificationEngine
-from app.core.extractor_strategies import registry
 from app.ui.settings import SettingsView
 
 ctk.set_appearance_mode("Dark")
@@ -881,9 +881,28 @@ class AutoSorterApp(ctk.CTk):
             f"Speed: {files_per_second:.1f} files/sec | ETA: {int(eta)}s remaining"
         )
 
+
     def pipeline_worker(self, items_to_sort: list) -> None:
         """Run the data collection and ML algorithm incrementally in a background thread."""
         try:
+            from app.core.metadata import MetadataPass
+            bypassed_files = MetadataPass.run(
+                self.app_session.base_dir,
+                items_to_sort,
+                self.settings,
+                self.app_session.db,
+                self.item_completed_callback,
+                lambda: getattr(self, "_cancel_analysis_flag", False)
+            )
+            bypassed_set = set(bypassed_files)
+            items_to_sort = [item for item in items_to_sort if item not in bypassed_set]
+            
+            if not items_to_sort and bypassed_files:
+                new_plan = self.app_session.generate_sorting_plan()
+                self._apply_locked_files(new_plan)
+                self.plan = new_plan
+                self.after(0, self.render_tree)
+
             for chunk in self.app_session.process_items(
                 items_to_sort,
                 self.item_completed_callback,
