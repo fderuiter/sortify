@@ -14,9 +14,11 @@ def get_uv_cmd():
     """Retrieve the path to the uv executable or exit if not found."""
     uv_cmd = shutil.which("uv")
     if not uv_cmd:
-        cargo_uv = os.path.expanduser("~/.cargo/bin/uv")
-        if os.path.exists(cargo_uv) or os.path.exists(cargo_uv + ".exe"):
-            return cargo_uv
+        local_uv = os.path.expanduser("~/.local/bin/uv")
+        if os.path.exists(local_uv):
+            return local_uv
+        if os.path.exists(local_uv + ".exe"):
+            return local_uv + ".exe"
         print("uv package manager not found.")
         print("Error: uv is not installed.")
         print("Please install uv manually before running this setup script.")
@@ -25,7 +27,9 @@ def get_uv_cmd():
         print("Run the following command in your terminal:")
         print("  curl -LsSf https://astral.sh/uv/install.sh | sh")
         print("")
-        print("Or refer to the official documentation: https://docs.astral.sh/uv/getting-started/installation/")
+        print(
+            "Or refer to the official documentation: https://docs.astral.sh/uv/getting-started/installation/"
+        )
         sys.exit(1)
     return uv_cmd
 
