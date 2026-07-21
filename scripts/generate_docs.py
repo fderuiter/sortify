@@ -180,14 +180,6 @@ def update_security_md():
     """Scan for network dependencies and update SECURITY.md."""
     network_deps = []
 
-    # scan tasks.py
-    with open("tasks.py", "r") as f:
-        content = f.read()
-        if "https://astral.sh" in content:
-            network_deps.append(
-                "- `https://astral.sh` (via `tasks.py`): Bootstrapping the `uv` package manager."
-            )
-
     # scan scripts/prepare_offline.py
     with open(os.path.join("scripts", "prepare_offline.py"), "r") as f:
         content = f.read()
