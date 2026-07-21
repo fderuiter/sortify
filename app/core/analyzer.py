@@ -27,8 +27,9 @@ def _worker_init(model_path: str | None, backend: str):
 
     if model_path is not None:
         try:
-            from sentence_transformers import SentenceTransformer
             import sys
+
+            from sentence_transformers import SentenceTransformer
 
             device = "cpu" if sys.platform == "darwin" else None
             _worker_model = SentenceTransformer(model_path, backend=backend, device=device)

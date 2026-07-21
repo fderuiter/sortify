@@ -10,6 +10,7 @@ import subprocess
 import sys
 import zipfile
 
+
 def get_uv_cmd():
     """Retrieve the path to the uv executable or exit if not found."""
     uv_cmd = shutil.which("uv")
