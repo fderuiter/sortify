@@ -33,6 +33,7 @@ def main():
     reqs_file = bundle_dir / "requirements.txt"
     subprocess.run([
         "uv", "pip", "compile", "pyproject.toml",
+        "--group", "dev",
         "--extra-index-url", "https://download.pytorch.org/whl/cpu",
         "-o", str(reqs_file)
     ], check=True)

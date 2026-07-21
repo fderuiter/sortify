@@ -23,20 +23,6 @@ dependencies = [
     "keyring>=24.0.0",
 ]
 
-[project.optional-dependencies]
-dev = [
-    "mkdocs",
-    "mkdocs-material",
-    "mkdocstrings[python]",
-    "ruff",
-    "mypy",
-    "pytest>=8.4.2",
-    "pytest-mock>=3.15.1",
-    "reportlab>=5.0.0",
-    "pyinstaller",
-    "pre-commit"
-]
-
 [project.scripts]
 smart-autosorter = "app.main:main"
 docs = "mkdocs:build"
@@ -87,12 +73,19 @@ commands =
 
 [dependency-groups]
 dev = [
-    "pytest-cov>=7.1.0",
-    "reportlab>=5.0.0",
+    "mkdocs",
+    "mkdocs-material",
+    "mkdocstrings[python]",
+    "mypy",
+    "pre-commit",
+    "pyinstaller",
     "pytest>=8.4.2",
+    "pytest-cov>=7.1.0",
     "pytest-mock>=3.15.1",
     "pytest-timeout>=2.4.0",
     "pytest-xdist>=3.8.0",
+    "reportlab>=5.0.0",
+    "ruff",
     "sqlcipher3-wheels==0.5.7",
 ]
 
