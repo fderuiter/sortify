@@ -108,12 +108,11 @@ def headless_app():
     app.plan = {}
     app.plan_errors = {}
     yield app
-    app.on_close()
 
 
 def test_empty_plan_rendering(headless_app):
     headless_app.render_tree()
-    state = headless_app.tree.dump_state()
+    state = headless_app.get_tree_state()
     assert_snapshot("empty_plan", state)
 
 
@@ -123,14 +122,14 @@ def test_clustering_rendering(headless_app):
         "Images": {"vacation.jpg": None},
     }
     headless_app.render_tree()
-    state = headless_app.tree.dump_state()
+    state = headless_app.get_tree_state()
     assert_snapshot("clustering_plan", state)
 
 
 def test_nested_folders_rendering(headless_app):
     headless_app.plan = {"Work": {"Projects": {"Project Alpha": {"spec.docx": None}}}}
     headless_app.render_tree()
-    state = headless_app.tree.dump_state()
+    state = headless_app.get_tree_state()
     assert_snapshot("nested_folders_plan", state)
 
 
@@ -139,7 +138,7 @@ def test_error_states_rendering(headless_app):
     # Simulate an error on invoice_102.pdf
     headless_app.plan_errors = {"invoice_102.pdf": "File locked by another process"}
     headless_app.render_tree()
-    state = headless_app.tree.dump_state()
+    state = headless_app.get_tree_state()
     assert_snapshot("error_states_plan", state)
 
 
@@ -155,5 +154,5 @@ def test_manual_override_visibility(headless_app):
         }
     }
     headless_app.render_tree()
-    state = headless_app.tree.dump_state()
+    state = headless_app.get_tree_state()
     assert_snapshot("manual_override_plan", state)

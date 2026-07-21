@@ -3,7 +3,7 @@
 import os
 import sys
 import platform
-import customtkinter
+# Removed customtkinter
 from PyInstaller.utils.hooks import collect_all
 
 block_cipher = None
@@ -38,9 +38,7 @@ for pkg in ml_packages:
     except Exception as e:
         print(f"Warning: Could not collect package {pkg}: {e}")
 
-# Bundle customtkinter assets
-ctk_path = os.path.dirname(customtkinter.__file__)
-datas.append((ctk_path, 'customtkinter'))
+# No special nicegui asset bundling needed by default
 
 # Bundle secure database shared libraries (downloaded by build.py)
 sqlcipher_dir = os.path.join(os.getcwd(), "build_tmp", "sqlcipher", "sqlcipher3")
