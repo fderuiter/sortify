@@ -9,6 +9,7 @@ import pytest
 from keyring.backend import KeyringBackend
 
 from app.core.analyzer import IncrementalAnalyzer
+from app.core.db_conn import clear_connection_cache
 
 
 class MemoryKeyring(KeyringBackend):
@@ -32,6 +33,12 @@ keyring.set_keyring(_memory_keyring)
 @pytest.fixture(autouse=True)
 def reset_memory_keyring():
     pass # _memory_keyring.clear() removed to preserve session scoped keys in tests
+
+@pytest.fixture(autouse=True)
+def cleanup_db_connections():
+    """Ensure database connections are closed after each test to prevent Windows file locking issues."""
+    yield
+    clear_connection_cache()
 
 @pytest.fixture(scope="session", autouse=True)
 def isolate_test_environment(monkeypatch_session):
