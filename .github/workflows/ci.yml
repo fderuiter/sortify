@@ -28,12 +28,12 @@ jobs:
         
     - name: Install dependencies
       run: |
-        uv sync --all-extras
+        uv sync
         
     - name: Lint with Ruff
       if: matrix.os == 'ubuntu-latest'
       run: |
-        uv run --all-extras ruff check .
+        uv run ruff check .
         
     - name: Validate External Links
       if: matrix.os == 'ubuntu-latest'
@@ -44,7 +44,7 @@ jobs:
       env:
         SMOKE_TEST: "1"
       run: |
-        uv run --all-extras pytest --cov --cov-report=term tests/
+        uv run pytest --cov --cov-report=term tests/
 
     - name: Generate Documentation
       if: matrix.os == 'ubuntu-latest'
@@ -63,9 +63,9 @@ jobs:
     - name: Validate Documentation Integrity
       if: matrix.os == 'ubuntu-latest'
       run: |
-        uv run --all-extras mkdocs build --strict
+        uv run mkdocs build --strict
         
     - name: Deploy Documentation
       if: github.ref == 'refs/heads/main' && matrix.os == 'ubuntu-latest'
       run: |
-        uv run --all-extras mkdocs gh-deploy --force
+        uv run mkdocs gh-deploy --force

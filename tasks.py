@@ -59,7 +59,7 @@ def setup(args):
         print("Skipping pre-commit installation in offline mode to avoid network calls.")
     else:
         print("Synchronizing local environment with lockfile...")
-        subprocess.run([uv_cmd, "sync", "--all-extras"], check=True)
+        subprocess.run([uv_cmd, "sync"], check=True)
         print("Installing pre-commit hooks...")
         subprocess.run([uv_cmd, "run", "pre-commit", "install"], check=True)
 
