@@ -1,8 +1,11 @@
+"""Validates architectural constraints across the project codebase."""
 import ast
 import os
 import sys
 
+
 def main():
+    """Execute the architectural validation checks."""
     errors = []
     
     # Define directories to check

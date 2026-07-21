@@ -38,7 +38,6 @@ def reset_memory_keyring():
 def sync_db_worker():
     """Ensure all database writes happen synchronously during tests to prevent race conditions on Windows."""
     from app.core.db_worker import DBWorker
-    original_async = DBWorker.execute_write_async
     
     def sync_execute(self, func, *args, **kwargs):
         return self.execute_write(func, *args, **kwargs)
