@@ -40,7 +40,7 @@ for pkg in ml_packages:
 
 # No special nicegui asset bundling needed by default
 
-# Bundle secure database shared libraries (downloaded by build.py)
+# Bundle secure database shared libraries (bundled by build.py from local env)
 sqlcipher_dir = os.path.join(os.getcwd(), "build_tmp", "sqlcipher", "sqlcipher3")
 if os.path.exists(sqlcipher_dir):
     datas.append((sqlcipher_dir, 'sqlcipher3'))
