@@ -2,8 +2,6 @@
 
 import json
 import logging
-import sqlite3
-from contextlib import closing
 from pathlib import Path
 
 from app.core.db_conn import get_db_connection

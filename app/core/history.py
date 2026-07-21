@@ -4,7 +4,6 @@ import os
 import shutil
 import time
 import uuid
-from contextlib import closing
 from typing import Any, Dict, List
 
 from app.core.db_conn import get_db_connection
@@ -62,77 +61,85 @@ class HistoryManager:
                 )
             """)
 
+    def _create_snapshot_internal(self, base_dir: str) -> str:
+        session_id = str(uuid.uuid4())
+        timestamp = time.time()
+
+        from app.core.scanner import get_files_recursively
+        files = get_files_recursively(base_dir)
+
+        conn = get_db_connection(self.db_path)
+        with conn:
+            conn.execute(
+                "INSERT INTO sessions (session_id, timestamp, base_dir, status) VALUES (?, ?, ?, ?)",
+                (session_id, timestamp, base_dir, "active")
+            )
+            
+            # 1. Snapshot Files
+            file_records = []
+            for rel_path in files:
+                abs_path = os.path.join(base_dir, rel_path)
+                try:
+                    st = os.stat(abs_path)
+                    file_records.append((session_id, rel_path, st.st_ino, st.st_size, st.st_mtime))
+                except OSError:
+                    continue
+            if file_records:
+                conn.executemany(
+                    "INSERT INTO snapshot_files (session_id, original_rel_path, inode, size, mtime) VALUES (?, ?, ?, ?, ?)",
+                    file_records
+                )
+
+            # 2. Snapshot Cache
+            cache_conn = self.cache_manager._get_conn()
+            with cache_conn:
+                cur = cache_conn.execute(
+                    "SELECT corpus, locked_files, index_to_word, manual_folders FROM directory_cache WHERE source_directory = ?",
+                    (base_dir,)
+                )
+                row = cur.fetchone()
+            if row:
+                conn.execute(
+                    "INSERT INTO snapshot_cache (session_id, corpus, locked_files, index_to_word, manual_folders) VALUES (?, ?, ?, ?, ?)",
+                    (session_id, row[0], row[1], row[2], row[3])
+                )
+
+            # 3. Snapshot DB
+            docs = []
+            db_conn = get_db_connection(self.db.db_path)
+            with db_conn:
+                cur = db_conn.execute(
+                    "SELECT filepath, file_hash, extracted_text, embedding FROM documents WHERE base_dir = ?",
+                    (base_dir,)
+                )
+                for r in cur.fetchall():
+                    docs.append((session_id, r[0], r[1], r[2], r[3]))
+            if docs:
+                conn.executemany(
+                    "INSERT INTO snapshot_documents (session_id, filepath, file_hash, extracted_text, embedding) VALUES (?, ?, ?, ?, ?)",
+                    docs
+                )
+            
+            # Prune old snapshots to prevent excessive growth (keep last 10)
+            self._prune_snapshots(conn, limit=10)
+
+        return session_id
+
     def create_snapshot(self, base_dir: str) -> str:
         """Create a complete snapshot of the directory tree and its metadata."""
         def _write():
-            session_id = str(uuid.uuid4())
-            timestamp = time.time()
-
-            from app.core.scanner import get_files_recursively
-            files = get_files_recursively(base_dir)
-
-            conn = get_db_connection(self.db_path)
-            with conn:
-                conn.execute(
-                    "INSERT INTO sessions (session_id, timestamp, base_dir, status) VALUES (?, ?, ?, ?)",
-                    (session_id, timestamp, base_dir, "active")
-                )
-                
-                # 1. Snapshot Files
-                file_records = []
-                for rel_path in files:
-                    abs_path = os.path.join(base_dir, rel_path)
-                    try:
-                        st = os.stat(abs_path)
-                        file_records.append((session_id, rel_path, st.st_ino, st.st_size, st.st_mtime))
-                    except OSError:
-                        continue
-                if file_records:
-                    conn.executemany(
-                        "INSERT INTO snapshot_files (session_id, original_rel_path, inode, size, mtime) VALUES (?, ?, ?, ?, ?)",
-                        file_records
-                    )
-
-                # 2. Snapshot Cache
-                cache_conn = self.cache_manager._get_conn()
-                with cache_conn:
-                    cur = cache_conn.execute(
-                        "SELECT corpus, locked_files, index_to_word, manual_folders FROM directory_cache WHERE source_directory = ?",
-                        (base_dir,)
-                    )
-                    row = cur.fetchone()
-                if row:
-                    conn.execute(
-                        "INSERT INTO snapshot_cache (session_id, corpus, locked_files, index_to_word, manual_folders) VALUES (?, ?, ?, ?, ?)",
-                        (session_id, row[0], row[1], row[2], row[3])
-                    )
-
-                # 3. Snapshot DB
-                docs = []
-                db_conn = get_db_connection(self.db.db_path)
-                with db_conn:
-                    cur = db_conn.execute(
-                        "SELECT filepath, file_hash, extracted_text, embedding FROM documents WHERE base_dir = ?",
-                        (base_dir,)
-                    )
-                    for r in cur.fetchall():
-                        docs.append((session_id, r[0], r[1], r[2], r[3]))
-                if docs:
-                    conn.executemany(
-                        "INSERT INTO snapshot_documents (session_id, filepath, file_hash, extracted_text, embedding) VALUES (?, ?, ?, ?, ?)",
-                        docs
-                    )
-                
-                # Prune old snapshots to prevent excessive growth (keep last 10)
-                self._prune_snapshots(conn, limit=10)
-
-            return session_id
+            return self._create_snapshot_internal(base_dir)
         return self.db.worker.execute_write(_write)
 
     def _prune_snapshots(self, conn, limit=10):
-        cur = conn.execute("SELECT session_id FROM sessions ORDER BY timestamp DESC LIMIT -1 OFFSET ?", (limit,))
-        old_sessions = [row[0] for row in cur.fetchall()]
-        for sid in old_sessions:
+        cur = conn.execute("SELECT session_id, base_dir FROM sessions ORDER BY timestamp DESC LIMIT -1 OFFSET ?", (limit,))
+        old_sessions = cur.fetchall()
+        for sid, base_dir in old_sessions:
+            # Never prune divergent history branches that contain unmerged user data
+            branch_dir = os.path.join(base_dir, ".branches", sid)
+            if os.path.exists(branch_dir) and os.listdir(branch_dir):
+                continue
+                
             conn.execute("DELETE FROM snapshot_files WHERE session_id = ?", (sid,))
             conn.execute("DELETE FROM snapshot_cache WHERE session_id = ?", (sid,))
             conn.execute("DELETE FROM snapshot_documents WHERE session_id = ?", (sid,))
@@ -233,6 +240,10 @@ class HistoryManager:
                     raise ValueError("Session not found")
                 base_dir = row[0]
 
+            # Generate safety backup snapshot before proceeding
+            safety_session_id = self._create_snapshot_internal(base_dir)
+
+            with conn:
                 cur = conn.execute("SELECT original_rel_path, inode, size, mtime FROM snapshot_files WHERE session_id = ?", (session_id,))
                 snapshot_files = cur.fetchall()
 
@@ -307,12 +318,23 @@ class HistoryManager:
                     cur_docs = db_conn.execute("SELECT filepath FROM documents WHERE base_dir = ?", (base_dir,))
                     current_filepaths = [row[0] for row in cur_docs.fetchall()]
 
-                    to_delete = []
+                    to_diverge = []
                     for fp in current_filepaths:
                         if fp not in snapshot_filepaths and fp not in planned_source_rels:
-                            to_delete.append((base_dir, fp))
-                    if to_delete:
-                        db_conn.executemany("DELETE FROM documents WHERE base_dir = ? AND filepath = ?", to_delete)
+                            to_diverge.append(fp)
+                    
+                    if to_diverge:
+                        divergent_updates = []
+                        for fp in to_diverge:
+                            src_abs = os.path.join(base_dir, fp)
+                            if os.path.exists(src_abs):
+                                branch_rel = os.path.join(".branches", safety_session_id, fp)
+                                branch_abs = os.path.join(base_dir, branch_rel)
+                                os.makedirs(os.path.dirname(branch_abs), exist_ok=True)
+                                shutil.move(src_abs, branch_abs)
+                                divergent_updates.append((branch_rel, base_dir, fp))
+                        if divergent_updates:
+                            db_conn.executemany("UPDATE documents SET filepath = ? WHERE base_dir = ? AND filepath = ?", divergent_updates)
 
                     docs_to_upsert = []
                     for fp, r in snapshot_docs_dict.items():
@@ -332,7 +354,6 @@ class HistoryManager:
                         )
 
                 # Execute moves safely to avoid overwriting during cyclic renames
-                created_temps = []
                 try:
                     for src, dst in moves:
                         os.makedirs(os.path.dirname(dst), exist_ok=True)
@@ -340,16 +361,16 @@ class HistoryManager:
                         rel_dst = os.path.relpath(dst, base_dir)
 
                         if os.path.exists(dst) and not os.path.samefile(src, dst):
-                            # Collision: move existing target out of the way temporarily
-                            temp_dst = dst + f".tmp.{uuid.uuid4().hex}"
+                            # Collision: map existing target to divergent historical branch
+                            branch_rel_temp = os.path.join(".branches", safety_session_id, rel_dst)
+                            temp_dst = os.path.join(base_dir, branch_rel_temp)
+                            os.makedirs(os.path.dirname(temp_dst), exist_ok=True)
+                            
                             shutil.move(dst, temp_dst)
-                            created_temps.append(temp_dst)
                         
-                            rel_temp_dst = os.path.relpath(temp_dst, base_dir)
-
                             db_conn = get_db_connection(self.db.db_path)
                             with db_conn:
-                                db_conn.execute("UPDATE documents SET filepath = ? WHERE base_dir = ? AND filepath = ?", (rel_temp_dst, base_dir, rel_dst))
+                                db_conn.execute("UPDATE documents SET filepath = ? WHERE base_dir = ? AND filepath = ?", (branch_rel_temp, base_dir, rel_dst))
 
                             # The file that was at dst is now at temp_dst. 
                             # If this file is also part of our 'moves', we need to update its src in the 'moves' list.
@@ -377,10 +398,6 @@ class HistoryManager:
                                     """,
                                     (base_dir, rel_dst, snapshot_doc[1], snapshot_doc[2], snapshot_doc[3])
                                 )
-                            
-                    for tmp in created_temps:
-                        if os.path.exists(tmp):
-                            os.remove(tmp)
                         
                 except Exception as e:
                     conn.execute("UPDATE sessions SET status = 'failed' WHERE session_id = ?", (session_id,))

@@ -11,6 +11,9 @@ def test_find_similar(tmp_path):
             return [np.array([1.0, 0.0, 0.0], dtype=np.float32)]
 
     class MockExecutor:
+        def shutdown(self, wait=False, cancel_futures=False):
+            pass
+
         def submit(self, fn, *args, **kwargs):
             return MockFuture()
 

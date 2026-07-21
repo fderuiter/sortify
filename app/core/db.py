@@ -1,6 +1,5 @@
 """Local database management for autosorter."""
 
-from contextlib import closing
 from pathlib import Path
 
 import numpy as np
