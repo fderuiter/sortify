@@ -315,27 +315,6 @@ class HistoryManager:
                 # 1. Pre-Move Synchronization
                 db_conn = get_db_connection(self.db.db_path)
                 with db_conn:
-                    cur_docs = db_conn.execute("SELECT filepath FROM documents WHERE base_dir = ?", (base_dir,))
-                    current_filepaths = [row[0] for row in cur_docs.fetchall()]
-
-                    to_diverge = []
-                    for fp in current_filepaths:
-                        if fp not in snapshot_filepaths and fp not in planned_source_rels:
-                            to_diverge.append(fp)
-                    
-                    if to_diverge:
-                        divergent_updates = []
-                        for fp in to_diverge:
-                            src_abs = os.path.join(base_dir, fp)
-                            if os.path.exists(src_abs):
-                                branch_rel = os.path.join(".branches", safety_session_id, fp)
-                                branch_abs = os.path.join(base_dir, branch_rel)
-                                os.makedirs(os.path.dirname(branch_abs), exist_ok=True)
-                                shutil.move(src_abs, branch_abs)
-                                divergent_updates.append((branch_rel, base_dir, fp))
-                        if divergent_updates:
-                            db_conn.executemany("UPDATE documents SET filepath = ? WHERE base_dir = ? AND filepath = ?", divergent_updates)
-
                     docs_to_upsert = []
                     for fp, r in snapshot_docs_dict.items():
                         if fp not in planned_target_rels:
@@ -356,33 +335,62 @@ class HistoryManager:
                 # Execute moves safely to avoid overwriting during cyclic renames
                 try:
                     for src, dst in moves:
+                        from app.core.mover import get_safe_path
+                        db_conn = get_db_connection(self.db.db_path)
+                        
+                        # Fix parent directory collisions
+                        parts = os.path.relpath(dst, base_dir).split(os.sep)
+                        current = base_dir
+                        for part in parts[:-1]:
+                            current = os.path.join(current, part)
+                            if os.path.exists(current) and not os.path.isdir(current):
+                                safe_current = get_safe_path(os.path.dirname(current), os.path.basename(current))
+                                shutil.move(current, safe_current)
+                                rel_current = os.path.relpath(current, base_dir)
+                                rel_safe = os.path.relpath(safe_current, base_dir)
+                                with db_conn:
+                                    db_conn.execute("UPDATE documents SET filepath = ? WHERE base_dir = ? AND filepath = ?", (rel_safe, base_dir, rel_current))
+                                    db_conn.execute("UPDATE documents SET filepath = ? || SUBSTR(filepath, ?) WHERE base_dir = ? AND filepath LIKE ?", (rel_safe, len(rel_current) + 1, base_dir, rel_current + '/%'))
+                                    
                         os.makedirs(os.path.dirname(dst), exist_ok=True)
                         rel_src = os.path.relpath(src, base_dir)
                         rel_dst = os.path.relpath(dst, base_dir)
 
                         if os.path.exists(dst) and not os.path.samefile(src, dst):
-                            # Collision: map existing target to divergent historical branch
-                            branch_rel_temp = os.path.join(".branches", safety_session_id, rel_dst)
-                            temp_dst = os.path.join(base_dir, branch_rel_temp)
-                            os.makedirs(os.path.dirname(temp_dst), exist_ok=True)
-                            
-                            shutil.move(dst, temp_dst)
-                        
-                            db_conn = get_db_connection(self.db.db_path)
-                            with db_conn:
-                                db_conn.execute("UPDATE documents SET filepath = ? WHERE base_dir = ? AND filepath = ?", (branch_rel_temp, base_dir, rel_dst))
-
-                            # The file that was at dst is now at temp_dst. 
-                            # If this file is also part of our 'moves', we need to update its src in the 'moves' list.
-                            for i, (m_src, m_dst) in enumerate(moves):
+                            is_cyclic = False
+                            for m_src, m_dst in moves:
                                 if m_src == dst:
-                                    moves[i] = (temp_dst, m_dst)
+                                    is_cyclic = True
+                                    break
+                                    
+                            if is_cyclic:
+                                # Cyclic rename conflict -> isolate to safe transient path
+                                branch_rel_temp = os.path.join(".branches", safety_session_id, rel_dst)
+                                temp_dst = os.path.join(base_dir, branch_rel_temp)
+                                os.makedirs(os.path.dirname(temp_dst), exist_ok=True)
+                                shutil.move(dst, temp_dst)
+                                
+                                with db_conn:
+                                    db_conn.execute("UPDATE documents SET filepath = ? WHERE base_dir = ? AND filepath = ?", (branch_rel_temp, base_dir, rel_dst))
+    
+                                for i, (m_src, m_dst) in enumerate(moves):
+                                    if m_src == dst:
+                                        moves[i] = (temp_dst, m_dst)
+                            else:
+                                # Non-cyclic inline rename (Requirement 2)
+                                safe_dst = get_safe_path(os.path.dirname(dst), os.path.basename(dst))
+                                shutil.move(dst, safe_dst)
+                                
+                                safe_rel = os.path.relpath(safe_dst, base_dir)
+                                with db_conn:
+                                    db_conn.execute("UPDATE documents SET filepath = ? WHERE base_dir = ? AND filepath = ?", (safe_rel, base_dir, rel_dst))
+                                    db_conn.execute("UPDATE documents SET filepath = ? || SUBSTR(filepath, ?) WHERE base_dir = ? AND filepath LIKE ?", (safe_rel, len(rel_dst) + 1, base_dir, rel_dst + '/%'))
+                                
                             shutil.move(src, dst)
                         else:
                             if not os.path.exists(dst):
                                 shutil.move(src, dst)
 
-                        db_conn = get_db_connection(self.db.db_path)
                         with db_conn:
                             db_conn.execute("DELETE FROM documents WHERE base_dir = ? AND filepath = ?", (base_dir, rel_src))
                             snapshot_doc = snapshot_docs_dict.get(rel_dst)
