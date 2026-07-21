@@ -79,16 +79,19 @@ class DummyExecutor:
         pass
 
 @pytest.fixture(autouse=True)
-def mock_analyzer_executor_and_cleanup():
+def mock_analyzer_executor_and_cleanup(request):
     analyzers = []
     original_init = IncrementalAnalyzer.__init__
+    
+    use_dummy = "test_semantic_quality_guardrails" not in request.node.name
     
     def wrapped_init(self, *args, **kwargs):
         original_init(self, *args, **kwargs)
         # Replace the real executor with the dummy one
-        if hasattr(self, 'executor'):
-            self.executor.shutdown(wait=False)
-        self.executor = DummyExecutor()
+        if use_dummy:
+            if hasattr(self, 'executor'):
+                self.executor.shutdown(wait=False)
+            self.executor = DummyExecutor()
         analyzers.append(self)
         
     with patch.object(IncrementalAnalyzer, '__init__', wrapped_init):
