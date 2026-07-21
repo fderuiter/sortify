@@ -348,7 +348,7 @@ class HistoryManager:
                                 rel_safe = os.path.relpath(safe_current, base_dir)
                                 with db_conn:
                                     db_conn.execute("UPDATE documents SET filepath = ? WHERE base_dir = ? AND filepath = ?", (rel_safe, base_dir, rel_current))
-                                    db_conn.execute("UPDATE documents SET filepath = ? || SUBSTR(filepath, ?) WHERE base_dir = ? AND filepath LIKE ?", (rel_safe, len(rel_current) + 1, base_dir, rel_current + '/%'))
+                                    db_conn.execute("UPDATE documents SET filepath = ? || SUBSTR(filepath, ?) WHERE base_dir = ? AND filepath LIKE ?", (rel_safe, len(rel_current) + 1, base_dir, rel_current + os.sep + '%'))
                                     
                         os.makedirs(os.path.dirname(dst), exist_ok=True)
                         rel_src = os.path.relpath(src, base_dir)
@@ -382,7 +382,7 @@ class HistoryManager:
                                 safe_rel = os.path.relpath(safe_dst, base_dir)
                                 with db_conn:
                                     db_conn.execute("UPDATE documents SET filepath = ? WHERE base_dir = ? AND filepath = ?", (safe_rel, base_dir, rel_dst))
-                                    db_conn.execute("UPDATE documents SET filepath = ? || SUBSTR(filepath, ?) WHERE base_dir = ? AND filepath LIKE ?", (safe_rel, len(rel_dst) + 1, base_dir, rel_dst + '/%'))
+                                    db_conn.execute("UPDATE documents SET filepath = ? || SUBSTR(filepath, ?) WHERE base_dir = ? AND filepath LIKE ?", (safe_rel, len(rel_dst) + 1, base_dir, rel_dst + os.sep + '%'))
                                 
                             shutil.move(src, dst)
                         else:
