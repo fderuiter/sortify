@@ -138,20 +138,3 @@ class SessionCrypto:
             return cipher.decrypt(cipher_bytes).decode("utf-8")
         except Exception as e:
             raise RuntimeError("Failed to decrypt text") from e
-
-    def encrypt_embedding(self, emb_bytes: bytes) -> bytes:
-        """Encrypt the raw embedding bytes."""
-        if emb_bytes is None:
-            return None
-        cipher = self.get_cipher()
-        return cipher.encrypt(emb_bytes)
-
-    def decrypt_embedding(self, cipher_bytes: bytes) -> bytes:
-        """Decrypt the embedding bytes."""
-        if cipher_bytes is None:
-            return None
-        cipher = self.get_cipher()
-        try:
-            return cipher.decrypt(cipher_bytes)
-        except Exception as e:
-            raise RuntimeError("Failed to decrypt embedding") from e

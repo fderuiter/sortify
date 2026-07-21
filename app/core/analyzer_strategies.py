@@ -39,7 +39,6 @@ class ClusteringStrategy(Protocol):
         self,
         filenames: List[str],
         documents: List[str],
-        embeddings: List[np.ndarray],
         max_folders: int,
         stop_words: set,
         max_depth: int = 5,
@@ -56,7 +55,6 @@ class RecursiveKMeansStrategy:
         self,
         filenames: List[str],
         documents: List[str],
-        embeddings: List[np.ndarray],
         max_folders: int,
         stop_words: set,
         max_depth: int = 5,
@@ -68,7 +66,7 @@ class RecursiveKMeansStrategy:
         self.max_depth = max_depth
         self.max_features = max_features
         self._error = 0.0
-        plan = self._cluster_recursive(filenames, documents, embeddings, depth=1)
+        plan = self._cluster_recursive(filenames, documents, depth=1)
         return plan, self._error
 
     def _get_cluster_keywords(self, documents: list) -> str:
@@ -91,7 +89,7 @@ class RecursiveKMeansStrategy:
             return "Miscellaneous"
 
     def _cluster_recursive(
-        self, filenames: list, documents: list, embeddings: list, depth: int
+        self, filenames: list, documents: list, depth: int
     ) -> dict:
         plan = {}
 
@@ -100,7 +98,14 @@ class RecursiveKMeansStrategy:
                 plan[f] = None
             return {"Miscellaneous": plan} if depth == 1 else plan
 
-        X = np.array(embeddings)
+        try:
+            vectorizer = TfidfVectorizer(stop_words=list(self.stop_words), max_features=1000)
+            X = vectorizer.fit_transform(documents)
+        except Exception:
+            for f in filenames:
+                plan[f] = None
+            return {"Miscellaneous": plan} if depth == 1 else plan
+
         actual_k = min(self.max_folders, len(documents) // 2)
         if actual_k < 2:
             actual_k = 2
@@ -111,12 +116,11 @@ class RecursiveKMeansStrategy:
 
         topic_groups = defaultdict(list)
         for i, label in enumerate(labels):
-            topic_groups[label].append((filenames[i], documents[i], embeddings[i]))
+            topic_groups[label].append((filenames[i], documents[i]))
 
         for topic_idx, group in topic_groups.items():
             sub_filenames = [item[0] for item in group]
             sub_documents = [item[1] for item in group]
-            sub_embeddings = [item[2] for item in group]
 
             folder_name = self._get_cluster_keywords(sub_documents)
             
@@ -130,7 +134,7 @@ class RecursiveKMeansStrategy:
                     plan[folder_name][f] = None
             else:
                 sub_plan = self._cluster_recursive(
-                    sub_filenames, sub_documents, sub_embeddings, depth + 1
+                    sub_filenames, sub_documents, depth + 1
                 )
 
                 def deep_update(d, u):

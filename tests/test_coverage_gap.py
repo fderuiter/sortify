@@ -86,7 +86,7 @@ def test_process_item_worker_already_processed(tmp_path):
     file_path = tmp_path / "test.txt"
     file_path.write_text("hello")
     file_hash = get_file_hash(str(file_path))
-    db.upsert_document(str(tmp_path), "test.txt", file_hash, "hello", np.array([0.1, 0.2]))
+    db.upsert_document(str(tmp_path), "test.txt", file_hash, "hello")
     
     cb = mock.MagicMock()
     item, text, h = process_item_worker(str(tmp_path), "test.txt", cb, db)
@@ -117,37 +117,37 @@ def test_build_corpus_generator_sequential_continue(tmp_path):
     file_path = tmp_path / "test.txt"
     file_path.write_text("hello")
     file_hash = get_file_hash(str(file_path))
-    db.upsert_document(str(tmp_path), "test.txt", file_hash, "hello", np.array([0.1, 0.2]), model_name="test_model", vector_dimension=10)
+    db.upsert_document(str(tmp_path), "test.txt", file_hash, "hello")
     
     gen = build_corpus_generator(
-        str(tmp_path), ["test.txt"], mock.MagicMock(), 1, chunk_size=1, sequential=True, active_model_name="test_model", active_dimension=10, db=db
+        str(tmp_path), ["test.txt"], mock.MagicMock(), 1, chunk_size=1, sequential=True, db=db
     )
     chunks = list(gen)
     assert len(chunks) == 0
 
     gen2 = build_corpus_generator(
-        str(tmp_path), ["test.txt"], mock.MagicMock(), 1, chunk_size=2, sequential=True, active_model_name="other_model", active_dimension=10, db=db
+        str(tmp_path), ["test.txt"], mock.MagicMock(), 1, chunk_size=2, sequential=True, db=db
     )
     chunks2 = list(gen2)
-    assert len(chunks2) == 1
+    assert len(chunks2) == 0
 
 def test_build_corpus_generator_parallel_continue(tmp_path):
     file_path = tmp_path / "test.txt"
     file_path.write_text("hello")
     file_hash = get_file_hash(str(file_path))
-    db.upsert_document(str(tmp_path), "test.txt", file_hash, "hello", np.array([0.1, 0.2]), model_name="test_model", vector_dimension=10)
+    db.upsert_document(str(tmp_path), "test.txt", file_hash, "hello")
     
     gen = build_corpus_generator(
-        str(tmp_path), ["test.txt"], mock.MagicMock(), 1, chunk_size=1, sequential=False, active_model_name="test_model", active_dimension=10, db=db
+        str(tmp_path), ["test.txt"], mock.MagicMock(), 1, chunk_size=1, sequential=False, db=db
     )
     chunks = list(gen)
     assert len(chunks) == 0
 
     gen2 = build_corpus_generator(
-        str(tmp_path), ["test.txt"], mock.MagicMock(), 1, chunk_size=2, sequential=False, active_model_name="other_model", active_dimension=10, db=db
+        str(tmp_path), ["test.txt"], mock.MagicMock(), 1, chunk_size=2, sequential=False, db=db
     )
     chunks2 = list(gen2)
-    assert len(chunks2) == 1
+    assert len(chunks2) == 0
 
 def test_mover_get_safe_path_samefile(tmp_path):
     f1 = tmp_path / "file.txt"
@@ -454,7 +454,7 @@ def test_execute_moves_recursive_db_doc_update(tmp_path):
     }
     
     file_hash = "fake_hash"
-    db.upsert_document(str(tmp_path), "test.txt", file_hash, "data", np.array([0.1, 0.2]))
+    db.upsert_document(str(tmp_path), "test.txt", file_hash, "data")
     
     try:
         _execute_moves_recursive(str(tmp_path), plan, db, "dest")

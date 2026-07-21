@@ -37,8 +37,8 @@ def test_rollback_zero_inode(setup_history_env):
     with open(file2_src, "w") as f:
         f.write("content 2")
 
-    db.upsert_document(base_dir, "doc1.txt", "hash1", "text1", None)
-    db.upsert_document(base_dir, "doc2.txt", "hash2", "text2", None)
+    db.upsert_document(base_dir, "doc1.txt", "hash1", "text1")
+    db.upsert_document(base_dir, "doc2.txt", "hash2", "text2")
 
     # Mock os.stat to return 0 for st_ino for all files
     original_stat = os.stat

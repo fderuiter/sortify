@@ -6,7 +6,6 @@ This module provides topic modeling functionality.
 import hashlib
 import json
 import logging
-import multiprocessing as mp
 import os
 import re
 from typing import Any, Dict, List, Tuple
@@ -15,121 +14,9 @@ import numpy as np
 
 from app.core.analyzer_strategies import clustering_registry
 
-_worker_model = None
-
-
-def _worker_init(model_path: str | None, backend: str):
-    global _worker_model
-    import torch
-
-    # Explicitly limit ML engine to 2 threads to prevent CPU starvation
-    torch.set_num_threads(2)
-
-    if model_path is not None:
-        try:
-            import sys
-
-            from sentence_transformers import SentenceTransformer
-
-            device = "cpu" if sys.platform == "darwin" else None
-            _worker_model = SentenceTransformer(model_path, backend=backend, device=device)
-        except Exception as e:
-            logging.error(f"Failed to load model in worker: {e}")
-            _worker_model = None
-    else:
-        _worker_model = None
-
-
-def _worker_encode(texts: List[str]) -> List[np.ndarray | None]:
-    global _worker_model
-    import torch
-
-    torch.set_num_threads(2)
-    if _worker_model is None:
-        return [None] * len(texts)
-    try:
-        # Some models return numpy arrays, others return tensors
-        embeddings = _worker_model.encode(texts, show_progress_bar=False)
-        return [np.array(e) for e in embeddings]
-    except Exception as e:
-        logging.error(f"Error encoding texts in worker: {e}")
-        raise e
-
-
-def _worker_generate_plan(
-    strategy_name: str,
-    filenames: List[str],
-    documents: List[str],
-    embeddings: List[np.ndarray],
-    max_folders: int,
-    stop_words: set,
-    max_depth: int,
-    max_features: int,
-) -> Tuple[Dict[str, Any], float]:
-    import torch
-
-    torch.set_num_threads(2)
-
-    strategy = clustering_registry.get_strategy(strategy_name)
-    if not strategy:
-        return {}, 0.0
-
-    try:
-        return strategy.generate_plan(
-            filenames,
-            documents,
-            embeddings,
-            max_folders,
-            stop_words,
-            max_depth,
-            max_features,
-        )
-    except Exception as e:
-        logging.error(f"Error generating plan in worker: {e}")
-        raise e
-
-def gguf_worker_process(model_path: str, q_in: mp.Queue, q_out: mp.Queue):
-    """Subprocess for handling GGUF inference in isolation."""
-    try:
-        import os
-
-        from llama_cpp import Llama
-        cpu_count = os.cpu_count() or 4
-        n_threads = max(1, int(cpu_count * 0.75))
-        
-        model = Llama(
-            model_path=model_path,
-            n_ctx=512,
-            n_batch=128,
-            n_threads=n_threads,
-            embedding=True,
-            verbose=False
-        )
-        
-        while True:
-            task = q_in.get()
-            if task is None:
-                break
-                
-            texts_to_encode = task
-            embeddings = []
-            for text in texts_to_encode:
-                res = model.create_embedding(text)
-                if 'data' in res and len(res['data']) > 0:
-                    embeddings.append(res['data'][0]['embedding'])
-                else:
-                    embeddings.append(None)
-            q_out.put(embeddings)
-    except Exception as e:
-        import logging
-        logging.error(f"GGUF worker crashed: {e}")
-        q_out.put(None)
 
 class IncrementalAnalyzer:
-    """Stateful ML analyzer using incremental topic modeling.
-
-    Uses SentenceTransformer and MiniBatchKMeans to cluster documents incrementally.
-    """
+    """Stateful ML analyzer using incremental topic modeling."""
 
     def __init__(
         self,
@@ -145,181 +32,21 @@ class IncrementalAnalyzer:
         self.stop_words = stop_words
         self.strategy_name = strategy_name
         self.model_path = model_path
-
-        # Check for side-loaded offline model package
-        import sys
-
-        from app.config import get_app_dir
-
-        if getattr(sys, "frozen", False):
-            base_path = os.path.dirname(sys.executable)
-        else:
-            base_path = os.path.dirname(
-                os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            )
-
-        offline_model_path = os.path.join(base_path, "offline_bundle", "model")
-        manifest_path = os.path.join(base_path, "offline_bundle", "model_manifest.json")
-        user_model_path = get_app_dir() / "model"
-
         self.model_name = None
-        backend = "torch"
-        self._model_dir_for_config = None
-        self._gguf_process = None
-        self._q_in = None
-        self._q_out = None
         self.corpus = {}
         self._last_reconstruction_error = 0.0
-        self._active_dimension = None
-        if os.path.exists(offline_model_path) and os.path.exists(manifest_path):
-            logging.info("Detected side-loaded model weights. Verifying integrity...")
-            self._verify_model(offline_model_path, manifest_path, "side-loaded")
-            logging.info("Integrity verified. Loading side-loaded model in worker...")
-            backend = self._detect_backend(offline_model_path)
-            if backend == "gguf":
-                self._start_gguf_worker(offline_model_path)
-            self.model_name = "offline_model"
-            self._model_dir_for_config = offline_model_path
-            self.model_path = offline_model_path
-        elif model_path is not None:
-            if str(model_path) == str(user_model_path):
-                hf_manifest = os.path.join(
-                    os.path.dirname(__file__), "hf_manifest.json"
-                )
-                if os.path.exists(hf_manifest):
-                    logging.info("Verifying user downloaded model integrity...")
-                    self._verify_model(str(user_model_path), hf_manifest, "downloaded")
-            backend = self._detect_backend(model_path)
-            if backend == "gguf":
-                self._start_gguf_worker(model_path)
-            self.model_name = str(model_path)
-            self._model_dir_for_config = str(model_path)
 
-        import concurrent.futures
-        import multiprocessing
-
-        context = multiprocessing.get_context("spawn")
-        self.executor = concurrent.futures.ProcessPoolExecutor(
-            max_workers=1,
-            mp_context=context,
-            initializer=_worker_init,
-            initargs=(self.model_path, backend) if self.model_path else (None, "torch"),
-        )
-    def _start_gguf_worker(self, path):
-        gguf_file = path
-        if os.path.isdir(path):
-            for root, _, files in os.walk(path):
-                for f in files:
-                    if f.endswith(".gguf"):
-                        gguf_file = os.path.join(root, f)
-                        break
-        
-        self._q_in = mp.Queue()
-        self._q_out = mp.Queue()
-        self._gguf_process = mp.Process(
-            target=gguf_worker_process,
-            args=(gguf_file, self._q_in, self._q_out),
-            daemon=True
-        )
-        self._gguf_process.start()
-
-    
     def close(self):
-        """Terminate the background processes and close queues cleanly."""
-        if hasattr(self, '_q_in') and self._q_in:
-            try:
-                self._q_in.put(None)
-            except Exception:
-                pass
-        self.terminate()
-        if hasattr(self, '_q_in') and self._q_in:
-            try:
-                self._q_in.close()
-            except Exception:
-                pass
-        if hasattr(self, '_q_out') and self._q_out:
-            try:
-                self._q_out.close()
-            except Exception:
-                pass
+        """Terminate processes."""
+        pass
 
     def __del__(self):
-        """Ensure background processes and queues are cleaned up on garbage collection."""
-        self.terminate()
+        """Clean up."""
+        pass
 
     def terminate(self):
-        """Terminate background processes."""
-        if self._gguf_process and self._gguf_process.is_alive():
-            self._gguf_process.terminate()
-            self._gguf_process.join()
-        if hasattr(self, 'executor'):
-            self.executor.shutdown(wait=False)
-
-
-    def _detect_backend(self, model_dir: str) -> str:
-        """Detect the appropriate backend for the model based on available weights."""
-        if not os.path.exists(model_dir):
-            return "torch"
-
-        has_torch = os.path.exists(
-            os.path.join(model_dir, "pytorch_model.bin")
-        ) or os.path.exists(os.path.join(model_dir, "model.safetensors"))
-        if has_torch:
-            return "torch"
-
-        for root, _, files in os.walk(model_dir):
-            if any(f.endswith(".onnx") for f in files):
-                return "onnx"
-
-        return "torch"
-
-    def _verify_model(self, model_dir: str, manifest_path: str, model_type: str) -> None:
-        """Verify the checksums of the model against the manifest."""
-        try:
-            with open(manifest_path, "r") as f:
-                manifest = json.load(f)
-        except Exception as e:
-            raise RuntimeError(f"Failed to read model manifest: {e}")
-
-        critical_files = ["config.json", "tokenizer.json"]
-        valid_weight_found = False
-
-        for rel_path, expected_hash in manifest.items():
-            if rel_path.startswith(".cache"):
-                continue
-
-            filepath = os.path.join(model_dir, rel_path)
-            if not os.path.exists(filepath):
-                if rel_path in critical_files:
-                    raise RuntimeError(f"Missing critical model file: {rel_path}")
-                continue
-
-            if rel_path in [
-                "pytorch_model.bin",
-                "model.safetensors",
-            ] or rel_path.endswith(".onnx"):
-                valid_weight_found = True
-
-            file_hash = hashlib.sha256()
-            try:
-                with open(filepath, "rb") as file_obj:
-                    while chunk := file_obj.read(8192):
-                        file_hash.update(chunk)
-            except Exception as e:
-                raise RuntimeError(f"Failed to read model file {rel_path}: {e}")
-
-            if file_hash.hexdigest() != expected_hash:
-                raise RuntimeError(
-                    f"Checksum mismatch for {model_type} model file: {rel_path}"
-                )
-
-        if not valid_weight_found:
-            raise RuntimeError(
-                "No valid weight formats found (PyTorch, SafeTensors, or ONNX)."
-            )
-
-
-
+        """Terminate processes."""
+        pass
 
     @property
     def active_model_name(self):
@@ -329,36 +56,11 @@ class IncrementalAnalyzer:
     @property
     def active_dimension(self):
         """Get the vector dimension of the currently active model."""
-        if self.model_name is None:
-            return None
-        if hasattr(self, "_cached_dimension"):
-            return self._cached_dimension
-
-        if self._model_dir_for_config and os.path.exists(self._model_dir_for_config):
-            config_path = os.path.join(self._model_dir_for_config, "config.json")
-            if os.path.exists(config_path):
-                try:
-                    with open(config_path, "r") as f:
-                        c = json.load(f)
-                        self._cached_dimension = c.get(
-                            "hidden_size", c.get("d_model", 384)
-                        )
-                        return self._cached_dimension
-                except Exception:
-                    pass
-
-        self._cached_dimension = 384
-        return 384
+        return None
 
     @property
     def last_reconstruction_error(self):
-        """Get the last reconstruction error from the underlying model.
-
-        Returns
-        -------
-        float
-            The reconstruction error.
-        """
+        """Get the last reconstruction error from the underlying model."""
         return self._last_reconstruction_error
 
     def partial_fit(
@@ -366,8 +68,6 @@ class IncrementalAnalyzer:
     ) -> None:
         """Update the ML model incrementally with new documents."""
         try:
-            # new_corpus is now dict[item_name, dict[text, hash]] or dict[item_name, text]
-            # (depending on where it's called from, UI manual moves might just pass text)
             filepaths = []
             texts = []
             hashes = []
@@ -379,14 +79,10 @@ class IncrementalAnalyzer:
                     texts.append(data)
                     hashes.append("")
                 filepaths.append(filepath)
-                self.corpus[filepath] = texts[-1]  # keep in-memory for UI triggers
+                self.corpus[filepath] = texts[-1]
 
             if not texts:
                 return
-
-            texts_to_encode = []
-            indices_to_encode = []
-            embeddings = [None] * len(filepaths)
 
             keyword_rules = (
                 getattr(runtime_settings, "KEYWORD_RULES", {})
@@ -399,78 +95,20 @@ class IncrementalAnalyzer:
                 else {}
             )
 
+            documents_to_upsert = []
             for i, (filepath, text, file_hash) in enumerate(
                 zip(filepaths, texts, hashes)
             ):
-                # If we don't have a hash, fetch existing from DB so we don't overwrite it with empty
-                doc = self.db.get_document(base_dir, filepath)
-
-                # compute hash if not provided
                 if not file_hash:
                     file_hash = hashlib.md5(text.encode("utf-8")).hexdigest()
                     hashes[i] = file_hash
-
-                is_lexical_match = False
-                filename_only = os.path.basename(filepath).lower()
-                doc_lower = text.lower() if text else ""
-                text_to_search = filename_only + " " + doc_lower
-
-                for keyword in keyword_rules.keys():
-                    if keyword.strip() and keyword.lower() in text_to_search:
-                        is_lexical_match = True
-                        break
-
-                if not is_lexical_match and learned_rules:
-                    for keyword in learned_rules.keys():
-                        if keyword.strip() and keyword.lower() in filename_only:
-                            is_lexical_match = True
-                            break
-
-                has_historical_target = doc and doc.get("user_verified_target_path")
-
-                if (
-                    doc
-                    and doc["file_hash"] == file_hash
-                    and doc["embedding"] is not None
-                    and doc.get("model_name") == self.active_model_name
-                    and doc.get("vector_dimension") == self.active_dimension
-                ):
-                    embeddings[i] = doc["embedding"]
-                elif text.startswith("[STATUS:"):
-                    embeddings[i] = None
-                elif is_lexical_match or has_historical_target:
-                    embeddings[i] = None
-                else:
-                    texts_to_encode.append(text)
-                    indices_to_encode.append(i)
-
-            if texts_to_encode:
-                if self.model_name is None:
-                    # Dummy embeddings if offline mode without model
-                    new_embeddings = [None] * len(texts_to_encode)
-                elif self._gguf_process and self._gguf_process.is_alive():
-                    self._q_in.put(texts_to_encode)
-                    new_embeddings = self._q_out.get()
-                else:
-                    future = self.executor.submit(_worker_encode, texts_to_encode)
-                    new_embeddings = future.result()
-
-                for idx, new_emb in zip(indices_to_encode, new_embeddings):
-                    embeddings[idx] = new_emb
-
-            documents_to_upsert = []
-            for filepath, text, file_hash, embedding in zip(
-                filepaths, texts, hashes, embeddings
-            ):
+                
                 documents_to_upsert.append(
                     (
                         base_dir,
                         filepath,
                         file_hash,
                         text,
-                        embedding,
-                        self.active_model_name,
-                        self.active_dimension,
                     )
                 )
 
@@ -478,12 +116,6 @@ class IncrementalAnalyzer:
 
         except Exception as e:
             logging.error(f"Failed during partial_fit. Error: {str(e)}", exc_info=True)
-            import concurrent.futures.process
-
-            if isinstance(e, concurrent.futures.process.BrokenProcessPool):
-                raise RuntimeError(
-                    "Background worker process crashed or ran out of memory."
-                ) from e
 
     def reload_stop_words(self, new_stop_words: set) -> None:
         """Reload stop words from config."""
@@ -520,14 +152,7 @@ class IncrementalAnalyzer:
         return new_node
 
     def generate_sorting_plan(self, base_dir: str, runtime_settings=None, locked_files: dict = None) -> dict:
-        """Generate a sorting plan based on the current model state.
-
-        Returns
-        -------
-        dict
-            A nested mapping where keys are generated folder names and values are
-            either dicts (subfolders) or file metadata dicts.
-        """
+        """Generate a sorting plan based on the current model state."""
         try:
             docs = self.db.get_all_documents(base_dir)
             if not docs:
@@ -550,11 +175,9 @@ class IncrementalAnalyzer:
 
             ai_filenames = []
             ai_documents = []
-            ai_embeddings = []
             keyword_plan_files = []
             unsupported_files = []
             historical_overrides = {}
-            folder_profiles = {}
 
             # Map file hashes to their historical targets
             hash_to_target = {}
@@ -563,7 +186,7 @@ class IncrementalAnalyzer:
                     hash_to_target[d[3]] = d[4]
 
             for d in docs:
-                f, doc, emb = d[0], d[1], d[2]
+                f, doc = d[0], d[1]
                 file_hash = d[3] if len(d) > 3 else None
                 assigned_folder = d[4] if len(d) > 4 else None
 
@@ -586,10 +209,6 @@ class IncrementalAnalyzer:
 
                 if target is not None:
                     historical_overrides[f] = (target, status_match)
-                    if emb is not None:
-                        if target not in folder_profiles:
-                            folder_profiles[target] = []
-                        folder_profiles[target].append(emb)
 
                 matched = False
                 if keyword_rules:
@@ -625,58 +244,10 @@ class IncrementalAnalyzer:
                     else:
                         ai_filenames.append(f)
                         ai_documents.append(doc)
-                        ai_embeddings.append(emb)
-
-            folder_centroids = {}
-            for folder, embs in folder_profiles.items():
-                if embs:
-                    centroid = np.mean(embs, axis=0)
-                    norm = np.linalg.norm(centroid)
-                    if norm > 0:
-                        centroid = centroid / norm
-                    folder_centroids[folder] = centroid
-
-            SIMILARITY_THRESHOLD = 0.65
-            if folder_centroids and ai_embeddings:
-                remaining_filenames = []
-                remaining_documents = []
-                remaining_embeddings = []
-
-                for f, doc_text, emb in zip(ai_filenames, ai_documents, ai_embeddings):
-                    routed = False
-                    if emb is not None:
-                        best_folder = None
-                        best_score = -1.0
-
-                        norm_emb = np.linalg.norm(emb)
-                        emb_normalized = emb / norm_emb if norm_emb > 0 else emb
-
-                        for folder, centroid in folder_centroids.items():
-                            score = np.dot(emb_normalized, centroid)
-                            if score > best_score:
-                                best_score = score
-                                best_folder = folder
-
-                        if best_folder and best_score >= SIMILARITY_THRESHOLD:
-                            keyword_plan_files.append(
-                                (f, best_folder, "similarity", "heuristic", None)
-                            )
-                            routed = True
-
-                    if not routed:
-                        remaining_filenames.append(f)
-                        remaining_documents.append(doc_text)
-                        remaining_embeddings.append(emb)
-
-                ai_filenames = remaining_filenames
-                ai_documents = remaining_documents
-                ai_embeddings = remaining_embeddings
 
             self._last_reconstruction_error = 0.0
 
-            if self.model_name is None:
-                plan = {f: None for f in ai_filenames}
-            elif self.strategy_name:
+            if self.strategy_name:
                 max_depth = (
                     getattr(runtime_settings, "MAX_DEPTH", 5) if runtime_settings else 5
                 )
@@ -686,19 +257,19 @@ class IncrementalAnalyzer:
                     else 3
                 )
 
-                future = self.executor.submit(
-                    _worker_generate_plan,
-                    self.strategy_name,
-                    ai_filenames,
-                    ai_documents,
-                    ai_embeddings,
-                    self.max_folders,
-                    self.stop_words,
-                    max_depth,
-                    max_features,
-                )
-                plan, error = future.result()
-                self._last_reconstruction_error = error
+                strategy = clustering_registry.get_strategy(self.strategy_name)
+                if strategy:
+                    plan, error = strategy.generate_plan(
+                        ai_filenames,
+                        ai_documents,
+                        self.max_folders,
+                        self.stop_words,
+                        max_depth,
+                        max_features,
+                    )
+                    self._last_reconstruction_error = error
+                else:
+                    plan = {}
 
                 if runtime_settings and getattr(
                     runtime_settings, "PRESERVE_HIERARCHY", False
@@ -864,91 +435,4 @@ class IncrementalAnalyzer:
             logging.error(
                 f"Failed during generate_sorting_plan. Error: {str(e)}", exc_info=True
             )
-            import concurrent.futures.process
-
-            if isinstance(e, concurrent.futures.process.BrokenProcessPool):
-                raise RuntimeError(
-                    "Background worker process crashed or ran out of memory."
-                ) from e
             return {}
-
-    def find_similar(
-        self, base_dir: str, query_text: str, top_k: int = 5
-    ) -> list[dict]:
-        """Find the most similar documents to a query string using vector search.
-
-        Retrieves stored embeddings from the local SQLite database (decrypting them in memory),
-        computes pairwise similarity against the query vector, and returns the top matches.
-        """
-        if self.model_name is None or not query_text.strip():
-            return []
-
-        try:
-            # Generate vector for the search query
-            if self._gguf_process and self._gguf_process.is_alive():
-                self._q_in.put([query_text])
-                query_embedding = self._q_out.get()[0]
-            else:
-                future = self.executor.submit(_worker_encode, [query_text])
-                query_embedding = future.result()[0]
-
-            docs = self.db.get_all_documents(base_dir)
-            if not docs:
-                return []
-
-            results = []
-
-            # Extract and filter records with valid compatible embeddings
-            for doc in docs:
-                # self.db.get_all_documents returns: (filepath, extracted_text, embedding, file_hash, user_verified_target_path, model_name, vector_dimension)
-                (
-                    filepath,
-                    extracted_text,
-                    embedding,
-                    file_hash,
-                    user_verified_target,
-                    model_name,
-                    vector_dimension,
-                ) = doc
-
-                if (
-                    embedding is not None
-                    and model_name == self.active_model_name
-                    and vector_dimension == self.active_dimension
-                ):
-                    # Compute Cosine Similarity
-                    dot_product = np.dot(query_embedding, embedding)
-                    norm_q = np.linalg.norm(query_embedding)
-                    norm_e = np.linalg.norm(embedding)
-
-                    if norm_q > 0 and norm_e > 0:
-                        similarity = dot_product / (norm_q * norm_e)
-                    else:
-                        similarity = 0.0
-
-                    results.append(
-                        {
-                            "filepath": filepath,
-                            "file_hash": file_hash,
-                            "similarity": float(similarity),
-                            "extracted_text": extracted_text,
-                            "assigned_folder": user_verified_target,
-                        }
-                    )
-
-            # Sort by highest similarity
-            results.sort(key=lambda x: x["similarity"], reverse=True)
-
-            return results[:top_k]
-
-        except Exception as e:
-            logging.error(
-                f"Failed during vector search. Error: {str(e)}", exc_info=True
-            )
-            import concurrent.futures.process
-
-            if isinstance(e, concurrent.futures.process.BrokenProcessPool):
-                raise RuntimeError(
-                    "Background worker process crashed or ran out of memory."
-                ) from e
-            return []
