@@ -43,21 +43,42 @@ def analyze_all():
         MAX_FOLDERS = 5
         STOP_WORDS = {"the", "and", "a", "an", "is"}
         
-    from app.core.session import AppSession
-    session = AppSession(MockSettings(), base_dir=SANDBOX_DIR)
-    analyzer = session.analyzer
+    from app.core.db import Database
+    from app.core.db_worker import DBWorker
+    from app.core.analyzer import IncrementalAnalyzer
+    from app.core.extractor import build_corpus_generator
+    
+    db_worker = DBWorker()
+    db_path = os.path.join(SANDBOX_DIR, "sandbox.db")
+    db = Database(db_path, db_worker)
+    
+    analyzer = IncrementalAnalyzer(
+        max_folders=MockSettings.MAX_FOLDERS,
+        stop_words=MockSettings.STOP_WORDS,
+        db=db
+    )
+    
+    def progress_callback():
+        print("Progress update: File extraction complete.")
 
-    corpus = {}
-    for filename in os.listdir(SANDBOX_DIR):
-        filepath = os.path.join(SANDBOX_DIR, filename)
-        if os.path.isfile(filepath):
-            text = extract_file_text(filepath)
-            corpus[filepath] = f"{filename} {text}"
+    items = [f for f in os.listdir(SANDBOX_DIR) if os.path.isfile(os.path.join(SANDBOX_DIR, f))]
+    
+    generator = build_corpus_generator(
+        base_dir=SANDBOX_DIR,
+        items_to_sort=items,
+        progress_callback=progress_callback,
+        max_workers=1,
+        db=db,
+        chunk_size=50
+    )
 
-    analyzer.partial_fit(SANDBOX_DIR, corpus, MockSettings())
+    for chunk in generator:
+        analyzer.partial_fit(SANDBOX_DIR, chunk, MockSettings())
+
     plan = analyzer.generate_sorting_plan(SANDBOX_DIR, MockSettings())
     
-    session.close()
+    analyzer.terminate()
+    db_worker.stop()
     
     import json
     print("--- Analysis Sorting Plan ---")
