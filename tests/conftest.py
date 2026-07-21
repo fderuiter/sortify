@@ -35,6 +35,18 @@ def reset_memory_keyring():
     pass # _memory_keyring.clear() removed to preserve session scoped keys in tests
 
 @pytest.fixture(autouse=True)
+def sync_db_worker():
+    """Ensure all database writes happen synchronously during tests to prevent race conditions on Windows."""
+    from app.core.db_worker import DBWorker
+    original_async = DBWorker.execute_write_async
+    
+    def sync_execute(self, func, *args, **kwargs):
+        return self.execute_write(func, *args, **kwargs)
+        
+    with patch.object(DBWorker, 'execute_write_async', sync_execute):
+        yield
+
+@pytest.fixture(autouse=True)
 def cleanup_db_connections():
     """Ensure database connections are closed after each test to prevent Windows file locking issues."""
     yield
