@@ -107,19 +107,32 @@ def _execute_moves_recursive(
                 )
 
                 if needs_update:
+                    import uuid
+                    shadow_name = f"{dest_path}.shadow_{uuid.uuid4().hex}"
+
                     if link_info["type"] == "symlink":
                         if not os.path.isabs(original_target):
                             final_target = os.path.relpath(new_abs_target, dest_dir)
                         else:
                             final_target = new_abs_target
 
-                        # If updating in place
-                        if dest_path == source_path:
-                            os.remove(source_path)
-                        os.symlink(final_target, dest_path)
-                        if dest_path != source_path:
-                            os.remove(source_path)
-                        moved_as_link = True
+                        try:
+                            os.symlink(final_target, shadow_name)
+                            if not os.path.lexists(shadow_name):
+                                raise RuntimeError("Shadow link creation failed validation.")
+                            
+                            os.replace(shadow_name, dest_path)
+                            if dest_path != source_path:
+                                os.remove(source_path)
+                            moved_as_link = True
+                        except Exception as e:
+                            if os.path.lexists(shadow_name):
+                                os.remove(shadow_name)
+                            logging.error(
+                                f"Failed to atomically update symlink {source_path}: {e}",
+                                exc_info=True,
+                            )
+                            raise
 
                     elif link_info["type"] == "lnk" and pylnk3:
                         try:
@@ -132,20 +145,25 @@ def _execute_moves_recursive(
                                 "work_dir": parsed.work_dir,
                                 "window_mode": parsed.window_mode,
                             }
-                            # If updating in place
-                            if dest_path == source_path:
-                                os.remove(source_path)
+                            
                             pylnk3.for_file(
-                                new_abs_target, lnk_name=dest_path, **kwargs
+                                new_abs_target, lnk_name=shadow_name, **kwargs
                             )
+                            if not os.path.lexists(shadow_name):
+                                raise RuntimeError("Shadow link creation failed validation.")
+                                
+                            os.replace(shadow_name, dest_path)
                             if dest_path != source_path:
                                 os.remove(source_path)
                             moved_as_link = True
                         except Exception as e:
+                            if os.path.lexists(shadow_name):
+                                os.remove(shadow_name)
                             logging.error(
-                                f"Failed to update Windows shortcut {source_path}: {e}",
+                                f"Failed to atomically update Windows shortcut {source_path}: {e}",
                                 exc_info=True,
                             )
+                            raise
 
             # Record user verified target
             doc = db.get_document(base_dir, key)
