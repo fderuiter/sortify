@@ -52,7 +52,7 @@ def main():
         "Extract text from a specific sandbox file",
         "Run the analysis pipeline"
     ]
-    if not run_command(["uv", "run", "python", "sandbox_cli.py", "--help"], sandbox_expected):
+    if not run_command([sys.executable, "sandbox_cli.py", "--help"], sandbox_expected):
         success = False
         
     # app/main.py demo flag mentioned in contributor.md
@@ -60,7 +60,7 @@ def main():
         "--demo",
         "Run interactive CLI demo mode"
     ]
-    if not run_command(["uv", "run", "python", "app/main.py", "--help"], main_expected):
+    if not run_command([sys.executable, "app/main.py", "--help"], main_expected):
         success = False
         
     if not success:

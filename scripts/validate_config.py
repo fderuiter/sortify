@@ -22,11 +22,11 @@ try:
     
     existing_schema = None
     if schema_path.exists():
-        with open(schema_path, "r") as f:
+        with open(schema_path, "r", encoding="utf-8") as f:
             existing_schema = json.load(f)
             
     if existing_schema != schema:
-        with open(schema_path, "w") as f:
+        with open(schema_path, "w", encoding="utf-8") as f:
             json.dump(schema, f, indent=2)
             f.write("\n")
         print("Configuration schema updated. Please commit the changes.", file=sys.stderr)
