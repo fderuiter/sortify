@@ -50,7 +50,9 @@ def run_demo(settings):
 
         print("[*] Processing files incrementally...")
         
-        cancel_check = lambda: False
+        def cancel_check():
+            return False
+        
         generator = session.process_items(
             files_to_sort,
             progress_callback,

@@ -1,10 +1,12 @@
 """Setup wizard module using NiceGUI."""
 
 import asyncio
+
 from nicegui import ui
-from app.config import get_app_dir
+
 
 def show_wizard(parent_app, settings):
+    """Show the initial setup wizard."""
     with ui.dialog() as dialog, ui.card().classes('w-96 p-6'):
         ui.label("AI Features Setup").classes('text-xl font-bold mb-4').props('aria-label="Setup Wizard Title"')
         

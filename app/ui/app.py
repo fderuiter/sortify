@@ -1,14 +1,10 @@
 """Main application GUI module using NiceGUI."""
 
 import asyncio
-import os
-import time
 import logging
-from pathlib import Path
+import os
 
-from nicegui import ui, app as nicegui_app
-from watchdog.events import FileSystemEventHandler
-from watchdog.observers import Observer
+from nicegui import ui
 
 from app.core.session import AppSession
 from app.core.verifier import VerificationEngine
@@ -17,6 +13,8 @@ from app.ui.dialog_helper import ask_directory_async
 logger = logging.getLogger(__name__)
 
 class AutoSorterApp:
+    """Main application class for the NiceGUI interface."""
+
     def __init__(self, settings):
         self.settings = settings
         self.base_dir = ""
@@ -44,6 +42,7 @@ class AutoSorterApp:
         self.preserve_hierarchy = self.settings.PRESERVE_HIERARCHY
 
     def build_ui(self):
+        """Build the main user interface."""
         ui.add_head_html('<style> .q-tree__node-header { padding: 4px; } </style>')
         
         with ui.header().classes('items-center justify-between'):
@@ -77,6 +76,7 @@ class AutoSorterApp:
         ui.timer(0.1, self.check_setup_wizard, once=True)
 
     def check_setup_wizard(self):
+        """Check if the setup wizard needs to be shown on startup."""
         from app.config import get_app_dir
         model_dir = get_app_dir() / "model"
         if (model_dir / "config.json").exists():
@@ -91,13 +91,16 @@ class AutoSorterApp:
         show_wizard(self, self.settings)
 
     def show_settings_view(self):
+        """Show the settings dialog."""
         from app.ui.settings import show_settings
         show_settings(self, self.settings)
         
     def show_help_view(self):
+        """Display help information."""
         ui.notify("Help documentation is available in the user manual.")
 
     def select_directory(self):
+        """Prompt the user to select a directory for analysis."""
         def on_selected(path):
             if path:
                 self.base_dir = path
@@ -105,6 +108,7 @@ class AutoSorterApp:
         ask_directory_async(None, "Select Directory", on_selected, None, None)
 
     def start_analysis(self):
+        """Start the background analysis of the selected directory."""
         self.app_session = AppSession(self.settings, self.base_dir)
         self.status_label.set_text("Scanning directory...")
         self.cancel_btn.set_visibility(True)
@@ -144,19 +148,22 @@ class AutoSorterApp:
             item = {"rel_path": file, "abs_path": os.path.join(self.base_dir, file)}
             try:
                 self.app_session.partial_fit([item])
-            except Exception as e:
+            except Exception:
                 pass
 
     def cancel_analysis(self):
+        """Cancel an ongoing analysis."""
         self._cancel_analysis_flag = True
         self.status_label.set_text("Analysis cancelled.")
         self.cancel_btn.set_visibility(False)
 
     def toggle_contextual_rename(self, e):
+        """Toggle contextual renaming and rebuild the sorting plan."""
         self.settings.CONTEXTUAL_RENAMING = e.value
         self._rebuild_plan_async()
 
     def toggle_preserve_hierarchy(self, e):
+        """Toggle hierarchy preservation and rebuild the sorting plan."""
         self.settings.PRESERVE_HIERARCHY = e.value
         self._rebuild_plan_async()
 
@@ -171,6 +178,7 @@ class AutoSorterApp:
         asyncio.create_task(run())
 
     def render_tree(self):
+        """Render the tree view of the sorting plan."""
         self.tree_nodes = []
         self._flatten(self.plan, "", self.tree_nodes)
         if hasattr(self, 'tree_view'):
@@ -199,6 +207,7 @@ class AutoSorterApp:
                 nodes_list.append({"id": node_id, "text": text, "icon": icon})
 
     def execute_sort(self):
+        """Execute the sorting plan."""
         if not self.app_session or not self.plan:
             return
         
@@ -221,6 +230,7 @@ class AutoSorterApp:
         asyncio.create_task(run())
 
     def get_tree_state(self):
+        """Get a representation of the tree state."""
         # Format tree state to match the old dump_state snapshot requirements
         def _convert(nodes):
             res = []
@@ -233,6 +243,7 @@ class AutoSorterApp:
         return _convert(self.tree_nodes)
 
 def run_app(settings) -> None:
+    """Run the NiceGUI application."""
     app_instance = AutoSorterApp(settings)
     app_instance.build_ui()
     ui.run(title="Smart AutoSorter AI Pro", port=8080, reload=False, show=True)

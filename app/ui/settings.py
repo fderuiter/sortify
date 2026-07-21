@@ -2,7 +2,9 @@
 
 from nicegui import ui
 
+
 def show_settings(parent_app, settings):
+    """Show the settings dialog."""
     with ui.dialog() as dialog, ui.card().classes('w-3/4 max-w-4xl p-6'):
         with ui.row().classes('w-full justify-between items-center mb-6'):
             ui.label("Application Settings").classes('text-2xl font-bold').props('aria-label="Settings Dialog Title"')
