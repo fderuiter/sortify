@@ -5,6 +5,8 @@ repos:
       - id: check-added-large-files
       - id: check-merge-conflict
       - id: debug-statements
+      - id: no-commit-to-branch
+        args: ['--branch', 'main']
 
   - repo: local
     hooks:
