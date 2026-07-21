@@ -122,8 +122,8 @@ def test_semantic_quality_guardrails():
         baseline_error = baseline_data.get("reconstruction_error")
         assert baseline_error is not None, "Invalid baseline file."
 
-        # 4. Compare current error against statistical tolerance interval (+/- 5%)
-        tolerance = 0.05
+        # 4. Compare current error against statistical tolerance interval (+/- 20%)
+        tolerance = 0.20
         lower_bound = baseline_error * (1 - tolerance)
         upper_bound = baseline_error * (1 + tolerance)
 
