@@ -3,6 +3,7 @@
 import logging
 import os
 
+from app.core.extractor_strategies import registry
 from app.core.link_manager import LinkManager
 
 
@@ -30,7 +31,9 @@ def get_files_recursively(base: str, rel_path: str = "") -> list:
                 elif entry.is_dir(follow_symlinks=False):
                     files.extend(get_files_recursively(base, entry_rel_path))
                 else:
-                    files.append(entry_rel_path)
+                    _, ext = os.path.splitext(entry.name)
+                    if registry.is_supported(ext):
+                        files.append(entry_rel_path)
     except Exception as e:
         logging.error(
             f"Failed to scan directory {os.path.join(base, rel_path)}: {e}",

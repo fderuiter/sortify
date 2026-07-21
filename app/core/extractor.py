@@ -56,6 +56,10 @@ def process_item_worker(
     try:
         item_path = os.path.join(base_dir, item)
         if os.path.isfile(item_path):
+            _, ext = os.path.splitext(item_path)
+            if not registry.is_supported(ext):
+                return item, "[STATUS:UNSUPPORTED]", ""
+
             file_hash = get_file_hash(item_path)
             doc = db.get_document(base_dir, item)
             if doc and doc["file_hash"] == file_hash and doc["embedding"] is not None:

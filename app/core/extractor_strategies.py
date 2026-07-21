@@ -176,6 +176,10 @@ class ExtractorRegistry:
         """Retrieve the document extractor for the given file extension."""
         return self._extractors.get(extension.lower())
 
+    def is_supported(self, extension: str) -> bool:
+        """Check if the given file extension is supported by the registry."""
+        return extension.lower() in self._extractors
+
 
 registry = ExtractorRegistry()
 registry.register(".txt", TxtExtractor())
