@@ -37,9 +37,19 @@ class HistoryManager:
                     inode INTEGER,
                     size INTEGER,
                     mtime REAL,
+                    is_symlink INTEGER DEFAULT 0,
+                    symlink_target TEXT,
                     FOREIGN KEY(session_id) REFERENCES sessions(session_id)
                 )
             """)
+            try:
+                conn.execute("ALTER TABLE snapshot_files ADD COLUMN is_symlink INTEGER DEFAULT 0")
+            except Exception:
+                pass
+            try:
+                conn.execute("ALTER TABLE snapshot_files ADD COLUMN symlink_target TEXT")
+            except Exception:
+                pass
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS snapshot_cache (
                     session_id TEXT PRIMARY KEY,
@@ -80,13 +90,15 @@ class HistoryManager:
             for rel_path in files:
                 abs_path = os.path.join(base_dir, rel_path)
                 try:
-                    st = os.stat(abs_path)
-                    file_records.append((session_id, rel_path, st.st_ino, st.st_size, st.st_mtime))
+                    st = os.lstat(abs_path)
+                    is_symlink = 1 if os.path.islink(abs_path) else 0
+                    symlink_target = os.readlink(abs_path) if is_symlink else None
+                    file_records.append((session_id, rel_path, st.st_ino, st.st_size, st.st_mtime, is_symlink, symlink_target))
                 except OSError:
                     continue
             if file_records:
                 conn.executemany(
-                    "INSERT INTO snapshot_files (session_id, original_rel_path, inode, size, mtime) VALUES (?, ?, ?, ?, ?)",
+                    "INSERT INTO snapshot_files (session_id, original_rel_path, inode, size, mtime, is_symlink, symlink_target) VALUES (?, ?, ?, ?, ?, ?, ?)",
                     file_records
                 )
 
@@ -162,7 +174,7 @@ class HistoryManager:
                 raise ValueError("Session not found")
             base_dir = row[0]
 
-            cur = conn.execute("SELECT original_rel_path, inode, size, mtime FROM snapshot_files WHERE session_id = ?", (session_id,))
+            cur = conn.execute("SELECT original_rel_path, inode, size, mtime, is_symlink, symlink_target FROM snapshot_files WHERE session_id = ?", (session_id,))
             snapshot_files = cur.fetchall()
 
         from app.core.scanner import get_files_recursively
@@ -177,47 +189,52 @@ class HistoryManager:
         for rel_path in current_files:
             abs_path = os.path.join(base_dir, rel_path)
             try:
-                st = os.stat(abs_path)
+                st = os.lstat(abs_path)
             except OSError:
                 continue
                 
             ino = st.st_ino
             size = st.st_size
             mtime = st.st_mtime
+            is_symlink = 1 if os.path.islink(abs_path) else 0
+            symlink_target = os.readlink(abs_path) if is_symlink else None
             
             inode_counts[ino] = inode_counts.get(ino, 0) + 1
             if ino == 0 or inode_counts[ino] > 1:
                 inodes_reliable = False
                 
-            current_inodes[ino] = abs_path
-            active_files_by_rel_path[rel_path] = (size, mtime)
+            sig = (size, mtime, is_symlink, symlink_target)
+            current_inodes[ino] = (abs_path, sig)
+            active_files_by_rel_path[rel_path] = sig
             
-            sig = (size, mtime)
             if sig not in active_files_by_sig:
                 active_files_by_sig[sig] = []
             active_files_by_sig[sig].append(abs_path)
 
         missing = []
-        for rel_path, inode, size, mtime in snapshot_files:
+        for rel_path, inode, size, mtime, is_symlink, symlink_target in snapshot_files:
             found = False
+            target_sig = (size, mtime, is_symlink, symlink_target)
             
             if inodes_reliable and inode in current_inodes:
-                abs_path = current_inodes[inode]
-                del current_inodes[inode] # consume it
-                found = True
-            else:
+                abs_path, current_sig = current_inodes[inode]
+                if current_sig[2] == is_symlink:
+                    if not is_symlink or current_sig[3] == symlink_target:
+                        del current_inodes[inode]
+                        found = True
+            
+            if not found:
                 # Fallback Step A
                 curr_sig = active_files_by_rel_path.get(rel_path)
-                if curr_sig == (size, mtime):
+                if curr_sig == target_sig:
                     abs_path = os.path.join(base_dir, rel_path)
                     if curr_sig in active_files_by_sig and abs_path in active_files_by_sig[curr_sig]:
                         active_files_by_sig[curr_sig].remove(abs_path)
                     found = True
                 else:
                     # Fallback Step B
-                    sig = (size, mtime)
-                    if sig in active_files_by_sig and active_files_by_sig[sig]:
-                        active_files_by_sig[sig].pop(0)
+                    if target_sig in active_files_by_sig and active_files_by_sig[target_sig]:
+                        active_files_by_sig[target_sig].pop(0)
                         found = True
             
             if not found:
@@ -244,7 +261,7 @@ class HistoryManager:
             safety_session_id = self._create_snapshot_internal(base_dir)
 
             with conn:
-                cur = conn.execute("SELECT original_rel_path, inode, size, mtime FROM snapshot_files WHERE session_id = ?", (session_id,))
+                cur = conn.execute("SELECT original_rel_path, inode, size, mtime, is_symlink, symlink_target FROM snapshot_files WHERE session_id = ?", (session_id,))
                 snapshot_files = cur.fetchall()
 
                 from app.core.scanner import get_files_recursively
@@ -259,50 +276,74 @@ class HistoryManager:
                 for rel_path in current_files:
                     abs_path = os.path.join(base_dir, rel_path)
                     try:
-                        st = os.stat(abs_path)
+                        st = os.lstat(abs_path)
                     except OSError:
                         continue
                     
                     ino = st.st_ino
                     size = st.st_size
                     mtime = st.st_mtime
+                    is_symlink = 1 if os.path.islink(abs_path) else 0
+                    symlink_target = os.readlink(abs_path) if is_symlink else None
                 
                     inode_counts[ino] = inode_counts.get(ino, 0) + 1
                     if ino == 0 or inode_counts[ino] > 1:
                         inodes_reliable = False
                     
-                    current_inodes[ino] = abs_path
-                    active_files_by_rel_path[rel_path] = (size, mtime)
+                    sig = (size, mtime, is_symlink, symlink_target)
+                    current_inodes[ino] = (abs_path, sig)
+                    active_files_by_rel_path[rel_path] = sig
                 
-                    sig = (size, mtime)
                     if sig not in active_files_by_sig:
                         active_files_by_sig[sig] = []
                     active_files_by_sig[sig].append(abs_path)
 
                 # First compute all intended moves
                 moves = []
-                for rel_path, inode, size, mtime in snapshot_files:
+                symlinks_to_restore = []
+                for rel_path, inode, size, mtime, is_symlink, symlink_target in snapshot_files:
                     target_abs = os.path.join(base_dir, rel_path)
                     current_abs = None
+                    target_sig = (size, mtime, is_symlink, symlink_target)
                 
                     if inodes_reliable and inode in current_inodes:
-                        current_abs = current_inodes[inode]
-                        del current_inodes[inode]
-                    else:
+                        abs_path, current_sig = current_inodes[inode]
+                        if current_sig[2] == is_symlink:
+                            if not is_symlink or current_sig[3] == symlink_target:
+                                current_abs = abs_path
+                                del current_inodes[inode]
+                    
+                    if not current_abs:
                         curr_sig = active_files_by_rel_path.get(rel_path)
-                        if curr_sig == (size, mtime):
+                        if curr_sig == target_sig:
                             current_abs = target_abs
                             if curr_sig in active_files_by_sig and current_abs in active_files_by_sig[curr_sig]:
                                 active_files_by_sig[curr_sig].remove(current_abs)
                         else:
-                            sig = (size, mtime)
-                            if sig in active_files_by_sig and active_files_by_sig[sig]:
-                                current_abs = active_files_by_sig[sig].pop(0)
+                            if target_sig in active_files_by_sig and active_files_by_sig[target_sig]:
+                                current_abs = active_files_by_sig[target_sig].pop(0)
 
                     if current_abs:
-                        if os.path.exists(current_abs) and not os.path.samefile(current_abs, target_abs) if os.path.exists(target_abs) else True:
+                        if is_symlink:
                             if current_abs != target_abs:
-                                moves.append((current_abs, target_abs))
+                                try:
+                                    os.remove(current_abs)
+                                except OSError:
+                                    pass
+                            symlinks_to_restore.append((target_abs, symlink_target))
+                        else:
+                            same_file = False
+                            if os.path.exists(current_abs) and os.path.exists(target_abs):
+                                try:
+                                    same_file = os.path.samefile(current_abs, target_abs)
+                                except OSError:
+                                    pass
+                            if not same_file:
+                                if current_abs != target_abs:
+                                    moves.append((current_abs, target_abs))
+                    else:
+                        if is_symlink:
+                            symlinks_to_restore.append((target_abs, symlink_target))
 
                 planned_target_rels = [os.path.relpath(m[1], base_dir) for m in moves]
 
@@ -351,6 +392,12 @@ class HistoryManager:
                                     db_conn.execute("UPDATE documents SET filepath = ? || SUBSTR(filepath, ?) WHERE base_dir = ? AND filepath LIKE ?", (rel_safe, len(rel_current) + 1, base_dir, rel_current + os.sep + '%'))
                                     
                         os.makedirs(os.path.dirname(dst), exist_ok=True)
+                        if os.path.islink(dst):
+                            try:
+                                os.remove(dst)
+                            except OSError:
+                                pass
+                        
                         rel_src = os.path.relpath(src, base_dir)
                         rel_dst = os.path.relpath(dst, base_dir)
 
@@ -404,6 +451,31 @@ class HistoryManager:
                                     """,
                                     (base_dir, rel_dst, snapshot_doc[1], snapshot_doc[2], snapshot_doc[3])
                                 )
+
+                    # Restore symlinks after standard files
+                    for target_abs, symlink_target in symlinks_to_restore:
+                        if os.path.exists(target_abs) or os.path.islink(target_abs):
+                            if os.path.islink(target_abs):
+                                try:
+                                    os.remove(target_abs)
+                                except OSError:
+                                    pass
+                            else:
+                                from app.core.mover import get_safe_path
+                                safe_path = get_safe_path(os.path.dirname(target_abs), os.path.basename(target_abs))
+                                shutil.move(target_abs, safe_path)
+                                
+                                rel_target = os.path.relpath(target_abs, base_dir)
+                                rel_safe = os.path.relpath(safe_path, base_dir)
+                                db_conn = get_db_connection(self.db.db_path)
+                                with db_conn:
+                                    db_conn.execute("UPDATE documents SET filepath = ? WHERE base_dir = ? AND filepath = ?", (rel_safe, base_dir, rel_target))
+                                    db_conn.execute("UPDATE documents SET filepath = ? || SUBSTR(filepath, ?) WHERE base_dir = ? AND filepath LIKE ?", (rel_safe, len(rel_target) + 1, base_dir, rel_target + os.sep + '%'))
+                        try:
+                            os.symlink(symlink_target, target_abs)
+                        except OSError as e:
+                            import logging
+                            logging.warning(f"Failed to recreate symbolic link at {target_abs}: {e}")
                         
                 except Exception as e:
                     conn.execute("UPDATE sessions SET status = 'failed' WHERE session_id = ?", (session_id,))
