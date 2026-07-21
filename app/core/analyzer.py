@@ -28,8 +28,10 @@ def _worker_init(model_path: str | None, backend: str):
     if model_path is not None:
         try:
             from sentence_transformers import SentenceTransformer
+            import sys
 
-            _worker_model = SentenceTransformer(model_path, backend=backend)
+            device = "cpu" if sys.platform == "darwin" else None
+            _worker_model = SentenceTransformer(model_path, backend=backend, device=device)
         except Exception as e:
             logging.error(f"Failed to load model in worker: {e}")
             _worker_model = None
