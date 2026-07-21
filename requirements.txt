@@ -267,7 +267,7 @@ secretstorage==3.5.0
     # via keyring
 sentence-transformers==5.6.0
     # via smart-autosorter (pyproject.toml)
-setuptools==81.0.0
+setuptools==83.0.0
     # via torch
 shellingham==1.5.4
     # via typer
@@ -287,7 +287,7 @@ tinycss2==1.5.1
     # via nicegui
 tokenizers==0.22.2
     # via transformers
-torch==2.12.1
+torch==2.13.0
     # via sentence-transformers
 tqdm==4.68.3
     # via
