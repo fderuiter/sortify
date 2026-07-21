@@ -304,13 +304,11 @@ class HistoryManager:
                             if current_abs != target_abs:
                                 moves.append((current_abs, target_abs))
 
-                planned_source_rels = [os.path.relpath(m[0], base_dir) for m in moves]
                 planned_target_rels = [os.path.relpath(m[1], base_dir) for m in moves]
 
                 cur = conn.execute("SELECT filepath, file_hash, extracted_text, embedding FROM snapshot_documents WHERE session_id = ?", (session_id,))
                 snapshot_docs = cur.fetchall()
                 snapshot_docs_dict = {r[0]: r for r in snapshot_docs}
-                snapshot_filepaths = set(snapshot_docs_dict.keys())
 
                 # 1. Pre-Move Synchronization
                 db_conn = get_db_connection(self.db.db_path)
