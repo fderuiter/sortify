@@ -1,43 +1,30 @@
 """Database connection module."""
 
 import os
-import sys
+import sqlite3
+import threading
 from pathlib import Path
 
-from app.core.crypto import SessionCrypto
-
-
-def get_sqlite_engine():
-    """Dynamically determine and return the correct SQLite engine module."""
-    import importlib
-    if hasattr(sys, '_MEIPASS'):
-        sys.path.insert(0, sys._MEIPASS)
-    # Dynamically import to hide from PyInstaller, preventing standard compiler errors
-    return importlib.import_module("sqlcipher3.dbapi2")
-
-sqlite3 = get_sqlite_engine()
-
-_connection_cache = {}
+_local = threading.local()
 
 def clear_connection_cache():
     """Clear all cached database connections."""
-    global _connection_cache
-    for conn in _connection_cache.values():
+    if not hasattr(_local, "connection_cache"):
+        return
+    for conn in _local.connection_cache.values():
         conn.close()
-    _connection_cache.clear()
+    _local.connection_cache.clear()
 
 def get_db_connection(db_path: str):
     """Create and configure a new database connection with performance parameters."""
+    if not hasattr(_local, "connection_cache"):
+        _local.connection_cache = {}
+        
     abs_path = os.path.abspath(db_path)
-    if abs_path in _connection_cache:
-        return _connection_cache[abs_path]
+    if abs_path in _local.connection_cache:
+        return _local.connection_cache[abs_path]
 
     conn = sqlite3.connect(db_path, timeout=5.0, check_same_thread=False)
-    
-    # Apply SQLCipher encryption immediately
-    crypto = SessionCrypto(Path(db_path).parent / "secret.key", Path(db_path))
-    raw_key = crypto.get_raw_key()
-    conn.execute(f"PRAGMA key = '{raw_key}'")
     
     # Enable Write-Ahead Logging (WAL) for simultaneous reads and writes
     conn.execute("PRAGMA journal_mode = WAL")
@@ -52,6 +39,6 @@ def get_db_connection(db_path: str):
     # Set synchronous mode to NORMAL for WAL
     conn.execute("PRAGMA synchronous = NORMAL")
     
-    _connection_cache[abs_path] = conn
+    _local.connection_cache[abs_path] = conn
     return conn
 
