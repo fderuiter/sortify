@@ -5,8 +5,6 @@ import os
 import sys
 import tempfile
 
-from app.core.session import AppSession
-
 
 def generate_sample_corpus(base_dir: str):
     """Generate a sample corpus with at least 3 documents."""
@@ -43,34 +41,54 @@ def run_demo(settings):
         files_to_sort = generate_sample_corpus(temp_dir)
         print(f"[*] Generated {len(files_to_sort)} files.")
 
-        session = AppSession(settings, base_dir=temp_dir)
+        from app.core.analyzer import IncrementalAnalyzer
+        from app.core.db import Database
+        from app.core.db_worker import DBWorker
+        from app.core.extractor import build_corpus_generator
+        
+        db_worker = DBWorker()
+        db_path = os.path.join(temp_dir, "demo.db")
+        db = Database(db_path, db_worker)
+        
+        analyzer = IncrementalAnalyzer(
+            max_folders=settings.MAX_FOLDERS,
+            stop_words=settings.STOP_WORDS,
+            db=db,
+        )
 
         def progress_callback(info=None):
-            pass
+            print("    -> Progress: File extraction complete.")
 
         print("[*] Processing files incrementally...")
         
         def cancel_check():
             return False
-        
-        generator = session.process_items(
-            files_to_sort,
-            progress_callback,
-            cancel_check
+            
+        generator = build_corpus_generator(
+            base_dir=temp_dir,
+            items_to_sort=files_to_sort,
+            progress_callback=progress_callback,
+            max_workers=settings.MAX_WORKERS,
+            db=db,
+            chunk_size=50,
+            active_model_name=analyzer.active_model_name,
+            active_dimension=analyzer.active_dimension,
+            cancel_check=cancel_check
         )
 
         for i, chunk in enumerate(generator):
             print(f"    - Processing chunk {i + 1}...")
-            session.partial_fit(chunk)
+            analyzer.partial_fit(temp_dir, chunk, settings)
 
         print("[*] Generating sorting plan...")
-        plan = session.generate_sorting_plan()
+        plan = analyzer.generate_sorting_plan(temp_dir, settings)
 
         print("\n--- Generated Sorting Plan ---")
         print(json.dumps(plan, indent=2))
         print("------------------------------\n")
         
-        session.close()
+        analyzer.terminate()
+        db_worker.stop()
 
         if plan and isinstance(plan, dict):
             print("[+] Success: Demo completed. Sorting plan successfully generated.")
