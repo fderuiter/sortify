@@ -41,8 +41,8 @@ def test_incremental_sync_and_stop_on_failure(setup_history_env):
         f.write("file2")
 
     # Upsert to DB
-    db.upsert_document(base_dir, "file1.txt", "hash1", "text1", None)
-    db.upsert_document(base_dir, "file2.txt", "hash2", "text2", None)
+    db.upsert_document(base_dir, "file1.txt", "hash1", "text1")
+    db.upsert_document(base_dir, "file2.txt", "hash2", "text2")
 
     # Take snapshot
     session_id = history_manager.create_snapshot(base_dir)
@@ -59,8 +59,8 @@ def test_incremental_sync_and_stop_on_failure(setup_history_env):
         with conn:
             conn.execute("DELETE FROM documents WHERE base_dir = ?", (base_dir,))
     db.worker.execute_write(_delete)
-    db.upsert_document(base_dir, os.path.join("folder", "file1.txt"), "hash1", "text1", None)
-    db.upsert_document(base_dir, os.path.join("folder", "file2.txt"), "hash2", "text2", None)
+    db.upsert_document(base_dir, os.path.join("folder", "file1.txt"), "hash1", "text1")
+    db.upsert_document(base_dir, os.path.join("folder", "file2.txt"), "hash2", "text2")
 
     # Mock shutil.move to fail on the second file
     original_move = shutil.move
@@ -111,8 +111,8 @@ def test_rollback_cyclic_collision(setup_history_env):
     with open(file2_src, "w") as f:
         f.write("B")
 
-    db.upsert_document(base_dir, "A.txt", "hashA", "textA", None)
-    db.upsert_document(base_dir, "B.txt", "hashB", "textB", None)
+    db.upsert_document(base_dir, "A.txt", "hashA", "textA")
+    db.upsert_document(base_dir, "B.txt", "hashB", "textB")
 
     session_id = history_manager.create_snapshot(base_dir)
 
@@ -127,8 +127,8 @@ def test_rollback_cyclic_collision(setup_history_env):
         with conn:
             conn.execute("DELETE FROM documents WHERE base_dir = ?", (base_dir,))
     db.worker.execute_write(_delete)
-    db.upsert_document(base_dir, "A.txt", "hashB", "textB", None)
-    db.upsert_document(base_dir, "B.txt", "hashA", "textA", None)
+    db.upsert_document(base_dir, "A.txt", "hashB", "textB")
+    db.upsert_document(base_dir, "B.txt", "hashA", "textA")
 
     # Perform rollback
     history_manager.rollback(session_id)

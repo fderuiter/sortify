@@ -67,36 +67,6 @@ def test_partial_fit_empty():
     analyzer.partial_fit("dummy_base", {})
     assert len(analyzer.corpus) == 0
 
-def test_mismatch_reembedding(mocker):
-    # Setup first model
-    analyzer1 = IncrementalAnalyzer(max_folders=3, stop_words=set(), db=db, model_path="all-MiniLM-L6-v2")
-    corpus = {"test_doc.txt": "This is a test document."}
-    
-    # Spy on model.encode to see if it's called
-    spy1 = mocker.spy(analyzer1.executor, "submit")
-    analyzer1.partial_fit("mismatch_base", corpus)
-    assert spy1.call_count == 1
-    
-    # Verify it was saved with analyzer1's model name
-    doc = db.get_document("mismatch_base", "test_doc.txt")
-    assert doc is not None
-    assert doc["model_name"] == "all-MiniLM-L6-v2"
-    
-    # Setup second model (simulating a model change)
-    analyzer2 = IncrementalAnalyzer(max_folders=3, stop_words=set(), db=db, model_path="paraphrase-MiniLM-L3-v2")
-    spy2 = mocker.spy(analyzer2.executor, "submit")
-    
-    # Feed same corpus to partial_fit. In a normal cache hit, submit() is not called.
-    # But since the model_name differs, it should call submit().
-    analyzer2.partial_fit("mismatch_base", corpus)
-    assert spy2.call_count == 1
-    
-    # Verify it updated the DB with the new model name
-    doc = db.get_document("mismatch_base", "test_doc.txt")
-    assert doc["model_name"] == "paraphrase-MiniLM-L3-v2"
-
-
-def test_generate_sorting_plan_empty():
     analyzer = IncrementalAnalyzer(max_folders=3, stop_words={"the", "and"}, db=db, model_path="all-MiniLM-L6-v2")
     plan = analyzer.generate_sorting_plan("dummy_base")
     assert plan == {}
@@ -118,16 +88,6 @@ def test_generate_sorting_plan():
     assert len(plan) > 0
 
 
-def test_partial_fit_exception(mocker):
-    analyzer = IncrementalAnalyzer(max_folders=2, stop_words={"the", "and"}, db=db, model_path="all-MiniLM-L6-v2")
-    mocker.patch.object(analyzer.executor, "submit", side_effect=Exception("Test error"))
-    mock_logger = mocker.patch("app.core.analyzer.logging.error")
-
-    corpus = {"unique_file_exception.txt": "unique test content exception"}
-    analyzer.partial_fit("dummy_base", corpus)
-
-    mock_logger.assert_called_once()
-    assert "unique_file_exception.txt" in analyzer.corpus  # Update still happened before exception
 
 
 def test_generate_sorting_plan_exception(mocker):
@@ -171,7 +131,7 @@ def test_conflict_detection():
     corpus = {"invoice_2025.txt": "Some invoice text"}
     
     # Put document in DB with an assigned folder (historical override)
-    db.upsert_document("test_conflict_base", "invoice_2025.txt", "hash123", "Some invoice text", np.array([0.1]*384))
+    db.upsert_document("test_conflict_base", "invoice_2025.txt", "hash123", "Some invoice text")
     db.set_user_verified_target("test_conflict_base", "hash123", "Archive")
     
     analyzer.partial_fit("test_conflict_base", corpus)
@@ -193,7 +153,7 @@ def test_conflict_resolution():
     analyzer = IncrementalAnalyzer(max_folders=2, stop_words={"the", "and"}, db=db)
     corpus = {"invoice_2025.txt": "Some invoice text"}
     
-    db.upsert_document("test_conflict_res_base", "invoice_2025.txt", "hash123", "Some invoice text", np.array([0.1]*384))
+    db.upsert_document("test_conflict_res_base", "invoice_2025.txt", "hash123", "Some invoice text")
     db.set_user_verified_target("test_conflict_res_base", "hash123", "Archive")
     
     analyzer.partial_fit("test_conflict_res_base", corpus)

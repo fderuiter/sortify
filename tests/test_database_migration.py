@@ -39,8 +39,6 @@ def test_migration_from_v1(tmp_path):
         columns = [row[1] for row in cursor.fetchall()]
         
         assert "user_verified_target_path" in columns
-        assert "model_name" in columns
-        assert "vector_dimension" in columns
         
         cursor.execute("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_documents_file_hash'")
         assert cursor.fetchone() is not None
@@ -80,8 +78,6 @@ def test_migration_from_v2(tmp_path):
         columns = [row[1] for row in cursor.fetchall()]
         
         assert "user_verified_target_path" in columns
-        assert "model_name" in columns
-        assert "vector_dimension" in columns
         
         cursor.execute("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_documents_file_hash'")
         assert cursor.fetchone() is not None
@@ -105,8 +101,6 @@ def test_migration_from_empty(tmp_path):
         columns = [row[1] for row in cursor.fetchall()]
         
         assert "user_verified_target_path" in columns
-        assert "model_name" in columns
-        assert "vector_dimension" in columns
         
         cursor.execute("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_documents_file_hash'")
         assert cursor.fetchone() is not None

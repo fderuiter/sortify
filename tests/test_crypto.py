@@ -113,10 +113,6 @@ def test_encryption_decryption(tmp_path):
     assert crypto.decrypt_text(enc_text) == original_text
     
     # Embeddings
-    original_emb = np.array([0.1, 0.2, 0.3], dtype=np.float32).tobytes()
-    enc_emb = crypto.encrypt_embedding(original_emb)
-    assert enc_emb != original_emb
-    assert crypto.decrypt_embedding(enc_emb) == original_emb
 
 
 def test_invalid_key(tmp_path):

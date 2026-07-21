@@ -36,10 +36,7 @@ class Database:
                         filepath TEXT,
                         file_hash TEXT,
                         extracted_text TEXT,
-                        embedding BLOB,
                         user_verified_target_path TEXT,
-                        model_name TEXT,
-                        vector_dimension INTEGER,
                         PRIMARY KEY (base_dir, filepath)
                     )
                 """)
@@ -48,9 +45,6 @@ class Database:
             elif db_version < self.CURRENT_VERSION:
                 if db_version == 1:
                     conn.execute("ALTER TABLE documents ADD COLUMN user_verified_target_path TEXT")
-                if db_version <= 2:
-                    conn.execute("ALTER TABLE documents ADD COLUMN model_name TEXT")
-                    conn.execute("ALTER TABLE documents ADD COLUMN vector_dimension INTEGER")
                 if db_version <= 3:
                     conn.execute("CREATE INDEX IF NOT EXISTS idx_documents_file_hash ON documents (base_dir, file_hash)")
                 conn.execute(f"PRAGMA user_version = {self.CURRENT_VERSION}")
@@ -60,26 +54,21 @@ class Database:
         conn = get_db_connection(self.db_path)
         with conn:
             cursor = conn.execute(
-                "SELECT file_hash, extracted_text, embedding, model_name, vector_dimension FROM documents WHERE base_dir = ? AND filepath = ?",
+                "SELECT file_hash, extracted_text FROM documents WHERE base_dir = ? AND filepath = ?",
                 (base_dir, filepath),
             )
             row = cursor.fetchone()
             if row:
                 decrypted_text = self.crypto.decrypt_text(row[1]) if row[1] is not None else None
-                decrypted_emb_bytes = self.crypto.decrypt_embedding(row[2]) if row[2] is not None else None
-                embedding = np.frombuffer(decrypted_emb_bytes, dtype=np.float32) if decrypted_emb_bytes else None
                 return {
                     "file_hash": row[0],
                     "extracted_text": decrypted_text,
-                    "embedding": embedding,
-                    "model_name": row[3],
-                    "vector_dimension": row[4],
                 }
             return None
 
-    def upsert_document(self, base_dir, filepath, file_hash, extracted_text, embedding, model_name=None, vector_dimension=None):
+    def upsert_document(self, base_dir, filepath, file_hash, extracted_text):
         """Insert or update a document in the database."""
-        self.upsert_documents([(base_dir, filepath, file_hash, extracted_text, embedding, model_name, vector_dimension)])
+        self.upsert_documents([(base_dir, filepath, file_hash, extracted_text)])
 
     def upsert_documents(self, documents):
         """Insert or update multiple documents in the database."""
@@ -91,29 +80,21 @@ class Database:
             with conn:
                 rows_to_insert = []
                 for doc in documents:
-                    base_dir, filepath, file_hash, extracted_text, embedding, model_name, vector_dimension = doc
+                    base_dir, filepath, file_hash, extracted_text = doc
                     
-                    if embedding is not None:
-                        embedding_blob = self.crypto.encrypt_embedding(embedding.astype(np.float32).tobytes())
-                    else:
-                        embedding_blob = None
-                        
                     enc_text = self.crypto.encrypt_text(extracted_text) if extracted_text is not None else None
                     
                     rows_to_insert.append(
-                        (base_dir, filepath, file_hash, enc_text, embedding_blob, model_name, vector_dimension)
+                        (base_dir, filepath, file_hash, enc_text)
                     )
                     
                 conn.executemany(
                     """
-                    INSERT INTO documents (base_dir, filepath, file_hash, extracted_text, embedding, model_name, vector_dimension)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO documents (base_dir, filepath, file_hash, extracted_text)
+                    VALUES (?, ?, ?, ?)
                     ON CONFLICT(base_dir, filepath) DO UPDATE SET
                         file_hash = excluded.file_hash,
-                        extracted_text = excluded.extracted_text,
-                        embedding = excluded.embedding,
-                        model_name = excluded.model_name,
-                        vector_dimension = excluded.vector_dimension
+                        extracted_text = excluded.extracted_text
                 """,
                     rows_to_insert,
                 )
@@ -124,7 +105,7 @@ class Database:
         conn = get_db_connection(self.db_path)
         with conn:
             cursor = conn.execute(
-                "SELECT filepath, extracted_text, embedding, file_hash, user_verified_target_path, model_name, vector_dimension FROM documents WHERE base_dir = ?",
+                "SELECT filepath, extracted_text, file_hash, user_verified_target_path FROM documents WHERE base_dir = ?",
                 (base_dir,),
             )
             rows = cursor.fetchall()
@@ -133,9 +114,7 @@ class Database:
             
             def _decrypt_row(row):
                 decrypted_text = self.crypto.decrypt_text(row[1]) if row[1] is not None else None
-                decrypted_emb_bytes = self.crypto.decrypt_embedding(row[2]) if row[2] is not None else None
-                embedding = np.frombuffer(decrypted_emb_bytes, dtype=np.float32) if decrypted_emb_bytes is not None else None
-                return (row[0], decrypted_text, embedding, row[3], row[4], row[5], row[6])
+                return (row[0], decrypted_text, row[2], row[3])
                 
             results = []
             if rows:
