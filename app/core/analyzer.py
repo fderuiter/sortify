@@ -27,8 +27,9 @@ def _worker_init(model_path: str | None, backend: str):
 
     if model_path is not None:
         try:
-            from sentence_transformers import SentenceTransformer
             import sys
+
+            from sentence_transformers import SentenceTransformer
 
             device = "cpu" if sys.platform == "darwin" else None
             _worker_model = SentenceTransformer(model_path, backend=backend, device=device)
@@ -172,7 +173,7 @@ class IncrementalAnalyzer:
         self._active_dimension = None
         if os.path.exists(offline_model_path) and os.path.exists(manifest_path):
             logging.info("Detected side-loaded model weights. Verifying integrity...")
-            self._verify_offline_model(offline_model_path, manifest_path)
+            self._verify_model(offline_model_path, manifest_path, "side-loaded")
             logging.info("Integrity verified. Loading side-loaded model in worker...")
             backend = self._detect_backend(offline_model_path)
             if backend == "gguf":
@@ -187,7 +188,7 @@ class IncrementalAnalyzer:
                 )
                 if os.path.exists(hf_manifest):
                     logging.info("Verifying user downloaded model integrity...")
-                    self._verify_hf_model(str(user_model_path), hf_manifest)
+                    self._verify_model(str(user_model_path), hf_manifest, "downloaded")
             backend = self._detect_backend(model_path)
             if backend == "gguf":
                 self._start_gguf_worker(model_path)
@@ -272,8 +273,8 @@ class IncrementalAnalyzer:
 
         return "torch"
 
-    def _verify_hf_model(self, model_dir: str, manifest_path: str) -> None:
-        """Verify the checksums of critical files in the downloaded HuggingFace model."""
+    def _verify_model(self, model_dir: str, manifest_path: str, model_type: str) -> None:
+        """Verify the checksums of the model against the manifest."""
         try:
             with open(manifest_path, "r") as f:
                 manifest = json.load(f)
@@ -281,7 +282,6 @@ class IncrementalAnalyzer:
             raise RuntimeError(f"Failed to read model manifest: {e}")
 
         critical_files = ["config.json", "tokenizer.json"]
-
         valid_weight_found = False
 
         for rel_path, expected_hash in manifest.items():
@@ -310,7 +310,7 @@ class IncrementalAnalyzer:
 
             if file_hash.hexdigest() != expected_hash:
                 raise RuntimeError(
-                    f"Checksum mismatch for downloaded model file: {rel_path}"
+                    f"Checksum mismatch for {model_type} model file: {rel_path}"
                 )
 
         if not valid_weight_found:
@@ -318,47 +318,8 @@ class IncrementalAnalyzer:
                 "No valid weight formats found (PyTorch, SafeTensors, or ONNX)."
             )
 
-    def _verify_offline_model(self, model_dir: str, manifest_path: str) -> None:
-        """Verify the checksums of the offline model against the manifest."""
-        try:
-            with open(manifest_path, "r") as f:
-                manifest = json.load(f)
-        except Exception as e:
-            raise RuntimeError(f"Failed to read model manifest: {e}")
 
-        critical_files = ["config.json", "tokenizer.json"]
-        valid_weight_found = False
 
-        for rel_path, expected_hash in manifest.items():
-            filepath = os.path.join(model_dir, rel_path)
-            if not os.path.exists(filepath):
-                if rel_path in critical_files:
-                    raise RuntimeError(f"Missing critical model file: {rel_path}")
-                continue
-
-            if rel_path in [
-                "pytorch_model.bin",
-                "model.safetensors",
-            ] or rel_path.endswith(".onnx"):
-                valid_weight_found = True
-
-            file_hash = hashlib.sha256()
-            try:
-                with open(filepath, "rb") as file_obj:
-                    while chunk := file_obj.read(8192):
-                        file_hash.update(chunk)
-            except Exception as e:
-                raise RuntimeError(f"Failed to read model file {rel_path}: {e}")
-
-            if file_hash.hexdigest() != expected_hash:
-                raise RuntimeError(
-                    f"Checksum mismatch for side-loaded model file: {rel_path}"
-                )
-
-        if not valid_weight_found:
-            raise RuntimeError(
-                "No valid weight formats found (PyTorch, SafeTensors, or ONNX)."
-            )
 
     @property
     def active_model_name(self):
