@@ -160,14 +160,14 @@ class AppSettings:
 
         has_validation_errors = False
         try:
-            with open(self._filepath, "r") as f:
+            with open(self._filepath, "r", encoding="utf-8") as f:
                 data = json.load(f)
 
             # Validate against static schema file if it exists
             schema_path = Path(__file__).parent / "config_schema.json"
             if schema_path.exists():
                 import jsonschema
-                with open(schema_path, "r") as sf:
+                with open(schema_path, "r", encoding="utf-8") as sf:
                     schema = json.load(sf)
                 validator = jsonschema.Draft202012Validator(schema)
                 errors = sorted(validator.iter_errors(data), key=lambda e: e.path)
@@ -212,7 +212,7 @@ class AppSettings:
         with self._lock:
             data = self._settings_model.model_dump(mode="json")
         try:
-            with open(self._filepath, "w") as f:
+            with open(self._filepath, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=4)
         except Exception as e:
             logging.error(f"Failed to save settings: {e}")
