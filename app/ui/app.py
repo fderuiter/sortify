@@ -18,6 +18,7 @@ from watchdog.observers import Observer
 
 from app.core.session import AppSession
 from app.core.verifier import VerificationEngine
+from app.core.extractor_strategies import registry
 from app.ui.settings import SettingsView
 
 ctk.set_appearance_mode("Dark")
@@ -758,6 +759,10 @@ class AutoSorterApp(ctk.CTk):
             rel_path = os.path.relpath(file_path, self.base_dir)
             if rel_path.startswith("."):
                 return
+            
+            _, ext = os.path.splitext(rel_path)
+            if not registry.is_supported(ext):
+                return
 
             with self._update_lock:
                 self._pending_files.add(rel_path)
@@ -776,12 +781,27 @@ class AutoSorterApp(ctk.CTk):
             if rel_src.startswith(".") or rel_dest.startswith("."):
                 return
             
-            with self._update_lock:
-                if rel_src in self.locked_files:
-                    self.locked_files[rel_dest] = self.locked_files.pop(rel_src)
+            _, src_ext = os.path.splitext(rel_src)
+            _, dest_ext = os.path.splitext(rel_dest)
             
-            if self.app_session:
-                self.app_session.update_document_path(rel_src, rel_dest)
+            src_supported = registry.is_supported(src_ext)
+            dest_supported = registry.is_supported(dest_ext)
+            
+            if not src_supported and not dest_supported:
+                return
+
+            if src_supported and not dest_supported:
+                # Treat as deletion
+                self._queue_delete(src_path)
+                return
+            
+            if src_supported:
+                with self._update_lock:
+                    if rel_src in self.locked_files:
+                        self.locked_files[rel_dest] = self.locked_files.pop(rel_src)
+                
+                if self.app_session:
+                    self.app_session.update_document_path(rel_src, rel_dest)
             
             # Re-run plan generation
             self._queue_file(dest_path)
@@ -792,6 +812,10 @@ class AutoSorterApp(ctk.CTk):
         try:
             rel_path = os.path.relpath(file_path, self.base_dir)
             if rel_path.startswith("."):
+                return
+            
+            _, ext = os.path.splitext(rel_path)
+            if not registry.is_supported(ext):
                 return
             
             with self._update_lock:
