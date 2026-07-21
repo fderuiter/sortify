@@ -50,6 +50,10 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.core.link_manager
 
+## `app.core.metadata`
+
+::: app.core.metadata
+
 ## `app.core.mover`
 
 ::: app.core.mover
