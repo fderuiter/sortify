@@ -1,7 +1,6 @@
 """Unified build script for smart autosorter application on Windows, macOS, and Linux."""
 
 import os
-import platform
 import sys
 
 import PyInstaller.__main__

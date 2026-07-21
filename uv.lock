@@ -5151,7 +5151,7 @@ dependencies = [
     { name = "watchdog" },
 ]
 
-[package.optional-dependencies]
+[package.dev-dependencies]
 dev = [
     { name = "mkdocs" },
     { name = "mkdocs-material", version = "8.4.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
@@ -5165,20 +5165,12 @@ dev = [
     { name = "pyinstaller" },
     { name = "pytest", version = "8.4.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
     { name = "pytest", version = "9.1.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
-    { name = "pytest-mock" },
-    { name = "reportlab" },
-    { name = "ruff" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "pytest", version = "8.4.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
-    { name = "pytest", version = "9.1.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
     { name = "pytest-cov" },
     { name = "pytest-mock" },
     { name = "pytest-timeout" },
     { name = "pytest-xdist" },
     { name = "reportlab" },
+    { name = "ruff" },
     { name = "sqlcipher3-wheels" },
 ]
 
@@ -5187,36 +5179,32 @@ requires-dist = [
     { name = "cryptography", specifier = ">=41.0.0" },
     { name = "customtkinter" },
     { name = "keyring", specifier = ">=24.0.0" },
-    { name = "mkdocs", marker = "extra == 'dev'" },
-    { name = "mkdocs-material", marker = "extra == 'dev'" },
-    { name = "mkdocstrings", extras = ["python"], marker = "extra == 'dev'" },
-    { name = "mypy", marker = "extra == 'dev'" },
     { name = "openpyxl" },
     { name = "pandas" },
-    { name = "pre-commit", marker = "extra == 'dev'" },
     { name = "pydantic-settings" },
-    { name = "pyinstaller", marker = "extra == 'dev'" },
     { name = "pylnk3", specifier = ">=0.4.2" },
     { name = "pypdf" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.4.2" },
-    { name = "pytest-mock", marker = "extra == 'dev'", specifier = ">=3.15.1" },
     { name = "python-docx" },
-    { name = "reportlab", marker = "extra == 'dev'", specifier = ">=5.0.0" },
-    { name = "ruff", marker = "extra == 'dev'" },
     { name = "scikit-learn" },
     { name = "sentence-transformers", specifier = ">=5.1.2" },
     { name = "watchdog", specifier = ">=6.0.0" },
 ]
-provides-extras = ["dev"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "mkdocs" },
+    { name = "mkdocs-material" },
+    { name = "mkdocstrings", extras = ["python"] },
+    { name = "mypy" },
+    { name = "pre-commit" },
+    { name = "pyinstaller" },
     { name = "pytest", specifier = ">=8.4.2" },
     { name = "pytest-cov", specifier = ">=7.1.0" },
     { name = "pytest-mock", specifier = ">=3.15.1" },
     { name = "pytest-timeout", specifier = ">=2.4.0" },
     { name = "pytest-xdist", specifier = ">=3.8.0" },
     { name = "reportlab", specifier = ">=5.0.0" },
+    { name = "ruff" },
     { name = "sqlcipher3-wheels", specifier = "==0.5.7" },
 ]
 

@@ -1,8 +1,7 @@
-from unittest.mock import ANY
 import os
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 from app.core.cache import CacheManager
 from app.core.db import Database
@@ -171,7 +170,6 @@ def test_windows_shortcut_update_mocked(tmp_path):
         print("SHUTIL MOVE CALLED WITH:", mock_shutil_move.call_args)
         
         # 4. Assertions
-        dest_path = os.path.join(base_dir, "subfolder", "app.lnk")
 
         # Verify parsed was called on source
         mock_pylnk3.parse.assert_called_with(shortcut_path)
