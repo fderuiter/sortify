@@ -122,11 +122,29 @@ class AutoSorterApp:
             self.total_files = len(files)
             self.completed_files = 0
             
+            def _progress_cb():
+                self.completed_files += 1
+                if self.total_files > 0:
+                    self.progress_bar.set_value(self.completed_files / self.total_files)
+            
+            from app.core.metadata import MetadataPass
+            bypassed_files = await asyncio.to_thread(
+                MetadataPass.run,
+                self.app_session.base_dir,
+                files,
+                self.settings,
+                self.app_session.db,
+                _progress_cb,
+                lambda: getattr(self, "_cancel_analysis_flag", False)
+            )
+            bypassed_set = set(bypassed_files)
+            items_to_sort = [f for f in files if f not in bypassed_set]
+            
             chunk_size = 50
-            for i in range(0, len(files), chunk_size):
+            for i in range(0, len(items_to_sort), chunk_size):
                 if self._cancel_analysis_flag:
                     break
-                chunk = files[i:i+chunk_size]
+                chunk = items_to_sort[i:i+chunk_size]
                 await asyncio.to_thread(self._process_chunk, chunk)
                 self.completed_files += len(chunk)
                 self.progress_bar.set_value(self.completed_files / self.total_files if self.total_files > 0 else 0)
