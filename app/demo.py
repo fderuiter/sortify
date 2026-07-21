@@ -5,8 +5,7 @@ import os
 import sys
 import tempfile
 
-from app.core.analyzer import IncrementalAnalyzer
-from app.core.extractor import build_corpus_generator
+from app.core.session import AppSession
 
 
 def generate_sample_corpus(base_dir: str):
@@ -44,34 +43,32 @@ def run_demo(settings):
         files_to_sort = generate_sample_corpus(temp_dir)
         print(f"[*] Generated {len(files_to_sort)} files.")
 
-        analyzer = IncrementalAnalyzer(
-            max_folders=settings.MAX_FOLDERS, stop_words=settings.STOP_WORDS
-        )
+        session = AppSession(settings, base_dir=temp_dir)
 
-        def progress_callback():
+        def progress_callback(info=None):
             pass
 
         print("[*] Processing files incrementally...")
-        generator = build_corpus_generator(
-            temp_dir,
+        
+        cancel_check = lambda: False
+        generator = session.process_items(
             files_to_sort,
             progress_callback,
-            chunk_size=2,
-            max_workers=settings.MAX_WORKERS,
-            active_model_name=analyzer.active_model_name,
-            active_dimension=analyzer.active_dimension,
+            cancel_check
         )
 
         for i, chunk in enumerate(generator):
             print(f"    - Processing chunk {i + 1}...")
-            analyzer.partial_fit(temp_dir, chunk)
+            session.partial_fit(chunk)
 
         print("[*] Generating sorting plan...")
-        plan = analyzer.generate_sorting_plan(temp_dir, settings)
+        plan = session.generate_sorting_plan()
 
         print("\n--- Generated Sorting Plan ---")
         print(json.dumps(plan, indent=2))
         print("------------------------------\n")
+        
+        session.close()
 
         if plan and isinstance(plan, dict):
             print("[+] Success: Demo completed. Sorting plan successfully generated.")

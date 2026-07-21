@@ -28,14 +28,10 @@ def main():
     args = parser.parse_args()
 
     if args.demo:
-        from app.core.db_init import init_databases
-        init_databases()
         from app.demo import run_demo
 
         run_demo(settings)
     else:
-        from app.core.db_init import init_databases
-        init_databases()
         from app.ui.app import run_app
 
         run_app(settings)
