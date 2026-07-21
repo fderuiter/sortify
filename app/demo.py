@@ -52,6 +52,7 @@ def run_demo(settings):
         
         def cancel_check():
             return False
+        
         generator = session.process_items(
             files_to_sort,
             progress_callback,

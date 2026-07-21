@@ -1,7 +1,29 @@
 [
   {
-    "iid": "folder:Work",
-    "text": "\u25b6 \u2705 \ud83d\udcc2 [Work] (1 moves)",
-    "children": []
+    "iid": "Work",
+    "text": "Work",
+    "children": [
+      {
+        "iid": "Work/Projects",
+        "text": "Projects",
+        "children": [
+          {
+            "iid": "Work/Projects/Project Alpha",
+            "text": "Project Alpha",
+            "children": [
+              {
+                "iid": "Work/Projects/Project Alpha/spec.docx",
+                "text": "spec.docx",
+                "children": [],
+                "open": false
+              }
+            ],
+            "open": true
+          }
+        ],
+        "open": true
+      }
+    ],
+    "open": true
   }
 ]

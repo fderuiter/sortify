@@ -11,7 +11,7 @@ requires-python = ">=3.9"
 dependencies = [
     "pandas",
     "scikit-learn",
-    "customtkinter",
+    "nicegui",
     "python-docx",
     "pypdf",
     "openpyxl",

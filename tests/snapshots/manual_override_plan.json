@@ -1,7 +1,21 @@
 [
   {
-    "iid": "folder:Documents",
-    "text": "\u25b6 \u2705 \ud83d\udcc2 [Documents] (1 moves)",
-    "children": []
+    "iid": "Documents",
+    "text": "Documents",
+    "children": [
+      {
+        "iid": "Documents/report.txt",
+        "text": "report.txt",
+        "children": [],
+        "open": false
+      },
+      {
+        "iid": "Documents/secret.txt",
+        "text": "secret.txt [Already Sorted]",
+        "children": [],
+        "open": false
+      }
+    ],
+    "open": true
   }
 ]

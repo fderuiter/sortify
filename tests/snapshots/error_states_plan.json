@@ -1,7 +1,21 @@
 [
   {
-    "iid": "folder:Invoices",
-    "text": "\u25b6 \u274c \ud83d\udcc2 [Invoices] (2 moves)",
-    "children": []
+    "iid": "Invoices",
+    "text": "Invoices",
+    "children": [
+      {
+        "iid": "Invoices/invoice_101.pdf",
+        "text": "invoice_101.pdf",
+        "children": [],
+        "open": false
+      },
+      {
+        "iid": "Invoices/invoice_102.pdf",
+        "text": "invoice_102.pdf (Error: File locked by another process)",
+        "children": [],
+        "open": false
+      }
+    ],
+    "open": true
   }
 ]
