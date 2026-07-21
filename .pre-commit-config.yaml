@@ -27,7 +27,7 @@ repos:
         name: Validate External Links
         entry: uv run python scripts/validate_links.py
         language: system
-        files: '^(setup\.sh|setup\.bat|app/ui/app\.py|scripts/prepare_offline\.py)$'
+        files: '^(app/ui/app\.py|scripts/prepare_offline\.py)$'
         pass_filenames: false
       - id: validate-config-schema
         name: Validate Configuration Schema

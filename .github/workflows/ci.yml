@@ -2,9 +2,9 @@ name: CI Pipeline
 
 on:
   push:
-    branches: [ "main", "master" ]
+    branches: [ "main" ]
   pull_request:
-    branches: [ "main", "master" ]
+    branches: [ "main" ]
 
 jobs:
   build-and-test:
@@ -66,6 +66,6 @@ jobs:
         uv run --all-extras mkdocs build --strict
         
     - name: Deploy Documentation
-      if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && matrix.os == 'ubuntu-latest'
+      if: github.ref == 'refs/heads/main' && matrix.os == 'ubuntu-latest'
       run: |
         uv run --all-extras mkdocs gh-deploy --force
