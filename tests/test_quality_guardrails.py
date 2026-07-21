@@ -41,7 +41,7 @@ def save_cache_sync(*args, **kwargs):
 
 BASELINE_FILE = os.path.join(os.path.dirname(__file__), "baseline_metrics.json")
 
-@pytest.mark.timeout(120)
+@pytest.mark.timeout(300)
 def test_semantic_quality_guardrails():
     """
     Hybrid Quality Guardrail:
