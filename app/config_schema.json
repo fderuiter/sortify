@@ -1,0 +1,147 @@
+{
+  "description": "Application settings schema.",
+  "properties": {
+    "CONTEXTUAL_RENAMING": {
+      "default": false,
+      "title": "Contextual Renaming",
+      "type": "boolean"
+    },
+    "PRESERVE_HIERARCHY": {
+      "default": false,
+      "title": "Preserve Hierarchy",
+      "type": "boolean"
+    },
+    "MAX_FOLDERS": {
+      "default": 12,
+      "exclusiveMinimum": 0,
+      "maximum": 50,
+      "title": "Max Folders",
+      "type": "integer"
+    },
+    "MAX_WORKERS": {
+      "default": 4,
+      "exclusiveMinimum": 0,
+      "maximum": 64,
+      "title": "Max Workers",
+      "type": "integer"
+    },
+    "MAX_DEPTH": {
+      "default": 5,
+      "exclusiveMinimum": 0,
+      "maximum": 10,
+      "title": "Max Depth",
+      "type": "integer"
+    },
+    "MAX_FEATURES": {
+      "default": 3,
+      "exclusiveMinimum": 0,
+      "maximum": 10,
+      "title": "Max Features",
+      "type": "integer"
+    },
+    "CLEANUP_EMPTY_FOLDERS": {
+      "default": true,
+      "title": "Cleanup Empty Folders",
+      "type": "boolean"
+    },
+    "KEYWORD_RULES": {
+      "additionalProperties": true,
+      "title": "Keyword Rules",
+      "type": "object"
+    },
+    "LEARNED_RULES": {
+      "additionalProperties": true,
+      "title": "Learned Rules",
+      "type": "object"
+    },
+    "AI_CONSENT_GRANTED": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Ai Consent Granted"
+    },
+    "LOG_FILE": {
+      "default": "autosorter.log",
+      "minLength": 1,
+      "title": "Log File",
+      "type": "string"
+    },
+    "STOP_WORDS": {
+      "default": [
+        "about",
+        "all",
+        "also",
+        "and",
+        "are",
+        "because",
+        "been",
+        "but",
+        "can",
+        "com",
+        "could",
+        "csv",
+        "docx",
+        "don",
+        "for",
+        "from",
+        "get",
+        "has",
+        "have",
+        "how",
+        "inc",
+        "into",
+        "like",
+        "much",
+        "nan",
+        "not",
+        "only",
+        "other",
+        "out",
+        "over",
+        "page",
+        "pdf",
+        "should",
+        "site",
+        "some",
+        "team",
+        "than",
+        "that",
+        "the",
+        "their",
+        "there",
+        "these",
+        "this",
+        "through",
+        "txt",
+        "unnamed",
+        "was",
+        "well",
+        "what",
+        "when",
+        "where",
+        "which",
+        "who",
+        "will",
+        "with",
+        "would",
+        "xls",
+        "xlsx",
+        "your"
+      ],
+      "items": {
+        "type": "string"
+      },
+      "title": "Stop Words",
+      "type": "array",
+      "uniqueItems": true
+    }
+  },
+  "title": "Settings",
+  "type": "object"
+}

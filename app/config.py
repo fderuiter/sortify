@@ -158,22 +158,48 @@ class AppSettings:
             self._trigger_save()
             return
 
+        has_validation_errors = False
         try:
             with open(self._filepath, "r") as f:
                 data = json.load(f)
+
+            # Validate against static schema file if it exists
+            schema_path = Path(__file__).parent / "config_schema.json"
+            if schema_path.exists():
+                import jsonschema
+                with open(schema_path, "r") as sf:
+                    schema = json.load(sf)
+                validator = jsonschema.Draft202012Validator(schema)
+                errors = sorted(validator.iter_errors(data), key=lambda e: e.path)
+                for error in errors:
+                    has_validation_errors = True
+                    path = ".".join([str(p) for p in error.path]) if error.path else "root"
+                    logging.warning(f"Configuration validation failed for field '{path}': {error.message}. Using default value.")
 
             for key, value in data.items():
                 if hasattr(self._settings_model, key):
                     try:
                         setattr(self._settings_model, key, value)
                     except (ValueError, ValidationError) as e:
-                        logging.warning(f"Invalid {key} in config, using default: {e}")
+                        if not has_validation_errors:
+                            logging.warning(f"Invalid {key} in config, using default: {e}")
+                        has_validation_errors = True
+                        
+            if has_validation_errors:
+                # Do not allow saving to overwrite the invalid user settings
+                self._has_validation_errors = True
+            else:
+                self._has_validation_errors = False
 
         except Exception as e:
             logging.warning(f"Failed to load settings, using defaults: {e}")
-            self._trigger_save()
+            # If JSON is corrupted, we don't want to overwrite either
+            self._has_validation_errors = True
 
     def _trigger_save(self):
+        if getattr(self, "_has_validation_errors", False):
+            logging.warning("Skipping save to prevent overwriting invalid user configuration.")
+            return
         with self._lock:
             if self._save_timer is not None:
                 self._save_timer.cancel()
