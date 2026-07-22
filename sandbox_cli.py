@@ -43,9 +43,9 @@ def analyze_all():
         MAX_FOLDERS = 5
         STOP_WORDS = {"the", "and", "a", "an", "is"}
         
+    from app.core.analyzer import IncrementalAnalyzer
     from app.core.db import Database
     from app.core.db_worker import DBWorker
-    from app.core.analyzer import IncrementalAnalyzer
     from app.core.extractor import build_corpus_generator
     
     db_worker = DBWorker()

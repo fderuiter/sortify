@@ -8,11 +8,9 @@ import PyInstaller.__main__
 
 def main():
     """Build the standalone executable."""
-    import shutil
-    import subprocess
-    
     # Locate precompiled sqlcipher3-wheels from the active virtual environment
     import importlib.util
+    import shutil
     print("Locating SQLCipher shared libraries in active environment...")
     spec = importlib.util.find_spec("sqlcipher3")
     if not spec or not spec.submodule_search_locations:

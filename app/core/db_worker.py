@@ -26,6 +26,14 @@ class DBWorker:
                     result_q.put(("error", e))
             finally:
                 self.q.task_done()
+        
+        # Ensure all database connections opened by this worker thread are closed
+        # before the thread exits, preventing file locking issues on Windows.
+        try:
+            from app.core.db_conn import clear_connection_cache
+            clear_connection_cache()
+        except ImportError:
+            pass
 
     def submit_write(self, func, *args, **kwargs):
         """Submit a database write operation to the queue without waiting for completion."""
