@@ -7173,6 +7173,10 @@ dependencies = [
 ]
 
 [package.dev-dependencies]
+build = [
+    { name = "pyinstaller" },
+    { name = "sqlcipher3-wheels" },
+]
 dev = [
     { name = "mkdocs" },
     { name = "mkdocs-material", version = "8.4.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
@@ -7183,7 +7187,6 @@ dev = [
     { name = "mypy", version = "2.1.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
     { name = "pre-commit", version = "4.3.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
     { name = "pre-commit", version = "4.6.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
-    { name = "pyinstaller" },
     { name = "pytest", version = "8.4.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
     { name = "pytest", version = "9.1.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
     { name = "pytest-cov" },
@@ -7192,7 +7195,6 @@ dev = [
     { name = "pytest-xdist" },
     { name = "reportlab" },
     { name = "ruff" },
-    { name = "sqlcipher3-wheels" },
 ]
 
 [package.metadata]
@@ -7213,13 +7215,16 @@ requires-dist = [
 ]
 
 [package.metadata.requires-dev]
+build = [
+    { name = "pyinstaller" },
+    { name = "sqlcipher3-wheels", specifier = "==0.5.7" },
+]
 dev = [
     { name = "mkdocs" },
     { name = "mkdocs-material" },
     { name = "mkdocstrings", extras = ["python"] },
     { name = "mypy" },
     { name = "pre-commit" },
-    { name = "pyinstaller" },
     { name = "pytest", specifier = ">=8.4.2" },
     { name = "pytest-cov", specifier = ">=7.1.0" },
     { name = "pytest-mock", specifier = ">=3.15.1" },
@@ -7227,7 +7232,6 @@ dev = [
     { name = "pytest-xdist", specifier = ">=3.8.0" },
     { name = "reportlab", specifier = ">=5.0.0" },
     { name = "ruff" },
-    { name = "sqlcipher3-wheels", specifier = "==0.5.7" },
 ]
 
 [[package]]
