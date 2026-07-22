@@ -264,6 +264,18 @@ class VerificationEngine:
                     # Ensure boundary protection
                     abs_dst = os.path.abspath(dst)
                     abs_base = os.path.abspath(base_dir)
+                    
+                    # Normalize Windows long path prefixes for reliable startswith checks
+                    if os.name == 'nt':
+                        if abs_dst.startswith("\\\\?\\"):
+                            abs_dst = abs_dst[4:]
+                            if abs_dst.startswith("UNC\\"):
+                                abs_dst = "\\\\" + abs_dst[4:]
+                        if abs_base.startswith("\\\\?\\"):
+                            abs_base = abs_base[4:]
+                            if abs_base.startswith("UNC\\"):
+                                abs_base = "\\\\" + abs_base[4:]
+                                
                     if not abs_base.endswith(os.sep):
                         abs_base += os.sep
                     if not abs_dst.startswith(abs_base) or os.sep in filename or (os.altsep and os.altsep in filename):
