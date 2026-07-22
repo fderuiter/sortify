@@ -1,3 +1,1 @@
-* @fderuiter
-/app/config.py @config-specialist
-/app/core/db.py @database-specialist
+* @fderuiter\n/app/config.py @config-specialist\n/app/core/ @database-specialist\n/app/ui/ @ui-specialist
