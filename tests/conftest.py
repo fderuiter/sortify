@@ -4,11 +4,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 import keyring
-import numpy as np
 import pytest
 from keyring.backend import KeyringBackend
 
-from app.core.analyzer import IncrementalAnalyzer
 from app.core.db_conn import clear_connection_cache
 
 

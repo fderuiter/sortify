@@ -1,5 +1,6 @@
 """
-Lightweight Production-Scoped Duplication Check
+Lightweight Production-Scoped Duplication Check.
+
 Scans the 'app/' directory for duplicated logic.
 """
 
@@ -10,6 +11,7 @@ import sys
 MIN_DUPLICATE_LINES = 10
 
 def get_docstring_lines(filepath, content):
+    """Extract line numbers that belong to docstrings."""
     doc_lines = set()
     try:
         tree = ast.parse(content, filename=filepath)
@@ -25,6 +27,7 @@ def get_docstring_lines(filepath, content):
     return doc_lines
 
 def get_normalized_lines(filepath):
+    """Normalize lines of a Python file, stripping whitespace and comments."""
     try:
         with open(filepath, 'r', encoding='utf-8') as f:
             content = f.read()
@@ -50,6 +53,7 @@ def get_normalized_lines(filepath):
     return normalized
 
 def main():
+    """Run the duplication check over the 'app/' directory."""
     print(f"Running duplication check (window size: {MIN_DUPLICATE_LINES} lines)...")
     
     # 1. Collect all production files

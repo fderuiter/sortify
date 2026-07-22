@@ -213,7 +213,6 @@ class HistoryManager:
             cur = conn.execute("SELECT original_rel_path, inode, size, mtime, is_symlink, symlink_target FROM snapshot_files WHERE session_id = ?", (session_id,))
             snapshot_files = cur.fetchall()
 
-        from app.core.scanner import get_files_recursively
         current_inodes, active_files_by_rel_path, active_files_by_sig, inodes_reliable = self._build_current_file_state(base_dir)
 
         missing = []
