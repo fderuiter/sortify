@@ -20,12 +20,15 @@ def get_db_connection(db_path: str):
     """Create and configure a new database connection with performance parameters."""
     global _connection_cache
     abs_path = os.path.abspath(db_path)
+    thread_id = threading.get_ident()
+    cache_key = (abs_path, thread_id)
     
     with _cache_lock:
-        if abs_path in _connection_cache:
-            return _connection_cache[abs_path]
+        if cache_key in _connection_cache:
+            return _connection_cache[cache_key]
 
     conn = sqlite3.connect(db_path, timeout=5.0, check_same_thread=False)
+
     
     # Enable Write-Ahead Logging (WAL) for simultaneous reads and writes
     conn.execute("PRAGMA journal_mode = WAL")
@@ -41,7 +44,7 @@ def get_db_connection(db_path: str):
     conn.execute("PRAGMA synchronous = NORMAL")
     
     with _cache_lock:
-        _connection_cache[abs_path] = conn
+        _connection_cache[cache_key] = conn
         
     return conn
 
