@@ -3,6 +3,8 @@
 import queue
 import threading
 
+from app.core.db_conn import clear_connection_cache
+
 
 class DBWorker:
     """A worker that sequentially executes database write operations on a background thread."""
@@ -16,6 +18,7 @@ class DBWorker:
         while True:
             func, args, kwargs, result_q = self.q.get()
             if func is None:
+                clear_connection_cache()
                 break
             try:
                 result = func(*args, **kwargs)
