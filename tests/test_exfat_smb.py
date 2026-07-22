@@ -14,22 +14,23 @@ from app.core.history import HistoryManager
 def setup_history_env(tmp_path):
     base_dir = str(tmp_path / "test_base")
     os.makedirs(base_dir, exist_ok=True)
-    
+
     db_worker = DBWorker()
     db_path = tmp_path / "test_docs.db"
     db = Database(db_path, worker=db_worker)
-    
+
     cache_path = tmp_path / "test_cache.db"
     cache = CacheManager(str(cache_path), worker=db_worker)
-    
+
     history_manager = HistoryManager(db, cache, str(tmp_path / "test_history.db"))
 
     yield base_dir, db, history_manager
     db_worker.stop()
 
+
 def test_rollback_zero_inode(setup_history_env):
     base_dir, db, history_manager = setup_history_env
-    
+
     file1_src = os.path.join(base_dir, "doc1.txt")
     file2_src = os.path.join(base_dir, "doc2.txt")
     with open(file1_src, "w") as f:
@@ -42,6 +43,7 @@ def test_rollback_zero_inode(setup_history_env):
 
     # Mock os.stat to return 0 for st_ino for all files
     original_stat = os.stat
+
     class MockStatResult:
         def __init__(self, st):
             self.st_mode = st.st_mode
@@ -59,7 +61,7 @@ def test_rollback_zero_inode(setup_history_env):
         st = original_stat(path, *args, **kwargs)
         return MockStatResult(st)
 
-    with patch('os.stat', side_effect=mock_stat):
+    with patch("os.stat", side_effect=mock_stat):
         session_id = history_manager.create_snapshot(base_dir)
 
         # Move files around
@@ -67,7 +69,7 @@ def test_rollback_zero_inode(setup_history_env):
         os.makedirs(folder_dir, exist_ok=True)
         shutil.move(file1_src, os.path.join(folder_dir, "doc1.txt"))
         shutil.move(file2_src, os.path.join(folder_dir, "doc2.txt"))
-        
+
         # Rollback using the zero-inode environment
         history_manager.rollback(session_id)
 

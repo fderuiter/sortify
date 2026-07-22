@@ -8,20 +8,19 @@ import PyInstaller.__main__
 def main():
     """Build the standalone executable."""
     import importlib.util
-    
+
     print("Verifying SQLCipher in active environment...")
     spec = importlib.util.find_spec("sqlcipher3")
     if not spec or not spec.submodule_search_locations:
-        print("Error: sqlcipher3 not found in active environment. Please ensure dependencies are installed.")
+        print(
+            "Error: sqlcipher3 not found in active environment. Please ensure dependencies are installed."
+        )
         sys.exit(1)
 
-    cmd = [
-        'smart-autosorter.spec',
-        '--noconfirm',
-        '--clean'
-    ]
-        
+    cmd = ["smart-autosorter.spec", "--noconfirm", "--clean"]
+
     PyInstaller.__main__.run(cmd)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()

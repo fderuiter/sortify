@@ -15,14 +15,14 @@ from app.core.history import HistoryManager
 def setup_history_env(tmp_path):
     base_dir = str(tmp_path / "test_base")
     os.makedirs(base_dir, exist_ok=True)
-    
+
     db_worker = DBWorker()
     db_path = tmp_path / "test_docs.db"
     db = Database(db_path, worker=db_worker)
-    
+
     cache_path = tmp_path / "test_cache.db"
     cache = CacheManager(str(cache_path), worker=db_worker)
-    
+
     history_manager = HistoryManager(db, cache, str(tmp_path / "test_history.db"))
 
     yield base_dir, db, history_manager
@@ -31,7 +31,7 @@ def setup_history_env(tmp_path):
 
 def test_incremental_sync_and_stop_on_failure(setup_history_env):
     base_dir, db, history_manager = setup_history_env
-    
+
     # Create two files
     file1_src = os.path.join(base_dir, "file1.txt")
     file2_src = os.path.join(base_dir, "file2.txt")
@@ -58,18 +58,20 @@ def test_incremental_sync_and_stop_on_failure(setup_history_env):
         conn = get_db_connection(db.db_path)
         with conn:
             conn.execute("DELETE FROM documents WHERE base_dir = ?", (base_dir,))
+
     db.worker.execute_write(_delete)
     db.upsert_document(base_dir, os.path.join("folder", "file1.txt"), "hash1", "text1")
     db.upsert_document(base_dir, os.path.join("folder", "file2.txt"), "hash2", "text2")
 
     # Mock shutil.move to fail on the second file
     original_move = shutil.move
+
     def mock_move(src, dst):
         if "file2.txt" in src or "file2.txt" in dst:
             raise OSError("Mocked permission error on file2")
         return original_move(src, dst)
 
-    with patch('shutil.move', side_effect=mock_move):
+    with patch("shutil.move", side_effect=mock_move):
         with pytest.raises(OSError, match="Mocked permission error on file2"):
             history_manager.rollback(session_id)
 
@@ -85,9 +87,11 @@ def test_incremental_sync_and_stop_on_failure(setup_history_env):
     # 3. Database should reflect file1 at 'file1.txt' and file2 at 'folder/file2.txt'
     conn = get_db_connection(db.db_path)
     with conn:
-        cur = conn.execute("SELECT filepath FROM documents WHERE base_dir = ?", (base_dir,))
+        cur = conn.execute(
+            "SELECT filepath FROM documents WHERE base_dir = ?", (base_dir,)
+        )
         filepaths = {r[0] for r in cur.fetchall()}
-    
+
     assert "file1.txt" in filepaths
     assert os.path.join("folder", "file2.txt") in filepaths
     assert os.path.join("folder", "file1.txt") not in filepaths
@@ -96,14 +100,17 @@ def test_incremental_sync_and_stop_on_failure(setup_history_env):
     # 4. Session status should be 'failed'
     conn = get_db_connection(history_manager.db_path)
     with conn:
-        cur = conn.execute("SELECT status FROM sessions WHERE session_id = ?", (session_id,))
+        cur = conn.execute(
+            "SELECT status FROM sessions WHERE session_id = ?", (session_id,)
+        )
         status = cur.fetchone()[0]
-    
+
     assert status == "failed"
+
 
 def test_rollback_cyclic_collision(setup_history_env):
     base_dir, db, history_manager = setup_history_env
-    
+
     file1_src = os.path.join(base_dir, "A.txt")
     file2_src = os.path.join(base_dir, "B.txt")
     with open(file1_src, "w") as f:
@@ -126,6 +133,7 @@ def test_rollback_cyclic_collision(setup_history_env):
         conn = get_db_connection(db.db_path)
         with conn:
             conn.execute("DELETE FROM documents WHERE base_dir = ?", (base_dir,))
+
     db.worker.execute_write(_delete)
     db.upsert_document(base_dir, "A.txt", "hashB", "textB")
     db.upsert_document(base_dir, "B.txt", "hashA", "textA")

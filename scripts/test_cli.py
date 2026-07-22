@@ -19,20 +19,20 @@ def run_command(command, expected_args):
             env=env,
         )
         output = result.stdout
-        
+
         missing = []
         for arg in expected_args:
             if arg not in output:
                 missing.append(arg)
-                
+
         if missing:
             print(f"Error: {command} is missing arguments in help output: {missing}")
             print(f"Output was:\n{output}")
             return False
-            
+
         print(f"Success: {command} contains all expected arguments.")
         return True
-        
+
     except subprocess.CalledProcessError as e:
         print(f"Error running {command}: exit code {e.returncode}")
         print(f"Stderr: {e.stderr}")
@@ -42,7 +42,7 @@ def run_command(command, expected_args):
 def main():
     """Run all CLI smoke tests."""
     success = True
-    
+
     # sandbox_cli.py arguments documented in admin_guide.md
     sandbox_expected = [
         "reset",
@@ -50,22 +50,19 @@ def main():
         "analyze",
         "Reset the sandbox dataset",
         "Extract text from a specific sandbox file",
-        "Run the analysis pipeline"
+        "Run the analysis pipeline",
     ]
     if not run_command([sys.executable, "sandbox_cli.py", "--help"], sandbox_expected):
         success = False
-        
+
     # app/main.py demo flag mentioned in contributor.md
-    main_expected = [
-        "--demo",
-        "Run interactive CLI demo mode"
-    ]
+    main_expected = ["--demo", "Run interactive CLI demo mode"]
     if not run_command([sys.executable, "app/main.py", "--help"], main_expected):
         success = False
-        
+
     if not success:
         sys.exit(1)
-        
+
     print("All CLI smoke tests passed successfully.")
     sys.exit(0)
 
