@@ -359,10 +359,21 @@ class IncrementalAnalyzer:
                     }
 
             clean_plan = {}
-            for k, v in plan.items():
-                if isinstance(v, dict) and not v:
+            for target_folder, files in plan.items():
+                if not isinstance(files, dict) or not files:
                     continue
-                clean_plan[k] = v
+                parts = target_folder.replace("\\", "/").split("/")
+                current = clean_plan
+                for i, part in enumerate(parts):
+                    if part not in current:
+                        current[part] = {}
+                    if not isinstance(current[part], dict):
+                        current[part] = {"_original": current[part]}
+                    if i == len(parts) - 1:
+                        for f, info in files.items():
+                            current[part][f] = info
+                    else:
+                        current = current[part]
                 
             return self._inject_hierarchy(clean_plan)
 
