@@ -1,9 +1,16 @@
 """Database connection module."""
 
 import os
-import sqlite3
 import sys
 import threading
+from pathlib import Path
+
+try:
+    from sqlcipher3 import dbapi2 as sqlite3
+except ImportError:
+    import sqlite3
+
+from app.core.crypto import SessionCrypto
 
 # Global connection cache and lock
 _connection_cache = {}
@@ -40,7 +47,42 @@ def get_db_connection(db_path: str):
         if cache_key in _connection_cache:
             return _connection_cache[cache_key]
 
-    conn = sqlite3.connect(db_path, timeout=5.0, check_same_thread=False)
+    key_path = Path(db_path).parent / "secret.key"
+    crypto = SessionCrypto(key_path, Path(db_path))
+    raw_key = crypto.get_raw_key()
+
+    def _open_conn(path: str) -> sqlite3.Connection:
+        conn = sqlite3.connect(path, timeout=5.0, check_same_thread=False)
+        if raw_key:
+            conn.execute(f"PRAGMA key = '{raw_key}'")
+            
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA cipher_version;")
+        version = cursor.fetchone()
+        if not version or not version[0]:
+            raise RuntimeError("SQLCipher is not active on this connection context.")
+        
+        # Test database validity to catch unencrypted legacy databases or bad keys
+        try:
+            conn.execute("PRAGMA user_version;")
+        except sqlite3.DatabaseError:
+            conn.close()
+            raise
+        return conn
+
+    try:
+        conn = _open_conn(db_path)
+    except sqlite3.DatabaseError as e:
+        err_msg = str(e).lower()
+        if "file is not a database" in err_msg or "file is encrypted" in err_msg:
+            # Legacy unencrypted database or invalid key. Delete files and recreate.
+            for ext in ["", "-wal", "-shm"]:
+                target_file = f"{db_path}{ext}"
+                if os.path.exists(target_file):
+                    os.remove(target_file)
+            conn = _open_conn(db_path)
+        else:
+            raise
 
     # Enable Write-Ahead Logging (WAL) for simultaneous reads and writes
     conn.execute("PRAGMA journal_mode = WAL")
