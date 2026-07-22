@@ -1,6 +1,5 @@
 """Main application GUI module using NiceGUI."""
 
-import os
 import asyncio
 import logging
 import os
@@ -116,15 +115,17 @@ class AutoSorterApp:
             self.execute_btn.disable()
 
         with ui.dialog() as self.recalc_dialog:
-            self.recalc_dialog.props('persistent')
-            with ui.card().classes('items-center'):
+            self.recalc_dialog.props("persistent")
+            with ui.card().classes("items-center"):
                 ui.label("Recalculating plan...")
-                ui.spinner(size='lg')
-                ui.button("Cancel", on_click=self.cancel_recalc).props('aria-label="Cancel Recalculation Button"')
+                ui.spinner(size="lg")
+                ui.button("Cancel", on_click=self.cancel_recalc).props(
+                    'aria-label="Cancel Recalculation Button"'
+                )
 
         # Check wizard on startup
         ui.timer(0.1, self.check_setup_wizard, once=True)
-        
+
         if self.base_dir:
             ui.timer(0.2, self.start_analysis, once=True)
 
@@ -302,7 +303,7 @@ class AutoSorterApp:
                     self.base_dir,
                     self.settings,
                     self.locked_files,
-                    check_cancel
+                    check_cancel,
                 )
 
                 if self._cancel_recalc_flag:
@@ -310,10 +311,7 @@ class AutoSorterApp:
                     return
 
                 errors = await asyncio.to_thread(
-                    self.verifier.verify_plan,
-                    self.base_dir,
-                    plan,
-                    check_cancel
+                    self.verifier.verify_plan, self.base_dir, plan, check_cancel
                 )
 
                 if self._cancel_recalc_flag:

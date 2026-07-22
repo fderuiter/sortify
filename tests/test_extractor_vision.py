@@ -16,8 +16,6 @@ def reset_ocr_reader(monkeypatch):
 
 def test_extract_image_success(mocker):
 
-
-
     mock_image = MagicMock()
     mock_PIL = MagicMock()
     mock_PIL.Image.open.return_value = mock_image
@@ -44,8 +42,6 @@ def test_extract_image_success(mocker):
 
 def test_extract_image_corrupt(mocker):
 
-
-
     mock_PIL = MagicMock()
     mock_PIL.Image.open.side_effect = Exception("Corrupt image")
     mocker.patch.dict("sys.modules", {"PIL": mock_PIL})
@@ -55,8 +51,6 @@ def test_extract_image_corrupt(mocker):
 
 
 def test_extract_image_model_offline(mocker):
-
-
 
     mock_image = MagicMock()
     mock_PIL = MagicMock()
@@ -70,8 +64,6 @@ def test_extract_image_model_offline(mocker):
 
 
 def test_extract_pdf_visual_fallback(mocker):
-
-
 
     mocker.patch("builtins.open", mocker.mock_open())
 

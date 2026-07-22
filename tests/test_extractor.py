@@ -138,7 +138,9 @@ def test_process_item_worker_dir(mocker):
 
 
 def test_process_item_worker_exception(mocker):
-    mocker.patch("app.core.extractor.os.path.isfile", side_effect=Exception("Test error"))
+    mocker.patch(
+        "app.core.extractor.os.path.isfile", side_effect=Exception("Test error")
+    )
     mock_logger = mocker.patch("app.core.extractor.logging.error")
 
     mock_callback = MagicMock()
@@ -178,27 +180,32 @@ def test_build_corpus_generator(mocker):
     assert len(chunks[0]) == 2
     assert len(chunks[1]) == 1
 
+
 def test_get_file_hash_mp3(tmp_path):
     file_path = tmp_path / "test.mp3"
     with open(file_path, "wb") as f:
         # Write ID3v2 header
-        f.write(b"ID3\x04\x00\x00\x00\x00\x00\x05") # size = 5
-        f.write(b"12345") # ID3 body
+        f.write(b"ID3\x04\x00\x00\x00\x00\x00\x05")  # size = 5
+        f.write(b"12345")  # ID3 body
         f.write(b"audio_data")
-    
+
     hash_val = get_file_hash(str(file_path))
     import hashlib
+
     assert hash_val == hashlib.sha256(b"audio_data").hexdigest()
+
 
 def test_get_file_hash_m4a(tmp_path):
     file_path = tmp_path / "test.m4a"
     with open(file_path, "wb") as f:
         import struct
+
         f.write(struct.pack(">I4s", 16, b"ftyp"))
         f.write(b"12345678")
         f.write(struct.pack(">I4s", 18, b"mdat"))
         f.write(b"audio_data")
-    
+
     hash_val = get_file_hash(str(file_path))
     import hashlib
+
     assert hash_val == hashlib.sha256(b"audio_data").hexdigest()

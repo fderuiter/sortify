@@ -5,15 +5,20 @@ from nicegui import ui
 
 def show_settings(parent_app, settings):
     """Show the settings dialog."""
+
     def on_explorer_integration_change(e):
         import sys
-        if sys.platform != 'win32':
-            ui.notify("Context menu integration is only available on Windows.", type="warning")
+
+        if sys.platform != "win32":
+            ui.notify(
+                "Context menu integration is only available on Windows.", type="warning"
+            )
             e.sender.value = False
             return
-            
+
         try:
             from app.core.integration import register_context_menu
+
             register_context_menu(e.value)
             settings.EXPLORER_INTEGRATION = e.value
             ui.notify("Explorer integration updated successfully.", type="positive")

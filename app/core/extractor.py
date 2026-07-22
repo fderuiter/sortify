@@ -17,15 +17,15 @@ from app.core.extractor_strategies import registry
 
 def get_file_hash(file_path: str) -> str:
     """Calculate the SHA-256 hash of a file.
-    
+
     For MP3 and M4A files, skips metadata headers and structural atoms
     to isolate the raw audio payload, ensuring stable hashes after tag edits.
     """
     hasher = hashlib.sha256()
-    
+
     offset = 0
     size_to_hash = -1  # -1 means hash to EOF
-    
+
     try:
         ext = os.path.splitext(file_path)[1].lower()
         if ext == ".mp3":
@@ -34,7 +34,12 @@ def get_file_hash(file_path: str) -> str:
                     header = f.read(10)
                     if len(header) >= 10 and header[:3] == b"ID3":
                         flags = header[5]
-                        size = (header[6] << 21) | (header[7] << 14) | (header[8] << 7) | header[9]
+                        size = (
+                            (header[6] << 21)
+                            | (header[7] << 14)
+                            | (header[8] << 7)
+                            | header[9]
+                        )
                         has_footer = (flags & 0x10) != 0
                         tag_size = 10 + size + (10 if has_footer else 0)
                         offset += tag_size
@@ -49,7 +54,7 @@ def get_file_hash(file_path: str) -> str:
                         break
                     box_size, box_type = struct.unpack(">I4s", header)
                     header_size = 8
-                    
+
                     if box_size == 1:
                         box_size = struct.unpack(">Q", f.read(8))[0]
                         header_size = 16
@@ -59,12 +64,12 @@ def get_file_hash(file_path: str) -> str:
                             offset = f.tell()
                             size_to_hash = -1
                         break
-                        
+
                     if box_type == b"mdat":
                         offset = f.tell()
                         size_to_hash = box_size - header_size
                         break
-                        
+
                     f.seek(box_size - header_size, os.SEEK_CUR)
     except Exception:
         # Fallback to standard whole-file hashing if parsing fails
@@ -75,10 +80,10 @@ def get_file_hash(file_path: str) -> str:
         with open(file_path, "rb") as f:
             if offset > 0:
                 f.seek(offset)
-            
+
             bytes_remaining = size_to_hash
             chunk_size = 4096
-            
+
             while True:
                 if bytes_remaining != -1:
                     read_size = min(chunk_size, bytes_remaining)
@@ -86,17 +91,17 @@ def get_file_hash(file_path: str) -> str:
                         break
                 else:
                     read_size = chunk_size
-                    
+
                 chunk = f.read(read_size)
                 if not chunk:
                     break
-                    
+
                 hasher.update(chunk)
                 if bytes_remaining != -1:
                     bytes_remaining -= len(chunk)
     except Exception:
         pass
-        
+
     return hasher.hexdigest()
 
 

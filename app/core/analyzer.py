@@ -135,7 +135,11 @@ class IncrementalAnalyzer:
         return new_node
 
     def generate_sorting_plan(
-        self, base_dir: str, runtime_settings=None, locked_files: dict = None, cancel_check=None
+        self,
+        base_dir: str,
+        runtime_settings=None,
+        locked_files: dict = None,
+        cancel_check=None,
     ) -> dict:
         """Generate a sorting plan based on the current model state."""
         try:
@@ -233,59 +237,79 @@ class IncrementalAnalyzer:
                     else:
                         ai_filenames.append(f)
                         ai_documents.append(doc)
-            
+
             # Centroid Matching Phase
             historical_folder_docs = {}
             for d in docs:
                 file_hash = d[2] if len(d) > 2 else None
                 assigned_folder = d[3] if len(d) > 3 else None
-                target = assigned_folder if assigned_folder is not None else hash_to_target.get(file_hash)
-                
+                target = (
+                    assigned_folder
+                    if assigned_folder is not None
+                    else hash_to_target.get(file_hash)
+                )
+
                 if target is not None and d[1]:
                     if target not in historical_folder_docs:
                         historical_folder_docs[target] = []
                     historical_folder_docs[target].append(d[1])
-            
+
             if historical_folder_docs and ai_filenames:
                 try:
                     import numpy as np
                     from sklearn.feature_extraction.text import TfidfVectorizer
                     from sklearn.metrics.pairwise import cosine_similarity
-                    
+
                     folder_names = list(historical_folder_docs.keys())
-                    folder_texts = [" ".join(historical_folder_docs[folder]) for folder in folder_names]
-                    
-                    vectorizer = TfidfVectorizer(stop_words=list(self.stop_words), max_features=1000)
+                    folder_texts = [
+                        " ".join(historical_folder_docs[folder])
+                        for folder in folder_names
+                    ]
+
+                    vectorizer = TfidfVectorizer(
+                        stop_words=list(self.stop_words), max_features=1000
+                    )
                     safe_ai_documents = [d or "" for d in ai_documents]
                     all_texts = folder_texts + safe_ai_documents
                     vectorizer.fit(all_texts)
-                    
+
                     centroid_vectors = vectorizer.transform(folder_texts)
                     new_docs_vectors = vectorizer.transform(safe_ai_documents)
-                    
+
                     similarities = cosine_similarity(new_docs_vectors, centroid_vectors)
-                    
+
                     remaining_ai_filenames = []
                     remaining_ai_documents = []
-                    
+
                     for i, f in enumerate(ai_filenames):
                         if len(folder_names) > 0:
                             max_sim = np.max(similarities[i])
                             best_folder_idx = np.argmax(similarities[i])
                             if max_sim >= 0.8:
                                 target_folder = folder_names[best_folder_idx]
-                                keyword_plan_files.append((f, target_folder, f"centroid >= 0.8 ({max_sim:.2f})", "centroid", None))
+                                keyword_plan_files.append(
+                                    (
+                                        f,
+                                        target_folder,
+                                        f"centroid >= 0.8 ({max_sim:.2f})",
+                                        "centroid",
+                                        None,
+                                    )
+                                )
                             else:
                                 remaining_ai_filenames.append(f)
                                 remaining_ai_documents.append(ai_documents[i])
                         else:
                             remaining_ai_filenames.append(f)
                             remaining_ai_documents.append(ai_documents[i])
-                            
+
                     ai_filenames = remaining_ai_filenames
                     ai_documents = remaining_ai_documents
                 except Exception as e:
-                    logging.error(f"Failed during centroid matching. Error: {str(e)}", exc_info=True)
+                    logging.error(
+                        f"Failed during centroid matching. Error: {str(e)}",
+                        exc_info=True,
+                    )
 
             self._last_reconstruction_error = 0.0
 
