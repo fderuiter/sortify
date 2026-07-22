@@ -20,7 +20,9 @@ def block_external_network():
         if isinstance(address, tuple):
             host = address[0]
             if host not in ("127.0.0.1", "localhost", "::1", "0.0.0.0"):
-                raise PermissionError(f"External network connections are blocked during folder naming: {host}")
+                raise PermissionError(
+                    f"External network connections are blocked during folder naming: {host}"
+                )
         return original_connect(self, address)
 
     socket.socket.connect = safe_connect
@@ -72,6 +74,7 @@ class RecursiveKMeansStrategy:
             return "Miscellaneous"
         try:
             from sklearn.feature_extraction.text import TfidfVectorizer
+
             vectorizer = TfidfVectorizer(
                 stop_words=list(self.stop_words), max_features=self.max_features
             )
@@ -87,9 +90,7 @@ class RecursiveKMeansStrategy:
         except Exception:
             return "Miscellaneous"
 
-    def _cluster_recursive(
-        self, filenames: list, documents: list, depth: int
-    ) -> dict:
+    def _cluster_recursive(self, filenames: list, documents: list, depth: int) -> dict:
         plan = {}
 
         if depth >= self.max_depth or len(documents) < 3:
@@ -99,7 +100,10 @@ class RecursiveKMeansStrategy:
 
         try:
             from sklearn.feature_extraction.text import TfidfVectorizer
-            vectorizer = TfidfVectorizer(stop_words=list(self.stop_words), max_features=1000)
+
+            vectorizer = TfidfVectorizer(
+                stop_words=list(self.stop_words), max_features=1000
+            )
             X = vectorizer.fit_transform(documents)
         except Exception:
             for f in filenames:
@@ -111,6 +115,7 @@ class RecursiveKMeansStrategy:
             actual_k = 2
 
         from sklearn.cluster import MiniBatchKMeans
+
         kmeans = MiniBatchKMeans(n_clusters=actual_k, random_state=42, n_init="auto")
         labels = kmeans.fit_predict(X)
         self._error += kmeans.inertia_
@@ -124,8 +129,9 @@ class RecursiveKMeansStrategy:
             sub_documents = [item[1] for item in group]
 
             folder_name = self._get_cluster_keywords(sub_documents)
-            
+
             from app.core.path_utils import sanitize_name
+
             folder_name = sanitize_name(folder_name)
 
             if len(group) == len(documents):

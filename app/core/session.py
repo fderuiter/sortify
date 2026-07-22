@@ -15,21 +15,29 @@ from app.core.history import HistoryManager
 
 class AppSession:
     """Encapsulates the core business logic, analytics, and database services for a single application run."""
-    
+
     def __init__(self, settings, base_dir=None):
         self.settings = settings
         self.base_dir = base_dir
         self.session_id = str(uuid.uuid4())
-        self.session_dir = Path(tempfile.gettempdir()) / "autosorter_sessions" / self.session_id
+        self.session_dir = (
+            Path(tempfile.gettempdir()) / "autosorter_sessions" / self.session_id
+        )
         self.session_dir.mkdir(parents=True, exist_ok=True)
-        
+
         from app.core.db_worker import DBWorker
+
         self.db_worker = DBWorker()
         self.db = Database(self.session_dir / "autosorter.db", self.db_worker)
-        self.cache_manager = CacheManager(str(self.session_dir / "cache.db"), self.db_worker)
-        self.history_manager = HistoryManager(self.db, self.cache_manager, str(self.session_dir / "history.db"))
-        
+        self.cache_manager = CacheManager(
+            str(self.session_dir / "cache.db"), self.db_worker
+        )
+        self.history_manager = HistoryManager(
+            self.db, self.cache_manager, str(self.session_dir / "history.db")
+        )
+
         import sys
+        
         if getattr(sys, "frozen", False):
             base_path = os.path.dirname(sys.executable)
         else:
@@ -45,7 +53,7 @@ class AppSession:
             active_model_path = user_model_path
             
         model_path = active_model_path if self.settings.AI_CONSENT_GRANTED else None
-        
+
         self.analyzer = IncrementalAnalyzer(
             self.settings.MAX_FOLDERS,
             self.settings.STOP_WORDS,
@@ -66,6 +74,7 @@ class AppSession:
         if not self.base_dir:
             return []
         from app.core.scanner import get_files_recursively
+
         return get_files_recursively(self.base_dir, rel_path)
 
     def process_items(self, items_to_sort, callback, cancel_check):
@@ -73,6 +82,7 @@ class AppSession:
         if not self.base_dir:
             return
         from app.core.extractor import build_corpus_generator
+
         for chunk in build_corpus_generator(
             self.base_dir,
             items_to_sort,
@@ -80,7 +90,7 @@ class AppSession:
             max_workers=self.settings.MAX_WORKERS,
             db=self.db,
             chunk_size=50,
-            cancel_check=cancel_check
+            cancel_check=cancel_check,
         ):
             yield chunk
 
@@ -95,7 +105,9 @@ class AppSession:
         if not self.base_dir:
             return {}
         _, locked, _, _ = self.cache_manager.load_cache(self.base_dir)
-        return self.analyzer.generate_sorting_plan(self.base_dir, self.settings, locked_files=locked)
+        return self.analyzer.generate_sorting_plan(
+            self.base_dir, self.settings, locked_files=locked
+        )
 
     def save_cache_async(self, locked_files, manual_folders):
         """Save the cache asynchronously."""
@@ -144,7 +156,10 @@ class AppSession:
         if not self.base_dir:
             return {}
         from app.core.mover import execute_moves
-        return execute_moves(self.base_dir, plan, self.db, self.history_manager, self.settings)
+
+        return execute_moves(
+            self.base_dir, plan, self.db, self.history_manager, self.settings
+        )
 
     def close(self):
         """Cleanup session directory."""

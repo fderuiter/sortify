@@ -100,8 +100,20 @@ To deploy the application in a completely offline environment, you must sideload
 
 ### Folder Layout Requirements
 
-The offline bundle must be extracted into the application's local configuration directory (e.g., `~/.autosorter/`). The directory structure must exactly match the following:
+The offline bundle must be extracted into either the application's local project directory (e.g., `offline_bundle/`) or the user configuration directory (e.g., `~/.autosorter/`). If bundles exist in both locations, the local project directory takes priority. The directory structure must exactly match one of the following:
 
+Local Project Directory:
+```text
+offline_bundle/
+├── model/
+│   ├── config.json
+│   ├── pytorch_model.bin
+│   ├── tokenizer.json
+│   └── ... (other model weights)
+└── model_manifest.json
+```
+
+User Configuration Directory:
 ```text
 ~/.autosorter/
 ├── model/
