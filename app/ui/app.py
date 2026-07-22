@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import os
 
 from nicegui import ui
 
@@ -114,6 +115,9 @@ class AutoSorterApp:
 
         # Check wizard on startup
         ui.timer(0.1, self.check_setup_wizard, once=True)
+        
+        if self.base_dir:
+            ui.timer(0.2, self.start_analysis, once=True)
 
     def check_setup_wizard(self):
         """Check if the setup wizard needs to be shown on startup."""
@@ -343,8 +347,11 @@ class AutoSorterApp:
         return _convert(self.tree_nodes)
 
 
-def run_app(settings) -> None:
+def run_app(settings, directory=None) -> None:
     """Run the NiceGUI application."""
     app_instance = AutoSorterApp(settings)
+    if directory:
+        if os.path.exists(directory):
+            app_instance.base_dir = os.path.abspath(directory)
     app_instance.build_ui()
     ui.run(title="Smart AutoSorter AI Pro", port=8080, reload=False, show=True)

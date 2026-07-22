@@ -44,6 +44,11 @@
       "title": "Cleanup Empty Folders",
       "type": "boolean"
     },
+    "EXPLORER_INTEGRATION": {
+      "default": false,
+      "title": "Explorer Integration",
+      "type": "boolean"
+    },
     "KEYWORD_RULES": {
       "additionalProperties": true,
       "title": "Keyword Rules",
