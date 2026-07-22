@@ -14,8 +14,8 @@ def compute_sha256(filepath):
     """Compute the SHA-256 hash of a file."""
     sha256_hash = hashlib.sha256()
     with open(filepath, "rb") as f:
-        for byte_block in iter(lambda: f.read(4096), b""):
-            sha256_hash.update(byte_block)
+        content = f.read().replace(b"\r\n", b"\n")
+        sha256_hash.update(content)
     return sha256_hash.hexdigest()
 
 
