@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Task runner for local development and setup."""
+"""Offline installation and verification script."""
 
 import argparse
 import hashlib
@@ -113,49 +113,12 @@ def _verify_local_weights(manifest_path, model_dir):
         
     print("Weight validation successful. All checksums match the manifest.")
 
-def setup(args):
-    """Local workspace package syncing."""
-    print("Setting up development environment...")
-    
-    offline_mode = False
-    if os.path.exists("offline_bundle.zip") or os.path.isdir("offline_bundle"):
-        print("Offline bundle found. Enabling air-gapped installation mode.")
-        offline_mode = True
-
-    uv_cmd = get_uv_cmd()
-    
-    print("Synchronizing local environment...")
-    if offline_mode:
-        _extract_and_install_offline(uv_cmd)
-        print("Skipping pre-commit installation in offline mode to avoid network calls.")
-    else:
-        print("Synchronizing local environment with lockfile...")
-        try:
-            subprocess.run([uv_cmd, "sync"], check=True)
-            print("Installing pre-commit hooks...")
-            subprocess.run([uv_cmd, "run", "pre-commit", "install"], check=True)
-        except subprocess.CalledProcessError as e:
-            print(f"Environment synchronization failed: {e}")
-            sys.exit(1)
-
-    print("Setup complete. Virtual environment provisioned.")
-    print("You can manually run the application anytime using:")
-    print("  uv run smart-autosorter")
 
 def verify_weights(args):
     """Offline machine learning weight validation."""
     print("Verifying local weights...")
     _verify_local_weights("app/core/hf_manifest.json", "offline_bundle/model")
 
-def test_env(args):
-    """Task to verify the environment by running the test suite."""
-    print("Verifying environment by running tests...")
-    uv_cmd = get_uv_cmd()
-    try:
-        subprocess.run([uv_cmd, "run", "pytest"], check=True)
-    except subprocess.CalledProcessError:
-        print("Test suite failed. Please check your environment.")
-        sys.exit(1)
 
 def offline_install(args):
     """Air-gapped installation mode."""
@@ -169,22 +132,17 @@ def offline_install(args):
     
     print("Offline installation complete.")
 
+
 def main():
-    """Execute the task runner."""
-    parser = argparse.ArgumentParser(description="Task runner for Smart AutoSorter AI Pro setup.")
+    """Execute the offline installation runner."""
+    parser = argparse.ArgumentParser(description="Offline install runner for Smart AutoSorter AI Pro.")
     subparsers = parser.add_subparsers(dest="command", required=True)
-    
-    setup_parser = subparsers.add_parser("setup", help="Sync local workspace packages")
-    setup_parser.set_defaults(func=setup)
     
     verify_parser = subparsers.add_parser("verify-weights", help="Verify offline machine learning weights against manifest")
     verify_parser.set_defaults(func=verify_weights)
     
     offline_parser = subparsers.add_parser("offline-install", help="Perform offline installation and verify weights")
     offline_parser.set_defaults(func=offline_install)
-    
-    test_parser = subparsers.add_parser("test", help="Verify environment by running the test suite")
-    test_parser.set_defaults(func=test_env)
     
     args = parser.parse_args()
     args.func(args)
