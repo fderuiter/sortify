@@ -15,8 +15,8 @@ def reset_ocr_reader(monkeypatch):
 
 
 def test_extract_image_success(mocker):
-    mocker.patch("os.path.isfile", return_value=True)
-    mocker.patch("os.path.splitext", return_value=("file", ".png"))
+
+
 
     mock_image = MagicMock()
     mock_PIL = MagicMock()
@@ -43,8 +43,8 @@ def test_extract_image_success(mocker):
 
 
 def test_extract_image_corrupt(mocker):
-    mocker.patch("os.path.isfile", return_value=True)
-    mocker.patch("os.path.splitext", return_value=("file", ".jpg"))
+
+
 
     mock_PIL = MagicMock()
     mock_PIL.Image.open.side_effect = Exception("Corrupt image")
@@ -55,8 +55,8 @@ def test_extract_image_corrupt(mocker):
 
 
 def test_extract_image_model_offline(mocker):
-    mocker.patch("os.path.isfile", return_value=True)
-    mocker.patch("os.path.splitext", return_value=("file", ".jpeg"))
+
+
 
     mock_image = MagicMock()
     mock_PIL = MagicMock()
@@ -70,8 +70,8 @@ def test_extract_image_model_offline(mocker):
 
 
 def test_extract_pdf_visual_fallback(mocker):
-    mocker.patch("os.path.isfile", return_value=True)
-    mocker.patch("os.path.splitext", return_value=("file", ".pdf"))
+
+
 
     mocker.patch("builtins.open", mocker.mock_open())
 
