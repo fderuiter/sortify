@@ -5,24 +5,25 @@ import sqlite3
 import threading
 from pathlib import Path
 
-_local = threading.local()
+_connection_cache = {}
+_cache_lock = threading.Lock()
 
 def clear_connection_cache():
     """Clear all cached database connections."""
-    if not hasattr(_local, "connection_cache"):
-        return
-    for conn in _local.connection_cache.values():
-        conn.close()
-    _local.connection_cache.clear()
+    global _connection_cache
+    with _cache_lock:
+        for conn in _connection_cache.values():
+            conn.close()
+        _connection_cache.clear()
 
 def get_db_connection(db_path: str):
     """Create and configure a new database connection with performance parameters."""
-    if not hasattr(_local, "connection_cache"):
-        _local.connection_cache = {}
-        
+    global _connection_cache
     abs_path = os.path.abspath(db_path)
-    if abs_path in _local.connection_cache:
-        return _local.connection_cache[abs_path]
+    
+    with _cache_lock:
+        if abs_path in _connection_cache:
+            return _connection_cache[abs_path]
 
     conn = sqlite3.connect(db_path, timeout=5.0, check_same_thread=False)
     
@@ -39,6 +40,8 @@ def get_db_connection(db_path: str):
     # Set synchronous mode to NORMAL for WAL
     conn.execute("PRAGMA synchronous = NORMAL")
     
-    _local.connection_cache[abs_path] = conn
+    with _cache_lock:
+        _connection_cache[abs_path] = conn
+        
     return conn
 
