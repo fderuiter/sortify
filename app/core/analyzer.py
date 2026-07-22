@@ -135,7 +135,7 @@ class IncrementalAnalyzer:
         return new_node
 
     def generate_sorting_plan(
-        self, base_dir: str, runtime_settings=None, locked_files: dict = None
+        self, base_dir: str, runtime_settings=None, locked_files: dict = None, cancel_check=None
     ) -> dict:
         """Generate a sorting plan based on the current model state."""
         try:
@@ -167,10 +167,14 @@ class IncrementalAnalyzer:
             # Map file hashes to their historical targets
             hash_to_target = {}
             for d in docs:
+                if cancel_check and cancel_check():
+                    return {}
                 if len(d) > 3 and d[3] is not None:
                     hash_to_target[d[2]] = d[3]
 
             for d in docs:
+                if cancel_check and cancel_check():
+                    return {}
                 f, doc = d[0], d[1]
                 file_hash = d[2] if len(d) > 2 else None
                 assigned_folder = d[3] if len(d) > 3 else None
@@ -265,6 +269,8 @@ class IncrementalAnalyzer:
 
             # Inject keyword routed files back into the plan
             for f, target_folder, keyword, routed_by, ext_status in keyword_plan_files:
+                if cancel_check and cancel_check():
+                    return {}
                 parts = target_folder.replace("\\", "/").split("/")
                 current = plan
                 for i, part in enumerate(parts):
@@ -320,6 +326,8 @@ class IncrementalAnalyzer:
             }
 
             for f, target_folder, keyword, rule_type, status in keyword_plan_files:
+                if cancel_check and cancel_check():
+                    return {}
                 if target_folder not in plan:
                     plan[target_folder] = {}
                 plan[target_folder][f] = {
@@ -331,6 +339,8 @@ class IncrementalAnalyzer:
 
             # Inject Historical Assignments and handle conflicts
             for f, (target_folder, status) in historical_overrides.items():
+                if cancel_check and cancel_check():
+                    return {}
                 is_conflicted = False
                 compliance_path = None
 
@@ -389,6 +399,8 @@ class IncrementalAnalyzer:
             import ntpath
 
             for target_folder, files in plan.items():
+                if cancel_check and cancel_check():
+                    return {}
                 if not isinstance(files, dict) or not files:
                     continue
 

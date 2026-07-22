@@ -1,7 +1,9 @@
 """Main application GUI module using NiceGUI."""
 
+import os
 import asyncio
 import logging
+import os
 
 from nicegui import ui
 
@@ -37,6 +39,7 @@ class AutoSorterApp:
         self._pending_files = set()
         self.observer = None
         self._debounce_task = None
+        self._cancel_recalc_flag = False
 
         self.contextual_rename = self.settings.CONTEXTUAL_RENAMING
         self.preserve_hierarchy = self.settings.PRESERVE_HIERARCHY
@@ -111,6 +114,13 @@ class AutoSorterApp:
                 .props('aria-label="Approve and Execute Sort Button"')
             )
             self.execute_btn.disable()
+
+        with ui.dialog() as self.recalc_dialog:
+            self.recalc_dialog.props('persistent')
+            with ui.card().classes('items-center'):
+                ui.label("Recalculating plan...")
+                ui.spinner(size='lg')
+                ui.button("Cancel", on_click=self.cancel_recalc).props('aria-label="Cancel Recalculation Button"')
 
         # Check wizard on startup
         ui.timer(0.1, self.check_setup_wizard, once=True)
@@ -240,6 +250,11 @@ class AutoSorterApp:
         self.status_label.set_text("Analysis cancelled.")
         self.cancel_btn.set_visibility(False)
 
+    def cancel_recalc(self):
+        """Cancel the recalculation process."""
+        self._cancel_recalc_flag = True
+        self.recalc_dialog.close()
+
     def toggle_contextual_rename(self, e):
         """Toggle contextual renaming and rebuild the sorting plan."""
         self.settings.CONTEXTUAL_RENAMING = e.value
@@ -253,18 +268,58 @@ class AutoSorterApp:
     def _rebuild_plan_async(self):
         if not self.app_session or not self.base_dir:
             return
-        self.status_label.set_text("Rebuilding plan...")
 
-        async def run():
-            self.plan = await asyncio.to_thread(
-                self.app_session.analyzer.generate_sorting_plan,
-                self.base_dir,
-                self.settings,
-            )
-            self.render_tree()
-            self.status_label.set_text("Plan rebuilt.")
+        if self._debounce_task:
+            self._debounce_task.cancel()
 
-        asyncio.create_task(run())
+        async def delayed_run():
+            try:
+                await asyncio.sleep(0.5)
+            except asyncio.CancelledError:
+                return
+
+            self._cancel_recalc_flag = False
+            self.recalc_dialog.open()
+            self.status_label.set_text("Rebuilding plan...")
+
+            def check_cancel():
+                return getattr(self, "_cancel_recalc_flag", False)
+
+            try:
+                plan = await asyncio.to_thread(
+                    self.app_session.analyzer.generate_sorting_plan,
+                    self.base_dir,
+                    self.settings,
+                    self.locked_files,
+                    check_cancel
+                )
+
+                if self._cancel_recalc_flag:
+                    self.status_label.set_text("Recalculation cancelled.")
+                    return
+
+                errors = await asyncio.to_thread(
+                    self.verifier.verify_plan,
+                    self.base_dir,
+                    plan,
+                    check_cancel
+                )
+
+                if self._cancel_recalc_flag:
+                    self.status_label.set_text("Recalculation cancelled.")
+                    return
+
+                self.plan = plan
+                self.plan_errors = errors
+                self.render_tree()
+                self.status_label.set_text("Plan rebuilt.")
+            except Exception as e:
+                logger.error(f"Error rebuilding plan: {e}")
+                self.status_label.set_text("Error rebuilding plan.")
+            finally:
+                self.recalc_dialog.close()
+
+        self._debounce_task = asyncio.create_task(delayed_run())
 
     def render_tree(self):
         """Render the tree view of the sorting plan."""
