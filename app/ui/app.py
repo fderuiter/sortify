@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import os
 
 from nicegui import ui
 
@@ -120,16 +121,21 @@ class AutoSorterApp:
         import sys
 
         from app.config import get_app_dir
-        
+
         if getattr(sys, "frozen", False):
             base_path = os.path.dirname(sys.executable)
         else:
-            base_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-            
+            base_path = os.path.dirname(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            )
+
         local_model_dir = os.path.join(base_path, "offline_bundle", "model")
         user_model_dir = get_app_dir() / "model"
-        
-        if os.path.exists(os.path.join(local_model_dir, "config.json")) or (user_model_dir / "config.json").exists():
+
+        if (
+            os.path.exists(os.path.join(local_model_dir, "config.json"))
+            or (user_model_dir / "config.json").exists()
+        ):
             if self.settings.AI_CONSENT_GRANTED is None:
                 self.settings.AI_CONSENT_GRANTED = True
             return
@@ -173,10 +179,13 @@ class AutoSorterApp:
     async def _scan_and_process_worker(self):
         try:
             from app.core.scanner import get_files_recursively
-            files = await asyncio.to_thread(get_files_recursively, self.app_session.base_dir)
+
+            files = await asyncio.to_thread(
+                get_files_recursively, self.app_session.base_dir
+            )
             self.total_files = len(files)
             self.completed_files = 0
-            
+
             from app.core.metadata import MetadataPass
 
             bypassed_files = await asyncio.to_thread(
@@ -186,19 +195,19 @@ class AutoSorterApp:
                 self.settings,
                 self.app_session.db,
                 None,
-                lambda: getattr(self, "_cancel_analysis_flag", False)
+                lambda: getattr(self, "_cancel_analysis_flag", False),
             )
             self.completed_files += len(bypassed_files)
             if self.total_files > 0:
                 self.progress_bar.set_value(self.completed_files / self.total_files)
-            
+
             bypassed_set = set(bypassed_files)
             items_to_sort = [f for f in files if f not in bypassed_set]
-            
+
             generator = self.app_session.process_items(
-                items_to_sort, 
-                None, 
-                lambda: getattr(self, "_cancel_analysis_flag", False)
+                items_to_sort,
+                None,
+                lambda: getattr(self, "_cancel_analysis_flag", False),
             )
 
             def get_next_chunk():
@@ -210,17 +219,17 @@ class AutoSorterApp:
             while True:
                 if self._cancel_analysis_flag:
                     break
-                
+
                 chunk = await asyncio.to_thread(get_next_chunk)
                 if chunk is None:
                     break
-                
+
                 await asyncio.to_thread(self.app_session.partial_fit, chunk)
                 self.completed_files += len(chunk)
                 if self.total_files > 0:
                     self.progress_bar.set_value(self.completed_files / self.total_files)
                 await asyncio.sleep(0.01)
-            
+
             if not self._cancel_analysis_flag:
                 self.plan = await asyncio.to_thread(
                     self.app_session.generate_sorting_plan
@@ -253,18 +262,71 @@ class AutoSorterApp:
     def _rebuild_plan_async(self):
         if not self.app_session or not self.base_dir:
             return
+
+        if self._debounce_task:
+            self._debounce_task.cancel()
+
+        if hasattr(self, "_rebuild_process") and self._rebuild_process.is_alive():
+            self._rebuild_process.terminate()
+            self._rebuild_process.join()
+
         self.status_label.set_text("Rebuilding plan...")
+        self.cancel_btn.set_visibility(True)
 
         async def run():
-            self.plan = await asyncio.to_thread(
-                self.app_session.analyzer.generate_sorting_plan,
-                self.base_dir,
-                self.settings,
-            )
-            self.render_tree()
-            self.status_label.set_text("Plan rebuilt.")
+            try:
+                await asyncio.sleep(0.5)
+            except asyncio.CancelledError:
+                return
 
-        asyncio.create_task(run())
+            self.status_label.set_text("Rebuilding plan (calculating)...")
+
+            import multiprocessing
+
+            queue = multiprocessing.Queue()
+
+            _, locked, _, _ = self.app_session.cache_manager.load_cache(self.base_dir)
+            session_dir = str(self.app_session.session_dir)
+            base_dir = self.app_session.base_dir
+            model_path = self.app_session.analyzer.model_path
+
+            self._rebuild_process = multiprocessing.Process(
+                target=_rebuild_worker,
+                args=(queue, base_dir, session_dir, self.settings, model_path, locked),
+            )
+            self._rebuild_process.start()
+
+            loop = asyncio.get_event_loop()
+
+            def check_queue():
+                try:
+                    return queue.get(timeout=0.1)
+                except Exception:
+                    return None
+
+            while True:
+                if getattr(self, "_cancel_analysis_flag", False):
+                    self._rebuild_process.terminate()
+                    self._rebuild_process.join()
+                    self.status_label.set_text("Analysis cancelled.")
+                    self.cancel_btn.set_visibility(False)
+                    return
+
+                res = await loop.run_in_executor(None, check_queue)
+                if res is not None:
+                    break
+                await asyncio.sleep(0.1)
+
+            self.cancel_btn.set_visibility(False)
+            status, result = res
+            if status == "success":
+                self.plan = result
+                self.render_tree()
+                self.status_label.set_text("Plan rebuilt.")
+            else:
+                self.status_label.set_text(f"Error rebuilding plan: {result}")
+
+        self._debounce_task = asyncio.create_task(run())
 
     def render_tree(self):
         """Render the tree view of the sorting plan."""
@@ -341,6 +403,42 @@ class AutoSorterApp:
             return res
 
         return _convert(self.tree_nodes)
+
+
+def _rebuild_worker(
+    queue, session_base_dir, session_dir, settings, model_path, locked_files
+):
+    import os
+    from pathlib import Path
+
+    try:
+        if os.name != "nt":
+            os.nice(10)
+    except Exception:
+        pass
+
+    try:
+        from app.core.analyzer import IncrementalAnalyzer
+        from app.core.db import Database
+        from app.core.db_worker import DBWorker
+
+        db_worker = DBWorker()
+        db_path = Path(session_dir) / "autosorter.db"
+        db = Database(db_path, db_worker)
+
+        analyzer = IncrementalAnalyzer(
+            settings.MAX_FOLDERS,
+            settings.STOP_WORDS,
+            db,
+            model_path=model_path,
+        )
+
+        plan = analyzer.generate_sorting_plan(
+            session_base_dir, settings, locked_files=locked_files
+        )
+        queue.put(("success", plan))
+    except Exception as e:
+        queue.put(("error", str(e)))
 
 
 def run_app(settings) -> None:

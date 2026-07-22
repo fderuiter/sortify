@@ -174,8 +174,9 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
             )
 
         local_bundle_path = os.path.join(base_path, "offline_bundle", "model")
-        
+
         from app.config import get_app_dir
+
         user_bundle_path = str(get_app_dir() / "model")
 
         self.model_path = model_path
@@ -245,7 +246,24 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
             return super()._get_cluster_keywords(documents)
 
         try:
-            doc_text = " ".join(documents)[:1000]
+            import numpy as np
+            from sklearn.feature_extraction.text import TfidfVectorizer
+
+            try:
+                vectorizer = TfidfVectorizer(
+                    stop_words=list(self.stop_words), max_features=15
+                )
+                X = vectorizer.fit_transform(documents)
+                feature_names = vectorizer.get_feature_names_out()
+                if len(feature_names) > 0:
+                    scores = np.asarray(X.sum(axis=0)).ravel()
+                    top_indices = scores.argsort()[::-1]
+                    doc_text = ", ".join([feature_names[i] for i in top_indices])
+                else:
+                    doc_text = " ".join(documents)[:1000]
+            except Exception:
+                doc_text = " ".join(documents)[:1000]
+
             prompt = f"Generate a short, descriptive natural language folder name (1 to 4 words) for a folder containing these documents. Do not use hyphens. Return only the name.\nDocuments: {doc_text}\nFolder Name:"
 
             with block_external_network():
