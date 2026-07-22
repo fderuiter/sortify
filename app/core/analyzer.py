@@ -359,9 +359,18 @@ class IncrementalAnalyzer:
                     }
 
             clean_plan = {}
+            import ntpath
             for target_folder, files in plan.items():
                 if not isinstance(files, dict) or not files:
                     continue
+                
+                if os.path.isabs(target_folder) or ntpath.isabs(target_folder):
+                    if target_folder not in clean_plan:
+                        clean_plan[target_folder] = {}
+                    for f, info in files.items():
+                        clean_plan[target_folder][f] = info
+                    continue
+
                 parts = target_folder.replace("\\", "/").split("/")
                 current = clean_plan
                 for i, part in enumerate(parts):
