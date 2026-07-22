@@ -176,4 +176,3 @@ def test_build_corpus_generator(mocker):
     assert len(chunks[0]) == 2
     assert len(chunks[1]) == 1
 
-

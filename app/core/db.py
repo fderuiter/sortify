@@ -2,8 +2,6 @@
 
 from pathlib import Path
 
-import numpy as np
-
 from app.core.crypto import SessionCrypto
 from app.core.db_conn import get_db_connection
 from app.core.db_worker import DBWorker
@@ -36,10 +34,7 @@ class Database:
                         filepath TEXT,
                         file_hash TEXT,
                         extracted_text TEXT,
-                        embedding BLOB,
                         user_verified_target_path TEXT,
-                        model_name TEXT,
-                        vector_dimension INTEGER,
                         PRIMARY KEY (base_dir, filepath)
                     )
                 """)
@@ -48,9 +43,6 @@ class Database:
             elif db_version < self.CURRENT_VERSION:
                 if db_version == 1:
                     conn.execute("ALTER TABLE documents ADD COLUMN user_verified_target_path TEXT")
-                if db_version <= 2:
-                    conn.execute("ALTER TABLE documents ADD COLUMN model_name TEXT")
-                    conn.execute("ALTER TABLE documents ADD COLUMN vector_dimension INTEGER")
                 if db_version <= 3:
                     conn.execute("CREATE INDEX IF NOT EXISTS idx_documents_file_hash ON documents (base_dir, file_hash)")
                 conn.execute(f"PRAGMA user_version = {self.CURRENT_VERSION}")
@@ -69,9 +61,6 @@ class Database:
                 return {
                     "file_hash": row[0],
                     "extracted_text": decrypted_text,
-                    "embedding": None,
-                    "model_name": None,
-                    "vector_dimension": None,
                 }
             return None
 
@@ -89,27 +78,21 @@ class Database:
             with conn:
                 rows_to_insert = []
                 for doc in documents:
-                    base_dir = doc[0]
-                    filepath = doc[1]
-                    file_hash = doc[2]
-                    extracted_text = doc[3]
+                    base_dir, filepath, file_hash, extracted_text = doc
                     
                     enc_text = self.crypto.encrypt_text(extracted_text) if extracted_text is not None else None
                     
                     rows_to_insert.append(
-                        (base_dir, filepath, file_hash, enc_text, None, None, None)
+                        (base_dir, filepath, file_hash, enc_text)
                     )
                     
                 conn.executemany(
                     """
-                    INSERT INTO documents (base_dir, filepath, file_hash, extracted_text, embedding, model_name, vector_dimension)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO documents (base_dir, filepath, file_hash, extracted_text)
+                    VALUES (?, ?, ?, ?)
                     ON CONFLICT(base_dir, filepath) DO UPDATE SET
                         file_hash = excluded.file_hash,
-                        extracted_text = excluded.extracted_text,
-                        embedding = excluded.embedding,
-                        model_name = excluded.model_name,
-                        vector_dimension = excluded.vector_dimension
+                        extracted_text = excluded.extracted_text
                 """,
                     rows_to_insert,
                 )
@@ -129,7 +112,7 @@ class Database:
             
             def _decrypt_row(row):
                 decrypted_text = self.crypto.decrypt_text(row[1]) if row[1] is not None else None
-                return (row[0], decrypted_text, None, row[2], row[3], None, None)
+                return (row[0], decrypted_text, row[2], row[3])
                 
             results = []
             if rows:

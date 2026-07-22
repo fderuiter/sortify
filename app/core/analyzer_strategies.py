@@ -98,6 +98,7 @@ class RecursiveKMeansStrategy:
             return {"Miscellaneous": plan} if depth == 1 else plan
 
         try:
+            from sklearn.feature_extraction.text import TfidfVectorizer
             vectorizer = TfidfVectorizer(stop_words=list(self.stop_words), max_features=1000)
             X = vectorizer.fit_transform(documents)
         except Exception:
