@@ -63,13 +63,18 @@ def get_db_connection(db_path: str):
             raise RuntimeError("SQLCipher is not active on this connection context.")
         
         # Test database validity to catch unencrypted legacy databases or bad keys
-        conn.execute("PRAGMA user_version;")
+        try:
+            conn.execute("PRAGMA user_version;")
+        except sqlite3.DatabaseError:
+            conn.close()
+            raise
         return conn
 
     try:
         conn = _open_conn(db_path)
     except sqlite3.DatabaseError as e:
         err_msg = str(e).lower()
+        assert False, "HIT LEGACY PURGE BLOCK"
         if "file is not a database" in err_msg or "file is encrypted" in err_msg:
             # Legacy unencrypted database or invalid key. Delete files and recreate.
             for ext in ["", "-wal", "-shm"]:
