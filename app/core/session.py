@@ -44,7 +44,7 @@ class AppSession:
         if not self.base_dir:
             return
         self.cache_manager.save_cache_sync(
-            self.base_dir, self.analyzer.corpus, locked_files, self.analyzer.index_to_word, manual_folders
+            self.base_dir, self.analyzer.corpus, locked_files, {}, manual_folders
         )
 
     def get_files_recursively(self, rel_path: str = "") -> list:
@@ -66,8 +66,6 @@ class AppSession:
             max_workers=self.settings.MAX_WORKERS,
             db=self.db,
             chunk_size=50,
-            active_model_name=self.analyzer.active_model_name,
-            active_dimension=self.analyzer.active_dimension,
             cancel_check=cancel_check
         ):
             yield chunk
@@ -90,7 +88,7 @@ class AppSession:
         if not self.base_dir:
             return
         self.cache_manager.save_cache_async(
-            self.base_dir, self.analyzer.corpus, locked_files, self.analyzer.index_to_word, manual_folders
+            self.base_dir, self.analyzer.corpus, locked_files, {}, manual_folders
         )
 
     def load_cache(self):
