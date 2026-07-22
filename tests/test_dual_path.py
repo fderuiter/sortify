@@ -15,7 +15,7 @@ def mock_app_session_env():
     # We will use temp directories to simulate base_path and app_dir
     with tempfile.TemporaryDirectory() as base_temp:
         with tempfile.TemporaryDirectory() as app_temp:
-            yield base_temp, app_temp
+            yield str(Path(base_temp).resolve()), str(Path(app_temp).resolve())
 
 def test_session_dual_path_resolution_local_priority(mock_app_session_env):
     base_temp, app_temp = mock_app_session_env
