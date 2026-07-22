@@ -229,23 +229,43 @@ class HistoryManager:
             if sig not in active_files_by_sig:
                 active_files_by_sig[sig] = []
             active_files_by_sig[sig].append(abs_path)
-            
-        return current_inodes, active_files_by_rel_path, active_files_by_sig, inodes_reliable
+
+        return (
+            current_inodes,
+            active_files_by_rel_path,
+            active_files_by_sig,
+            inodes_reliable,
+        )
+
+    def _get_snapshot_and_current_state(self, conn, session_id, base_dir):
+        cur = conn.execute(
+            "SELECT original_rel_path, inode, size, mtime, is_symlink, symlink_target FROM snapshot_files WHERE session_id = ?",
+            (session_id,),
+        )
+        snapshot_files = cur.fetchall()
+
+        (
+            current_inodes,
+            active_files_by_rel_path,
+            active_files_by_sig,
+            inodes_reliable,
+        ) = self._build_current_file_state(base_dir)
+
+        return snapshot_files, current_inodes, active_files_by_rel_path, active_files_by_sig, inodes_reliable
 
     def check_missing_files(self, session_id: str) -> List[str]:
         """Check if any files from the snapshot are missing from the disk."""
         conn = get_db_connection(self.db_path)
         with conn:
-            cur = conn.execute("SELECT base_dir FROM sessions WHERE session_id = ?", (session_id,))
+            cur = conn.execute(
+                "SELECT base_dir FROM sessions WHERE session_id = ?", (session_id,)
+            )
             row = cur.fetchone()
             if not row:
                 raise ValueError("Session not found")
             base_dir = row[0]
 
-            cur = conn.execute("SELECT original_rel_path, inode, size, mtime, is_symlink, symlink_target FROM snapshot_files WHERE session_id = ?", (session_id,))
-            snapshot_files = cur.fetchall()
-
-        current_inodes, active_files_by_rel_path, active_files_by_sig, inodes_reliable = self._build_current_file_state(base_dir)
+            snapshot_files, current_inodes, active_files_by_rel_path, active_files_by_sig, inodes_reliable = self._get_snapshot_and_current_state(conn, session_id, base_dir)
 
         missing = []
         for rel_path, inode, size, mtime, is_symlink, symlink_target in snapshot_files:
@@ -308,13 +328,7 @@ class HistoryManager:
             safety_session_id = self._create_snapshot_internal(base_dir)
 
             with conn:
-                cur = conn.execute(
-                    "SELECT original_rel_path, inode, size, mtime, is_symlink, symlink_target FROM snapshot_files WHERE session_id = ?",
-                    (session_id,),
-                )
-                snapshot_files = cur.fetchall()
-
-                current_inodes, active_files_by_rel_path, active_files_by_sig, inodes_reliable = self._build_current_file_state(base_dir)
+                snapshot_files, current_inodes, active_files_by_rel_path, active_files_by_sig, inodes_reliable = self._get_snapshot_and_current_state(conn, session_id, base_dir)
 
                 # First compute all intended moves
                 moves = []

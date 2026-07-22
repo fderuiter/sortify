@@ -78,21 +78,13 @@ class CacheManager:
                         ),
                     )
             except Exception as e:
-                logging.error(f"Failed to save cache{' async' if is_async else ''}: {e}")
+                logging.error(
+                    f"Failed to save cache{' async' if is_async else ''}: {e}"
+                )
                 if not is_async:
                     raise
-        return _write
 
-    def _save_cache_sync(
-        self,
-        source_directory: str,
-        corpus: dict,
-        locked_files: dict,
-        index_to_word: dict,
-        manual_folders: set = None,
-    ):
-        _write = self._create_write_task(source_directory, corpus, locked_files, index_to_word, manual_folders, is_async=False)
-        self.worker.execute_write(_write)
+        return _write
 
     def save_cache_async(
         self,
@@ -103,21 +95,19 @@ class CacheManager:
         manual_folders: set = None,
     ):
         """Asynchronously save analysis results to the database."""
-        _write = self._create_write_task(source_directory, corpus, locked_files, index_to_word, manual_folders, is_async=True)
+        _write = self._create_write_task(
+            source_directory, corpus, locked_files, index_to_word, manual_folders, is_async=True
+        )
         self.worker.execute_write_async(_write)
 
     def save_cache_sync(
         self,
-        source_directory: str,
-        corpus: dict,
-        locked_files: dict,
-        index_to_word: dict,
-        manual_folders: set = None,
+        *args,
+        **kwargs,
     ):
         """Save analysis results to the database synchronously."""
-        self._save_cache_sync(
-            source_directory, corpus, locked_files, index_to_word, manual_folders
-        )
+        _write = self._create_write_task(*args, **kwargs, is_async=False)
+        self.worker.execute_write(_write)
 
     def load_cache(self, source_directory: str):
         """Load cached analysis results from the database for a specific directory."""
