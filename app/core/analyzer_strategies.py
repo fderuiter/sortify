@@ -173,9 +173,10 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
 
                 self.model_path = str(get_app_dir() / "generative_model")
 
-        self._init_model()
+        self._model_initialized = False
 
     def _init_model(self):
+        self._model_initialized = True
         if not self.model_path or not os.path.exists(self.model_path):
             logging.info(
                 "Generative model not found locally. Falling back to deterministic rules."
@@ -222,6 +223,9 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
     def _get_cluster_keywords(self, documents: list) -> str:
         if not documents:
             return "Miscellaneous"
+
+        if not getattr(self, "_model_initialized", False):
+            self._init_model()
 
         if self.generator is None:
             return super()._get_cluster_keywords(documents)
