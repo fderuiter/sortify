@@ -2,8 +2,6 @@
 
 from pathlib import Path
 
-import numpy as np
-
 from app.core.crypto import SessionCrypto
 from app.core.db_conn import get_db_connection
 from app.core.db_worker import DBWorker

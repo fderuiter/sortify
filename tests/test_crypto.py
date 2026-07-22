@@ -3,7 +3,6 @@ import sqlite3
 from contextlib import closing
 
 import keyring
-import numpy as np
 import pytest
 from cryptography.fernet import Fernet
 

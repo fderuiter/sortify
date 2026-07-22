@@ -4,14 +4,12 @@ import tempfile
 from pathlib import Path
 from unittest import mock
 
-import numpy as np
 import pypdf
 
 from app.core.cache import CacheManager
 from app.core.db import Database
 from app.core.db_worker import DBWorker
 from app.core.extractor import (
-    build_corpus_generator,
     extract_file_text,
     get_file_hash,
     process_item_worker,

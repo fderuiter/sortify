@@ -4,10 +4,8 @@ This module provides topic modeling functionality.
 """
 
 import hashlib
-import json
 import logging
 import os
-import re
 from typing import Any, Dict, List, Tuple
 
 from app.core.analyzer_strategies import clustering_registry
@@ -110,8 +108,6 @@ class IncrementalAnalyzer:
             for i, (filepath, text, file_hash) in enumerate(
                 zip(filepaths, texts, hashes)
             ):
-                doc = self.db.get_document(base_dir, filepath)
-
                 if not file_hash:
                     file_hash = hashlib.md5(text.encode("utf-8")).hexdigest()
                     hashes[i] = file_hash
