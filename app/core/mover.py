@@ -21,12 +21,14 @@ def get_safe_path(dest_dir: str, filename: str, source_path: str = None) -> str:
     base, extension = os.path.splitext(filename)
     counter = 1
     safe_path = os.path.join(dest_dir, filename)
-    while os.path.exists(safe_path):
-        if source_path and os.path.exists(source_path):
+    while os.path.lexists(safe_path):
+        if source_path and os.path.lexists(source_path):
             try:
                 if os.path.samefile(safe_path, source_path):
                     return safe_path
             except OSError as e:
+                if os.path.abspath(safe_path) == os.path.abspath(source_path):
+                    return safe_path
                 logging.error(
                     f"Failed to verify if paths conflict for {safe_path} and {source_path}: {e}",
                     exc_info=True,
@@ -79,7 +81,7 @@ def _execute_moves_recursive(
 
             # It's a file, key is the original relative path
             source_path = os.path.join(base_dir, key)
-            if not os.path.exists(source_path):
+            if not os.path.lexists(source_path):
                 continue
 
             if isinstance(content, dict) and "target_filename" in content:
