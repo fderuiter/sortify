@@ -118,59 +118,46 @@ def build_corpus_generator(
     """
     items_to_sort = sorted(items_to_sort)
     chunk = {}
-    if sequential:
-        for item in items_to_sort:
-            if cancel_check and cancel_check():
-                break
-            item_name, item_text, file_hash = process_item_worker(
-                base_dir, item, progress_callback, db
-            )
 
-            doc = db.get_document(base_dir, item_name)
-            if doc and doc["file_hash"] == file_hash:
-                # Already processed and unchanged, no need to yield to analyzer
-                continue
-
-            chunk[item_name] = {
-                "text": item_text
-                if item_text.startswith("[STATUS:")
-                else item_name + " " + item_text,
-                "hash": file_hash,
-            }
-            if len(chunk) >= chunk_size:
-                yield chunk
-                chunk = {}
-        if chunk:
-            yield chunk
-    else:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-            item_to_future = {
-                item: executor.submit(
-                    process_item_worker, base_dir, item, progress_callback, db
-                )
-                for item in items_to_sort
-            }
+    def _item_generator():
+        if sequential:
             for item in items_to_sort:
                 if cancel_check and cancel_check():
-                    # Attempt to cancel remaining futures
-                    for fut in item_to_future.values():
-                        fut.cancel()
                     break
-                future = item_to_future[item]
-                item_name, item_text, file_hash = future.result()
-
-                doc = db.get_document(base_dir, item_name)
-                if doc and doc["file_hash"] == file_hash:
-                    continue
-
-                chunk[item_name] = {
-                    "text": item_text
-                    if item_text.startswith("[STATUS:")
-                    else item_name + " " + item_text,
-                    "hash": file_hash,
+                yield process_item_worker(base_dir, item, progress_callback, db)
+        else:
+            with concurrent.futures.ThreadPoolExecutor(
+                max_workers=max_workers
+            ) as executor:
+                item_to_future = {
+                    item: executor.submit(
+                        process_item_worker, base_dir, item, progress_callback, db
+                    )
+                    for item in items_to_sort
                 }
-                if len(chunk) >= chunk_size:
-                    yield chunk
-                    chunk = {}
-            if chunk:
-                yield chunk
+                for item in items_to_sort:
+                    if cancel_check and cancel_check():
+                        # Attempt to cancel remaining futures
+                        for fut in item_to_future.values():
+                            fut.cancel()
+                        break
+                    yield item_to_future[item].result()
+
+    for item_name, item_text, file_hash in _item_generator():
+        doc = db.get_document(base_dir, item_name)
+        if doc and doc["file_hash"] == file_hash:
+            # Already processed and unchanged, no need to yield to analyzer
+            continue
+
+        chunk[item_name] = {
+            "text": item_text
+            if item_text.startswith("[STATUS:")
+            else item_name + " " + item_text,
+            "hash": file_hash,
+        }
+        if len(chunk) >= chunk_size:
+            yield chunk
+            chunk = {}
+
+    if chunk:
+        yield chunk
