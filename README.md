@@ -69,7 +69,7 @@ For details regarding our security posture, vulnerability reporting, and network
 To understand how your data is processed locally and stored, please refer to our [Privacy Policy](PRIVACY.md).
 
 ## Documentation
-Check the `docs/` folder for the MkDocs configuration or run `tox -e docs` to build the site.
+Check the `docs/` folder for the MkDocs configuration or run `uv run mkdocs build` to build the site.
 
 ## Architectural Overview
 

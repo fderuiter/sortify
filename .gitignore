@@ -11,7 +11,6 @@ __pycache__/
 *.pyo
 autosorter.log
 site/
-.tox/
 .ruff_cache/
 dist/
 settings.json

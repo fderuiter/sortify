@@ -84,6 +84,7 @@ class IncrementalAnalyzer:
         if hasattr(self, 'executor'):
             self.executor.shutdown(wait=False)
 
+
     def partial_fit(
         self, base_dir: str, new_corpus: dict, runtime_settings=None
     ) -> None:

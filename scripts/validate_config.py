@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """Validate the application configuration schema and export it."""
 
-import sys
 import json
-import os
+import sys
 from pathlib import Path
 
 from pydantic import ValidationError

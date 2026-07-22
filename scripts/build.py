@@ -1,6 +1,5 @@
 """Unified build script for smart autosorter application on Windows, macOS, and Linux."""
 
-import os
 import sys
 
 import PyInstaller.__main__
@@ -8,23 +7,13 @@ import PyInstaller.__main__
 
 def main():
     """Build the standalone executable."""
-    import shutil
-    import subprocess
+    import importlib.util
     
-    # Download precompiled sqlcipher3-wheels for the current platform
-    print("Downloading precompiled SQLCipher shared libraries...")
-    sqlcipher_dir = os.path.join(os.getcwd(), "build_tmp", "sqlcipher")
-    if os.path.exists(sqlcipher_dir):
-        shutil.rmtree(sqlcipher_dir)
-    os.makedirs(sqlcipher_dir, exist_ok=True)
-    
-    subprocess.run([
-        sys.executable, "-m", "pip", "install", 
-        "sqlcipher3-wheels==0.5.7", 
-        "--target", sqlcipher_dir,
-        "--only-binary=:all:",
-        "--no-cache-dir"
-    ], check=True)
+    print("Verifying SQLCipher in active environment...")
+    spec = importlib.util.find_spec("sqlcipher3")
+    if not spec or not spec.submodule_search_locations:
+        print("Error: sqlcipher3 not found in active environment. Please ensure dependencies are installed.")
+        sys.exit(1)
 
     cmd = [
         'smart-autosorter.spec',

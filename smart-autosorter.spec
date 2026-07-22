@@ -1,8 +1,11 @@
 # -*- mode: python ; coding: utf-8 -*-
+# ruff: noqa
 
+import importlib.util
 import os
-import sys
 import platform
+import sys
+
 # Removed customtkinter
 from PyInstaller.utils.hooks import collect_all
 
@@ -40,12 +43,13 @@ for pkg in ml_packages:
 
 # No special nicegui asset bundling needed by default
 
-# Bundle secure database shared libraries (downloaded by build.py)
-sqlcipher_dir = os.path.join(os.getcwd(), "build_tmp", "sqlcipher", "sqlcipher3")
-if os.path.exists(sqlcipher_dir):
+# Bundle secure database shared libraries directly from the active virtual environment
+sqlcipher_spec = importlib.util.find_spec("sqlcipher3")
+if sqlcipher_spec and sqlcipher_spec.submodule_search_locations:
+    sqlcipher_dir = sqlcipher_spec.submodule_search_locations[0]
     datas.append((sqlcipher_dir, 'sqlcipher3'))
 else:
-    print(f"Warning: sqlcipher3 not found at {sqlcipher_dir}")
+    print("Warning: sqlcipher3 not found in active environment.")
 
 # Bundle platform-specific Tcl/Tk dylibs on macOS
 if platform.system() == "Darwin":

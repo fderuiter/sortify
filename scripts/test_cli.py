@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Dedicated CLI smoke test script to verify argument compatibility."""
 
+import os
 import subprocess
 import sys
-import os
 
 
 def run_command(command, expected_args):
