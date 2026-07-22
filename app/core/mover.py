@@ -62,11 +62,12 @@ def _execute_moves_recursive(
 
     for key, content in plan.items():
         if content is None or (
-            isinstance(content, dict) and content.get("__type__") in ("file", "directory")
+            isinstance(content, dict)
+            and content.get("__type__") in ("file", "directory")
         ):
             if isinstance(content, dict) and content.get("__type__") == "directory":
                 continue
-                
+
             if isinstance(content, dict) and content.get("status") == "Already Sorted":
                 # Even if already sorted, the target might have moved, so we still process links
                 pass
@@ -108,6 +109,7 @@ def _execute_moves_recursive(
 
                 if needs_update:
                     import uuid
+
                     shadow_name = f"{dest_path}.shadow_{uuid.uuid4().hex}"
 
                     if link_info["type"] == "symlink":
@@ -119,8 +121,10 @@ def _execute_moves_recursive(
                         try:
                             os.symlink(final_target, shadow_name)
                             if not os.path.lexists(shadow_name):
-                                raise RuntimeError("Shadow link creation failed validation.")
-                            
+                                raise RuntimeError(
+                                    "Shadow link creation failed validation."
+                                )
+
                             os.replace(shadow_name, dest_path)
                             if dest_path != source_path:
                                 os.remove(source_path)
@@ -145,13 +149,15 @@ def _execute_moves_recursive(
                                 "work_dir": parsed.work_dir,
                                 "window_mode": parsed.window_mode,
                             }
-                            
+
                             pylnk3.for_file(
                                 new_abs_target, lnk_name=shadow_name, **kwargs
                             )
                             if not os.path.lexists(shadow_name):
-                                raise RuntimeError("Shadow link creation failed validation.")
-                                
+                                raise RuntimeError(
+                                    "Shadow link creation failed validation."
+                                )
+
                             os.replace(shadow_name, dest_path)
                             if dest_path != source_path:
                                 os.remove(source_path)
@@ -168,23 +174,29 @@ def _execute_moves_recursive(
             # Record user verified target
             doc = db.get_document(base_dir, key)
             if doc and doc.get("file_hash"):
-                db.set_user_verified_target(base_dir, doc["file_hash"], current_dest.replace("\\", "/"))
+                db.set_user_verified_target(
+                    base_dir, doc["file_hash"], current_dest.replace("\\", "/")
+                )
 
             if dest_path == source_path:
                 continue
 
             if not moved_as_link:
                 shutil.move(source_path, dest_path)
-                
+
             # Update filepath in database
             rel_dest = os.path.relpath(dest_path, base_dir)
             db.update_document_path(base_dir, key, rel_dest)
         else:
             # It's a folder
-            _execute_moves_recursive(base_dir, content, db, os.path.join(current_dest, key), path_map)
+            _execute_moves_recursive(
+                base_dir, content, db, os.path.join(current_dest, key), path_map
+            )
 
 
-def execute_moves(base_dir: str, plan: dict, db, history_manager, runtime_settings=None) -> dict:
+def execute_moves(
+    base_dir: str, plan: dict, db, history_manager, runtime_settings=None
+) -> dict:
     """Create directories and safely move files, tracking file-system errors."""
     # Create a full snapshot of the directory tree and metadata before moving files
     session_id = history_manager.create_snapshot(base_dir)
@@ -200,11 +212,15 @@ def execute_moves(base_dir: str, plan: dict, db, history_manager, runtime_settin
     _execute_moves_recursive(base_dir, plan, db, "", path_map)
 
     summary = {"deleted_folders": 0, "protected_folders": 0}
-    cleanup_enabled = getattr(runtime_settings, "CLEANUP_EMPTY_FOLDERS", True) if runtime_settings else True
+    cleanup_enabled = (
+        getattr(runtime_settings, "CLEANUP_EMPTY_FOLDERS", True)
+        if runtime_settings
+        else True
+    )
 
     # Find the directory nodes in the plan
     dirs_to_process = []
-    
+
     def _find_dir_nodes(node):
         if not isinstance(node, dict) or node.get("__type__") in ("file", "directory"):
             return
@@ -213,11 +229,13 @@ def execute_moves(base_dir: str, plan: dict, db, history_manager, runtime_settin
                 dirs_to_process.append(v)
             elif isinstance(v, dict) and v.get("__type__") != "file":
                 _find_dir_nodes(v)
-                
+
     _find_dir_nodes(plan)
-    
+
     # Sort by descending depth to delete subdirectories before parents
-    dirs_to_process.sort(key=lambda x: len(x["source_path"].split(os.sep)), reverse=True)
+    dirs_to_process.sort(
+        key=lambda x: len(x["source_path"].split(os.sep)), reverse=True
+    )
 
     if cleanup_enabled:
         for node in dirs_to_process:
@@ -225,12 +243,14 @@ def execute_moves(base_dir: str, plan: dict, db, history_manager, runtime_settin
                 summary["protected_folders"] += 1
             elif node.get("status") == "To Be Deleted":
                 try:
-                    if os.path.isdir(node["source_path"]) and not os.listdir(node["source_path"]):
+                    if os.path.isdir(node["source_path"]) and not os.listdir(
+                        node["source_path"]
+                    ):
                         os.rmdir(node["source_path"])
                         summary["deleted_folders"] += 1
                 except OSError:
                     pass
-                    
+
         # Guarantee complete cleanup of empty directories after all explicit plan folders are processed
         for entry in os.listdir(base_dir):
             entry_path = os.path.join(base_dir, entry)
