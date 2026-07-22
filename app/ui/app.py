@@ -123,11 +123,6 @@ class AutoSorterApp:
             self.total_files = len(files)
             self.completed_files = 0
             
-            def _progress_cb():
-                self.completed_files += 1
-                if self.total_files > 0:
-                    self.progress_bar.set_value(self.completed_files / self.total_files)
-            
             from app.core.metadata import MetadataPass
             bypassed_files = await asyncio.to_thread(
                 MetadataPass.run,
@@ -135,23 +130,41 @@ class AutoSorterApp:
                 files,
                 self.settings,
                 self.app_session.db,
-                _progress_cb,
+                None,
                 lambda: getattr(self, "_cancel_analysis_flag", False)
             )
+            self.completed_files += len(bypassed_files)
+            if self.total_files > 0:
+                self.progress_bar.set_value(self.completed_files / self.total_files)
+            
             bypassed_set = set(bypassed_files)
             items_to_sort = [f for f in files if f not in bypassed_set]
             
-            def process_all():
-                for chunk in self.app_session.process_items(
-                    items_to_sort, 
-                    _progress_cb, 
-                    lambda: getattr(self, "_cancel_analysis_flag", False)
-                ):
-                    if getattr(self, "_cancel_analysis_flag", False):
-                        break
-                    self.app_session.partial_fit(chunk)
-            
-            await asyncio.to_thread(process_all)
+            generator = self.app_session.process_items(
+                items_to_sort, 
+                None, 
+                lambda: getattr(self, "_cancel_analysis_flag", False)
+            )
+
+            def get_next_chunk():
+                try:
+                    return next(generator)
+                except StopIteration:
+                    return None
+
+            while True:
+                if self._cancel_analysis_flag:
+                    break
+                
+                chunk = await asyncio.to_thread(get_next_chunk)
+                if chunk is None:
+                    break
+                
+                await asyncio.to_thread(self.app_session.partial_fit, chunk)
+                self.completed_files += len(chunk)
+                if self.total_files > 0:
+                    self.progress_bar.set_value(self.completed_files / self.total_files)
+                await asyncio.sleep(0.01)
             
             if not self._cancel_analysis_flag:
                 self.plan = await asyncio.to_thread(self.app_session.generate_sorting_plan)
