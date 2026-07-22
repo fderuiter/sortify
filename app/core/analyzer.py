@@ -256,53 +256,6 @@ class IncrementalAnalyzer:
             else:
                 plan = {}
 
-            # Inject keyword routed files back into the plan
-            for f, target_folder, keyword, routed_by, ext_status in keyword_plan_files:
-                parts = target_folder.replace("\\", "/").split("/")
-                current = plan
-                for i, part in enumerate(parts):
-                    if part not in current:
-                        current[part] = {}
-                    if not isinstance(current[part], dict):
-                        current[part] = {"_original": current[part]}
-                    if i == len(parts) - 1:
-                        current[part][f] = {
-                            "routed_by": routed_by,
-                            "keyword": keyword,
-                            "extraction_status": ext_status,
-                        }
-                    else:
-                        current = current[part]
-
-            if unsupported_files:
-                if "Miscellaneous" not in plan:
-                    plan["Miscellaneous"] = {}
-                elif not isinstance(plan["Miscellaneous"], dict):
-                    plan["Miscellaneous"] = {"_original": plan["Miscellaneous"]}
-                for f, ext_status in unsupported_files:
-                    plan["Miscellaneous"][f] = {"extraction_status": ext_status}
-
-            def remove_from_plan(node, target_f):
-                for k, v in list(node.items()):
-                    if k == target_f:
-                        if v is None or (
-                            isinstance(v, dict)
-                            and (v.get("routed_by") or v.get("extraction_status"))
-                        ):
-                            return node.pop(k)
-                        elif isinstance(v, dict) and "_original" in v:
-                            val = v.pop("_original")
-                            if not v:
-                                node.pop(k)
-                            return val
-                    if isinstance(v, dict):
-                        res = remove_from_plan(v, target_f)
-                        if res is not None:
-                            if not v:
-                                node.pop(k)
-                            return res
-                return None
-
             if locked_files is None:
                 locked_files = {}
 
