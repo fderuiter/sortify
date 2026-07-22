@@ -162,6 +162,74 @@ class RecursiveKMeansStrategy:
 class GenerativeNamingStrategy(RecursiveKMeansStrategy):
     """Strategy that uses a generative model to create descriptive folder names."""
 
+    def generate_plan(
+        self,
+        filenames: List[str],
+        documents: List[str],
+        max_folders: int,
+        stop_words: set,
+        max_depth: int = 5,
+        max_features: int = 3,
+    ) -> tuple[dict, float]:
+        plan, error = super().generate_plan(
+            filenames, documents, max_folders, stop_words, max_depth, max_features
+        )
+
+        if not getattr(self, "_model_initialized", False):
+            self._init_model()
+
+        if self.generator is None:
+            return plan, error
+
+        doc_map = dict(zip(filenames, documents))
+
+        def filter_plan(node, path_name=""):
+            new_node = {}
+            low_confidence_files = {}
+            for k, v in node.items():
+                if v is None:
+                    doc_text = doc_map.get(k, "")[:1000]
+                    prompt = f"Does this document about '{doc_text}' belong in a folder for '{path_name}'? Reply YES or NO."
+                    try:
+                        with block_external_network():
+                            import torch
+                            torch.set_num_threads(2)
+                            if self.task == "text-generation":
+                                res = self.generator(
+                                    prompt,
+                                    max_new_tokens=5,
+                                    num_return_sequences=1,
+                                    return_full_text=False,
+                                )
+                            else:
+                                res = self.generator(
+                                    prompt, max_new_tokens=5, num_return_sequences=1
+                                )
+                            answer = res[0]["generated_text"].strip().upper()
+                            
+                            if "NO" in answer:
+                                low_confidence_files[k] = None
+                            else:
+                                new_node[k] = None
+                    except Exception as e:
+                        logging.error(f"Coherence check failed: {e}")
+                        new_node[k] = None
+                elif isinstance(v, dict):
+                    folder_name = k if not path_name else f"{path_name} {k}"
+                    filtered_v, lc_v = filter_plan(v, path_name=folder_name)
+                    if filtered_v:
+                        new_node[k] = filtered_v
+                    low_confidence_files.update(lc_v)
+            return new_node, low_confidence_files
+
+        new_plan, lc_files = filter_plan(plan)
+        if lc_files:
+            if "Low Confidence" not in new_plan:
+                new_plan["Low Confidence"] = {}
+            new_plan["Low Confidence"].update(lc_files)
+
+        return new_plan, error
+
     def __init__(self, model_path: str = None):
         self.generator = None
         self.task = None
