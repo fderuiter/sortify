@@ -1,0 +1,39 @@
+{
+  "targets": [
+    "scripts",
+    "app",
+    ".github"
+  ],
+  "rules": [
+    {
+      "pattern": "https://astral\\.sh",
+      "match_type": "regex",
+      "description": "Bootstrapping the `uv` package manager."
+    },
+    {
+      "pattern": "huggingface-hub",
+      "match_type": "substring",
+      "description": "Model acquisition (e.g., `sentence-transformers/all-MiniLM-L6-v2`)."
+    },
+    {
+      "pattern": "https://download\\.pytorch\\.org",
+      "match_type": "regex",
+      "description": "Fetching CPU-optimized PyTorch wheels."
+    },
+    {
+      "pattern": "all-MiniLM-L6-v2",
+      "match_type": "substring",
+      "description": "Runtime model download prompt in the UI wizard."
+    },
+    {
+      "pattern": "actions/checkout",
+      "match_type": "substring",
+      "description": "Fetching source code in CI."
+    },
+    {
+      "pattern": "astral-sh/setup-uv",
+      "match_type": "substring",
+      "description": "Setting up uv in CI."
+    }
+  ]
+}
