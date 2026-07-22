@@ -1,7 +1,9 @@
-import sqlite3
-import threading
+"""Database connection module."""
+
 import os
 import sys
+import sqlite3
+import threading
 
 # Global connection cache and lock
 _connection_cache = {}
