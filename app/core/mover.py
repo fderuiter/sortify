@@ -16,6 +16,12 @@ except ImportError:
     pylnk3 = None
 
 
+def _is_same_path(p1: str, p2: str) -> bool:
+    if p1 is None or p2 is None:
+        return p1 == p2
+    return os.path.normcase(os.path.abspath(p1)) == os.path.normcase(os.path.abspath(p2))
+
+
 def get_safe_path(dest_dir: str, filename: str, source_path: str = None) -> str:
     """Generate a safe file path to avoid overwriting existing files."""
     base, extension = os.path.splitext(filename)
@@ -27,7 +33,7 @@ def get_safe_path(dest_dir: str, filename: str, source_path: str = None) -> str:
                 if os.path.samefile(safe_path, source_path):
                     return safe_path
             except OSError as e:
-                if os.path.normcase(os.path.abspath(safe_path)) == os.path.normcase(os.path.abspath(source_path)):
+                if _is_same_path(safe_path, source_path):
                     return safe_path
                 logging.error(
                     f"Failed to verify if paths conflict for {safe_path} and {source_path}: {e}",
@@ -102,12 +108,13 @@ def _execute_moves_recursive(
                         os.path.join(os.path.dirname(source_path), original_target)
                     )
 
-                new_abs_target = path_map.get(abs_target, abs_target)
+                new_abs_target = path_map.get(
+                    os.path.normcase(os.path.abspath(abs_target)) if abs_target else abs_target,
+                    abs_target
+                )
 
                 # Check if we need to update the link
-                needs_update = (dest_path != source_path) or (
-                    new_abs_target != abs_target
-                )
+                needs_update = not _is_same_path(dest_path, source_path) or not _is_same_path(new_abs_target, abs_target)
 
                 if needs_update:
                     import uuid
@@ -128,7 +135,7 @@ def _execute_moves_recursive(
                                 )
 
                             os.replace(shadow_name, dest_path)
-                            if os.path.normcase(os.path.abspath(dest_path)) != os.path.normcase(os.path.abspath(source_path)):
+                            if not _is_same_path(dest_path, source_path):
                                 os.remove(source_path)
                             moved_as_link = True
                         except Exception as e:
@@ -161,7 +168,7 @@ def _execute_moves_recursive(
                                 )
 
                             os.replace(shadow_name, dest_path)
-                            if os.path.normcase(os.path.abspath(dest_path)) != os.path.normcase(os.path.abspath(source_path)):
+                            if not _is_same_path(dest_path, source_path):
                                 os.remove(source_path)
                             moved_as_link = True
                         except Exception as e:
@@ -208,7 +215,7 @@ def execute_moves(
     moves_list = VerificationEngine.get_moves(base_dir, plan)
     path_map = {}
     for rel_src, src, dst in moves_list:
-        path_map[os.path.abspath(src)] = os.path.abspath(dst)
+        path_map[os.path.normcase(os.path.abspath(src))] = os.path.abspath(dst)
 
     # Execute all moves first
     _execute_moves_recursive(base_dir, plan, db, "", path_map)
