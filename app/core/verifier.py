@@ -264,6 +264,8 @@ class VerificationEngine:
                     # Ensure boundary protection
                     abs_dst = os.path.abspath(dst)
                     abs_base = os.path.abspath(base_dir)
+                    if not abs_base.endswith(os.sep):
+                        abs_base += os.sep
                     if not abs_dst.startswith(abs_base) or os.sep in filename or (os.altsep and os.altsep in filename):
                         errors[rel_src] = "Truncated path escapes workspace"
                 else:

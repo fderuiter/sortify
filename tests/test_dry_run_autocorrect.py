@@ -1,6 +1,8 @@
 import os
 import platform
 import unittest
+import tempfile
+import shutil
 from unittest.mock import patch
 
 from app.core.verifier import VerificationEngine
@@ -8,19 +10,17 @@ from app.core.link_manager import LinkManager
 
 class TestDryRunAutocorrect(unittest.TestCase):
     def setUp(self):
-        self.base_dir = "/tmp/test_dry_run"
-        os.makedirs(self.base_dir, exist_ok=True)
+        self.base_dir = tempfile.mkdtemp()
         self.engine = VerificationEngine()
         
     def tearDown(self):
-        import shutil
         if os.path.exists(self.base_dir):
             shutil.rmtree(self.base_dir)
             
     @patch('app.core.verifier.platform.system', return_value="Windows")
     def test_windows_long_path_truncation(self, mock_system):
-        long_dir = "A" * 200
-        long_file = "B" * 60 + ".txt"
+        long_dir = "A" * 150
+        long_file = "B" * 100 + ".txt"
         
         plan_nested = {
             long_dir: {
