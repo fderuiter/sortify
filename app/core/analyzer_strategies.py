@@ -171,6 +171,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         max_depth: int = 5,
         max_features: int = 3,
     ) -> tuple[dict, float]:
+        """Generate a hierarchical plan of folder names using generative modeling."""
         plan, error = super().generate_plan(
             filenames, documents, max_folders, stop_words, max_depth, max_features
         )

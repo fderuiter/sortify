@@ -244,9 +244,9 @@ class IncrementalAnalyzer:
             
             if historical_folder_docs and ai_filenames:
                 try:
+                    import numpy as np
                     from sklearn.feature_extraction.text import TfidfVectorizer
                     from sklearn.metrics.pairwise import cosine_similarity
-                    import numpy as np
                     
                     folder_names = list(historical_folder_docs.keys())
                     folder_texts = [" ".join(historical_folder_docs[folder]) for folder in folder_names]
