@@ -9,8 +9,6 @@ from contextlib import contextmanager
 from typing import List, Protocol
 
 import numpy as np
-from sklearn.cluster import MiniBatchKMeans
-from sklearn.feature_extraction.text import TfidfVectorizer
 
 
 @contextmanager
@@ -75,6 +73,7 @@ class RecursiveKMeansStrategy:
         if not documents:
             return "Miscellaneous"
         try:
+            from sklearn.feature_extraction.text import TfidfVectorizer
             vectorizer = TfidfVectorizer(
                 stop_words=list(self.stop_words), max_features=self.max_features
             )
@@ -105,6 +104,7 @@ class RecursiveKMeansStrategy:
         if actual_k < 2:
             actual_k = 2
 
+        from sklearn.cluster import MiniBatchKMeans
         kmeans = MiniBatchKMeans(n_clusters=actual_k, random_state=42, n_init="auto")
         labels = kmeans.fit_predict(X)
         self._error += kmeans.inertia_
