@@ -4,9 +4,10 @@ import os
 import sqlite3
 import sys
 import threading
+from typing import Dict, Tuple
 
 # Global connection cache and lock
-_connection_cache = {}
+_connection_cache: Dict[Tuple[str, int], sqlite3.Connection] = {}
 _cache_lock = threading.Lock()
 
 

@@ -4,6 +4,7 @@ import hashlib
 import os
 import sqlite3
 from pathlib import Path
+from typing import Optional
 
 import keyring
 from cryptography.fernet import Fernet
@@ -115,7 +116,7 @@ class SessionCrypto:
                 "Database accessed but key file is missing or invalid."
             ) from e
 
-    def get_raw_key(self) -> str:
+    def get_raw_key(self) -> Optional[str]:
         """Get the raw key string for SQLCipher."""
         if self._cipher is None:
             self.get_cipher()

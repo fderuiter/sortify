@@ -199,10 +199,14 @@ class HistoryManager:
 
         current_files = get_files_recursively(base_dir)
 
-        inode_counts = {}
-        current_inodes = {}
-        active_files_by_rel_path = {}
-        active_files_by_sig = {}
+        from typing import Optional, Tuple
+
+        inode_counts: Dict[int, int] = {}
+        current_inodes: Dict[
+            int, Tuple[str, Tuple[int, float, int, Optional[str]]]
+        ] = {}
+        active_files_by_rel_path: Dict[str, Tuple[int, float, int, Optional[str]]] = {}
+        active_files_by_sig: Dict[Tuple[int, float, int, Optional[str]], List[str]] = {}
         inodes_reliable = True
 
         for rel_path in current_files:
@@ -251,7 +255,13 @@ class HistoryManager:
             inodes_reliable,
         ) = self._build_current_file_state(base_dir)
 
-        return snapshot_files, current_inodes, active_files_by_rel_path, active_files_by_sig, inodes_reliable
+        return (
+            snapshot_files,
+            current_inodes,
+            active_files_by_rel_path,
+            active_files_by_sig,
+            inodes_reliable,
+        )
 
     def check_missing_files(self, session_id: str) -> List[str]:
         """Check if any files from the snapshot are missing from the disk."""
@@ -265,7 +275,13 @@ class HistoryManager:
                 raise ValueError("Session not found")
             base_dir = row[0]
 
-            snapshot_files, current_inodes, active_files_by_rel_path, active_files_by_sig, inodes_reliable = self._get_snapshot_and_current_state(conn, session_id, base_dir)
+            (
+                snapshot_files,
+                current_inodes,
+                active_files_by_rel_path,
+                active_files_by_sig,
+                inodes_reliable,
+            ) = self._get_snapshot_and_current_state(conn, session_id, base_dir)
 
         missing = []
         for rel_path, inode, size, mtime, is_symlink, symlink_target in snapshot_files:
@@ -328,7 +344,13 @@ class HistoryManager:
             safety_session_id = self._create_snapshot_internal(base_dir)
 
             with conn:
-                snapshot_files, current_inodes, active_files_by_rel_path, active_files_by_sig, inodes_reliable = self._get_snapshot_and_current_state(conn, session_id, base_dir)
+                (
+                    snapshot_files,
+                    current_inodes,
+                    active_files_by_rel_path,
+                    active_files_by_sig,
+                    inodes_reliable,
+                ) = self._get_snapshot_and_current_state(conn, session_id, base_dir)
 
                 # First compute all intended moves
                 moves = []

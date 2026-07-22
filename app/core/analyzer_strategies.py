@@ -6,7 +6,7 @@ import socket
 import sys
 from collections import defaultdict
 from contextlib import contextmanager
-from typing import List, Protocol
+from typing import Any, Dict, List, Optional, Protocol
 
 import numpy as np
 
@@ -91,7 +91,7 @@ class RecursiveKMeansStrategy:
             return "Miscellaneous"
 
     def _cluster_recursive(self, filenames: list, documents: list, depth: int) -> dict:
-        plan = {}
+        plan: Dict[str, Any] = {}
 
         if depth >= self.max_depth or len(documents) < 3:
             for f in filenames:
@@ -162,7 +162,7 @@ class RecursiveKMeansStrategy:
 class GenerativeNamingStrategy(RecursiveKMeansStrategy):
     """Strategy that uses a generative model to create descriptive folder names."""
 
-    def __init__(self, model_path: str = None):
+    def __init__(self, model_path: Optional[str] = None):
         self.generator = None
         self.task = None
 

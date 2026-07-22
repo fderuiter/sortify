@@ -3,6 +3,7 @@
 import json
 import logging
 from pathlib import Path
+from typing import Optional
 
 from app.core.db_conn import get_db_connection
 from app.core.db_worker import DBWorker
@@ -49,7 +50,7 @@ class CacheManager:
         corpus: dict,
         locked_files: dict,
         index_to_word: dict,
-        manual_folders: set = None,
+        manual_folders: Optional[set] = None,
         is_async: bool = False,
     ):
         if manual_folders is None:
@@ -92,11 +93,16 @@ class CacheManager:
         corpus: dict,
         locked_files: dict,
         index_to_word: dict,
-        manual_folders: set = None,
+        manual_folders: Optional[set] = None,
     ):
         """Asynchronously save analysis results to the database."""
         _write = self._create_write_task(
-            source_directory, corpus, locked_files, index_to_word, manual_folders, is_async=True
+            source_directory,
+            corpus,
+            locked_files,
+            index_to_word,
+            manual_folders,
+            is_async=True,
         )
         self.worker.execute_write_async(_write)
 

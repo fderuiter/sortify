@@ -12,7 +12,9 @@ except ImportError:
 class LinkManager:
     """Manager for symbolic and shortcut links."""
 
-    _registry = {}
+    from typing import Any, Dict
+
+    _registry: Dict[str, Dict[str, Any]] = {}
 
     @classmethod
     def register_link(cls, base_dir: str, rel_path: str):

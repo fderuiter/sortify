@@ -6,6 +6,7 @@ This module is responsible for safely moving files to new directories.
 import logging
 import os
 import shutil
+from typing import Optional
 
 from app.core.link_manager import LinkManager
 from app.core.verifier import VerificationEngine
@@ -16,7 +17,9 @@ except ImportError:
     pylnk3 = None
 
 
-def get_safe_path(dest_dir: str, filename: str, source_path: str = None) -> str:
+def get_safe_path(
+    dest_dir: str, filename: str, source_path: Optional[str] = None
+) -> str:
     """Generate a safe file path to avoid overwriting existing files."""
     base, extension = os.path.splitext(filename)
     counter = 1
@@ -51,7 +54,11 @@ def _remove_empty_dirs(path: str):
 
 
 def _execute_moves_recursive(
-    base_dir: str, plan: dict, db, current_dest: str = "", path_map: dict = None
+    base_dir: str,
+    plan: dict,
+    db,
+    current_dest: str = "",
+    path_map: Optional[dict] = None,
 ) -> None:
     """Recursively move files according to the plan."""
     if path_map is None:
@@ -116,8 +123,10 @@ def _execute_moves_recursive(
                         try:
                             create_func()
                             if not os.path.lexists(shadow_name):
-                                raise RuntimeError("Shadow link creation failed validation.")
-                                
+                                raise RuntimeError(
+                                    "Shadow link creation failed validation."
+                                )
+
                             os.replace(shadow_name, dest_path)
                             if dest_path != source_path:
                                 os.remove(source_path)
@@ -138,11 +147,11 @@ def _execute_moves_recursive(
                             final_target = new_abs_target
 
                         moved_as_link = _create_and_commit_shadow_link(
-                            lambda: os.symlink(final_target, shadow_name),
-                            "symlink"
+                            lambda: os.symlink(final_target, shadow_name), "symlink"
                         )
 
                     elif link_info["type"] == "lnk" and pylnk3:
+
                         def _create_lnk():
                             parsed = pylnk3.parse(source_path)
                             kwargs = {
@@ -153,9 +162,13 @@ def _execute_moves_recursive(
                                 "work_dir": parsed.work_dir,
                                 "window_mode": parsed.window_mode,
                             }
-                            pylnk3.for_file(new_abs_target, lnk_name=shadow_name, **kwargs)
+                            pylnk3.for_file(
+                                new_abs_target, lnk_name=shadow_name, **kwargs
+                            )
 
-                        moved_as_link = _create_and_commit_shadow_link(_create_lnk, "Windows shortcut")
+                        moved_as_link = _create_and_commit_shadow_link(
+                            _create_lnk, "Windows shortcut"
+                        )
 
             # Record user verified target
             doc = db.get_document(base_dir, key)
