@@ -115,7 +115,7 @@ class SessionCrypto:
                 "Database accessed but key file is missing or invalid."
             ) from e
 
-    def get_raw_key(self) -> str:
+    def get_raw_key(self) -> str | None:
         """Get the raw key string for SQLCipher."""
         if self._cipher is None:
             self.get_cipher()

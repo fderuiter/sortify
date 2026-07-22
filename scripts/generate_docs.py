@@ -255,11 +255,12 @@ if __name__ == "__main__":
             errors.append((name, e, sys.exc_info()))
 
     if errors:
-        sys.stderr.write("Documentation generation encountered errors in the following modules:\n\n")
+        sys.stderr.write(
+            "Documentation generation encountered errors in the following modules:\n\n"
+        )
         for name, exc, exc_info in errors:
             sys.stderr.write(f"--- Error in {name} ---\n")
             traceback.print_exception(*exc_info, file=sys.stderr)
             sys.stderr.write("\n")
-        
-        sys.exit(1)
 
+        sys.exit(1)

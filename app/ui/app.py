@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import os
 
 from nicegui import ui
 
@@ -120,16 +121,21 @@ class AutoSorterApp:
         import sys
 
         from app.config import get_app_dir
-        
+
         if getattr(sys, "frozen", False):
             base_path = os.path.dirname(sys.executable)
         else:
-            base_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-            
+            base_path = os.path.dirname(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            )
+
         local_model_dir = os.path.join(base_path, "offline_bundle", "model")
         user_model_dir = get_app_dir() / "model"
-        
-        if os.path.exists(os.path.join(local_model_dir, "config.json")) or (user_model_dir / "config.json").exists():
+
+        if (
+            os.path.exists(os.path.join(local_model_dir, "config.json"))
+            or (user_model_dir / "config.json").exists()
+        ):
             if self.settings.AI_CONSENT_GRANTED is None:
                 self.settings.AI_CONSENT_GRANTED = True
             return
@@ -173,10 +179,13 @@ class AutoSorterApp:
     async def _scan_and_process_worker(self):
         try:
             from app.core.scanner import get_files_recursively
-            files = await asyncio.to_thread(get_files_recursively, self.app_session.base_dir)
+
+            files = await asyncio.to_thread(
+                get_files_recursively, self.app_session.base_dir
+            )
             self.total_files = len(files)
             self.completed_files = 0
-            
+
             from app.core.metadata import MetadataPass
 
             bypassed_files = await asyncio.to_thread(
@@ -186,19 +195,19 @@ class AutoSorterApp:
                 self.settings,
                 self.app_session.db,
                 None,
-                lambda: getattr(self, "_cancel_analysis_flag", False)
+                lambda: getattr(self, "_cancel_analysis_flag", False),
             )
             self.completed_files += len(bypassed_files)
             if self.total_files > 0:
                 self.progress_bar.set_value(self.completed_files / self.total_files)
-            
+
             bypassed_set = set(bypassed_files)
             items_to_sort = [f for f in files if f not in bypassed_set]
-            
+
             generator = self.app_session.process_items(
-                items_to_sort, 
-                None, 
-                lambda: getattr(self, "_cancel_analysis_flag", False)
+                items_to_sort,
+                None,
+                lambda: getattr(self, "_cancel_analysis_flag", False),
             )
 
             def get_next_chunk():
@@ -210,17 +219,17 @@ class AutoSorterApp:
             while True:
                 if self._cancel_analysis_flag:
                     break
-                
+
                 chunk = await asyncio.to_thread(get_next_chunk)
                 if chunk is None:
                     break
-                
+
                 await asyncio.to_thread(self.app_session.partial_fit, chunk)
                 self.completed_files += len(chunk)
                 if self.total_files > 0:
                     self.progress_bar.set_value(self.completed_files / self.total_files)
                 await asyncio.sleep(0.01)
-            
+
             if not self._cancel_analysis_flag:
                 self.plan = await asyncio.to_thread(
                     self.app_session.generate_sorting_plan

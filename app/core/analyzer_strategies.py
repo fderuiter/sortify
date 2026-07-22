@@ -91,7 +91,9 @@ class RecursiveKMeansStrategy:
             return "Miscellaneous"
 
     def _cluster_recursive(self, filenames: list, documents: list, depth: int) -> dict:
-        plan = {}
+        from typing import Any
+        plan: dict[str, Any] = {}
+
 
         if depth >= self.max_depth or len(documents) < 3:
             for f in filenames:
@@ -162,7 +164,7 @@ class RecursiveKMeansStrategy:
 class GenerativeNamingStrategy(RecursiveKMeansStrategy):
     """Strategy that uses a generative model to create descriptive folder names."""
 
-    def __init__(self, model_path: str = None):
+    def __init__(self, model_path: str | None = None):
         self.generator = None
         self.task = None
 
@@ -174,11 +176,12 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
             )
 
         local_bundle_path = os.path.join(base_path, "offline_bundle", "model")
-        
+
         from app.config import get_app_dir
+
         user_bundle_path = str(get_app_dir() / "model")
 
-        self.model_path = model_path
+        self.model_path: str | None = model_path
         if not self.model_path:
             if os.path.exists(local_bundle_path):
                 self.model_path = local_bundle_path

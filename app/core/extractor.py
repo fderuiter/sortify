@@ -75,7 +75,7 @@ def process_item_worker(
             f"General worker failure processing item: {item}. Error: {str(e)}"
         )
     finally:
-        if progress_callback:
+        if progress_callback is not None:
             progress_callback()
 
     return item, "", ""

@@ -6,7 +6,7 @@ import sys
 import threading
 
 # Global connection cache and lock
-_connection_cache = {}
+_connection_cache: dict[tuple[str, int], sqlite3.Connection] = {}
 _cache_lock = threading.Lock()
 
 

@@ -43,7 +43,9 @@ class CacheManager:
         except Exception:
             raise
 
-    def _create_write_func(self, source_directory, corpus, locked_files, index_to_word, manual_folders):
+    def _create_write_func(
+        self, source_directory, corpus, locked_files, index_to_word, manual_folders
+    ):
         def _write():
             try:
                 conn = self._get_conn()
@@ -69,6 +71,7 @@ class CacheManager:
             except Exception as e:
                 logging.error(f"Failed to save cache: {e}")
                 raise
+
         return _write
 
     def _save_cache_sync(
@@ -77,12 +80,14 @@ class CacheManager:
         corpus: dict,
         locked_files: dict,
         index_to_word: dict,
-        manual_folders: set = None,
+        manual_folders: set | None = None,
     ):
         if manual_folders is None:
             manual_folders = set()
-            
-        _write = self._create_write_func(source_directory, corpus, locked_files, index_to_word, manual_folders)
+
+        _write = self._create_write_func(
+            source_directory, corpus, locked_files, index_to_word, manual_folders
+        )
         self.worker.execute_write(_write)
 
     def save_cache_async(
@@ -91,13 +96,15 @@ class CacheManager:
         corpus: dict,
         locked_files: dict,
         index_to_word: dict,
-        manual_folders: set = None,
+        manual_folders: set | None = None,
     ):
         """Asynchronously save analysis results to the database."""
         if manual_folders is None:
             manual_folders = set()
-            
-        _write = self._create_write_func(source_directory, corpus, locked_files, index_to_word, manual_folders)
+
+        _write = self._create_write_func(
+            source_directory, corpus, locked_files, index_to_word, manual_folders
+        )
         self.worker.execute_write_async(_write)
 
     def save_cache_sync(
@@ -106,7 +113,7 @@ class CacheManager:
         corpus: dict,
         locked_files: dict,
         index_to_word: dict,
-        manual_folders: set = None,
+        manual_folders: set | None = None,
     ):
         """Save analysis results to the database synchronously."""
         self._save_cache_sync(

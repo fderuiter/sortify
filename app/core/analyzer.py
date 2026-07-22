@@ -6,6 +6,7 @@ This module provides topic modeling functionality.
 import hashlib
 import logging
 import os
+import typing
 
 from app.core.analyzer_strategies import clustering_registry
 
@@ -27,7 +28,7 @@ class IncrementalAnalyzer:
         self.strategy_name = strategy_name
         self.model_path = model_path
         self.model_name = None
-        self.corpus = {}
+        self.corpus: dict[str, str] = {}
         self._last_reconstruction_error = 0.0
 
     def close(self):
@@ -119,23 +120,24 @@ class IncrementalAnalyzer:
                     parts = dirname.replace("\\", "/").split("/")
                     current = new_node
                     for part in parts:
+                        val = current.get(part)
                         if (
                             part not in current
-                            or current[part] is None
+                            or val is None
                             or (
-                                isinstance(current[part], dict)
-                                and current[part].get("__type__") == "file"
+                                isinstance(val, dict)
+                                and val.get("__type__") == "file"
                             )
                         ):
                             current[part] = {}
-                        current = current[part]
+                        current = current[part] # type: ignore
                     current[k] = v
             else:
                 new_node[k] = self._inject_hierarchy(v)
         return new_node
 
     def generate_sorting_plan(
-        self, base_dir: str, runtime_settings=None, locked_files: dict = None
+        self, base_dir: str, runtime_settings=None, locked_files: dict | None = None
     ) -> dict:
         """Generate a sorting plan based on the current model state."""
         try:
@@ -279,7 +281,7 @@ class IncrementalAnalyzer:
                             "extraction_status": ext_status,
                         }
                     else:
-                        current = current[part]
+                        current = current[part] # type: ignore
 
             if unsupported_files:
                 if "Miscellaneous" not in plan:
@@ -385,7 +387,7 @@ class IncrementalAnalyzer:
                             "status": status,
                         }
 
-            clean_plan = {}
+            clean_plan: dict[str, typing.Any] = {}
             import ntpath
 
             for target_folder, files in plan.items():
@@ -410,7 +412,7 @@ class IncrementalAnalyzer:
                         for f, info in files.items():
                             current[part][f] = info
                     else:
-                        current = current[part]
+                        current = current[part] # type: ignore
 
             return self._inject_hierarchy(clean_plan)
 

@@ -3,6 +3,7 @@
 import os
 import shutil
 import time
+import typing
 import uuid
 from typing import Any, Dict, List
 
@@ -216,10 +217,11 @@ class HistoryManager:
 
         current_files = get_files_recursively(base_dir)
 
-        inode_counts = {}
+        inode_counts: dict[int, int] = {}
         current_inodes = {}
         active_files_by_rel_path = {}
-        active_files_by_sig = {}
+
+        active_files_by_sig: dict[tuple[int, float, int, typing.Any], list[str]] = {}
         inodes_reliable = True
 
         for rel_path in current_files:
@@ -318,10 +320,10 @@ class HistoryManager:
 
                 current_files = get_files_recursively(base_dir)
 
-                inode_counts = {}
+                inode_counts: dict[int, int] = {}
                 current_inodes = {}
                 active_files_by_rel_path = {}
-                active_files_by_sig = {}
+                active_files_by_sig: dict[tuple[int, float, int, typing.Any], list[str]] = {}
                 inodes_reliable = True
 
                 for rel_path in current_files:

@@ -16,7 +16,7 @@ except ImportError:
     pylnk3 = None
 
 
-def get_safe_path(dest_dir: str, filename: str, source_path: str = None) -> str:
+def get_safe_path(dest_dir: str, filename: str, source_path: str | None = None) -> str:
     """Generate a safe file path to avoid overwriting existing files."""
     base, extension = os.path.splitext(filename)
     counter = 1
@@ -51,7 +51,7 @@ def _remove_empty_dirs(path: str):
 
 
 def _execute_moves_recursive(
-    base_dir: str, plan: dict, db, current_dest: str = "", path_map: dict = None
+    base_dir: str, plan: dict, db, current_dest: str = "", path_map: dict | None = None
 ) -> None:
     """Recursively move files according to the plan."""
     if path_map is None:
