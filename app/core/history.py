@@ -66,7 +66,6 @@ class HistoryManager:
                     filepath TEXT,
                     file_hash TEXT,
                     extracted_text TEXT,
-                    embedding BLOB,
                     FOREIGN KEY(session_id) REFERENCES sessions(session_id)
                 )
             """)
@@ -121,14 +120,14 @@ class HistoryManager:
             db_conn = get_db_connection(self.db.db_path)
             with db_conn:
                 cur = db_conn.execute(
-                    "SELECT filepath, file_hash, extracted_text, embedding FROM documents WHERE base_dir = ?",
+                    "SELECT filepath, file_hash, extracted_text FROM documents WHERE base_dir = ?",
                     (base_dir,)
                 )
                 for r in cur.fetchall():
-                    docs.append((session_id, r[0], r[1], r[2], r[3]))
+                    docs.append((session_id, r[0], r[1], r[2]))
             if docs:
                 conn.executemany(
-                    "INSERT INTO snapshot_documents (session_id, filepath, file_hash, extracted_text, embedding) VALUES (?, ?, ?, ?, ?)",
+                    "INSERT INTO snapshot_documents (session_id, filepath, file_hash, extracted_text) VALUES (?, ?, ?, ?)",
                     docs
                 )
             
@@ -321,7 +320,7 @@ class HistoryManager:
 
                 planned_target_rels = [os.path.relpath(m[1], base_dir) for m in moves]
 
-                cur = conn.execute("SELECT filepath, file_hash, extracted_text, embedding FROM snapshot_documents WHERE session_id = ?", (session_id,))
+                cur = conn.execute("SELECT filepath, file_hash, extracted_text FROM snapshot_documents WHERE session_id = ?", (session_id,))
                 snapshot_docs = cur.fetchall()
                 snapshot_docs_dict = {r[0]: r for r in snapshot_docs}
 
@@ -331,16 +330,15 @@ class HistoryManager:
                     docs_to_upsert = []
                     for fp, r in snapshot_docs_dict.items():
                         if fp not in planned_target_rels:
-                            docs_to_upsert.append((base_dir, r[0], r[1], r[2], r[3]))
+                            docs_to_upsert.append((base_dir, r[0], r[1], r[2]))
                     if docs_to_upsert:
                         db_conn.executemany(
                             """
-                            INSERT INTO documents (base_dir, filepath, file_hash, extracted_text, embedding)
-                            VALUES (?, ?, ?, ?, ?)
-                            ON CONFLICT(base_dir, filepath) DO UPDATE SET
-                                file_hash=excluded.file_hash,
-                                extracted_text=excluded.extracted_text,
-                                embedding=excluded.embedding
+                            INSERT INTO documents (base_dir, filepath, file_hash, extracted_text)
+                        VALUES (?, ?, ?, ?)
+                        ON CONFLICT(base_dir, filepath) DO UPDATE SET
+                            file_hash=excluded.file_hash,
+                            extracted_text=excluded.extracted_text
                             """,
                             docs_to_upsert
                         )
@@ -416,14 +414,13 @@ class HistoryManager:
                             if snapshot_doc:
                                 db_conn.execute(
                                     """
-                                    INSERT INTO documents (base_dir, filepath, file_hash, extracted_text, embedding)
-                                    VALUES (?, ?, ?, ?, ?)
-                                    ON CONFLICT(base_dir, filepath) DO UPDATE SET
-                                        file_hash=excluded.file_hash,
-                                        extracted_text=excluded.extracted_text,
-                                        embedding=excluded.embedding
+                                    INSERT INTO documents (base_dir, filepath, file_hash, extracted_text)
+                        VALUES (?, ?, ?, ?)
+                        ON CONFLICT(base_dir, filepath) DO UPDATE SET
+                            file_hash=excluded.file_hash,
+                            extracted_text=excluded.extracted_text
                                     """,
-                                    (base_dir, rel_dst, snapshot_doc[1], snapshot_doc[2], snapshot_doc[3])
+                                    (base_dir, rel_dst, snapshot_doc[1], snapshot_doc[2])
                                 )
 
                     # Restore symlinks after standard files

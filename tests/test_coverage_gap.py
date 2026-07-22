@@ -4,7 +4,6 @@ import tempfile
 from pathlib import Path
 from unittest import mock
 
-import numpy as np
 import pypdf
 
 from app.core.cache import CacheManager
@@ -120,13 +119,13 @@ def test_build_corpus_generator_sequential_continue(tmp_path):
     db.upsert_document(str(tmp_path), "test.txt", file_hash, "hello")
     
     gen = build_corpus_generator(
-        str(tmp_path), ["test.txt"], mock.MagicMock(), 1, chunk_size=1, sequential=True, db=db
+        str(tmp_path), ["test.txt"], mock.MagicMock(), 1, db=db, chunk_size=1, sequential=True
     )
     chunks = list(gen)
     assert len(chunks) == 0
 
     gen2 = build_corpus_generator(
-        str(tmp_path), ["test.txt"], mock.MagicMock(), 1, chunk_size=2, sequential=True, db=db
+        str(tmp_path), ["test.txt"], mock.MagicMock(), 1, db=db, chunk_size=2, sequential=True
     )
     chunks2 = list(gen2)
     assert len(chunks2) == 0
@@ -138,13 +137,13 @@ def test_build_corpus_generator_parallel_continue(tmp_path):
     db.upsert_document(str(tmp_path), "test.txt", file_hash, "hello")
     
     gen = build_corpus_generator(
-        str(tmp_path), ["test.txt"], mock.MagicMock(), 1, chunk_size=1, sequential=False, db=db
+        str(tmp_path), ["test.txt"], mock.MagicMock(), 1, db=db, chunk_size=1, sequential=False
     )
     chunks = list(gen)
     assert len(chunks) == 0
 
     gen2 = build_corpus_generator(
-        str(tmp_path), ["test.txt"], mock.MagicMock(), 1, chunk_size=2, sequential=False, db=db
+        str(tmp_path), ["test.txt"], mock.MagicMock(), 1, db=db, chunk_size=2, sequential=False
     )
     chunks2 = list(gen2)
     assert len(chunks2) == 0
