@@ -61,6 +61,9 @@ class Database:
                 return {
                     "file_hash": row[0],
                     "extracted_text": decrypted_text,
+                    "embedding": None,
+                    "model_name": None,
+                    "vector_dimension": None,
                 }
             return None
 
@@ -78,7 +81,10 @@ class Database:
             with conn:
                 rows_to_insert = []
                 for doc in documents:
-                    base_dir, filepath, file_hash, extracted_text = doc
+                    base_dir = doc[0]
+                    filepath = doc[1]
+                    file_hash = doc[2]
+                    extracted_text = doc[3]
                     
                     enc_text = self.crypto.encrypt_text(extracted_text) if extracted_text is not None else None
                     
@@ -112,7 +118,7 @@ class Database:
             
             def _decrypt_row(row):
                 decrypted_text = self.crypto.decrypt_text(row[1]) if row[1] is not None else None
-                return (row[0], decrypted_text, row[2], row[3])
+                return (row[0], decrypted_text, None, row[2], row[3], None, None)
                 
             results = []
             if rows:

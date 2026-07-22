@@ -9,8 +9,6 @@ from contextlib import contextmanager
 from typing import List, Protocol
 
 import numpy as np
-from sklearn.cluster import MiniBatchKMeans
-from sklearn.feature_extraction.text import TfidfVectorizer
 
 
 @contextmanager
@@ -73,6 +71,7 @@ class RecursiveKMeansStrategy:
         if not documents:
             return "Miscellaneous"
         try:
+            from sklearn.feature_extraction.text import TfidfVectorizer
             vectorizer = TfidfVectorizer(
                 stop_words=list(self.stop_words), max_features=self.max_features
             )
@@ -99,9 +98,8 @@ class RecursiveKMeansStrategy:
             return {"Miscellaneous": plan} if depth == 1 else plan
 
         try:
-            vectorizer = TfidfVectorizer(
-                stop_words=list(self.stop_words), max_features=100
-            )
+            from sklearn.feature_extraction.text import TfidfVectorizer
+            vectorizer = TfidfVectorizer(stop_words=list(self.stop_words), max_features=1000)
             X = vectorizer.fit_transform(documents)
         except Exception:
             for f in filenames:
@@ -112,6 +110,7 @@ class RecursiveKMeansStrategy:
         if actual_k < 2:
             actual_k = 2
 
+        from sklearn.cluster import MiniBatchKMeans
         kmeans = MiniBatchKMeans(n_clusters=actual_k, random_state=42, n_init="auto")
         labels = kmeans.fit_predict(X)
         self._error += kmeans.inertia_
@@ -179,9 +178,10 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
 
                 self.model_path = str(get_app_dir() / "generative_model")
 
-        self._init_model()
+        self._model_initialized = False
 
     def _init_model(self):
+        self._model_initialized = True
         if not self.model_path or not os.path.exists(self.model_path):
             logging.info(
                 "Generative model not found locally. Falling back to deterministic rules."
@@ -228,6 +228,9 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
     def _get_cluster_keywords(self, documents: list) -> str:
         if not documents:
             return "Miscellaneous"
+
+        if not getattr(self, "_model_initialized", False):
+            self._init_model()
 
         if self.generator is None:
             return super()._get_cluster_keywords(documents)

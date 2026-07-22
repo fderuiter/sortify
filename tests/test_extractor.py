@@ -56,7 +56,7 @@ def test_extract_txt(mock_txt_file):
 
 def test_extract_docx(mocker):
     mocker.patch("os.path.splitext", return_value=("file", ".docx"))
-    mock_doc = mocker.patch("app.core.extractor_strategies.Document")
+    mock_doc = mocker.patch("docx.Document")
     mock_instance = mock_doc.return_value
     mock_instance.paragraphs = [
         MagicMock(text="Paragraph 1"),
@@ -81,7 +81,7 @@ def test_extract_csv(mocker):
 
 def test_extract_excel(mocker):
     mocker.patch("os.path.splitext", return_value=("file", ".xlsx"))
-    mock_pd = mocker.patch("app.core.extractor_strategies.pd.read_excel")
+    mock_pd = mocker.patch("pandas.read_excel")
     mock_df = mock_pd.return_value
     mock_df.to_string.return_value = "Excel content"
 
@@ -175,4 +175,5 @@ def test_build_corpus_generator(mocker):
     assert "file1.txt" in chunks[0] or "file1.txt" in chunks[1]
     assert len(chunks[0]) == 2
     assert len(chunks[1]) == 1
+
 

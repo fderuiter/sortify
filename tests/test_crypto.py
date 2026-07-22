@@ -111,7 +111,6 @@ def test_encryption_decryption(tmp_path):
     assert enc_text != original_text.encode('utf-8')
     assert crypto.decrypt_text(enc_text) == original_text
     
-    # Embeddings
 
 
 def test_invalid_key(tmp_path):

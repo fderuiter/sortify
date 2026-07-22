@@ -66,6 +66,7 @@ def test_partial_fit_empty():
     analyzer.partial_fit("dummy_base", {})
     assert len(analyzer.corpus) == 0
 
+def test_generate_sorting_plan_empty():
     analyzer = IncrementalAnalyzer(max_folders=3, stop_words={"the", "and"}, db=db, model_path="all-MiniLM-L6-v2")
     plan = analyzer.generate_sorting_plan("dummy_base")
     assert plan == {}
@@ -87,6 +88,16 @@ def test_generate_sorting_plan():
     assert len(plan) > 0
 
 
+def test_partial_fit_exception(mocker):
+    analyzer = IncrementalAnalyzer(max_folders=2, stop_words={"the", "and"}, db=db, model_path="all-MiniLM-L6-v2")
+    mocker.patch.object(db, "upsert_documents", side_effect=Exception("Test error"))
+    mock_logger = mocker.patch("app.core.analyzer.logging.error")
+
+    corpus = {"unique_file_exception.txt": "unique test content exception"}
+    analyzer.partial_fit("dummy_base", corpus)
+
+    mock_logger.assert_called_once()
+    assert "unique_file_exception.txt" in analyzer.corpus  # Update still happened before exception
 
 
 def test_generate_sorting_plan_exception(mocker):

@@ -4,16 +4,17 @@ Welcome to the Smart AutoSorter AI Pro project! This guide will help you get sta
 
 ## Development Setup
 
-To set up your local development environment and sync dependencies, run the workspace setup task:
+To set up your local development environment and sync dependencies, run the standard uv commands:
 
 ```bash
-python tasks.py setup
+uv sync
+uv run pre-commit install
 ```
 
 Once the setup is complete, verify your environment by running the test suite:
 
 ```bash
-python tasks.py test
+uv run pytest
 ```
 
 ## Interactive CLI Demo Mode

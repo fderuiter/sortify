@@ -91,6 +91,9 @@ options:
 ### `scripts/prepare_offline.py`
 Utility script to prepare an offline deployment bundle.
 
+### `scripts/install_offline.py`
+Offline installation and verification script.
+
 ## Offline Sideloading Deployment
 
 To deploy the application in a completely offline environment, you must sideload the model bundle. The application will bypass the setup download prompt and activate semantic local sorting automatically if it detects a valid local bundle on startup.
