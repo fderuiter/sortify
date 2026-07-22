@@ -110,32 +110,38 @@ def _execute_moves_recursive(
                     import uuid
                     shadow_name = f"{dest_path}.shadow_{uuid.uuid4().hex}"
 
+                    def _create_and_commit_shadow_link(create_func, link_type_name):
+                        try:
+                            create_func()
+                            if not os.path.lexists(shadow_name):
+                                raise RuntimeError("Shadow link creation failed validation.")
+                                
+                            os.replace(shadow_name, dest_path)
+                            if dest_path != source_path:
+                                os.remove(source_path)
+                            return True
+                        except Exception as e:
+                            if os.path.lexists(shadow_name):
+                                os.remove(shadow_name)
+                            logging.error(
+                                f"Failed to atomically update {link_type_name} {source_path}: {e}",
+                                exc_info=True,
+                            )
+                            raise
+
                     if link_info["type"] == "symlink":
                         if not os.path.isabs(original_target):
                             final_target = os.path.relpath(new_abs_target, dest_dir)
                         else:
                             final_target = new_abs_target
 
-                        try:
-                            os.symlink(final_target, shadow_name)
-                            if not os.path.lexists(shadow_name):
-                                raise RuntimeError("Shadow link creation failed validation.")
-                            
-                            os.replace(shadow_name, dest_path)
-                            if dest_path != source_path:
-                                os.remove(source_path)
-                            moved_as_link = True
-                        except Exception as e:
-                            if os.path.lexists(shadow_name):
-                                os.remove(shadow_name)
-                            logging.error(
-                                f"Failed to atomically update symlink {source_path}: {e}",
-                                exc_info=True,
-                            )
-                            raise
+                        moved_as_link = _create_and_commit_shadow_link(
+                            lambda: os.symlink(final_target, shadow_name),
+                            "symlink"
+                        )
 
                     elif link_info["type"] == "lnk" and pylnk3:
-                        try:
+                        def _create_lnk():
                             parsed = pylnk3.parse(source_path)
                             kwargs = {
                                 "arguments": parsed.arguments,
@@ -145,25 +151,9 @@ def _execute_moves_recursive(
                                 "work_dir": parsed.work_dir,
                                 "window_mode": parsed.window_mode,
                             }
-                            
-                            pylnk3.for_file(
-                                new_abs_target, lnk_name=shadow_name, **kwargs
-                            )
-                            if not os.path.lexists(shadow_name):
-                                raise RuntimeError("Shadow link creation failed validation.")
-                                
-                            os.replace(shadow_name, dest_path)
-                            if dest_path != source_path:
-                                os.remove(source_path)
-                            moved_as_link = True
-                        except Exception as e:
-                            if os.path.lexists(shadow_name):
-                                os.remove(shadow_name)
-                            logging.error(
-                                f"Failed to atomically update Windows shortcut {source_path}: {e}",
-                                exc_info=True,
-                            )
-                            raise
+                            pylnk3.for_file(new_abs_target, lnk_name=shadow_name, **kwargs)
+
+                        moved_as_link = _create_and_commit_shadow_link(_create_lnk, "Windows shortcut")
 
             # Record user verified target
             doc = db.get_document(base_dir, key)

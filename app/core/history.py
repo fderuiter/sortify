@@ -164,19 +164,7 @@ class HistoryManager:
             cur = conn.execute("SELECT session_id, timestamp, base_dir, status FROM sessions ORDER BY timestamp DESC")
             return [{"session_id": r[0], "timestamp": r[1], "base_dir": r[2], "status": r[3]} for r in cur.fetchall()]
 
-    def check_missing_files(self, session_id: str) -> List[str]:
-        """Check if any files from the snapshot are missing from the disk."""
-        conn = get_db_connection(self.db_path)
-        with conn:
-            cur = conn.execute("SELECT base_dir FROM sessions WHERE session_id = ?", (session_id,))
-            row = cur.fetchone()
-            if not row:
-                raise ValueError("Session not found")
-            base_dir = row[0]
-
-            cur = conn.execute("SELECT original_rel_path, inode, size, mtime, is_symlink, symlink_target FROM snapshot_files WHERE session_id = ?", (session_id,))
-            snapshot_files = cur.fetchall()
-
+    def _build_current_file_state(self, base_dir: str):
         from app.core.scanner import get_files_recursively
         current_files = get_files_recursively(base_dir)
         
@@ -210,6 +198,24 @@ class HistoryManager:
             if sig not in active_files_by_sig:
                 active_files_by_sig[sig] = []
             active_files_by_sig[sig].append(abs_path)
+            
+        return current_inodes, active_files_by_rel_path, active_files_by_sig, inodes_reliable
+
+    def check_missing_files(self, session_id: str) -> List[str]:
+        """Check if any files from the snapshot are missing from the disk."""
+        conn = get_db_connection(self.db_path)
+        with conn:
+            cur = conn.execute("SELECT base_dir FROM sessions WHERE session_id = ?", (session_id,))
+            row = cur.fetchone()
+            if not row:
+                raise ValueError("Session not found")
+            base_dir = row[0]
+
+            cur = conn.execute("SELECT original_rel_path, inode, size, mtime, is_symlink, symlink_target FROM snapshot_files WHERE session_id = ?", (session_id,))
+            snapshot_files = cur.fetchall()
+
+        from app.core.scanner import get_files_recursively
+        current_inodes, active_files_by_rel_path, active_files_by_sig, inodes_reliable = self._build_current_file_state(base_dir)
 
         missing = []
         for rel_path, inode, size, mtime, is_symlink, symlink_target in snapshot_files:
@@ -264,39 +270,7 @@ class HistoryManager:
                 cur = conn.execute("SELECT original_rel_path, inode, size, mtime, is_symlink, symlink_target FROM snapshot_files WHERE session_id = ?", (session_id,))
                 snapshot_files = cur.fetchall()
 
-                from app.core.scanner import get_files_recursively
-                current_files = get_files_recursively(base_dir)
-            
-                inode_counts = {}
-                current_inodes = {}
-                active_files_by_rel_path = {}
-                active_files_by_sig = {}
-                inodes_reliable = True
-            
-                for rel_path in current_files:
-                    abs_path = os.path.join(base_dir, rel_path)
-                    try:
-                        st = os.lstat(abs_path)
-                    except OSError:
-                        continue
-                    
-                    ino = st.st_ino
-                    size = st.st_size
-                    mtime = st.st_mtime
-                    is_symlink = 1 if os.path.islink(abs_path) else 0
-                    symlink_target = os.readlink(abs_path) if is_symlink else None
-                
-                    inode_counts[ino] = inode_counts.get(ino, 0) + 1
-                    if ino == 0 or inode_counts[ino] > 1:
-                        inodes_reliable = False
-                    
-                    sig = (size, mtime, is_symlink, symlink_target)
-                    current_inodes[ino] = (abs_path, sig)
-                    active_files_by_rel_path[rel_path] = sig
-                
-                    if sig not in active_files_by_sig:
-                        active_files_by_sig[sig] = []
-                    active_files_by_sig[sig].append(abs_path)
+                current_inodes, active_files_by_rel_path, active_files_by_sig, inodes_reliable = self._build_current_file_state(base_dir)
 
                 # First compute all intended moves
                 moves = []

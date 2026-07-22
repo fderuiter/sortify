@@ -84,16 +84,8 @@ class IncrementalAnalyzer:
             if not texts:
                 return
 
-            keyword_rules = (
-                getattr(runtime_settings, "KEYWORD_RULES", {})
-                if runtime_settings
-                else {}
-            )
-            learned_rules = (
-                getattr(runtime_settings, "LEARNED_RULES", {})
-                if runtime_settings
-                else {}
-            )
+            keyword_rules = getattr(runtime_settings, "KEYWORD_RULES", {}) if runtime_settings else {}
+            learned_rules = getattr(runtime_settings, "LEARNED_RULES", {}) if runtime_settings else {}
 
             documents_to_upsert = []
             for i, (filepath, text, file_hash) in enumerate(
@@ -162,16 +154,8 @@ class IncrementalAnalyzer:
 
             supported_exts = set(registry._extractors.keys())
 
-            keyword_rules = (
-                getattr(runtime_settings, "KEYWORD_RULES", {})
-                if runtime_settings
-                else {}
-            )
-            learned_rules = (
-                getattr(runtime_settings, "LEARNED_RULES", {})
-                if runtime_settings
-                else {}
-            )
+            keyword_rules = getattr(runtime_settings, "KEYWORD_RULES", {}) if runtime_settings else {}
+            learned_rules = getattr(runtime_settings, "LEARNED_RULES", {}) if runtime_settings else {}
 
             ai_filenames = []
             ai_documents = []
