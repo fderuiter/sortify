@@ -74,7 +74,6 @@ def get_db_connection(db_path: str):
         conn = _open_conn(db_path)
     except sqlite3.DatabaseError as e:
         err_msg = str(e).lower()
-        assert False, "HIT LEGACY PURGE BLOCK"
         if "file is not a database" in err_msg or "file is encrypted" in err_msg:
             # Legacy unencrypted database or invalid key. Delete files and recreate.
             for ext in ["", "-wal", "-shm"]:
