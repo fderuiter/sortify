@@ -10,12 +10,6 @@ import urllib.error
 import urllib.request
 from urllib.parse import urlparse
 
-TARGET_FILES = [
-    "app/ui/app.py",
-    "scripts/prepare_offline.py",
-    "scripts/install_offline.py",
-]
-
 URL_REGEX = re.compile(r'https?://[^\s\'"<>]+')
 TIMEOUT = 3.0
 
@@ -63,6 +57,24 @@ def validate_url(url: str, bypass_domains: set):
         return False, f"Unexpected Error: {str(e)}", False
 
 
+def get_all_python_files():
+    """Get all python files in the repository."""
+    import os
+
+    py_files = []
+    for root, dirs, files in os.walk("."):
+        dirs[:] = [
+            d
+            for d in dirs
+            if not d.startswith(".")
+            and d not in ("venv", "env", "__pycache__", "node_modules", "site-packages")
+        ]
+        for file in files:
+            if file.endswith(".py"):
+                py_files.append(os.path.join(root, file))
+    return py_files
+
+
 def main():
     """Parse arguments and run concurrent URL validation."""
     parser = argparse.ArgumentParser(description="Local-First Python Link Validator")
@@ -72,16 +84,18 @@ def main():
     bypass_domains = set(args.bypass)
     urls = set()
 
-    for file_path in TARGET_FILES:
+    for file_path in get_all_python_files():
         try:
             with open(file_path, "r", encoding="utf-8") as f:
-                content = f.read()
-                found = URL_REGEX.findall(content)
+                try:
+                    file_content = f.read()
+                except UnicodeDecodeError:
+                    continue
+                found = URL_REGEX.findall(file_content)
                 for url in found:
-                    url = url.rstrip(".,;)")
+                    url = url.rstrip(".,;)'\"")
                     urls.add(url)
         except FileNotFoundError:
-            print(f"Warning: Target file {file_path} not found.")
             continue
 
     if not urls:

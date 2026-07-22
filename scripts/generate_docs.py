@@ -186,87 +186,137 @@ def generate_admin_guide():
 
 def update_security_md():
     """Scan for network dependencies and update SECURITY.md."""
+    import concurrent.futures
+    import re
+    from urllib.parse import urlparse
+
+    from scripts.validate_links import URL_REGEX, validate_url
+
     network_deps = []
+    urls_to_validate = set()
 
     config_path = "network_rules.json"
+    valid_rules = []
     if os.path.exists(config_path):
         import json
-        import re
 
         with open(config_path, "r", encoding="utf-8") as f:
             config = json.load(f)
-
         raw_rules = config.get("rules", [])
-        targets = config.get("targets", [])
-
-        valid_rules = []
         for rule in raw_rules:
             if (
-                not rule.get("pattern")
-                or not rule.get("match_type")
-                or not rule.get("description")
+                rule.get("pattern")
+                and rule.get("match_type")
+                and rule.get("description")
             ):
-                print(f"Warning: Malformed rule {rule}")
-            else:
                 valid_rules.append(rule)
 
-        # Helper to check matching files
-        for target in targets:
-            target_path = os.path.join(".", target)
-            if not os.path.exists(target_path):
+    import_regex = re.compile(
+        r"^\s*(?:import|from)\s+(urllib|requests|httpx|aiohttp|socket|ftplib|http\.client)(?:\s|\.|$)"
+    )
+
+    for root, dirs, files in os.walk("."):
+        # Exclude common external dependency dirs
+        dirs[:] = [
+            d
+            for d in dirs
+            if not d.startswith(".")
+            and d not in ("venv", "env", "__pycache__", "node_modules", "site-packages")
+        ]
+        for file in files:
+            if not file.endswith(".py"):
                 continue
-            for root, dirs, files in os.walk(target_path):
-                for file in files:
-                    if (
-                        not file.endswith(".py")
-                        and not file.endswith(".yml")
-                        and not file.endswith(".yaml")
-                    ):
-                        continue
-                    filepath = os.path.join(root, file)
-                    # Avoid scanning the generate_docs script itself to prevent self-matching
-                    if "generate_docs.py" in filepath:
-                        continue
 
-                    with open(filepath, "r", encoding="utf-8") as f:
-                        content = f.read()
+            filepath = os.path.join(root, file)
+            # Avoid scanning the script itself
+            if "generate_docs.py" in filepath.replace("\\", "/"):
+                continue
 
-                    for rule in valid_rules:
-                        pattern = rule.get("pattern")
-                        match_type = rule.get("match_type")
-                        desc = rule.get("description")
+            with open(filepath, "r", encoding="utf-8") as f:
+                try:
+                    file_content = f.read()
+                except UnicodeDecodeError:
+                    continue
 
-                        match_found = False
-                        matched_str = ""
+            rel_path = os.path.relpath(filepath, ".").replace("\\", "/")
 
-                        if match_type == "substring":
-                            if pattern in content:
-                                match_found = True
-                                matched_str = pattern
-                        elif match_type == "regex":
-                            try:
-                                m = re.search(pattern, content)
-                                if m:
-                                    match_found = True
-                                    matched_str = m.group(0)
-                            except re.error as e:
-                                print(
-                                    f"Warning: Invalid regex pattern '{pattern}': {e}"
-                                )
-                        else:
-                            print(
-                                f"Warning: Unknown match_type '{match_type}' in rule {rule}"
-                            )
+            # Check rules
+            for rule in valid_rules:
+                pattern = rule.get("pattern")
+                match_type = rule.get("match_type")
+                desc = rule.get("description")
 
-                        if match_found:
-                            # Normalize path for cross-platform consistency
-                            rel_path = os.path.relpath(filepath, ".").replace("\\", "/")
-                            dep_entry = f"- `{matched_str}` (via `{rel_path}`): {desc}"
-                            if dep_entry not in network_deps:
-                                network_deps.append(dep_entry)
+                match_found = False
+                matched_str = ""
 
-    # Deduplicate and sort to ensure consistent output
+                if match_type == "substring" and pattern in file_content:
+                    match_found = True
+                    matched_str = pattern
+                elif match_type == "regex":
+                    try:
+                        m = re.search(pattern, file_content)
+                        if m:
+                            match_found = True
+                            matched_str = m.group(0)
+                    except re.error:
+                        pass
+
+                if match_found:
+                    network_deps.append(f"- `{matched_str}` (via `{rel_path}`): {desc}")
+
+            # Find URLs
+            for match in URL_REGEX.finditer(file_content):
+                url = match.group(0).rstrip(".,;)'\"")
+                urls_to_validate.add(url)
+
+                try:
+                    domain = urlparse(url).netloc
+                except Exception:
+                    domain = url
+
+                if domain:
+                    network_deps.append(
+                        f"- `{domain}` (via `{rel_path}`): Auto-discovered network URL"
+                    )
+
+            # Find Imports
+            for line in file_content.splitlines():
+                m = import_regex.search(line)
+                if m:
+                    module = m.group(1)
+                    network_deps.append(
+                        f"- `{module}` (via `{rel_path}`): Auto-discovered network import"
+                    )
+
+    # Deduplicate and sort
     network_deps = sorted(list(set(network_deps)))
+
+    has_critical_error = False
+    print(f"Discovered {len(urls_to_validate)} unique network URLs to validate.")
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+        # Request timeouts of no more than 5 seconds per domain handled by validate_url?
+        # Wait, validate_url in validate_links.py uses TIMEOUT = 3.0 which is <= 5s.
+        future_to_url = {
+            executor.submit(validate_url, url, set()): url for url in urls_to_validate
+        }
+        for future in concurrent.futures.as_completed(future_to_url):
+            url = future_to_url[future]
+            try:
+                success, msg, is_critical = future.result()
+                if not success and is_critical:
+                    print(f"[FAIL] {url} - {msg}")
+                    has_critical_error = True
+                elif not success:
+                    print(f"[WARN] {url} - {msg}")
+                else:
+                    print(f"[PASS] {url} - {msg}")
+            except Exception as e:
+                print(f"[WARN] {url} generated an exception: {e}")
+
+    if has_critical_error:
+        raise Exception(
+            "One or more network dependencies failed connectivity validation."
+        )
 
     sec_file = "SECURITY.md"
     with open(sec_file, "r", encoding="utf-8") as f:
