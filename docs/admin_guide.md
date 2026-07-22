@@ -34,6 +34,10 @@ The following parameters are extracted directly from the application's configura
 - **Default**: `True`
 - **Required**: `False`
 
+### `EXPLORER_INTEGRATION`
+- **Default**: `False`
+- **Required**: `False`
+
 ### `KEYWORD_RULES`
 - **Default**: `PydanticUndefined`
 - **Required**: `False`

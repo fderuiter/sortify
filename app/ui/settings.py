@@ -5,6 +5,22 @@ from nicegui import ui
 
 def show_settings(parent_app, settings):
     """Show the settings dialog."""
+    def on_explorer_integration_change(e):
+        import sys
+        if sys.platform != 'win32':
+            ui.notify("Context menu integration is only available on Windows.", type="warning")
+            e.sender.value = False
+            return
+            
+        try:
+            from app.core.integration import register_context_menu
+            register_context_menu(e.value)
+            settings.EXPLORER_INTEGRATION = e.value
+            ui.notify("Explorer integration updated successfully.", type="positive")
+        except Exception as ex:
+            e.sender.value = not e.value
+            ui.notify(f"Failed to update Explorer integration: {ex}", type="negative")
+
     with ui.dialog() as dialog, ui.card().classes("w-3/4 max-w-4xl p-6"):
         with ui.row().classes("w-full justify-between items-center mb-6"):
             ui.label("Application Settings").classes("text-2xl font-bold").props(
@@ -27,13 +43,20 @@ def show_settings(parent_app, settings):
 
         with ui.tab_panels(tabs, value="General").classes("w-full mt-4"):
             with ui.tab_panel("General"):
-                ui.label("Cleanup & Maintenance").classes("text-lg font-bold mb-2")
+                ui.label("System Integration").classes("text-lg font-bold mb-2")
+                ui.switch(
+                    "Enable Windows Explorer Context Menu",
+                    value=getattr(settings, "EXPLORER_INTEGRATION", False),
+                    on_change=on_explorer_integration_change,
+                ).props('aria-label="Explorer integration toggle"')
+
+                ui.label("Cleanup & Maintenance").classes("text-lg font-bold mt-4 mb-2")
                 ui.switch(
                     "Automatically remove empty directories",
-                    value=settings.CLEANUP_EMPTY_DIRS,
+                    value=settings.CLEANUP_EMPTY_FOLDERS,
                 ).props('aria-label="Cleanup empty directories toggle"')
                 ui.label("Processing Limits").classes("text-lg font-bold mt-4 mb-2")
-                ui.number("Max folder depth", value=settings.MAX_FOLDER_DEPTH).props(
+                ui.number("Max folder depth", value=settings.MAX_DEPTH).props(
                     'aria-label="Max folder depth input"'
                 )
 

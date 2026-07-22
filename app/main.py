@@ -24,6 +24,9 @@ def main():
     parser.add_argument(
         "--demo", action="store_true", help="Run interactive CLI demo mode"
     )
+    parser.add_argument(
+        "directory", nargs="?", default=None, help="Directory to analyze automatically"
+    )
 
     args = parser.parse_args()
 
@@ -34,7 +37,7 @@ def main():
     else:
         from app.ui.app import run_app
 
-        run_app(settings)
+        run_app(settings, args.directory)
 
 
 if __name__ == "__main__":
