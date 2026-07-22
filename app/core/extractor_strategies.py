@@ -7,30 +7,45 @@ from typing import Protocol
 
 import pypdf
 
-_vision_model = None
-_vision_model_loaded = False
+_ocr_reader = None
+_ocr_reader_loaded = False
 
 
-def get_vision_model():
-    """Lazily load and return the vision-language model pipeline."""
-    global _vision_model, _vision_model_loaded
-    if not _vision_model_loaded:
-        _vision_model_loaded = True
+def get_ocr_reader():
+    """Lazily load and return the EasyOCR Reader instance configured for CPU execution."""
+    global _ocr_reader, _ocr_reader_loaded
+    if not _ocr_reader_loaded:
+        _ocr_reader_loaded = True
         try:
             import torch
-            from transformers import pipeline
+            import easyocr
 
-            # Keep the vision-language model CPU-optimized
+            # CPU optimization
             torch.set_num_threads(2)
-            _vision_model = pipeline(
-                "image-to-text",
-                model="Salesforce/blip-image-captioning-base",
-                device=-1,  # Force CPU
-            )
+            # Create reader on CPU to execute entirely locally
+            _ocr_reader = easyocr.Reader(["en"], gpu=False)
         except Exception as e:
-            logging.error(f"Failed to load vision model: {e}")
-            _vision_model = None
-    return _vision_model
+            logging.error(f"Failed to load EasyOCR reader: {e}")
+            _ocr_reader = None
+    return _ocr_reader
+
+
+def extract_text_from_image(image) -> str:
+    """Extract character-level text from an image using the unified EasyOCR engine."""
+    reader = get_ocr_reader()
+    if reader is None:
+        return ""
+
+    try:
+        import numpy as np
+
+        img_np = np.array(image)
+        results = reader.readtext(img_np)
+        extracted_text = " ".join([res[1] for res in results])
+        return extracted_text.strip()
+    except Exception as e:
+        logging.error(f"OCR processing failed: {e}")
+        return ""
 
 
 class DocumentExtractor(Protocol):
@@ -100,8 +115,8 @@ class PdfExtractor:
 
         if not text.strip():
             # Standard extraction yields no text, attempt visual extraction
-            model = get_vision_model()
-            if model is None:
+            reader = get_ocr_reader()
+            if reader is None:
                 return text
 
             visual_text = ""
@@ -109,18 +124,14 @@ class PdfExtractor:
                 from PIL import Image
 
                 with open(file_path, "rb") as f:
-                    reader = pypdf.PdfReader(f)
-                    for page in reader.pages:
+                    pdf_reader = pypdf.PdfReader(f)
+                    for page in pdf_reader.pages:
                         for img in page.images:
                             try:
                                 pil_image = Image.open(io.BytesIO(img.data))
-                                result = model(pil_image)
-                                if (
-                                    result
-                                    and isinstance(result, list)
-                                    and "generated_text" in result[0]
-                                ):
-                                    visual_text += result[0]["generated_text"] + " "
+                                extracted = extract_text_from_image(pil_image)
+                                if extracted:
+                                    visual_text += extracted + " "
                             except Exception as img_e:
                                 logging.error(
                                     f"Failed to process image in PDF {file_path}: {img_e}"
@@ -138,7 +149,7 @@ class ImageExtractor:
     """Extractor for image files."""
 
     def extract(self, file_path: str) -> str:
-        """Extract descriptive text from an image using a vision-language model."""
+        """Extract literal text from an image using local character recognition."""
         try:
             from PIL import Image
 
@@ -149,15 +160,13 @@ class ImageExtractor:
             logging.error(f"Corrupt image file {file_path}: {e}")
             return "[STATUS:ERROR: Corrupt Image File]"
 
-        model = get_vision_model()
-        if model is None:
+        reader = get_ocr_reader()
+        if reader is None:
             return "[STATUS:ERROR: Vision Model Offline]"
 
         try:
-            result = model(image)
-            if result and isinstance(result, list) and "generated_text" in result[0]:
-                return result[0]["generated_text"]
-            return ""
+            extracted_text = extract_text_from_image(image)
+            return extracted_text
         except Exception as e:
             logging.error(f"Failed to process image {file_path}: {e}")
             return "[STATUS:ERROR: Vision Model Failure]"

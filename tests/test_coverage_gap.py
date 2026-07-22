@@ -195,7 +195,7 @@ def test_mover_get_safe_path_samefile(tmp_path):
     f2 = dest / "file.txt"
     f2.write_text("data")
 
-    with mock.patch("os.path.samefile", side_effect=OSError("Access Denied")):
+    with mock.patch("app.core.mover.os.path.samefile", side_effect=OSError("Access Denied")):
         safe = get_safe_path(str(dest), "file.txt", str(f1))
         assert safe != str(f2)
         assert safe == str(dest / "file_1.txt")

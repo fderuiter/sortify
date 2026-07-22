@@ -3,43 +3,48 @@ from unittest.mock import MagicMock
 import pytest
 
 from app.core.extractor import extract_file_text
-from app.core.extractor_strategies import get_vision_model
+from app.core.extractor_strategies import get_ocr_reader
 
 
 @pytest.fixture(autouse=True)
-def reset_vision_model(monkeypatch):
+def reset_ocr_reader(monkeypatch):
     import app.core.extractor_strategies as strat
 
-    strat._vision_model = None
-    strat._vision_model_loaded = False
+    strat._ocr_reader = None
+    strat._ocr_reader_loaded = False
 
 
 def test_extract_image_success(mocker):
-    mocker.patch("os.path.isfile", return_value=True)
-    mocker.patch("os.path.splitext", return_value=("file", ".png"))
+
+
 
     mock_image = MagicMock()
     mock_PIL = MagicMock()
     mock_PIL.Image.open.return_value = mock_image
     mocker.patch.dict("sys.modules", {"PIL": mock_PIL})
 
-    mock_model = MagicMock(
-        return_value=[{"generated_text": "a screenshot of a dashboard"}]
-    )
+    mock_numpy = MagicMock()
+    mock_numpy.array.return_value = "np_image"
+    mocker.patch.dict("sys.modules", {"numpy": mock_numpy})
+
+    mock_reader = MagicMock()
+    mock_reader.readtext.return_value = [
+        ([[0, 0], [10, 0], [10, 10], [0, 10]], "a screenshot of a dashboard", 0.99)
+    ]
     mocker.patch(
-        "app.core.extractor_strategies.get_vision_model", return_value=mock_model
+        "app.core.extractor_strategies.get_ocr_reader", return_value=mock_reader
     )
 
     text = extract_file_text("dashboard.png")
     assert text == "a screenshot of a dashboard"
     mock_PIL.Image.open.assert_called_once_with("dashboard.png")
     mock_image.load.assert_called_once()
-    mock_model.assert_called_once_with(mock_image)
+    mock_reader.readtext.assert_called_once_with("np_image")
 
 
 def test_extract_image_corrupt(mocker):
-    mocker.patch("os.path.isfile", return_value=True)
-    mocker.patch("os.path.splitext", return_value=("file", ".jpg"))
+
+
 
     mock_PIL = MagicMock()
     mock_PIL.Image.open.side_effect = Exception("Corrupt image")
@@ -50,23 +55,23 @@ def test_extract_image_corrupt(mocker):
 
 
 def test_extract_image_model_offline(mocker):
-    mocker.patch("os.path.isfile", return_value=True)
-    mocker.patch("os.path.splitext", return_value=("file", ".jpeg"))
+
+
 
     mock_image = MagicMock()
     mock_PIL = MagicMock()
     mock_PIL.Image.open.return_value = mock_image
     mocker.patch.dict("sys.modules", {"PIL": mock_PIL})
 
-    mocker.patch("app.core.extractor_strategies.get_vision_model", return_value=None)
+    mocker.patch("app.core.extractor_strategies.get_ocr_reader", return_value=None)
 
     text = extract_file_text("offline.jpeg")
     assert text == "[STATUS:ERROR: Vision Model Offline]"
 
 
 def test_extract_pdf_visual_fallback(mocker):
-    mocker.patch("os.path.isfile", return_value=True)
-    mocker.patch("os.path.splitext", return_value=("file", ".pdf"))
+
+
 
     mocker.patch("builtins.open", mocker.mock_open())
 
@@ -82,28 +87,39 @@ def test_extract_pdf_visual_fallback(mocker):
 
     mock_instance.pages = [mock_page]
 
-    mock_model = MagicMock(return_value=[{"generated_text": "scanned contract page"}])
+    mock_reader = MagicMock()
+    mock_reader.readtext.return_value = [
+        ([[0, 0], [10, 0], [10, 10], [0, 10]], "scanned contract page", 0.99)
+    ]
     mocker.patch(
-        "app.core.extractor_strategies.get_vision_model", return_value=mock_model
+        "app.core.extractor_strategies.get_ocr_reader", return_value=mock_reader
     )
 
     mock_PIL = MagicMock()
     mock_PIL.Image.open.return_value = "pil_image"
     mocker.patch.dict("sys.modules", {"PIL": mock_PIL})
 
+    mock_numpy = MagicMock()
+    mock_numpy.array.return_value = "np_image"
+    mocker.patch.dict("sys.modules", {"numpy": mock_numpy})
+
     text = extract_file_text("scanned.pdf")
     assert text == "scanned contract page"
 
 
-def test_get_vision_model(mocker):
-    mock_transformers = MagicMock()
-    mock_pipeline = MagicMock(return_value="model_instance")
-    mock_transformers.pipeline = mock_pipeline
-    mocker.patch.dict("sys.modules", {"transformers": mock_transformers})
+def test_get_ocr_reader(mocker):
+    mock_easyocr = MagicMock()
+    mock_easyocr_reader = MagicMock(return_value="reader_instance")
+    mock_easyocr.Reader = mock_easyocr_reader
+    mocker.patch.dict("sys.modules", {"easyocr": mock_easyocr})
 
-    model1 = get_vision_model()
-    model2 = get_vision_model()
+    mock_torch = MagicMock()
+    mocker.patch.dict("sys.modules", {"torch": mock_torch})
 
-    assert model1 == "model_instance"
-    assert model2 == "model_instance"
-    mock_pipeline.assert_called_once()
+    reader1 = get_ocr_reader()
+    reader2 = get_ocr_reader()
+
+    assert reader1 == "reader_instance"
+    assert reader2 == "reader_instance"
+    mock_easyocr_reader.assert_called_once_with(["en"], gpu=False)
+    mock_torch.set_num_threads.assert_called_once_with(2)

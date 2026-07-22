@@ -48,8 +48,7 @@ def save_cache_sync(*args, **kwargs):
 
 @pytest.fixture
 def mock_txt_file(mocker):
-    mocker.patch("os.path.isfile", return_value=True)
-    mocker.patch("os.path.splitext", return_value=("file", ".txt"))
+    mocker.patch("app.core.extractor.os.path.isfile", return_value=True)
     return mocker.patch(
         "builtins.open", mocker.mock_open(read_data="Sample text content.")
     )
@@ -61,7 +60,6 @@ def test_extract_txt(mock_txt_file):
 
 
 def test_extract_docx(mocker):
-    mocker.patch("os.path.splitext", return_value=("file", ".docx"))
     mock_doc = mocker.patch("docx.Document")
     mock_instance = mock_doc.return_value
     mock_instance.paragraphs = [
@@ -74,7 +72,6 @@ def test_extract_docx(mocker):
 
 
 def test_extract_csv(mocker):
-    mocker.patch("os.path.splitext", return_value=("file", ".csv"))
     mocker.patch("builtins.open", mocker.mock_open(read_data="col1,col2\nval1,val2"))
     mocker.patch(
         "app.core.extractor_strategies.csv.reader",
@@ -86,7 +83,6 @@ def test_extract_csv(mocker):
 
 
 def test_extract_excel(mocker):
-    mocker.patch("os.path.splitext", return_value=("file", ".xlsx"))
     mock_pd = mocker.patch("pandas.read_excel")
     mock_df = mock_pd.return_value
     mock_df.to_string.return_value = "Excel content"
@@ -96,7 +92,6 @@ def test_extract_excel(mocker):
 
 
 def test_extract_pdf(mocker):
-    mocker.patch("os.path.splitext", return_value=("file", ".pdf"))
     mocker.patch("builtins.open", mocker.mock_open())
     mock_pdf = mocker.patch("app.core.extractor_strategies.pypdf.PdfReader")
     mock_instance = mock_pdf.return_value
@@ -109,13 +104,12 @@ def test_extract_pdf(mocker):
 
 
 def test_extract_unsupported(mocker):
-    mocker.patch("os.path.splitext", return_value=("file", ".unknown"))
     text = extract_file_text("dummy.unknown")
     assert text == "[STATUS:UNSUPPORTED]"
 
 
 def test_process_item_worker_file(mocker):
-    mocker.patch("os.path.isfile", return_value=True)
+    mocker.patch("app.core.extractor.os.path.isfile", return_value=True)
     mocker.patch("app.core.extractor.get_file_hash", return_value="hash1")
     mocker.patch.object(db, "get_document", return_value=None)
     mocker.patch("app.core.extractor.extract_file_text", return_value="worker text")
@@ -130,8 +124,8 @@ def test_process_item_worker_file(mocker):
 
 
 def test_process_item_worker_dir(mocker):
-    mocker.patch("os.path.isfile", return_value=False)
-    mocker.patch("os.path.isdir", return_value=True)
+    mocker.patch("app.core.extractor.os.path.isfile", return_value=False)
+    mocker.patch("app.core.extractor.os.path.isdir", return_value=True)
 
     mock_callback = MagicMock()
     item, text, fhash = process_item_worker("/base", "subdir", mock_callback, db)
@@ -143,7 +137,7 @@ def test_process_item_worker_dir(mocker):
 
 
 def test_process_item_worker_exception(mocker):
-    mocker.patch("os.path.isfile", side_effect=Exception("Test error"))
+    mocker.patch("app.core.extractor.os.path.isfile", side_effect=Exception("Test error"))
     mock_logger = mocker.patch("app.core.extractor.logging.error")
 
     mock_callback = MagicMock()
