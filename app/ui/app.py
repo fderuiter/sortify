@@ -1,6 +1,7 @@
 """Main application GUI module using NiceGUI."""
 
 import asyncio
+import os
 import logging
 
 from nicegui import ui
