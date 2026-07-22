@@ -17,7 +17,7 @@ class SessionCrypto:
         self.db_path = db_path
         self._cipher = None
         self.keyring_service = "AutoSorter"
-        db_hash = hashlib.md5(str(db_path).encode('utf-8')).hexdigest()
+        db_hash = hashlib.md5(str(db_path).encode("utf-8")).hexdigest()
         self.keyring_account = f"DatabaseDecryptionKey_{db_hash}"
 
     def get_cipher(self):
@@ -26,7 +26,7 @@ class SessionCrypto:
             return self._cipher
 
         key = None
-        
+
         # 1. Try loading from Keyring
         try:
             key_str = keyring.get_password(self.keyring_service, self.keyring_account)
@@ -40,18 +40,21 @@ class SessionCrypto:
             try:
                 with open(self.key_path, "rb") as f:
                     key = f.read().strip()
-                
+
                 # Try to migrate to keyring
                 try:
-                    keyring.set_password(self.keyring_service, self.keyring_account, key.decode("utf-8"))
-                    verify_str = keyring.get_password(self.keyring_service, self.keyring_account)
+                    keyring.set_password(
+                        self.keyring_service, self.keyring_account, key.decode("utf-8")
+                    )
+                    verify_str = keyring.get_password(
+                        self.keyring_service, self.keyring_account
+                    )
                     if verify_str and verify_str.encode("utf-8") == key:
                         os.unlink(self.key_path)  # Securely delete legacy file
                 except Exception:
-                    pass # Fallback to keeping it in the file
+                    pass  # Fallback to keeping it in the file
             except Exception:
                 pass
-
 
         # 3. Database Guard
         if key is None:
@@ -59,12 +62,16 @@ class SessionCrypto:
                 try:
                     conn = sqlite3.connect(str(self.db_path))
                     try:
-                        cursor = conn.execute("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='documents'")
+                        cursor = conn.execute(
+                            "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='documents'"
+                        )
                         if cursor.fetchone()[0] > 0:
                             # It might be encrypted, so query will fail, but if it's plaintext, it will succeed
                             cursor = conn.execute("SELECT count(*) FROM documents")
                             if cursor.fetchone()[0] > 0:
-                                raise RuntimeError("Database accessed but key file is missing.")
+                                raise RuntimeError(
+                                    "Database accessed but key file is missing."
+                                )
                     finally:
                         conn.close()
                 except sqlite3.DatabaseError:
@@ -78,17 +85,23 @@ class SessionCrypto:
             key = Fernet.generate_key()
             saved_to_keyring = False
             try:
-                keyring.set_password(self.keyring_service, self.keyring_account, key.decode("utf-8"))
-                verify_str = keyring.get_password(self.keyring_service, self.keyring_account)
+                keyring.set_password(
+                    self.keyring_service, self.keyring_account, key.decode("utf-8")
+                )
+                verify_str = keyring.get_password(
+                    self.keyring_service, self.keyring_account
+                )
                 if verify_str and verify_str.encode("utf-8") == key:
                     saved_to_keyring = True
             except Exception:
                 pass
-                
+
             if not saved_to_keyring:
                 # Fallback to local file with strict permissions
-                fd = os.open(str(self.key_path), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-                with os.fdopen(fd, 'wb') as f:
+                fd = os.open(
+                    str(self.key_path), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600
+                )
+                with os.fdopen(fd, "wb") as f:
                     f.write(key)
 
         if key is None:
@@ -98,15 +111,16 @@ class SessionCrypto:
             self._cipher = Fernet(key)
             return self._cipher
         except Exception as e:
-            raise RuntimeError("Database accessed but key file is missing or invalid.") from e
+            raise RuntimeError(
+                "Database accessed but key file is missing or invalid."
+            ) from e
 
-    
     def get_raw_key(self) -> str:
         """Get the raw key string for SQLCipher."""
         if self._cipher is None:
             self.get_cipher()
         # Since _cipher is initialized, we can fetch it again using get_cipher logic, but we need the raw bytes.
-        # Actually, self._cipher._signing_key + self._cipher._encryption_key is the raw key, but let's just 
+        # Actually, self._cipher._signing_key + self._cipher._encryption_key is the raw key, but let's just
         # extract it the same way.
         key = None
         try:

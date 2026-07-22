@@ -85,7 +85,7 @@ class IncrementalAnalyzer:
                 if not file_hash:
                     file_hash = hashlib.md5(text.encode("utf-8")).hexdigest()
                     hashes[i] = file_hash
-                
+
                 documents_to_upsert.append(
                     (
                         base_dir,
@@ -134,7 +134,9 @@ class IncrementalAnalyzer:
                 new_node[k] = self._inject_hierarchy(v)
         return new_node
 
-    def generate_sorting_plan(self, base_dir: str, runtime_settings=None, locked_files: dict = None) -> dict:
+    def generate_sorting_plan(
+        self, base_dir: str, runtime_settings=None, locked_files: dict = None
+    ) -> dict:
         """Generate a sorting plan based on the current model state."""
         try:
             docs = self.db.get_all_documents(base_dir)
@@ -311,7 +313,6 @@ class IncrementalAnalyzer:
             if locked_files is None:
                 locked_files = {}
 
-            
             # Phase 1: Keyword, and Learned Rule sorting
             compliance_targets = {
                 f: target_folder
@@ -336,14 +337,19 @@ class IncrementalAnalyzer:
                 if f in compliance_targets and compliance_targets[f] != target_folder:
                     compliance_path = compliance_targets[f]
 
-                    if locked_files and f in locked_files and locked_files[f] in (
-                        target_folder,
-                        compliance_path,
+                    if (
+                        locked_files
+                        and f in locked_files
+                        and locked_files[f]
+                        in (
+                            target_folder,
+                            compliance_path,
+                        )
                     ):
                         target_folder = locked_files[f]
                     else:
                         is_conflicted = True
-                
+
                 # Remove from other locations if present
                 for t in plan.values():
                     if isinstance(t, dict) and f in t:
@@ -351,7 +357,7 @@ class IncrementalAnalyzer:
 
                 if target_folder not in plan:
                     plan[target_folder] = {}
-                
+
                 info = {
                     "__type__": "file",
                     "routed_by": "historical",
@@ -381,10 +387,11 @@ class IncrementalAnalyzer:
 
             clean_plan = {}
             import ntpath
+
             for target_folder, files in plan.items():
                 if not isinstance(files, dict) or not files:
                     continue
-                
+
                 if os.path.isabs(target_folder) or ntpath.isabs(target_folder):
                     if target_folder not in clean_plan:
                         clean_plan[target_folder] = {}
@@ -404,7 +411,7 @@ class IncrementalAnalyzer:
                             current[part][f] = info
                     else:
                         current = current[part]
-                
+
             return self._inject_hierarchy(clean_plan)
 
         except Exception as e:

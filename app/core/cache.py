@@ -35,7 +35,9 @@ class CacheManager:
                     )
                 """)
                 try:
-                    conn.execute("ALTER TABLE directory_cache ADD COLUMN manual_folders TEXT")
+                    conn.execute(
+                        "ALTER TABLE directory_cache ADD COLUMN manual_folders TEXT"
+                    )
                 except Exception:
                     pass
         except Exception:
@@ -121,7 +123,7 @@ class CacheManager:
                     (source_directory,),
                 )
                 row = cur.fetchone()
-                
+
             if row:
                 corpus = json.loads(row[0])
                 locked_files = json.loads(row[1])

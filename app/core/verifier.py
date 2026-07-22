@@ -18,11 +18,12 @@ class VerificationEngine:
         moves = []
         for key, content in plan.items():
             if content is None or (
-                isinstance(content, dict) and content.get("__type__") in ("file", "directory")
+                isinstance(content, dict)
+                and content.get("__type__") in ("file", "directory")
             ):
                 if isinstance(content, dict) and content.get("__type__") == "directory":
                     continue
-                
+
                 source_path = os.path.join(base_dir, key)
 
                 if isinstance(content, dict) and "target_filename" in content:
@@ -48,7 +49,10 @@ class VerificationEngine:
         sys_platform = platform.system()
 
         if sys_platform == "Darwin":
-            if f"library{os.sep}mobile documents" in norm_path or "com~apple~clouddocs" in norm_path:
+            if (
+                f"library{os.sep}mobile documents" in norm_path
+                or "com~apple~clouddocs" in norm_path
+            ):
                 return True
         elif sys_platform == "Windows":
             env_vars = ["OneDrive", "OneDriveConsumer", "OneDriveCommercial"]
@@ -56,10 +60,15 @@ class VerificationEngine:
                 env_val = os.environ.get(var)
                 if env_val:
                     env_val_norm = os.path.normpath(os.path.abspath(env_val)).lower()
-                    if norm_path.startswith(env_val_norm + os.sep) or norm_path == env_val_norm:
+                    if (
+                        norm_path.startswith(env_val_norm + os.sep)
+                        or norm_path == env_val_norm
+                    ):
                         return True
             # Fallback checks
-            if f"{os.sep}onedrive{os.sep}" in norm_path or norm_path.endswith(f"{os.sep}onedrive"):
+            if f"{os.sep}onedrive{os.sep}" in norm_path or norm_path.endswith(
+                f"{os.sep}onedrive"
+            ):
                 return True
         return False
 
@@ -160,17 +169,18 @@ class VerificationEngine:
 
         # Check if we have symlink capabilities if we are moving any symlinks
         symlink_privilege = None
-        
+
         from app.core.path_utils import is_valid_name
 
         for rel_src, src, dst in moves:
             if rel_src in errors:
                 continue
-                
+
             if is_windows:
                 # Fallback validation for Windows invalid characters and reserved names
                 # Split the relative path components to check each directory and file name
                 import ntpath
+
                 rel_dst = ntpath.relpath(dst, base_dir)
                 parts = rel_dst.replace("\\", "/").split("/")
                 invalid_found = False
@@ -179,7 +189,9 @@ class VerificationEngine:
                         invalid_found = True
                         break
                 if invalid_found:
-                    errors[rel_src] = "Path contains invalid characters or reserved names"
+                    errors[rel_src] = (
+                        "Path contains invalid characters or reserved names"
+                    )
                     continue
 
             link_info = LinkManager.get_link_info(src)

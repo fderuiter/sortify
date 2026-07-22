@@ -38,13 +38,19 @@ class Database:
                         PRIMARY KEY (base_dir, filepath)
                     )
                 """)
-                conn.execute("CREATE INDEX IF NOT EXISTS idx_documents_file_hash ON documents (base_dir, file_hash)")
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_documents_file_hash ON documents (base_dir, file_hash)"
+                )
                 conn.execute(f"PRAGMA user_version = {self.CURRENT_VERSION}")
             elif db_version < self.CURRENT_VERSION:
                 if db_version == 1:
-                    conn.execute("ALTER TABLE documents ADD COLUMN user_verified_target_path TEXT")
+                    conn.execute(
+                        "ALTER TABLE documents ADD COLUMN user_verified_target_path TEXT"
+                    )
                 if db_version <= 3:
-                    conn.execute("CREATE INDEX IF NOT EXISTS idx_documents_file_hash ON documents (base_dir, file_hash)")
+                    conn.execute(
+                        "CREATE INDEX IF NOT EXISTS idx_documents_file_hash ON documents (base_dir, file_hash)"
+                    )
                 conn.execute(f"PRAGMA user_version = {self.CURRENT_VERSION}")
 
     def get_document(self, base_dir, filepath):
@@ -57,7 +63,9 @@ class Database:
             )
             row = cursor.fetchone()
             if row:
-                decrypted_text = self.crypto.decrypt_text(row[1]) if row[1] is not None else None
+                decrypted_text = (
+                    self.crypto.decrypt_text(row[1]) if row[1] is not None else None
+                )
                 return {
                     "file_hash": row[0],
                     "extracted_text": decrypted_text,
@@ -72,20 +80,22 @@ class Database:
         """Insert or update multiple documents in the database."""
         if not documents:
             return
-            
+
         def _write():
             conn = get_db_connection(self.db_path)
             with conn:
                 rows_to_insert = []
                 for doc in documents:
                     base_dir, filepath, file_hash, extracted_text = doc
-                    
-                    enc_text = self.crypto.encrypt_text(extracted_text) if extracted_text is not None else None
-                    
-                    rows_to_insert.append(
-                        (base_dir, filepath, file_hash, enc_text)
+
+                    enc_text = (
+                        self.crypto.encrypt_text(extracted_text)
+                        if extracted_text is not None
+                        else None
                     )
-                    
+
+                    rows_to_insert.append((base_dir, filepath, file_hash, enc_text))
+
                 conn.executemany(
                     """
                     INSERT INTO documents (base_dir, filepath, file_hash, extracted_text)
@@ -96,6 +106,7 @@ class Database:
                 """,
                     rows_to_insert,
                 )
+
         self.worker.execute_write(_write)
 
     def get_all_documents(self, base_dir):
@@ -109,20 +120,23 @@ class Database:
             rows = cursor.fetchall()
 
             import concurrent.futures
-            
+
             def _decrypt_row(row):
-                decrypted_text = self.crypto.decrypt_text(row[1]) if row[1] is not None else None
+                decrypted_text = (
+                    self.crypto.decrypt_text(row[1]) if row[1] is not None else None
+                )
                 return (row[0], decrypted_text, row[2], row[3])
-                
+
             results = []
             if rows:
                 with concurrent.futures.ThreadPoolExecutor() as executor:
                     results = list(executor.map(_decrypt_row, rows))
-                    
+
             return results
 
     def set_user_verified_target(self, base_dir, file_hash, target_path):
         """Record the historical folder assignment for a specific document hash."""
+
         def _write():
             conn = get_db_connection(self.db_path)
             with conn:
@@ -130,36 +144,49 @@ class Database:
                     "UPDATE documents SET user_verified_target_path = ? WHERE base_dir = ? AND file_hash = ?",
                     (target_path, base_dir, file_hash),
                 )
+
         self.worker.execute_write(_write)
 
     def remove_document(self, base_dir, filepath):
         """Remove a document and its historical assignments when deleted."""
+
         def _write():
             conn = get_db_connection(self.db_path)
             with conn:
-                conn.execute("DELETE FROM documents WHERE base_dir = ? AND filepath = ?", (base_dir, filepath))
+                conn.execute(
+                    "DELETE FROM documents WHERE base_dir = ? AND filepath = ?",
+                    (base_dir, filepath),
+                )
+
         self.worker.execute_write(_write)
 
     def update_document_path(self, base_dir, old_filepath, new_filepath):
         """Update a document's path and historical assignment when moved."""
         import os
+
         new_dir = os.path.dirname(new_filepath).replace("\\", "/")
+
         def _write():
             conn = get_db_connection(self.db_path)
             with conn:
                 conn.execute(
                     "UPDATE documents SET filepath = ?, user_verified_target_path = ? WHERE base_dir = ? AND filepath = ?",
-                    (new_filepath, new_dir, base_dir, old_filepath)
+                    (new_filepath, new_dir, base_dir, old_filepath),
                 )
+
         self.worker.execute_write(_write)
 
     def clear(self, base_dir=None):
         """Clear documents from the database. If base_dir is provided, only clear those."""
+
         def _write():
             conn = get_db_connection(self.db_path)
             with conn:
                 if base_dir:
-                    conn.execute("DELETE FROM documents WHERE base_dir = ?", (base_dir,))
+                    conn.execute(
+                        "DELETE FROM documents WHERE base_dir = ?", (base_dir,)
+                    )
                 else:
                     conn.execute("DELETE FROM documents")
+
         self.worker.execute_write(_write)
