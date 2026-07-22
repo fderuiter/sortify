@@ -11,11 +11,13 @@ from app.core.session import AppSession
 
 
 @pytest.fixture
-def mock_app_session_env():
+def mock_app_session_env(tmp_path):
     # We will use temp directories to simulate base_path and app_dir
-    with tempfile.TemporaryDirectory() as base_temp:
-        with tempfile.TemporaryDirectory() as app_temp:
-            yield base_temp, app_temp
+    base_temp = str(tmp_path / "base")
+    app_temp = str(tmp_path / "app")
+    os.makedirs(base_temp)
+    os.makedirs(app_temp)
+    yield base_temp, app_temp
 
 def test_session_dual_path_resolution_local_priority(mock_app_session_env):
     base_temp, app_temp = mock_app_session_env
@@ -39,6 +41,7 @@ def test_session_dual_path_resolution_local_priority(mock_app_session_env):
                 with patch("app.core.session.os.path.abspath", return_value=os.path.join(base_temp, "app", "core", "session.py")):
                     session = AppSession(settings, base_dir=base_temp)
                     assert session.analyzer.model_path == local_model
+                    session.close()
 
 def test_session_dual_path_resolution_user_fallback(mock_app_session_env):
     base_temp, app_temp = mock_app_session_env
@@ -56,6 +59,7 @@ def test_session_dual_path_resolution_user_fallback(mock_app_session_env):
             with patch("app.core.session.os.path.abspath", return_value=os.path.join(base_temp, "app", "core", "session.py")):
                 session = AppSession(settings, base_dir=base_temp)
                 assert session.analyzer.model_path == user_model
+                session.close()
 
 def test_session_dual_path_resolution_no_model(mock_app_session_env):
     base_temp, app_temp = mock_app_session_env
@@ -69,6 +73,7 @@ def test_session_dual_path_resolution_no_model(mock_app_session_env):
             with patch("app.core.session.os.path.abspath", return_value=os.path.join(base_temp, "app", "core", "session.py")):
                 session = AppSession(settings, base_dir=base_temp)
                 assert session.analyzer.model_path is None
+                session.close()
 
 def test_strategy_dual_path_resolution_local_priority(mock_app_session_env):
     base_temp, app_temp = mock_app_session_env
