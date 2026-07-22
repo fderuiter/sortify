@@ -18,7 +18,6 @@ class DBWorker:
         while True:
             func, args, kwargs, result_q = self.q.get()
             if func is None:
-                clear_connection_cache()
                 break
             try:
                 result = func(*args, **kwargs)
@@ -32,11 +31,7 @@ class DBWorker:
         
         # Ensure all database connections opened by this worker thread are closed
         # before the thread exits, preventing file locking issues on Windows.
-        try:
-            from app.core.db_conn import clear_connection_cache
-            clear_connection_cache()
-        except ImportError:
-            pass
+        clear_connection_cache()
 
     def submit_write(self, func, *args, **kwargs):
         """Submit a database write operation to the queue without waiting for completion."""
