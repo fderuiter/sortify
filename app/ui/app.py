@@ -78,8 +78,17 @@ class AutoSorterApp:
     def check_setup_wizard(self):
         """Check if the setup wizard needs to be shown on startup."""
         from app.config import get_app_dir
-        model_dir = get_app_dir() / "model"
-        if (model_dir / "config.json").exists():
+        import sys
+        
+        if getattr(sys, "frozen", False):
+            base_path = os.path.dirname(sys.executable)
+        else:
+            base_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            
+        local_model_dir = os.path.join(base_path, "offline_bundle", "model")
+        user_model_dir = get_app_dir() / "model"
+        
+        if os.path.exists(os.path.join(local_model_dir, "config.json")) or (user_model_dir / "config.json").exists():
             if self.settings.AI_CONSENT_GRANTED is None:
                 self.settings.AI_CONSENT_GRANTED = True
             return
