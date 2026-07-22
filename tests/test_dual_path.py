@@ -147,7 +147,8 @@ def test_setup_wizard_bypass_dual_path(mock_app_session_env):
 
         with patch.object(sys, "frozen", False, create=True):
             with patch(
-                "app.ui.app.__file__", os.path.join(base_temp, "app", "ui", "app.py")
+                "app.ui.app.__file__",
+                os.path.join(base_temp, "app", "ui", "app.py"),
             ):
                 app.check_setup_wizard()
                 assert settings.AI_CONSENT_GRANTED is True

@@ -55,13 +55,13 @@ def get_db_connection(db_path: str):
         conn = sqlite3.connect(path, timeout=5.0, check_same_thread=False)
         if raw_key:
             conn.execute(f"PRAGMA key = '{raw_key}'")
-            
+
         cursor = conn.cursor()
         cursor.execute("PRAGMA cipher_version;")
         version = cursor.fetchone()
         if not version or not version[0]:
             raise RuntimeError("SQLCipher is not active on this connection context.")
-        
+
         # Test database validity to catch unencrypted legacy databases or bad keys
         try:
             conn.execute("PRAGMA user_version;")
