@@ -22,8 +22,8 @@ class MetadataPass:
         docs = db.get_all_documents(base_dir)
         hash_to_target = {}
         for d in docs:
-            if len(d) > 4 and d[4] is not None and d[3]:
-                hash_to_target[d[3]] = d[4]
+            if len(d) >= 4 and d[2] and d[3] is not None:
+                hash_to_target[d[2]] = d[3]
 
         bypassed_files = []
         docs_to_upsert = []
