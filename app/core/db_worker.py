@@ -3,6 +3,8 @@
 import queue
 import threading
 
+from app.core.db_conn import clear_connection_cache
+
 
 class DBWorker:
     """A worker that sequentially executes database write operations on a background thread."""
@@ -26,6 +28,10 @@ class DBWorker:
                     result_q.put(("error", e))
             finally:
                 self.q.task_done()
+        
+        # Ensure all database connections opened by this worker thread are closed
+        # before the thread exits, preventing file locking issues on Windows.
+        clear_connection_cache()
 
     def submit_write(self, func, *args, **kwargs):
         """Submit a database write operation to the queue without waiting for completion."""

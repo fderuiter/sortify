@@ -10,39 +10,8 @@ from typing import Any, Dict, List, Tuple
 
 from app.core.analyzer_strategies import clustering_registry
 
-
-def _worker_generate_plan(
-    strategy_name: str,
-    filenames: List[str],
-    documents: List[str],
-    max_folders: int,
-    stop_words: set,
-    max_depth: int,
-    max_features: int,
-) -> Tuple[Dict[str, Any], float]:
-    strategy = clustering_registry.get_strategy(strategy_name)
-    if not strategy:
-        return {}, 0.0
-
-    try:
-        return strategy.generate_plan(
-            filenames,
-            documents,
-            max_folders,
-            stop_words,
-            max_depth,
-            max_features,
-        )
-    except Exception as e:
-        logging.error(f"Error generating plan in worker: {e}")
-        raise e
-
-
 class IncrementalAnalyzer:
-    """Stateful ML analyzer using incremental topic modeling.
-
-    Uses TF-IDF and MiniBatchKMeans to cluster documents incrementally.
-    """
+    """Stateful ML analyzer using incremental topic modeling."""
 
     def __init__(
         self,
@@ -57,31 +26,36 @@ class IncrementalAnalyzer:
         self.stop_words = stop_words
         self.strategy_name = strategy_name
         self.model_path = model_path
+        self.model_name = None
         self.corpus = {}
         self._last_reconstruction_error = 0.0
 
-        import concurrent.futures
-        import multiprocessing
-
-        context = multiprocessing.get_context("spawn")
-        self.executor = concurrent.futures.ProcessPoolExecutor(
-            max_workers=1,
-            mp_context=context,
-        )
-
     def close(self):
-        """Terminate the background processes and close queues cleanly."""
-        self.terminate()
+        """Terminate processes."""
+        pass
 
     def __del__(self):
-        """Ensure background processes and queues are cleaned up on garbage collection."""
-        self.terminate()
+        """Clean up."""
+        pass
 
     def terminate(self):
-        """Terminate background processes."""
-        if hasattr(self, 'executor'):
-            self.executor.shutdown(wait=False)
+        """Terminate processes."""
+        pass
 
+    @property
+    def active_model_name(self):
+        """Get the name of the currently active model."""
+        return self.model_name
+
+    @property
+    def active_dimension(self):
+        """Get the vector dimension of the currently active model."""
+        return None
+
+    @property
+    def last_reconstruction_error(self):
+        """Get the last reconstruction error from the underlying model."""
+        return self._last_reconstruction_error
 
     def partial_fit(
         self, base_dir: str, new_corpus: dict, runtime_settings=None
@@ -99,10 +73,21 @@ class IncrementalAnalyzer:
                     texts.append(data)
                     hashes.append("")
                 filepaths.append(filepath)
-                self.corpus[filepath] = texts[-1]  # keep in-memory for UI triggers
+                self.corpus[filepath] = texts[-1]
 
             if not texts:
                 return
+
+            keyword_rules = (
+                getattr(runtime_settings, "KEYWORD_RULES", {})
+                if runtime_settings
+                else {}
+            )
+            learned_rules = (
+                getattr(runtime_settings, "LEARNED_RULES", {})
+                if runtime_settings
+                else {}
+            )
 
             documents_to_upsert = []
             for i, (filepath, text, file_hash) in enumerate(
@@ -111,7 +96,7 @@ class IncrementalAnalyzer:
                 if not file_hash:
                     file_hash = hashlib.md5(text.encode("utf-8")).hexdigest()
                     hashes[i] = file_hash
-
+                
                 documents_to_upsert.append(
                     (
                         base_dir,
@@ -125,11 +110,6 @@ class IncrementalAnalyzer:
 
         except Exception as e:
             logging.error(f"Failed during partial_fit. Error: {str(e)}", exc_info=True)
-            import concurrent.futures.process
-            if isinstance(e, concurrent.futures.process.BrokenProcessPool):
-                raise RuntimeError(
-                    "Background worker process crashed or ran out of memory."
-                ) from e
 
     def reload_stop_words(self, new_stop_words: set) -> None:
         """Reload stop words from config."""
@@ -259,7 +239,88 @@ class IncrementalAnalyzer:
                         ai_filenames.append(f)
                         ai_documents.append(doc)
 
-            plan = {}
+            self._last_reconstruction_error = 0.0
+
+            if self.strategy_name:
+                max_depth = (
+                    getattr(runtime_settings, "MAX_DEPTH", 5) if runtime_settings else 5
+                )
+                max_features = (
+                    getattr(runtime_settings, "MAX_FEATURES", 3)
+                    if runtime_settings
+                    else 3
+                )
+
+                strategy = clustering_registry.get_strategy(self.strategy_name)
+                if strategy:
+                    plan, error = strategy.generate_plan(
+                        ai_filenames,
+                        ai_documents,
+                        self.max_folders,
+                        self.stop_words,
+                        max_depth,
+                        max_features,
+                    )
+                    self._last_reconstruction_error = error
+                else:
+                    plan = {}
+
+                if runtime_settings and getattr(
+                    runtime_settings, "PRESERVE_HIERARCHY", False
+                ):
+                    plan = self._inject_hierarchy(plan)
+            else:
+                plan = {}
+
+            # Inject keyword routed files back into the plan
+            for f, target_folder, keyword, routed_by, ext_status in keyword_plan_files:
+                parts = target_folder.replace("\\", "/").split("/")
+                current = plan
+                for i, part in enumerate(parts):
+                    if part not in current:
+                        current[part] = {}
+                    if not isinstance(current[part], dict):
+                        current[part] = {"_original": current[part]}
+                    if i == len(parts) - 1:
+                        current[part][f] = {
+                            "routed_by": routed_by,
+                            "keyword": keyword,
+                            "extraction_status": ext_status,
+                        }
+                    else:
+                        current = current[part]
+
+            if unsupported_files:
+                if "Miscellaneous" not in plan:
+                    plan["Miscellaneous"] = {}
+                elif not isinstance(plan["Miscellaneous"], dict):
+                    plan["Miscellaneous"] = {"_original": plan["Miscellaneous"]}
+                for f, ext_status in unsupported_files:
+                    plan["Miscellaneous"][f] = {"extraction_status": ext_status}
+
+            def remove_from_plan(node, target_f):
+                for k, v in list(node.items()):
+                    if k == target_f:
+                        if v is None or (
+                            isinstance(v, dict)
+                            and (v.get("routed_by") or v.get("extraction_status"))
+                        ):
+                            return node.pop(k)
+                        elif isinstance(v, dict) and "_original" in v:
+                            val = v.pop("_original")
+                            if not v:
+                                node.pop(k)
+                            return val
+                    if isinstance(v, dict):
+                        res = remove_from_plan(v, target_f)
+                        if res is not None:
+                            if not v:
+                                node.pop(k)
+                            return res
+                return None
+
+            if locked_files is None:
+                locked_files = {}
 
             
             # Phase 1: Keyword, and Learned Rule sorting
@@ -315,48 +376,19 @@ class IncrementalAnalyzer:
                     info["historical_path"] = target_folder
 
                 plan[target_folder][f] = info
-# Phase 2: Generative/Clustering assignment for remaining files
-            if ai_filenames:
-                future = self.executor.submit(
-                    _worker_generate_plan,
-                    self.strategy_name,
-                    ai_filenames,
-                    ai_documents,
-                    self.max_folders,
-                    self.stop_words,
-                    max_depth=5,
-                    max_features=3,
-                )
-                ai_plan, error = future.result()
-                self._last_reconstruction_error = error
-
-                def _merge_plan(src, dst):
-                    for k, v in src.items():
-                        if isinstance(v, dict) and k in dst and isinstance(dst[k], dict):
-                            _merge_plan(v, dst[k])
-                        elif v is None:
-                            dst[k] = {
-                                "__type__": "file",
-                                "routed_by": "generative",
-                                "match": "cluster",
-                                "status": None,
-                            }
-                        else:
-                            dst[k] = v
-
-                _merge_plan(ai_plan, plan)
 
             # Phase 3: Route unsupported files safely
             if unsupported_files:
                 if "Miscellaneous" not in plan:
                     plan["Miscellaneous"] = {}
                 for f, status in unsupported_files:
-                    plan["Miscellaneous"][f] = {
-                        "__type__": "file",
-                        "routed_by": "fallback",
-                        "match": "none",
-                        "status": status,
-                    }
+                    if f not in plan["Miscellaneous"]:
+                        plan["Miscellaneous"][f] = {
+                            "__type__": "file",
+                            "routed_by": "fallback",
+                            "match": "none",
+                            "status": status,
+                        }
 
             clean_plan = {}
             import ntpath
@@ -387,15 +419,7 @@ class IncrementalAnalyzer:
             return self._inject_hierarchy(clean_plan)
 
         except Exception as e:
-            logging.error(f"Failed to generate sorting plan: {e}", exc_info=True)
-            import concurrent.futures.process
-            if isinstance(e, concurrent.futures.process.BrokenProcessPool):
-                raise RuntimeError(
-                    "Background worker process crashed or ran out of memory."
-                ) from e
+            logging.error(
+                f"Failed during generate_sorting_plan. Error: {str(e)}", exc_info=True
+            )
             return {}
-
-    @property
-    def last_reconstruction_error(self):
-        """Mock property for guardrail compatibility."""
-        return getattr(self, "_last_reconstruction_error", 0.05)

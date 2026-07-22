@@ -10,6 +10,7 @@ from app.core.cache import CacheManager
 from app.core.db import Database
 from app.core.db_worker import DBWorker
 from app.core.extractor import (
+    build_corpus_generator,
     extract_file_text,
     get_file_hash,
     process_item_worker,
@@ -111,6 +112,41 @@ def test_process_item_worker_exception(tmp_path):
         assert h == ""
     cb.assert_called_once()
 
+def test_build_corpus_generator_sequential_continue(tmp_path):
+    file_path = tmp_path / "test.txt"
+    file_path.write_text("hello")
+    file_hash = get_file_hash(str(file_path))
+    db.upsert_document(str(tmp_path), "test.txt", file_hash, "hello")
+    
+    gen = build_corpus_generator(
+        str(tmp_path), ["test.txt"], mock.MagicMock(), 1, db=db, chunk_size=1, sequential=True
+    )
+    chunks = list(gen)
+    assert len(chunks) == 0
+
+    gen2 = build_corpus_generator(
+        str(tmp_path), ["test.txt"], mock.MagicMock(), 1, db=db, chunk_size=2, sequential=True
+    )
+    chunks2 = list(gen2)
+    assert len(chunks2) == 0
+
+def test_build_corpus_generator_parallel_continue(tmp_path):
+    file_path = tmp_path / "test.txt"
+    file_path.write_text("hello")
+    file_hash = get_file_hash(str(file_path))
+    db.upsert_document(str(tmp_path), "test.txt", file_hash, "hello")
+    
+    gen = build_corpus_generator(
+        str(tmp_path), ["test.txt"], mock.MagicMock(), 1, db=db, chunk_size=1, sequential=False
+    )
+    chunks = list(gen)
+    assert len(chunks) == 0
+
+    gen2 = build_corpus_generator(
+        str(tmp_path), ["test.txt"], mock.MagicMock(), 1, db=db, chunk_size=2, sequential=False
+    )
+    chunks2 = list(gen2)
+    assert len(chunks2) == 0
 
 def test_mover_get_safe_path_samefile(tmp_path):
     f1 = tmp_path / "file.txt"

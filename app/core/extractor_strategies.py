@@ -5,10 +5,7 @@ import io
 import logging
 from typing import Protocol
 
-import pandas as pd
 import pypdf
-import torch
-from docx import Document
 
 _vision_model = None
 _vision_model_loaded = False
@@ -20,6 +17,7 @@ def get_vision_model():
     if not _vision_model_loaded:
         _vision_model_loaded = True
         try:
+            import torch
             from transformers import pipeline
 
             # Keep the vision-language model CPU-optimized
@@ -57,6 +55,7 @@ class DocxExtractor:
 
     def extract(self, file_path: str) -> str:
         """Extract text from a .docx file."""
+        from docx import Document
         doc = Document(file_path)
         return "\n".join([p.text for p in doc.paragraphs])
 
@@ -76,6 +75,7 @@ class XlsxExtractor:
 
     def extract(self, file_path: str) -> str:
         """Extract text from an Excel file."""
+        import pandas as pd
         dfs = pd.read_excel(file_path, sheet_name=None)
         if isinstance(dfs, dict):
             return "\n".join(df.to_string() for df in dfs.values())
