@@ -146,6 +146,12 @@ def generate_admin_guide():
 
         f.write(f"{prepare_offline.__doc__}\n\n")
 
+        # scripts/install_offline.py
+        f.write("### `scripts/install_offline.py`\n")
+        import scripts.install_offline as install_offline
+
+        f.write(f"{install_offline.__doc__}\n\n")
+
         # Offline Sideloading
         f.write("## Offline Sideloading Deployment\n\n")
         f.write(
@@ -179,6 +185,14 @@ def generate_admin_guide():
 def update_security_md():
     """Scan for network dependencies and update SECURITY.md."""
     network_deps = []
+
+    # scan scripts/install_offline.py
+    with open(os.path.join("scripts", "install_offline.py"), "r") as f:
+        content = f.read()
+        if "https://astral.sh" in content:
+            network_deps.append(
+                "- `https://astral.sh` (via `scripts/install_offline.py`): Bootstrapping the `uv` package manager."
+            )
 
     # scan scripts/prepare_offline.py
     with open(os.path.join("scripts", "prepare_offline.py"), "r") as f:

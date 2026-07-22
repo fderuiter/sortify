@@ -12,6 +12,7 @@ from urllib.parse import urlparse
 TARGET_FILES = [
     "app/ui/app.py",
     "scripts/prepare_offline.py",
+    "scripts/install_offline.py",
 ]
 
 URL_REGEX = re.compile(r'https?://[^\s\'"<>]+')
