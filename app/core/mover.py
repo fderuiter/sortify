@@ -27,7 +27,7 @@ def get_safe_path(dest_dir: str, filename: str, source_path: str = None) -> str:
                 if os.path.samefile(safe_path, source_path):
                     return safe_path
             except OSError as e:
-                if os.path.abspath(safe_path) == os.path.abspath(source_path):
+                if os.path.normcase(os.path.abspath(safe_path)) == os.path.normcase(os.path.abspath(source_path)):
                     return safe_path
                 logging.error(
                     f"Failed to verify if paths conflict for {safe_path} and {source_path}: {e}",
@@ -128,7 +128,7 @@ def _execute_moves_recursive(
                                 )
 
                             os.replace(shadow_name, dest_path)
-                            if dest_path != source_path:
+                            if os.path.normcase(os.path.abspath(dest_path)) != os.path.normcase(os.path.abspath(source_path)):
                                 os.remove(source_path)
                             moved_as_link = True
                         except Exception as e:
@@ -161,7 +161,7 @@ def _execute_moves_recursive(
                                 )
 
                             os.replace(shadow_name, dest_path)
-                            if dest_path != source_path:
+                            if os.path.normcase(os.path.abspath(dest_path)) != os.path.normcase(os.path.abspath(source_path)):
                                 os.remove(source_path)
                             moved_as_link = True
                         except Exception as e:
