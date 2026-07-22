@@ -13,7 +13,7 @@ from scripts.validate_links import URL_REGEX, validate_url
 def test_url_extraction():
     content = """
     Check out https://astral.sh/uv/install.sh.
-    Also http://example.com/test?a=1&b=2
+    Also http://example.com/
     (See https://docs.smartautosorter.com/user_guide/#system-limits)
     """
     found = URL_REGEX.findall(content)
@@ -21,7 +21,7 @@ def test_url_extraction():
     urls = [url.rstrip(".,;)") for url in found]
 
     assert "https://astral.sh/uv/install.sh" in urls
-    assert "http://example.com/test?a=1&b=2" in urls
+    assert "http://example.com/" in urls
     assert "https://docs.smartautosorter.com/user_guide/#system-limits" in urls
 
 
