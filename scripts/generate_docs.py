@@ -179,74 +179,68 @@ def update_security_md():
     
     config_path = "network_rules.json"
     if os.path.exists(config_path):
-        try:
-            import json
-            import re
+        import json
+        import re
+        
+        with open(config_path, "r", encoding="utf-8") as f:
+            config = json.load(f)
             
-            with open(config_path, "r", encoding="utf-8") as f:
-                config = json.load(f)
-                
-            raw_rules = config.get("rules", [])
-            targets = config.get("targets", [])
-            
-            valid_rules = []
-            for rule in raw_rules:
-                if not rule.get("pattern") or not rule.get("match_type") or not rule.get("description"):
-                    print(f"Warning: Malformed rule {rule}")
-                else:
-                    valid_rules.append(rule)
-            
-            # Helper to check matching files
-            for target in targets:
-                target_path = os.path.join(".", target)
-                if not os.path.exists(target_path):
-                    continue
-                for root, dirs, files in os.walk(target_path):
-                    for file in files:
-                        if not file.endswith(".py") and not file.endswith(".yml") and not file.endswith(".yaml"):
-                            continue
-                        filepath = os.path.join(root, file)
-                        # Avoid scanning the generate_docs script itself to prevent self-matching
-                        if "generate_docs.py" in filepath:
-                            continue
+        raw_rules = config.get("rules", [])
+        targets = config.get("targets", [])
+        
+        valid_rules = []
+        for rule in raw_rules:
+            if not rule.get("pattern") or not rule.get("match_type") or not rule.get("description"):
+                print(f"Warning: Malformed rule {rule}")
+            else:
+                valid_rules.append(rule)
+        
+        # Helper to check matching files
+        for target in targets:
+            target_path = os.path.join(".", target)
+            if not os.path.exists(target_path):
+                continue
+            for root, dirs, files in os.walk(target_path):
+                for file in files:
+                    if not file.endswith(".py") and not file.endswith(".yml") and not file.endswith(".yaml"):
+                        continue
+                    filepath = os.path.join(root, file)
+                    # Avoid scanning the generate_docs script itself to prevent self-matching
+                    if "generate_docs.py" in filepath:
+                        continue
+                    
+                    with open(filepath, "r", encoding="utf-8") as f:
+                        content = f.read()
                         
-                        try:
-                            with open(filepath, "r", encoding="utf-8") as f:
-                                content = f.read()
-                                
-                            for rule in valid_rules:
-                                pattern = rule.get("pattern")
-                                match_type = rule.get("match_type")
-                                desc = rule.get("description")
-                                
-                                match_found = False
-                                matched_str = ""
-                                
-                                if match_type == "substring":
-                                    if pattern in content:
-                                        match_found = True
-                                        matched_str = pattern
-                                elif match_type == "regex":
-                                    try:
-                                        m = re.search(pattern, content)
-                                        if m:
-                                            match_found = True
-                                            matched_str = m.group(0)
-                                    except re.error as e:
-                                        print(f"Warning: Invalid regex pattern '{pattern}': {e}")
-                                else:
-                                    print(f"Warning: Unknown match_type '{match_type}' in rule {rule}")
-                                    
-                                if match_found:
-                                    # Normalize path for cross-platform consistency
-                                    rel_path = os.path.relpath(filepath, ".").replace("\\", "/")
-                                    dep_entry = f"- `{matched_str}` (via `{rel_path}`): {desc}"
-                                    if dep_entry not in network_deps:
-                                        network_deps.append(dep_entry)
-                        except Exception as e:
-                            print(f"Warning: Error reading {filepath}: {e}")
-        except Exception as e:
-            print(f"Warning: Failed to process network_rules.json: {e}")
+                    for rule in valid_rules:
+                        pattern = rule.get("pattern")
+                        match_type = rule.get("match_type")
+                        desc = rule.get("description")
+                        
+                        match_found = False
+                        matched_str = ""
+                        
+                        if match_type == "substring":
+                            if pattern in content:
+                                match_found = True
+                                matched_str = pattern
+                        elif match_type == "regex":
+                            try:
+                                m = re.search(pattern, content)
+                                if m:
+                                    match_found = True
+                                    matched_str = m.group(0)
+                            except re.error as e:
+                                print(f"Warning: Invalid regex pattern '{pattern}': {e}")
+                        else:
+                            print(f"Warning: Unknown match_type '{match_type}' in rule {rule}")
+                            
+                        if match_found:
+                            # Normalize path for cross-platform consistency
+                            rel_path = os.path.relpath(filepath, ".").replace("\\", "/")
+                            dep_entry = f"- `{matched_str}` (via `{rel_path}`): {desc}"
+                            if dep_entry not in network_deps:
+                                network_deps.append(dep_entry)
 
     # Deduplicate and sort to ensure consistent output
     network_deps = sorted(list(set(network_deps)))
