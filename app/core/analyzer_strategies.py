@@ -173,24 +173,27 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                 os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
             )
 
-        offline_gen_path = os.path.join(base_path, "offline_bundle", "generative_model")
+        local_bundle_path = os.path.join(base_path, "offline_bundle", "model")
+        
+        from app.config import get_app_dir
+        user_bundle_path = str(get_app_dir() / "model")
 
         self.model_path = model_path
         if not self.model_path:
-            if os.path.exists(offline_gen_path):
-                self.model_path = offline_gen_path
+            if os.path.exists(local_bundle_path):
+                self.model_path = local_bundle_path
+            elif os.path.exists(user_bundle_path):
+                self.model_path = user_bundle_path
             else:
-                from app.config import get_app_dir
-
-                self.model_path = str(get_app_dir() / "generative_model")
+                self.model_path = None
 
         self._model_initialized = False
 
     def _init_model(self):
         self._model_initialized = True
         if not self.model_path or not os.path.exists(self.model_path):
-            logging.info(
-                "Generative model not found locally. Falling back to deterministic rules."
+            logging.warning(
+                "Offline model bundle not found in either the local project directory or the user configuration directory."
             )
             return
 

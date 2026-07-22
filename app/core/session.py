@@ -36,8 +36,23 @@ class AppSession:
             self.db, self.cache_manager, str(self.session_dir / "history.db")
         )
 
-        user_model_path = get_app_dir() / "model"
-        model_path = str(user_model_path) if self.settings.AI_CONSENT_GRANTED else None
+        import sys
+        
+        if getattr(sys, "frozen", False):
+            base_path = os.path.dirname(sys.executable)
+        else:
+            base_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            
+        local_model_path = os.path.join(base_path, "offline_bundle", "model")
+        user_model_path = str(get_app_dir() / "model")
+        
+        active_model_path = None
+        if os.path.exists(local_model_path):
+            active_model_path = local_model_path
+        elif os.path.exists(user_model_path):
+            active_model_path = user_model_path
+            
+        model_path = active_model_path if self.settings.AI_CONSENT_GRANTED else None
 
         self.analyzer = IncrementalAnalyzer(
             self.settings.MAX_FOLDERS,

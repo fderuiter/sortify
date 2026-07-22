@@ -150,8 +150,19 @@ def generate_admin_guide():
         )
         f.write("### Folder Layout Requirements\n\n")
         f.write(
-            "The offline bundle must be extracted into the application's local configuration directory (e.g., `~/.autosorter/`). The directory structure must exactly match the following:\n\n"
+            "The offline bundle must be extracted into either the application's local project directory (e.g., `offline_bundle/`) or the user configuration directory (e.g., `~/.autosorter/`). If bundles exist in both locations, the local project directory takes priority. The directory structure must exactly match one of the following:\n\n"
         )
+        f.write("Local Project Directory:\n")
+        f.write("```text\n")
+        f.write("offline_bundle/\n")
+        f.write("├── model/\n")
+        f.write("│   ├── config.json\n")
+        f.write("│   ├── pytorch_model.bin\n")
+        f.write("│   ├── tokenizer.json\n")
+        f.write("│   └── ... (other model weights)\n")
+        f.write("└── model_manifest.json\n")
+        f.write("```\n\n")
+        f.write("User Configuration Directory:\n")
         f.write("```text\n")
         f.write("~/.autosorter/\n")
         f.write("├── model/\n")
