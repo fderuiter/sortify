@@ -45,11 +45,11 @@ def run_demo(settings):
         from app.core.db import Database
         from app.core.db_worker import DBWorker
         from app.core.extractor import build_corpus_generator
-        
+
         db_worker = DBWorker()
         db_path = os.path.join(temp_dir, "demo.db")
         db = Database(db_path, db_worker)
-        
+
         analyzer = IncrementalAnalyzer(
             max_folders=settings.MAX_FOLDERS,
             stop_words=settings.STOP_WORDS,
@@ -60,10 +60,10 @@ def run_demo(settings):
             print("    -> Progress: File extraction complete.")
 
         print("[*] Processing files incrementally...")
-        
+
         def cancel_check():
             return False
-            
+
         generator = build_corpus_generator(
             base_dir=temp_dir,
             items_to_sort=files_to_sort,
@@ -73,7 +73,7 @@ def run_demo(settings):
             chunk_size=50,
             active_model_name=analyzer.active_model_name,
             active_dimension=analyzer.active_dimension,
-            cancel_check=cancel_check
+            cancel_check=cancel_check,
         )
 
         for i, chunk in enumerate(generator):
@@ -86,7 +86,7 @@ def run_demo(settings):
         print("\n--- Generated Sorting Plan ---")
         print(json.dumps(plan, indent=2))
         print("------------------------------\n")
-        
+
         analyzer.terminate()
         db_worker.stop()
 

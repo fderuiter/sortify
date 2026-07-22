@@ -19,9 +19,7 @@ def generate_api_docs():
     app_dir = "app"
     output_file = os.path.join("docs", "api_reference.md")
 
-
     with open(output_file, "w", encoding="utf-8", newline="\n") as f:
-    
         f.write("# API Reference\n\n")
         f.write("This document is automatically generated. Do not edit manually.\n\n")
 
@@ -46,9 +44,7 @@ def generate_ui_docs():
     app_dir = os.path.join("app", "ui")
     output_file = os.path.join("docs", "ui.md")
 
-
     with open(output_file, "w", encoding="utf-8", newline="\n") as f:
-    
         f.write("# UI API Reference\n\n")
         f.write("This document is automatically generated. Do not edit manually.\n\n")
 
@@ -70,9 +66,7 @@ def generate_admin_guide():
     # Import config safely
     from app.config import Settings
 
-
     with open(output_file, "w", encoding="utf-8", newline="\n") as f:
-    
         f.write("# Administrator Guide\n\n")
         f.write("This document is automatically generated. Do not edit manually.\n\n")
 
@@ -125,19 +119,16 @@ def generate_admin_guide():
         f.write("#### Usage\n```text\n")
         import subprocess
 
-        try:
-            env = os.environ.copy()
-            env["COLUMNS"] = "80"
-            result = subprocess.run(
-                ["uv", "run", "python", "sandbox_cli.py", "--help"],
-                capture_output=True,
-                text=True,
-                check=True,
-                env=env,
-            )
-            f.write(result.stdout.replace("\r\n", "\n"))
-        except subprocess.CalledProcessError as e:
-            f.write(f"Error capturing help: {e}\n")
+        env = os.environ.copy()
+        env["COLUMNS"] = "80"
+        result = subprocess.run(
+            ["uv", "run", "python", "sandbox_cli.py", "--help"],
+            capture_output=True,
+            text=True,
+            check=True,
+            env=env,
+        )
+        f.write(result.stdout.replace("\r\n", "\n"))
         f.write("```\n\n")
 
         # scripts/prepare_offline.py
@@ -261,12 +252,8 @@ def update_security_md():
     network_deps = sorted(list(set(network_deps)))
 
     sec_file = "SECURITY.md"
-    try:
-        with open(sec_file, "r", encoding="utf-8") as f:
-            lines = f.readlines()
-    except Exception as e:
-        print(f"Warning: Failed to read {sec_file}: {e}")
-        return
+    with open(sec_file, "r", encoding="utf-8") as f:
+        lines = f.readlines()
 
     out_lines = []
     in_network_section = False
@@ -288,15 +275,34 @@ def update_security_md():
         if not in_network_section:
             out_lines.append(line)
 
-    try:
-        with open(sec_file, "w", encoding="utf-8", newline="\n") as f:
-            f.writelines(out_lines)
-    except Exception as e:
-        print(f"Warning: Failed to write {sec_file}: {e}")
+    with open(sec_file, "w", encoding="utf-8", newline="\n") as f:
+        f.writelines(out_lines)
 
 
 if __name__ == "__main__":
-    generate_api_docs()
-    generate_ui_docs()
-    generate_admin_guide()
-    update_security_md()
+    import traceback
+
+    tasks = [
+        ("generate_api_docs", generate_api_docs),
+        ("generate_ui_docs", generate_ui_docs),
+        ("generate_admin_guide", generate_admin_guide),
+        ("update_security_md", update_security_md),
+    ]
+
+    errors = []
+
+    for name, task in tasks:
+        try:
+            task()
+        except Exception as e:
+            errors.append((name, e, sys.exc_info()))
+
+    if errors:
+        sys.stderr.write("Documentation generation encountered errors in the following modules:\n\n")
+        for name, exc, exc_info in errors:
+            sys.stderr.write(f"--- Error in {name} ---\n")
+            traceback.print_exception(*exc_info, file=sys.stderr)
+            sys.stderr.write("\n")
+        
+        sys.exit(1)
+

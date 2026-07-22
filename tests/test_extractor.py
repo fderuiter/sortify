@@ -20,21 +20,27 @@ db = None
 cache_manager = None
 history_manager = None
 
+
 def setup_module(module):
     global _test_dir, db_worker, db, cache_manager, history_manager
     _test_dir = tempfile.mkdtemp()
     db_worker = DBWorker()
     db = Database(Path(_test_dir) / "test.db", db_worker)
     cache_manager = CacheManager(str(Path(_test_dir) / "cache.db"), db_worker)
-    history_manager = HistoryManager(db, cache_manager, str(Path(_test_dir) / "history.db"))
+    history_manager = HistoryManager(
+        db, cache_manager, str(Path(_test_dir) / "history.db")
+    )
+
 
 def teardown_module(module):
     global _test_dir, db_worker
     if db_worker:
         db_worker.stop()
     import shutil
+
     if _test_dir:
         shutil.rmtree(_test_dir, ignore_errors=True)
+
 
 def save_cache_sync(*args, **kwargs):
     cache_manager.save_cache_sync(*args, **kwargs)
@@ -167,7 +173,8 @@ def test_build_corpus_generator(mocker):
         ["file1.txt", "file2.txt", "file3.txt"],
         mock_callback,
         max_workers=2,
-        chunk_size=2, db=db
+        chunk_size=2,
+        db=db,
     )
 
     chunks = list(generator)
@@ -175,4 +182,3 @@ def test_build_corpus_generator(mocker):
     assert "file1.txt" in chunks[0] or "file1.txt" in chunks[1]
     assert len(chunks[0]) == 2
     assert len(chunks[1]) == 1
-

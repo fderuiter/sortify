@@ -12,6 +12,7 @@ from app.ui.dialog_helper import ask_directory_async
 
 logger = logging.getLogger(__name__)
 
+
 class AutoSorterApp:
     """Main application class for the NiceGUI interface."""
 
@@ -24,7 +25,7 @@ class AutoSorterApp:
         self.protected_folders = set()
         self.plan_errors = {}
         self.expanded_nodes = set()
-        
+
         self.total_files = 0
         self.completed_files = 0
         self.start_time = 0.0
@@ -32,44 +33,84 @@ class AutoSorterApp:
 
         self.app_session = None
         self.verifier = VerificationEngine()
-        
+
         self.tree_nodes = []
         self._pending_files = set()
         self.observer = None
         self._debounce_task = None
-        
+
         self.contextual_rename = self.settings.CONTEXTUAL_RENAMING
         self.preserve_hierarchy = self.settings.PRESERVE_HIERARCHY
 
     def build_ui(self):
         """Build the main user interface."""
-        ui.add_head_html('<style> .q-tree__node-header { padding: 4px; } </style>')
-        
-        with ui.header().classes('items-center justify-between'):
-            ui.label("AI File Organizer Pro").classes('text-h6').props('aria-label="Application Title"')
+        ui.add_head_html("<style> .q-tree__node-header { padding: 4px; } </style>")
+
+        with ui.header().classes("items-center justify-between"):
+            ui.label("AI File Organizer Pro").classes("text-h6").props(
+                'aria-label="Application Title"'
+            )
             with ui.row():
-                ui.button("Settings", on_click=self.show_settings_view).props('aria-label="Settings Button"')
-                ui.button("Help", on_click=self.show_help_view).props('aria-label="Help Button"')
+                ui.button("Settings", on_click=self.show_settings_view).props(
+                    'aria-label="Settings Button"'
+                )
+                ui.button("Help", on_click=self.show_help_view).props(
+                    'aria-label="Help Button"'
+                )
 
-        with ui.column().classes('w-full items-center mt-4'):
-            self.select_btn = ui.button("Select Directory to Sort", on_click=self.select_directory).props('aria-label="Select Directory Button"')
-            self.status_label = ui.label("Waiting for directory...").classes('text-gray-500').props('aria-label="Status Label"')
-            self.progress_bar = ui.linear_progress(value=0).classes('w-1/2 mt-4').props('aria-label="Progress Bar"')
-            
-            self.cancel_btn = ui.button("Cancel Analysis", on_click=self.cancel_analysis).classes('bg-red-500 mt-2').props('aria-label="Cancel Analysis Button"')
+        with ui.column().classes("w-full items-center mt-4"):
+            self.select_btn = ui.button(
+                "Select Directory to Sort", on_click=self.select_directory
+            ).props('aria-label="Select Directory Button"')
+            self.status_label = (
+                ui.label("Waiting for directory...")
+                .classes("text-gray-500")
+                .props('aria-label="Status Label"')
+            )
+            self.progress_bar = (
+                ui.linear_progress(value=0)
+                .classes("w-1/2 mt-4")
+                .props('aria-label="Progress Bar"')
+            )
+
+            self.cancel_btn = (
+                ui.button("Cancel Analysis", on_click=self.cancel_analysis)
+                .classes("bg-red-500 mt-2")
+                .props('aria-label="Cancel Analysis Button"')
+            )
             self.cancel_btn.set_visibility(False)
-            
-            self.meta_label = ui.label("").classes('text-cyan-500 mt-2').props('aria-label="Metadata Label"')
-            
-            with ui.row().classes('mt-4 items-center'):
-                ui.switch("Enable Contextual Renaming", value=self.contextual_rename, on_change=self.toggle_contextual_rename).props('aria-label="Contextual Renaming Switch"')
-                ui.switch("Preserve Hierarchy", value=self.preserve_hierarchy, on_change=self.toggle_preserve_hierarchy).props('aria-label="Preserve Hierarchy Switch"')
 
-        with ui.row().classes('w-full h-96 mt-4 p-4'):
-            self.tree_view = ui.tree([], label_key='text', children_key='children').classes('w-full').props('default-expand-all aria-label="Sorting Plan Tree"')
+            self.meta_label = (
+                ui.label("")
+                .classes("text-cyan-500 mt-2")
+                .props('aria-label="Metadata Label"')
+            )
 
-        with ui.row().classes('w-full justify-center mt-4'):
-            self.execute_btn = ui.button("Approve & Execute Sort", on_click=self.execute_sort).classes('bg-green-500').props('aria-label="Approve and Execute Sort Button"')
+            with ui.row().classes("mt-4 items-center"):
+                ui.switch(
+                    "Enable Contextual Renaming",
+                    value=self.contextual_rename,
+                    on_change=self.toggle_contextual_rename,
+                ).props('aria-label="Contextual Renaming Switch"')
+                ui.switch(
+                    "Preserve Hierarchy",
+                    value=self.preserve_hierarchy,
+                    on_change=self.toggle_preserve_hierarchy,
+                ).props('aria-label="Preserve Hierarchy Switch"')
+
+        with ui.row().classes("w-full h-96 mt-4 p-4"):
+            self.tree_view = (
+                ui.tree([], label_key="text", children_key="children")
+                .classes("w-full")
+                .props('default-expand-all aria-label="Sorting Plan Tree"')
+            )
+
+        with ui.row().classes("w-full justify-center mt-4"):
+            self.execute_btn = (
+                ui.button("Approve & Execute Sort", on_click=self.execute_sort)
+                .classes("bg-green-500")
+                .props('aria-label="Approve and Execute Sort Button"')
+            )
             self.execute_btn.disable()
 
         # Check wizard on startup
@@ -78,6 +119,7 @@ class AutoSorterApp:
     def check_setup_wizard(self):
         """Check if the setup wizard needs to be shown on startup."""
         from app.config import get_app_dir
+
         model_dir = get_app_dir() / "model"
         if (model_dir / "config.json").exists():
             if self.settings.AI_CONSENT_GRANTED is None:
@@ -85,26 +127,30 @@ class AutoSorterApp:
             return
         if self.settings.AI_CONSENT_GRANTED is False:
             return
-            
+
         # Run wizard dialog
         from app.ui.wizard import show_wizard
+
         show_wizard(self, self.settings)
 
     def show_settings_view(self):
         """Show the settings dialog."""
         from app.ui.settings import show_settings
+
         show_settings(self, self.settings)
-        
+
     def show_help_view(self):
         """Display help information."""
         ui.notify("Help documentation is available in the user manual.")
 
     def select_directory(self):
         """Prompt the user to select a directory for analysis."""
+
         def on_selected(path):
             if path:
                 self.base_dir = path
                 self.start_analysis()
+
         ask_directory_async(None, "Select Directory", on_selected, None, None)
 
     def start_analysis(self):
@@ -113,7 +159,7 @@ class AutoSorterApp:
         self.status_label.set_text("Scanning directory...")
         self.cancel_btn.set_visibility(True)
         self._cancel_analysis_flag = False
-        
+
         asyncio.create_task(self._scan_and_process_worker())
 
     async def _scan_and_process_worker(self):
@@ -121,13 +167,14 @@ class AutoSorterApp:
             files = await asyncio.to_thread(self.app_session.get_files_recursively, "")
             self.total_files = len(files)
             self.completed_files = 0
-            
+
             def _progress_cb():
                 self.completed_files += 1
                 if self.total_files > 0:
                     self.progress_bar.set_value(self.completed_files / self.total_files)
-            
+
             from app.core.metadata import MetadataPass
+
             bypassed_files = await asyncio.to_thread(
                 MetadataPass.run,
                 self.app_session.base_dir,
@@ -135,23 +182,29 @@ class AutoSorterApp:
                 self.settings,
                 self.app_session.db,
                 _progress_cb,
-                lambda: getattr(self, "_cancel_analysis_flag", False)
+                lambda: getattr(self, "_cancel_analysis_flag", False),
             )
             bypassed_set = set(bypassed_files)
             items_to_sort = [f for f in files if f not in bypassed_set]
-            
+
             chunk_size = 50
             for i in range(0, len(items_to_sort), chunk_size):
                 if self._cancel_analysis_flag:
                     break
-                chunk = items_to_sort[i:i+chunk_size]
+                chunk = items_to_sort[i : i + chunk_size]
                 await asyncio.to_thread(self._process_chunk, chunk)
                 self.completed_files += len(chunk)
-                self.progress_bar.set_value(self.completed_files / self.total_files if self.total_files > 0 else 0)
-                await asyncio.sleep(0.01) # Yield to event loop
-            
+                self.progress_bar.set_value(
+                    self.completed_files / self.total_files
+                    if self.total_files > 0
+                    else 0
+                )
+                await asyncio.sleep(0.01)  # Yield to event loop
+
             if not self._cancel_analysis_flag:
-                self.plan = await asyncio.to_thread(self.app_session.generate_sorting_plan)
+                self.plan = await asyncio.to_thread(
+                    self.app_session.generate_sorting_plan
+                )
                 self.render_tree()
                 self.status_label.set_text("Analysis complete.")
                 self.execute_btn.enable()
@@ -189,18 +242,24 @@ class AutoSorterApp:
         if not self.app_session or not self.base_dir:
             return
         self.status_label.set_text("Rebuilding plan...")
+
         async def run():
-            self.plan = await asyncio.to_thread(self.app_session.analyzer.generate_sorting_plan, self.base_dir, self.settings)
+            self.plan = await asyncio.to_thread(
+                self.app_session.analyzer.generate_sorting_plan,
+                self.base_dir,
+                self.settings,
+            )
             self.render_tree()
             self.status_label.set_text("Plan rebuilt.")
+
         asyncio.create_task(run())
 
     def render_tree(self):
         """Render the tree view of the sorting plan."""
         self.tree_nodes = []
         self._flatten(self.plan, "", self.tree_nodes)
-        if hasattr(self, 'tree_view'):
-            self.tree_view._props['nodes'] = self.tree_nodes
+        if hasattr(self, "tree_view"):
+            self.tree_view._props["nodes"] = self.tree_nodes
             self.tree_view.update()
 
     def _flatten(self, node, current_path, nodes_list):
@@ -208,7 +267,9 @@ class AutoSorterApp:
             node_id = f"{current_path}/{k}" if current_path else k
             if isinstance(v, dict) and "__type__" not in v:
                 children = []
-                nodes_list.append({"id": node_id, "text": k, "children": children, "icon": "folder"})
+                nodes_list.append(
+                    {"id": node_id, "text": k, "children": children, "icon": "folder"}
+                )
                 self._flatten(v, node_id, children)
             else:
                 text = k
@@ -228,14 +289,16 @@ class AutoSorterApp:
         """Execute the sorting plan."""
         if not self.app_session or not self.plan:
             return
-        
+
         self.execute_btn.disable()
         self.status_label.set_text("Executing sort...")
         self.progress_bar.set_value(0)
-        
+
         async def run():
             try:
-                summary = await asyncio.to_thread(self.app_session.execute_moves, self.plan)
+                summary = await asyncio.to_thread(
+                    self.app_session.execute_moves, self.plan
+                )
                 ui.notify(f"Sorted successfully: {summary}")
                 self.status_label.set_text("Sorting complete.")
             except Exception as e:
@@ -245,20 +308,28 @@ class AutoSorterApp:
             finally:
                 self.plan = {}
                 self.render_tree()
+
         asyncio.create_task(run())
 
     def get_tree_state(self):
         """Get a representation of the tree state."""
+
         # Format tree state to match the old dump_state snapshot requirements
         def _convert(nodes):
             res = []
             for n in nodes:
-                item = {"iid": n["id"], "text": n["text"], "children": _convert(n.get("children", []))}
+                item = {
+                    "iid": n["id"],
+                    "text": n["text"],
+                    "children": _convert(n.get("children", [])),
+                }
                 # mock old "open" property which was default True or False
                 item["open"] = True if n.get("children") else False
                 res.append(item)
             return res
+
         return _convert(self.tree_nodes)
+
 
 def run_app(settings) -> None:
     """Run the NiceGUI application."""

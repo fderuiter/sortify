@@ -6,9 +6,11 @@ import threading
 from tkinter import filedialog
 
 
-def ask_directory_async(parent, title, callback, disable_ui_callback, enable_ui_callback):
+def ask_directory_async(
+    parent, title, callback, disable_ui_callback, enable_ui_callback
+):
     """Launch native OS directory selector asynchronously to prevent blocking the web UI execution thread.
-    
+
     Force the native OS window manager to bring the newly opened folder picker window to the front.
     """
     if disable_ui_callback:
@@ -17,18 +19,24 @@ def ask_directory_async(parent, title, callback, disable_ui_callback, enable_ui_
     def _run_dialog():
         path = ""
         success = False
-        
+
         try:
-            if sys.platform == 'darwin':
+            if sys.platform == "darwin":
                 # macOS AppleScript
                 cmd = [
                     "osascript",
-                    "-e", "try",
-                    "-e", f'set f to choose folder with prompt "{title}"',
-                    "-e", '"SUCCESS:" & POSIX path of f',
-                    "-e", "on error",
-                    "-e", '"CANCEL:"',
-                    "-e", "end try"
+                    "-e",
+                    "try",
+                    "-e",
+                    f'set f to choose folder with prompt "{title}"',
+                    "-e",
+                    '"SUCCESS:" & POSIX path of f',
+                    "-e",
+                    "on error",
+                    "-e",
+                    '"CANCEL:"',
+                    "-e",
+                    "end try",
                 ]
                 result = subprocess.run(cmd, capture_output=True, text=True, check=True)
                 output = result.stdout.strip()
@@ -40,7 +48,7 @@ def ask_directory_async(parent, title, callback, disable_ui_callback, enable_ui_
                     success = True
                 else:
                     success = False
-            elif sys.platform == 'win32':
+            elif sys.platform == "win32":
                 # Windows PowerShell
                 script = f"""
 [System.Reflection.Assembly]::LoadWithPartialName('System.windows.forms') | Out-Null;
@@ -56,9 +64,11 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {{
 """
                 startupinfo = subprocess.STARTUPINFO()
                 startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-                startupinfo.wShowWindow = 0 # SW_HIDE
+                startupinfo.wShowWindow = 0  # SW_HIDE
                 cmd = ["powershell", "-Command", script]
-                result = subprocess.run(cmd, capture_output=True, text=True, startupinfo=startupinfo)
+                result = subprocess.run(
+                    cmd, capture_output=True, text=True, startupinfo=startupinfo
+                )
                 output = result.stdout.strip()
                 if output.startswith("SUCCESS:"):
                     path = output[8:]
@@ -82,16 +92,16 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {{
                     enable_ui_callback()
                 if callback:
                     callback(selected)
-            
+
             parent.after(0, _fallback)
             return
-            
+
         def _on_complete():
             if enable_ui_callback:
                 enable_ui_callback()
             if callback:
                 callback(path)
-                
+
         parent.after(0, _on_complete)
 
     threading.Thread(target=_run_dialog, daemon=True).start()
