@@ -192,26 +192,25 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                     doc_text = doc_map.get(k, "")[:1000]
                     prompt = f"Does this document about '{doc_text}' belong in a folder for '{path_name}'? Reply YES or NO."
                     try:
-                        with block_external_network():
-                            import torch
-                            torch.set_num_threads(2)
-                            if self.task == "text-generation":
-                                res = self.generator(
-                                    prompt,
-                                    max_new_tokens=5,
-                                    num_return_sequences=1,
-                                    return_full_text=False,
-                                )
-                            else:
-                                res = self.generator(
-                                    prompt, max_new_tokens=5, num_return_sequences=1
-                                )
-                            answer = res[0]["generated_text"].strip().upper()
-                            
-                            if "NO" in answer:
-                                low_confidence_files[k] = None
-                            else:
-                                new_node[k] = None
+                        import torch
+                        torch.set_num_threads(2)
+                        if self.task == "text-generation":
+                            res = self.generator(
+                                prompt,
+                                max_new_tokens=5,
+                                num_return_sequences=1,
+                                return_full_text=False,
+                            )
+                        else:
+                            res = self.generator(
+                                prompt, max_new_tokens=5, num_return_sequences=1
+                            )
+                        answer = res[0]["generated_text"].strip().upper()
+                        
+                        if "NO" in answer:
+                            low_confidence_files[k] = None
+                        else:
+                            new_node[k] = None
                     except Exception as e:
                         logging.error(f"Coherence check failed: {e}")
                         new_node[k] = None
@@ -223,7 +222,9 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                     low_confidence_files.update(lc_v)
             return new_node, low_confidence_files
 
-        new_plan, lc_files = filter_plan(plan)
+        with block_external_network():
+            new_plan, lc_files = filter_plan(plan)
+            
         if lc_files:
             if "Low Confidence" not in new_plan:
                 new_plan["Low Confidence"] = {}
