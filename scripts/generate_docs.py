@@ -202,18 +202,13 @@ def update_security_md():
 
         with open(config_path, "r", encoding="utf-8") as f:
             config = json.load(f)
-
         raw_rules = config.get("rules", [])
-
-        valid_rules = []
         for rule in raw_rules:
             if (
-                not rule.get("pattern")
-                or not rule.get("match_type")
-                or not rule.get("description")
+                rule.get("pattern")
+                and rule.get("match_type")
+                and rule.get("description")
             ):
-                print(f"Warning: Malformed rule {rule}")
-            else:
                 valid_rules.append(rule)
 
     import_regex = re.compile(
@@ -229,11 +224,7 @@ def update_security_md():
             and d not in ("venv", "env", "__pycache__", "node_modules", "site-packages")
         ]
         for file in files:
-            if (
-                not file.endswith(".py")
-                and not file.endswith(".yml")
-                and not file.endswith(".yaml")
-            ):
+            if not file.endswith(".py"):
                 continue
 
             filepath = os.path.join(root, file)
@@ -267,8 +258,7 @@ def update_security_md():
                         if m:
                             match_found = True
                             matched_str = m.group(0)
-                    except re.error as e:
-                        print(f"Warning: Invalid regex pattern '{pattern}': {e}")
+                    except re.error:
                         pass
 
                 if match_found:
