@@ -154,51 +154,51 @@ def test_empty_files_handling():
     # Check if empty files are handled without crash
 
 
-def test_concurrent_large_volume():
+def test_concurrent_large_volume(tmp_path):
     # Requirement: accurately simulates the asynchronous processing of at least 20 files simultaneously
     analyzer = IncrementalAnalyzer(
         max_folders=5, stop_words={"the", "and"}, model_path="all-MiniLM-L6-v2", db=db
     )
     progress_callback = MagicMock()
 
-    with tempfile.TemporaryDirectory() as temp_dir:
-        # Create 25 files
-        files_to_sort = []
-        for i in range(25):
-            fname = f"sim_file_{i}.txt"
-            with open(os.path.join(temp_dir, fname), "w") as f:
-                f.write(f"This is simulation file {i} about technology and computers.")
-            files_to_sort.append(fname)
+    temp_dir = str(tmp_path)
+    # Create 25 files
+    files_to_sort = []
+    for i in range(25):
+        fname = f"sim_file_{i}.txt"
+        with open(os.path.join(temp_dir, fname), "w") as f:
+            f.write(f"This is simulation file {i} about technology and computers.")
+        files_to_sort.append(fname)
 
-        generator = build_corpus_generator(
-            temp_dir,
-            files_to_sort,
-            progress_callback,
-            max_workers=4,
-            db=db,
-            chunk_size=10,
-        )
+    generator = build_corpus_generator(
+        temp_dir,
+        files_to_sort,
+        progress_callback,
+        max_workers=4,
+        db=db,
+        chunk_size=10,
+    )
 
-        for chunk in generator:
-            analyzer.partial_fit(temp_dir, chunk)
+    for chunk in generator:
+        analyzer.partial_fit(temp_dir, chunk)
 
-        plan = analyzer.generate_sorting_plan(temp_dir)
+    plan = analyzer.generate_sorting_plan(temp_dir)
 
-        # Verify
-        assert progress_callback.call_count == 25
-        assert isinstance(plan, dict)
+    # Verify
+    assert progress_callback.call_count == 25
+    assert isinstance(plan, dict)
 
-        # Verify all 25 files are present
-        def get_all_files(p):
-            result = []
-            if not isinstance(p, dict) or p.get("__type__") == "file":
-                return result
-            for k, v in p.items():
-                if v is None or (isinstance(v, dict) and v.get("__type__") == "file"):
-                    result.append(k)
-                else:
-                    result.extend(get_all_files(v))
+    # Verify all 25 files are present
+    def get_all_files(p):
+        result = []
+        if not isinstance(p, dict) or p.get("__type__") == "file":
             return result
+        for k, v in p.items():
+            if v is None or (isinstance(v, dict) and v.get("__type__") == "file"):
+                result.append(k)
+            else:
+                result.extend(get_all_files(v))
+        return result
 
-        sorted_files = get_all_files(plan)
-        assert len(sorted_files) == 25
+    sorted_files = get_all_files(plan)
+    assert len(sorted_files) == 25
