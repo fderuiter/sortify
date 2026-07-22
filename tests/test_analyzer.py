@@ -2,7 +2,6 @@ import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 
-import numpy as np
 import pytest
 
 from app.core.analyzer import IncrementalAnalyzer

@@ -4,16 +4,11 @@ This module provides topic modeling functionality.
 """
 
 import hashlib
-import json
 import logging
 import os
-import re
 from typing import Any, Dict, List, Tuple
 
-import numpy as np
-
 from app.core.analyzer_strategies import clustering_registry
-
 
 class IncrementalAnalyzer:
     """Stateful ML analyzer using incremental topic modeling."""
@@ -27,7 +22,6 @@ class IncrementalAnalyzer:
         model_path: str | None = None,
     ) -> None:
         self.db = db
-        """Initialize the analyzer with the maximum number of folders."""
         self.max_folders = max_folders
         self.stop_words = stop_words
         self.strategy_name = strategy_name
@@ -182,13 +176,13 @@ class IncrementalAnalyzer:
             # Map file hashes to their historical targets
             hash_to_target = {}
             for d in docs:
-                if len(d) > 4 and d[4] is not None:
-                    hash_to_target[d[3]] = d[4]
+                if len(d) > 3 and d[3] is not None:
+                    hash_to_target[d[2]] = d[3]
 
             for d in docs:
                 f, doc = d[0], d[1]
-                file_hash = d[3] if len(d) > 3 else None
-                assigned_folder = d[4] if len(d) > 4 else None
+                file_hash = d[2] if len(d) > 2 else None
+                assigned_folder = d[3] if len(d) > 3 else None
 
                 target = (
                     assigned_folder
@@ -328,109 +322,102 @@ class IncrementalAnalyzer:
             if locked_files is None:
                 locked_files = {}
 
+            
+            # Phase 1: Keyword, and Learned Rule sorting
             compliance_targets = {
                 f: target_folder
                 for f, target_folder, keyword, routed_by, ext_status in keyword_plan_files
             }
 
-            for f, override_data in historical_overrides.items():
-                target_folder, ext_status = override_data
+            for f, target_folder, keyword, rule_type, status in keyword_plan_files:
+                if target_folder not in plan:
+                    plan[target_folder] = {}
+                plan[target_folder][f] = {
+                    "__type__": "file",
+                    "routed_by": rule_type,
+                    "match": keyword,
+                    "status": status,
+                }
 
+            # Inject Historical Assignments and handle conflicts
+            for f, (target_folder, status) in historical_overrides.items():
                 is_conflicted = False
                 compliance_path = None
 
                 if f in compliance_targets and compliance_targets[f] != target_folder:
                     compliance_path = compliance_targets[f]
 
-                    if f in locked_files and locked_files[f] in (
+                    if locked_files and f in locked_files and locked_files[f] in (
                         target_folder,
                         compliance_path,
                     ):
-                        # User already resolved this conflict
                         target_folder = locked_files[f]
                     else:
                         is_conflicted = True
+                
+                # Remove from other locations if present
+                for t in plan.values():
+                    if isinstance(t, dict) and f in t:
+                        del t[f]
 
-                remove_from_plan(plan, f)
-
-                info_dict = {"routed_by": "historical"}
-                if ext_status:
-                    info_dict["extraction_status"] = ext_status
+                if target_folder not in plan:
+                    plan[target_folder] = {}
+                
+                info = {
+                    "__type__": "file",
+                    "routed_by": "historical",
+                    "match": "user assignment",
+                    "status": status,
+                }
 
                 if is_conflicted:
-                    info_dict["is_conflicted"] = True
-                    info_dict["compliance_path"] = compliance_path
-                    info_dict["historical_path"] = target_folder
+                    info["is_conflicted"] = True
+                    info["compliance_path"] = compliance_path
+                    info["historical_path"] = target_folder
 
-                if not target_folder:
-                    plan[f] = info_dict
+                plan[target_folder][f] = info
+
+            # Phase 3: Route unsupported files safely
+            if unsupported_files:
+                if "Miscellaneous" not in plan:
+                    plan["Miscellaneous"] = {}
+                for f, status in unsupported_files:
+                    if f not in plan["Miscellaneous"]:
+                        plan["Miscellaneous"][f] = {
+                            "__type__": "file",
+                            "routed_by": "fallback",
+                            "match": "none",
+                            "status": status,
+                        }
+
+            clean_plan = {}
+            import ntpath
+            for target_folder, files in plan.items():
+                if not isinstance(files, dict) or not files:
+                    continue
+                
+                if os.path.isabs(target_folder) or ntpath.isabs(target_folder):
+                    if target_folder not in clean_plan:
+                        clean_plan[target_folder] = {}
+                    for f, info in files.items():
+                        clean_plan[target_folder][f] = info
                     continue
 
                 parts = target_folder.replace("\\", "/").split("/")
-                current = plan
+                current = clean_plan
                 for i, part in enumerate(parts):
                     if part not in current:
                         current[part] = {}
                     if not isinstance(current[part], dict):
                         current[part] = {"_original": current[part]}
                     if i == len(parts) - 1:
-                        current[part][f] = info_dict
+                        for f, info in files.items():
+                            current[part][f] = info
                     else:
                         current = current[part]
+                
+            return self._inject_hierarchy(clean_plan)
 
-            def _annotate(node, current_path):
-                for k, v in list(node.items()):
-                    if v is None or (
-                        isinstance(v, dict)
-                        and (v.get("routed_by") or v.get("extraction_status"))
-                    ):
-                        filename = os.path.basename(k)
-                        target_filename = filename
-
-                        contextual_renaming = False
-                        if runtime_settings:
-                            contextual_renaming = getattr(
-                                runtime_settings, "CONTEXTUAL_RENAMING", False
-                            )
-                        else:
-                            contextual_renaming = False
-
-                        if contextual_renaming:
-                            parent_dir = os.path.dirname(k)
-                            if parent_dir:
-                                parent_folder = os.path.basename(parent_dir)
-                                if parent_folder:
-                                    safe_parent = re.sub(
-                                        r"[^A-Za-z0-9]", "_", parent_folder
-                                    )
-                                    target_filename = f"{safe_parent}_{filename}"
-
-                        target_path = os.path.join(current_path, target_filename)
-
-                        norm_source = os.path.normpath(k)
-                        norm_target = os.path.normpath(target_path)
-
-                        status = (
-                            "Already Sorted"
-                            if norm_source == norm_target
-                            else "Pending Move"
-                        )
-
-                        file_dict = {
-                            "__type__": "file",
-                            "status": status,
-                            "source_path": k,
-                            "target_filename": target_filename,
-                        }
-                        if isinstance(v, dict) and v.get("routed_by"):
-                            file_dict.update(v)
-
-                        node[k] = file_dict
-                    elif isinstance(v, dict):
-                        _annotate(v, os.path.join(current_path, k))
-
-            _annotate(plan, "")
-            return plan
         except Exception as e:
             logging.error(
                 f"Failed during generate_sorting_plan. Error: {str(e)}", exc_info=True
