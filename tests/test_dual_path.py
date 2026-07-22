@@ -31,14 +31,13 @@ def test_session_dual_path_resolution_local_priority(mock_app_session_env):
     settings = AppSettings()
     settings.AI_CONSENT_GRANTED = True
     
-    # Mock sys.frozen and __file__ to control base_path, and get_app_dir to control user app dir
+    # Mock sys.frozen and executable to control base_path, and get_app_dir to control user app dir
     with patch("app.core.session.get_app_dir", return_value=Path(app_temp)):
         import sys
-        with patch.object(sys, "frozen", False, create=True):
+        with patch.object(sys, "frozen", True, create=True):
             with patch.object(sys, "executable", os.path.join(base_temp, "app.exe"), create=True):
-                with patch("app.core.session.__file__", os.path.join(base_temp, "app", "core", "session.py")):
-                    session = AppSession(settings, base_dir=base_temp)
-                    assert session.analyzer.model_path == local_model
+                session = AppSession(settings, base_dir=base_temp)
+                assert session.analyzer.model_path == local_model
 
 def test_session_dual_path_resolution_user_fallback(mock_app_session_env):
     base_temp, app_temp = mock_app_session_env
@@ -52,8 +51,8 @@ def test_session_dual_path_resolution_user_fallback(mock_app_session_env):
     
     with patch("app.core.session.get_app_dir", return_value=Path(app_temp)):
         import sys
-        with patch.object(sys, "frozen", False, create=True):
-            with patch("app.core.session.__file__", os.path.join(base_temp, "app", "core", "session.py")):
+        with patch.object(sys, "frozen", True, create=True):
+            with patch.object(sys, "executable", os.path.join(base_temp, "app.exe"), create=True):
                 session = AppSession(settings, base_dir=base_temp)
                 assert session.analyzer.model_path == user_model
 
@@ -65,8 +64,8 @@ def test_session_dual_path_resolution_no_model(mock_app_session_env):
     
     with patch("app.core.session.get_app_dir", return_value=Path(app_temp)):
         import sys
-        with patch.object(sys, "frozen", False, create=True):
-            with patch("app.core.session.__file__", os.path.join(base_temp, "app", "core", "session.py")):
+        with patch.object(sys, "frozen", True, create=True):
+            with patch.object(sys, "executable", os.path.join(base_temp, "app.exe"), create=True):
                 session = AppSession(settings, base_dir=base_temp)
                 assert session.analyzer.model_path is None
 
@@ -81,8 +80,8 @@ def test_strategy_dual_path_resolution_local_priority(mock_app_session_env):
     
     with patch("app.config.get_app_dir", return_value=Path(app_temp)):
         import sys
-        with patch.object(sys, "frozen", False, create=True):
-            with patch("app.core.analyzer_strategies.__file__", os.path.join(base_temp, "app", "core", "analyzer_strategies.py")):
+        with patch.object(sys, "frozen", True, create=True):
+            with patch.object(sys, "executable", os.path.join(base_temp, "app.exe"), create=True):
                 strategy = GenerativeNamingStrategy()
                 assert strategy.model_path == local_model
 
@@ -94,8 +93,8 @@ def test_strategy_dual_path_resolution_user_fallback(mock_app_session_env):
     
     with patch("app.config.get_app_dir", return_value=Path(app_temp)):
         import sys
-        with patch.object(sys, "frozen", False, create=True):
-            with patch("app.core.analyzer_strategies.__file__", os.path.join(base_temp, "app", "core", "analyzer_strategies.py")):
+        with patch.object(sys, "frozen", True, create=True):
+            with patch.object(sys, "executable", os.path.join(base_temp, "app.exe"), create=True):
                 strategy = GenerativeNamingStrategy()
                 assert strategy.model_path == user_model
 
@@ -116,7 +115,7 @@ def test_setup_wizard_bypass_dual_path(mock_app_session_env):
     
     with patch("app.config.get_app_dir", return_value=Path(app_temp)):
         import sys
-        with patch.object(sys, "frozen", False, create=True):
-            with patch("app.ui.app.__file__", os.path.join(base_temp, "app", "ui", "app.py")):
+        with patch.object(sys, "frozen", True, create=True):
+            with patch.object(sys, "executable", os.path.join(base_temp, "app.exe"), create=True):
                 app.check_setup_wizard()
                 assert settings.AI_CONSENT_GRANTED is True
