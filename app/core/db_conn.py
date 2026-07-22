@@ -1,8 +1,8 @@
 """Database connection module."""
 
 import os
-import sys
 import sqlite3
+import sys
 import threading
 
 # Global connection cache and lock
@@ -18,9 +18,11 @@ def clear_connection_cache():
             try:
                 try:
                     conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-                except: pass
+                except Exception:
+                    pass
                 conn.close()
-            except Exception: pass
+            except Exception:
+                pass
         _connection_cache.clear()
     gc.collect()
 

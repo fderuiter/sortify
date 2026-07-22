@@ -6,9 +6,9 @@ This module provides topic modeling functionality.
 import hashlib
 import logging
 import os
-from typing import Any, Dict, List, Tuple
 
 from app.core.analyzer_strategies import clustering_registry
+
 
 class IncrementalAnalyzer:
     """Stateful ML analyzer using incremental topic modeling."""
@@ -77,17 +77,6 @@ class IncrementalAnalyzer:
 
             if not texts:
                 return
-
-            keyword_rules = (
-                getattr(runtime_settings, "KEYWORD_RULES", {})
-                if runtime_settings
-                else {}
-            )
-            learned_rules = (
-                getattr(runtime_settings, "LEARNED_RULES", {})
-                if runtime_settings
-                else {}
-            )
 
             documents_to_upsert = []
             for i, (filepath, text, file_hash) in enumerate(
