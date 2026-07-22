@@ -137,8 +137,8 @@ def test_windows_path_limit():
     engine = VerificationEngine()
     errors = run_with_vfs(vfs, engine.verify_plan, "C:\\app", plan)
 
-    assert "test.txt" in errors
-    assert errors["test.txt"] == "Path exceeds 260 characters"
+    # Autocorrect should fix the path, so no errors should be returned
+    assert errors == {}
 
 
 def test_linux_path_limit():
@@ -151,7 +151,8 @@ def test_linux_path_limit():
     plan = {"test.txt": {"__type__": "file", "target_filename": long_dest}}
     engine = VerificationEngine()
     errors = run_with_vfs(vfs, engine.verify_plan, "/app", plan)
-    assert errors["test.txt"] == "Filename exceeds 255 characters"
+    # Autocorrect should fix it
+    assert errors == {}
 
     # Path limit
     deep_path = "a" * 200

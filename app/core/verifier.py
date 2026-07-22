@@ -13,8 +13,8 @@ class VerificationEngine:
     """Engine to verify file operations before execution."""
 
     @staticmethod
-    def get_moves(base_dir: str, plan: dict, current_dest: str = "") -> list:
-        """Get a flat list of moves from the plan."""
+    def _get_moves_with_nodes(base_dir: str, plan: dict, current_dest: str = "") -> list:
+        """Get a flat list of moves from the plan, including the dictionary node for mutation."""
         moves = []
         for key, content in plan.items():
             if content is None or (
@@ -33,14 +33,24 @@ class VerificationEngine:
 
                 dest_dir = os.path.join(base_dir, current_dest)
                 dest_path = os.path.join(dest_dir, filename)
-                moves.append((key, source_path, dest_path))
+                moves.append((key, source_path, dest_path, plan, key))
             else:
                 moves.extend(
-                    VerificationEngine.get_moves(
+                    VerificationEngine._get_moves_with_nodes(
                         base_dir, content, os.path.join(current_dest, key)
                     )
                 )
         return moves
+
+    @staticmethod
+    def get_moves(base_dir: str, plan: dict, current_dest: str = "") -> list:
+        """Get a flat list of moves from the plan."""
+        return [
+            (rel, src, dst)
+            for rel, src, dst, _, _ in VerificationEngine._get_moves_with_nodes(
+                base_dir, plan, current_dest
+            )
+        ]
 
     @staticmethod
     def is_cloud_path(path: str) -> bool:
@@ -130,7 +140,8 @@ class VerificationEngine:
     def verify_plan(self, base_dir: str, plan: dict) -> dict:
         """Verify the execution plan against constraints."""
         errors = {}
-        moves = self.get_moves(base_dir, plan)
+        moves_nodes = self._get_moves_with_nodes(base_dir, plan)
+        moves = [(rel, src, dst) for rel, src, dst, _, _ in moves_nodes]
 
         volumes = {}
         for rel_src, src, dst in moves:
@@ -172,7 +183,7 @@ class VerificationEngine:
 
         from app.core.path_utils import is_valid_name
 
-        for rel_src, src, dst in moves:
+        for rel_src, src, dst, parent_dict, key_in_plan in moves_nodes:
             if rel_src in errors:
                 continue
 
@@ -195,6 +206,8 @@ class VerificationEngine:
                     continue
 
             link_info = LinkManager.get_link_info(src)
+            is_link = link_info is not None and link_info["type"] in ("symlink", "lnk")
+
             if link_info and link_info["type"] == "symlink":
                 if symlink_privilege is None:
                     symlink_privilege = self._check_symlink_privilege()
@@ -204,14 +217,57 @@ class VerificationEngine:
                     )
                     continue
 
-            if is_windows:
-                if len(dst) >= 260:
-                    errors[rel_src] = "Path exceeds 260 characters"
-            else:
-                if len(os.path.basename(dst)) > 255:
-                    errors[rel_src] = "Filename exceeds 255 characters"
-                elif len(dst) > 4096:
-                    errors[rel_src] = "Path exceeds 4096 characters"
+            # Simulate collision and shadow suffixes
+            extra_len = 4 + (44 if is_link else 0)
+
+            dest_dir = os.path.dirname(dst)
+            filename = os.path.basename(dst)
+
+            def check_limits(f_name):
+                test_dst = os.path.join(dest_dir, f_name)
+                test_len = len(test_dst) + extra_len
+                if is_windows:
+                    if test_len >= 260:
+                        return False, "Path exceeds 260 characters"
+                else:
+                    test_basename_len = len(f_name) + extra_len
+                    if test_basename_len > 255:
+                        return False, "Filename exceeds 255 characters"
+                    if test_len > 4096:
+                        return False, "Path exceeds 4096 characters"
+                return True, None
+
+            valid, err_msg = check_limits(filename)
+
+            if not valid:
+                stem, ext = os.path.splitext(filename)
+                truncated = False
+                
+                # Truncate one character at a time until valid
+                while len(stem) > 0:
+                    stem = stem[:-1]
+                    test_name = stem + ext
+                    valid, err_msg = check_limits(test_name)
+                    if valid:
+                        filename = test_name
+                        truncated = True
+                        break
+
+                if truncated:
+                    dst = os.path.join(dest_dir, filename)
+                    content = parent_dict[key_in_plan]
+                    if content is None:
+                        parent_dict[key_in_plan] = {"__type__": "file", "target_filename": filename}
+                    elif isinstance(content, dict):
+                        parent_dict[key_in_plan]["target_filename"] = filename
+                    
+                    # Ensure boundary protection
+                    abs_dst = os.path.abspath(dst)
+                    abs_base = os.path.abspath(base_dir)
+                    if not abs_dst.startswith(abs_base) or os.sep in filename or (os.altsep and os.altsep in filename):
+                        errors[rel_src] = "Truncated path escapes workspace"
+                else:
+                    errors[rel_src] = err_msg
 
             if rel_src not in errors and not self._is_file_accessible(src):
                 errors[rel_src] = "File is locked or inaccessible"
