@@ -226,6 +226,19 @@ class AppSettings:
         except Exception as e:
             logging.error(f"Failed to save settings: {e}")
 
+    def __getstate__(self):
+        """Prepare object for pickling by removing unpicklable attributes."""
+        state = self.__dict__.copy()
+        state.pop("_lock", None)
+        state.pop("_save_timer", None)
+        return state
+
+    def __setstate__(self, state):
+        """Restore object from pickle."""
+        self.__dict__.update(state)
+        self._lock = threading.Lock()
+        self._save_timer = None
+
     def __getattr__(self, name):
         """Get attribute dynamically from the settings model."""
         if hasattr(self._settings_model, name):
