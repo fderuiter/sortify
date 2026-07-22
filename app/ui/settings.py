@@ -1,15 +1,13 @@
 """Settings module using NiceGUI."""
 
 import asyncio
-import os
 import shutil
-from pathlib import Path
 
-from nicegui import ui
 from huggingface_hub import snapshot_download
+from nicegui import ui
 
 from app.config import get_app_dir
-from app.ui.wizard import verify_model, _DownloadProgressTracker, _shared_download_state
+from app.ui.wizard import _DownloadProgressTracker, _shared_download_state, verify_model
 
 
 def show_settings(parent_app, settings):

@@ -3,17 +3,17 @@
 import asyncio
 import hashlib
 import json
-import os
-import shutil
 from pathlib import Path
 
-from nicegui import ui
 from huggingface_hub import snapshot_download
+from nicegui import ui
 
 from app.config import get_app_dir
 
 
 class SharedTracker:
+    """Shared state tracker for background downloads."""
+
     def __init__(self):
         self.n = 0
         self.total = 1
@@ -43,6 +43,7 @@ class _DownloadProgressTracker:
 
 
 def verify_model():
+    """Verify model integrity offline by comparing SHA256 checksums."""
     model_dir = get_app_dir() / "model"
     if not model_dir.exists():
         return False
