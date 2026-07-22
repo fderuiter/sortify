@@ -193,6 +193,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                     prompt = f"Does this document about '{doc_text}' belong in a folder for '{path_name}'? Reply YES or NO."
                     try:
                         import torch
+
                         torch.set_num_threads(2)
                         if self.task == "text-generation":
                             res = self.generator(
@@ -206,7 +207,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                                 prompt, max_new_tokens=5, num_return_sequences=1
                             )
                         answer = res[0]["generated_text"].strip().upper()
-                        
+
                         if "NO" in answer:
                             low_confidence_files[k] = None
                         else:
@@ -224,7 +225,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
 
         with block_external_network():
             new_plan, lc_files = filter_plan(plan)
-            
+
         if lc_files:
             if "Low Confidence" not in new_plan:
                 new_plan["Low Confidence"] = {}
@@ -244,8 +245,9 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
             )
 
         local_bundle_path = os.path.join(base_path, "offline_bundle", "model")
-        
+
         from app.config import get_app_dir
+
         user_bundle_path = str(get_app_dir() / "model")
 
         self.model_path = model_path

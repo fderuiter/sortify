@@ -1,6 +1,5 @@
 """Main application GUI module using NiceGUI."""
 
-import os
 import asyncio
 import logging
 import os
@@ -116,15 +115,17 @@ class AutoSorterApp:
             self.execute_btn.disable()
 
         with ui.dialog() as self.recalc_dialog:
-            self.recalc_dialog.props('persistent')
-            with ui.card().classes('items-center'):
+            self.recalc_dialog.props("persistent")
+            with ui.card().classes("items-center"):
                 ui.label("Recalculating plan...")
-                ui.spinner(size='lg')
-                ui.button("Cancel", on_click=self.cancel_recalc).props('aria-label="Cancel Recalculation Button"')
+                ui.spinner(size="lg")
+                ui.button("Cancel", on_click=self.cancel_recalc).props(
+                    'aria-label="Cancel Recalculation Button"'
+                )
 
         # Check wizard on startup
         ui.timer(0.1, self.check_setup_wizard, once=True)
-        
+
         if self.base_dir:
             ui.timer(0.2, self.start_analysis, once=True)
 
@@ -133,16 +134,21 @@ class AutoSorterApp:
         import sys
 
         from app.config import get_app_dir
-        
+
         if getattr(sys, "frozen", False):
             base_path = os.path.dirname(sys.executable)
         else:
-            base_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-            
+            base_path = os.path.dirname(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            )
+
         local_model_dir = os.path.join(base_path, "offline_bundle", "model")
         user_model_dir = get_app_dir() / "model"
-        
-        if os.path.exists(os.path.join(local_model_dir, "config.json")) or (user_model_dir / "config.json").exists():
+
+        if (
+            os.path.exists(os.path.join(local_model_dir, "config.json"))
+            or (user_model_dir / "config.json").exists()
+        ):
             if self.settings.AI_CONSENT_GRANTED is None:
                 self.settings.AI_CONSENT_GRANTED = True
             return
@@ -186,10 +192,13 @@ class AutoSorterApp:
     async def _scan_and_process_worker(self):
         try:
             from app.core.scanner import get_files_recursively
-            files = await asyncio.to_thread(get_files_recursively, self.app_session.base_dir)
+
+            files = await asyncio.to_thread(
+                get_files_recursively, self.app_session.base_dir
+            )
             self.total_files = len(files)
             self.completed_files = 0
-            
+
             from app.core.metadata import MetadataPass
 
             bypassed_files = await asyncio.to_thread(
@@ -199,19 +208,19 @@ class AutoSorterApp:
                 self.settings,
                 self.app_session.db,
                 None,
-                lambda: getattr(self, "_cancel_analysis_flag", False)
+                lambda: getattr(self, "_cancel_analysis_flag", False),
             )
             self.completed_files += len(bypassed_files)
             if self.total_files > 0:
                 self.progress_bar.set_value(self.completed_files / self.total_files)
-            
+
             bypassed_set = set(bypassed_files)
             items_to_sort = [f for f in files if f not in bypassed_set]
-            
+
             generator = self.app_session.process_items(
-                items_to_sort, 
-                None, 
-                lambda: getattr(self, "_cancel_analysis_flag", False)
+                items_to_sort,
+                None,
+                lambda: getattr(self, "_cancel_analysis_flag", False),
             )
 
             def get_next_chunk():
@@ -223,17 +232,17 @@ class AutoSorterApp:
             while True:
                 if self._cancel_analysis_flag:
                     break
-                
+
                 chunk = await asyncio.to_thread(get_next_chunk)
                 if chunk is None:
                     break
-                
+
                 await asyncio.to_thread(self.app_session.partial_fit, chunk)
                 self.completed_files += len(chunk)
                 if self.total_files > 0:
                     self.progress_bar.set_value(self.completed_files / self.total_files)
                 await asyncio.sleep(0.01)
-            
+
             if not self._cancel_analysis_flag:
                 self.plan = await asyncio.to_thread(
                     self.app_session.generate_sorting_plan
@@ -294,7 +303,7 @@ class AutoSorterApp:
                     self.base_dir,
                     self.settings,
                     self.locked_files,
-                    check_cancel
+                    check_cancel,
                 )
 
                 if self._cancel_recalc_flag:
@@ -302,10 +311,7 @@ class AutoSorterApp:
                     return
 
                 errors = await asyncio.to_thread(
-                    self.verifier.verify_plan,
-                    self.base_dir,
-                    plan,
-                    check_cancel
+                    self.verifier.verify_plan, self.base_dir, plan, check_cancel
                 )
 
                 if self._cancel_recalc_flag:

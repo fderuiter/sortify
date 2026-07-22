@@ -187,25 +187,29 @@ def generate_admin_guide():
 def update_security_md():
     """Scan for network dependencies and update SECURITY.md."""
     network_deps = []
-    
+
     config_path = "network_rules.json"
     if os.path.exists(config_path):
         import json
         import re
-        
+
         with open(config_path, "r", encoding="utf-8") as f:
             config = json.load(f)
-            
+
         raw_rules = config.get("rules", [])
         targets = config.get("targets", [])
-        
+
         valid_rules = []
         for rule in raw_rules:
-            if not rule.get("pattern") or not rule.get("match_type") or not rule.get("description"):
+            if (
+                not rule.get("pattern")
+                or not rule.get("match_type")
+                or not rule.get("description")
+            ):
                 print(f"Warning: Malformed rule {rule}")
             else:
                 valid_rules.append(rule)
-        
+
         # Helper to check matching files
         for target in targets:
             target_path = os.path.join(".", target)
@@ -213,24 +217,28 @@ def update_security_md():
                 continue
             for root, dirs, files in os.walk(target_path):
                 for file in files:
-                    if not file.endswith(".py") and not file.endswith(".yml") and not file.endswith(".yaml"):
+                    if (
+                        not file.endswith(".py")
+                        and not file.endswith(".yml")
+                        and not file.endswith(".yaml")
+                    ):
                         continue
                     filepath = os.path.join(root, file)
                     # Avoid scanning the generate_docs script itself to prevent self-matching
                     if "generate_docs.py" in filepath:
                         continue
-                    
+
                     with open(filepath, "r", encoding="utf-8") as f:
                         content = f.read()
-                        
+
                     for rule in valid_rules:
                         pattern = rule.get("pattern")
                         match_type = rule.get("match_type")
                         desc = rule.get("description")
-                        
+
                         match_found = False
                         matched_str = ""
-                        
+
                         if match_type == "substring":
                             if pattern in content:
                                 match_found = True
@@ -242,10 +250,14 @@ def update_security_md():
                                     match_found = True
                                     matched_str = m.group(0)
                             except re.error as e:
-                                print(f"Warning: Invalid regex pattern '{pattern}': {e}")
+                                print(
+                                    f"Warning: Invalid regex pattern '{pattern}': {e}"
+                                )
                         else:
-                            print(f"Warning: Unknown match_type '{match_type}' in rule {rule}")
-                            
+                            print(
+                                f"Warning: Unknown match_type '{match_type}' in rule {rule}"
+                            )
+
                         if match_found:
                             # Normalize path for cross-platform consistency
                             rel_path = os.path.relpath(filepath, ".").replace("\\", "/")
@@ -303,11 +315,12 @@ if __name__ == "__main__":
             errors.append((name, e, sys.exc_info()))
 
     if errors:
-        sys.stderr.write("Documentation generation encountered errors in the following modules:\n\n")
+        sys.stderr.write(
+            "Documentation generation encountered errors in the following modules:\n\n"
+        )
         for name, exc, exc_info in errors:
             sys.stderr.write(f"--- Error in {name} ---\n")
             traceback.print_exception(*exc_info, file=sys.stderr)
             sys.stderr.write("\n")
-        
-        sys.exit(1)
 
+        sys.exit(1)

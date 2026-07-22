@@ -17,8 +17,8 @@ def get_ocr_reader():
     if not _ocr_reader_loaded:
         _ocr_reader_loaded = True
         try:
-            import torch
             import easyocr
+            import torch
 
             # CPU optimization
             torch.set_num_threads(2)

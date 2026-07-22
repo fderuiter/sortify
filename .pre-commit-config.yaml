@@ -47,4 +47,10 @@ repos:
         language: system
         files: '^app/config\.py$'
         pass_filenames: false
+      - id: validate-agent-prompts
+        name: Validate Agent Prompts Manifest
+        entry: uv run python scripts/prompt_manifest.py verify
+        language: system
+        files: '^\.github/AGENTS/.*$'
+        pass_filenames: false
 
