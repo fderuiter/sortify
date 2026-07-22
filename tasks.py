@@ -79,7 +79,6 @@ def _verify_local_weights(manifest_path, model_dir):
         
     critical_files = ["config.json", "tokenizer.json"]
     valid_weight_found = False
-    error_count = 0
     
     for rel_path, expected_hash in manifest.items():
         if rel_path.startswith(".cache"):
@@ -89,7 +88,7 @@ def _verify_local_weights(manifest_path, model_dir):
         if not os.path.exists(filepath):
             if rel_path in critical_files:
                 print(f"Error: Missing critical model file: {rel_path}")
-                error_count += 1
+                sys.exit(1)
             continue
             
         if rel_path in ["pytorch_model.bin", "model.safetensors"] or rel_path.endswith(".onnx"):
@@ -102,19 +101,14 @@ def _verify_local_weights(manifest_path, model_dir):
                     file_hash.update(chunk)
         except Exception as e:
             print(f"Error reading model file {rel_path}: {e}")
-            error_count += 1
-            continue
+            sys.exit(1)
             
         if file_hash.hexdigest() != expected_hash:
             print(f"Error: Checksum mismatch for side-loaded model file: {rel_path}")
-            error_count += 1
+            sys.exit(1)
             
     if not valid_weight_found:
         print("Error: No valid weight formats found (PyTorch, SafeTensors, or ONNX).")
-        error_count += 1
-        
-    if error_count > 0:
-        print(f"Weight verification failed with {error_count} errors.")
         sys.exit(1)
         
     print("Weight validation successful. All checksums match the manifest.")
