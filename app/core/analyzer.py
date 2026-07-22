@@ -259,6 +259,21 @@ class IncrementalAnalyzer:
             if locked_files is None:
                 locked_files = {}
 
+            def remove_from_plan(node, target_f):
+                for k, v in list(node.items()):
+                    if k == target_f:
+                        val = node.pop(k)
+                        if isinstance(val, dict) and "_original" in val:
+                            return val.get("_original")
+                        return val
+                    if isinstance(v, dict):
+                        res = remove_from_plan(v, target_f)
+                        if res is not None:
+                            if not v:
+                                node.pop(k)
+                            return res
+                return None
+
             
             # Phase 1: Keyword, and Learned Rule sorting
             compliance_targets = {
@@ -267,6 +282,7 @@ class IncrementalAnalyzer:
             }
 
             for f, target_folder, keyword, rule_type, status in keyword_plan_files:
+                remove_from_plan(plan, f)
                 if target_folder not in plan:
                     plan[target_folder] = {}
                 plan[target_folder][f] = {
@@ -293,9 +309,7 @@ class IncrementalAnalyzer:
                         is_conflicted = True
                 
                 # Remove from other locations if present
-                for t in plan.values():
-                    if isinstance(t, dict) and f in t:
-                        del t[f]
+                remove_from_plan(plan, f)
 
                 if target_folder not in plan:
                     plan[target_folder] = {}
