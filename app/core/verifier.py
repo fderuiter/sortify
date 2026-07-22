@@ -127,13 +127,15 @@ class VerificationEngine:
         except Exception:
             return False
 
-    def verify_plan(self, base_dir: str, plan: dict) -> dict:
+    def verify_plan(self, base_dir: str, plan: dict, cancel_check=None) -> dict:
         """Verify the execution plan against constraints."""
         errors = {}
         moves = self.get_moves(base_dir, plan)
 
         volumes = {}
         for rel_src, src, dst in moves:
+            if cancel_check and cancel_check():
+                return {}
             src_vol = self._get_volume(src)
             dst_vol = self._get_volume(dst)
 
@@ -173,6 +175,8 @@ class VerificationEngine:
         from app.core.path_utils import is_valid_name
 
         for rel_src, src, dst in moves:
+            if cancel_check and cancel_check():
+                return {}
             if rel_src in errors:
                 continue
 
