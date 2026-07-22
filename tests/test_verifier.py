@@ -117,6 +117,8 @@ def run_with_vfs(vfs: VirtualFS, func, *args, **kwargs):
         patch("app.core.verifier.os.symlink", side_effect=vfs.symlink),
         patch("app.core.verifier.os.remove", side_effect=vfs.remove),
         patch("app.core.verifier.platform.system", return_value=vfs.os_system),
+        patch("app.core.verifier.os.sep", vfs.path_module.sep),
+        patch("app.core.verifier.os.altsep", vfs.path_module.altsep),
         patch("app.core.verifier.shutil.disk_usage", side_effect=vfs.disk_usage),
         patch("builtins.open", side_effect=vfs.open),
     ):
