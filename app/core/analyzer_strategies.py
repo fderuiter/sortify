@@ -2,13 +2,20 @@
 
 import logging
 import os
+import pickle
+import re
 import socket
 import sys
+import threading
 from collections import defaultdict
 from contextlib import contextmanager
 from typing import List, Protocol
 
 import numpy as np
+
+from app.config import get_app_dir
+from app.core.db_conn import get_db_connection
+from app.core.db_worker import DBWorker
 
 
 @contextmanager
@@ -175,7 +182,6 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
 
         local_bundle_path = os.path.join(base_path, "offline_bundle", "model")
         
-        from app.config import get_app_dir
         user_bundle_path = str(get_app_dir() / "model")
 
         self.model_path = model_path
@@ -188,6 +194,64 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                 self.model_path = None
 
         self._model_initialized = False
+        
+        self.constraint_db_path = str(get_app_dir() / "constraint_cache.db")
+        self.db_worker = DBWorker()
+        self.compiled_constraint = None
+        
+        self._init_constraint_db()
+        self._start_warming()
+
+    def _init_constraint_db(self):
+        def _write():
+            conn = get_db_connection(self.constraint_db_path)
+            with conn:
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS compiled_constraints (
+                        constraint_key TEXT PRIMARY KEY,
+                        compiled_blob BLOB,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+        self.db_worker.execute_write(_write)
+
+    def _start_warming(self):
+        """Eagerly compile and cache naming constraints in a background worker process."""
+        def _warm_cache():
+            key = "folder_naming_constraint_v1"
+            conn = get_db_connection(self.constraint_db_path)
+            try:
+                cursor = conn.execute("SELECT compiled_blob FROM compiled_constraints WHERE constraint_key = ?", (key,))
+                row = cursor.fetchone()
+                if row:
+                    self.compiled_constraint = pickle.loads(row[0])
+                    return
+            except Exception as e:
+                logging.error(f"Failed to load cached constraint: {e}")
+
+            # Define formatting rules and constraints for generative folder names
+            pattern = r"^[A-Z][a-zA-Z0-9 ]{1,49}$"
+            compiled = re.compile(pattern)
+            blob = pickle.dumps(compiled)
+
+            def _write():
+                try:
+                    conn = get_db_connection(self.constraint_db_path)
+                    with conn:
+                        conn.execute("""
+                            INSERT INTO compiled_constraints (constraint_key, compiled_blob)
+                            VALUES (?, ?)
+                            ON CONFLICT(constraint_key) DO UPDATE SET compiled_blob=excluded.compiled_blob
+                        """, (key, blob))
+                except Exception as e:
+                    logging.error(f"Failed to save cached constraint: {e}")
+            
+            self.db_worker.execute_write_async(_write)
+            self.compiled_constraint = compiled
+
+        # Run background warming in single thread to limit CPU usage and avoid UI freeze
+        t = threading.Thread(target=_warm_cache, daemon=True)
+        t.start()
 
     def _init_model(self):
         self._model_initialized = True
@@ -271,6 +335,31 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                     return super()._get_cluster_keywords(documents)
 
                 name = name.replace('"', "").replace("-", " ").strip()
+
+                # Coordinate with cache mapping
+                if self.compiled_constraint is None:
+                    key = "folder_naming_constraint_v1"
+                    pattern = r"^[A-Z][a-zA-Z0-9 ]{1,49}$"
+                    self.compiled_constraint = re.compile(pattern)
+                    blob = pickle.dumps(self.compiled_constraint)
+                    
+                    def _write_async():
+                        try:
+                            conn = get_db_connection(self.constraint_db_path)
+                            with conn:
+                                conn.execute("""
+                                    INSERT INTO compiled_constraints (constraint_key, compiled_blob)
+                                    VALUES (?, ?)
+                                    ON CONFLICT(constraint_key) DO UPDATE SET compiled_blob=excluded.compiled_blob
+                                """, (key, blob))
+                        except Exception as e:
+                            logging.error(f"Failed to save cached constraint async: {e}")
+                    
+                    self.db_worker.execute_write_async(_write_async)
+
+                if self.compiled_constraint and not self.compiled_constraint.match(name):
+                    return super()._get_cluster_keywords(documents)
+
                 return name
         except Exception as e:
             logging.error(f"Generative naming failed: {e}")
