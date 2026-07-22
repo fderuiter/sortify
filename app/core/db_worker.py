@@ -28,7 +28,7 @@ class DBWorker:
                     result_q.put(("error", e))
             finally:
                 self.q.task_done()
-        
+
         # Ensure all database connections opened by this worker thread are closed
         # before the thread exits, preventing file locking issues on Windows.
         clear_connection_cache()
@@ -38,7 +38,7 @@ class DBWorker:
         result_q = queue.Queue()
         self.q.put((func, args, kwargs, result_q))
         return result_q
-        
+
     def execute_write(self, func, *args, **kwargs):
         """Submit a database write operation and synchronously block until it completes."""
         result_q = self.submit_write(func, *args, **kwargs)
@@ -56,5 +56,3 @@ class DBWorker:
         self.q.put((None, None, None, None))
         if self.thread.is_alive():
             self.thread.join()
-
-

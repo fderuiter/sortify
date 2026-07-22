@@ -62,11 +62,12 @@ def _execute_moves_recursive(
 
     for key, content in plan.items():
         if content is None or (
-            isinstance(content, dict) and content.get("__type__") in ("file", "directory")
+            isinstance(content, dict)
+            and content.get("__type__") in ("file", "directory")
         ):
             if isinstance(content, dict) and content.get("__type__") == "directory":
                 continue
-                
+
             if isinstance(content, dict) and content.get("status") == "Already Sorted":
                 # Even if already sorted, the target might have moved, so we still process links
                 pass
@@ -108,6 +109,7 @@ def _execute_moves_recursive(
 
                 if needs_update:
                     import uuid
+
                     shadow_name = f"{dest_path}.shadow_{uuid.uuid4().hex}"
 
                     def _create_and_commit_shadow_link(create_func, link_type_name):
@@ -158,23 +160,29 @@ def _execute_moves_recursive(
             # Record user verified target
             doc = db.get_document(base_dir, key)
             if doc and doc.get("file_hash"):
-                db.set_user_verified_target(base_dir, doc["file_hash"], current_dest.replace("\\", "/"))
+                db.set_user_verified_target(
+                    base_dir, doc["file_hash"], current_dest.replace("\\", "/")
+                )
 
             if dest_path == source_path:
                 continue
 
             if not moved_as_link:
                 shutil.move(source_path, dest_path)
-                
+
             # Update filepath in database
             rel_dest = os.path.relpath(dest_path, base_dir)
             db.update_document_path(base_dir, key, rel_dest)
         else:
             # It's a folder
-            _execute_moves_recursive(base_dir, content, db, os.path.join(current_dest, key), path_map)
+            _execute_moves_recursive(
+                base_dir, content, db, os.path.join(current_dest, key), path_map
+            )
 
 
-def execute_moves(base_dir: str, plan: dict, db, history_manager, runtime_settings=None) -> dict:
+def execute_moves(
+    base_dir: str, plan: dict, db, history_manager, runtime_settings=None
+) -> dict:
     """Create directories and safely move files, tracking file-system errors."""
     # Create a full snapshot of the directory tree and metadata before moving files
     session_id = history_manager.create_snapshot(base_dir)
@@ -190,11 +198,15 @@ def execute_moves(base_dir: str, plan: dict, db, history_manager, runtime_settin
     _execute_moves_recursive(base_dir, plan, db, "", path_map)
 
     summary = {"deleted_folders": 0, "protected_folders": 0}
-    cleanup_enabled = getattr(runtime_settings, "CLEANUP_EMPTY_FOLDERS", True) if runtime_settings else True
+    cleanup_enabled = (
+        getattr(runtime_settings, "CLEANUP_EMPTY_FOLDERS", True)
+        if runtime_settings
+        else True
+    )
 
     # Find the directory nodes in the plan
     dirs_to_process = []
-    
+
     def _find_dir_nodes(node):
         if not isinstance(node, dict) or node.get("__type__") in ("file", "directory"):
             return
@@ -203,11 +215,13 @@ def execute_moves(base_dir: str, plan: dict, db, history_manager, runtime_settin
                 dirs_to_process.append(v)
             elif isinstance(v, dict) and v.get("__type__") != "file":
                 _find_dir_nodes(v)
-                
+
     _find_dir_nodes(plan)
-    
+
     # Sort by descending depth to delete subdirectories before parents
-    dirs_to_process.sort(key=lambda x: len(x["source_path"].split(os.sep)), reverse=True)
+    dirs_to_process.sort(
+        key=lambda x: len(x["source_path"].split(os.sep)), reverse=True
+    )
 
     if cleanup_enabled:
         for node in dirs_to_process:
@@ -215,12 +229,14 @@ def execute_moves(base_dir: str, plan: dict, db, history_manager, runtime_settin
                 summary["protected_folders"] += 1
             elif node.get("status") == "To Be Deleted":
                 try:
-                    if os.path.isdir(node["source_path"]) and not os.listdir(node["source_path"]):
+                    if os.path.isdir(node["source_path"]) and not os.listdir(
+                        node["source_path"]
+                    ):
                         os.rmdir(node["source_path"])
                         summary["deleted_folders"] += 1
                 except OSError:
                     pass
-                    
+
         # Guarantee complete cleanup of empty directories after all explicit plan folders are processed
         for entry in os.listdir(base_dir):
             entry_path = os.path.join(base_dir, entry)

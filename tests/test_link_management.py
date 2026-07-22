@@ -17,24 +17,31 @@ db = None
 cache_manager = None
 history_manager = None
 
+
 def setup_module(module):
     global _test_dir, db_worker, db, cache_manager, history_manager
     _test_dir = tempfile.mkdtemp()
     db_worker = DBWorker()
     db = Database(Path(_test_dir) / "test.db", db_worker)
     cache_manager = CacheManager(str(Path(_test_dir) / "cache.db"), db_worker)
-    history_manager = HistoryManager(db, cache_manager, str(Path(_test_dir) / "history.db"))
+    history_manager = HistoryManager(
+        db, cache_manager, str(Path(_test_dir) / "history.db")
+    )
+
 
 def teardown_module(module):
     global _test_dir, db_worker
     if db_worker:
         db_worker.stop()
     import shutil
+
     if _test_dir:
         shutil.rmtree(_test_dir, ignore_errors=True)
 
+
 def save_cache_sync(*args, **kwargs):
     cache_manager.save_cache_sync(*args, **kwargs)
+
 
 try:
     import pylnk3
@@ -44,7 +51,9 @@ except ImportError:
 
 def test_relative_symlink_update(tmp_path):
     if __import__("sys").platform == "win32":
-        __import__("pytest").skip("Windows requires admin privileges to create symlinks")
+        __import__("pytest").skip(
+            "Windows requires admin privileges to create symlinks"
+        )
     # Setup
     base_dir = str(tmp_path)
 
@@ -120,27 +129,30 @@ def test_windows_shortcut_update_mocked(tmp_path):
     original_exists = os.path.exists
     original_remove = os.remove
 
-    with patch("app.core.link_manager.pylnk3", mock_pylnk3), \
-         patch("app.core.mover.pylnk3", mock_pylnk3), \
-         patch("app.core.mover.os.path.exists") as mock_exists, \
-             patch("app.core.mover.os.path.lexists") as mock_lexists, \
-         patch.object(history_manager, "create_snapshot"), \
-         patch("app.core.mover.os.remove") as mock_remove, \
-         patch("app.core.mover.shutil.move") as mock_shutil_move:
-         
+    with (
+        patch("app.core.link_manager.pylnk3", mock_pylnk3),
+        patch("app.core.mover.pylnk3", mock_pylnk3),
+        patch("app.core.mover.os.path.exists") as mock_exists,
+        patch("app.core.mover.os.path.lexists") as mock_lexists,
+        patch.object(history_manager, "create_snapshot"),
+        patch("app.core.mover.os.remove") as mock_remove,
+        patch("app.core.mover.shutil.move") as mock_shutil_move,
+    ):
         # Make os.path.exists return True for our mocked shortcut and fallback to real os.path.exists for others
         def side_effect_exists(path):
-                if path == shortcut_path or ".shadow_" in str(path):
-                    return True
-                return original_exists(path)
+            if path == shortcut_path or ".shadow_" in str(path):
+                return True
+            return original_exists(path)
+
         mock_exists.side_effect = side_effect_exists
         mock_lexists.side_effect = side_effect_exists
-        
+
         # Make os.remove do nothing for our mocked shortcut, fallback to real os.remove for others
         def side_effect_remove(path):
-                if path == shortcut_path or ".shadow_" in str(path):
-                    return
-                original_remove(path)
+            if path == shortcut_path or ".shadow_" in str(path):
+                return
+            original_remove(path)
+
         mock_remove.side_effect = side_effect_remove
 
         # 1. Register link
@@ -165,10 +177,10 @@ def test_windows_shortcut_update_mocked(tmp_path):
 
         # 3. Execute move
         execute_moves(base_dir, plan, db, history_manager)
-        
+
         print("MOCK CALLED WITH:", mock_pylnk3.for_file.call_args)
         print("SHUTIL MOVE CALLED WITH:", mock_shutil_move.call_args)
-        
+
         # 4. Assertions
 
         # Verify parsed was called on source
@@ -184,7 +196,7 @@ def test_windows_shortcut_update_mocked(tmp_path):
             icon_file="app.ico",
             icon_index=2,
             work_dir="C:\\",
-            window_mode=3
+            window_mode=3,
         )
 
         # Mover expects to delete the original source file because moved_as_link = True
@@ -201,7 +213,7 @@ def test_windows_shortcut_update_in_place_mocked(tmp_path):
     new_target_dir = os.path.join(base_dir, "new_target_dir")
     os.makedirs(target_dir)
     os.makedirs(new_target_dir)
-    
+
     target_file = os.path.join(target_dir, "app.exe")
     with open(target_file, "w") as f:
         f.write("exe content")
@@ -223,34 +235,39 @@ def test_windows_shortcut_update_in_place_mocked(tmp_path):
     original_exists = os.path.exists
     original_remove = os.remove
 
-    with patch("app.core.link_manager.pylnk3", mock_pylnk3), \
-         patch("app.core.mover.pylnk3", mock_pylnk3), \
-         patch("app.core.mover.os.path.exists") as mock_exists, \
-             patch("app.core.mover.os.path.lexists") as mock_lexists, \
-         patch("app.core.mover.os.path.samefile") as mock_samefile, \
-         patch.object(history_manager, "create_snapshot"), \
-         patch("app.core.mover.shutil.move"), \
-         patch("app.core.mover.os.remove") as mock_remove:
-         
+    with (
+        patch("app.core.link_manager.pylnk3", mock_pylnk3),
+        patch("app.core.mover.pylnk3", mock_pylnk3),
+        patch("app.core.mover.os.path.exists") as mock_exists,
+        patch("app.core.mover.os.path.lexists") as mock_lexists,
+        patch("app.core.mover.os.path.samefile") as mock_samefile,
+        patch.object(history_manager, "create_snapshot"),
+        patch("app.core.mover.shutil.move"),
+        patch("app.core.mover.os.remove") as mock_remove,
+    ):
+
         def side_effect_exists(path):
-                if path == shortcut_path or ".shadow_" in str(path):
-                    return True
-                return original_exists(path)
+            if path == shortcut_path or ".shadow_" in str(path):
+                return True
+            return original_exists(path)
+
         mock_exists.side_effect = side_effect_exists
         mock_lexists.side_effect = side_effect_exists
-        
+
         def side_effect_samefile(f1, f2):
             if f1 == shortcut_path and f2 == shortcut_path:
                 return True
             if not original_exists(f1) or not original_exists(f2):
                 return False
             return os.path.samefile(f1, f2)
+
         mock_samefile.side_effect = side_effect_samefile
-        
+
         def side_effect_remove(path):
-                if path == shortcut_path or ".shadow_" in str(path):
-                    return
-                original_remove(path)
+            if path == shortcut_path or ".shadow_" in str(path):
+                return
+            original_remove(path)
+
         mock_remove.side_effect = side_effect_remove
 
         LinkManager.register_link(base_dir, "app.lnk")
@@ -270,13 +287,13 @@ def test_windows_shortcut_update_in_place_mocked(tmp_path):
                     "source_path": "target_dir/app.exe",
                     "target_filename": "app.exe",
                 }
-            }
+            },
         }
-        
-        # When moving in place, the original file is deleted *before* for_file is called, 
+
+        # When moving in place, the original file is deleted *before* for_file is called,
         # so we need to be careful that our mock doesn't fail. The real `for_file` would recreate it.
         # However, the script checks if dest_path != source_path at the end to delete the original.
-        
+
         execute_moves(base_dir, plan, db, history_manager)
 
         # verify that for_file was called with the new target path
@@ -288,7 +305,7 @@ def test_windows_shortcut_update_in_place_mocked(tmp_path):
             icon_file=None,
             icon_index=0,
             work_dir=None,
-            window_mode=None
+            window_mode=None,
         )
 
 
@@ -315,34 +332,39 @@ def test_windows_shortcut_update_exception(tmp_path, caplog):
     original_exists = os.path.exists
     original_remove = os.remove
 
-    with patch("app.core.link_manager.pylnk3", mock_pylnk3), \
-         patch("app.core.mover.pylnk3", mock_pylnk3), \
-         patch("app.core.mover.os.path.exists") as mock_exists, \
-             patch("app.core.mover.os.path.lexists") as mock_lexists, \
-         patch("app.core.mover.os.path.samefile") as mock_samefile, \
-         patch.object(history_manager, "create_snapshot"), \
-         patch("app.core.mover.shutil.move"), \
-         patch("app.core.mover.os.remove") as mock_remove:
-         
+    with (
+        patch("app.core.link_manager.pylnk3", mock_pylnk3),
+        patch("app.core.mover.pylnk3", mock_pylnk3),
+        patch("app.core.mover.os.path.exists") as mock_exists,
+        patch("app.core.mover.os.path.lexists") as mock_lexists,
+        patch("app.core.mover.os.path.samefile") as mock_samefile,
+        patch.object(history_manager, "create_snapshot"),
+        patch("app.core.mover.shutil.move"),
+        patch("app.core.mover.os.remove") as mock_remove,
+    ):
+
         def side_effect_exists(path):
-                if path == shortcut_path or ".shadow_" in str(path):
-                    return True
-                return original_exists(path)
+            if path == shortcut_path or ".shadow_" in str(path):
+                return True
+            return original_exists(path)
+
         mock_exists.side_effect = side_effect_exists
         mock_lexists.side_effect = side_effect_exists
-        
+
         def side_effect_samefile(f1, f2):
             if f1 == shortcut_path and f2 == shortcut_path:
                 return True
             if not original_exists(f1) or not original_exists(f2):
                 return False
             return os.path.samefile(f1, f2)
+
         mock_samefile.side_effect = side_effect_samefile
-        
+
         def side_effect_remove(path):
-                if path == shortcut_path or ".shadow_" in str(path):
-                    return
-                original_remove(path)
+            if path == shortcut_path or ".shadow_" in str(path):
+                return
+            original_remove(path)
+
         mock_remove.side_effect = side_effect_remove
 
         LinkManager.register_link(base_dir, "app.lnk")
@@ -357,10 +379,11 @@ def test_windows_shortcut_update_exception(tmp_path, caplog):
                 }
             }
         }
-        
+
         import pytest
+
         with pytest.raises(Exception):
             execute_moves(base_dir, plan, db, history_manager)
-        
+
         assert "Failed to atomically update Windows shortcut" in caplog.text
         assert "Mocked Windows shortcut exception" in caplog.text

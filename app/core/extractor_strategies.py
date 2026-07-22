@@ -56,6 +56,7 @@ class DocxExtractor:
     def extract(self, file_path: str) -> str:
         """Extract text from a .docx file."""
         from docx import Document
+
         doc = Document(file_path)
         return "\n".join([p.text for p in doc.paragraphs])
 
@@ -76,6 +77,7 @@ class XlsxExtractor:
     def extract(self, file_path: str) -> str:
         """Extract text from an Excel file."""
         import pandas as pd
+
         dfs = pd.read_excel(file_path, sheet_name=None)
         if isinstance(dfs, dict):
             return "\n".join(df.to_string() for df in dfs.values())

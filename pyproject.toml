@@ -35,7 +35,7 @@ packages = ["app"]
 line-length = 88
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "D"]
+select = ["E", "F", "I", "D", "D417"]
 ignore = ["E501"]
 
 [tool.ruff.lint.pydocstyle]
