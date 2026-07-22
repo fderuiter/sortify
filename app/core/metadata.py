@@ -56,7 +56,7 @@ class MetadataPass:
             if matched_target:
                 bypassed_files.append(item)
                 docs_to_upsert.append(
-                    (base_dir, item, file_hash, "[STATUS:BYPASSED]", None, None, None)
+                    (base_dir, item, file_hash, "[STATUS:BYPASSED]")
                 )
                 if callback:
                     callback()

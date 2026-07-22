@@ -78,9 +78,6 @@ class IncrementalAnalyzer:
             if not texts:
                 return
 
-            (getattr(runtime_settings, "KEYWORD_RULES", {}) if runtime_settings else {})
-            (getattr(runtime_settings, "LEARNED_RULES", {}) if runtime_settings else {})
-
             documents_to_upsert = []
             for i, (filepath, text, file_hash) in enumerate(
                 zip(filepaths, texts, hashes)

@@ -54,14 +54,6 @@ class AppSession:
             self.base_dir, self.analyzer.corpus, locked_files, {}, manual_folders
         )
 
-    def get_files_recursively(self, rel_path: str = "") -> list:
-        """Scan directory for files."""
-        if not self.base_dir:
-            return []
-        from app.core.scanner import get_files_recursively
-
-        return get_files_recursively(self.base_dir, rel_path)
-
     def process_items(self, items_to_sort, callback, cancel_check):
         """Build corpus generator for files."""
         if not self.base_dir:

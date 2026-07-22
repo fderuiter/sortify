@@ -2,7 +2,6 @@
 
 import asyncio
 import logging
-import os
 
 from nicegui import ui
 
@@ -164,15 +163,11 @@ class AutoSorterApp:
 
     async def _scan_and_process_worker(self):
         try:
-            files = await asyncio.to_thread(self.app_session.get_files_recursively, "")
+            from app.core.scanner import get_files_recursively
+            files = await asyncio.to_thread(get_files_recursively, self.app_session.base_dir)
             self.total_files = len(files)
             self.completed_files = 0
-
-            def _progress_cb():
-                self.completed_files += 1
-                if self.total_files > 0:
-                    self.progress_bar.set_value(self.completed_files / self.total_files)
-
+            
             from app.core.metadata import MetadataPass
 
             bypassed_files = await asyncio.to_thread(
@@ -181,26 +176,42 @@ class AutoSorterApp:
                 files,
                 self.settings,
                 self.app_session.db,
-                _progress_cb,
-                lambda: getattr(self, "_cancel_analysis_flag", False),
+                None,
+                lambda: getattr(self, "_cancel_analysis_flag", False)
             )
+            self.completed_files += len(bypassed_files)
+            if self.total_files > 0:
+                self.progress_bar.set_value(self.completed_files / self.total_files)
+            
             bypassed_set = set(bypassed_files)
             items_to_sort = [f for f in files if f not in bypassed_set]
+            
+            generator = self.app_session.process_items(
+                items_to_sort, 
+                None, 
+                lambda: getattr(self, "_cancel_analysis_flag", False)
+            )
 
-            chunk_size = 50
-            for i in range(0, len(items_to_sort), chunk_size):
+            def get_next_chunk():
+                try:
+                    return next(generator)
+                except StopIteration:
+                    return None
+
+            while True:
                 if self._cancel_analysis_flag:
                     break
-                chunk = items_to_sort[i : i + chunk_size]
-                await asyncio.to_thread(self._process_chunk, chunk)
+                
+                chunk = await asyncio.to_thread(get_next_chunk)
+                if chunk is None:
+                    break
+                
+                await asyncio.to_thread(self.app_session.partial_fit, chunk)
                 self.completed_files += len(chunk)
-                self.progress_bar.set_value(
-                    self.completed_files / self.total_files
-                    if self.total_files > 0
-                    else 0
-                )
-                await asyncio.sleep(0.01)  # Yield to event loop
-
+                if self.total_files > 0:
+                    self.progress_bar.set_value(self.completed_files / self.total_files)
+                await asyncio.sleep(0.01)
+            
             if not self._cancel_analysis_flag:
                 self.plan = await asyncio.to_thread(
                     self.app_session.generate_sorting_plan
@@ -213,14 +224,6 @@ class AutoSorterApp:
             self.status_label.set_text(f"Error: {e}")
         finally:
             self.cancel_btn.set_visibility(False)
-
-    def _process_chunk(self, chunk):
-        for file in chunk:
-            item = {"rel_path": file, "abs_path": os.path.join(self.base_dir, file)}
-            try:
-                self.app_session.partial_fit([item])
-            except Exception:
-                pass
 
     def cancel_analysis(self):
         """Cancel an ongoing analysis."""

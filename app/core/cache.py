@@ -43,17 +43,7 @@ class CacheManager:
         except Exception:
             raise
 
-    def _save_cache_sync(
-        self,
-        source_directory: str,
-        corpus: dict,
-        locked_files: dict,
-        index_to_word: dict,
-        manual_folders: set = None,
-    ):
-        if manual_folders is None:
-            manual_folders = set()
-
+    def _create_write_func(self, source_directory, corpus, locked_files, index_to_word, manual_folders):
         def _write():
             try:
                 conn = self._get_conn()
@@ -79,7 +69,20 @@ class CacheManager:
             except Exception as e:
                 logging.error(f"Failed to save cache: {e}")
                 raise
+        return _write
 
+    def _save_cache_sync(
+        self,
+        source_directory: str,
+        corpus: dict,
+        locked_files: dict,
+        index_to_word: dict,
+        manual_folders: set = None,
+    ):
+        if manual_folders is None:
+            manual_folders = set()
+            
+        _write = self._create_write_func(source_directory, corpus, locked_files, index_to_word, manual_folders)
         self.worker.execute_write(_write)
 
     def save_cache_async(
@@ -93,32 +96,8 @@ class CacheManager:
         """Asynchronously save analysis results to the database."""
         if manual_folders is None:
             manual_folders = set()
-
-        def _write():
-            try:
-                conn = self._get_conn()
-                with conn:
-                    conn.execute(
-                        """
-                        INSERT INTO directory_cache (source_directory, corpus, locked_files, index_to_word, manual_folders)
-                        VALUES (?, ?, ?, ?, ?)
-                        ON CONFLICT(source_directory) DO UPDATE SET
-                            corpus=excluded.corpus,
-                            locked_files=excluded.locked_files,
-                            index_to_word=excluded.index_to_word,
-                            manual_folders=excluded.manual_folders
-                        """,
-                        (
-                            source_directory,
-                            json.dumps(corpus),
-                            json.dumps(locked_files),
-                            json.dumps({str(k): v for k, v in index_to_word.items()}),
-                            json.dumps(list(manual_folders)),
-                        ),
-                    )
-            except Exception as e:
-                logging.error(f"Failed to save cache async: {e}")
-
+            
+        _write = self._create_write_func(source_directory, corpus, locked_files, index_to_word, manual_folders)
         self.worker.execute_write_async(_write)
 
     def save_cache_sync(
