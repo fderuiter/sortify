@@ -146,9 +146,32 @@ class IncrementalAnalyzer:
                 if runtime_settings
                 else {}
             )
+            policies = (
+                getattr(runtime_settings, "POLICIES", [])
+                if runtime_settings
+                else []
+            )
+            sorted_policies = sorted(policies, key=lambda x: x.get("priority", 0), reverse=True)
+
+            def match_policy(rule, file_path, doc_text, st_match) -> bool:
+                rule_type = rule.get("type", "").lower()
+                expression = rule.get("expression", "").lower()
+
+                fn_only = os.path.basename(file_path).lower()
+                dl_lower = doc_text.lower() if doc_text else ""
+
+                if rule_type == "keyword":
+                    text_to_search = fn_only if st_match else (fn_only + " " + dl_lower)
+                    return expression in text_to_search
+                elif rule_type == "pattern":
+                    return expression in fn_only
+                elif rule_type == "override":
+                    return expression == fn_only or expression in fn_only or expression in file_path.lower()
+                return False
 
             ai_filenames = []
             ai_documents = []
+            policy_plan_files = []
             keyword_plan_files = []
             unsupported_files = []
             historical_overrides = {}
@@ -184,6 +207,20 @@ class IncrementalAnalyzer:
                 ext = os.path.splitext(f)[1].lower()
                 if ext not in supported_exts and not status_match:
                     status_match = "UNSUPPORTED"
+
+                # Check against unified policies first!
+                matched_policy = None
+                if sorted_policies:
+                    for rule in sorted_policies:
+                        if match_policy(rule, f, doc, status_match):
+                            matched_policy = rule
+                            break
+
+                if matched_policy:
+                    policy_plan_files.append(
+                        (f, matched_policy["target_path"], matched_policy["expression"], matched_policy["type"], status_match)
+                    )
+                    continue
 
                 if target is not None:
                     historical_overrides[f] = (target, status_match)
@@ -329,6 +366,26 @@ class IncrementalAnalyzer:
             else:
                 plan = {}
 
+            # Inject policy routed files back into the plan
+            for f, target_folder, expression, rule_type, ext_status in policy_plan_files:
+                if cancel_check and cancel_check():
+                    return {}
+                parts = target_folder.replace("\\", "/").split("/")
+                current = plan
+                for i, part in enumerate(parts):
+                    if part not in current:
+                        current[part] = {}
+                    if not isinstance(current[part], dict):
+                        current[part] = {"_original": current[part]}
+                    if i == len(parts) - 1:
+                        current[part][f] = {
+                            "routed_by": rule_type,
+                            "keyword": expression,
+                            "extraction_status": ext_status,
+                        }
+                    else:
+                        current = current[part]
+
             # Inject keyword routed files back into the plan
             for f, target_folder, keyword, routed_by, ext_status in keyword_plan_files:
                 if cancel_check and cancel_check():
@@ -381,11 +438,24 @@ class IncrementalAnalyzer:
             if locked_files is None:
                 locked_files = {}
 
-            # Phase 1: Keyword, and Learned Rule sorting
-            compliance_targets = {
-                f: target_folder
-                for f, target_folder, keyword, routed_by, ext_status in keyword_plan_files
-            }
+            # Phase 1: Policy, Keyword, and Learned Rule sorting
+            compliance_targets = {}
+            for f, target_folder, expression, rule_type, status in policy_plan_files:
+                compliance_targets[f] = target_folder
+            for f, target_folder, keyword, routed_by, ext_status in keyword_plan_files:
+                compliance_targets[f] = target_folder
+
+            for f, target_folder, expression, rule_type, status in policy_plan_files:
+                if cancel_check and cancel_check():
+                    return {}
+                if target_folder not in plan:
+                    plan[target_folder] = {}
+                plan[target_folder][f] = {
+                    "__type__": "file",
+                    "routed_by": rule_type,
+                    "match": expression,
+                    "status": status,
+                }
 
             for f, target_folder, keyword, rule_type, status in keyword_plan_files:
                 if cancel_check and cancel_check():
