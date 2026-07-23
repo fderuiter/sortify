@@ -3,6 +3,8 @@
 import asyncio
 import logging
 import os
+import threading
+import time
 
 from nicegui import ui
 
@@ -10,6 +12,98 @@ from app.core.session import AppSession
 from app.ui.dialog_helper import ask_directory_async
 
 logger = logging.getLogger(__name__)
+
+
+class PlanRebuilderThread(threading.Thread):
+    """Background daemon thread to run plan generation and validation pipeline."""
+
+    def __init__(self, app, base_dir, settings, locked_files, timeout=30.0):
+        super().__init__(daemon=True)
+        self.app = app
+        self.base_dir = base_dir
+        self.settings = settings
+        self.locked_files = locked_files
+        self.timeout = timeout
+        self.start_time = time.time()
+        self.loop = asyncio.get_running_loop()
+
+        self.plan = None
+        self.error = None
+        self.warning = None
+        self.timed_out = False
+        self.cancelled = False
+
+    def check_cancel(self):
+        """Check if recalculation has been cancelled or timed out."""
+        if getattr(self.app, "_cancel_recalc_flag", False):
+            self.cancelled = True
+            return True
+        if time.time() - self.start_time > self.timeout:
+            self.timed_out = True
+            return True
+        return False
+
+    def run(self):
+        """Run the plan generation and validation pipeline."""
+        from app.core.verifier import VerificationEngine
+        try:
+            # 1. Plan generation
+            plan = self.app.app_session.analyzer.generate_sorting_plan(
+                self.base_dir,
+                self.settings,
+                self.locked_files,
+                self.check_cancel,
+            )
+
+            if self.cancelled:
+                return
+
+            if self.timed_out:
+                raise TimeoutError("Background plan calculation timed out.")
+
+            # If generative strategy failed or returned nothing, trigger fallback
+            if (not plan) and getattr(self.app.app_session.analyzer, "strategy_name", "") == "generative":
+                raise ValueError("Generative strategy returned an empty plan.")
+
+            # 2. Structural validation
+            VerificationEngine.get_moves(self.base_dir, plan)
+
+            self.plan = plan
+
+        except Exception as e:
+            # Fast fallback plan automatically triggered on generative model failures
+            if getattr(self.app.app_session.analyzer, "strategy_name", "") == "generative":
+                logger.error(f"Generative plan generation failed: {e}. Trying fallback strategy...")
+                try:
+                    old_strategy = self.app.app_session.analyzer.strategy_name
+                    self.app.app_session.analyzer.strategy_name = "default"
+
+                    plan = self.app.app_session.analyzer.generate_sorting_plan(
+                        self.base_dir,
+                        self.settings,
+                        self.locked_files,
+                        self.check_cancel,
+                    )
+
+                    if self.cancelled:
+                        return
+                    if self.timed_out:
+                        raise TimeoutError("Background plan calculation timed out.")
+
+                    # Structural validation on fallback plan
+                    VerificationEngine.get_moves(self.base_dir, plan)
+
+                    self.plan = plan
+                    self.warning = "Generative model encountered a process failure. Switched to fast fallback plan."
+                except Exception as fallback_err:
+                    self.error = fallback_err
+                finally:
+                    self.app.app_session.analyzer.strategy_name = old_strategy
+            else:
+                self.error = e
+        finally:
+            self.loop.call_soon_threadsafe(self.app._on_rebuild_complete, self)
+
 
 
 class AutoSorterApp:
@@ -37,6 +131,7 @@ class AutoSorterApp:
         self.observer = None
         self._debounce_task = None
         self._cancel_recalc_flag = False
+        self._previous_stable_plan = {}
 
         self.contextual_rename = self.settings.CONTEXTUAL_RENAMING
         self.preserve_hierarchy = self.settings.PRESERVE_HIERARCHY
@@ -97,12 +192,22 @@ class AutoSorterApp:
                     on_change=self.toggle_preserve_hierarchy,
                 ).props('aria-label="Preserve Hierarchy Switch"')
 
-        with ui.row().classes("w-full h-96 mt-4 p-4"):
+        with ui.row().classes("w-full h-96 mt-4 p-4 relative") as self.tree_container:
             self.tree_view = (
                 ui.tree([], label_key="text", children_key="children")
                 .classes("w-full")
                 .props('default-expand-all aria-label="Sorting Plan Tree"')
             )
+            # Tree-specific non-blocking loading overlay
+            with ui.column().classes(
+                "absolute inset-0 bg-white/75 flex flex-col items-center justify-center z-10 gap-2"
+            ) as self.tree_overlay:
+                ui.spinner(size="lg")
+                ui.label("Rebuilding plan...").classes("text-lg font-semibold text-gray-700")
+                ui.button("Cancel", on_click=self.cancel_recalc).classes("bg-red-500 text-white").props(
+                    'aria-label="Cancel Recalculation Button"'
+                )
+            self.tree_overlay.set_visibility(False)
 
         with ui.row().classes("w-full justify-center mt-4"):
             self.execute_btn = (
@@ -362,6 +467,8 @@ class AutoSorterApp:
     def cancel_recalc(self):
         """Cancel the recalculation process."""
         self._cancel_recalc_flag = True
+        if hasattr(self, "tree_overlay") and self.tree_overlay:
+            self.tree_overlay.set_visibility(False)
         self.recalc_dialog.close()
 
     def toggle_contextual_rename(self, e):
@@ -388,36 +495,69 @@ class AutoSorterApp:
                 return
 
             self._cancel_recalc_flag = False
-            self.recalc_dialog.open()
+            self._previous_stable_plan = self.plan.copy() if isinstance(self.plan, dict) else {}
+
+            if hasattr(self, "tree_overlay") and self.tree_overlay:
+                self.tree_overlay.set_visibility(True)
+
+            if hasattr(self, "execute_btn") and self.execute_btn:
+                self.execute_btn.disable()
+
             self.status_label.set_text("Rebuilding plan...")
 
-            def check_cancel():
-                return getattr(self, "_cancel_recalc_flag", False)
-
-            try:
-                plan = await asyncio.to_thread(
-                    self.app_session.analyzer.generate_sorting_plan,
-                    self.base_dir,
-                    self.settings,
-                    self.locked_files,
-                    check_cancel,
-                )
-
-                if self._cancel_recalc_flag:
-                    self.status_label.set_text("Recalculation cancelled.")
-                    return
-
-                self.plan = plan
-                self.plan_errors = {}
-                self.render_tree()
-                self.status_label.set_text("Plan rebuilt.")
-            except Exception as e:
-                logger.error(f"Error rebuilding plan: {e}")
-                self.status_label.set_text("Error rebuilding plan.")
-            finally:
-                self.recalc_dialog.close()
+            # Start complete plan generation, lock resolution, and structural validation on a background thread
+            thread = PlanRebuilderThread(
+                self,
+                self.base_dir,
+                self.settings,
+                self.locked_files,
+                timeout=30.0,
+            )
+            thread.start()
 
         self._debounce_task = asyncio.create_task(delayed_run())
+
+    def _on_rebuild_complete(self, thread):
+        """Transition plan updates and visual rendering operations safely back to the main UI event loop."""
+        if hasattr(self, "tree_overlay") and self.tree_overlay:
+            self.tree_overlay.set_visibility(False)
+
+        if thread.cancelled:
+            self.plan = self._previous_stable_plan
+            self.render_tree()
+            self.status_label.set_text("Recalculation cancelled.")
+            if hasattr(self, "execute_btn") and self.execute_btn:
+                if self.plan:
+                    self.execute_btn.enable()
+                else:
+                    self.execute_btn.disable()
+            return
+
+        if thread.plan is not None:
+            self.plan = thread.plan
+            self.plan_errors = {}
+            self.render_tree()
+            if thread.warning:
+                self.status_label.set_text("Plan rebuilt with warning.")
+                ui.notify(thread.warning, type="warning")
+            else:
+                self.status_label.set_text("Plan rebuilt.")
+        else:
+            error_msg = str(thread.error) if thread.error else "Unknown error occurred."
+            logger.error(f"Error rebuilding plan: {error_msg}")
+            ui.notify(f"Error rebuilding plan: {error_msg}", type="negative")
+            self.status_label.set_text("Error rebuilding plan.")
+
+            # Restore previous stable plan
+            self.plan = self._previous_stable_plan
+            self.render_tree()
+
+        # Re-evaluate execution panel controls once the thread finishes
+        if hasattr(self, "execute_btn") and self.execute_btn:
+            if self.plan:
+                self.execute_btn.enable()
+            else:
+                self.execute_btn.disable()
 
     def render_tree(self):
         """Render the tree view of the sorting plan."""
