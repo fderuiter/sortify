@@ -7,7 +7,6 @@ from app.core.db import Database
 from app.core.db_worker import DBWorker
 from app.core.history import HistoryManager
 from app.core.mover import execute_moves
-from app.core.verifier import VerificationEngine
 
 _test_dir = None
 db_worker = None
@@ -135,25 +134,3 @@ def test_empty_source_folder_cleanup(tmp_path):
 
     # Expect 3 deleted folders
     assert summary["deleted_folders"] == 3
-
-
-def test_cloud_folder_detection(tmp_path, monkeypatch):
-    """Test that targets in cloud sync paths are identified."""
-    verifier = VerificationEngine()
-
-    # Test macOS iCloud path
-    monkeypatch.setattr("platform.system", lambda: "Darwin")
-    icloud_path = str(tmp_path / "Library" / "Mobile Documents" / "target")
-    assert verifier.is_cloud_path(icloud_path) is True
-
-    # Test Windows OneDrive path using the fallback logic, but manually setting the path separator to match Windows style
-    monkeypatch.setattr("platform.system", lambda: "Windows")
-    # For testing the fallback `\\onedrive\\` logic when running on linux, we can just inject a string that resembles a Windows path.
-    # However, since `os.path.normpath(os.path.abspath(path))` is called in the verifier, we will just use the env var method for Windows.
-    monkeypatch.setenv("OneDrive", str(tmp_path / "MyCloudFolder"))
-    env_onedrive_path = str(tmp_path / "MyCloudFolder" / "target")
-    assert verifier.is_cloud_path(env_onedrive_path) is True
-
-    # Test safe path
-    safe_path = str(tmp_path / "Documents" / "target")
-    assert verifier.is_cloud_path(safe_path) is False

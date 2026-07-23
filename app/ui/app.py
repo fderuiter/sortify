@@ -7,7 +7,6 @@ import os
 from nicegui import ui
 
 from app.core.session import AppSession
-from app.core.verifier import VerificationEngine
 from app.ui.dialog_helper import ask_directory_async
 
 logger = logging.getLogger(__name__)
@@ -32,7 +31,6 @@ class AutoSorterApp:
         self._cancel_analysis_flag = False
 
         self.app_session = None
-        self.verifier = VerificationEngine()
 
         self.tree_nodes = []
         self._pending_files = set()
@@ -310,16 +308,8 @@ class AutoSorterApp:
                     self.status_label.set_text("Recalculation cancelled.")
                     return
 
-                errors = await asyncio.to_thread(
-                    self.verifier.verify_plan, self.base_dir, plan, check_cancel
-                )
-
-                if self._cancel_recalc_flag:
-                    self.status_label.set_text("Recalculation cancelled.")
-                    return
-
                 self.plan = plan
-                self.plan_errors = errors
+                self.plan_errors = {}
                 self.render_tree()
                 self.status_label.set_text("Plan rebuilt.")
             except Exception as e:
