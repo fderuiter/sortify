@@ -115,3 +115,63 @@ def test_get_ocr_reader(mocker):
     assert reader2 == "reader_instance"
     mock_easyocr_reader.assert_called_once_with(["en"], gpu=False)
     mock_torch.set_num_threads.assert_called_once_with(2)
+
+
+def test_extract_pdf_native_no_fallback(mocker):
+    mocker.patch("builtins.open", mocker.mock_open())
+    mock_pdf = mocker.patch("app.core.extractor_strategies.pypdf.PdfReader")
+    mock_instance = mock_pdf.return_value
+    mock_page = MagicMock()
+    mock_page.extract_text.return_value = "This is some standard native PDF text"
+    mock_instance.pages = [mock_page]
+
+    mock_get_ocr = mocker.patch("app.core.extractor_strategies.get_ocr_reader")
+
+    text = extract_file_text("native.pdf")
+    assert text == "This is some standard native PDF text"
+    mock_get_ocr.assert_not_called()
+
+
+def test_extract_image_skipped_due_to_dimensions(mocker):
+    mock_image = MagicMock()
+    mock_image.size = (3500, 2000)
+    mock_PIL = MagicMock()
+    mock_PIL.Image.open.return_value = mock_image
+    mocker.patch.dict("sys.modules", {"PIL": mock_PIL})
+
+    mock_reader = MagicMock()
+    mocker.patch(
+        "app.core.extractor_strategies.get_ocr_reader", return_value=mock_reader
+    )
+
+    text = extract_file_text("large_image.png")
+    assert text == "[STATUS:SKIPPED]"
+    mock_reader.readtext.assert_not_called()
+
+
+def test_extract_image_downscaled(mocker):
+    mock_image = MagicMock()
+    mock_image.size = (1500, 800)
+    mock_resized = MagicMock()
+    mock_image.resize.return_value = mock_resized
+    mock_PIL = MagicMock()
+    mock_PIL.Image.open.return_value = mock_image
+    mocker.patch.dict("sys.modules", {"PIL": mock_PIL})
+
+    mock_numpy = MagicMock()
+    mock_numpy.array.return_value = "np_image"
+    mocker.patch.dict("sys.modules", {"numpy": mock_numpy})
+
+    mock_reader = MagicMock()
+    mock_reader.readtext.return_value = [
+        ([[0, 0], [10, 0], [10, 10], [0, 10]], "downscaled text", 0.99)
+    ]
+    mocker.patch(
+        "app.core.extractor_strategies.get_ocr_reader", return_value=mock_reader
+    )
+
+    text = extract_file_text("medium_image.png")
+    assert text == "downscaled text"
+    mock_image.resize.assert_called_once()
+    mock_numpy.array.assert_called_once_with(mock_resized)
+
