@@ -10,6 +10,8 @@ aiohttp==3.14.3
     #   python-socketio
 aiosignal==1.4.0
     # via aiohttp
+annotated-doc==0.0.4
+    # via typer
 annotated-types==0.7.0
     # via pydantic
 anyio==4.14.2
@@ -22,6 +24,8 @@ attrs==26.1.0
     #   aiohttp
     #   jsonschema
     #   referencing
+backports-tarfile==1.2.0
+    # via jaraco-context
 bidict==0.23.1
     # via python-socketio
 certifi==2022.12.7
@@ -31,7 +35,9 @@ certifi==2022.12.7
 cffi==2.1.0
     # via cryptography
 click==8.4.2
-    # via uvicorn
+    # via
+    #   huggingface-hub
+    #   uvicorn
 cryptography==49.0.0
     # via
     #   smart-autosorter (pyproject.toml)
@@ -45,24 +51,36 @@ et-xmlfile==2.0.0
 fastapi==0.109.2
     # via nicegui
 filelock==3.29.0
-    # via torch
+    # via
+    #   huggingface-hub
+    #   torch
 frozenlist==1.8.0
     # via
     #   aiohttp
     #   aiosignal
 fsspec==2026.4.0
-    # via torch
+    # via
+    #   huggingface-hub
+    #   torch
 h11==0.16.0
     # via
     #   httpcore
     #   uvicorn
     #   wsproto
+hf-xet==1.5.2
+    # via huggingface-hub
 httpcore==1.0.9
     # via httpx
 httptools==0.8.0
     # via uvicorn
 httpx==0.28.1
-    # via nicegui
+    # via
+    #   huggingface-hub
+    #   nicegui
+huggingface-hub==1.24.0
+    # via
+    #   tokenizers
+    #   transformers
 idna==3.4
     # via
     #   anyio
@@ -72,6 +90,8 @@ ifaddr==0.2.0
     # via nicegui
 imageio==2.37.4
     # via scikit-image
+importlib-metadata==7.1.0
+    # via keyring
 itsdangerous==2.2.0
     # via nicegui
 jaraco-classes==3.4.0
@@ -100,10 +120,14 @@ lazy-loader==0.5
     # via scikit-image
 lxml==6.1.1
     # via python-docx
+markdown-it-py==4.2.0
+    # via rich
 markdown2==2.5.5
     # via nicegui
 markupsafe==3.0.3
     # via jinja2
+mdurl==0.1.2
+    # via markdown-it-py
 more-itertools==11.1.0
     # via
     #   jaraco-classes
@@ -136,6 +160,7 @@ numpy==2.4.4
     #   shapely
     #   tifffile
     #   torchvision
+    #   transformers
 opencv-python-headless==5.0.0.93
     # via easyocr
 openpyxl==3.1.5
@@ -144,8 +169,10 @@ orjson==3.11.9
     # via nicegui
 packaging==24.1
     # via
+    #   huggingface-hub
     #   lazy-loader
     #   scikit-image
+    #   transformers
 pandas==3.0.5
     # via smart-autosorter (pyproject.toml)
 pillow==12.2.0
@@ -173,7 +200,9 @@ pydantic-core==2.46.4
 pydantic-settings==2.14.2
     # via smart-autosorter (pyproject.toml)
 pygments==2.20.0
-    # via nicegui
+    # via
+    #   nicegui
+    #   rich
 pylnk3==0.4.3
     # via smart-autosorter (pyproject.toml)
 pypdf==6.14.2
@@ -197,20 +226,28 @@ python-socketio==5.16.3
 pyyaml==6.0.3
     # via
     #   easyocr
+    #   huggingface-hub
+    #   transformers
     #   uvicorn
 referencing==0.37.0
     # via
     #   jsonschema
     #   jsonschema-specifications
+regex==2026.7.19
+    # via transformers
+rich==15.0.0
+    # via typer
 rpds-py==2026.6.3
     # via
     #   jsonschema
     #   referencing
+safetensors==0.8.0
+    # via transformers
 scikit-image==0.26.0
     # via easyocr
 scikit-learn==1.9.0
     # via smart-autosorter (pyproject.toml)
-scipy==1.18.0
+scipy==1.17.1
     # via
     #   easyocr
     #   scikit-image
@@ -221,6 +258,8 @@ setuptools==78.1.0
     # via torch
 shapely==2.1.2
     # via easyocr
+shellingham==1.5.4
+    # via typer
 simple-websocket==1.1.0
     # via python-engineio
 six==1.17.0
@@ -233,20 +272,31 @@ sympy==1.14.0
     # via torch
 threadpoolctl==3.6.0
     # via scikit-learn
-tifffile==2026.7.14
+tifffile==2026.3.3
     # via scikit-image
+tokenizers==0.22.2
+    # via transformers
 torch==2.13.0+cpu
     # via
     #   easyocr
     #   torchvision
 torchvision==0.28.0+cpu
     # via easyocr
+tqdm==4.66.5
+    # via
+    #   huggingface-hub
+    #   transformers
+transformers==5.14.1
+    # via smart-autosorter (pyproject.toml)
+typer==0.27.0
+    # via transformers
 typing-extensions==4.15.0
     # via
     #   aiohttp
     #   aiosignal
     #   anyio
     #   fastapi
+    #   huggingface-hub
     #   nicegui
     #   pydantic
     #   pydantic-core
@@ -276,3 +326,5 @@ wsproto==1.3.2
     # via simple-websocket
 yarl==1.24.5
     # via aiohttp
+zipp==3.19.2
+    # via importlib-metadata
