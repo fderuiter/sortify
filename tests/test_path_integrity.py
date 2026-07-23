@@ -75,7 +75,9 @@ def test_broken_symlink_detection():
 
     assert result["success"] is False
     assert len(result["broken_links"]) > 0
-    assert any(link_item["type"] == "broken_symlink" for link_item in result["broken_links"])
+    assert any(
+        link_item["type"] == "broken_symlink" for link_item in result["broken_links"]
+    )
     assert "Broken symlink target" in result["warnings"][0]
 
 

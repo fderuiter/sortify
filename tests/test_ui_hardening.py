@@ -9,7 +9,7 @@ def test_run_app_hardening():
     """Verify that run_app binds exclusively to 127.0.0.1 (local-only hardening)."""
     with (
         patch("app.ui.app.ui") as mock_ui,
-        patch("app.ui.app.AutoSorterApp") as mock_app_class,
+        patch("app.ui.app.AutoSorterApp"),
     ):
         settings = AppSettings()
         run_app(settings)

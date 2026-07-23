@@ -90,8 +90,8 @@ async def test_ui_recovery_and_watcher_restart(tmp_path):
     # Mock NiceGUI ui.dialog, ui.notify and tree render
     with (
         patch("nicegui.ui.dialog") as mock_dialog,
-        patch("nicegui.ui.notify") as mock_notify,
-        patch.object(app, "render_tree") as mock_render_tree,
+        patch("nicegui.ui.notify"),
+        patch.object(app, "render_tree"),
         patch.object(app, "start_watcher") as mock_start_watcher,
         patch.object(app, "stop_watcher") as mock_stop_watcher,
     ):
