@@ -41,7 +41,18 @@ except Exception as e:
 sqlcipher_spec = importlib.util.find_spec("sqlcipher3")
 if sqlcipher_spec and sqlcipher_spec.submodule_search_locations:
     sqlcipher_dir = sqlcipher_spec.submodule_search_locations[0]
-    datas.append((sqlcipher_dir, 'sqlcipher3'))
+    for root, dirs, files in os.walk(sqlcipher_dir):
+        for file in files:
+            abs_file_path = os.path.join(root, file)
+            rel_path = os.path.relpath(abs_file_path, sqlcipher_dir)
+            dest_dir = os.path.join('sqlcipher3', os.path.dirname(rel_path))
+            
+            # Identify platform-specific binary extensions (.dll, .dylib, .so)
+            file_lower = file.lower()
+            if file_lower.endswith(('.dll', '.dylib', '.so')) or '.so.' in file_lower:
+                binaries.append((abs_file_path, dest_dir))
+            else:
+                datas.append((abs_file_path, dest_dir))
 else:
     print("Warning: sqlcipher3 not found in active environment.")
 
