@@ -16,6 +16,7 @@ class SessionCrypto:
         self.key_path = key_path
         self.db_path = db_path
         self._cipher = None
+        self.recovery_code = None
         self.keyring_service = "AutoSorter"
         db_hash = hashlib.md5(str(db_path).encode("utf-8")).hexdigest()
         self.keyring_account = f"DatabaseDecryptionKey_{db_hash}"
@@ -81,8 +82,9 @@ class SessionCrypto:
                 except sqlite3.Error:
                     pass
 
-            # 4. Generate new key
-            key = Fernet.generate_key()
+            # 4. Generate new key from a new 24-character recovery code
+            self.recovery_code = self.generate_recovery_code()
+            key = self.derive_key(self.recovery_code)
             saved_to_keyring = False
             try:
                 keyring.set_password(
@@ -114,6 +116,79 @@ class SessionCrypto:
             raise RuntimeError(
                 "Database accessed but key file is missing or invalid."
             ) from e
+
+    @staticmethod
+    def generate_recovery_code() -> str:
+        """Generate a random 24-character alphanumeric recovery code."""
+        import secrets
+        import string
+
+        alphabet = string.ascii_letters + string.digits
+        return "".join(secrets.choice(alphabet) for _ in range(24))
+
+    @staticmethod
+    def derive_key(recovery_code: str) -> bytes:
+        """Derive a 32-byte Fernet key from the 24-character recovery code."""
+        import base64
+        import hashlib
+
+        digest = hashlib.sha256(recovery_code.encode("utf-8")).digest()
+        return base64.urlsafe_b64encode(digest)
+
+    def verify_recovery_code(self, recovery_code: str) -> bool:
+        """Verify if the 24-character recovery code correctly decrypts the database."""
+        if len(recovery_code) != 24:
+            return False
+        try:
+            key_bytes = self.derive_key(recovery_code)
+            key_str = key_bytes.decode("utf-8")
+
+            if not self.db_path.exists():
+                return True
+
+            from app.core.db_conn import sqlite3
+
+            conn = sqlite3.connect(str(self.db_path))
+            try:
+                conn.execute(f"PRAGMA key = '{key_str}'")
+                conn.execute("PRAGMA user_version")
+                return True
+            except sqlite3.DatabaseError:
+                return False
+            finally:
+                conn.close()
+        except Exception:
+            return False
+
+    def save_recovered_key(self, recovery_code: str):
+        """Save the key derived from the recovery code to the keyring/file."""
+        key_bytes = self.derive_key(recovery_code)
+        saved_to_keyring = False
+        try:
+            keyring.set_password(
+                self.keyring_service, self.keyring_account, key_bytes.decode("utf-8")
+            )
+            verify_str = keyring.get_password(
+                self.keyring_service, self.keyring_account
+            )
+            if verify_str and verify_str.encode("utf-8") == key_bytes:
+                saved_to_keyring = True
+        except Exception:
+            pass
+
+        if not saved_to_keyring:
+            # Fallback to local file with strict permissions
+            fd = os.open(
+                str(self.key_path),
+                os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+                if self.key_path.exists()
+                else os.O_EXCL,
+                0o600,
+            )
+            with os.fdopen(fd, "wb") as f:
+                f.write(key_bytes)
+
+        self._cipher = None
 
     def get_raw_key(self) -> str:
         """Get the raw key string for SQLCipher."""
