@@ -113,6 +113,10 @@ def test_spec_file_partitioning():
         "__file__": spec_path,
     }
     
+    # Mock PyInstaller utils hooks which may not be present in all test environments
+    mock_pyinstaller_hooks = MagicMock()
+    mock_pyinstaller_hooks.collect_all.return_value = ([], [], [])
+    
     # Let's mock importlib.util.find_spec to return a custom location for sqlcipher3
     # and mock os.walk to return a mix of .so, .dll, .dylib, and standard files (.py, .pyc, .txt).
     mock_sqlcipher_dir = "/mock/sqlcipher3"
@@ -137,7 +141,12 @@ def test_spec_file_partitioning():
     
     with patch("importlib.util.find_spec", mock_find_spec), \
          patch("os.walk", return_value=mock_walk_data), \
-         patch("os.path.exists", return_value=True):
+         patch("os.path.exists", return_value=True), \
+         patch.dict("sys.modules", {
+             "PyInstaller": MagicMock(),
+             "PyInstaller.utils": MagicMock(),
+             "PyInstaller.utils.hooks": mock_pyinstaller_hooks,
+         }):
         
         # Execute the spec file in our mock global context
         exec(spec_content, mock_globals)
