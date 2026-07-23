@@ -1,5 +1,6 @@
 """Metadata pass for pre-evaluating files against rules before text extraction."""
 
+import logging
 import os
 
 from app.core.extractor import get_file_hash
@@ -22,8 +23,8 @@ class MetadataPass:
         docs = db.get_all_documents(base_dir)
         hash_to_target = {}
         for d in docs:
-            if len(d) > 4 and d[4] is not None and d[3]:
-                hash_to_target[d[3]] = d[4]
+            if len(d) >= 4 and d[2] and d[3]:
+                hash_to_target[d[2]] = d[3]
 
         bypassed_files = []
         docs_to_upsert = []
@@ -33,7 +34,16 @@ class MetadataPass:
                 break
 
             item_path = os.path.join(base_dir, item)
-            if not os.path.isfile(item_path):
+            try:
+                if not os.path.isfile(item_path):
+                    continue
+                # Ensure the file is readable
+                with open(item_path, "rb") as f:
+                    pass
+            except (OSError, PermissionError, FileNotFoundError) as e:
+                logging.warning(
+                    f"Could not read/process file {item_path} due to access errors: {e}"
+                )
                 continue
 
             file_hash = get_file_hash(item_path)
