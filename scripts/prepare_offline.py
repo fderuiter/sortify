@@ -3,8 +3,6 @@
 # ///
 """Utility script to prepare an offline deployment bundle."""
 
-import hashlib
-import json
 import os
 import shutil
 import subprocess

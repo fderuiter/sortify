@@ -1,8 +1,10 @@
 import os
+from unittest.mock import MagicMock
+
 import pytest
-from unittest.mock import MagicMock, call
 
 from app.core.mover import execute_moves
+
 
 class MockDB:
     def __init__(self):
