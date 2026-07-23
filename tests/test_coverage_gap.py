@@ -51,10 +51,6 @@ def teardown_module(module):
         shutil.rmtree(_test_dir, ignore_errors=True)
 
 
-def save_cache_sync(*args, **kwargs):
-    cache_manager.save_cache_sync(*args, **kwargs)
-
-
 def test_get_file_hash_exception(tmp_path):
     with mock.patch("builtins.open", side_effect=PermissionError):
         h = get_file_hash(str(tmp_path / "nonexistent.txt"))

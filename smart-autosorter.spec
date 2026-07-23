@@ -12,20 +12,7 @@ from PyInstaller.utils.hooks import collect_all
 block_cipher = None
 
 # Core machine learning and NLP dependencies required for offline processing
-ml_packages = [
-    'torch',
-    'transformers',
-    'sentence_transformers',
-    'llama_cpp',
-    'huggingface_hub',
-    'filelock',
-    'regex',
-    'tqdm',
-    'numpy',
-    'packaging',
-    'yaml',
-    'safetensors'
-]
+ml_packages = []
 
 datas = []
 binaries = []

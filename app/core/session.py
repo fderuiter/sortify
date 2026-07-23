@@ -103,14 +103,6 @@ class AppSession:
             self.base_dir, self.settings, locked_files=locked
         )
 
-    def save_cache_async(self, locked_files, manual_folders):
-        """Save the cache asynchronously."""
-        if not self.base_dir:
-            return
-        self.cache_manager.save_cache_async(
-            self.base_dir, self.analyzer.corpus, locked_files, {}, manual_folders
-        )
-
     def load_cache(self):
         """Load the cache for the current session."""
         if not self.base_dir:
