@@ -1,6 +1,5 @@
-import tempfile
 import logging
-import sys
+import tempfile
 from pathlib import Path
 
 import pytest

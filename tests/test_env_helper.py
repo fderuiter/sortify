@@ -1,18 +1,13 @@
 import os
-import sys
-import subprocess
-from pathlib import Path
 from unittest import mock
 
-import pytest
-
+from app.config import get_app_dir
 from app.core.env_helper import (
     get_cleaned_env,
     get_subprocess_startupinfo,
-    spawn_background_process,
     run_background_process,
+    spawn_background_process,
 )
-from app.config import get_app_dir
 
 
 def test_get_cleaned_env_defaults():

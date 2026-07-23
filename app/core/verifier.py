@@ -1,7 +1,7 @@
 """Verification engine for proactive move validation."""
 
 import os
-import logging
+
 from app.core.link_manager import LinkManager
 
 try:
@@ -13,22 +13,20 @@ except ImportError:
 def is_ml_available() -> bool:
     """Check if heavy machine learning dependencies (torch, easyocr) are available."""
     try:
-        import torch
-        import easyocr
+        import easyocr  # noqa: F401
+        import torch  # noqa: F401
         return True
     except ImportError:
         return False
 
 
 def check_ai_status(settings) -> tuple[bool, str | None]:
-    """Check AI models status.
-    Returns (is_healthy, warning_message).
-    """
+    """Check AI models status, returning (is_healthy, warning_message)."""
     if not is_ml_available():
         return False, "Machine learning dependencies (PyTorch/EasyOCR) are not installed. Running in fallback state."
 
-    from app.core.path_utils import get_base_path
     from app.config import get_app_dir
+    from app.core.path_utils import get_base_path
     try:
         base_path = get_base_path(__file__)
     except Exception:
@@ -112,6 +110,8 @@ class VerificationEngine:
 
 
 class VirtualNode:
+    """Represents a simulated file or directory in the virtual filesystem tracker."""
+
     def __init__(self, path, is_dir, inode, size, symlink_target=None, shortcut_target=None):
         self.path = os.path.abspath(path)
         self.is_dir = is_dir
@@ -479,8 +479,8 @@ class VirtualFilesystemTracker:
             warnings.append(c["message"])
         for r in circular_renames:
             warnings.append(r["message"])
-        for l in broken_links:
-            warnings.append(l["message"])
+        for link in broken_links:
+            warnings.append(link["message"])
 
         # Eliminate duplicate messages in warnings
         unique_warnings = list(dict.fromkeys(warnings))

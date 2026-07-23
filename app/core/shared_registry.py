@@ -16,6 +16,7 @@ _original_connect = socket.socket.connect
 _original_connect_ex = socket.socket.connect_ex
 
 def safe_connect(self, address):
+    """Safely connect socket, raising PermissionError for external connections."""
     if isinstance(address, tuple):
         host = address[0]
         if host not in ("127.0.0.1", "localhost", "::1", "0.0.0.0"):
@@ -25,6 +26,7 @@ def safe_connect(self, address):
     return _original_connect(self, address)
 
 def safe_connect_ex(self, address):
+    """Safely connect_ex socket, raising PermissionError for external connections."""
     if isinstance(address, tuple):
         host = address[0]
         if host not in ("127.0.0.1", "localhost", "::1", "0.0.0.0"):
@@ -64,6 +66,7 @@ class SharedModelRegistry:
 
     @classmethod
     def get_instance(cls):
+        """Retrieve the singleton instance of SharedModelRegistry."""
         if cls._instance is None:
             cls._instance = cls()
         return cls._instance
@@ -191,6 +194,7 @@ class SharedWorkerPool:
 
     @classmethod
     def get_instance(cls, max_workers=None):
+        """Retrieve the singleton instance of SharedWorkerPool, initializing it if necessary."""
         if cls._instance is None:
             # Respect system limits / CPU counts to prevent starvation
             if max_workers is None:
@@ -215,5 +219,6 @@ class SharedWorkerPool:
         return self._executor.submit(offline_wrapped_fn, *args, **kwargs)
 
     def shutdown(self, wait=True):
+        """Shutdown the underlying executor and reset singleton instance."""
         self._executor.shutdown(wait=wait)
         SharedWorkerPool._instance = None

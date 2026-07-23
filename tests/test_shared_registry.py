@@ -1,14 +1,12 @@
-import os
-import tempfile
-import socket
-import pytest
 import hashlib
+import socket
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from app.core.shared_registry import (
     SharedModelRegistry,
     SharedWorkerPool,
-    block_external_network,
 )
 
 
@@ -119,7 +117,11 @@ def test_session_db_and_cache_isolation():
 
 def test_socket_sandbox_blocking_of_external_and_allow_localhost():
     """Verify that socket sandboxing blocks external domains while allowing localhost/loopback."""
-    from app.core.shared_registry import apply_global_socket_sandbox, safe_connect, safe_connect_ex
+    from app.core.shared_registry import (
+        apply_global_socket_sandbox,
+        safe_connect,
+        safe_connect_ex,
+    )
     apply_global_socket_sandbox()
 
     # Create a mock socket
@@ -144,8 +146,8 @@ def test_socket_sandbox_blocking_of_external_and_allow_localhost():
 
 def test_check_ai_status_corrupt_or_missing(tmp_path, monkeypatch):
     """Verify check_ai_status correctly warns when models are corrupt/missing."""
-    from app.core.verifier import check_ai_status
     from app.config import AppSettings
+    from app.core.verifier import check_ai_status
 
     settings = AppSettings()
     settings.AI_ASSISTED_NAMING = True
