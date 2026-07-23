@@ -7,31 +7,137 @@ with offline enforcement and thread limits.
 
 import concurrent.futures
 import hashlib
+import ipaddress
 import logging
 import os
 import socket
+import threading
 from contextlib import contextmanager
+
+_thread_local = threading.local()
+
+# Keep track of original functions permanently to avoid recursion/re-patching issues
+_original_connect = socket.socket.connect
+_original_connect_ex = socket.socket.connect_ex
+
+# Resolve and cache local IP addresses once at import time
+_local_ips = {
+    "127.0.0.1",
+    "localhost",
+    "::1",
+    "0.0.0.0",
+    "",
+}
+
+try:
+    _local_ips.add(socket.gethostname().lower())
+    _local_ips.add(socket.getfqdn().lower())
+except Exception:
+    pass
+
+try:
+    for info in socket.getaddrinfo(socket.gethostname(), None):
+        _local_ips.add(info[4][0].lower())
+except Exception:
+    pass
+
+try:
+    for info in socket.getaddrinfo("localhost", None):
+        _local_ips.add(info[4][0].lower())
+except Exception:
+    pass
+
+
+def _is_local_address(host: str) -> bool:
+    """Check if the given host/IP is local/loopback/unspecified/private/link-local."""
+    host_lower = host.lower()
+    if host_lower in _local_ips:
+        return True
+
+    if host_lower.endswith(".local") or host_lower.endswith(".localhost"):
+        return True
+
+    try:
+        ip = ipaddress.ip_address(host)
+        return (
+            ip.is_loopback
+            or ip.is_unspecified
+            or ip.is_private
+            or ip.is_link_local
+        )
+    except ValueError:
+        pass
+
+    # Try resolving hostname dynamically to check if its IPs are local/private/loopback
+    try:
+        for info in socket.getaddrinfo(host, None):
+            resolved_ip = info[4][0]
+            try:
+                ip = ipaddress.ip_address(resolved_ip)
+                if (
+                    ip.is_loopback
+                    or ip.is_unspecified
+                    or ip.is_private
+                    or ip.is_link_local
+                ):
+                    return True
+            except ValueError:
+                pass
+    except Exception:
+        pass
+
+    return False
+
+
+def safe_connect(self, address):
+    """Safely connect socket, raising PermissionError for external connections if sandboxed."""
+    if getattr(_thread_local, "sandboxed", False):
+        if isinstance(address, tuple) and len(address) > 0:
+            host = str(address[0])
+            if not _is_local_address(host):
+                reason = getattr(_thread_local, "reason", "worker execution")
+                raise PermissionError(
+                    f"External network connections are blocked during {reason}: {host}"
+                )
+    return _original_connect(self, address)
+
+
+def safe_connect_ex(self, address):
+    """Safely connect_ex socket, raising PermissionError for external connections if sandboxed."""
+    if getattr(_thread_local, "sandboxed", False):
+        if isinstance(address, tuple) and len(address) > 0:
+            host = str(address[0])
+            if not _is_local_address(host):
+                reason = getattr(_thread_local, "reason", "worker execution")
+                raise PermissionError(
+                    f"External network connections are blocked during {reason}: {host}"
+                )
+    return _original_connect_ex(self, address)
+
+
+def apply_global_socket_sandbox():
+    """Apply socket-level blocking of non-localhost outgoing network requests globally."""
+    # Kept for backward-compatibility but does not do dangerous dynamic re-patching.
+    pass
+
+
+# Permanently patch once at import time
+socket.socket.connect = safe_connect
+socket.socket.connect_ex = safe_connect_ex
 
 
 @contextmanager
-def block_external_network():
-    """Block outgoing non-localhost network traffic."""
-    original_connect = socket.socket.connect
-
-    def safe_connect(self, address):
-        if isinstance(address, tuple):
-            host = address[0]
-            if host not in ("127.0.0.1", "localhost", "::1", "0.0.0.0"):
-                raise PermissionError(
-                    f"External network connections are blocked during worker execution: {host}"
-                )
-        return original_connect(self, address)
-
-    socket.socket.connect = safe_connect
+def block_external_network(reason="worker execution"):
+    """Block outgoing non-localhost network traffic safely and thread-locally."""
+    was_sandboxed = getattr(_thread_local, "sandboxed", False)
+    old_reason = getattr(_thread_local, "reason", "worker execution")
+    _thread_local.sandboxed = True
+    _thread_local.reason = reason
     try:
         yield
     finally:
-        socket.socket.connect = original_connect
+        _thread_local.sandboxed = was_sandboxed
+        _thread_local.reason = old_reason
 
 
 class SharedModelRegistry:
@@ -47,6 +153,7 @@ class SharedModelRegistry:
         return cls._instance
 
     def __init__(self):
+        apply_global_socket_sandbox()
         self._models = {}
         self._expected_hashes = {}
 
@@ -189,8 +296,11 @@ class SharedWorkerPool:
         return cls._instance
 
     def __init__(self, max_workers: int):
+        apply_global_socket_sandbox()
         self._executor = concurrent.futures.ThreadPoolExecutor(
-            max_workers=max_workers, thread_name_prefix="GlobalSharedWorker"
+            max_workers=max_workers,
+            thread_name_prefix="GlobalSharedWorker",
+            initializer=apply_global_socket_sandbox,
         )
         self.max_workers = max_workers
 

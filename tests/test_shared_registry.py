@@ -94,6 +94,16 @@ def test_shared_worker_pool_offline_enforcement():
     ):
         future.result()
 
+    def task_trying_to_connect_ex():
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.connect_ex(("8.8.8.8", 53))
+
+    future_ex = pool.submit(task_trying_to_connect_ex)
+    with pytest.raises(
+        PermissionError, match="External network connections are blocked"
+    ):
+        future_ex.result()
+
 
 def test_session_db_and_cache_isolation():
     """Assert routing tasks preserves session-specific database and settings references."""
@@ -117,3 +127,126 @@ def test_session_db_and_cache_isolation():
 
     assert fut1.result() == ("session_1_db", "session_1_settings")
     assert fut2.result() == ("session_2_db", "session_2_settings")
+
+
+def test_socket_sandbox_blocking_of_external_and_allow_localhost():
+    """Verify that socket sandboxing blocks external domains while allowing localhost/loopback."""
+    from app.core.shared_registry import (
+        apply_global_socket_sandbox,
+        safe_connect,
+        safe_connect_ex,
+        block_external_network,
+    )
+
+    apply_global_socket_sandbox()
+
+    # Create a mock socket
+    mock_socket = MagicMock()
+
+    # Try connecting to external domain
+    with pytest.raises(
+        PermissionError, match="External network connections are blocked"
+    ):
+        with block_external_network():
+            safe_connect(mock_socket, ("8.8.8.8", 80))
+
+    with pytest.raises(
+        PermissionError, match="External network connections are blocked"
+    ):
+        with block_external_network():
+            safe_connect_ex(mock_socket, ("8.8.8.8", 80))
+
+    # Try connecting to localhost
+    with (
+        patch("app.core.shared_registry._original_connect") as mock_connect,
+        patch("app.core.shared_registry._original_connect_ex") as mock_connect_ex,
+    ):
+        with block_external_network():
+            safe_connect(mock_socket, ("127.0.0.1", 8080))
+        mock_connect.assert_called_once_with(mock_socket, ("127.0.0.1", 8080))
+
+        with block_external_network():
+            safe_connect_ex(mock_socket, ("localhost", 8080))
+        mock_connect_ex.assert_called_once_with(mock_socket, ("localhost", 8080))
+
+
+def test_socket_sandbox_inactive_allows_external_connections():
+    """Verify that when block_external_network is not active, external connections are allowed."""
+    from app.core.shared_registry import safe_connect, safe_connect_ex
+    mock_socket = MagicMock()
+    with (
+        patch("app.core.shared_registry._original_connect") as mock_connect,
+        patch("app.core.shared_registry._original_connect_ex") as mock_connect_ex,
+    ):
+        safe_connect(mock_socket, ("8.8.8.8", 80))
+        mock_connect.assert_called_once_with(mock_socket, ("8.8.8.8", 80))
+
+        safe_connect_ex(mock_socket, ("8.8.8.8", 80))
+        mock_connect_ex.assert_called_once_with(mock_socket, ("8.8.8.8", 80))
+
+
+def test_socket_sandbox_case_insensitivity_and_local_suffixes():
+    """Verify that the socket sandbox is case-insensitive and permits .local/.localhost suffixes."""
+    from app.core.shared_registry import (
+        safe_connect,
+        safe_connect_ex,
+        block_external_network,
+        _is_local_address,
+    )
+    mock_socket = MagicMock()
+
+    # Test cases for local addresses (various cases and suffixes)
+    assert _is_local_address("LOCALHOST") is True
+    assert _is_local_address("LocalHost") is True
+    assert _is_local_address("my-pc.local") is True
+    assert _is_local_address("MY-PC.LOCAL") is True
+    assert _is_local_address("my-server.localhost") is True
+
+    # Test case-insensitivity in safe_connect within active sandbox
+    with (
+        patch("app.core.shared_registry._original_connect") as mock_connect,
+        patch("app.core.shared_registry._original_connect_ex") as mock_connect_ex,
+    ):
+        with block_external_network():
+            safe_connect(mock_socket, ("LOCALHOST", 8080))
+            mock_connect.assert_called_once_with(mock_socket, ("LOCALHOST", 8080))
+
+            safe_connect_ex(mock_socket, ("my-machine.local", 8080))
+            mock_connect_ex.assert_called_once_with(mock_socket, ("my-machine.local", 8080))
+
+
+def test_check_ai_status_corrupt_or_missing(tmp_path, monkeypatch):
+    """Verify check_ai_status correctly warns when models are corrupt/missing."""
+    from app.config import AppSettings
+    from app.core.verifier import check_ai_status
+
+    settings = AppSettings()
+    settings.AI_ASSISTED_NAMING = True
+
+    # Case 1: missing/uninstalled dependencies -> mock is_ml_available returning False
+    with patch("app.core.verifier.is_ml_available", return_value=False):
+        is_healthy, warn_msg = check_ai_status(settings)
+        assert not is_healthy
+        assert "dependencies" in warn_msg
+
+    # Case 2: ML is available but files are missing
+    with (
+        patch("app.core.verifier.is_ml_available", return_value=True),
+        patch("os.path.exists", return_value=False),
+    ):
+        is_healthy, warn_msg = check_ai_status(settings)
+        assert not is_healthy
+        assert "weights are missing or corrupt" in warn_msg
+
+
+def test_is_local_address_dynamic_resolution():
+    """Verify that _is_local_address dynamically resolves hostname to identify local IP."""
+    from app.core.shared_registry import _is_local_address
+
+    # Mock getaddrinfo to return a private IP for a custom local hostname
+    with patch("socket.getaddrinfo", return_value=[(None, None, None, None, ("192.168.1.100", 0))]):
+        assert _is_local_address("custom-local-host") is True
+
+    # Mock getaddrinfo to return an external public IP
+    with patch("socket.getaddrinfo", return_value=[(None, None, None, None, ("8.8.8.8", 0))]):
+        assert _is_local_address("custom-external-host") is False

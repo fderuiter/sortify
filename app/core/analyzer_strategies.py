@@ -3,32 +3,19 @@
 import logging
 import multiprocessing
 import os
-import socket
 import sys
 from collections import defaultdict
 from contextlib import contextmanager
 from typing import List, Protocol
 
+from app.core.shared_registry import block_external_network as _block_external_network
+
 
 @contextmanager
 def block_external_network():
     """Block outgoing non-localhost network traffic during naming generation."""
-    original_connect = socket.socket.connect
-
-    def safe_connect(self, address):
-        if isinstance(address, tuple):
-            host = address[0]
-            if host not in ("127.0.0.1", "localhost", "::1", "0.0.0.0"):
-                raise PermissionError(
-                    f"External network connections are blocked during folder naming: {host}"
-                )
-        return original_connect(self, address)
-
-    socket.socket.connect = safe_connect
-    try:
+    with _block_external_network(reason="folder naming"):
         yield
-    finally:
-        socket.socket.connect = original_connect
 
 
 class ClusteringStrategy(Protocol):
