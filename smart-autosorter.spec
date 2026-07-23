@@ -28,7 +28,14 @@ for pkg in ml_packages:
     except Exception as e:
         print(f"Warning: Could not collect package {pkg}: {e}")
 
-# No special nicegui asset bundling needed by default
+# Bundle nicegui static assets and dependencies
+try:
+    nicegui_datas, nicegui_binaries, nicegui_hiddenimports = collect_all('nicegui')
+    datas.extend(nicegui_datas)
+    binaries.extend(nicegui_binaries)
+    hiddenimports.extend(nicegui_hiddenimports)
+except Exception as e:
+    print(f"Warning: Could not collect nicegui package: {e}")
 
 # Bundle secure database shared libraries directly from the active virtual environment
 sqlcipher_spec = importlib.util.find_spec("sqlcipher3")
@@ -86,7 +93,7 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    upx=False,
     console=False,  # windowed mode
     disable_windowed_traceback=False,
     argv_emulation=False,
@@ -101,7 +108,7 @@ coll = COLLECT(
     a.zipfiles,
     a.datas,
     strip=False,
-    upx=True,
+    upx=False,
     upx_exclude=[],
     name='smart-autosorter',
 )
