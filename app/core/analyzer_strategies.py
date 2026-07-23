@@ -8,8 +8,6 @@ from collections import defaultdict
 from contextlib import contextmanager
 from typing import List, Protocol
 
-import numpy as np
-
 
 @contextmanager
 def block_external_network():
@@ -83,6 +81,7 @@ class RecursiveKMeansStrategy:
             if len(feature_names) == 0:
                 return "Miscellaneous"
 
+            import numpy as np
             scores = np.asarray(X.sum(axis=0)).ravel()
             top_indices = scores.argsort()[::-1][:2]
             top_terms = [feature_names[i].capitalize() for i in top_indices]

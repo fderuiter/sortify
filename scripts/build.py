@@ -1,5 +1,6 @@
 """Unified build script for smart autosorter application on Windows, macOS, and Linux."""
 
+import os
 import sys
 
 import PyInstaller.__main__
@@ -8,6 +9,12 @@ import PyInstaller.__main__
 def main():
     """Build the standalone executable."""
     import importlib.util
+
+    is_lite = "--lite" in sys.argv
+    if is_lite:
+        sys.argv.remove("--lite")
+        os.environ["LITE_BUILD"] = "1"
+        print("Lite profile enabled. Heavy ML packages will be excluded from the build.")
 
     print("Verifying SQLCipher in active environment...")
     spec = importlib.util.find_spec("sqlcipher3")
