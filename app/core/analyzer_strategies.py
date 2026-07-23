@@ -3,8 +3,8 @@
 import logging
 import multiprocessing
 import os
-import queue
 import socket
+import sys
 from collections import defaultdict
 from contextlib import contextmanager
 from typing import List, Protocol
@@ -160,6 +160,7 @@ class RecursiveKMeansStrategy:
 
 
 def is_gguf_model_dir(model_path: str) -> bool:
+    """Check recursively if the given path contains any GGUF files."""
     if not model_path or not os.path.exists(model_path):
         return False
     for root, _, files in os.walk(model_path):
@@ -169,6 +170,7 @@ def is_gguf_model_dir(model_path: str) -> bool:
     return False
 
 def gguf_worker_main(model_path, input_queue, output_queue):
+    """Worker process main loop that handles local GGUF model generation."""
     import os
     gguf_file = None
     for root, _, files in os.walk(model_path):
@@ -211,8 +213,12 @@ try:
     from transformers import LogitsProcessor, LogitsProcessorList
 except ImportError:
     class LogitsProcessor:
+        """Dummy LogitsProcessor fallback class when transformers is not installed."""
+
         pass
     class LogitsProcessorList(list):
+        """Dummy LogitsProcessorList fallback class when transformers is not installed."""
+
         pass
 
 
@@ -223,6 +229,7 @@ class NegativeLogitBiasProcessor(LogitsProcessor):
         self.token_biases = token_biases
 
     def __call__(self, input_ids, scores):
+        """Apply negative logit bias to the specified tokens."""
         for token_id, bias in self.token_biases.items():
             if token_id < scores.shape[-1]:
                 if len(scores.shape) == 1:
