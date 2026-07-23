@@ -78,6 +78,10 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.core.session
 
+## `app.core.shared_registry`
+
+::: app.core.shared_registry
+
 ## `app.core.verifier`
 
 ::: app.core.verifier
