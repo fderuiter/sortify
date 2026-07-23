@@ -133,7 +133,6 @@ class AutoSorterApp:
     def check_abandoned_sessions(self):
         """Check for abandoned sessions on startup and prompt for recovery."""
         from app.core.session import scan_abandoned_sessions_async
-        import json
         
         async def run():
             abandoned = await scan_abandoned_sessions_async()

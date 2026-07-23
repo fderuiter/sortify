@@ -1,11 +1,11 @@
 """Session manager module for encapsulating app state."""
 
+import json
 import os
 import shutil
+import sqlite3
 import tempfile
 import uuid
-import json
-import sqlite3
 from pathlib import Path
 
 from app.config import get_app_dir
@@ -200,7 +200,6 @@ class AppSession:
         if not self.base_dir:
             return {}
         
-        import json
         plan_path = self.session_dir / "plan.json"
         with open(plan_path, "w") as f:
             json.dump(plan, f)
