@@ -1,9 +1,10 @@
 """Helper module for asynchronous directory selection with focus elevation."""
 
-import subprocess
 import sys
 import threading
 from tkinter import filedialog
+
+from app.core.env_helper import run_background_process
 
 
 def ask_directory_async(
@@ -38,7 +39,7 @@ def ask_directory_async(
                     "-e",
                     "end try",
                 ]
-                result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+                result = run_background_process(cmd, capture_output=True, text=True, check=True)
                 output = result.stdout.strip()
                 if output.startswith("SUCCESS:"):
                     path = output[8:]
@@ -62,12 +63,9 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {{
     Write-Output "CANCEL:"
 }}
 """
-                startupinfo = subprocess.STARTUPINFO()
-                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-                startupinfo.wShowWindow = 0  # SW_HIDE
                 cmd = ["powershell", "-Command", script]
-                result = subprocess.run(
-                    cmd, capture_output=True, text=True, startupinfo=startupinfo
+                result = run_background_process(
+                    cmd, capture_output=True, text=True
                 )
                 output = result.stdout.strip()
                 if output.startswith("SUCCESS:"):
@@ -80,6 +78,7 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {{
                     success = False
         except Exception:
             success = False
+
 
         if not success:
             # Fallback

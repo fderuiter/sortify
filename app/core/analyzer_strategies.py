@@ -3,12 +3,9 @@
 import logging
 import os
 import socket
-import sys
 from collections import defaultdict
 from contextlib import contextmanager
 from typing import List, Protocol
-
-import numpy as np
 
 
 @contextmanager
@@ -83,6 +80,7 @@ class RecursiveKMeansStrategy:
             if len(feature_names) == 0:
                 return "Miscellaneous"
 
+            import numpy as np
             scores = np.asarray(X.sum(axis=0)).ravel()
             top_indices = scores.argsort()[::-1][:2]
             top_terms = [feature_names[i].capitalize() for i in top_indices]
@@ -157,6 +155,31 @@ class RecursiveKMeansStrategy:
                     deep_update(plan[folder_name], sub_plan)
 
         return plan
+
+
+try:
+    from transformers import LogitsProcessor, LogitsProcessorList
+except ImportError:
+    class LogitsProcessor:
+        pass
+    class LogitsProcessorList(list):
+        pass
+
+
+class NegativeLogitBiasProcessor(LogitsProcessor):
+    """LogitsProcessor that applies negative logit biases to specified token IDs."""
+
+    def __init__(self, token_biases: dict):
+        self.token_biases = token_biases
+
+    def __call__(self, input_ids, scores):
+        for token_id, bias in self.token_biases.items():
+            if token_id < scores.shape[-1]:
+                if len(scores.shape) == 1:
+                    scores[token_id] += bias
+                else:
+                    scores[:, token_id] += bias
+        return scores
 
 
 class GenerativeNamingStrategy(RecursiveKMeansStrategy):
@@ -236,13 +259,11 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
     def __init__(self, model_path: str = None):
         self.generator = None
         self.task = None
+        self.token_biases = {}
 
-        if getattr(sys, "frozen", False):
-            base_path = os.path.dirname(sys.executable)
-        else:
-            base_path = os.path.dirname(
-                os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            )
+        from app.core.path_utils import get_base_path
+
+        base_path = get_base_path(__file__)
 
         local_bundle_path = os.path.join(base_path, "offline_bundle", "model")
 
@@ -302,9 +323,57 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                 self.generator = pipeline(
                     self.task, model=quantized_model, tokenizer=tokenizer, device=-1
                 )
+
+                self.token_biases = self._build_logit_biases(tokenizer)
         except Exception as e:
             logging.error(f"Failed to load generative model: {e}")
             self.generator = None
+
+    def _should_bias_token(self, token_str: str) -> bool:
+        # Clean token of special tokenizer characters representing spaces or unk
+        clean_str = token_str.replace("Ġ", "").replace(" ", "").replace("<unk>", "").strip()
+        if not clean_str:
+            return False
+
+        # Hyphen and punctuation check
+        import string
+        if any(c in string.punctuation for c in clean_str):
+            return True
+
+        # Conversational filler words
+        lower_str = clean_str.lower()
+        if lower_str in {
+            "sure", "here", "is", "a", "an", "the", "this", "these", "it", "they", "them",
+            "there", "are", "of", "some", "document", "documents", "file", "files", "folder",
+            "folders", "containing", "about", "for", "named", "associated", "with", "relating",
+            "to", "and", "in", "at", "by", "from", "or", "as", "but", "so", "if", "then", "else",
+            "under", "below", "above", "following", "list", "items", "content", "contents",
+            "yes", "no", "ok", "okay", "hello", "hi", "hey", "please", "find", "attached",
+            "generated", "name", "names", "title", "titles"
+        }:
+            return True
+
+        return False
+
+    def _build_logit_biases(self, tokenizer):
+        token_biases = {}
+        try:
+            vocab = tokenizer.get_vocab()
+            for token_str, token_id in vocab.items():
+                if self._should_bias_token(token_str):
+                    token_biases[token_id] = -100.0
+        except Exception:
+            try:
+                vocab_size = getattr(tokenizer, "vocab_size", None)
+                if vocab_size is None:
+                    vocab_size = len(tokenizer)
+                for token_id in range(vocab_size):
+                    token_str = tokenizer.convert_ids_to_tokens(token_id)
+                    if isinstance(token_str, str) and self._should_bias_token(token_str):
+                        token_biases[token_id] = -100.0
+            except Exception as e:
+                logging.error(f"Failed to build logit biases: {e}")
+        return token_biases
 
     def _get_cluster_keywords(self, documents: list) -> str:
         if not documents:
@@ -322,8 +391,13 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
 
             with block_external_network():
                 import torch
+                from transformers import LogitsProcessorList
 
                 torch.set_num_threads(2)
+
+                logits_processor = LogitsProcessorList()
+                if getattr(self, "token_biases", None):
+                    logits_processor.append(NegativeLogitBiasProcessor(self.token_biases))
 
                 if self.task == "text-generation":
                     res = self.generator(
@@ -331,18 +405,43 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                         max_new_tokens=15,
                         num_return_sequences=1,
                         return_full_text=False,
+                        logits_processor=logits_processor,
                     )
                 else:
                     res = self.generator(
-                        prompt, max_new_tokens=15, num_return_sequences=1
+                        prompt,
+                        max_new_tokens=15,
+                        num_return_sequences=1,
+                        logits_processor=logits_processor,
                     )
 
                 name = res[0]["generated_text"].strip()
 
+                # Cleanup the generated name
+                name = name.replace('"', "").replace("-", " ").strip()
+
+                # Replace duplicate whitespace
+                name = " ".join(name.split())
+
+                # Limit generated folder name to 1 to 4 words
+                words = name.split()
+                if len(words) > 4:
+                    name = " ".join(words[:4])
+
+                # Strip leading/trailing punctuation
+                import string
+                name = name.strip(string.punctuation).strip()
+
                 if not name or len(name) < 2:
                     return super()._get_cluster_keywords(documents)
 
-                name = name.replace('"', "").replace("-", " ").strip()
+                # Final OS-level path sanitization
+                from app.core.path_utils import sanitize_name
+                name = sanitize_name(name)
+
+                if not name or len(name) < 2:
+                    return super()._get_cluster_keywords(documents)
+
                 return name
         except Exception as e:
             logging.error(f"Generative naming failed: {e}")

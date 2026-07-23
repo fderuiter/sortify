@@ -30,13 +30,53 @@ def get_ocr_reader():
     return _ocr_reader
 
 
-def extract_text_from_image(image) -> str:
+def extract_text_from_image(image, settings=None, file_path=None) -> str:
     """Extract character-level text from an image using the unified EasyOCR engine."""
     reader = get_ocr_reader()
     if reader is None:
         return ""
 
     try:
+        from PIL import Image
+
+        # Check if we should get the image size and perform checks
+        width, height = None, None
+        if hasattr(image, "size"):
+            try:
+                sz = image.size
+                if isinstance(sz, tuple) and len(sz) == 2:
+                    width, height = sz
+            except Exception:
+                pass
+
+        if isinstance(width, (int, float)) and isinstance(height, (int, float)):
+            if settings is None:
+                from app.config import AppSettings
+                try:
+                    settings = AppSettings()
+                except Exception:
+                    pass
+
+            skip_threshold = settings.IMAGE_SKIP_THRESHOLD if settings else 3000
+            max_dimension = settings.IMAGE_MAX_DIMENSION if settings else 1000
+
+            if max(width, height) > skip_threshold:
+                name = file_path if file_path else "In-memory image"
+                logging.warning(
+                    f"Skipping OCR for {name} because its dimensions {(width, height)} exceed the skip threshold of {skip_threshold}"
+                )
+                return "[STATUS:SKIPPED]"
+
+            if max(width, height) > max_dimension:
+                ratio = max_dimension / max(width, height)
+                new_width = max(min(width, 400), int(width * ratio))
+                new_height = max(min(height, 400), int(height * ratio))
+                name = file_path if file_path else "In-memory image"
+                logging.info(
+                    f"Downscaling {name} from {(width, height)} to {(new_width, new_height)}"
+                )
+                image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+
         import numpy as np
 
         img_np = np.array(image)
@@ -59,7 +99,7 @@ class DocumentExtractor(Protocol):
 class TxtExtractor:
     """Extractor for plain text files."""
 
-    def extract(self, file_path: str) -> str:
+    def extract(self, file_path: str, settings=None) -> str:
         """Extract text from a .txt file."""
         with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
             return f.read()
@@ -68,7 +108,7 @@ class TxtExtractor:
 class DocxExtractor:
     """Extractor for Microsoft Word documents."""
 
-    def extract(self, file_path: str) -> str:
+    def extract(self, file_path: str, settings=None) -> str:
         """Extract text from a .docx file."""
         from docx import Document
 
@@ -79,7 +119,7 @@ class DocxExtractor:
 class CsvExtractor:
     """Extractor for comma-separated values files."""
 
-    def extract(self, file_path: str) -> str:
+    def extract(self, file_path: str, settings=None) -> str:
         """Extract text from a .csv file."""
         with open(file_path, newline="", encoding="utf-8", errors="ignore") as f:
             reader = csv.reader(f)
@@ -89,7 +129,7 @@ class CsvExtractor:
 class XlsxExtractor:
     """Extractor for Excel spreadsheets."""
 
-    def extract(self, file_path: str) -> str:
+    def extract(self, file_path: str, settings=None) -> str:
         """Extract text from an Excel file."""
         import pandas as pd
 
@@ -102,7 +142,7 @@ class XlsxExtractor:
 class PdfExtractor:
     """Extractor for PDF documents."""
 
-    def extract(self, file_path: str) -> str:
+    def extract(self, file_path: str, settings=None) -> str:
         """Extract text from a .pdf file."""
         text = ""
         try:
@@ -129,8 +169,8 @@ class PdfExtractor:
                         for img in page.images:
                             try:
                                 pil_image = Image.open(io.BytesIO(img.data))
-                                extracted = extract_text_from_image(pil_image)
-                                if extracted:
+                                extracted = extract_text_from_image(pil_image, settings=settings, file_path=file_path)
+                                if extracted and extracted != "[STATUS:SKIPPED]":
                                     visual_text += extracted + " "
                             except Exception as img_e:
                                 logging.error(
@@ -148,7 +188,7 @@ class PdfExtractor:
 class ImageExtractor:
     """Extractor for image files."""
 
-    def extract(self, file_path: str) -> str:
+    def extract(self, file_path: str, settings=None) -> str:
         """Extract literal text from an image using local character recognition."""
         try:
             from PIL import Image
@@ -165,7 +205,7 @@ class ImageExtractor:
             return "[STATUS:ERROR: Vision Model Offline]"
 
         try:
-            extracted_text = extract_text_from_image(image)
+            extracted_text = extract_text_from_image(image, settings=settings, file_path=file_path)
             return extracted_text
         except Exception as e:
             logging.error(f"Failed to process image {file_path}: {e}")

@@ -2,7 +2,6 @@
 
 from pathlib import Path
 
-from app.core.crypto import SessionCrypto
 from app.core.db_conn import get_db_connection
 from app.core.db_worker import DBWorker
 
@@ -15,8 +14,9 @@ class Database:
     def __init__(self, db_path: Path, worker: DBWorker):
         self.db_path = str(db_path)
         self.worker = worker
-        key_path = Path(db_path).parent / "secret.key"
-        self.crypto = SessionCrypto(key_path, Path(db_path))
+        from app.core.path_utils import resolve_db_crypto
+
+        self.crypto = resolve_db_crypto(db_path)
         self.init_db()
 
     def init_db(self):
@@ -185,15 +185,16 @@ class Database:
             conn = get_db_connection(self.db_path)
             with conn:
                 for item in updates:
-                    if item['type'] == 'verified_target':
-                        base_dir, file_hash, target_path = item['args']
+                    if item["type"] == "verified_target":
+                        base_dir, file_hash, target_path = item["args"]
                         conn.execute(
                             "UPDATE documents SET user_verified_target_path = ? WHERE base_dir = ? AND file_hash = ?",
                             (target_path, base_dir, file_hash),
                         )
-                    elif item['type'] == 'document_path':
-                        base_dir, old_filepath, new_filepath = item['args']
+                    elif item["type"] == "document_path":
+                        base_dir, old_filepath, new_filepath = item["args"]
                         import os
+
                         new_dir = os.path.dirname(new_filepath).replace("\\", "/")
                         conn.execute(
                             "UPDATE documents SET filepath = ?, user_verified_target_path = ? WHERE base_dir = ? AND filepath = ?",

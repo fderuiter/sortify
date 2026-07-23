@@ -37,6 +37,7 @@ class AutoSorterApp:
         self.observer = None
         self._debounce_task = None
         self._cancel_recalc_flag = False
+        self.loop = None
 
         self.contextual_rename = self.settings.CONTEXTUAL_RENAMING
         self.preserve_hierarchy = self.settings.PRESERVE_HIERARCHY
@@ -96,6 +97,11 @@ class AutoSorterApp:
                     value=self.preserve_hierarchy,
                     on_change=self.toggle_preserve_hierarchy,
                 ).props('aria-label="Preserve Hierarchy Switch"')
+                self.ai_naming_switch = ui.switch(
+                    "AI-Assisted Naming",
+                    value=getattr(self.settings, "AI_ASSISTED_NAMING", False),
+                    on_change=self.toggle_ai_assisted_naming,
+                ).props('aria-label="AI-Assisted Naming Switch"')
 
         with ui.row().classes("w-full h-96 mt-4 p-4"):
             self.tree_view = (
@@ -131,41 +137,51 @@ class AutoSorterApp:
     def check_abandoned_sessions(self):
         """Check for abandoned sessions on startup and prompt for recovery."""
         from app.core.session import scan_abandoned_sessions_async
-        
+
         async def run():
             abandoned = await scan_abandoned_sessions_async()
             if not abandoned:
                 return
-                
+
             session_info = abandoned[0]
-            
-            with ui.dialog() as dialog, ui.card().classes('w-full max-w-md'):
+
+            with ui.dialog() as dialog, ui.card().classes("w-full max-w-md"):
                 dialog.props("persistent")
                 ui.label("Interrupted Session Detected").classes("text-h6 text-red-500")
-                ui.label("An application crash occurred during a previous file sorting operation. Files may be partially moved.")
+                ui.label(
+                    "An application crash occurred during a previous file sorting operation. Files may be partially moved."
+                )
                 ui.label(f"Location: {session_info['base_dir']}")
-                
+
                 with ui.row().classes("w-full justify-end mt-4 gap-2"):
+
                     def on_resume():
                         dialog.close()
                         self.resume_session(session_info)
-                        
+
                     def on_revert():
                         dialog.close()
                         self.revert_session(session_info)
-                        
-                    ui.button("Revert", on_click=on_revert).props('color="negative" aria-label="Revert Button"')
-                    ui.button("Resume", on_click=on_resume).props('color="positive" aria-label="Resume Button"')
+
+                    ui.button("Revert", on_click=on_revert).props(
+                        'color="negative" aria-label="Revert Button"'
+                    )
+                    ui.button("Resume", on_click=on_resume).props(
+                        'color="positive" aria-label="Resume Button"'
+                    )
             dialog.open()
-            
+
         asyncio.create_task(run())
 
     def resume_session(self, session_info):
         """Resume an interrupted sorting operation."""
         import json
+
         self.base_dir = session_info["base_dir"]
-        self.app_session = AppSession(self.settings, self.base_dir, session_id=session_info["session_id"])
-        
+        self.app_session = AppSession(
+            self.settings, self.base_dir, session_id=session_info["session_id"]
+        )
+
         try:
             with open(session_info["plan_path"], "r") as f:
                 self.plan = json.load(f)
@@ -173,9 +189,9 @@ class AutoSorterApp:
             ui.notify(f"Could not load plan: {e}", type="negative")
             self.app_session.close()
             return
-            
+
         self.status_label.set_text("Resuming sorting operation...")
-        
+
         async def run():
             success = False
             try:
@@ -201,9 +217,11 @@ class AutoSorterApp:
     def revert_session(self, session_info):
         """Revert an interrupted sorting operation."""
         self.base_dir = session_info["base_dir"]
-        self.app_session = AppSession(self.settings, self.base_dir, session_id=session_info["session_id"])
+        self.app_session = AppSession(
+            self.settings, self.base_dir, session_id=session_info["session_id"]
+        )
         self.status_label.set_text("Reverting sorting operation...")
-        
+
         async def run():
             success = False
             try:
@@ -228,16 +246,10 @@ class AutoSorterApp:
 
     def check_setup_wizard(self):
         """Check if the setup wizard needs to be shown on startup."""
-        import sys
-
         from app.config import get_app_dir
+        from app.core.path_utils import get_base_path
 
-        if getattr(sys, "frozen", False):
-            base_path = os.path.dirname(sys.executable)
-        else:
-            base_path = os.path.dirname(
-                os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            )
+        base_path = get_base_path(__file__)
 
         local_model_dir = os.path.join(base_path, "offline_bundle", "model")
         user_model_dir = get_app_dir() / "model"
@@ -279,6 +291,11 @@ class AutoSorterApp:
 
     def start_analysis(self):
         """Start the background analysis of the selected directory."""
+        self.stop_watcher()
+        try:
+            self.loop = asyncio.get_running_loop()
+        except RuntimeError:
+            self.loop = None
         self.app_session = AppSession(self.settings, self.base_dir)
         self.status_label.set_text("Scanning directory...")
         self.cancel_btn.set_visibility(True)
@@ -295,6 +312,15 @@ class AutoSorterApp:
             )
             self.total_files = len(files)
             self.completed_files = 0
+
+            from app.core.verifier import is_ml_available
+            if not is_ml_available():
+                has_images_or_pdfs = any(
+                    os.path.splitext(f)[1].lower() in (".png", ".jpg", ".jpeg", ".pdf")
+                    for f in files
+                )
+                if has_images_or_pdfs:
+                    self.show_ml_warning_dialog("Visual text extraction (OCR)")
 
             from app.core.metadata import MetadataPass
 
@@ -347,6 +373,7 @@ class AutoSorterApp:
                 self.render_tree()
                 self.status_label.set_text("Analysis complete.")
                 self.execute_btn.enable()
+                self.start_watcher()
         except Exception as e:
             logger.error(f"Error scanning directory: {e}")
             self.status_label.set_text(f"Error: {e}")
@@ -373,6 +400,37 @@ class AutoSorterApp:
         """Toggle hierarchy preservation and rebuild the sorting plan."""
         self.settings.PRESERVE_HIERARCHY = e.value
         self._rebuild_plan_async()
+
+    def toggle_ai_assisted_naming(self, e):
+        """Toggle AI-assisted naming."""
+        from app.core.verifier import is_ml_available
+
+        if e.value and not is_ml_available():
+            self.show_ml_warning_dialog("AI-assisted naming")
+            self.ai_naming_switch.value = False
+            self.settings.AI_ASSISTED_NAMING = False
+        else:
+            self.settings.AI_ASSISTED_NAMING = e.value
+            self._rebuild_plan_async()
+
+    def show_ml_warning_dialog(self, feature_name: str):
+        """Show a clear, non-blocking warning dialogue explaining that the feature requires the full ML package."""
+        with ui.dialog() as dialog, ui.card().classes("w-96 p-6"):
+            ui.label("Feature Unavailable").classes("text-xl font-bold mb-4 text-red-500").props(
+                'aria-label="Warning Dialog Title"'
+            )
+            ui.label(
+                f"The '{feature_name}' feature requires heavy machine learning dependencies (like PyTorch and EasyOCR) "
+                "which are excluded from this lightweight build."
+            ).classes("mb-4").props('aria-label="Warning Description"')
+            ui.label(
+                "Please download the full ML installer bundle to access offline AI naming and visual text extraction."
+            ).classes("text-sm text-gray-500 mb-4").props('aria-label="Warning Suggestion"')
+            with ui.row().classes("w-full justify-end"):
+                ui.button("OK", on_click=dialog.close).classes("bg-blue-500 text-white").props(
+                    'aria-label="Warning OK Button"'
+                )
+        dialog.open()
 
     def _rebuild_plan_async(self):
         if not self.app_session or not self.base_dir:
@@ -458,6 +516,7 @@ class AutoSorterApp:
         self.execute_btn.disable()
         self.status_label.set_text("Executing sort...")
         self.progress_bar.set_value(0)
+        self.stop_watcher()
 
         async def run():
             success = False
@@ -472,14 +531,66 @@ class AutoSorterApp:
                 logger.error(f"Error executing sort: {e}")
                 ui.notify(f"Error: {e}", type="negative")
                 self.status_label.set_text("Sorting failed.")
+                
+                with ui.dialog() as error_dialog, ui.card().classes('w-full max-w-md'):
+                    ui.label("Move Transaction Error").classes("text-h6 text-red-500")
+                    ui.label(f"The organization process failed: {e}").classes("text-body1")
+                    ui.label("An automated rollback was successfully executed to restore files and index database.").classes("text-body2 text-gray-600")
+                    with ui.row().classes("w-full justify-end mt-4"):
+                        ui.button("Close", on_click=error_dialog.close).props('color="primary" aria-label="Close Error Dialog"')
+                error_dialog.open()
             finally:
                 self.plan = {}
                 self.render_tree()
+                self.execute_btn.enable()
+                self.start_watcher()
                 if success and self.app_session:
                     self.app_session.close()
                     self.app_session = None
 
         asyncio.create_task(run())
+
+    def start_watcher(self):
+        """Start the watchdog folder observer to monitor base_dir."""
+        if not self.base_dir or not os.path.exists(self.base_dir):
+            return
+        
+        self.stop_watcher()
+        
+        try:
+            self.loop = asyncio.get_running_loop()
+        except RuntimeError:
+            self.loop = None
+            
+        from watchdog.observers import Observer
+        from watchdog.events import FileSystemEventHandler
+
+        class FolderChangeHandler(FileSystemEventHandler):
+            def __init__(self, app):
+                self.app = app
+
+            def on_any_event(self, event):
+                if ".branches" in event.src_path or "autosorter.db" in event.src_path or "history.db" in event.src_path or "cache.db" in event.src_path or "plan.json" in event.src_path:
+                    return
+                if self.app.loop:
+                    self.app.loop.call_soon_threadsafe(self.app._rebuild_plan_async)
+
+        self.observer = Observer()
+        handler = FolderChangeHandler(self)
+        self.observer.schedule(handler, self.base_dir, recursive=True)
+        self.observer.start()
+        logger.info(f"Started folder observer for {self.base_dir}")
+
+    def stop_watcher(self):
+        """Stop the watchdog folder observer."""
+        if self.observer:
+            try:
+                self.observer.stop()
+                self.observer.join()
+            except Exception as e:
+                logger.error(f"Error stopping folder observer: {e}")
+            finally:
+                self.observer = None
 
     def get_tree_state(self):
         """Get a representation of the tree state."""
@@ -508,4 +619,4 @@ def run_app(settings, directory=None) -> None:
         if os.path.exists(directory):
             app_instance.base_dir = os.path.abspath(directory)
     app_instance.build_ui()
-    ui.run(title="Smart AutoSorter AI Pro", port=8080, reload=False, show=True)
+    ui.run(host="127.0.0.1", title="Smart AutoSorter AI Pro", port=8080, reload=False, show=True)
