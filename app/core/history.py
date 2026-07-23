@@ -214,7 +214,7 @@ class HistoryManager:
 
         from app.core.scanner import get_files_recursively
 
-        current_files = get_files_recursively(base_dir)
+        current_files = get_files_recursively(base_dir, include_hidden=True)
 
         inode_counts = {}
         current_inodes = {}
@@ -316,7 +316,7 @@ class HistoryManager:
 
                 from app.core.scanner import get_files_recursively
 
-                current_files = get_files_recursively(base_dir)
+                current_files = get_files_recursively(base_dir, include_hidden=True)
 
                 inode_counts = {}
                 current_inodes = {}

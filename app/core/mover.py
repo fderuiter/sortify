@@ -219,12 +219,15 @@ def _execute_moves_recursive(
 
 
 def execute_moves(
-    base_dir: str, plan: dict, db, history_manager, runtime_settings=None
+    base_dir: str, plan: dict, db, history_manager, runtime_settings=None, resume: bool = False
 ) -> dict:
     """Create directories and safely move files, tracking file-system errors."""
-    # Create a full snapshot of the directory tree and metadata before moving files
-    session_id = history_manager.create_snapshot(base_dir)
-    logging.info(f"Created snapshot session {session_id} for {base_dir}")
+    if not resume:
+        # Create a full snapshot of the directory tree and metadata before moving files
+        session_id = history_manager.create_snapshot(base_dir)
+        logging.info(f"Created snapshot session {session_id} for {base_dir}")
+    else:
+        logging.info(f"Resuming snapshot session for {base_dir}")
 
     # Build path mapping to track where targets move
     moves_list = VerificationEngine.get_moves(base_dir, plan)
