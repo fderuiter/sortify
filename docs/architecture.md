@@ -22,7 +22,7 @@ When a directory is selected, `build_corpus_generator` scans and extracts text f
 
 See [IncrementalAnalyzer][app.core.analyzer.IncrementalAnalyzer] for details on the core incremental ingestion logic.
 
-See [RecursiveNMFStrategy][app.core.analyzer_strategies.RecursiveNMFStrategy] for details on the hierarchical clustering approach used for deep folder structures.
+See [RecursiveKMeansStrategy][app.core.analyzer_strategies.RecursiveKMeansStrategy] for details on the hierarchical clustering approach used for deep folder structures.
 
 ### 3. Folder Naming Logic
 Folder names are generated dynamically using NMF components. The folder naming logic selects the top 2 terms for each topic and concatenates them with a hyphen (e.g., `Finance-Money`). Words are capitalized based on a TF-IDF vectorizer of the cluster documents.

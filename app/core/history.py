@@ -55,6 +55,12 @@ class HistoryManager:
                 )
             except Exception:
                 pass
+            try:
+                conn.execute(
+                    "ALTER TABLE snapshot_files ADD COLUMN file_hash TEXT"
+                )
+            except Exception:
+                pass
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS snapshot_cache (
                     session_id TEXT PRIMARY KEY,
@@ -98,6 +104,13 @@ class HistoryManager:
                     st = os.lstat(abs_path)
                     is_symlink = 1 if os.path.islink(abs_path) else 0
                     symlink_target = os.readlink(abs_path) if is_symlink else None
+                    file_hash = None
+                    if not is_symlink and st.st_size > 0:
+                        try:
+                            from app.core.extractor import get_file_hash
+                            file_hash = get_file_hash(abs_path)
+                        except Exception:
+                            pass
                     file_records.append(
                         (
                             session_id,
@@ -107,13 +120,14 @@ class HistoryManager:
                             st.st_mtime,
                             is_symlink,
                             symlink_target,
+                            file_hash,
                         )
                     )
                 except OSError:
                     continue
             if file_records:
                 conn.executemany(
-                    "INSERT INTO snapshot_files (session_id, original_rel_path, inode, size, mtime, is_symlink, symlink_target) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO snapshot_files (session_id, original_rel_path, inode, size, mtime, is_symlink, symlink_target, file_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                     file_records,
                 )
 
@@ -206,11 +220,18 @@ class HistoryManager:
                 raise ValueError("Session not found")
             base_dir = row[0]
 
-            cur = conn.execute(
-                "SELECT original_rel_path, inode, size, mtime, is_symlink, symlink_target FROM snapshot_files WHERE session_id = ?",
-                (session_id,),
-            )
-            snapshot_files = cur.fetchall()
+            try:
+                cur = conn.execute(
+                    "SELECT original_rel_path, inode, size, mtime, is_symlink, symlink_target, file_hash FROM snapshot_files WHERE session_id = ?",
+                    (session_id,),
+                )
+                snapshot_files = cur.fetchall()
+            except Exception:
+                cur = conn.execute(
+                    "SELECT original_rel_path, inode, size, mtime, is_symlink, symlink_target FROM snapshot_files WHERE session_id = ?",
+                    (session_id,),
+                )
+                snapshot_files = [(*row, None) for row in cur.fetchall()]
 
         from app.core.scanner import get_files_recursively
 
@@ -247,8 +268,16 @@ class HistoryManager:
                 active_files_by_sig[sig] = []
             active_files_by_sig[sig].append(abs_path)
 
+        def verify_hash(abs_path, expected_hash):
+            if not expected_hash:
+                return True
+            try:
+                from app.core.extractor import get_file_hash
+                return get_file_hash(abs_path) == expected_hash
+            except Exception:
+                return False
         missing = []
-        for rel_path, inode, size, mtime, is_symlink, symlink_target in snapshot_files:
+        for rel_path, inode, size, mtime, is_symlink, symlink_target, file_hash in snapshot_files:
             found = False
             target_sig = (size, mtime, is_symlink, symlink_target)
 
@@ -256,28 +285,33 @@ class HistoryManager:
                 abs_path, current_sig = current_inodes[inode]
                 if current_sig[2] == is_symlink:
                     if not is_symlink or current_sig[3] == symlink_target:
-                        del current_inodes[inode]
-                        found = True
+                        if verify_hash(abs_path, file_hash):
+                            del current_inodes[inode]
+                            found = True
 
             if not found:
                 # Fallback Step A
                 curr_sig = active_files_by_rel_path.get(rel_path)
                 if curr_sig == target_sig:
                     abs_path = os.path.join(base_dir, rel_path)
-                    if (
-                        curr_sig in active_files_by_sig
-                        and abs_path in active_files_by_sig[curr_sig]
-                    ):
-                        active_files_by_sig[curr_sig].remove(abs_path)
-                    found = True
-                else:
+                    if verify_hash(abs_path, file_hash):
+                        if (
+                            curr_sig in active_files_by_sig
+                            and abs_path in active_files_by_sig[curr_sig]
+                        ):
+                            active_files_by_sig[curr_sig].remove(abs_path)
+                        found = True
+                if not found:
                     # Fallback Step B
                     if (
                         target_sig in active_files_by_sig
                         and active_files_by_sig[target_sig]
                     ):
-                        active_files_by_sig[target_sig].pop(0)
-                        found = True
+                        for idx, cand_path in enumerate(active_files_by_sig[target_sig]):
+                            if verify_hash(cand_path, file_hash):
+                                active_files_by_sig[target_sig].pop(idx)
+                                found = True
+                                break
 
             if not found:
                 missing.append(rel_path)
@@ -308,11 +342,18 @@ class HistoryManager:
             safety_session_id = self._create_snapshot_internal(base_dir)
 
             with conn:
-                cur = conn.execute(
-                    "SELECT original_rel_path, inode, size, mtime, is_symlink, symlink_target FROM snapshot_files WHERE session_id = ?",
-                    (session_id,),
-                )
-                snapshot_files = cur.fetchall()
+                try:
+                    cur = conn.execute(
+                        "SELECT original_rel_path, inode, size, mtime, is_symlink, symlink_target, file_hash FROM snapshot_files WHERE session_id = ?",
+                        (session_id,),
+                    )
+                    snapshot_files = cur.fetchall()
+                except Exception:
+                    cur = conn.execute(
+                        "SELECT original_rel_path, inode, size, mtime, is_symlink, symlink_target FROM snapshot_files WHERE session_id = ?",
+                        (session_id,),
+                    )
+                    snapshot_files = [(*row, None) for row in cur.fetchall()]
 
                 from app.core.scanner import get_files_recursively
 
@@ -351,6 +392,14 @@ class HistoryManager:
 
                 # First compute all intended moves
                 moves = []
+                def verify_hash(abs_path, expected_hash):
+                    if not expected_hash:
+                        return True
+                    try:
+                        from app.core.extractor import get_file_hash
+                        return get_file_hash(abs_path) == expected_hash
+                    except Exception:
+                        return False
                 symlinks_to_restore = []
                 for (
                     rel_path,
@@ -359,6 +408,7 @@ class HistoryManager:
                     mtime,
                     is_symlink,
                     symlink_target,
+                    file_hash,
                 ) in snapshot_files:
                     target_abs = os.path.join(base_dir, rel_path)
                     current_abs = None
@@ -368,24 +418,34 @@ class HistoryManager:
                         abs_path, current_sig = current_inodes[inode]
                         if current_sig[2] == is_symlink:
                             if not is_symlink or current_sig[3] == symlink_target:
-                                current_abs = abs_path
-                                del current_inodes[inode]
+                                if verify_hash(abs_path, file_hash):
+                                    current_abs = abs_path
+                                    del current_inodes[inode]
 
                     if not current_abs:
                         curr_sig = active_files_by_rel_path.get(rel_path)
                         if curr_sig == target_sig:
-                            current_abs = target_abs
-                            if (
-                                curr_sig in active_files_by_sig
-                                and current_abs in active_files_by_sig[curr_sig]
-                            ):
-                                active_files_by_sig[curr_sig].remove(current_abs)
-                        else:
+                            candidate_abs = target_abs
+                            if verify_hash(candidate_abs, file_hash):
+                                current_abs = candidate_abs
+                                if (
+                                    curr_sig in active_files_by_sig
+                                    and current_abs in active_files_by_sig[curr_sig]
+                                ):
+                                    active_files_by_sig[curr_sig].remove(current_abs)
+                        if not current_abs:
                             if (
                                 target_sig in active_files_by_sig
                                 and active_files_by_sig[target_sig]
                             ):
-                                current_abs = active_files_by_sig[target_sig].pop(0)
+                                for idx, cand_path in enumerate(active_files_by_sig[target_sig]):
+                                    if verify_hash(cand_path, file_hash):
+                                        current_abs = active_files_by_sig[target_sig].pop(idx)
+                                        break
+                    
+                    if not current_abs:
+                        if not ignore_missing:
+                            raise ValueError(f"Rollback validation failed: file hash mismatch or missing for {rel_path}")
 
                     if current_abs:
                         if is_symlink:
