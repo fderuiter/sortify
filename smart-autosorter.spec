@@ -57,13 +57,13 @@ else:
     print("Warning: sqlcipher3 not found in active environment.")
 
 is_lite = os.environ.get("LITE_BUILD") == "1"
-excludes = []
+excludes = ['tkinter', 'tcl', 'tk', '_tkinter']
 if is_lite:
-    excludes = [
+    excludes.extend([
         'torch', 'torchvision', 'triton', 'nvidia', 'easyocr', 'scipy',
         'sklearn', 'scikit-learn', 'pandas', 'cv2', 'numpy', 'skimage',
         'scikit-image', 'sympy', 'lxml', 'mypy', 'matplotlib'
-    ]
+    ])
 
 a = Analysis(
     ['app/main.py'],
@@ -81,26 +81,25 @@ a = Analysis(
     noarchive=False,
 )
 
-# Filter out Tcl/Tk components on macOS to reduce bundle size
-if platform.system() == "Darwin":
-    def is_tcl_tk_asset(name):
-        name_lower = name.lower().replace('\\', '/')
-        parts = name_lower.split('/')
-        for p in parts:
-            if p in ('_tcl_data', '_tk_data', 'tcl', 'tk', 'tcl8', 'tk8', 'tcl9', 'tk9'):
-                return True
-            if p.startswith('libtcl') or p.startswith('libtk'):
-                return True
-            if p.startswith('tcl8') or p.startswith('tk8') or p.startswith('tcl9') or p.startswith('tk9'):
-                return True
-            if '_tkinter' in p:
-                return True
-            if p in ('tcl.framework', 'tk.framework'):
-                return True
-        return False
-    
-    a.binaries = [x for x in a.binaries if not is_tcl_tk_asset(x[0])]
-    a.datas = [x for x in a.datas if not is_tcl_tk_asset(x[0])]
+# Filter out Tcl/Tk components unconditionally to reduce bundle size on all platforms
+def is_tcl_tk_asset(name):
+    name_lower = name.lower().replace('\\', '/')
+    parts = name_lower.split('/')
+    for p in parts:
+        if p in ('_tcl_data', '_tk_data', 'tcl', 'tk', 'tcl8', 'tk8', 'tcl9', 'tk9'):
+            return True
+        if p.startswith('libtcl') or p.startswith('libtk'):
+            return True
+        if p.startswith('tcl8') or p.startswith('tk8') or p.startswith('tcl9') or p.startswith('tk9'):
+            return True
+        if '_tkinter' in p:
+            return True
+        if p in ('tcl.framework', 'tk.framework'):
+            return True
+    return False
+
+a.binaries = [x for x in a.binaries if not is_tcl_tk_asset(x[0])]
+a.datas = [x for x in a.datas if not is_tcl_tk_asset(x[0])]
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
