@@ -125,9 +125,109 @@ class AutoSorterApp:
 
         # Check wizard on startup
         ui.timer(0.1, self.check_setup_wizard, once=True)
+        ui.timer(0.2, self.check_abandoned_sessions, once=True)
 
         if self.base_dir:
-            ui.timer(0.2, self.start_analysis, once=True)
+            ui.timer(0.3, self.start_analysis, once=True)
+
+    def check_abandoned_sessions(self):
+        """Check for abandoned sessions on startup and prompt for recovery."""
+        from app.core.session import scan_abandoned_sessions_async
+        import json
+        
+        async def run():
+            abandoned = await scan_abandoned_sessions_async()
+            if not abandoned:
+                return
+                
+            session_info = abandoned[0]
+            
+            with ui.dialog() as dialog, ui.card().classes('w-full max-w-md'):
+                dialog.props("persistent")
+                ui.label("Interrupted Session Detected").classes("text-h6 text-red-500")
+                ui.label("An application crash occurred during a previous file sorting operation. Files may be partially moved.")
+                ui.label(f"Location: {session_info['base_dir']}")
+                
+                with ui.row().classes("w-full justify-end mt-4 gap-2"):
+                    def on_resume():
+                        dialog.close()
+                        self.resume_session(session_info)
+                        
+                    def on_revert():
+                        dialog.close()
+                        self.revert_session(session_info)
+                        
+                    ui.button("Revert", on_click=on_revert).props('color="negative" aria-label="Revert Button"')
+                    ui.button("Resume", on_click=on_resume).props('color="positive" aria-label="Resume Button"')
+            dialog.open()
+            
+        asyncio.create_task(run())
+
+    def resume_session(self, session_info):
+        """Resume an interrupted sorting operation."""
+        import json
+        self.base_dir = session_info["base_dir"]
+        self.app_session = AppSession(self.settings, self.base_dir, session_id=session_info["session_id"])
+        
+        try:
+            with open(session_info["plan_path"], "r") as f:
+                self.plan = json.load(f)
+        except Exception as e:
+            ui.notify(f"Could not load plan: {e}", type="negative")
+            self.app_session.close()
+            return
+            
+        self.status_label.set_text("Resuming sorting operation...")
+        
+        async def run():
+            success = False
+            try:
+                summary = await asyncio.to_thread(
+                    self.app_session.execute_moves, self.plan, True
+                )
+                ui.notify(f"Resumed and sorted successfully: {summary}")
+                self.status_label.set_text("Sorting complete.")
+                success = True
+            except Exception as e:
+                logger.error(f"Error resuming sort: {e}")
+                ui.notify(f"Error: {e}", type="negative")
+                self.status_label.set_text("Sorting failed.")
+            finally:
+                self.plan = {}
+                self.render_tree()
+                if success and self.app_session:
+                    self.app_session.close()
+                    self.app_session = None
+
+        asyncio.create_task(run())
+
+    def revert_session(self, session_info):
+        """Revert an interrupted sorting operation."""
+        self.base_dir = session_info["base_dir"]
+        self.app_session = AppSession(self.settings, self.base_dir, session_id=session_info["session_id"])
+        self.status_label.set_text("Reverting sorting operation...")
+        
+        async def run():
+            success = False
+            try:
+                await asyncio.to_thread(
+                    self.app_session.rollback, session_info["session_id"], True
+                )
+                ui.notify("Reverted successfully.")
+                self.status_label.set_text("Reversion complete.")
+                success = True
+            except Exception as e:
+                logger.error(f"Error reverting sort: {e}")
+                ui.notify(f"Error: {e}", type="negative")
+                self.status_label.set_text("Reversion failed.")
+            finally:
+                self.plan = {}
+                self.render_tree()
+                if success and self.app_session:
+                    self.app_session.close()
+                    self.app_session = None
+
+        asyncio.create_task(run())
 
     def check_setup_wizard(self):
         """Check if the setup wizard needs to be shown on startup."""
@@ -371,12 +471,14 @@ class AutoSorterApp:
         self.progress_bar.set_value(0)
 
         async def run():
+            success = False
             try:
                 summary = await asyncio.to_thread(
                     self.app_session.execute_moves, self.plan
                 )
                 ui.notify(f"Sorted successfully: {summary}")
                 self.status_label.set_text("Sorting complete.")
+                success = True
             except Exception as e:
                 logger.error(f"Error executing sort: {e}")
                 ui.notify(f"Error: {e}", type="negative")
@@ -384,6 +486,9 @@ class AutoSorterApp:
             finally:
                 self.plan = {}
                 self.render_tree()
+                if success and self.app_session:
+                    self.app_session.close()
+                    self.app_session = None
 
         asyncio.create_task(run())
 
