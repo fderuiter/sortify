@@ -144,7 +144,6 @@ def generate_admin_guide():
         f.write(f"{install_offline.__doc__}\n\n")
 
 
-
 def update_security_md():
     """Scan for network dependencies and update SECURITY.md."""
     import concurrent.futures

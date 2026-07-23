@@ -107,4 +107,3 @@ def test_history_env(tmp_path):
 
     yield base_dir, db, cache, history_manager, db_worker
     db_worker.stop()
-
