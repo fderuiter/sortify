@@ -126,6 +126,7 @@ class AppSession:
             db=self.db,
             chunk_size=50,
             cancel_check=cancel_check,
+            settings=self.settings,
         ):
             yield chunk
 
