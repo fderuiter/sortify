@@ -7,27 +7,10 @@ from typing import Protocol
 
 import pypdf
 
-_ocr_reader = None
-_ocr_reader_loaded = False
-
-
 def get_ocr_reader():
     """Lazily load and return the EasyOCR Reader instance configured for CPU execution."""
-    global _ocr_reader, _ocr_reader_loaded
-    if not _ocr_reader_loaded:
-        _ocr_reader_loaded = True
-        try:
-            import easyocr
-            import torch
-
-            # CPU optimization
-            torch.set_num_threads(2)
-            # Create reader on CPU to execute entirely locally
-            _ocr_reader = easyocr.Reader(["en"], gpu=False)
-        except Exception as e:
-            logging.error(f"Failed to load EasyOCR reader: {e}")
-            _ocr_reader = None
-    return _ocr_reader
+    from app.core.shared_registry import SharedModelRegistry
+    return SharedModelRegistry.get_instance().get_ocr_reader()
 
 
 def extract_text_from_image(image, settings=None, file_path=None) -> str:

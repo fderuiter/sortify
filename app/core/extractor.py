@@ -292,45 +292,46 @@ def build_corpus_generator(
         if chunk:
             yield chunk
     else:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-            item_to_future = {
-                item: executor.submit(
-                    process_item_worker, base_dir, item, progress_callback, db, settings
+        from app.core.shared_registry import SharedWorkerPool
+        pool = SharedWorkerPool.get_instance(max_workers=max_workers)
+        item_to_future = {
+            item: pool.submit(
+                process_item_worker, base_dir, item, progress_callback, db, settings
+            )
+            for item in items_to_sort
+        }
+        timeout = settings.VISUAL_TIMEOUT if settings else None
+        for item in items_to_sort:
+            if cancel_check and cancel_check():
+                # Attempt to cancel remaining futures
+                for fut in item_to_future.values():
+                    fut.cancel()
+                break
+            future = item_to_future[item]
+            try:
+                item_name, item_text, file_hash = future.result(timeout=timeout)
+            except concurrent.futures.TimeoutError:
+                logging.warning(
+                    f"Extraction of '{item}' timed out after {timeout} seconds."
                 )
-                for item in items_to_sort
+                item_name = item
+                item_text = "[STATUS:TIMEOUT]"
+                file_hash = ""
+                # Cancel the future if possible
+                future.cancel()
+
+            doc = db.get_document(base_dir, item_name)
+            if doc and doc["file_hash"] == file_hash:
+                continue
+
+            chunk[item_name] = {
+                "text": item_text
+                if item_text.startswith("[STATUS:")
+                else item_name + " " + item_text,
+                "hash": file_hash,
             }
-            timeout = settings.VISUAL_TIMEOUT if settings else None
-            for item in items_to_sort:
-                if cancel_check and cancel_check():
-                    # Attempt to cancel remaining futures
-                    for fut in item_to_future.values():
-                        fut.cancel()
-                    break
-                future = item_to_future[item]
-                try:
-                    item_name, item_text, file_hash = future.result(timeout=timeout)
-                except concurrent.futures.TimeoutError:
-                    logging.warning(
-                        f"Extraction of '{item}' timed out after {timeout} seconds."
-                    )
-                    item_name = item
-                    item_text = "[STATUS:TIMEOUT]"
-                    file_hash = ""
-                    # Cancel the future if possible
-                    future.cancel()
-
-                doc = db.get_document(base_dir, item_name)
-                if doc and doc["file_hash"] == file_hash:
-                    continue
-
-                chunk[item_name] = {
-                    "text": item_text
-                    if item_text.startswith("[STATUS:")
-                    else item_name + " " + item_text,
-                    "hash": file_hash,
-                }
-                if len(chunk) >= chunk_size:
-                    yield chunk
-                    chunk = {}
-            if chunk:
+            if len(chunk) >= chunk_size:
                 yield chunk
+                chunk = {}
+        if chunk:
+            yield chunk

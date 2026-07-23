@@ -290,43 +290,16 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
             )
             return
 
+        from app.core.shared_registry import SharedModelRegistry
+        registry = SharedModelRegistry.get_instance()
         try:
-            with block_external_network():
-                import torch
-                from transformers import (
-                    AutoModelForCausalLM,
-                    AutoModelForSeq2SeqLM,
-                    AutoTokenizer,
-                    pipeline,
-                )
-
-                torch.set_num_threads(2)
-
-                tokenizer = AutoTokenizer.from_pretrained(
-                    self.model_path, local_files_only=True
-                )
-                try:
-                    model = AutoModelForSeq2SeqLM.from_pretrained(
-                        self.model_path, local_files_only=True
-                    )
-                    self.task = "text2text-generation"
-                except Exception:
-                    model = AutoModelForCausalLM.from_pretrained(
-                        self.model_path, local_files_only=True
-                    )
-                    self.task = "text-generation"
-
-                quantized_model = torch.quantization.quantize_dynamic(
-                    model, {torch.nn.Linear}, dtype=torch.qint8
-                )
-
-                self.generator = pipeline(
-                    self.task, model=quantized_model, tokenizer=tokenizer, device=-1
-                )
-
+            generator, task, tokenizer = registry.get_generative_model(self.model_path)
+            self.generator = generator
+            self.task = task
+            if tokenizer:
                 self.token_biases = self._build_logit_biases(tokenizer)
         except Exception as e:
-            logging.error(f"Failed to load generative model: {e}")
+            logging.error(f"Failed to load generative model via shared registry: {e}")
             self.generator = None
 
     def _should_bias_token(self, token_str: str) -> bool:
