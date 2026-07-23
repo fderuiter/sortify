@@ -53,4 +53,10 @@ repos:
         language: system
         files: '^\.github/AGENTS/.*$'
         pass_filenames: false
+      - id: validate-architecture
+        name: Validate Architectural Constraints
+        entry: python scripts/validate_architecture.py
+        language: system
+        files: '\.py$'
+        pass_filenames: false
 

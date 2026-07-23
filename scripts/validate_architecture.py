@@ -32,6 +32,20 @@ def main():
             class Visitor(ast.NodeVisitor):
                 def __init__(self):
                     self.async_context = []
+                    self.aliases = {}
+
+                def visit_Import(self, node):
+                    for alias in node.names:
+                        local_name = alias.asname if alias.asname else alias.name
+                        self.aliases[local_name] = (alias.name, None)
+                    self.generic_visit(node)
+
+                def visit_ImportFrom(self, node):
+                    module = node.module if node.module else ""
+                    for alias in node.names:
+                        local_name = alias.asname if alias.asname else alias.name
+                        self.aliases[local_name] = (module, alias.name)
+                    self.generic_visit(node)
 
                 def visit_AsyncFunctionDef(self, node):
                     self.async_context.append(node.name)
@@ -74,31 +88,54 @@ def main():
 
                     # Rule B: Synchronous blocking operations in UI-bound logic
                     if is_ui_file:
-                        # Check for time.sleep
-                        if (
-                            isinstance(node.func, ast.Attribute)
-                            and node.func.attr == "sleep"
-                            and isinstance(node.func.value, ast.Name)
-                            and node.func.value.id == "time"
+                        mod = None
+                        name = None
+                        if isinstance(node.func, ast.Attribute) and isinstance(
+                            node.func.value, ast.Name
                         ):
+                            obj = node.func.value.id
+                            attr = node.func.attr
+                            if obj in self.aliases:
+                                alias_mod, alias_name = self.aliases[obj]
+                                mod = alias_mod
+                                name = (
+                                    attr
+                                    if alias_name is None
+                                    else f"{alias_name}.{attr}"
+                                )
+                            else:
+                                mod = obj
+                                name = attr
+                        elif isinstance(node.func, ast.Name):
+                            func_name = node.func.id
+                            if func_name in self.aliases:
+                                alias_mod, alias_name = self.aliases[func_name]
+                                mod = alias_mod
+                                name = alias_name
+                            else:
+                                mod = None
+                                name = func_name
+
+                        # Check for time.sleep
+                        if mod == "time" and name == "sleep":
                             errors.append(
                                 f"{filepath}:{node.lineno}: Synchronous time.sleep() inside async function '{self.async_context[-1]}'"
                             )
 
                         # Check for requests.get, requests.post, etc.
-                        if (
-                            isinstance(node.func, ast.Attribute)
-                            and node.func.attr
-                            in ("get", "post", "put", "delete", "patch")
-                            and isinstance(node.func.value, ast.Name)
-                            and node.func.value.id == "requests"
+                        if mod == "requests" and name in (
+                            "get",
+                            "post",
+                            "put",
+                            "delete",
+                            "patch",
                         ):
                             errors.append(
-                                f"{filepath}:{node.lineno}: Synchronous requests.{node.func.attr}() inside async function '{self.async_context[-1]}'"
+                                f"{filepath}:{node.lineno}: Synchronous requests.{name}() inside async function '{self.async_context[-1]}'"
                             )
 
                         # Check for open()
-                        if isinstance(node.func, ast.Name) and node.func.id == "open":
+                        if name == "open" and (mod is None or mod == "builtins"):
                             errors.append(
                                 f"{filepath}:{node.lineno}: Synchronous open() inside async function '{self.async_context[-1]}'"
                             )
