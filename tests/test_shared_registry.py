@@ -135,6 +135,7 @@ def test_socket_sandbox_blocking_of_external_and_allow_localhost():
         apply_global_socket_sandbox,
         safe_connect,
         safe_connect_ex,
+        block_external_network,
     )
 
     apply_global_socket_sandbox()
@@ -146,23 +147,42 @@ def test_socket_sandbox_blocking_of_external_and_allow_localhost():
     with pytest.raises(
         PermissionError, match="External network connections are blocked"
     ):
-        safe_connect(mock_socket, ("8.8.8.8", 80))
+        with block_external_network():
+            safe_connect(mock_socket, ("8.8.8.8", 80))
 
     with pytest.raises(
         PermissionError, match="External network connections are blocked"
     ):
-        safe_connect_ex(mock_socket, ("8.8.8.8", 80))
+        with block_external_network():
+            safe_connect_ex(mock_socket, ("8.8.8.8", 80))
 
     # Try connecting to localhost
     with (
         patch("app.core.shared_registry._original_connect") as mock_connect,
         patch("app.core.shared_registry._original_connect_ex") as mock_connect_ex,
     ):
-        safe_connect(mock_socket, ("127.0.0.1", 8080))
+        with block_external_network():
+            safe_connect(mock_socket, ("127.0.0.1", 8080))
         mock_connect.assert_called_once_with(mock_socket, ("127.0.0.1", 8080))
 
-        safe_connect_ex(mock_socket, ("localhost", 8080))
+        with block_external_network():
+            safe_connect_ex(mock_socket, ("localhost", 8080))
         mock_connect_ex.assert_called_once_with(mock_socket, ("localhost", 8080))
+
+
+def test_socket_sandbox_inactive_allows_external_connections():
+    """Verify that when block_external_network is not active, external connections are allowed."""
+    from app.core.shared_registry import safe_connect, safe_connect_ex
+    mock_socket = MagicMock()
+    with (
+        patch("app.core.shared_registry._original_connect") as mock_connect,
+        patch("app.core.shared_registry._original_connect_ex") as mock_connect_ex,
+    ):
+        safe_connect(mock_socket, ("8.8.8.8", 80))
+        mock_connect.assert_called_once_with(mock_socket, ("8.8.8.8", 80))
+
+        safe_connect_ex(mock_socket, ("8.8.8.8", 80))
+        mock_connect_ex.assert_called_once_with(mock_socket, ("8.8.8.8", 80))
 
 
 def test_check_ai_status_corrupt_or_missing(tmp_path, monkeypatch):

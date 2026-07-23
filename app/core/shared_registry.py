@@ -68,25 +68,27 @@ def _is_local_address(host: str) -> bool:
 
 def safe_connect(self, address):
     """Safely connect socket, raising PermissionError for external connections if sandboxed."""
-    if isinstance(address, tuple) and len(address) > 0:
-        host = str(address[0])
-        if not _is_local_address(host):
-            reason = getattr(_thread_local, "reason", "worker execution")
-            raise PermissionError(
-                f"External network connections are blocked during {reason}: {host}"
-            )
+    if getattr(_thread_local, "sandboxed", False):
+        if isinstance(address, tuple) and len(address) > 0:
+            host = str(address[0])
+            if not _is_local_address(host):
+                reason = getattr(_thread_local, "reason", "worker execution")
+                raise PermissionError(
+                    f"External network connections are blocked during {reason}: {host}"
+                )
     return _original_connect(self, address)
 
 
 def safe_connect_ex(self, address):
     """Safely connect_ex socket, raising PermissionError for external connections if sandboxed."""
-    if isinstance(address, tuple) and len(address) > 0:
-        host = str(address[0])
-        if not _is_local_address(host):
-            reason = getattr(_thread_local, "reason", "worker execution")
-            raise PermissionError(
-                f"External network connections are blocked during {reason}: {host}"
-            )
+    if getattr(_thread_local, "sandboxed", False):
+        if isinstance(address, tuple) and len(address) > 0:
+            host = str(address[0])
+            if not _is_local_address(host):
+                reason = getattr(_thread_local, "reason", "worker execution")
+                raise PermissionError(
+                    f"External network connections are blocked during {reason}: {host}"
+                )
     return _original_connect_ex(self, address)
 
 
