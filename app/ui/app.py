@@ -93,6 +93,13 @@ class AutoSorterApp:
             )
             self.warnings_label.set_visibility(False)
 
+            self.ai_warnings_label = (
+                ui.label("")
+                .classes("text-amber-600 mt-2 font-bold text-center bg-amber-50 border border-amber-200 p-2 rounded w-1/2")
+                .props('aria-label="AI Offline Warning Label"')
+            )
+            self.ai_warnings_label.set_visibility(False)
+
             with ui.row().classes("mt-4 items-center"):
                 ui.switch(
                     "Enable Contextual Renaming",
@@ -135,6 +142,7 @@ class AutoSorterApp:
                 )
 
         # Check wizard on startup
+        ui.timer(0.05, self.update_ai_warning, once=True)
         ui.timer(0.1, self.check_setup_wizard, once=True)
         ui.timer(0.2, self.check_abandoned_sessions, once=True)
 
@@ -419,6 +427,7 @@ class AutoSorterApp:
             self.settings.AI_ASSISTED_NAMING = False
         else:
             self.settings.AI_ASSISTED_NAMING = e.value
+            self.update_ai_warning()
             self._rebuild_plan_async()
 
     def show_ml_warning_dialog(self, feature_name: str):
@@ -622,6 +631,7 @@ class AutoSorterApp:
 
     def verify_current_plan(self):
         """Run path integrity verification on the current plan and update warnings."""
+        self.update_ai_warning()
         if not self.base_dir or not self.plan:
             if hasattr(self, "warnings_label"):
                 self.warnings_label.set_text("")
@@ -667,6 +677,19 @@ class AutoSorterApp:
             if hasattr(self, "warnings_label"):
                 self.warnings_label.set_text("")
                 self.warnings_label.set_visibility(False)
+
+    def update_ai_warning(self):
+        """Update the UI with any AI status warnings."""
+        if not hasattr(self, "ai_warnings_label"):
+            return
+        from app.core.verifier import check_ai_status
+        is_healthy, warn_msg = check_ai_status(self.settings)
+        if not is_healthy:
+            self.ai_warnings_label.set_text(warn_msg or "AI models are corrupt or missing.")
+            self.ai_warnings_label.set_visibility(True)
+        else:
+            self.ai_warnings_label.set_text("")
+            self.ai_warnings_label.set_visibility(False)
 
 
 def run_app(settings, directory=None) -> None:

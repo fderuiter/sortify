@@ -70,6 +70,23 @@ def show_settings(parent_app, settings):
                 ui.label("AI processing is fully offline.").classes(
                     "text-gray-500 mb-2"
                 )
+
+                # Status Warning section
+                from app.core.verifier import check_ai_status
+                is_healthy, warn_msg = check_ai_status(settings)
+                if not is_healthy:
+                    with ui.card().classes("bg-amber-50 border-amber-200 border p-4 mb-4"):
+                        with ui.row().classes("items-center gap-2 text-amber-800"):
+                            ui.icon("warning", size="sm")
+                            ui.label("AI System Warning").classes("font-bold")
+                        ui.label(warn_msg or "AI models are corrupt or missing.").classes("text-amber-900 text-sm mt-1").props('aria-label="AI Offline Warning Label"')
+                else:
+                    with ui.card().classes("bg-green-50 border-green-200 border p-4 mb-4"):
+                        with ui.row().classes("items-center gap-2 text-green-800"):
+                            ui.icon("check_circle", size="sm")
+                            ui.label("AI System Status").classes("font-bold")
+                        ui.label("AI models are loaded and healthy (Offline mode).").classes("text-green-900 text-sm mt-1")
+
                 ui.button(
                     "Reset Model Cache", on_click=lambda: ui.notify("Cache cleared.")
                 ).props('aria-label="Reset Model Cache Button"')

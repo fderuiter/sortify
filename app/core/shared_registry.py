@@ -12,25 +12,49 @@ import os
 import socket
 from contextlib import contextmanager
 
+_original_connect = socket.socket.connect
+_original_connect_ex = socket.socket.connect_ex
+
+def safe_connect(self, address):
+    if isinstance(address, tuple):
+        host = address[0]
+        if host not in ("127.0.0.1", "localhost", "::1", "0.0.0.0"):
+            raise PermissionError(
+                f"External network connections are blocked during worker execution: {host}"
+            )
+    return _original_connect(self, address)
+
+def safe_connect_ex(self, address):
+    if isinstance(address, tuple):
+        host = address[0]
+        if host not in ("127.0.0.1", "localhost", "::1", "0.0.0.0"):
+            raise PermissionError(
+                f"External network connections are blocked during worker execution: {host}"
+            )
+    return _original_connect_ex(self, address)
+
+def apply_global_socket_sandbox():
+    """Apply socket-level blocking of non-localhost outgoing network requests globally."""
+    global _original_connect, _original_connect_ex
+    if socket.socket.connect is not safe_connect:
+        _original_connect = socket.socket.connect
+        socket.socket.connect = safe_connect
+    if socket.socket.connect_ex is not safe_connect_ex:
+        _original_connect_ex = socket.socket.connect_ex
+        socket.socket.connect_ex = safe_connect_ex
+
+# Enforce immediately on import
+apply_global_socket_sandbox()
+
+
 @contextmanager
 def block_external_network():
     """Block outgoing non-localhost network traffic."""
-    original_connect = socket.socket.connect
-
-    def safe_connect(self, address):
-        if isinstance(address, tuple):
-            host = address[0]
-            if host not in ("127.0.0.1", "localhost", "::1", "0.0.0.0"):
-                raise PermissionError(
-                    f"External network connections are blocked during worker execution: {host}"
-                )
-        return original_connect(self, address)
-
-    socket.socket.connect = safe_connect
+    apply_global_socket_sandbox()
     try:
         yield
     finally:
-        socket.socket.connect = original_connect
+        pass
 
 
 class SharedModelRegistry:
@@ -45,6 +69,7 @@ class SharedModelRegistry:
         return cls._instance
 
     def __init__(self):
+        apply_global_socket_sandbox()
         self._models = {}
         self._expected_hashes = {}
 
@@ -174,9 +199,11 @@ class SharedWorkerPool:
         return cls._instance
 
     def __init__(self, max_workers: int):
+        apply_global_socket_sandbox()
         self._executor = concurrent.futures.ThreadPoolExecutor(
             max_workers=max_workers,
-            thread_name_prefix="GlobalSharedWorker"
+            thread_name_prefix="GlobalSharedWorker",
+            initializer=apply_global_socket_sandbox
         )
         self.max_workers = max_workers
 

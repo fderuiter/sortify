@@ -115,3 +115,51 @@ def test_session_db_and_cache_isolation():
 
     assert fut1.result() == ("session_1_db", "session_1_settings")
     assert fut2.result() == ("session_2_db", "session_2_settings")
+
+
+def test_socket_sandbox_blocking_of_external_and_allow_localhost():
+    """Verify that socket sandboxing blocks external domains while allowing localhost/loopback."""
+    from app.core.shared_registry import apply_global_socket_sandbox, safe_connect, safe_connect_ex
+    apply_global_socket_sandbox()
+
+    # Create a mock socket
+    mock_socket = MagicMock()
+
+    # Try connecting to external domain
+    with pytest.raises(PermissionError, match="External network connections are blocked"):
+        safe_connect(mock_socket, ("8.8.8.8", 80))
+
+    with pytest.raises(PermissionError, match="External network connections are blocked"):
+        safe_connect_ex(mock_socket, ("8.8.8.8", 80))
+
+    # Try connecting to localhost
+    with patch("app.core.shared_registry._original_connect") as mock_connect, \
+         patch("app.core.shared_registry._original_connect_ex") as mock_connect_ex:
+        safe_connect(mock_socket, ("127.0.0.1", 8080))
+        mock_connect.assert_called_once_with(mock_socket, ("127.0.0.1", 8080))
+
+        safe_connect_ex(mock_socket, ("localhost", 8080))
+        mock_connect_ex.assert_called_once_with(mock_socket, ("localhost", 8080))
+
+
+def test_check_ai_status_corrupt_or_missing(tmp_path, monkeypatch):
+    """Verify check_ai_status correctly warns when models are corrupt/missing."""
+    from app.core.verifier import check_ai_status
+    from app.config import AppSettings
+
+    settings = AppSettings()
+    settings.AI_ASSISTED_NAMING = True
+
+    # Case 1: missing/uninstalled dependencies -> mock is_ml_available returning False
+    with patch("app.core.verifier.is_ml_available", return_value=False):
+        is_healthy, warn_msg = check_ai_status(settings)
+        assert not is_healthy
+        assert "dependencies" in warn_msg
+
+    # Case 2: ML is available but files are missing
+    with patch("app.core.verifier.is_ml_available", return_value=True), \
+         patch("os.path.exists", return_value=False):
+        is_healthy, warn_msg = check_ai_status(settings)
+        assert not is_healthy
+        assert "weights are missing or corrupt" in warn_msg
+

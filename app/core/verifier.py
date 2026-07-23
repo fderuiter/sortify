@@ -20,6 +20,57 @@ def is_ml_available() -> bool:
         return False
 
 
+def check_ai_status(settings) -> tuple[bool, str | None]:
+    """Check AI models status.
+    Returns (is_healthy, warning_message).
+    """
+    if not is_ml_available():
+        return False, "Machine learning dependencies (PyTorch/EasyOCR) are not installed. Running in fallback state."
+
+    from app.core.path_utils import get_base_path
+    from app.config import get_app_dir
+    try:
+        base_path = get_base_path(__file__)
+    except Exception:
+        base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+    local_bundle_path = os.path.join(base_path, "offline_bundle", "model")
+    try:
+        user_bundle_path = str(get_app_dir() / "model")
+    except Exception:
+        user_bundle_path = os.path.expanduser("~/.smart-autosorter/model")
+
+    model_dir = None
+    if os.path.exists(local_bundle_path):
+        model_dir = local_bundle_path
+    elif os.path.exists(user_bundle_path):
+        model_dir = user_bundle_path
+
+    easyocr_path = os.environ.get("EASYOCR_MODULE_PATH")
+    if easyocr_path:
+        easyocr_dir = os.path.join(easyocr_path, "model")
+    else:
+        easyocr_dir = os.path.expanduser("~/.EasyOCR/model")
+    craft_model = os.path.join(easyocr_dir, "craft_mlt_25k.pth")
+    lang_model = os.path.join(easyocr_dir, "english_g2.pth")
+
+    if getattr(settings, "AI_ASSISTED_NAMING", False):
+        if not model_dir or not os.path.exists(os.path.join(model_dir, "config.json")):
+            return False, "AI generative model weights are missing or corrupt. Running in fallback rule-based sorting state."
+        
+        from app.core.shared_registry import SharedModelRegistry
+        registry = SharedModelRegistry.get_instance()
+        try:
+            registry.verify_integrity("generative_naming", model_dir)
+        except Exception as e:
+            return False, f"AI generative model integrity check failed: {str(e)}. Running in fallback rule-based sorting state."
+
+    if not os.path.exists(craft_model) or not os.path.exists(lang_model):
+        return False, "OCR vision model files are corrupt or missing. Visual text extraction is unavailable."
+
+    return True, None
+
+
 class VerificationEngine:
     """Engine to verify file operations before execution."""
 
