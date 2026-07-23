@@ -347,30 +347,30 @@ class AutoSorterApp:
             bypassed_set = set(bypassed_files)
             items_to_sort = [f for f in files if f not in bypassed_set]
 
-            generator = self.app_session.process_items(
+            async for item, text, file_hash, was_skipped in self.app_session.process_items_async(
                 items_to_sort,
-                None,
                 lambda: getattr(self, "_cancel_analysis_flag", False),
-            )
-
-            def get_next_chunk():
-                try:
-                    return next(generator)
-                except StopIteration:
-                    return None
-
-            while True:
+            ):
                 if self._cancel_analysis_flag:
                     break
 
-                chunk = await asyncio.to_thread(get_next_chunk)
-                if chunk is None:
-                    break
+                if not was_skipped:
+                    chunk = {item: {"text": text, "hash": file_hash}}
+                    await asyncio.to_thread(self.app_session.partial_fit, chunk)
 
-                await asyncio.to_thread(self.app_session.partial_fit, chunk)
-                self.completed_files += len(chunk)
+                self.completed_files += 1
                 if self.total_files > 0:
                     self.progress_bar.set_value(self.completed_files / self.total_files)
+
+                if was_skipped:
+                    msg = f"Processed {self.completed_files}/{self.total_files} files (skipped unchanged: {item})"
+                    self.status_label.set_text(msg)
+                    logger.info(msg)
+                else:
+                    msg = f"Processed {self.completed_files}/{self.total_files} files (extracted: {item})"
+                    self.status_label.set_text(msg)
+                    logger.info(msg)
+
                 await asyncio.sleep(0.01)
 
             if not self._cancel_analysis_flag:

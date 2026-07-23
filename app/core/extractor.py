@@ -160,6 +160,65 @@ def process_item_worker(
     return item, "", ""
 
 
+async def build_corpus_generator_async(
+    base_dir: str,
+    items_to_sort: list,
+    db,
+    cancel_check: Callable | None = None,
+    settings=None,
+):
+    """Asynchronously map every item to its text payload sequentially and yield file-by-file.
+
+    Parameters
+    ----------
+    base_dir : str
+        The base directory containing the items.
+    items_to_sort : list
+        A list of item names to process.
+    db : Any
+        Database connection or instance used for document lookups.
+    cancel_check : Callable | None
+        A callback to check if the process should be cancelled.
+    settings : Any | None
+        Optional settings object.
+
+    Yields
+    ------
+    tuple of (str, str, str, bool)
+        (item_name, item_text, file_hash, was_skipped)
+    """
+    import asyncio
+
+    if settings is None:
+        from app.config import AppSettings
+        try:
+            settings = AppSettings()
+        except Exception:
+            pass
+
+    items_to_sort = sorted(items_to_sort)
+    for item in items_to_sort:
+        if cancel_check and cancel_check():
+            break
+
+        item_path = os.path.join(base_dir, item)
+        
+        # 1. Run file hashing in background thread to protect event loop
+        file_hash = await asyncio.to_thread(get_file_hash, item_path)
+        
+        # 2. Check cache database
+        doc = await asyncio.to_thread(db.get_document, base_dir, item)
+        if doc and doc["file_hash"] == file_hash:
+            # Skip extraction and yield immediately
+            yield item, doc["extracted_text"], file_hash, True
+            continue
+
+        # 3. Process/extract file content in background thread
+        text = await asyncio.to_thread(extract_file_text, item_path, settings=settings)
+        
+        yield item, text, file_hash, False
+
+
 def build_corpus_generator(
     base_dir: str,
     items_to_sort: list,
