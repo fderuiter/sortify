@@ -37,8 +37,6 @@ def main():
             "pip",
             "compile",
             "pyproject.toml",
-            "--group",
-            "dev",
             "--extra-index-url",
             "https://download.pytorch.org/whl/cpu",
             "-o",

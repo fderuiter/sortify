@@ -51,14 +51,6 @@ if sqlcipher_spec and sqlcipher_spec.submodule_search_locations:
 else:
     print("Warning: sqlcipher3 not found in active environment.")
 
-# Bundle platform-specific Tcl/Tk dylibs on macOS
-if platform.system() == "Darwin":
-    python_lib_dir = os.path.join(sys.base_prefix, 'lib')
-    if os.path.exists(os.path.join(python_lib_dir, 'libtcl9.0.dylib')):
-        binaries.append((os.path.join(python_lib_dir, 'libtcl9.0.dylib'), '.'))
-    if os.path.exists(os.path.join(python_lib_dir, 'libtcl9tk9.0.dylib')):
-        binaries.append((os.path.join(python_lib_dir, 'libtcl9tk9.0.dylib'), '.'))
-
 a = Analysis(
     ['app/main.py'],
     pathex=[],
@@ -74,6 +66,27 @@ a = Analysis(
     cipher=block_cipher,
     noarchive=False,
 )
+
+# Filter out Tcl/Tk components on macOS to reduce bundle size
+if platform.system() == "Darwin":
+    def is_tcl_tk_asset(name):
+        name_lower = name.lower().replace('\\', '/')
+        parts = name_lower.split('/')
+        for p in parts:
+            if p in ('_tcl_data', '_tk_data', 'tcl', 'tk', 'tcl8', 'tk8', 'tcl9', 'tk9'):
+                return True
+            if p.startswith('libtcl') or p.startswith('libtk'):
+                return True
+            if p.startswith('tcl8') or p.startswith('tk8') or p.startswith('tcl9') or p.startswith('tk9'):
+                return True
+            if '_tkinter' in p:
+                return True
+            if p in ('tcl.framework', 'tk.framework'):
+                return True
+        return False
+    
+    a.binaries = [x for x in a.binaries if not is_tcl_tk_asset(x[0])]
+    a.datas = [x for x in a.datas if not is_tcl_tk_asset(x[0])]
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
