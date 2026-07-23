@@ -63,7 +63,9 @@ def test_shared_model_registry_integrity_check(
     # Case 2: Register expected hash, mismatch -> should raise ValueError and prevent execution
     SharedModelRegistry._instance = None
     registry = SharedModelRegistry.get_instance()
-    registry.register_expected_hashes("generative_naming", {"config.json": "wrong_hash"})
+    registry.register_expected_hashes(
+        "generative_naming", {"config.json": "wrong_hash"}
+    )
 
     with pytest.raises(ValueError, match="Integrity check failed"):
         registry.get_generative_model(str(model_dir))
@@ -87,8 +89,20 @@ def test_shared_worker_pool_offline_enforcement():
         s.connect(("8.8.8.8", 53))
 
     future = pool.submit(task_trying_to_connect)
-    with pytest.raises(PermissionError, match="External network connections are blocked"):
+    with pytest.raises(
+        PermissionError, match="External network connections are blocked"
+    ):
         future.result()
+
+    def task_trying_to_connect_ex():
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.connect_ex(("8.8.8.8", 53))
+
+    future_ex = pool.submit(task_trying_to_connect_ex)
+    with pytest.raises(
+        PermissionError, match="External network connections are blocked"
+    ):
+        future_ex.result()
 
 
 def test_session_db_and_cache_isolation():
@@ -122,21 +136,28 @@ def test_socket_sandbox_blocking_of_external_and_allow_localhost():
         safe_connect,
         safe_connect_ex,
     )
+
     apply_global_socket_sandbox()
 
     # Create a mock socket
     mock_socket = MagicMock()
 
     # Try connecting to external domain
-    with pytest.raises(PermissionError, match="External network connections are blocked"):
+    with pytest.raises(
+        PermissionError, match="External network connections are blocked"
+    ):
         safe_connect(mock_socket, ("8.8.8.8", 80))
 
-    with pytest.raises(PermissionError, match="External network connections are blocked"):
+    with pytest.raises(
+        PermissionError, match="External network connections are blocked"
+    ):
         safe_connect_ex(mock_socket, ("8.8.8.8", 80))
 
     # Try connecting to localhost
-    with patch("app.core.shared_registry._original_connect") as mock_connect, \
-         patch("app.core.shared_registry._original_connect_ex") as mock_connect_ex:
+    with (
+        patch("app.core.shared_registry._original_connect") as mock_connect,
+        patch("app.core.shared_registry._original_connect_ex") as mock_connect_ex,
+    ):
         safe_connect(mock_socket, ("127.0.0.1", 8080))
         mock_connect.assert_called_once_with(mock_socket, ("127.0.0.1", 8080))
 
@@ -159,9 +180,10 @@ def test_check_ai_status_corrupt_or_missing(tmp_path, monkeypatch):
         assert "dependencies" in warn_msg
 
     # Case 2: ML is available but files are missing
-    with patch("app.core.verifier.is_ml_available", return_value=True), \
-         patch("os.path.exists", return_value=False):
+    with (
+        patch("app.core.verifier.is_ml_available", return_value=True),
+        patch("os.path.exists", return_value=False),
+    ):
         is_healthy, warn_msg = check_ai_status(settings)
         assert not is_healthy
         assert "weights are missing or corrupt" in warn_msg
-

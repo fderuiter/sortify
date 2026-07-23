@@ -95,7 +95,9 @@ class AutoSorterApp:
 
             self.ai_warnings_label = (
                 ui.label("")
-                .classes("text-amber-600 mt-2 font-bold text-center bg-amber-50 border border-amber-200 p-2 rounded w-1/2")
+                .classes(
+                    "text-amber-600 mt-2 font-bold text-center bg-amber-50 border border-amber-200 p-2 rounded w-1/2"
+                )
                 .props('aria-label="AI Offline Warning Label"')
             )
             self.ai_warnings_label.set_visibility(False)
@@ -329,6 +331,7 @@ class AutoSorterApp:
             self.completed_files = 0
 
             from app.core.verifier import is_ml_available
+
             if not is_ml_available():
                 has_images_or_pdfs = any(
                     os.path.splitext(f)[1].lower() in (".png", ".jpg", ".jpeg", ".pdf")
@@ -355,7 +358,12 @@ class AutoSorterApp:
             bypassed_set = set(bypassed_files)
             items_to_sort = [f for f in files if f not in bypassed_set]
 
-            async for item, text, file_hash, was_skipped in self.app_session.process_items_async(
+            async for (
+                item,
+                text,
+                file_hash,
+                was_skipped,
+            ) in self.app_session.process_items_async(
                 items_to_sort,
                 lambda: getattr(self, "_cancel_analysis_flag", False),
             ):
@@ -433,20 +441,22 @@ class AutoSorterApp:
     def show_ml_warning_dialog(self, feature_name: str):
         """Show a clear, non-blocking warning dialogue explaining that the feature requires the full ML package."""
         with ui.dialog() as dialog, ui.card().classes("w-96 p-6"):
-            ui.label("Feature Unavailable").classes("text-xl font-bold mb-4 text-red-500").props(
-                'aria-label="Warning Dialog Title"'
-            )
+            ui.label("Feature Unavailable").classes(
+                "text-xl font-bold mb-4 text-red-500"
+            ).props('aria-label="Warning Dialog Title"')
             ui.label(
                 f"The '{feature_name}' feature requires heavy machine learning dependencies (like PyTorch and EasyOCR) "
                 "which are excluded from this lightweight build."
             ).classes("mb-4").props('aria-label="Warning Description"')
             ui.label(
                 "Please download the full ML installer bundle to access offline AI naming and visual text extraction."
-            ).classes("text-sm text-gray-500 mb-4").props('aria-label="Warning Suggestion"')
+            ).classes("text-sm text-gray-500 mb-4").props(
+                'aria-label="Warning Suggestion"'
+            )
             with ui.row().classes("w-full justify-end"):
-                ui.button("OK", on_click=dialog.close).classes("bg-blue-500 text-white").props(
-                    'aria-label="Warning OK Button"'
-                )
+                ui.button("OK", on_click=dialog.close).classes(
+                    "bg-blue-500 text-white"
+                ).props('aria-label="Warning OK Button"')
         dialog.open()
 
     def _rebuild_plan_async(self):
@@ -549,13 +559,19 @@ class AutoSorterApp:
                 logger.error(f"Error executing sort: {e}")
                 ui.notify(f"Error: {e}", type="negative")
                 self.status_label.set_text("Sorting failed.")
-                
-                with ui.dialog() as error_dialog, ui.card().classes('w-full max-w-md'):
+
+                with ui.dialog() as error_dialog, ui.card().classes("w-full max-w-md"):
                     ui.label("Move Transaction Error").classes("text-h6 text-red-500")
-                    ui.label(f"The organization process failed: {e}").classes("text-body1")
-                    ui.label("An automated rollback was successfully executed to restore files and index database.").classes("text-body2 text-gray-600")
+                    ui.label(f"The organization process failed: {e}").classes(
+                        "text-body1"
+                    )
+                    ui.label(
+                        "An automated rollback was successfully executed to restore files and index database."
+                    ).classes("text-body2 text-gray-600")
                     with ui.row().classes("w-full justify-end mt-4"):
-                        ui.button("Close", on_click=error_dialog.close).props('color="primary" aria-label="Close Error Dialog"')
+                        ui.button("Close", on_click=error_dialog.close).props(
+                            'color="primary" aria-label="Close Error Dialog"'
+                        )
                 error_dialog.open()
             finally:
                 self.plan = {}
@@ -572,14 +588,14 @@ class AutoSorterApp:
         """Start the watchdog folder observer to monitor base_dir."""
         if not self.base_dir or not os.path.exists(self.base_dir):
             return
-        
+
         self.stop_watcher()
-        
+
         try:
             self.loop = asyncio.get_running_loop()
         except RuntimeError:
             self.loop = None
-            
+
         from watchdog.events import FileSystemEventHandler
         from watchdog.observers import Observer
 
@@ -588,7 +604,13 @@ class AutoSorterApp:
                 self.app = app
 
             def on_any_event(self, event):
-                if ".branches" in event.src_path or "autosorter.db" in event.src_path or "history.db" in event.src_path or "cache.db" in event.src_path or "plan.json" in event.src_path:
+                if (
+                    ".branches" in event.src_path
+                    or "autosorter.db" in event.src_path
+                    or "history.db" in event.src_path
+                    or "cache.db" in event.src_path
+                    or "plan.json" in event.src_path
+                ):
                     return
                 if self.app.loop:
                     self.app.loop.call_soon_threadsafe(self.app._rebuild_plan_async)
@@ -639,7 +661,10 @@ class AutoSorterApp:
             return
 
         from app.core.verifier import VerificationEngine
-        integrity_result = VerificationEngine.verify_plan_integrity(self.base_dir, self.plan)
+
+        integrity_result = VerificationEngine.verify_plan_integrity(
+            self.base_dir, self.plan
+        )
 
         self.plan_errors = {}
         if not integrity_result["success"]:
@@ -658,14 +683,18 @@ class AutoSorterApp:
             for item in integrity_result.get("circular_renames", []):
                 path_abs = item.get("path")
                 if path_abs:
-                    rel_path = os.path.relpath(path_abs, self.base_dir).replace("\\", "/")
+                    rel_path = os.path.relpath(path_abs, self.base_dir).replace(
+                        "\\", "/"
+                    )
                     self.plan_errors[rel_path] = item["message"]
                     self.plan_errors[os.path.basename(path_abs)] = item["message"]
 
             for item in integrity_result.get("broken_links", []):
                 path_abs = item.get("path")
                 if path_abs:
-                    rel_path = os.path.relpath(path_abs, self.base_dir).replace("\\", "/")
+                    rel_path = os.path.relpath(path_abs, self.base_dir).replace(
+                        "\\", "/"
+                    )
                     self.plan_errors[rel_path] = item["message"]
                     self.plan_errors[os.path.basename(path_abs)] = item["message"]
 
@@ -683,9 +712,12 @@ class AutoSorterApp:
         if not hasattr(self, "ai_warnings_label"):
             return
         from app.core.verifier import check_ai_status
+
         is_healthy, warn_msg = check_ai_status(self.settings)
         if not is_healthy:
-            self.ai_warnings_label.set_text(warn_msg or "AI models are corrupt or missing.")
+            self.ai_warnings_label.set_text(
+                warn_msg or "AI models are corrupt or missing."
+            )
             self.ai_warnings_label.set_visibility(True)
         else:
             self.ai_warnings_label.set_text("")
@@ -699,4 +731,10 @@ def run_app(settings, directory=None) -> None:
         if os.path.exists(directory):
             app_instance.base_dir = os.path.abspath(directory)
     app_instance.build_ui()
-    ui.run(host="127.0.0.1", title="Smart AutoSorter AI Pro", port=8080, reload=False, show=True)
+    ui.run(
+        host="127.0.0.1",
+        title="Smart AutoSorter AI Pro",
+        port=8080,
+        reload=False,
+        show=True,
+    )

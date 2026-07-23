@@ -15,6 +15,7 @@ def is_ml_available() -> bool:
     try:
         import easyocr  # noqa: F401
         import torch  # noqa: F401
+
         return True
     except ImportError:
         return False
@@ -23,10 +24,14 @@ def is_ml_available() -> bool:
 def check_ai_status(settings) -> tuple[bool, str | None]:
     """Check AI models status, returning (is_healthy, warning_message)."""
     if not is_ml_available():
-        return False, "Machine learning dependencies (PyTorch/EasyOCR) are not installed. Running in fallback state."
+        return (
+            False,
+            "Machine learning dependencies (PyTorch/EasyOCR) are not installed. Running in fallback state.",
+        )
 
     from app.config import get_app_dir
     from app.core.path_utils import get_base_path
+
     try:
         base_path = get_base_path(__file__)
     except Exception:
@@ -54,17 +59,27 @@ def check_ai_status(settings) -> tuple[bool, str | None]:
 
     if getattr(settings, "AI_ASSISTED_NAMING", False):
         if not model_dir or not os.path.exists(os.path.join(model_dir, "config.json")):
-            return False, "AI generative model weights are missing or corrupt. Running in fallback rule-based sorting state."
-        
+            return (
+                False,
+                "AI generative model weights are missing or corrupt. Running in fallback rule-based sorting state.",
+            )
+
         from app.core.shared_registry import SharedModelRegistry
+
         registry = SharedModelRegistry.get_instance()
         try:
             registry.verify_integrity("generative_naming", model_dir)
         except Exception as e:
-            return False, f"AI generative model integrity check failed: {str(e)}. Running in fallback rule-based sorting state."
+            return (
+                False,
+                f"AI generative model integrity check failed: {str(e)}. Running in fallback rule-based sorting state.",
+            )
 
     if not os.path.exists(craft_model) or not os.path.exists(lang_model):
-        return False, "OCR vision model files are corrupt or missing. Visual text extraction is unavailable."
+        return (
+            False,
+            "OCR vision model files are corrupt or missing. Visual text extraction is unavailable.",
+        )
 
     return True, None
 
@@ -112,7 +127,9 @@ class VerificationEngine:
 class VirtualNode:
     """Represents a simulated file or directory in the virtual filesystem tracker."""
 
-    def __init__(self, path, is_dir, inode, size, symlink_target=None, shortcut_target=None):
+    def __init__(
+        self, path, is_dir, inode, size, symlink_target=None, shortcut_target=None
+    ):
         self.path = os.path.abspath(path)
         self.is_dir = is_dir
         self.inode = inode
@@ -138,7 +155,7 @@ class VirtualFilesystemTracker:
             return
 
         base_dir_abs = os.path.abspath(base_dir)
-        
+
         # Add base_dir itself
         try:
             st = os.stat(base_dir_abs)
@@ -147,7 +164,9 @@ class VirtualFilesystemTracker:
         except OSError:
             inode = self._get_next_inode()
             size = 0
-        self.nodes[base_dir_abs] = VirtualNode(base_dir_abs, is_dir=True, inode=inode, size=size)
+        self.nodes[base_dir_abs] = VirtualNode(
+            base_dir_abs, is_dir=True, inode=inode, size=size
+        )
 
         for root, dirs, files in os.walk(base_dir):
             for d in dirs:
@@ -160,7 +179,9 @@ class VirtualFilesystemTracker:
                 except OSError:
                     inode = self._get_next_inode()
                     size = 0
-                self.nodes[abs_dir_path] = VirtualNode(abs_dir_path, is_dir=True, inode=inode, size=size)
+                self.nodes[abs_dir_path] = VirtualNode(
+                    abs_dir_path, is_dir=True, inode=inode, size=size
+                )
 
             for f in files:
                 file_path = os.path.join(root, f)
@@ -188,7 +209,11 @@ class VirtualFilesystemTracker:
                             pass
 
                 try:
-                    st = os.lstat(abs_file_path) if symlink_target else os.stat(abs_file_path)
+                    st = (
+                        os.lstat(abs_file_path)
+                        if symlink_target
+                        else os.stat(abs_file_path)
+                    )
                     inode = st.st_ino
                     size = st.st_size
                 except OSError:
@@ -201,7 +226,7 @@ class VirtualFilesystemTracker:
                     inode=inode,
                     size=size,
                     symlink_target=symlink_target,
-                    shortcut_target=shortcut_target
+                    shortcut_target=shortcut_target,
                 )
 
     def populate_from_moves(self, moves_list: list):
@@ -212,7 +237,7 @@ class VirtualFilesystemTracker:
                 inode = self._get_next_inode()
                 symlink_target = None
                 shortcut_target = None
-                
+
                 # Retrieve registered link info if available
                 link_info = LinkManager.get_link_info(abs_src)
                 if link_info:
@@ -230,7 +255,7 @@ class VirtualFilesystemTracker:
                     inode=inode,
                     size=1024,  # default mock size
                     symlink_target=symlink_target,
-                    shortcut_target=shortcut_target
+                    shortcut_target=shortcut_target,
                 )
 
     def simulate_final_state(self, moves_list: list) -> dict:
@@ -255,20 +280,17 @@ class VirtualFilesystemTracker:
                     inode=node.inode,
                     size=node.size,
                     symlink_target=node.symlink_target,
-                    shortcut_target=node.shortcut_target
+                    shortcut_target=node.shortcut_target,
                 )
                 final_nodes[abs_dst] = new_node
-                
+
                 # Also ensure all intermediate parent directories are in the final_nodes
                 # unless they are already occupied by a file.
                 current = os.path.dirname(abs_dst)
                 while current and len(current) > 0:
                     if current not in final_nodes:
                         final_nodes[current] = VirtualNode(
-                            current,
-                            is_dir=True,
-                            inode=self._get_next_inode(),
-                            size=0
+                            current, is_dir=True, inode=self._get_next_inode(), size=0
                         )
                     parent = os.path.dirname(current)
                     if parent == current:
@@ -281,7 +303,7 @@ class VirtualFilesystemTracker:
         """Detect duplicate destination target collisions and blocked parent directory/ancestor paths."""
         collisions = []
         base_dir_abs = os.path.abspath(base_dir) if base_dir else ""
-        
+
         dest_to_srcs = {}
         for rel_path, src, dst in moves_list:
             abs_src = os.path.abspath(src)
@@ -291,12 +313,14 @@ class VirtualFilesystemTracker:
         # 1. Duplicate target collision
         for dst, srcs in dest_to_srcs.items():
             if len(srcs) > 1:
-                collisions.append({
-                    "path": dst,
-                    "type": "duplicate_target",
-                    "sources": srcs,
-                    "message": f"Multiple files are planned to be moved to the same destination: {dst}"
-                })
+                collisions.append(
+                    {
+                        "path": dst,
+                        "type": "duplicate_target",
+                        "sources": srcs,
+                        "message": f"Multiple files are planned to be moved to the same destination: {dst}",
+                    }
+                )
 
         # 2. Parent directory / target structure collisions
         for rel_path, src, dst in moves_list:
@@ -309,13 +333,15 @@ class VirtualFilesystemTracker:
             while current and len(current) >= len(base_dir_abs):
                 node = self.nodes.get(current)
                 if node and not node.is_dir:
-                    collisions.append({
-                        "path": abs_dst,
-                        "type": "parent_directory_collision",
-                        "blocked_by": current,
-                        "source": abs_src,
-                        "message": f"Destination path '{abs_dst}' is blocked because ancestor '{current}' is a file."
-                    })
+                    collisions.append(
+                        {
+                            "path": abs_dst,
+                            "type": "parent_directory_collision",
+                            "blocked_by": current,
+                            "source": abs_src,
+                            "message": f"Destination path '{abs_dst}' is blocked because ancestor '{current}' is a file.",
+                        }
+                    )
                     ancestor_collision = True
                     break
                 parent = os.path.dirname(current)
@@ -330,21 +356,27 @@ class VirtualFilesystemTracker:
             node_at_dst = self.nodes.get(abs_dst)
             if node_at_dst:
                 if node_at_dst.is_dir:
-                    collisions.append({
-                        "path": abs_dst,
-                        "type": "target_is_directory",
-                        "source": abs_src,
-                        "message": f"Destination path '{abs_dst}' is already an existing directory."
-                    })
-                else:
-                    is_dst_moving = any(os.path.abspath(s) == abs_dst for _, s, _ in moves_list)
-                    if not is_dst_moving and abs_src != abs_dst:
-                        collisions.append({
+                    collisions.append(
+                        {
                             "path": abs_dst,
-                            "type": "target_collision",
+                            "type": "target_is_directory",
                             "source": abs_src,
-                            "message": f"Destination path '{abs_dst}' is blocked by an existing file that is not being moved."
-                        })
+                            "message": f"Destination path '{abs_dst}' is already an existing directory.",
+                        }
+                    )
+                else:
+                    is_dst_moving = any(
+                        os.path.abspath(s) == abs_dst for _, s, _ in moves_list
+                    )
+                    if not is_dst_moving and abs_src != abs_dst:
+                        collisions.append(
+                            {
+                                "path": abs_dst,
+                                "type": "target_collision",
+                                "source": abs_src,
+                                "message": f"Destination path '{abs_dst}' is blocked by an existing file that is not being moved.",
+                            }
+                        )
 
         return collisions
 
@@ -389,20 +421,22 @@ class VirtualFilesystemTracker:
             cycle_str = " -> ".join(cycle) + f" -> {cycle[0]}"
             message = f"Circular renaming dependency detected: {cycle_str}"
             for path in cycle:
-                circular_renames.append({
-                    "path": path,
-                    "cycle": cycle,
-                    "message": message
-                })
+                circular_renames.append(
+                    {"path": path, "cycle": cycle, "message": message}
+                )
 
         return circular_renames
 
-    def check_broken_links(self, moves_list: list, base_dir: str, final_nodes: dict) -> list:
+    def check_broken_links(
+        self, moves_list: list, base_dir: str, final_nodes: dict
+    ) -> list:
         """Validate symbolic links and Windows shortcut targets after simulating moves."""
         broken_links = []
         base_dir_abs = os.path.abspath(base_dir) if base_dir else ""
 
-        path_map = {os.path.abspath(src): os.path.abspath(dst) for _, src, dst in moves_list}
+        path_map = {
+            os.path.abspath(src): os.path.abspath(dst) for _, src, dst in moves_list
+        }
 
         for abs_path, node in final_nodes.items():
             target_path = None
@@ -431,14 +465,18 @@ class VirtualFilesystemTracker:
             if os.path.isabs(target_path):
                 abs_target_orig = os.path.abspath(target_path)
             else:
-                abs_target_orig = os.path.abspath(os.path.join(os.path.dirname(orig_src), target_path))
+                abs_target_orig = os.path.abspath(
+                    os.path.join(os.path.dirname(orig_src), target_path)
+                )
 
             # Final absolute target path after moves
             abs_target_final = path_map.get(abs_target_orig, abs_target_orig)
 
             # Verify target existence
-            is_inside_base = abs_target_final.startswith(base_dir_abs) if base_dir_abs else False
-            
+            is_inside_base = (
+                abs_target_final.startswith(base_dir_abs) if base_dir_abs else False
+            )
+
             if is_inside_base:
                 target_exists = abs_target_final in final_nodes
             else:
@@ -446,19 +484,21 @@ class VirtualFilesystemTracker:
 
             if not target_exists:
                 message = f"Broken {link_type} target: '{abs_path}' points to '{abs_target_final}', which does not exist."
-                broken_links.append({
-                    "path": abs_path,
-                    "type": f"broken_{link_type}",
-                    "target": abs_target_final,
-                    "message": message
-                })
+                broken_links.append(
+                    {
+                        "path": abs_path,
+                        "type": f"broken_{link_type}",
+                        "target": abs_target_final,
+                        "message": message,
+                    }
+                )
 
         return broken_links
 
     def verify_integrity(self, base_dir: str, plan: dict) -> dict:
         """Run complete virtual filesystem simulation and integrity check."""
         moves_list = VerificationEngine.get_moves(base_dir, plan)
-        
+
         # Populate initial VFS state
         self.populate_from_disk(base_dir)
         self.populate_from_moves(moves_list)
@@ -466,10 +506,10 @@ class VirtualFilesystemTracker:
         # Trace and analyze issues
         collisions = self.check_collisions(moves_list, base_dir)
         circular_renames = self.check_circular_renames(moves_list)
-        
+
         # Simulate final VFS state
         final_nodes = self.simulate_final_state(moves_list)
-        
+
         # Validate links in final VFS state
         broken_links = self.check_broken_links(moves_list, base_dir, final_nodes)
 
@@ -485,13 +525,16 @@ class VirtualFilesystemTracker:
         # Eliminate duplicate messages in warnings
         unique_warnings = list(dict.fromkeys(warnings))
 
-        success = len(collisions) == 0 and len(circular_renames) == 0 and len(broken_links) == 0
+        success = (
+            len(collisions) == 0
+            and len(circular_renames) == 0
+            and len(broken_links) == 0
+        )
 
         return {
             "success": success,
             "collisions": collisions,
             "circular_renames": circular_renames,
             "broken_links": broken_links,
-            "warnings": unique_warnings
+            "warnings": unique_warnings,
         }
-

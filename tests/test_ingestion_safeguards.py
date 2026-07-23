@@ -28,9 +28,7 @@ def test_config_safeguard_bounds():
 
     # Valid settings work
     settings = Settings(
-        VISUAL_TIMEOUT=5,
-        IMAGE_MAX_DIMENSION=800,
-        IMAGE_SKIP_THRESHOLD=2500
+        VISUAL_TIMEOUT=5, IMAGE_MAX_DIMENSION=800, IMAGE_SKIP_THRESHOLD=2500
     )
     assert settings.VISUAL_TIMEOUT == 5
     assert settings.IMAGE_MAX_DIMENSION == 800
@@ -46,9 +44,13 @@ def test_image_skipping_rules(caplog):
     settings = Settings(IMAGE_SKIP_THRESHOLD=3000, IMAGE_MAX_DIMENSION=1000)
 
     # Mock get_ocr_reader to return a dummy reader
-    with patch("app.core.extractor_strategies.get_ocr_reader", return_value=MagicMock()):
+    with patch(
+        "app.core.extractor_strategies.get_ocr_reader", return_value=MagicMock()
+    ):
         with caplog.at_level(logging.WARNING):
-            result = extract_text_from_image(mock_image, settings=settings, file_path="very_large.jpg")
+            result = extract_text_from_image(
+                mock_image, settings=settings, file_path="very_large.jpg"
+            )
 
     assert result == "[STATUS:SKIPPED]"
     assert "Skipping OCR for very_large.jpg" in caplog.text
@@ -62,10 +64,14 @@ def test_image_downscaling_aspect_ratio():
     mock_image1.size = (2000, 1500)
     settings = Settings(IMAGE_SKIP_THRESHOLD=5000, IMAGE_MAX_DIMENSION=1000)
 
-    with patch("app.core.extractor_strategies.get_ocr_reader", return_value=MagicMock()), \
-         patch("numpy.array") as mock_np_arr:
+    with (
+        patch("app.core.extractor_strategies.get_ocr_reader", return_value=MagicMock()),
+        patch("numpy.array") as mock_np_arr,
+    ):
         mock_np_arr.return_value = "np_image"
-        extract_text_from_image(mock_image1, settings=settings, file_path="oversized.jpg")
+        extract_text_from_image(
+            mock_image1, settings=settings, file_path="oversized.jpg"
+        )
 
     # Verify resize was called with (1000, 750)
     mock_image1.resize.assert_called_once()
@@ -81,8 +87,10 @@ def test_image_downscaling_hard_minimum():
     mock_image2.size = (2000, 500)
     settings = Settings(IMAGE_SKIP_THRESHOLD=5000, IMAGE_MAX_DIMENSION=1000)
 
-    with patch("app.core.extractor_strategies.get_ocr_reader", return_value=MagicMock()), \
-         patch("numpy.array") as mock_np_arr:
+    with (
+        patch("app.core.extractor_strategies.get_ocr_reader", return_value=MagicMock()),
+        patch("numpy.array") as mock_np_arr,
+    ):
         mock_np_arr.return_value = "np_image"
         extract_text_from_image(mock_image2, settings=settings, file_path="wide.jpg")
 
@@ -107,9 +115,10 @@ def test_parallel_future_collection_timeout(caplog):
         else:
             return item, "Fast text", "fast_hash"
 
-    with patch("app.core.extractor.process_item_worker", side_effect=side_effect_worker), \
-         patch("app.config.AppSettings", return_value=MagicMock()):
-        
+    with (
+        patch("app.core.extractor.process_item_worker", side_effect=side_effect_worker),
+        patch("app.config.AppSettings", return_value=MagicMock()),
+    ):
         # We temporarily patch VISUAL_TIMEOUT to be 1 second for fast test execution
         settings.VISUAL_TIMEOUT = 1
 
@@ -122,7 +131,7 @@ def test_parallel_future_collection_timeout(caplog):
                 db=mock_db,
                 chunk_size=10,
                 sequential=False,
-                settings=settings
+                settings=settings,
             )
             chunks = list(generator)
 

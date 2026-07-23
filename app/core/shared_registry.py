@@ -7,56 +7,92 @@ with offline enforcement and thread limits.
 
 import concurrent.futures
 import hashlib
+import ipaddress
 import logging
 import os
 import socket
+import threading
 from contextlib import contextmanager
 
+_thread_local = threading.local()
+
+# Keep track of original functions permanently to avoid recursion/re-patching issues
 _original_connect = socket.socket.connect
 _original_connect_ex = socket.socket.connect_ex
 
+
+def _is_local_address(host: str) -> bool:
+    """Check if the given host/IP is local/loopback/unspecified."""
+    try:
+        allowed_hosts = {
+            "127.0.0.1",
+            "localhost",
+            "::1",
+            "0.0.0.0",
+            socket.gethostname(),
+            socket.getfqdn(),
+        }
+    except Exception:
+        allowed_hosts = {"127.0.0.1", "localhost", "::1", "0.0.0.0"}
+
+    if host in allowed_hosts:
+        return True
+
+    try:
+        ip = ipaddress.ip_address(host)
+        return ip.is_loopback or ip.is_unspecified
+    except ValueError:
+        pass
+    return False
+
+
 def safe_connect(self, address):
-    """Safely connect socket, raising PermissionError for external connections."""
-    if isinstance(address, tuple):
-        host = address[0]
-        if host not in ("127.0.0.1", "localhost", "::1", "0.0.0.0"):
+    """Safely connect socket, raising PermissionError for external connections if sandboxed."""
+    if isinstance(address, tuple) and len(address) > 0:
+        host = str(address[0])
+        if not _is_local_address(host):
+            reason = getattr(_thread_local, "reason", "worker execution")
             raise PermissionError(
-                f"External network connections are blocked during worker execution: {host}"
+                f"External network connections are blocked during {reason}: {host}"
             )
     return _original_connect(self, address)
 
+
 def safe_connect_ex(self, address):
-    """Safely connect_ex socket, raising PermissionError for external connections."""
-    if isinstance(address, tuple):
-        host = address[0]
-        if host not in ("127.0.0.1", "localhost", "::1", "0.0.0.0"):
+    """Safely connect_ex socket, raising PermissionError for external connections if sandboxed."""
+    if isinstance(address, tuple) and len(address) > 0:
+        host = str(address[0])
+        if not _is_local_address(host):
+            reason = getattr(_thread_local, "reason", "worker execution")
             raise PermissionError(
-                f"External network connections are blocked during worker execution: {host}"
+                f"External network connections are blocked during {reason}: {host}"
             )
     return _original_connect_ex(self, address)
 
+
 def apply_global_socket_sandbox():
     """Apply socket-level blocking of non-localhost outgoing network requests globally."""
-    global _original_connect, _original_connect_ex
-    if socket.socket.connect is not safe_connect:
-        _original_connect = socket.socket.connect
-        socket.socket.connect = safe_connect
-    if socket.socket.connect_ex is not safe_connect_ex:
-        _original_connect_ex = socket.socket.connect_ex
-        socket.socket.connect_ex = safe_connect_ex
+    # Kept for backward-compatibility but does not do dangerous dynamic re-patching.
+    pass
 
-# Enforce immediately on import
-apply_global_socket_sandbox()
+
+# Permanently patch once at import time
+socket.socket.connect = safe_connect
+socket.socket.connect_ex = safe_connect_ex
 
 
 @contextmanager
-def block_external_network():
-    """Block outgoing non-localhost network traffic."""
-    apply_global_socket_sandbox()
+def block_external_network(reason="worker execution"):
+    """Block outgoing non-localhost network traffic safely and thread-locally."""
+    was_sandboxed = getattr(_thread_local, "sandboxed", False)
+    old_reason = getattr(_thread_local, "reason", "worker execution")
+    _thread_local.sandboxed = True
+    _thread_local.reason = reason
     try:
         yield
     finally:
-        pass
+        _thread_local.sandboxed = was_sandboxed
+        _thread_local.reason = old_reason
 
 
 class SharedModelRegistry:
@@ -85,21 +121,27 @@ class SharedModelRegistry:
         if model_id in self._expected_hashes:
             expected = self._expected_hashes[model_id]
             if not model_path or not os.path.exists(model_path):
-                raise FileNotFoundError(f"Model path {model_path} does not exist for integrity check.")
-            
+                raise FileNotFoundError(
+                    f"Model path {model_path} does not exist for integrity check."
+                )
+
             if os.path.isdir(model_path):
                 for filename, expected_hash in expected.items():
                     file_path = os.path.join(model_path, filename)
                     if not os.path.exists(file_path):
-                        raise FileNotFoundError(f"Required model file {file_path} is missing.")
-                    
+                        raise FileNotFoundError(
+                            f"Required model file {file_path} is missing."
+                        )
+
                     hasher = hashlib.sha256()
                     with open(file_path, "rb") as f:
                         for chunk in iter(lambda: f.read(65536), b""):
                             hasher.update(chunk)
                     actual_hash = hasher.hexdigest()
                     if actual_hash != expected_hash:
-                        raise ValueError(f"Integrity check failed for {filename}. Expected {expected_hash}, got {actual_hash}")
+                        raise ValueError(
+                            f"Integrity check failed for {filename}. Expected {expected_hash}, got {actual_hash}"
+                        )
             else:
                 # Single file
                 hasher = hashlib.sha256()
@@ -107,9 +149,14 @@ class SharedModelRegistry:
                     for chunk in iter(lambda: f.read(65536), b""):
                         hasher.update(chunk)
                 actual_hash = hasher.hexdigest()
-                expected_hash = expected.get(os.path.basename(model_path)) or list(expected.values())[0]
+                expected_hash = (
+                    expected.get(os.path.basename(model_path))
+                    or list(expected.values())[0]
+                )
                 if actual_hash != expected_hash:
-                    raise ValueError(f"Integrity check failed. Expected {expected_hash}, got {actual_hash}")
+                    raise ValueError(
+                        f"Integrity check failed. Expected {expected_hash}, got {actual_hash}"
+                    )
         return True
 
     def get_ocr_reader(self):
@@ -126,6 +173,7 @@ class SharedModelRegistry:
             try:
                 import easyocr
                 import torch
+
                 torch.set_num_threads(2)
                 # Create reader on CPU
                 self._models[model_id] = easyocr.Reader(["en"], gpu=False)
@@ -207,15 +255,17 @@ class SharedWorkerPool:
         self._executor = concurrent.futures.ThreadPoolExecutor(
             max_workers=max_workers,
             thread_name_prefix="GlobalSharedWorker",
-            initializer=apply_global_socket_sandbox
+            initializer=apply_global_socket_sandbox,
         )
         self.max_workers = max_workers
 
     def submit(self, fn, *args, **kwargs):
         """Submit a task to the pool, ensuring offline boundaries are enforced."""
+
         def offline_wrapped_fn(*a, **kw):
             with block_external_network():
                 return fn(*a, **kw)
+
         return self._executor.submit(offline_wrapped_fn, *args, **kwargs)
 
     def shutdown(self, wait=True):
