@@ -1,6 +1,5 @@
-import tempfile
 import logging
-import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -52,20 +51,53 @@ def test_policy_schema_validation():
     # Valid policies
     settings = Settings(
         POLICIES=[
-            {"type": "keyword", "expression": "financial", "target_path": "Finance Folder", "priority": 10},
-            {"type": "pattern", "expression": ".*report.*", "target_path": "Reports/Quarterly", "priority": 20},
-            {"type": "override", "expression": "secret.txt", "target_path": "Restricted", "priority": 30},
+            {
+                "type": "keyword",
+                "expression": "financial",
+                "target_path": "Finance Folder",
+                "priority": 10,
+            },
+            {
+                "type": "pattern",
+                "expression": ".*report.*",
+                "target_path": "Reports/Quarterly",
+                "priority": 20,
+            },
+            {
+                "type": "override",
+                "expression": "secret.txt",
+                "target_path": "Restricted",
+                "priority": 30,
+            },
         ]
     )
     assert len(settings.POLICIES) == 3
 
     # Reject invalid types
     with pytest.raises(ValidationError):
-        Settings(POLICIES=[{"type": "invalid_type", "expression": "foo", "target_path": "bar", "priority": 1}])
+        Settings(
+            POLICIES=[
+                {
+                    "type": "invalid_type",
+                    "expression": "foo",
+                    "target_path": "bar",
+                    "priority": 1,
+                }
+            ]
+        )
 
     # Reject invalid expression (empty)
     with pytest.raises(ValidationError):
-        Settings(POLICIES=[{"type": "keyword", "expression": "   ", "target_path": "bar", "priority": 1}])
+        Settings(
+            POLICIES=[
+                {
+                    "type": "keyword",
+                    "expression": "   ",
+                    "target_path": "bar",
+                    "priority": 1,
+                }
+            ]
+        )
 
     # Reject missing fields
     with pytest.raises(ValidationError):
@@ -73,15 +105,42 @@ def test_policy_schema_validation():
 
     # Reject absolute path
     with pytest.raises(ValidationError):
-        Settings(POLICIES=[{"type": "keyword", "expression": "foo", "target_path": "/absolute/path", "priority": 1}])
+        Settings(
+            POLICIES=[
+                {
+                    "type": "keyword",
+                    "expression": "foo",
+                    "target_path": "/absolute/path",
+                    "priority": 1,
+                }
+            ]
+        )
 
     # Reject directory traversal
     with pytest.raises(ValidationError):
-        Settings(POLICIES=[{"type": "keyword", "expression": "foo", "target_path": "some/../../traversal", "priority": 1}])
+        Settings(
+            POLICIES=[
+                {
+                    "type": "keyword",
+                    "expression": "foo",
+                    "target_path": "some/../../traversal",
+                    "priority": 1,
+                }
+            ]
+        )
 
     # Reject illegal characters
     with pytest.raises(ValidationError):
-        Settings(POLICIES=[{"type": "keyword", "expression": "foo", "target_path": "some:bad?chars", "priority": 1}])
+        Settings(
+            POLICIES=[
+                {
+                    "type": "keyword",
+                    "expression": "foo",
+                    "target_path": "some:bad?chars",
+                    "priority": 1,
+                }
+            ]
+        )
 
 
 def test_policy_overlap_warnings(caplog):
@@ -90,8 +149,18 @@ def test_policy_overlap_warnings(caplog):
     with caplog.at_level(logging.WARNING):
         Settings(
             POLICIES=[
-                {"type": "keyword", "expression": "compliance", "target_path": "Restricted", "priority": 10},
-                {"type": "keyword", "expression": "compliance report", "target_path": "Reports", "priority": 5},
+                {
+                    "type": "keyword",
+                    "expression": "compliance",
+                    "target_path": "Restricted",
+                    "priority": 10,
+                },
+                {
+                    "type": "keyword",
+                    "expression": "compliance report",
+                    "target_path": "Reports",
+                    "priority": 5,
+                },
             ]
         )
     assert any("Rule overlap detected" in record.message for record in caplog.records)
@@ -115,12 +184,22 @@ def test_policy_priority_routing():
         PRESERVE_HIERARCHY = False
         CONTEXTUAL_RENAMING = False
         POLICIES = [
-            {"type": "keyword", "expression": "compliance", "target_path": "Compliance Folder", "priority": 100},
-            {"type": "keyword", "expression": "financial", "target_path": "Financial Folder", "priority": 50},
+            {
+                "type": "keyword",
+                "expression": "compliance",
+                "target_path": "Compliance Folder",
+                "priority": 100,
+            },
+            {
+                "type": "keyword",
+                "expression": "financial",
+                "target_path": "Financial Folder",
+                "priority": 50,
+            },
         ]
 
     plan1 = analyzer.generate_sorting_plan("dummy", runtime_settings=MockSettings1())
-    
+
     # Extract file assignment
     def find_folder_for(filename, p, current_path=""):
         if not isinstance(p, dict) or p.get("__type__") == "file":
@@ -137,7 +216,9 @@ def test_policy_priority_routing():
                     return res
         return None
 
-    assert find_folder_for("financial_compliance_report.txt", plan1) == "Compliance Folder"
+    assert (
+        find_folder_for("financial_compliance_report.txt", plan1) == "Compliance Folder"
+    )
 
     # Second case: financial rule has higher priority
     class MockSettings2:
@@ -146,12 +227,24 @@ def test_policy_priority_routing():
         PRESERVE_HIERARCHY = False
         CONTEXTUAL_RENAMING = False
         POLICIES = [
-            {"type": "keyword", "expression": "compliance", "target_path": "Compliance Folder", "priority": 50},
-            {"type": "keyword", "expression": "financial", "target_path": "Financial Folder", "priority": 100},
+            {
+                "type": "keyword",
+                "expression": "compliance",
+                "target_path": "Compliance Folder",
+                "priority": 50,
+            },
+            {
+                "type": "keyword",
+                "expression": "financial",
+                "target_path": "Financial Folder",
+                "priority": 100,
+            },
         ]
 
     plan2 = analyzer.generate_sorting_plan("dummy", runtime_settings=MockSettings2())
-    assert find_folder_for("financial_compliance_report.txt", plan2) == "Financial Folder"
+    assert (
+        find_folder_for("financial_compliance_report.txt", plan2) == "Financial Folder"
+    )
 
 
 def test_policy_override_bypasses_historical_and_ml():
@@ -162,9 +255,16 @@ def test_policy_override_bypasses_historical_and_ml():
 
     # Put a document in the database and also set up a historical target path
     # Database document structure: (base_dir, filepath, file_hash, text)
-    db.upsert_documents([
-        ("dummy", "corp_restricted.xlsx", "hash123", "Highly confidential finance spreadsheet")
-    ])
+    db.upsert_documents(
+        [
+            (
+                "dummy",
+                "corp_restricted.xlsx",
+                "hash123",
+                "Highly confidential finance spreadsheet",
+            )
+        ]
+    )
     db.set_user_verified_target("dummy", "hash123", "Manual User Folder")
 
     class MockSettings:
@@ -173,7 +273,12 @@ def test_policy_override_bypasses_historical_and_ml():
         PRESERVE_HIERARCHY = False
         CONTEXTUAL_RENAMING = False
         POLICIES = [
-            {"type": "pattern", "expression": "restricted", "target_path": "Strict Compliance", "priority": 1000},
+            {
+                "type": "pattern",
+                "expression": "restricted",
+                "target_path": "Strict Compliance",
+                "priority": 1000,
+            },
         ]
 
     plan = analyzer.generate_sorting_plan("dummy", runtime_settings=MockSettings())

@@ -1,18 +1,18 @@
-import os
-import shutil
 import asyncio
-from unittest.mock import patch, MagicMock
+import os
+from unittest.mock import MagicMock, patch
+
 import pytest
 
+from app.config import AppSettings
 from app.core.cache import CacheManager
 from app.core.db import Database
-from app.core.db_conn import get_db_connection
 from app.core.db_worker import DBWorker
 from app.core.history import HistoryManager
 from app.core.mover import execute_moves
-from app.config import AppSettings
-from app.ui.app import AutoSorterApp
 from app.core.session import AppSession
+from app.ui.app import AutoSorterApp
+
 
 @pytest.fixture
 def test_env(tmp_path):
@@ -43,14 +43,7 @@ def test_automatic_rollback_on_failed_move(test_env):
     base_dir, db, cache, history_manager, db_worker = test_env
 
     # We want to move file1.txt to folder/file1.txt
-    plan = {
-        "folder": {
-            "file1.txt": {
-                "__type__": "file",
-                "status": "To Be Sorted"
-            }
-        }
-    }
+    plan = {"folder": {"file1.txt": {"__type__": "file", "status": "To Be Sorted"}}}
 
     # Mock shutil.move to fail
     def mock_move(src, dst):
@@ -95,12 +88,13 @@ async def test_ui_recovery_and_watcher_restart(tmp_path):
     app.status_label = MagicMock()
 
     # Mock NiceGUI ui.dialog, ui.notify and tree render
-    with patch("nicegui.ui.dialog") as mock_dialog, \
-         patch("nicegui.ui.notify") as mock_notify, \
-         patch.object(app, "render_tree") as mock_render_tree, \
-         patch.object(app, "start_watcher") as mock_start_watcher, \
-         patch.object(app, "stop_watcher") as mock_stop_watcher:
-
+    with (
+        patch("nicegui.ui.dialog") as mock_dialog,
+        patch("nicegui.ui.notify"),
+        patch.object(app, "render_tree"),
+        patch.object(app, "start_watcher") as mock_start_watcher,
+        patch.object(app, "stop_watcher") as mock_stop_watcher,
+    ):
         mock_dialog_instance = MagicMock()
         mock_dialog.return_value.__enter__.return_value = mock_dialog_instance
 

@@ -1,6 +1,6 @@
 import os
-import sqlite3
 import shutil
+import sqlite3
 from contextlib import closing
 
 import keyring
@@ -151,8 +151,10 @@ def test_multiple_databases_key_isolation(tmp_path, monkeypatch):
     # Disable keyring to force fallback to local files
     def mock_set_password(*args, **kwargs):
         raise Exception("Keyring unavailable")
+
     def mock_get_password(*args, **kwargs):
         return None
+
     monkeypatch.setattr(keyring, "set_password", mock_set_password)
     monkeypatch.setattr(keyring, "get_password", mock_get_password)
 
@@ -163,8 +165,8 @@ def test_multiple_databases_key_isolation(tmp_path, monkeypatch):
     crypto1 = SessionCrypto(key_path, db_path1)
     crypto2 = SessionCrypto(key_path, db_path2)
 
-    cipher1 = crypto1.get_cipher()
-    cipher2 = crypto2.get_cipher()
+    crypto1.get_cipher()
+    crypto2.get_cipher()
 
     assert crypto1.isolated_key_path.exists()
     assert crypto2.isolated_key_path.exists()
@@ -205,6 +207,7 @@ def test_missing_key_existing_db_fails(tmp_path, monkeypatch):
     # Disable keyring
     def mock_get_password(*args, **kwargs):
         return None
+
     monkeypatch.setattr(keyring, "get_password", mock_get_password)
 
     key_path = tmp_path / "secret.key"
@@ -218,7 +221,9 @@ def test_missing_key_existing_db_fails(tmp_path, monkeypatch):
     crypto = SessionCrypto(key_path, db_path)
 
     # Attempting to get cipher must fail because key is missing (keyring, isolated, legacy are all absent)
-    with pytest.raises(RuntimeError, match="Database accessed but key file is missing."):
+    with pytest.raises(
+        RuntimeError, match="Database accessed but key file is missing."
+    ):
         crypto.get_cipher()
 
 
@@ -226,8 +231,10 @@ def test_copy_db_to_new_system_without_keyring(tmp_path, monkeypatch):
     # Disable keyring entirely
     def mock_set_password(*args, **kwargs):
         raise Exception("Keyring unavailable")
+
     def mock_get_password(*args, **kwargs):
         return None
+
     monkeypatch.setattr(keyring, "set_password", mock_set_password)
     monkeypatch.setattr(keyring, "get_password", mock_get_password)
 
@@ -239,7 +246,7 @@ def test_copy_db_to_new_system_without_keyring(tmp_path, monkeypatch):
     db_path1.touch()
 
     crypto1 = SessionCrypto(key_path1, db_path1)
-    cipher1 = crypto1.get_cipher()
+    crypto1.get_cipher()
 
     # Encrypt some text
     original_text = "Highly secure database info."
