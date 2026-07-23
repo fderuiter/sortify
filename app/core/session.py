@@ -1,7 +1,9 @@
 """Session manager module for encapsulating app state."""
 
+import json
 import os
 import shutil
+import sqlite3
 import tempfile
 import uuid
 from pathlib import Path
@@ -13,16 +15,64 @@ from app.core.db import Database
 from app.core.history import HistoryManager
 
 
+async def scan_abandoned_sessions_async():
+    """Scan for unclosed session folders containing active session databases."""
+    import asyncio
+    
+    def _scan():
+        session_base = Path(tempfile.gettempdir()) / "autosorter_sessions"
+        abandoned = []
+        if not session_base.exists():
+            return abandoned
+
+        for session_dir in session_base.iterdir():
+            if not session_dir.is_dir():
+                continue
+            
+            plan_path = session_dir / "plan.json"
+            if not plan_path.exists():
+                continue
+                
+            history_db = session_dir / "history.db"
+            if not history_db.exists():
+                continue
+                
+            try:
+                conn = sqlite3.connect(history_db)
+                cursor = conn.cursor()
+                cursor.execute("SELECT session_id, base_dir, status FROM sessions ORDER BY timestamp DESC LIMIT 1")
+                row = cursor.fetchone()
+                conn.close()
+                
+                if row and row[2] == 'active':
+                    abandoned.append({
+                        "session_id": row[0],
+                        "base_dir": row[1],
+                        "session_dir": str(session_dir),
+                        "plan_path": str(plan_path)
+                    })
+            except Exception:
+                pass
+                
+        return abandoned
+
+    return await asyncio.to_thread(_scan)
+
+
 class AppSession:
     """Encapsulates the core business logic, analytics, and database services for a single application run."""
 
-    def __init__(self, settings, base_dir=None):
+    def __init__(self, settings, base_dir=None, session_id=None):
         self.settings = settings
         self.base_dir = base_dir
-        self.session_id = str(uuid.uuid4())
-        self.session_dir = (
-            Path(tempfile.gettempdir()) / "autosorter_sessions" / self.session_id
-        )
+        if session_id:
+            self.session_id = session_id
+            self.session_dir = Path(tempfile.gettempdir()) / "autosorter_sessions" / self.session_id
+        else:
+            self.session_id = str(uuid.uuid4())
+            self.session_dir = (
+                Path(tempfile.gettempdir()) / "autosorter_sessions" / self.session_id
+            )
         self.session_dir.mkdir(parents=True, exist_ok=True)
 
         from app.core.db_worker import DBWorker
@@ -103,14 +153,6 @@ class AppSession:
             self.base_dir, self.settings, locked_files=locked
         )
 
-    def save_cache_async(self, locked_files, manual_folders):
-        """Save the cache asynchronously."""
-        if not self.base_dir:
-            return
-        self.cache_manager.save_cache_async(
-            self.base_dir, self.analyzer.corpus, locked_files, {}, manual_folders
-        )
-
     def load_cache(self):
         """Load the cache for the current session."""
         if not self.base_dir:
@@ -145,14 +187,19 @@ class AppSession:
             del self.analyzer.corpus[path]
         self.db.remove_document(self.base_dir, path)
 
-    def execute_moves(self, plan):
+    def execute_moves(self, plan, resume=False):
         """Execute move operations."""
         if not self.base_dir:
             return {}
+        
+        plan_path = self.session_dir / "plan.json"
+        with open(plan_path, "w") as f:
+            json.dump(plan, f)
+
         from app.core.mover import execute_moves
 
         return execute_moves(
-            self.base_dir, plan, self.db, self.history_manager, self.settings
+            self.base_dir, plan, self.db, self.history_manager, self.settings, resume=resume
         )
 
     def close(self):

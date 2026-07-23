@@ -176,6 +176,32 @@ class Database:
 
         self.worker.execute_write(_write)
 
+    def execute_batch_updates(self, updates):
+        """Execute all collected database updates in a single unified database transaction."""
+        if not updates:
+            return
+
+        def _write():
+            conn = get_db_connection(self.db_path)
+            with conn:
+                for item in updates:
+                    if item['type'] == 'verified_target':
+                        base_dir, file_hash, target_path = item['args']
+                        conn.execute(
+                            "UPDATE documents SET user_verified_target_path = ? WHERE base_dir = ? AND file_hash = ?",
+                            (target_path, base_dir, file_hash),
+                        )
+                    elif item['type'] == 'document_path':
+                        base_dir, old_filepath, new_filepath = item['args']
+                        import os
+                        new_dir = os.path.dirname(new_filepath).replace("\\", "/")
+                        conn.execute(
+                            "UPDATE documents SET filepath = ?, user_verified_target_path = ? WHERE base_dir = ? AND filepath = ?",
+                            (new_filepath, new_dir, base_dir, old_filepath),
+                        )
+
+        self.worker.execute_write(_write)
+
     def clear(self, base_dir=None):
         """Clear documents from the database. If base_dir is provided, only clear those."""
 

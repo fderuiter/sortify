@@ -51,7 +51,7 @@ def _remove_empty_dirs(path: str):
 
 
 def _execute_moves_recursive(
-    base_dir: str, plan: dict, db, current_dest: str = "", path_map: dict = None
+    base_dir: str, plan: dict, db, current_dest: str = "", path_map: dict = None, db_updates_batch: list = None
 ) -> None:
     """Recursively move files according to the plan."""
     if path_map is None:
@@ -171,36 +171,63 @@ def _execute_moves_recursive(
                             )
                             raise
 
-            # Record user verified target
             doc = db.get_document(base_dir, key)
-            if doc and doc.get("file_hash"):
-                db.set_user_verified_target(
-                    base_dir, doc["file_hash"], current_dest.replace("\\", "/")
-                )
 
             if dest_path == source_path:
+                # Still record user verified target if needed even if not moving
+                if doc and doc.get("file_hash"):
+                    if db_updates_batch is not None:
+                        db_updates_batch.append({
+                            'type': 'verified_target',
+                            'args': (base_dir, doc["file_hash"], current_dest.replace("\\", "/"))
+                        })
+                    else:
+                        db.set_user_verified_target(
+                            base_dir, doc["file_hash"], current_dest.replace("\\", "/")
+                        )
                 continue
 
             if not moved_as_link:
                 shutil.move(source_path, dest_path)
 
+            # Record user verified target and update filepath only after successful move
+            if doc and doc.get("file_hash"):
+                if db_updates_batch is not None:
+                    db_updates_batch.append({
+                        'type': 'verified_target',
+                        'args': (base_dir, doc["file_hash"], current_dest.replace("\\", "/"))
+                    })
+                else:
+                    db.set_user_verified_target(
+                        base_dir, doc["file_hash"], current_dest.replace("\\", "/")
+                    )
+
             # Update filepath in database
             rel_dest = os.path.relpath(dest_path, base_dir)
-            db.update_document_path(base_dir, key, rel_dest)
+            if db_updates_batch is not None:
+                db_updates_batch.append({
+                    'type': 'document_path',
+                    'args': (base_dir, key, rel_dest)
+                })
+            else:
+                db.update_document_path(base_dir, key, rel_dest)
         else:
             # It's a folder
             _execute_moves_recursive(
-                base_dir, content, db, os.path.join(current_dest, key), path_map
+                base_dir, content, db, os.path.join(current_dest, key), path_map, db_updates_batch
             )
 
 
 def execute_moves(
-    base_dir: str, plan: dict, db, history_manager, runtime_settings=None
+    base_dir: str, plan: dict, db, history_manager, runtime_settings=None, resume: bool = False
 ) -> dict:
     """Create directories and safely move files, tracking file-system errors."""
-    # Create a full snapshot of the directory tree and metadata before moving files
-    session_id = history_manager.create_snapshot(base_dir)
-    logging.info(f"Created snapshot session {session_id} for {base_dir}")
+    if not resume:
+        # Create a full snapshot of the directory tree and metadata before moving files
+        session_id = history_manager.create_snapshot(base_dir)
+        logging.info(f"Created snapshot session {session_id} for {base_dir}")
+    else:
+        logging.info(f"Resuming snapshot session for {base_dir}")
 
     # Build path mapping to track where targets move
     moves_list = VerificationEngine.get_moves(base_dir, plan)
@@ -209,7 +236,12 @@ def execute_moves(
         path_map[os.path.abspath(src)] = os.path.abspath(dst)
 
     # Execute all moves first
-    _execute_moves_recursive(base_dir, plan, db, "", path_map)
+    db_updates_batch = []
+    try:
+        _execute_moves_recursive(base_dir, plan, db, "", path_map, db_updates_batch)
+    except Exception:
+        db.execute_batch_updates(db_updates_batch)
+        raise
 
     summary = {"deleted_folders": 0, "protected_folders": 0}
     cleanup_enabled = (
@@ -259,5 +291,7 @@ def execute_moves(
     else:
         for node in dirs_to_process:
             summary["protected_folders"] += 1
+
+    db.execute_batch_updates(db_updates_batch)
 
     return summary
