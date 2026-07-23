@@ -86,11 +86,12 @@ def monkeypatch_session():
 @pytest.fixture
 def test_history_env(tmp_path):
     """Consolidated test environment helper for history, database, and cache."""
-    from app.core.db_worker import DBWorker
-    from app.core.db import Database
-    from app.core.cache import CacheManager
-    from app.core.history import HistoryManager
     import os
+
+    from app.core.cache import CacheManager
+    from app.core.db import Database
+    from app.core.db_worker import DBWorker
+    from app.core.history import HistoryManager
 
     base_dir = str(tmp_path / "test_base")
     os.makedirs(base_dir, exist_ok=True)

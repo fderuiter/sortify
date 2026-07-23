@@ -1,18 +1,18 @@
-import os
-import shutil
 import asyncio
-from unittest.mock import patch, MagicMock
+import os
+from unittest.mock import MagicMock, patch
+
 import pytest
 
+from app.config import AppSettings
 from app.core.cache import CacheManager
 from app.core.db import Database
-from app.core.db_conn import get_db_connection
 from app.core.db_worker import DBWorker
 from app.core.history import HistoryManager
 from app.core.mover import execute_moves
-from app.config import AppSettings
-from app.ui.app import AutoSorterApp
 from app.core.session import AppSession
+from app.ui.app import AutoSorterApp
+
 
 @pytest.fixture
 def test_env(tmp_path):

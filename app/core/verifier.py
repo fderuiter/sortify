@@ -1,7 +1,7 @@
 """Verification engine for proactive move validation."""
 
 import os
-import logging
+
 from app.core.link_manager import LinkManager
 
 try:
@@ -13,8 +13,8 @@ except ImportError:
 def is_ml_available() -> bool:
     """Check if heavy machine learning dependencies (torch, easyocr) are available."""
     try:
-        import torch
         import easyocr
+        import torch
         return True
     except ImportError:
         return False

@@ -4,11 +4,7 @@ from unittest.mock import patch
 
 import pytest
 
-from app.core.cache import CacheManager
-from app.core.db import Database
 from app.core.db_conn import get_db_connection
-from app.core.db_worker import DBWorker
-from app.core.history import HistoryManager
 
 
 def test_incremental_sync_and_stop_on_failure(test_history_env):

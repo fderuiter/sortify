@@ -1,11 +1,8 @@
 import os
 import tempfile
-import shutil
-from pathlib import Path
-import pytest
 
-from app.core.verifier import VerificationEngine, VirtualFilesystemTracker, VirtualNode
 from app.core.link_manager import LinkManager
+from app.core.verifier import VerificationEngine, VirtualFilesystemTracker, VirtualNode
 
 
 def test_circular_rename_dependency():

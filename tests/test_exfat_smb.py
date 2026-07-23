@@ -2,13 +2,6 @@ import os
 import shutil
 from unittest.mock import patch
 
-import pytest
-
-from app.core.cache import CacheManager
-from app.core.db import Database
-from app.core.db_worker import DBWorker
-from app.core.history import HistoryManager
-
 
 def test_rollback_zero_inode(test_history_env):
     base_dir, db, cache, history_manager, db_worker = test_history_env

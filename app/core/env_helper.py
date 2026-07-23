@@ -6,9 +6,8 @@ can resolve decoupled modules from the local cache, and do not pop up terminal w
 """
 
 import os
-import sys
 import subprocess
-from pathlib import Path
+import sys
 
 from app.config import get_app_dir
 

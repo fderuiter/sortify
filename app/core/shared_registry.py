@@ -12,6 +12,7 @@ import os
 import socket
 from contextlib import contextmanager
 
+
 @contextmanager
 def block_external_network():
     """Block outgoing non-localhost network traffic."""
