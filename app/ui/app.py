@@ -287,6 +287,28 @@ class AutoSorterApp:
         asyncio.create_task(self._scan_and_process_worker())
 
     async def _scan_and_process_worker(self):
+        loop = asyncio.get_running_loop()
+        import threading
+        import time
+
+        update_lock = threading.Lock()
+        last_ui_update_time = [0.0]
+        coalesce_interval = 0.1  # seconds
+
+        def update_ui_text():
+            if self.total_files > 0:
+                self.progress_bar.set_value(self.completed_files / self.total_files)
+            self.status_label.set_text(f"Processing: {self.completed_files}/{self.total_files} files...")
+
+        def safe_progress_callback():
+            with update_lock:
+                self.completed_files += 1
+                current_time = time.time()
+                # Update UI at most once every 100ms or when hitting the last file
+                if current_time - last_ui_update_time[0] >= coalesce_interval or self.completed_files == self.total_files:
+                    last_ui_update_time[0] = current_time
+                    loop.call_soon_threadsafe(update_ui_text)
+
         try:
             from app.core.scanner import get_files_recursively
 
@@ -295,6 +317,18 @@ class AutoSorterApp:
             )
             self.total_files = len(files)
             self.completed_files = 0
+            self.progress_bar.set_value(0)
+
+            if self._cancel_analysis_flag:
+                self.status_label.set_text("Analysis cancelled.")
+                self.progress_bar.set_value(0)
+                self.execute_btn.disable()
+                if self.app_session:
+                    self.app_session.close()
+                    self.app_session = None
+                return
+
+            self.status_label.set_text("Analyzing files...")
 
             from app.core.metadata import MetadataPass
 
@@ -304,19 +338,25 @@ class AutoSorterApp:
                 files,
                 self.settings,
                 self.app_session.db,
-                None,
+                safe_progress_callback,
                 lambda: getattr(self, "_cancel_analysis_flag", False),
             )
-            self.completed_files += len(bypassed_files)
-            if self.total_files > 0:
-                self.progress_bar.set_value(self.completed_files / self.total_files)
+
+            if self._cancel_analysis_flag:
+                self.status_label.set_text("Analysis cancelled.")
+                self.progress_bar.set_value(0)
+                self.execute_btn.disable()
+                if self.app_session:
+                    self.app_session.close()
+                    self.app_session = None
+                return
 
             bypassed_set = set(bypassed_files)
             items_to_sort = [f for f in files if f not in bypassed_set]
 
             generator = self.app_session.process_items(
                 items_to_sort,
-                None,
+                safe_progress_callback,
                 lambda: getattr(self, "_cancel_analysis_flag", False),
             )
 
@@ -335,9 +375,6 @@ class AutoSorterApp:
                     break
 
                 await asyncio.to_thread(self.app_session.partial_fit, chunk)
-                self.completed_files += len(chunk)
-                if self.total_files > 0:
-                    self.progress_bar.set_value(self.completed_files / self.total_files)
                 await asyncio.sleep(0.01)
 
             if not self._cancel_analysis_flag:
@@ -347,6 +384,13 @@ class AutoSorterApp:
                 self.render_tree()
                 self.status_label.set_text("Analysis complete.")
                 self.execute_btn.enable()
+            else:
+                self.status_label.set_text("Analysis cancelled.")
+                self.progress_bar.set_value(0)
+                self.execute_btn.disable()
+                if self.app_session:
+                    self.app_session.close()
+                    self.app_session = None
         except Exception as e:
             logger.error(f"Error scanning directory: {e}")
             self.status_label.set_text(f"Error: {e}")
@@ -358,6 +402,11 @@ class AutoSorterApp:
         self._cancel_analysis_flag = True
         self.status_label.set_text("Analysis cancelled.")
         self.cancel_btn.set_visibility(False)
+        self.progress_bar.set_value(0)
+        self.execute_btn.disable()
+        if self.app_session:
+            self.app_session.close()
+            self.app_session = None
 
     def cancel_recalc(self):
         """Cancel the recalculation process."""

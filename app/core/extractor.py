@@ -124,15 +124,22 @@ def extract_file_text(file_path: str) -> str:
         logging.error(
             f"Failed to extract text from {file_path}. Error: {str(e)}", exc_info=True
         )
-        text = "[STATUS:FAILED]"
+        text = f"[STATUS:FAILED: {str(e)}]"
     return text
 
 
 def process_item_worker(
-    base_dir: str, item: str, progress_callback: Callable, db
+    base_dir: str,
+    item: str,
+    progress_callback: Callable,
+    db,
+    cancel_check: Callable | None = None,
 ) -> Tuple[str, str, str]:
     """Process a single item, checking hash first, and extract its text content."""
     try:
+        if cancel_check and cancel_check():
+            return item, "[STATUS:FAILED: Cancelled]", ""
+
         item_path = os.path.join(base_dir, item)
         if os.path.isfile(item_path):
             _, ext = os.path.splitext(item_path)
@@ -153,6 +160,7 @@ def process_item_worker(
         logging.error(
             f"General worker failure processing item: {item}. Error: {str(e)}"
         )
+        return item, f"[STATUS:FAILED: {str(e)}]", ""
     finally:
         if progress_callback:
             progress_callback()
@@ -203,7 +211,7 @@ def build_corpus_generator(
             if cancel_check and cancel_check():
                 break
             item_name, item_text, file_hash = process_item_worker(
-                base_dir, item, progress_callback, db
+                base_dir, item, progress_callback, db, cancel_check
             )
 
             doc = db.get_document(base_dir, item_name)
@@ -226,7 +234,7 @@ def build_corpus_generator(
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             item_to_future = {
                 item: executor.submit(
-                    process_item_worker, base_dir, item, progress_callback, db
+                    process_item_worker, base_dir, item, progress_callback, db, cancel_check
                 )
                 for item in items_to_sort
             }

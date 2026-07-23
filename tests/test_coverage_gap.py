@@ -84,7 +84,7 @@ def test_extract_file_text_exception(tmp_path):
         mock_ext.extract.side_effect = Exception("General Failure")
         mock_get.return_value = mock_ext
         text = extract_file_text("dummy.txt")
-        assert text == "[STATUS:FAILED]"
+        assert text == "[STATUS:FAILED: General Failure]"
 
 
 def test_process_item_worker_already_processed(tmp_path):
@@ -116,7 +116,7 @@ def test_process_item_worker_exception(tmp_path):
     with mock.patch("app.core.extractor.os.path.join", side_effect=Exception("Boom")):
         item, text, h = process_item_worker(str(tmp_path), "test.txt", cb, db)
         assert item == "test.txt"
-        assert text == ""
+        assert text == "[STATUS:FAILED: Boom]"
         assert h == ""
     cb.assert_called_once()
 

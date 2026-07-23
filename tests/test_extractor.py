@@ -143,7 +143,7 @@ def test_process_item_worker_exception(mocker):
     item, text, fhash = process_item_worker("/base", "error.txt", mock_callback, db)
 
     assert item == "error.txt"
-    assert text == ""
+    assert text == "[STATUS:FAILED: Test error]"
     assert fhash == ""
     mock_logger.assert_called_once()
     mock_callback.assert_called_once()

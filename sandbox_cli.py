@@ -59,11 +59,8 @@ def analyze_all():
     def progress_callback():
         print("Progress update: File extraction complete.")
 
-    items = [
-        f
-        for f in os.listdir(SANDBOX_DIR)
-        if os.path.isfile(os.path.join(SANDBOX_DIR, f))
-    ]
+    from app.core.scanner import get_files_recursively
+    items = get_files_recursively(SANDBOX_DIR)
 
     generator = build_corpus_generator(
         base_dir=SANDBOX_DIR,
