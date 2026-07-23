@@ -391,7 +391,12 @@ class HistoryManager:
                         if is_symlink:
                             if current_abs != target_abs:
                                 try:
-                                    os.remove(current_abs)
+                                    from app.core.mover import get_safe_path
+                                    safe_curr = get_safe_path(
+                                        os.path.dirname(current_abs),
+                                        os.path.basename(current_abs)
+                                    )
+                                    os.rename(current_abs, safe_curr)
                                 except OSError:
                                     pass
                             symlinks_to_restore.append((target_abs, symlink_target))
@@ -478,7 +483,12 @@ class HistoryManager:
                         os.makedirs(os.path.dirname(dst), exist_ok=True)
                         if os.path.islink(dst):
                             try:
-                                os.remove(dst)
+                                from app.core.mover import get_safe_path
+                                safe_dst = get_safe_path(
+                                    os.path.dirname(dst),
+                                    os.path.basename(dst)
+                                )
+                                os.rename(dst, safe_dst)
                             except OSError:
                                 pass
 
@@ -566,7 +576,12 @@ class HistoryManager:
                         if os.path.exists(target_abs) or os.path.islink(target_abs):
                             if os.path.islink(target_abs):
                                 try:
-                                    os.remove(target_abs)
+                                    from app.core.mover import get_safe_path
+                                    safe_target = get_safe_path(
+                                        os.path.dirname(target_abs),
+                                        os.path.basename(target_abs)
+                                    )
+                                    os.rename(target_abs, safe_target)
                                 except OSError:
                                     pass
                             else:

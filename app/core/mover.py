@@ -21,7 +21,7 @@ def get_safe_path(dest_dir: str, filename: str, source_path: str = None) -> str:
     base, extension = os.path.splitext(filename)
     counter = 1
     safe_path = os.path.join(dest_dir, filename)
-    while os.path.exists(safe_path):
+    while os.path.lexists(safe_path):
         if source_path and os.path.exists(source_path):
             try:
                 if os.path.samefile(safe_path, source_path):
