@@ -174,4 +174,3 @@ def test_extract_image_downscaled(mocker):
     assert text == "downscaled text"
     mock_image.resize.assert_called_once()
     mock_numpy.array.assert_called_once_with(mock_resized)
-

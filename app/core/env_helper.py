@@ -13,7 +13,10 @@ from app.config import get_app_dir
 
 
 def get_cleaned_env(env: dict = None) -> dict:
-    """Return a copy of the environment dictionary with PyInstaller-specific variables removed."""
+    """Return a copy of the environment dictionary with PyInstaller-specific variables removed.
+
+    This also explicitly injects the local cache directory into PYTHONPATH.
+    """
     if env is None:
         env = os.environ.copy()
     else:

@@ -79,7 +79,9 @@ class SessionCrypto:
                     # Try to migrate to keyring
                     try:
                         keyring.set_password(
-                            self.keyring_service, self.keyring_account, key.decode("utf-8")
+                            self.keyring_service,
+                            self.keyring_account,
+                            key.decode("utf-8"),
                         )
                     except Exception:
                         pass

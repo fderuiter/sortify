@@ -147,11 +147,11 @@ class IncrementalAnalyzer:
                 else {}
             )
             policies = (
-                getattr(runtime_settings, "POLICIES", [])
-                if runtime_settings
-                else []
+                getattr(runtime_settings, "POLICIES", []) if runtime_settings else []
             )
-            sorted_policies = sorted(policies, key=lambda x: x.get("priority", 0), reverse=True)
+            sorted_policies = sorted(
+                policies, key=lambda x: x.get("priority", 0), reverse=True
+            )
 
             def match_policy(rule, file_path, doc_text, st_match) -> bool:
                 rule_type = rule.get("type", "").lower()
@@ -166,7 +166,11 @@ class IncrementalAnalyzer:
                 elif rule_type == "pattern":
                     return expression in fn_only
                 elif rule_type == "override":
-                    return expression == fn_only or expression in fn_only or expression in file_path.lower()
+                    return (
+                        expression == fn_only
+                        or expression in fn_only
+                        or expression in file_path.lower()
+                    )
                 return False
 
             ai_filenames = []
@@ -218,7 +222,13 @@ class IncrementalAnalyzer:
 
                 if matched_policy:
                     policy_plan_files.append(
-                        (f, matched_policy["target_path"], matched_policy["expression"], matched_policy["type"], status_match)
+                        (
+                            f,
+                            matched_policy["target_path"],
+                            matched_policy["expression"],
+                            matched_policy["type"],
+                            status_match,
+                        )
                     )
                     continue
 
@@ -367,7 +377,13 @@ class IncrementalAnalyzer:
                 plan = {}
 
             # Inject policy routed files back into the plan
-            for f, target_folder, expression, rule_type, ext_status in policy_plan_files:
+            for (
+                f,
+                target_folder,
+                expression,
+                rule_type,
+                ext_status,
+            ) in policy_plan_files:
                 if cancel_check and cancel_check():
                     return {}
                 parts = target_folder.replace("\\", "/").split("/")

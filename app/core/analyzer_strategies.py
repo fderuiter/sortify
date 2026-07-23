@@ -81,6 +81,7 @@ class RecursiveKMeansStrategy:
                 return "Miscellaneous"
 
             import numpy as np
+
             scores = np.asarray(X.sum(axis=0)).ravel()
             top_indices = scores.argsort()[::-1][:2]
             top_terms = [feature_names[i].capitalize() for i in top_indices]
@@ -160,10 +161,12 @@ class RecursiveKMeansStrategy:
 try:
     from transformers import LogitsProcessor, LogitsProcessorList
 except ImportError:
+
     class LogitsProcessor:
         """Fallback LogitsProcessor class when transformers is not available."""
 
         pass
+
     class LogitsProcessorList(list):
         """Fallback LogitsProcessorList list class when transformers is not available."""
 
@@ -296,6 +299,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
             return
 
         from app.core.shared_registry import SharedModelRegistry
+
         registry = SharedModelRegistry.get_instance()
         try:
             generator, task, tokenizer = registry.get_generative_model(self.model_path)
@@ -309,25 +313,85 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
 
     def _should_bias_token(self, token_str: str) -> bool:
         # Clean token of special tokenizer characters representing spaces or unk
-        clean_str = token_str.replace("Ġ", "").replace(" ", "").replace("<unk>", "").strip()
+        clean_str = (
+            token_str.replace("Ġ", "").replace(" ", "").replace("<unk>", "").strip()
+        )
         if not clean_str:
             return False
 
         # Hyphen and punctuation check
         import string
+
         if any(c in string.punctuation for c in clean_str):
             return True
 
         # Conversational filler words
         lower_str = clean_str.lower()
         if lower_str in {
-            "sure", "here", "is", "a", "an", "the", "this", "these", "it", "they", "them",
-            "there", "are", "of", "some", "document", "documents", "file", "files", "folder",
-            "folders", "containing", "about", "for", "named", "associated", "with", "relating",
-            "to", "and", "in", "at", "by", "from", "or", "as", "but", "so", "if", "then", "else",
-            "under", "below", "above", "following", "list", "items", "content", "contents",
-            "yes", "no", "ok", "okay", "hello", "hi", "hey", "please", "find", "attached",
-            "generated", "name", "names", "title", "titles"
+            "sure",
+            "here",
+            "is",
+            "a",
+            "an",
+            "the",
+            "this",
+            "these",
+            "it",
+            "they",
+            "them",
+            "there",
+            "are",
+            "of",
+            "some",
+            "document",
+            "documents",
+            "file",
+            "files",
+            "folder",
+            "folders",
+            "containing",
+            "about",
+            "for",
+            "named",
+            "associated",
+            "with",
+            "relating",
+            "to",
+            "and",
+            "in",
+            "at",
+            "by",
+            "from",
+            "or",
+            "as",
+            "but",
+            "so",
+            "if",
+            "then",
+            "else",
+            "under",
+            "below",
+            "above",
+            "following",
+            "list",
+            "items",
+            "content",
+            "contents",
+            "yes",
+            "no",
+            "ok",
+            "okay",
+            "hello",
+            "hi",
+            "hey",
+            "please",
+            "find",
+            "attached",
+            "generated",
+            "name",
+            "names",
+            "title",
+            "titles",
         }:
             return True
 
@@ -347,7 +411,9 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                     vocab_size = len(tokenizer)
                 for token_id in range(vocab_size):
                     token_str = tokenizer.convert_ids_to_tokens(token_id)
-                    if isinstance(token_str, str) and self._should_bias_token(token_str):
+                    if isinstance(token_str, str) and self._should_bias_token(
+                        token_str
+                    ):
                         token_biases[token_id] = -100.0
             except Exception as e:
                 logging.error(f"Failed to build logit biases: {e}")
@@ -375,7 +441,9 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
 
                 logits_processor = LogitsProcessorList()
                 if getattr(self, "token_biases", None):
-                    logits_processor.append(NegativeLogitBiasProcessor(self.token_biases))
+                    logits_processor.append(
+                        NegativeLogitBiasProcessor(self.token_biases)
+                    )
 
                 if self.task == "text-generation":
                     res = self.generator(
@@ -408,6 +476,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
 
                 # Strip leading/trailing punctuation
                 import string
+
                 name = name.strip(string.punctuation).strip()
 
                 if not name or len(name) < 2:
@@ -415,6 +484,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
 
                 # Final OS-level path sanitization
                 from app.core.path_utils import sanitize_name
+
                 name = sanitize_name(name)
 
                 if not name or len(name) < 2:

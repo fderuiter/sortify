@@ -43,14 +43,7 @@ def test_automatic_rollback_on_failed_move(test_env):
     base_dir, db, cache, history_manager, db_worker = test_env
 
     # We want to move file1.txt to folder/file1.txt
-    plan = {
-        "folder": {
-            "file1.txt": {
-                "__type__": "file",
-                "status": "To Be Sorted"
-            }
-        }
-    }
+    plan = {"folder": {"file1.txt": {"__type__": "file", "status": "To Be Sorted"}}}
 
     # Mock shutil.move to fail
     def mock_move(src, dst):
@@ -95,12 +88,13 @@ async def test_ui_recovery_and_watcher_restart(tmp_path):
     app.status_label = MagicMock()
 
     # Mock NiceGUI ui.dialog, ui.notify and tree render
-    with patch("nicegui.ui.dialog") as mock_dialog, \
-         patch("nicegui.ui.notify"), \
-         patch.object(app, "render_tree"), \
-         patch.object(app, "start_watcher") as mock_start_watcher, \
-         patch.object(app, "stop_watcher") as mock_stop_watcher:
-
+    with (
+        patch("nicegui.ui.dialog") as mock_dialog,
+        patch("nicegui.ui.notify"),
+        patch.object(app, "render_tree"),
+        patch.object(app, "start_watcher") as mock_start_watcher,
+        patch.object(app, "stop_watcher") as mock_stop_watcher,
+    ):
         mock_dialog_instance = MagicMock()
         mock_dialog.return_value.__enter__.return_value = mock_dialog_instance
 

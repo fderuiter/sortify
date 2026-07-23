@@ -151,8 +151,10 @@ def test_multiple_databases_key_isolation(tmp_path, monkeypatch):
     # Disable keyring to force fallback to local files
     def mock_set_password(*args, **kwargs):
         raise Exception("Keyring unavailable")
+
     def mock_get_password(*args, **kwargs):
         return None
+
     monkeypatch.setattr(keyring, "set_password", mock_set_password)
     monkeypatch.setattr(keyring, "get_password", mock_get_password)
 
@@ -205,6 +207,7 @@ def test_missing_key_existing_db_fails(tmp_path, monkeypatch):
     # Disable keyring
     def mock_get_password(*args, **kwargs):
         return None
+
     monkeypatch.setattr(keyring, "get_password", mock_get_password)
 
     key_path = tmp_path / "secret.key"
@@ -218,7 +221,9 @@ def test_missing_key_existing_db_fails(tmp_path, monkeypatch):
     crypto = SessionCrypto(key_path, db_path)
 
     # Attempting to get cipher must fail because key is missing (keyring, isolated, legacy are all absent)
-    with pytest.raises(RuntimeError, match="Database accessed but key file is missing."):
+    with pytest.raises(
+        RuntimeError, match="Database accessed but key file is missing."
+    ):
         crypto.get_cipher()
 
 
@@ -226,8 +231,10 @@ def test_copy_db_to_new_system_without_keyring(tmp_path, monkeypatch):
     # Disable keyring entirely
     def mock_set_password(*args, **kwargs):
         raise Exception("Keyring unavailable")
+
     def mock_get_password(*args, **kwargs):
         return None
+
     monkeypatch.setattr(keyring, "set_password", mock_set_password)
     monkeypatch.setattr(keyring, "get_password", mock_get_password)
 
