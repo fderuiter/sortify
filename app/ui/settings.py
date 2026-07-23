@@ -132,7 +132,6 @@ def show_settings(parent_app, settings):
                         ui.label(
                             "AI models are loaded and healthy (Offline mode)."
                         ).classes("text-green-900 text-sm mt-1")
-
                 def reset_model_cache():
                     import shutil
 
