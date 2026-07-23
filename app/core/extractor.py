@@ -224,20 +224,22 @@ def build_corpus_generator(
             yield chunk
     else:
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-            item_to_future = {
-                item: executor.submit(
+            future_to_item = {
+                executor.submit(
                     process_item_worker, base_dir, item, progress_callback, db
-                )
+                ): item
                 for item in items_to_sort
             }
-            for item in items_to_sort:
+            for future in concurrent.futures.as_completed(future_to_item):
                 if cancel_check and cancel_check():
                     # Attempt to cancel remaining futures
-                    for fut in item_to_future.values():
+                    for fut in future_to_item.keys():
                         fut.cancel()
                     break
-                future = item_to_future[item]
-                item_name, item_text, file_hash = future.result()
+                try:
+                    item_name, item_text, file_hash = future.result()
+                except concurrent.futures.CancelledError:
+                    continue
 
                 doc = db.get_document(base_dir, item_name)
                 if doc and doc["file_hash"] == file_hash:

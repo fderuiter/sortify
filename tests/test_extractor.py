@@ -205,3 +205,33 @@ def test_get_file_hash_m4a(tmp_path):
     import hashlib
 
     assert hash_val == hashlib.sha256(b"audio_data").hexdigest()
+
+
+def test_build_corpus_generator_out_of_order(mocker):
+    import time
+
+    def side_effect(base_dir, item, progress_callback, db_ref):
+        if item == "a_slow.txt":
+            time.sleep(0.3)
+            return ("a_slow.txt", "slow text", "hash_slow")
+        else:
+            return ("b_fast.txt", "fast text", "hash_fast")
+
+    mocker.patch("app.core.extractor.process_item_worker", side_effect=side_effect)
+    mocker.patch.object(db, "get_document", return_value=None)
+
+    mock_callback = MagicMock()
+    generator = build_corpus_generator(
+        "/base",
+        ["a_slow.txt", "b_fast.txt"],
+        mock_callback,
+        max_workers=2,
+        chunk_size=1,
+        db=db,
+        sequential=False,
+    )
+
+    chunks = list(generator)
+    assert len(chunks) == 2
+    assert "b_fast.txt" in chunks[0]
+    assert "a_slow.txt" in chunks[1]

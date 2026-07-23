@@ -131,41 +131,51 @@ class AutoSorterApp:
     def check_abandoned_sessions(self):
         """Check for abandoned sessions on startup and prompt for recovery."""
         from app.core.session import scan_abandoned_sessions_async
-        
+
         async def run():
             abandoned = await scan_abandoned_sessions_async()
             if not abandoned:
                 return
-                
+
             session_info = abandoned[0]
-            
-            with ui.dialog() as dialog, ui.card().classes('w-full max-w-md'):
+
+            with ui.dialog() as dialog, ui.card().classes("w-full max-w-md"):
                 dialog.props("persistent")
                 ui.label("Interrupted Session Detected").classes("text-h6 text-red-500")
-                ui.label("An application crash occurred during a previous file sorting operation. Files may be partially moved.")
+                ui.label(
+                    "An application crash occurred during a previous file sorting operation. Files may be partially moved."
+                )
                 ui.label(f"Location: {session_info['base_dir']}")
-                
+
                 with ui.row().classes("w-full justify-end mt-4 gap-2"):
+
                     def on_resume():
                         dialog.close()
                         self.resume_session(session_info)
-                        
+
                     def on_revert():
                         dialog.close()
                         self.revert_session(session_info)
-                        
-                    ui.button("Revert", on_click=on_revert).props('color="negative" aria-label="Revert Button"')
-                    ui.button("Resume", on_click=on_resume).props('color="positive" aria-label="Resume Button"')
+
+                    ui.button("Revert", on_click=on_revert).props(
+                        'color="negative" aria-label="Revert Button"'
+                    )
+                    ui.button("Resume", on_click=on_resume).props(
+                        'color="positive" aria-label="Resume Button"'
+                    )
             dialog.open()
-            
+
         asyncio.create_task(run())
 
     def resume_session(self, session_info):
         """Resume an interrupted sorting operation."""
         import json
+
         self.base_dir = session_info["base_dir"]
-        self.app_session = AppSession(self.settings, self.base_dir, session_id=session_info["session_id"])
-        
+        self.app_session = AppSession(
+            self.settings, self.base_dir, session_id=session_info["session_id"]
+        )
+
         try:
             with open(session_info["plan_path"], "r") as f:
                 self.plan = json.load(f)
@@ -173,9 +183,9 @@ class AutoSorterApp:
             ui.notify(f"Could not load plan: {e}", type="negative")
             self.app_session.close()
             return
-            
+
         self.status_label.set_text("Resuming sorting operation...")
-        
+
         async def run():
             success = False
             try:
@@ -201,9 +211,11 @@ class AutoSorterApp:
     def revert_session(self, session_info):
         """Revert an interrupted sorting operation."""
         self.base_dir = session_info["base_dir"]
-        self.app_session = AppSession(self.settings, self.base_dir, session_id=session_info["session_id"])
+        self.app_session = AppSession(
+            self.settings, self.base_dir, session_id=session_info["session_id"]
+        )
         self.status_label.set_text("Reverting sorting operation...")
-        
+
         async def run():
             success = False
             try:
@@ -338,6 +350,13 @@ class AutoSorterApp:
                 self.completed_files += len(chunk)
                 if self.total_files > 0:
                     self.progress_bar.set_value(self.completed_files / self.total_files)
+
+                # Update the tree visualization progressively as each batch finishes
+                self.plan = await asyncio.to_thread(
+                    self.app_session.generate_sorting_plan
+                )
+                self.render_tree()
+
                 await asyncio.sleep(0.01)
 
             if not self._cancel_analysis_flag:
