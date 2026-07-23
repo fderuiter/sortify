@@ -61,7 +61,7 @@ class VerificationEngine:
 
 
 class VirtualNode:
-    """Represents a virtual file system node used for simulating file movements."""
+    """Represents a simulated file or directory in the virtual filesystem tracker."""
 
     def __init__(self, path, is_dir, inode, size, symlink_target=None, shortcut_target=None):
         self.path = os.path.abspath(path)
