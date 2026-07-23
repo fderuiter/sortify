@@ -298,7 +298,14 @@ class IncrementalAnalyzer:
 
             self._last_reconstruction_error = 0.0
 
-            if self.strategy_name:
+            strategy_name = self.strategy_name
+            if runtime_settings is not None:
+                if getattr(runtime_settings, "CONTEXTUAL_RENAMING", False):
+                    strategy_name = "generative"
+                else:
+                    strategy_name = "default"
+
+            if strategy_name:
                 max_depth = (
                     getattr(runtime_settings, "MAX_DEPTH", 5) if runtime_settings else 5
                 )
@@ -308,7 +315,7 @@ class IncrementalAnalyzer:
                     else 3
                 )
 
-                strategy = clustering_registry.get_strategy(self.strategy_name)
+                strategy = clustering_registry.get_strategy(strategy_name)
                 if strategy:
                     plan, error = strategy.generate_plan(
                         ai_filenames,

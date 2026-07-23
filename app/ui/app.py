@@ -115,7 +115,9 @@ class AutoSorterApp:
         with ui.dialog() as self.recalc_dialog:
             self.recalc_dialog.props("persistent")
             with ui.card().classes("items-center"):
-                ui.label("Recalculating plan...")
+                self.recalc_label = ui.label("Recalculating plan...")
+                self.model_load_progress = ui.linear_progress().classes("w-full mt-2")
+                self.model_load_progress.set_visibility(False)
                 ui.spinner(size="lg")
                 ui.button("Cancel", on_click=self.cancel_recalc).props(
                     'aria-label="Cancel Recalculation Button"'
@@ -341,9 +343,32 @@ class AutoSorterApp:
                 await asyncio.sleep(0.01)
 
             if not self._cancel_analysis_flag:
-                self.plan = await asyncio.to_thread(
-                    self.app_session.generate_sorting_plan
+                self.recalc_dialog.open()
+                self.status_label.set_text("Generating plan...")
+                self.recalc_label.set_text("Generating plan...")
+
+                thread_task = asyncio.create_task(
+                    asyncio.to_thread(self.app_session.generate_sorting_plan)
                 )
+
+                async def update_status_loop():
+                    from app.core.analyzer_strategies import clustering_registry
+                    strategy = clustering_registry.get_strategy("generative")
+                    while not thread_task.done():
+                        if strategy and getattr(strategy, "is_loading", False):
+                            self.recalc_label.set_text("Loading generative AI model... (This may take a moment)")
+                            self.model_load_progress.set_visibility(True)
+                        await asyncio.sleep(0.1)
+
+                status_task = asyncio.create_task(update_status_loop())
+                try:
+                    self.plan = await thread_task
+                finally:
+                    status_task.cancel()
+                    self.model_load_progress.set_visibility(False)
+                    self.recalc_label.set_text("Recalculating plan...")
+                    self.recalc_dialog.close()
+
                 self.render_tree()
                 self.status_label.set_text("Analysis complete.")
                 self.execute_btn.enable()
@@ -395,13 +420,32 @@ class AutoSorterApp:
                 return getattr(self, "_cancel_recalc_flag", False)
 
             try:
-                plan = await asyncio.to_thread(
-                    self.app_session.analyzer.generate_sorting_plan,
-                    self.base_dir,
-                    self.settings,
-                    self.locked_files,
-                    check_cancel,
+                thread_task = asyncio.create_task(
+                    asyncio.to_thread(
+                        self.app_session.analyzer.generate_sorting_plan,
+                        self.base_dir,
+                        self.settings,
+                        self.locked_files,
+                        check_cancel,
+                    )
                 )
+
+                async def update_status_loop():
+                    from app.core.analyzer_strategies import clustering_registry
+                    strategy = clustering_registry.get_strategy("generative")
+                    while not thread_task.done():
+                        if strategy and getattr(strategy, "is_loading", False):
+                            self.recalc_label.set_text("Loading generative AI model... (This may take a moment)")
+                            self.model_load_progress.set_visibility(True)
+                        await asyncio.sleep(0.1)
+
+                status_task = asyncio.create_task(update_status_loop())
+                try:
+                    plan = await thread_task
+                finally:
+                    status_task.cancel()
+                    self.model_load_progress.set_visibility(False)
+                    self.recalc_label.set_text("Recalculating plan...")
 
                 if self._cancel_recalc_flag:
                     self.status_label.set_text("Recalculation cancelled.")

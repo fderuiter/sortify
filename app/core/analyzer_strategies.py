@@ -236,6 +236,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
     def __init__(self, model_path: str = None):
         self.generator = None
         self.task = None
+        self.is_loading = False
 
         if getattr(sys, "frozen", False):
             base_path = os.path.dirname(sys.executable)
@@ -262,49 +263,53 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         self._model_initialized = False
 
     def _init_model(self):
-        self._model_initialized = True
-        if not self.model_path or not os.path.exists(self.model_path):
-            logging.warning(
-                "Offline model bundle not found in either the local project directory or the user configuration directory."
-            )
-            return
-
+        self.is_loading = True
         try:
-            with block_external_network():
-                import torch
-                from transformers import (
-                    AutoModelForCausalLM,
-                    AutoModelForSeq2SeqLM,
-                    AutoTokenizer,
-                    pipeline,
+            if not self.model_path or not os.path.exists(self.model_path):
+                logging.warning(
+                    "Offline model bundle not found in either the local project directory or the user configuration directory."
                 )
+                return
 
-                torch.set_num_threads(2)
+            try:
+                with block_external_network():
+                    import torch
+                    from transformers import (
+                        AutoModelForCausalLM,
+                        AutoModelForSeq2SeqLM,
+                        AutoTokenizer,
+                        pipeline,
+                    )
 
-                tokenizer = AutoTokenizer.from_pretrained(
-                    self.model_path, local_files_only=True
-                )
-                try:
-                    model = AutoModelForSeq2SeqLM.from_pretrained(
+                    torch.set_num_threads(2)
+
+                    tokenizer = AutoTokenizer.from_pretrained(
                         self.model_path, local_files_only=True
                     )
-                    self.task = "text2text-generation"
-                except Exception:
-                    model = AutoModelForCausalLM.from_pretrained(
-                        self.model_path, local_files_only=True
+                    try:
+                        model = AutoModelForSeq2SeqLM.from_pretrained(
+                            self.model_path, local_files_only=True
+                        )
+                        self.task = "text2text-generation"
+                    except Exception:
+                        model = AutoModelForCausalLM.from_pretrained(
+                            self.model_path, local_files_only=True
+                        )
+                        self.task = "text-generation"
+
+                    quantized_model = torch.quantization.quantize_dynamic(
+                        model, {torch.nn.Linear}, dtype=torch.qint8
                     )
-                    self.task = "text-generation"
 
-                quantized_model = torch.quantization.quantize_dynamic(
-                    model, {torch.nn.Linear}, dtype=torch.qint8
-                )
-
-                self.generator = pipeline(
-                    self.task, model=quantized_model, tokenizer=tokenizer, device=-1
-                )
-        except Exception as e:
-            logging.error(f"Failed to load generative model: {e}")
-            self.generator = None
+                    self.generator = pipeline(
+                        self.task, model=quantized_model, tokenizer=tokenizer, device=-1
+                    )
+            except Exception as e:
+                logging.error(f"Failed to load generative model: {e}")
+                self.generator = None
+        finally:
+            self.is_loading = False
+            self._model_initialized = True
 
     def _get_cluster_keywords(self, documents: list) -> str:
         if not documents:
