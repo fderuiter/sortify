@@ -75,7 +75,9 @@ def test_broken_symlink_detection():
 
     assert result["success"] is False
     assert len(result["broken_links"]) > 0
-    assert any(link["type"] == "broken_symlink" for link in result["broken_links"])
+    assert any(
+        link_item["type"] == "broken_symlink" for link_item in result["broken_links"]
+    )
     assert "Broken symlink target" in result["warnings"][0]
 
 
@@ -111,8 +113,7 @@ def test_physical_filesystem_remains_unaltered():
         initial_files = set(os.listdir(tmp_dir))
 
         # Run simulation
-        VerificationEngine.verify_plan_integrity(tmp_dir, plan)
-
+        _ = VerificationEngine.verify_plan_integrity(tmp_dir, plan)
         # Physical filesystem must remain completely unaltered!
         final_files = set(os.listdir(tmp_dir))
         assert initial_files == final_files

@@ -163,12 +163,12 @@ try:
 except ImportError:
 
     class LogitsProcessor:
-        """Fallback LogitsProcessor class if transformers package is missing."""
+        """Fallback LogitsProcessor class when transformers is not available."""
 
         pass
 
     class LogitsProcessorList(list):
-        """Fallback LogitsProcessorList class if transformers package is missing."""
+        """Fallback LogitsProcessorList list class when transformers is not available."""
 
         pass
 
@@ -180,7 +180,7 @@ class NegativeLogitBiasProcessor(LogitsProcessor):
         self.token_biases = token_biases
 
     def __call__(self, input_ids, scores):
-        """Apply negative biases to logits scores during generation."""
+        """Apply negative logit biases to the specified tokens."""
         for token_id, bias in self.token_biases.items():
             if token_id < scores.shape[-1]:
                 if len(scores.shape) == 1:

@@ -41,7 +41,7 @@ class SharedModelRegistry:
 
     @classmethod
     def get_instance(cls):
-        """Get the singleton instance of SharedModelRegistry."""
+        """Retrieve the singleton instance of SharedModelRegistry."""
         if cls._instance is None:
             cls._instance = cls()
         return cls._instance
@@ -180,7 +180,7 @@ class SharedWorkerPool:
 
     @classmethod
     def get_instance(cls, max_workers=None):
-        """Get the singleton instance of SharedWorkerPool."""
+        """Retrieve the singleton instance of SharedWorkerPool, initializing it if necessary."""
         if cls._instance is None:
             # Respect system limits / CPU counts to prevent starvation
             if max_workers is None:
@@ -204,6 +204,6 @@ class SharedWorkerPool:
         return self._executor.submit(offline_wrapped_fn, *args, **kwargs)
 
     def shutdown(self, wait=True):
-        """Shut down the background worker pool."""
+        """Shutdown the underlying executor and reset singleton instance."""
         self._executor.shutdown(wait=wait)
         SharedWorkerPool._instance = None
