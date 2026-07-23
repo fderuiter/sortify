@@ -191,6 +191,7 @@ async def build_corpus_generator_async(
 
     if settings is None:
         from app.config import AppSettings
+
         try:
             settings = AppSettings()
         except Exception:
@@ -202,10 +203,10 @@ async def build_corpus_generator_async(
             break
 
         item_path = os.path.join(base_dir, item)
-        
+
         # 1. Run file hashing in background thread to protect event loop
         file_hash = await asyncio.to_thread(get_file_hash, item_path)
-        
+
         # 2. Check cache database
         doc = await asyncio.to_thread(db.get_document, base_dir, item)
         if doc and doc["file_hash"] == file_hash:
@@ -215,7 +216,7 @@ async def build_corpus_generator_async(
 
         # 3. Process/extract file content in background thread
         text = await asyncio.to_thread(extract_file_text, item_path, settings=settings)
-        
+
         yield item, text, file_hash, False
 
 
@@ -260,6 +261,7 @@ def build_corpus_generator(
     """
     if settings is None:
         from app.config import AppSettings
+
         try:
             settings = AppSettings()
         except Exception:
@@ -293,6 +295,7 @@ def build_corpus_generator(
             yield chunk
     else:
         from app.core.shared_registry import SharedWorkerPool
+
         pool = SharedWorkerPool.get_instance(max_workers=max_workers)
         item_to_future = {
             item: pool.submit(

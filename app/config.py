@@ -61,7 +61,9 @@ class Settings(BaseSettings):
                 raise ValueError("Each policy must be a dictionary.")
             rule_type = rule.get("type")
             if rule_type not in ("keyword", "pattern", "override"):
-                raise ValueError(f"Invalid policy type: {rule_type}. Must be keyword, pattern, or override.")
+                raise ValueError(
+                    f"Invalid policy type: {rule_type}. Must be keyword, pattern, or override."
+                )
 
             expression = rule.get("expression")
             if not isinstance(expression, str) or not expression.strip():

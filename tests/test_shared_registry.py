@@ -63,7 +63,9 @@ def test_shared_model_registry_integrity_check(
     # Case 2: Register expected hash, mismatch -> should raise ValueError and prevent execution
     SharedModelRegistry._instance = None
     registry = SharedModelRegistry.get_instance()
-    registry.register_expected_hashes("generative_naming", {"config.json": "wrong_hash"})
+    registry.register_expected_hashes(
+        "generative_naming", {"config.json": "wrong_hash"}
+    )
 
     with pytest.raises(ValueError, match="Integrity check failed"):
         registry.get_generative_model(str(model_dir))
@@ -87,7 +89,9 @@ def test_shared_worker_pool_offline_enforcement():
         s.connect(("8.8.8.8", 53))
 
     future = pool.submit(task_trying_to_connect)
-    with pytest.raises(PermissionError, match="External network connections are blocked"):
+    with pytest.raises(
+        PermissionError, match="External network connections are blocked"
+    ):
         future.result()
 
 
