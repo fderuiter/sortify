@@ -8,6 +8,11 @@ from typing import Any, Dict, List
 
 from app.core.db_conn import get_db_connection
 
+try:
+    import pylnk3
+except ImportError:
+    pylnk3 = None
+
 
 class HistoryManager:
     """Manages full directory snapshots and rollback functionality."""
@@ -40,6 +45,14 @@ class HistoryManager:
                     mtime REAL,
                     is_symlink INTEGER DEFAULT 0,
                     symlink_target TEXT,
+                    link_type TEXT,
+                    arguments TEXT,
+                    description TEXT,
+                    icon_file TEXT,
+                    icon_index INTEGER,
+                    work_dir TEXT,
+                    window_mode INTEGER,
+                    file_hash TEXT,
                     FOREIGN KEY(session_id) REFERENCES sessions(session_id)
                 )
             """)
@@ -57,6 +70,36 @@ class HistoryManager:
                 pass
             try:
                 conn.execute("ALTER TABLE snapshot_files ADD COLUMN file_hash TEXT")
+            except Exception:
+                pass
+            try:
+                conn.execute("ALTER TABLE snapshot_files ADD COLUMN link_type TEXT")
+            except Exception:
+                pass
+            try:
+                conn.execute("ALTER TABLE snapshot_files ADD COLUMN arguments TEXT")
+            except Exception:
+                pass
+            try:
+                conn.execute("ALTER TABLE snapshot_files ADD COLUMN description TEXT")
+            except Exception:
+                pass
+            try:
+                conn.execute("ALTER TABLE snapshot_files ADD COLUMN icon_file TEXT")
+            except Exception:
+                pass
+            try:
+                conn.execute("ALTER TABLE snapshot_files ADD COLUMN icon_index INTEGER")
+            except Exception:
+                pass
+            try:
+                conn.execute("ALTER TABLE snapshot_files ADD COLUMN work_dir TEXT")
+            except Exception:
+                pass
+            try:
+                conn.execute(
+                    "ALTER TABLE snapshot_files ADD COLUMN window_mode INTEGER"
+                )
             except Exception:
                 pass
             conn.execute("""
@@ -83,6 +126,7 @@ class HistoryManager:
         session_id = str(uuid.uuid4())
         timestamp = time.time()
 
+        from app.core.link_manager import LinkManager
         from app.core.scanner import get_files_recursively
 
         files = get_files_recursively(base_dir)
@@ -101,15 +145,54 @@ class HistoryManager:
                 try:
                     st = os.lstat(abs_path)
                     is_symlink = 1 if os.path.islink(abs_path) else 0
-                    symlink_target = os.readlink(abs_path) if is_symlink else None
+                    is_lnk = 1 if abs_path.lower().endswith(".lnk") else 0
+                    is_link_entity = bool(is_symlink or is_lnk)
+
+                    link_type = None
+                    link_target = None
+                    arguments = None
+                    description = None
+                    icon_file = None
+                    icon_index = 0
+                    work_dir = None
+                    window_mode = None
+
+                    if is_symlink:
+                        link_type = "symlink"
+                        try:
+                            link_target = os.readlink(abs_path)
+                        except OSError:
+                            pass
+                    elif is_lnk:
+                        link_type = "lnk"
+                        if pylnk3:
+                            try:
+                                parsed = pylnk3.parse(abs_path)
+                                link_target = parsed.path
+                                arguments = parsed.arguments
+                                description = parsed.description
+                                icon_file = parsed.icon
+                                icon_index = getattr(parsed, "icon_index", 0)
+                                work_dir = parsed.work_dir
+                                window_mode = parsed.window_mode
+                            except Exception:
+                                info = LinkManager.get_link_info(abs_path)
+                                if info:
+                                    link_target = info.get("target")
+                        else:
+                            info = LinkManager.get_link_info(abs_path)
+                            if info:
+                                link_target = info.get("target")
+
                     file_hash = None
-                    if not is_symlink and st.st_size > 0:
+                    if not is_link_entity and st.st_size > 0:
                         try:
                             from app.core.extractor import get_file_hash
 
                             file_hash = get_file_hash(abs_path)
                         except Exception:
                             pass
+
                     file_records.append(
                         (
                             session_id,
@@ -118,7 +201,20 @@ class HistoryManager:
                             st.st_size,
                             st.st_mtime,
                             is_symlink,
-                            symlink_target,
+                            is_symlink
+                            and (
+                                link_target or os.readlink(abs_path)
+                                if is_symlink
+                                else None
+                            )
+                            or link_target,
+                            link_type,
+                            arguments,
+                            description,
+                            icon_file,
+                            icon_index,
+                            work_dir,
+                            window_mode,
                             file_hash,
                         )
                     )
@@ -126,7 +222,14 @@ class HistoryManager:
                     continue
             if file_records:
                 conn.executemany(
-                    "INSERT INTO snapshot_files (session_id, original_rel_path, inode, size, mtime, is_symlink, symlink_target, file_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    """
+                    INSERT INTO snapshot_files (
+                        session_id, original_rel_path, inode, size, mtime, 
+                        is_symlink, symlink_target, link_type, arguments, 
+                        description, icon_file, icon_index, work_dir, 
+                        window_mode, file_hash
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
                     file_records,
                 )
 
@@ -221,16 +324,23 @@ class HistoryManager:
 
             try:
                 cur = conn.execute(
-                    "SELECT original_rel_path, inode, size, mtime, is_symlink, symlink_target, file_hash FROM snapshot_files WHERE session_id = ?",
+                    "SELECT original_rel_path, inode, size, mtime, is_symlink, symlink_target, file_hash, link_type FROM snapshot_files WHERE session_id = ?",
                     (session_id,),
                 )
                 snapshot_files = cur.fetchall()
             except Exception:
-                cur = conn.execute(
-                    "SELECT original_rel_path, inode, size, mtime, is_symlink, symlink_target FROM snapshot_files WHERE session_id = ?",
-                    (session_id,),
-                )
-                snapshot_files = [(*row, None) for row in cur.fetchall()]
+                try:
+                    cur = conn.execute(
+                        "SELECT original_rel_path, inode, size, mtime, is_symlink, symlink_target, file_hash FROM snapshot_files WHERE session_id = ?",
+                        (session_id,),
+                    )
+                    snapshot_files = [(*row, None) for row in cur.fetchall()]
+                except Exception:
+                    cur = conn.execute(
+                        "SELECT original_rel_path, inode, size, mtime, is_symlink, symlink_target FROM snapshot_files WHERE session_id = ?",
+                        (session_id,),
+                    )
+                    snapshot_files = [(*row, None, None) for row in cur.fetchall()]
 
         from app.core.scanner import get_files_recursively
 
@@ -286,46 +396,62 @@ class HistoryManager:
             is_symlink,
             symlink_target,
             file_hash,
+            link_type,
         ) in snapshot_files:
+            is_lnk = (
+                1 if (link_type == "lnk" or rel_path.lower().endswith(".lnk")) else 0
+            )
+            is_link_entity = bool(is_symlink or is_lnk)
+
             found = False
             target_sig = (size, mtime, is_symlink, symlink_target)
 
             if inodes_reliable and inode in current_inodes:
                 abs_path, current_sig = current_inodes[inode]
-                if current_sig[2] == is_symlink:
-                    if not is_symlink or current_sig[3] == symlink_target:
-                        if verify_hash(abs_path, file_hash):
-                            del current_inodes[inode]
-                            found = True
+                if is_link_entity:
+                    del current_inodes[inode]
+                    found = True
+                else:
+                    if current_sig[2] == is_symlink:
+                        if not is_symlink or current_sig[3] == symlink_target:
+                            if verify_hash(abs_path, file_hash):
+                                del current_inodes[inode]
+                                found = True
 
             if not found:
                 # Fallback Step A
                 curr_sig = active_files_by_rel_path.get(rel_path)
-                if curr_sig == target_sig:
-                    abs_path = os.path.join(base_dir, rel_path)
-                    if verify_hash(abs_path, file_hash):
-                        if (
-                            curr_sig in active_files_by_sig
-                            and abs_path in active_files_by_sig[curr_sig]
-                        ):
-                            active_files_by_sig[curr_sig].remove(abs_path)
+                if is_link_entity:
+                    if curr_sig is not None:
                         found = True
+                else:
+                    if curr_sig == target_sig:
+                        abs_path = os.path.join(base_dir, rel_path)
+                        if verify_hash(abs_path, file_hash):
+                            if (
+                                curr_sig in active_files_by_sig
+                                and abs_path in active_files_by_sig[curr_sig]
+                            ):
+                                active_files_by_sig[curr_sig].remove(abs_path)
+                            found = True
                 if not found:
                     # Fallback Step B
-                    if (
-                        target_sig in active_files_by_sig
-                        and active_files_by_sig[target_sig]
-                    ):
-                        for idx, cand_path in enumerate(
-                            active_files_by_sig[target_sig]
+                    if not is_link_entity:
+                        if (
+                            target_sig in active_files_by_sig
+                            and active_files_by_sig[target_sig]
                         ):
-                            if verify_hash(cand_path, file_hash):
-                                active_files_by_sig[target_sig].pop(idx)
-                                found = True
-                                break
+                            for idx, cand_path in enumerate(
+                                active_files_by_sig[target_sig]
+                            ):
+                                if verify_hash(cand_path, file_hash):
+                                    active_files_by_sig[target_sig].pop(idx)
+                                    found = True
+                                    break
 
             if not found:
-                missing.append(rel_path)
+                if not is_link_entity:
+                    missing.append(rel_path)
 
         return missing
 
@@ -355,16 +481,33 @@ class HistoryManager:
             with conn:
                 try:
                     cur = conn.execute(
-                        "SELECT original_rel_path, inode, size, mtime, is_symlink, symlink_target, file_hash FROM snapshot_files WHERE session_id = ?",
+                        """
+                        SELECT original_rel_path, inode, size, mtime, is_symlink, symlink_target, file_hash,
+                               link_type, arguments, description, icon_file, icon_index, work_dir, window_mode
+                        FROM snapshot_files WHERE session_id = ?
+                        """,
                         (session_id,),
                     )
                     snapshot_files = cur.fetchall()
                 except Exception:
-                    cur = conn.execute(
-                        "SELECT original_rel_path, inode, size, mtime, is_symlink, symlink_target FROM snapshot_files WHERE session_id = ?",
-                        (session_id,),
-                    )
-                    snapshot_files = [(*row, None) for row in cur.fetchall()]
+                    try:
+                        cur = conn.execute(
+                            "SELECT original_rel_path, inode, size, mtime, is_symlink, symlink_target, file_hash FROM snapshot_files WHERE session_id = ?",
+                            (session_id,),
+                        )
+                        snapshot_files = [
+                            (*row, None, None, None, None, 0, None, None)
+                            for row in cur.fetchall()
+                        ]
+                    except Exception:
+                        cur = conn.execute(
+                            "SELECT original_rel_path, inode, size, mtime, is_symlink, symlink_target FROM snapshot_files WHERE session_id = ?",
+                            (session_id,),
+                        )
+                        snapshot_files = [
+                            (*row, None, None, None, None, None, 0, None, None)
+                            for row in cur.fetchall()
+                        ]
 
                 from app.core.scanner import get_files_recursively
 
@@ -415,6 +558,7 @@ class HistoryManager:
                         return False
 
                 symlinks_to_restore = []
+                shortcuts_to_restore = []
                 for (
                     rel_path,
                     inode,
@@ -423,59 +567,98 @@ class HistoryManager:
                     is_symlink,
                     symlink_target,
                     file_hash,
+                    link_type,
+                    arguments,
+                    description,
+                    icon_file,
+                    icon_index,
+                    work_dir,
+                    window_mode,
                 ) in snapshot_files:
                     target_abs = os.path.join(base_dir, rel_path)
                     current_abs = None
                     target_sig = (size, mtime, is_symlink, symlink_target)
 
+                    is_lnk = (
+                        1
+                        if (link_type == "lnk" or rel_path.lower().endswith(".lnk"))
+                        else 0
+                    )
+                    is_link_entity = bool(is_symlink or is_lnk)
+
                     if inodes_reliable and inode in current_inodes:
                         abs_path, current_sig = current_inodes[inode]
-                        if current_sig[2] == is_symlink:
-                            if not is_symlink or current_sig[3] == symlink_target:
-                                if verify_hash(abs_path, file_hash):
-                                    current_abs = abs_path
-                                    del current_inodes[inode]
+                        if is_link_entity:
+                            current_abs = abs_path
+                            del current_inodes[inode]
+                        else:
+                            if current_sig[2] == is_symlink:
+                                if not is_symlink or current_sig[3] == symlink_target:
+                                    if verify_hash(abs_path, file_hash):
+                                        current_abs = abs_path
+                                        del current_inodes[inode]
 
                     if not current_abs:
                         curr_sig = active_files_by_rel_path.get(rel_path)
-                        if curr_sig == target_sig:
-                            candidate_abs = target_abs
-                            if verify_hash(candidate_abs, file_hash):
-                                current_abs = candidate_abs
-                                if (
-                                    curr_sig in active_files_by_sig
-                                    and current_abs in active_files_by_sig[curr_sig]
-                                ):
-                                    active_files_by_sig[curr_sig].remove(current_abs)
+                        if is_link_entity:
+                            if curr_sig is not None:
+                                current_abs = target_abs
+                        else:
+                            if curr_sig == target_sig:
+                                candidate_abs = target_abs
+                                if verify_hash(candidate_abs, file_hash):
+                                    current_abs = candidate_abs
+                                    if (
+                                        curr_sig in active_files_by_sig
+                                        and current_abs in active_files_by_sig[curr_sig]
+                                    ):
+                                        active_files_by_sig[curr_sig].remove(
+                                            current_abs
+                                        )
                         if not current_abs:
-                            if (
-                                target_sig in active_files_by_sig
-                                and active_files_by_sig[target_sig]
-                            ):
-                                for idx, cand_path in enumerate(
-                                    active_files_by_sig[target_sig]
+                            if not is_link_entity:
+                                if (
+                                    target_sig in active_files_by_sig
+                                    and active_files_by_sig[target_sig]
                                 ):
-                                    if verify_hash(cand_path, file_hash):
-                                        current_abs = active_files_by_sig[
-                                            target_sig
-                                        ].pop(idx)
-                                        break
+                                    for idx, cand_path in enumerate(
+                                        active_files_by_sig[target_sig]
+                                    ):
+                                        if verify_hash(cand_path, file_hash):
+                                            current_abs = active_files_by_sig[
+                                                target_sig
+                                            ].pop(idx)
+                                            break
 
                     if not current_abs:
-                        if not ignore_missing:
+                        if not is_link_entity and not ignore_missing:
                             raise ValueError(
                                 f"Rollback validation failed: file hash mismatch or missing for {rel_path}"
                             )
 
-                    if current_abs:
+                    if is_link_entity:
+                        if current_abs and current_abs != target_abs:
+                            try:
+                                os.remove(current_abs)
+                            except OSError:
+                                pass
                         if is_symlink:
-                            if current_abs != target_abs:
-                                try:
-                                    os.remove(current_abs)
-                                except OSError:
-                                    pass
                             symlinks_to_restore.append((target_abs, symlink_target))
-                        else:
+                        elif is_lnk:
+                            shortcuts_to_restore.append(
+                                (
+                                    target_abs,
+                                    symlink_target,
+                                    arguments,
+                                    description,
+                                    icon_file,
+                                    icon_index,
+                                    work_dir,
+                                    window_mode,
+                                )
+                            )
+                    else:
+                        if current_abs:
                             same_file = False
                             if os.path.exists(current_abs) and os.path.exists(
                                 target_abs
@@ -489,9 +672,6 @@ class HistoryManager:
                             if not same_file:
                                 if current_abs != target_abs:
                                     moves.append((current_abs, target_abs))
-                    else:
-                        if is_symlink:
-                            symlinks_to_restore.append((target_abs, symlink_target))
 
                 planned_target_rels = [os.path.relpath(m[1], base_dir) for m in moves]
 
@@ -515,8 +695,8 @@ class HistoryManager:
                             INSERT INTO documents (base_dir, filepath, file_hash, extracted_text)
                         VALUES (?, ?, ?, ?)
                         ON CONFLICT(base_dir, filepath) DO UPDATE SET
-                            file_hash=excluded.file_hash,
-                            extracted_text=excluded.extracted_text
+                             file_hash=excluded.file_hash,
+                             extracted_text=excluded.extracted_text
                             """,
                             docs_to_upsert,
                         )
@@ -676,12 +856,83 @@ class HistoryManager:
                                         ),
                                     )
                         try:
+                            os.makedirs(os.path.dirname(target_abs), exist_ok=True)
                             os.symlink(symlink_target, target_abs)
                         except OSError as e:
                             import logging
 
                             logging.warning(
                                 f"Failed to recreate symbolic link at {target_abs}: {e}"
+                            )
+
+                    # Restore Windows shortcuts after standard files and symlinks
+                    for (
+                        target_abs,
+                        lnk_target,
+                        arguments,
+                        description,
+                        icon_file,
+                        icon_index,
+                        work_dir,
+                        window_mode,
+                    ) in shortcuts_to_restore:
+                        if os.path.exists(target_abs) or os.path.islink(target_abs):
+                            if os.path.islink(
+                                target_abs
+                            ) or target_abs.lower().endswith(".lnk"):
+                                try:
+                                    os.remove(target_abs)
+                                except OSError:
+                                    pass
+                            else:
+                                from app.core.mover import get_safe_path
+
+                                safe_path = get_safe_path(
+                                    os.path.dirname(target_abs),
+                                    os.path.basename(target_abs),
+                                )
+                                shutil.move(target_abs, safe_path)
+
+                                rel_target = os.path.relpath(target_abs, base_dir)
+                                rel_safe = os.path.relpath(safe_path, base_dir)
+                                db_conn = get_db_connection(self.db.db_path)
+                                with db_conn:
+                                    db_conn.execute(
+                                        "UPDATE documents SET filepath = ? WHERE base_dir = ? AND filepath = ?",
+                                        (rel_safe, base_dir, rel_target),
+                                    )
+                                    db_conn.execute(
+                                        "UPDATE documents SET filepath = ? || SUBSTR(filepath, ?) WHERE base_dir = ? AND filepath LIKE ?",
+                                        (
+                                            rel_safe,
+                                            len(rel_target) + 1,
+                                            base_dir,
+                                            rel_target + os.sep + "%",
+                                        ),
+                                    )
+                        try:
+                            if pylnk3 and lnk_target:
+                                os.makedirs(os.path.dirname(target_abs), exist_ok=True)
+                                kwargs = {
+                                    "arguments": arguments,
+                                    "description": description,
+                                    "icon_file": icon_file,
+                                    "icon_index": icon_index or 0,
+                                    "work_dir": work_dir,
+                                    "window_mode": window_mode,
+                                }
+                                pylnk3.for_file(
+                                    lnk_target, lnk_name=target_abs, **kwargs
+                                )
+                            else:
+                                os.makedirs(os.path.dirname(target_abs), exist_ok=True)
+                                with open(target_abs, "w") as f:
+                                    f.write("")
+                        except Exception as e:
+                            import logging
+
+                            logging.warning(
+                                f"Failed to recreate Windows shortcut at {target_abs}: {e}"
                             )
 
                 except Exception as e:

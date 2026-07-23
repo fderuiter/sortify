@@ -13,9 +13,8 @@ except ImportError:
 def is_ml_available() -> bool:
     """Check if heavy machine learning dependencies (torch, easyocr) are available."""
     try:
-        import easyocr
-        import torch
-
+        import easyocr  # noqa: F401
+        import torch  # noqa: F401
         return True
     except ImportError:
         return False
@@ -62,6 +61,8 @@ class VerificationEngine:
 
 
 class VirtualNode:
+    """Represents a simulated file or directory in the virtual filesystem tracker."""
+
     def __init__(
         self, path, is_dir, inode, size, symlink_target=None, shortcut_target=None
     ):
@@ -454,8 +455,8 @@ class VirtualFilesystemTracker:
             warnings.append(c["message"])
         for r in circular_renames:
             warnings.append(r["message"])
-        for l in broken_links:
-            warnings.append(l["message"])
+        for link in broken_links:
+            warnings.append(link["message"])
 
         # Eliminate duplicate messages in warnings
         unique_warnings = list(dict.fromkeys(warnings))

@@ -144,7 +144,6 @@ def test_spec_file_partitioning():
         ),
         ("/mock/sqlcipher3/sub", [], ["extra.so", "doc.txt"]),
     ]
-
     mock_hooks = MagicMock()
     mock_hooks.collect_all.return_value = ([], [], [])
 
@@ -163,7 +162,6 @@ def test_spec_file_partitioning():
         ):
             # Execute the spec file in our mock global context
             exec(spec_content, mock_globals)
-
         # Now let's inspect the `datas` and `binaries` that were passed to `Analysis`
         # Analysis is called as Analysis(...)
         analysis_call = mock_globals["Analysis"].call_args
