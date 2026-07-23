@@ -508,4 +508,4 @@ def run_app(settings, directory=None) -> None:
         if os.path.exists(directory):
             app_instance.base_dir = os.path.abspath(directory)
     app_instance.build_ui()
-    ui.run(title="Smart AutoSorter AI Pro", port=8080, reload=False, show=True)
+    ui.run(host="127.0.0.1", title="Smart AutoSorter AI Pro", port=8080, reload=False, show=True)
