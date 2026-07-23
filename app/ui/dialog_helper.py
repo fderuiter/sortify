@@ -2,7 +2,6 @@
 
 import sys
 import threading
-from tkinter import filedialog
 
 from app.core.env_helper import run_background_process
 
@@ -39,7 +38,9 @@ def ask_directory_async(
                     "-e",
                     "end try",
                 ]
-                result = run_background_process(cmd, capture_output=True, text=True, check=True)
+                result = run_background_process(
+                    cmd, capture_output=True, text=True, check=True
+                )
                 output = result.stdout.strip()
                 if output.startswith("SUCCESS:"):
                     path = output[8:]
@@ -64,9 +65,7 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {{
 }}
 """
                 cmd = ["powershell", "-Command", script]
-                result = run_background_process(
-                    cmd, capture_output=True, text=True
-                )
+                result = run_background_process(cmd, capture_output=True, text=True)
                 output = result.stdout.strip()
                 if output.startswith("SUCCESS:"):
                     path = output[8:]
@@ -79,20 +78,33 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {{
         except Exception:
             success = False
 
-
         if not success:
             # Fallback
             def _fallback():
-                parent.attributes("-topmost", True)
-                parent.focus_force()
-                selected = filedialog.askdirectory(parent=parent, title=title)
-                parent.attributes("-topmost", False)
+                if parent and hasattr(parent, "attributes"):
+                    parent.attributes("-topmost", True)
+                if parent and hasattr(parent, "focus_force"):
+                    parent.focus_force()
+
+                # Lazy-import Tkinter only when running fallback
+                from tkinter import filedialog
+
+                try:
+                    selected = filedialog.askdirectory(parent=parent, title=title)
+                except Exception:
+                    selected = ""
+
+                if parent and hasattr(parent, "attributes"):
+                    parent.attributes("-topmost", False)
                 if enable_ui_callback:
                     enable_ui_callback()
                 if callback:
                     callback(selected)
 
-            parent.after(0, _fallback)
+            if parent and hasattr(parent, "after"):
+                parent.after(0, _fallback)
+            else:
+                _fallback()
             return
 
         def _on_complete():
@@ -101,6 +113,9 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {{
             if callback:
                 callback(path)
 
-        parent.after(0, _on_complete)
+        if parent and hasattr(parent, "after"):
+            parent.after(0, _on_complete)
+        else:
+            _on_complete()
 
     threading.Thread(target=_run_dialog, daemon=True).start()
