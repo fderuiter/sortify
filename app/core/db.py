@@ -1,6 +1,7 @@
 """Local database management for autosorter."""
 
 from pathlib import Path
+import threading
 
 from app.core.crypto import SessionCrypto
 from app.core.db_conn import get_db_connection
@@ -15,6 +16,7 @@ class Database:
     def __init__(self, db_path: Path, worker: DBWorker):
         self.db_path = str(db_path)
         self.worker = worker
+        self._read_lock = threading.Lock()
         key_path = Path(db_path).parent / "secret.key"
         self.crypto = SessionCrypto(key_path, Path(db_path))
         self.init_db()
@@ -55,22 +57,28 @@ class Database:
 
     def get_document(self, base_dir, filepath):
         """Retrieve a document by its base directory and filepath."""
-        conn = get_db_connection(self.db_path)
-        with conn:
-            cursor = conn.execute(
-                "SELECT file_hash, extracted_text FROM documents WHERE base_dir = ? AND filepath = ?",
-                (base_dir, filepath),
-            )
-            row = cursor.fetchone()
-            if row:
-                decrypted_text = (
-                    self.crypto.decrypt_text(row[1]) if row[1] is not None else None
+        acquired = self._read_lock.acquire(timeout=5.0)
+        if not acquired:
+            raise RuntimeError("Database read lock acquisition timeout")
+        try:
+            conn = get_db_connection(self.db_path)
+            with conn:
+                cursor = conn.execute(
+                    "SELECT file_hash, extracted_text FROM documents WHERE base_dir = ? AND filepath = ?",
+                    (base_dir, filepath),
                 )
-                return {
-                    "file_hash": row[0],
-                    "extracted_text": decrypted_text,
-                }
-            return None
+                row = cursor.fetchone()
+                if row:
+                    decrypted_text = (
+                        self.crypto.decrypt_text(row[1]) if row[1] is not None else None
+                    )
+                    return {
+                        "file_hash": row[0],
+                        "extracted_text": decrypted_text,
+                    }
+                return None
+        finally:
+            self._read_lock.release()
 
     def upsert_document(self, base_dir, filepath, file_hash, extracted_text):
         """Insert or update a document in the database."""
@@ -111,28 +119,34 @@ class Database:
 
     def get_all_documents(self, base_dir):
         """Retrieve all valid documents for a given base directory."""
-        conn = get_db_connection(self.db_path)
-        with conn:
-            cursor = conn.execute(
-                "SELECT filepath, extracted_text, file_hash, user_verified_target_path FROM documents WHERE base_dir = ?",
-                (base_dir,),
-            )
-            rows = cursor.fetchall()
-
-            import concurrent.futures
-
-            def _decrypt_row(row):
-                decrypted_text = (
-                    self.crypto.decrypt_text(row[1]) if row[1] is not None else None
+        acquired = self._read_lock.acquire(timeout=5.0)
+        if not acquired:
+            raise RuntimeError("Database read lock acquisition timeout")
+        try:
+            conn = get_db_connection(self.db_path)
+            with conn:
+                cursor = conn.execute(
+                    "SELECT filepath, extracted_text, file_hash, user_verified_target_path FROM documents WHERE base_dir = ?",
+                    (base_dir,),
                 )
-                return (row[0], decrypted_text, row[2], row[3])
+                rows = cursor.fetchall()
+        finally:
+            self._read_lock.release()
 
-            results = []
-            if rows:
-                with concurrent.futures.ThreadPoolExecutor() as executor:
-                    results = list(executor.map(_decrypt_row, rows))
+        import concurrent.futures
 
-            return results
+        def _decrypt_row(row):
+            decrypted_text = (
+                self.crypto.decrypt_text(row[1]) if row[1] is not None else None
+            )
+            return (row[0], decrypted_text, row[2], row[3])
+
+        results = []
+        if rows:
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                results = list(executor.map(_decrypt_row, rows))
+
+        return results
 
     def set_user_verified_target(self, base_dir, file_hash, target_path):
         """Record the historical folder assignment for a specific document hash."""

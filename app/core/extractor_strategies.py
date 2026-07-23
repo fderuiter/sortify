@@ -3,30 +3,39 @@
 import csv
 import io
 import logging
+import threading
 from typing import Protocol
 
 import pypdf
 
 _ocr_reader = None
 _ocr_reader_loaded = False
+_ocr_lock = threading.Lock()
 
 
 def get_ocr_reader():
     """Lazily load and return the EasyOCR Reader instance configured for CPU execution."""
     global _ocr_reader, _ocr_reader_loaded
     if not _ocr_reader_loaded:
-        _ocr_reader_loaded = True
+        acquired = _ocr_lock.acquire(timeout=20.0)
+        if not acquired:
+            raise RuntimeError("Timeout acquiring lock for OCR reader initialization")
         try:
-            import easyocr
-            import torch
+            if not _ocr_reader_loaded:
+                _ocr_reader_loaded = True
+                try:
+                    import easyocr
+                    import torch
 
-            # CPU optimization
-            torch.set_num_threads(2)
-            # Create reader on CPU to execute entirely locally
-            _ocr_reader = easyocr.Reader(["en"], gpu=False)
-        except Exception as e:
-            logging.error(f"Failed to load EasyOCR reader: {e}")
-            _ocr_reader = None
+                    # CPU optimization
+                    torch.set_num_threads(2)
+                    # Create reader on CPU to execute entirely locally
+                    _ocr_reader = easyocr.Reader(["en"], gpu=False)
+                except Exception as e:
+                    logging.error(f"Failed to load EasyOCR reader: {e}")
+                    _ocr_reader = None
+        finally:
+            _ocr_lock.release()
     return _ocr_reader
 
 

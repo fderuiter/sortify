@@ -223,34 +223,67 @@ def build_corpus_generator(
         if chunk:
             yield chunk
     else:
+        import threading
+        active_futures = {}
+        semaphore = threading.BoundedSemaphore(max_workers)
+
+        submit_idx = 0
+        consume_idx = 0
+        n = len(items_to_sort)
+
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-            item_to_future = {
-                item: executor.submit(
-                    process_item_worker, base_dir, item, progress_callback, db
-                )
-                for item in items_to_sort
-            }
-            for item in items_to_sort:
+            while consume_idx < n:
                 if cancel_check and cancel_check():
-                    # Attempt to cancel remaining futures
-                    for fut in item_to_future.values():
+                    # Attempt to cancel remaining active futures
+                    for fut in list(active_futures.values()):
                         fut.cancel()
                     break
-                future = item_to_future[item]
-                item_name, item_text, file_hash = future.result()
 
-                doc = db.get_document(base_dir, item_name)
-                if doc and doc["file_hash"] == file_hash:
-                    continue
+                # Submit as many tasks as possible up to max_workers
+                while submit_idx < n and len(active_futures) < max_workers:
+                    item = items_to_sort[submit_idx]
 
-                chunk[item_name] = {
-                    "text": item_text
-                    if item_text.startswith("[STATUS:")
-                    else item_name + " " + item_text,
-                    "hash": file_hash,
-                }
-                if len(chunk) >= chunk_size:
-                    yield chunk
-                    chunk = {}
+                    # Acquire the semaphore
+                    semaphore.acquire()
+
+                    future = executor.submit(
+                        process_item_worker, base_dir, item, progress_callback, db
+                    )
+                    # Register callback to release semaphore when done
+                    future.add_done_callback(lambda f: semaphore.release())
+
+                    active_futures[item] = future
+                    submit_idx += 1
+
+                # Consume the next expected item in alphabetical order
+                if consume_idx < submit_idx:
+                    next_item = items_to_sort[consume_idx]
+                    future = active_futures[next_item]
+
+                    # Wait for result
+                    item_name, item_text, file_hash = future.result()
+
+                    # Immediately delete reference to future to allow GC
+                    del active_futures[next_item]
+
+                    doc = db.get_document(base_dir, item_name)
+                    if doc and doc["file_hash"] == file_hash:
+                        consume_idx += 1
+                        continue
+
+                    chunk[item_name] = {
+                        "text": item_text
+                        if item_text.startswith("[STATUS:")
+                        else item_name + " " + item_text,
+                        "hash": file_hash,
+                    }
+                    if len(chunk) >= chunk_size:
+                        yield chunk
+                        chunk = {}
+
+                    consume_idx += 1
+                else:
+                    break
+
             if chunk:
                 yield chunk
