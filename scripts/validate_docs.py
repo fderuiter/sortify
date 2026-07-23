@@ -3,7 +3,6 @@
 import argparse
 import hashlib
 import json
-import os
 import sys
 from pathlib import Path
 
@@ -37,9 +36,9 @@ def run_generation():
 
     try:
         from scripts.generate_docs import (
+            generate_admin_guide,
             generate_api_docs,
             generate_ui_docs,
-            generate_admin_guide,
             update_security_md,
         )
 
@@ -184,6 +183,7 @@ def verify():
 
 
 def main():
+    """Parse command line arguments and execute the requested action."""
     parser = argparse.ArgumentParser(description="Documentation Manifest Utility")
     parser.add_argument(
         "action", choices=["generate", "verify"], help="Action to perform"

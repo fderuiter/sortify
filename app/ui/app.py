@@ -562,8 +562,8 @@ class AutoSorterApp:
         except RuntimeError:
             self.loop = None
             
-        from watchdog.observers import Observer
         from watchdog.events import FileSystemEventHandler
+        from watchdog.observers import Observer
 
         class FolderChangeHandler(FileSystemEventHandler):
             def __init__(self, app):

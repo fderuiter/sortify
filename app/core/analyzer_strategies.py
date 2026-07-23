@@ -161,8 +161,12 @@ try:
     from transformers import LogitsProcessor, LogitsProcessorList
 except ImportError:
     class LogitsProcessor:
+        """Dummy LogitsProcessor fallback when transformers is not installed."""
+
         pass
     class LogitsProcessorList(list):
+        """Dummy LogitsProcessorList fallback when transformers is not installed."""
+
         pass
 
 
@@ -173,6 +177,7 @@ class NegativeLogitBiasProcessor(LogitsProcessor):
         self.token_biases = token_biases
 
     def __call__(self, input_ids, scores):
+        """Apply negative logit biases to the logits scores."""
         for token_id, bias in self.token_biases.items():
             if token_id < scores.shape[-1]:
                 if len(scores.shape) == 1:

@@ -13,11 +13,14 @@ ALLOWED_FOR_CHARS = {"app/core/path_utils.py"}
 
 
 class DuplicatePatternVisitor(ast.NodeVisitor):
+    """AST visitor to find duplicate or redundant system utilities or path validation logic."""
+
     def __init__(self, filepath):
         self.filepath = filepath.replace("\\", "/")
         self.errors = []
 
     def visit_Attribute(self, node):
+        """Detect direct 'sys.frozen' access."""
         if self.filepath not in ALLOWED_FOR_FROZEN:
             if isinstance(node.value, ast.Name) and node.value.id == "sys" and node.attr == "frozen":
                 self.errors.append(
@@ -27,6 +30,7 @@ class DuplicatePatternVisitor(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_Call(self, node):
+        """Detect direct 'getattr(sys, 'frozen')' access."""
         if self.filepath not in ALLOWED_FOR_FROZEN:
             if isinstance(node.func, ast.Name) and node.func.id == "getattr":
                 if len(node.args) >= 2:
@@ -40,6 +44,7 @@ class DuplicatePatternVisitor(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_Constant(self, node):
+        """Detect hardcoded files/folders or character sets."""
         if isinstance(node.value, str):
             val = node.value
             
@@ -70,6 +75,7 @@ class DuplicatePatternVisitor(ast.NodeVisitor):
 
 
 def main():
+    """Scan app python files for prohibited duplicate patterns."""
     errors = []
     
     # Check all python files in the app directory

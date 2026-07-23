@@ -6,8 +6,8 @@ import os
 def is_ml_available() -> bool:
     """Check if heavy machine learning dependencies (torch, easyocr) are available."""
     try:
-        import torch
-        import easyocr
+        import easyocr  # noqa: F401
+        import torch  # noqa: F401
         return True
     except ImportError:
         return False

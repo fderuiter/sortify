@@ -1,10 +1,8 @@
 import json
-import sys
-from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
+
 import pytest
 
-import scripts.validate_docs
 from scripts.validate_docs import compute_sha256, generate, verify
 
 
