@@ -4,9 +4,6 @@ import json
 import os
 import shutil
 import sqlite3
-import tempfile
-import uuid
-from pathlib import Path
 
 from app.config import get_app_dir
 from app.core.analyzer import IncrementalAnalyzer
@@ -18,9 +15,11 @@ from app.core.history import HistoryManager
 async def scan_abandoned_sessions_async():
     """Scan for unclosed session folders containing active session databases."""
     import asyncio
-    
+
     def _scan():
-        session_base = Path(tempfile.gettempdir()) / "autosorter_sessions"
+        from app.core.path_utils import get_session_base_dir
+
+        session_base = get_session_base_dir()
         abandoned = []
         if not session_base.exists():
             return abandoned
@@ -28,32 +27,36 @@ async def scan_abandoned_sessions_async():
         for session_dir in session_base.iterdir():
             if not session_dir.is_dir():
                 continue
-            
+
             plan_path = session_dir / "plan.json"
             if not plan_path.exists():
                 continue
-                
+
             history_db = session_dir / "history.db"
             if not history_db.exists():
                 continue
-                
+
             try:
                 conn = sqlite3.connect(history_db)
                 cursor = conn.cursor()
-                cursor.execute("SELECT session_id, base_dir, status FROM sessions ORDER BY timestamp DESC LIMIT 1")
+                cursor.execute(
+                    "SELECT session_id, base_dir, status FROM sessions ORDER BY timestamp DESC LIMIT 1"
+                )
                 row = cursor.fetchone()
                 conn.close()
-                
-                if row and row[2] == 'active':
-                    abandoned.append({
-                        "session_id": row[0],
-                        "base_dir": row[1],
-                        "session_dir": str(session_dir),
-                        "plan_path": str(plan_path)
-                    })
+
+                if row and row[2] == "active":
+                    abandoned.append(
+                        {
+                            "session_id": row[0],
+                            "base_dir": row[1],
+                            "session_dir": str(session_dir),
+                            "plan_path": str(plan_path),
+                        }
+                    )
             except Exception:
                 pass
-                
+
         return abandoned
 
     return await asyncio.to_thread(_scan)
@@ -65,15 +68,10 @@ class AppSession:
     def __init__(self, settings, base_dir=None, session_id=None):
         self.settings = settings
         self.base_dir = base_dir
-        if session_id:
-            self.session_id = session_id
-            self.session_dir = Path(tempfile.gettempdir()) / "autosorter_sessions" / self.session_id
-        else:
-            self.session_id = str(uuid.uuid4())
-            self.session_dir = (
-                Path(tempfile.gettempdir()) / "autosorter_sessions" / self.session_id
-            )
-        self.session_dir.mkdir(parents=True, exist_ok=True)
+
+        from app.core.path_utils import get_base_path, setup_session_directory
+
+        self.session_id, self.session_dir = setup_session_directory(session_id)
 
         from app.core.db_worker import DBWorker
 
@@ -86,14 +84,7 @@ class AppSession:
             self.db, self.cache_manager, str(self.session_dir / "history.db")
         )
 
-        import sys
-
-        if getattr(sys, "frozen", False):
-            base_path = os.path.dirname(sys.executable)
-        else:
-            base_path = os.path.dirname(
-                os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            )
+        base_path = get_base_path(__file__)
 
         local_model_path = os.path.join(base_path, "offline_bundle", "model")
         user_model_path = str(get_app_dir() / "model")
@@ -191,7 +182,7 @@ class AppSession:
         """Execute move operations."""
         if not self.base_dir:
             return {}
-        
+
         plan_path = self.session_dir / "plan.json"
         with open(plan_path, "w") as f:
             json.dump(plan, f)
@@ -199,7 +190,12 @@ class AppSession:
         from app.core.mover import execute_moves
 
         return execute_moves(
-            self.base_dir, plan, self.db, self.history_manager, self.settings, resume=resume
+            self.base_dir,
+            plan,
+            self.db,
+            self.history_manager,
+            self.settings,
+            resume=resume,
         )
 
     def close(self):

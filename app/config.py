@@ -39,30 +39,10 @@ class Settings(BaseSettings):
     @classmethod
     def validate_keyword_rules(cls, v: dict) -> dict:
         """Validate that keyword routing rules and learned rules have valid target paths."""
-        illegal_chars = set('<>:"|?*')
+        from app.core.path_utils import validate_target_path
+
         for keyword, target_path in v.items():
-            if not isinstance(target_path, str):
-                raise ValueError(
-                    f"Target path for keyword '{keyword}' must be a string."
-                )
-
-            # Check for illegal OS characters
-            if any(char in illegal_chars for char in target_path):
-                raise ValueError(
-                    f"Target path '{target_path}' contains illegal characters."
-                )
-
-            # Check for absolute path roots (/ or \)
-            if target_path.startswith("/") or target_path.startswith("\\"):
-                raise ValueError(f"Target path '{target_path}' is an absolute path.")
-
-            # Check for directory traversal segments (..)
-            segments = target_path.replace("\\", "/").split("/")
-            if ".." in segments:
-                raise ValueError(
-                    f"Target path '{target_path}' contains directory traversal segments."
-                )
-
+            validate_target_path(target_path, keyword=keyword)
         return v
 
     AI_CONSENT_GRANTED: bool | None = Field(default=None)

@@ -46,7 +46,9 @@ def register_context_menu(enable: bool):
     # If we are admin, do the registry changes
     import winreg
 
-    if getattr(sys, "frozen", False):
+    from app.core.path_utils import is_packaged
+
+    if is_packaged():
         app_exe = f'"{sys.executable}"'
     else:
         main_script = os.path.abspath(

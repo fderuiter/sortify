@@ -17,13 +17,14 @@ def memory_log():
     # Clear existing handlers
     logger.handlers = []
     logger.addHandler(handler)
-    
+
     # Add filter to handler
     home_dir = str(Path.home())
     filter_instance = LogScrubbingFilter(home_dir)
     handler.addFilter(filter_instance)
-    
+
     return logger, stream
+
 
 def test_scrub_message(memory_log):
     logger, stream = memory_log
@@ -32,12 +33,14 @@ def test_scrub_message(memory_log):
     assert "<USER_HOME>/secret/file.txt" in stream.getvalue()
     assert str(home) not in stream.getvalue()
 
+
 def test_scrub_args(memory_log):
     logger, stream = memory_log
     home = Path.home()
     logger.error("Error with file %s", f"{home}/other/doc.pdf")
     assert "<USER_HOME>/other/doc.pdf" in stream.getvalue()
     assert str(home) not in stream.getvalue()
+
 
 def test_scrub_path_object_args(memory_log):
     logger, stream = memory_log
@@ -49,6 +52,7 @@ def test_scrub_path_object_args(memory_log):
     assert "test.zip" in output
     assert str(home) not in output
 
+
 def test_scrub_exception(memory_log):
     logger, stream = memory_log
     home = Path.home()
@@ -56,11 +60,12 @@ def test_scrub_exception(memory_log):
         raise ValueError(f"Bad path {home}/some/error")
     except ValueError:
         logger.error("An exception occurred", exc_info=True)
-    
+
     output = stream.getvalue()
     assert "An exception occurred" in output
     assert "<USER_HOME>/some/error" in output
     assert str(home) not in output
+
 
 def test_retain_relative_paths(memory_log):
     logger, stream = memory_log
