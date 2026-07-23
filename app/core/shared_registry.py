@@ -63,6 +63,25 @@ def _is_local_address(host: str) -> bool:
         )
     except ValueError:
         pass
+
+    # Try resolving hostname dynamically to check if its IPs are local/private/loopback
+    try:
+        for info in socket.getaddrinfo(host, None):
+            resolved_ip = info[4][0]
+            try:
+                ip = ipaddress.ip_address(resolved_ip)
+                if (
+                    ip.is_loopback
+                    or ip.is_unspecified
+                    or ip.is_private
+                    or ip.is_link_local
+                ):
+                    return True
+            except ValueError:
+                pass
+    except Exception:
+        pass
+
     return False
 
 

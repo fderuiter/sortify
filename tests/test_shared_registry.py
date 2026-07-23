@@ -207,3 +207,16 @@ def test_check_ai_status_corrupt_or_missing(tmp_path, monkeypatch):
         is_healthy, warn_msg = check_ai_status(settings)
         assert not is_healthy
         assert "weights are missing or corrupt" in warn_msg
+
+
+def test_is_local_address_dynamic_resolution():
+    """Verify that _is_local_address dynamically resolves hostname to identify local IP."""
+    from app.core.shared_registry import _is_local_address
+
+    # Mock getaddrinfo to return a private IP for a custom local hostname
+    with patch("socket.getaddrinfo", return_value=[(None, None, None, None, ("192.168.1.100", 0))]):
+        assert _is_local_address("custom-local-host") is True
+
+    # Mock getaddrinfo to return an external public IP
+    with patch("socket.getaddrinfo", return_value=[(None, None, None, None, ("8.8.8.8", 0))]):
+        assert _is_local_address("custom-external-host") is False
