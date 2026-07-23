@@ -109,7 +109,7 @@ class Database:
 
         self.worker.execute_write(_write)
 
-    def get_all_documents(self, base_dir):
+    def get_all_documents(self, base_dir, cache=None):
         """Retrieve all valid documents for a given base directory."""
         conn = get_db_connection(self.db_path)
         with conn:
@@ -122,9 +122,15 @@ class Database:
             import concurrent.futures
 
             def _decrypt_row(row):
-                decrypted_text = (
-                    self.crypto.decrypt_text(row[1]) if row[1] is not None else None
-                )
+                file_hash = row[2]
+                if cache is not None and file_hash in cache:
+                    decrypted_text = cache[file_hash]
+                else:
+                    decrypted_text = (
+                        self.crypto.decrypt_text(row[1]) if row[1] is not None else None
+                    )
+                    if cache is not None and file_hash:
+                        cache[file_hash] = decrypted_text
                 return (row[0], decrypted_text, row[2], row[3])
 
             results = []

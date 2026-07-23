@@ -143,7 +143,8 @@ class IncrementalAnalyzer:
     ) -> dict:
         """Generate a sorting plan based on the current model state."""
         try:
-            docs = self.db.get_all_documents(base_dir)
+            transient_cache = {}
+            docs = self.db.get_all_documents(base_dir, cache=transient_cache)
             if not docs:
                 return {}
 
@@ -164,6 +165,8 @@ class IncrementalAnalyzer:
 
             ai_filenames = []
             ai_documents = []
+            semantic_check_files = []
+            semantic_check_docs = []
             keyword_plan_files = []
             unsupported_files = []
             historical_overrides = {}
@@ -231,12 +234,16 @@ class IncrementalAnalyzer:
                             matched = True
                             break
 
-                if not matched:
-                    if status_match:
+                if status_match:
+                    if not matched:
                         unsupported_files.append((f, status_match))
-                    else:
+                else:
+                    if not matched:
                         ai_filenames.append(f)
                         ai_documents.append(doc)
+                    elif target is None:
+                        semantic_check_files.append(f)
+                        semantic_check_docs.append(doc)
 
             # Centroid Matching Phase
             historical_folder_docs = {}
@@ -254,7 +261,7 @@ class IncrementalAnalyzer:
                         historical_folder_docs[target] = []
                     historical_folder_docs[target].append(d[1])
 
-            if historical_folder_docs and ai_filenames:
+            if historical_folder_docs and (ai_filenames or semantic_check_files):
                 try:
                     import numpy as np
                     from sklearn.feature_extraction.text import TfidfVectorizer
@@ -269,39 +276,54 @@ class IncrementalAnalyzer:
                     vectorizer = TfidfVectorizer(
                         stop_words=list(self.stop_words), max_features=1000
                     )
-                    safe_ai_documents = [d or "" for d in ai_documents]
-                    all_texts = folder_texts + safe_ai_documents
+
+                    eval_filenames = ai_filenames + semantic_check_files
+                    eval_documents = ai_documents + semantic_check_docs
+
+                    safe_eval_documents = [d or "" for d in eval_documents]
+                    all_texts = folder_texts + safe_eval_documents
                     vectorizer.fit(all_texts)
 
                     centroid_vectors = vectorizer.transform(folder_texts)
-                    new_docs_vectors = vectorizer.transform(safe_ai_documents)
+                    new_docs_vectors = vectorizer.transform(safe_eval_documents)
 
                     similarities = cosine_similarity(new_docs_vectors, centroid_vectors)
 
                     remaining_ai_filenames = []
                     remaining_ai_documents = []
 
-                    for i, f in enumerate(ai_filenames):
+                    threshold = (
+                        getattr(runtime_settings, "SIMILARITY_THRESHOLD", 0.8)
+                        if runtime_settings
+                        else 0.8
+                    )
+
+                    for i, f in enumerate(eval_filenames):
                         if len(folder_names) > 0:
                             max_sim = np.max(similarities[i])
                             best_folder_idx = np.argmax(similarities[i])
-                            if max_sim >= 0.8:
+                            if max_sim >= threshold:
                                 target_folder = folder_names[best_folder_idx]
-                                keyword_plan_files.append(
-                                    (
-                                        f,
-                                        target_folder,
-                                        f"centroid >= 0.8 ({max_sim:.2f})",
-                                        "centroid",
-                                        None,
+                                if f in semantic_check_files:
+                                    historical_overrides[f] = (target_folder, None)
+                                else:
+                                    keyword_plan_files.append(
+                                        (
+                                            f,
+                                            target_folder,
+                                            f"centroid >= {threshold} ({max_sim:.2f})",
+                                            "centroid",
+                                            None,
+                                        )
                                     )
-                                )
                             else:
-                                remaining_ai_filenames.append(f)
-                                remaining_ai_documents.append(ai_documents[i])
+                                if f in ai_filenames:
+                                    remaining_ai_filenames.append(f)
+                                    remaining_ai_documents.append(eval_documents[i])
                         else:
-                            remaining_ai_filenames.append(f)
-                            remaining_ai_documents.append(ai_documents[i])
+                            if f in ai_filenames:
+                                remaining_ai_filenames.append(f)
+                                remaining_ai_documents.append(eval_documents[i])
 
                     ai_filenames = remaining_ai_filenames
                     ai_documents = remaining_ai_documents

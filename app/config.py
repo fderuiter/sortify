@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     MAX_WORKERS: int = Field(default=4, gt=0, le=64)
     MAX_DEPTH: int = Field(default=5, gt=0, le=10)
     MAX_FEATURES: int = Field(default=3, gt=0, le=10)
+    SIMILARITY_THRESHOLD: float = Field(default=0.8, ge=0.0, le=1.0)
     CLEANUP_EMPTY_FOLDERS: bool = Field(default=True)
     EXPLORER_INTEGRATION: bool = Field(default=False)
     KEYWORD_RULES: dict = Field(default_factory=dict)

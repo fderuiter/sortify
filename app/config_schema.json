@@ -39,6 +39,13 @@
       "title": "Max Features",
       "type": "integer"
     },
+    "SIMILARITY_THRESHOLD": {
+      "default": 0.8,
+      "minimum": 0.0,
+      "maximum": 1.0,
+      "title": "Similarity Threshold",
+      "type": "number"
+    },
     "CLEANUP_EMPTY_FOLDERS": {
       "default": true,
       "title": "Cleanup Empty Folders",
