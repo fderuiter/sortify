@@ -71,23 +71,6 @@ class AppSession:
             self.base_dir, self.analyzer.corpus, locked_files, {}, manual_folders
         )
 
-    def process_items(self, items_to_sort, callback, cancel_check):
-        """Build corpus generator for files."""
-        if not self.base_dir:
-            return
-        from app.core.extractor import build_corpus_generator
-
-        for chunk in build_corpus_generator(
-            self.base_dir,
-            items_to_sort,
-            callback,
-            max_workers=self.settings.MAX_WORKERS,
-            db=self.db,
-            chunk_size=50,
-            cancel_check=cancel_check,
-        ):
-            yield chunk
-
     def partial_fit(self, chunk):
         """Incrementally train the analyzer."""
         if not self.base_dir:

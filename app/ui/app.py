@@ -217,10 +217,15 @@ class AutoSorterApp:
             bypassed_set = set(bypassed_files)
             items_to_sort = [f for f in files if f not in bypassed_set]
 
-            generator = self.app_session.process_items(
-                items_to_sort,
-                None,
-                lambda: getattr(self, "_cancel_analysis_flag", False),
+            from app.core.extractor import build_corpus_generator
+            generator = build_corpus_generator(
+                base_dir=self.app_session.base_dir,
+                items_to_sort=items_to_sort,
+                progress_callback=None,
+                max_workers=self.settings.MAX_WORKERS,
+                db=self.app_session.db,
+                chunk_size=50,
+                cancel_check=lambda: getattr(self, "_cancel_analysis_flag", False),
             )
 
             def get_next_chunk():
