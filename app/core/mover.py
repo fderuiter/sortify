@@ -19,7 +19,9 @@ except ImportError:
 def _is_same_path(p1: str, p2: str) -> bool:
     if p1 is None or p2 is None:
         return p1 == p2
-    return os.path.normcase(os.path.abspath(p1)) == os.path.normcase(os.path.abspath(p2))
+    return os.path.normcase(os.path.abspath(p1)) == os.path.normcase(
+        os.path.abspath(p2)
+    )
 
 
 def get_safe_path(dest_dir: str, filename: str, source_path: str = None) -> str:
@@ -114,12 +116,16 @@ def _execute_moves_recursive(
                     )
 
                 new_abs_target = path_map.get(
-                    os.path.normcase(os.path.abspath(abs_target)) if abs_target else abs_target,
-                    abs_target
+                    os.path.normcase(os.path.abspath(abs_target))
+                    if abs_target
+                    else abs_target,
+                    abs_target,
                 )
 
                 # Check if we need to update the link
-                needs_update = not _is_same_path(dest_path, source_path) or not _is_same_path(new_abs_target, abs_target)
+                needs_update = not _is_same_path(
+                    dest_path, source_path
+                ) or not _is_same_path(new_abs_target, abs_target)
 
                 if needs_update:
                     import uuid
@@ -283,7 +289,7 @@ def execute_moves(
     db_updates_batch = []
     try:
         _execute_moves_recursive(base_dir, plan, db, "", path_map, db_updates_batch)
-        
+
         summary = {"deleted_folders": 0, "protected_folders": 0}
         cleanup_enabled = (
             getattr(runtime_settings, "CLEANUP_EMPTY_FOLDERS", True)
@@ -295,7 +301,10 @@ def execute_moves(
         dirs_to_process = []
 
         def _find_dir_nodes(node):
-            if not isinstance(node, dict) or node.get("__type__") in ("file", "directory"):
+            if not isinstance(node, dict) or node.get("__type__") in (
+                "file",
+                "directory",
+            ):
                 return
             for k, v in node.items():
                 if isinstance(v, dict) and v.get("__type__") == "directory":
@@ -341,12 +350,19 @@ def execute_moves(
             db.execute_batch_updates(db_updates_batch)
         except Exception:
             pass
-            
+
         if session_id:
-            logging.error(f"Error during background sorting: {e}. Initiating automatic rollback for session {session_id}")
+            logging.error(
+                f"Error during background sorting: {e}. Initiating automatic rollback for session {session_id}"
+            )
             try:
                 history_manager.rollback(session_id, ignore_missing=True)
-                logging.info(f"Automatic rollback completed successfully for session {session_id}")
+                logging.info(
+                    f"Automatic rollback completed successfully for session {session_id}"
+                )
             except Exception as rollback_err:
-                logging.error(f"Automatic rollback failed for session {session_id}: {rollback_err}", exc_info=True)
+                logging.error(
+                    f"Automatic rollback failed for session {session_id}: {rollback_err}",
+                    exc_info=True,
+                )
         raise e

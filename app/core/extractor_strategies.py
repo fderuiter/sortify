@@ -11,6 +11,7 @@ import pypdf
 def get_ocr_reader():
     """Lazily load and return the EasyOCR Reader instance configured for CPU execution."""
     from app.core.shared_registry import SharedModelRegistry
+
     return SharedModelRegistry.get_instance().get_ocr_reader()
 
 
@@ -36,6 +37,7 @@ def extract_text_from_image(image, settings=None, file_path=None) -> str:
         if isinstance(width, (int, float)) and isinstance(height, (int, float)):
             if settings is None:
                 from app.config import AppSettings
+
                 try:
                     settings = AppSettings()
                 except Exception:
@@ -153,7 +155,9 @@ class PdfExtractor:
                         for img in page.images:
                             try:
                                 pil_image = Image.open(io.BytesIO(img.data))
-                                extracted = extract_text_from_image(pil_image, settings=settings, file_path=file_path)
+                                extracted = extract_text_from_image(
+                                    pil_image, settings=settings, file_path=file_path
+                                )
                                 if extracted and extracted != "[STATUS:SKIPPED]":
                                     visual_text += extracted + " "
                             except Exception as img_e:
@@ -189,7 +193,9 @@ class ImageExtractor:
             return "[STATUS:ERROR: Vision Model Offline]"
 
         try:
-            extracted_text = extract_text_from_image(image, settings=settings, file_path=file_path)
+            extracted_text = extract_text_from_image(
+                image, settings=settings, file_path=file_path
+            )
             return extracted_text
         except Exception as e:
             logging.error(f"Failed to process image {file_path}: {e}")

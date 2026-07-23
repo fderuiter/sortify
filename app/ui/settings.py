@@ -56,21 +56,24 @@ def show_settings(parent_app, settings):
                 ).props('aria-label="Explorer integration toggle"')
 
                 ui.label("Cleanup & Maintenance").classes("text-lg font-bold mt-4 mb-2")
+
                 def on_cleanup_change(e):
                     try:
                         settings.CLEANUP_EMPTY_FOLDERS = e.value
                     except Exception as ex:
                         e.sender.value = settings.CLEANUP_EMPTY_FOLDERS
-                        ui.notify(f"Failed to update cleanup setting: {ex}", type="negative")
+                        ui.notify(
+                            f"Failed to update cleanup setting: {ex}", type="negative"
+                        )
 
                 ui.switch(
                     "Automatically remove empty directories",
                     value=settings.CLEANUP_EMPTY_FOLDERS,
-                    on_change=on_cleanup_change
+                    on_change=on_cleanup_change,
                 ).props('aria-label="Cleanup empty directories toggle"')
-                
+
                 ui.label("Processing Limits").classes("text-lg font-bold mt-4 mb-2")
-                
+
                 def on_max_depth_change(e):
                     try:
                         settings.MAX_DEPTH = e.value
@@ -78,10 +81,12 @@ def show_settings(parent_app, settings):
                         e.sender.value = settings.MAX_DEPTH
                         ui.notify(f"Invalid depth: {ex}", type="negative")
 
-                ui.number("Max folder depth", value=settings.MAX_DEPTH, on_change=on_max_depth_change).props(
-                    'aria-label="Max folder depth input"'
-                )
-                
+                ui.number(
+                    "Max folder depth",
+                    value=settings.MAX_DEPTH,
+                    on_change=on_max_depth_change,
+                ).props('aria-label="Max folder depth input"')
+
                 def on_max_folders_change(e):
                     try:
                         settings.MAX_FOLDERS = e.value
@@ -89,57 +94,72 @@ def show_settings(parent_app, settings):
                         e.sender.value = settings.MAX_FOLDERS
                         ui.notify(f"Invalid folder limit: {ex}", type="negative")
 
-                ui.number("Max folders", value=settings.MAX_FOLDERS, on_change=on_max_folders_change).props(
-                    'aria-label="Max folders input"'
-                )
+                ui.number(
+                    "Max folders",
+                    value=settings.MAX_FOLDERS,
+                    on_change=on_max_folders_change,
+                ).props('aria-label="Max folders input"')
 
             with ui.tab_panel("AI"):
                 ui.label("Privacy Options").classes("text-lg font-bold mb-2")
                 ui.label("AI processing is fully offline.").classes(
                     "text-gray-500 mb-2"
                 )
+
                 def reset_model_cache():
                     import shutil
 
                     from nicegui import run
 
                     from app.config import get_app_dir
+
                     model_dir = get_app_dir() / "model"
-                    
+
                     ui.notify("Clearing model cache in background...")
-                    
+
                     async def do_reset():
                         await run.io_bound(shutil.rmtree, model_dir, ignore_errors=True)
                         ui.notify("Model cache cleared successfully.", type="positive")
-                    
+
                     import asyncio
+
                     asyncio.create_task(do_reset())
 
-                ui.button(
-                    "Reset Model Cache", on_click=reset_model_cache
-                ).props('aria-label="Reset Model Cache Button"')
+                ui.button("Reset Model Cache", on_click=reset_model_cache).props(
+                    'aria-label="Reset Model Cache Button"'
+                )
 
             with ui.tab_panel("Rules"):
                 ui.label("Keyword Routing").classes("text-lg font-bold mb-2")
-                
+
                 rules_container = ui.column().classes("w-full mb-4")
-                
+
                 def render_rules():
                     rules_container.clear()
                     with rules_container:
                         for kw, target in settings.KEYWORD_RULES.items():
-                            with ui.row().classes("w-full items-center justify-between border-b pb-2 mb-2"):
+                            with ui.row().classes(
+                                "w-full items-center justify-between border-b pb-2 mb-2"
+                            ):
                                 ui.label(kw).classes("w-1/4 font-mono")
-                                ui.label(target).classes("w-1/2 font-mono text-gray-500")
+                                ui.label(target).classes(
+                                    "w-1/2 font-mono text-gray-500"
+                                )
+
                                 def delete_rule(k=kw):
                                     updated_rules = dict(settings.KEYWORD_RULES)
                                     if k in updated_rules:
                                         del updated_rules[k]
                                         settings.KEYWORD_RULES = updated_rules
-                                        ui.notify(f"Rule for '{k}' deleted.", type="positive")
+                                        ui.notify(
+                                            f"Rule for '{k}' deleted.", type="positive"
+                                        )
                                         render_rules()
-                                ui.button("Delete", on_click=delete_rule, color="red").props('size=sm')
-                                    
+
+                                ui.button(
+                                    "Delete", on_click=delete_rule, color="red"
+                                ).props("size=sm")
+
                 render_rules()
 
                 ui.label("Add New Rule").classes("text-md font-bold mt-4 mb-2")
@@ -150,13 +170,17 @@ def show_settings(parent_app, settings):
                     target_input = ui.input("Target Path").props(
                         'placeholder="Folder name" aria-label="Target Path input"'
                     )
+
                     def add_rule():
                         kw = kw_input.value
                         target = target_input.value
                         if not kw or not target:
-                            ui.notify("Both keyword and target path are required.", type="warning")
+                            ui.notify(
+                                "Both keyword and target path are required.",
+                                type="warning",
+                            )
                             return
-                        
+
                         updated_rules = dict(settings.KEYWORD_RULES)
                         updated_rules[kw] = target
                         try:
