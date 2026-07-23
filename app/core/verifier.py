@@ -1,7 +1,7 @@
 """Verification engine for proactive move validation."""
 
 import os
-import logging
+
 from app.core.link_manager import LinkManager
 
 try:
@@ -13,8 +13,8 @@ except ImportError:
 def is_ml_available() -> bool:
     """Check if heavy machine learning dependencies (torch, easyocr) are available."""
     try:
-        import torch
-        import easyocr
+        import easyocr  # noqa: F401
+        import torch  # noqa: F401
         return True
     except ImportError:
         return False
@@ -61,6 +61,8 @@ class VerificationEngine:
 
 
 class VirtualNode:
+    """Represents a virtual node in the in-memory simulated filesystem."""
+
     def __init__(self, path, is_dir, inode, size, symlink_target=None, shortcut_target=None):
         self.path = os.path.abspath(path)
         self.is_dir = is_dir
@@ -428,8 +430,8 @@ class VirtualFilesystemTracker:
             warnings.append(c["message"])
         for r in circular_renames:
             warnings.append(r["message"])
-        for l in broken_links:
-            warnings.append(l["message"])
+        for link in broken_links:
+            warnings.append(link["message"])
 
         # Eliminate duplicate messages in warnings
         unique_warnings = list(dict.fromkeys(warnings))
