@@ -72,6 +72,7 @@ def run_demo(settings):
             db=db,
             chunk_size=50,
             cancel_check=cancel_check,
+            settings=settings,
         )
 
         for i, chunk in enumerate(generator):

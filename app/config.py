@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     EXPLORER_INTEGRATION: bool = Field(default=False)
     KEYWORD_RULES: dict = Field(default_factory=dict)
     LEARNED_RULES: dict = Field(default_factory=dict)
+    VISUAL_TIMEOUT: int = Field(default=30, gt=0)
+    IMAGE_MAX_DIMENSION: int = Field(default=1000, gt=0)
+    IMAGE_SKIP_THRESHOLD: int = Field(default=3000, gt=0)
 
     @field_validator("KEYWORD_RULES", "LEARNED_RULES")
     @classmethod
