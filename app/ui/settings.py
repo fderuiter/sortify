@@ -100,8 +100,10 @@ def show_settings(parent_app, settings):
                 )
                 def reset_model_cache():
                     import shutil
-                    from app.config import get_app_dir
+
                     from nicegui import run
+
+                    from app.config import get_app_dir
                     model_dir = get_app_dir() / "model"
                     
                     ui.notify("Clearing model cache in background...")
