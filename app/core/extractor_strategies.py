@@ -7,6 +7,7 @@ from typing import Protocol
 
 import pypdf
 
+
 def get_ocr_reader():
     """Lazily load and return the EasyOCR Reader instance configured for CPU execution."""
     from app.core.shared_registry import SharedModelRegistry

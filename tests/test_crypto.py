@@ -1,6 +1,6 @@
 import os
-import sqlite3
 import shutil
+import sqlite3
 from contextlib import closing
 
 import keyring
@@ -163,8 +163,8 @@ def test_multiple_databases_key_isolation(tmp_path, monkeypatch):
     crypto1 = SessionCrypto(key_path, db_path1)
     crypto2 = SessionCrypto(key_path, db_path2)
 
-    cipher1 = crypto1.get_cipher()
-    cipher2 = crypto2.get_cipher()
+    crypto1.get_cipher()
+    crypto2.get_cipher()
 
     assert crypto1.isolated_key_path.exists()
     assert crypto2.isolated_key_path.exists()
@@ -239,7 +239,7 @@ def test_copy_db_to_new_system_without_keyring(tmp_path, monkeypatch):
     db_path1.touch()
 
     crypto1 = SessionCrypto(key_path1, db_path1)
-    cipher1 = crypto1.get_cipher()
+    crypto1.get_cipher()
 
     # Encrypt some text
     original_text = "Highly secure database info."
