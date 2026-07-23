@@ -141,7 +141,11 @@ def process_item_worker(
 
             file_hash = get_file_hash(item_path)
             doc = db.get_document(base_dir, item)
-            if doc and doc["file_hash"] == file_hash:
+            if (
+                doc
+                and doc["file_hash"] == file_hash
+                and doc.get("extracted_text") != "[STATUS:BYPASSED]"
+            ):
                 # Skip extraction if unchanged
                 return item, doc["extracted_text"], file_hash
 
@@ -201,6 +205,7 @@ def build_corpus_generator(
     """
     if settings is None:
         from app.config import AppSettings
+
         try:
             settings = AppSettings()
         except Exception:
@@ -217,7 +222,11 @@ def build_corpus_generator(
             )
 
             doc = db.get_document(base_dir, item_name)
-            if doc and doc["file_hash"] == file_hash:
+            if (
+                doc
+                and doc["file_hash"] == file_hash
+                and doc.get("extracted_text") != "[STATUS:BYPASSED]"
+            ):
                 # Already processed and unchanged, no need to yield to analyzer
                 continue
 
@@ -240,7 +249,7 @@ def build_corpus_generator(
                 )
                 for item in items_to_sort
             }
-            timeout = settings.VISUAL_TIMEOUT if settings else None
+            timeout = getattr(settings, "VISUAL_TIMEOUT", None) if settings else None
             for item in items_to_sort:
                 if cancel_check and cancel_check():
                     # Attempt to cancel remaining futures
@@ -261,7 +270,11 @@ def build_corpus_generator(
                     future.cancel()
 
                 doc = db.get_document(base_dir, item_name)
-                if doc and doc["file_hash"] == file_hash:
+                if (
+                    doc
+                    and doc["file_hash"] == file_hash
+                    and doc.get("extracted_text") != "[STATUS:BYPASSED]"
+                ):
                     continue
 
                 chunk[item_name] = {
