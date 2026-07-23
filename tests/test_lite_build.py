@@ -98,6 +98,7 @@ def test_image_extractor_fallback():
 
 def test_spec_file_partitioning():
     """Verify that the smart-autosorter.spec file correctly partitions dynamic libraries and static files."""
+    import sys
     spec_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "smart-autosorter.spec")
     assert os.path.exists(spec_path)
     
@@ -135,12 +136,30 @@ def test_spec_file_partitioning():
         )
     ]
     
-    with patch("importlib.util.find_spec", mock_find_spec), \
-         patch("os.walk", return_value=mock_walk_data), \
-         patch("os.path.exists", return_value=True):
+    original_modules = {}
+    for mod_name in ["PyInstaller", "PyInstaller.utils", "PyInstaller.utils.hooks"]:
+        if mod_name in sys.modules:
+            original_modules[mod_name] = sys.modules[mod_name]
+            
+    try:
+        mock_hooks = MagicMock()
+        mock_hooks.collect_all.return_value = ([], [], [])
+        sys.modules["PyInstaller"] = MagicMock()
+        sys.modules["PyInstaller.utils"] = MagicMock()
+        sys.modules["PyInstaller.utils.hooks"] = mock_hooks
         
-        # Execute the spec file in our mock global context
-        exec(spec_content, mock_globals)
+        with patch("importlib.util.find_spec", mock_find_spec), \
+             patch("os.walk", return_value=mock_walk_data), \
+             patch("os.path.exists", return_value=True):
+            
+            # Execute the spec file in our mock global context
+            exec(spec_content, mock_globals)
+    finally:
+        for mod_name in ["PyInstaller", "PyInstaller.utils", "PyInstaller.utils.hooks"]:
+            if mod_name in original_modules:
+                sys.modules[mod_name] = original_modules[mod_name]
+            elif mod_name in sys.modules:
+                del sys.modules[mod_name]
         
         # Now let's inspect the `datas` and `binaries` that were passed to `Analysis`
         # Analysis is called as Analysis(...)
