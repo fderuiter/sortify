@@ -1,7 +1,9 @@
 """Defines clustering strategies for grouping documents."""
 
 import logging
+import multiprocessing
 import os
+import queue
 import socket
 import sys
 from collections import defaultdict
@@ -159,6 +161,54 @@ class RecursiveKMeansStrategy:
         return plan
 
 
+def is_gguf_model_dir(model_path: str) -> bool:
+    if not model_path or not os.path.exists(model_path):
+        return False
+    for root, _, files in os.walk(model_path):
+        for file in files:
+            if file.lower().endswith(".gguf"):
+                return True
+    return False
+
+def gguf_worker_main(model_path, input_queue, output_queue):
+    import os
+    gguf_file = None
+    for root, _, files in os.walk(model_path):
+        for file in files:
+            if file.lower().endswith(".gguf"):
+                gguf_file = os.path.join(root, file)
+                break
+        if gguf_file:
+            break
+
+    if not gguf_file:
+        output_queue.put({"error": "No .gguf file found"})
+        return
+
+    try:
+        from llama_cpp import Llama
+        llm = Llama(model_path=gguf_file, n_ctx=2048, verbose=False)
+        output_queue.put({"status": "ready"})
+    except Exception as e:
+        output_queue.put({"error": str(e)})
+        return
+
+    while True:
+        try:
+            task = input_queue.get()
+            if task is None:
+                break
+            
+            prompt = task.get("prompt", "")
+            max_tokens = task.get("max_tokens", 15)
+            
+            res = llm(prompt, max_tokens=max_tokens, echo=False)
+            generated_text = res["choices"][0]["text"].strip()
+            output_queue.put({"text": generated_text})
+        except Exception as e:
+            output_queue.put({"error": str(e)})
+
+
 class GenerativeNamingStrategy(RecursiveKMeansStrategy):
     """Strategy that uses a generative model to create descriptive folder names."""
 
@@ -179,7 +229,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         if not getattr(self, "_model_initialized", False):
             self._init_model()
 
-        if self.generator is None:
+        if self.generator is None and not (self._gguf_active and not self._gguf_failed):
             return plan, error
 
         doc_map = dict(zip(filenames, documents))
@@ -192,21 +242,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                     doc_text = doc_map.get(k, "")[:1000]
                     prompt = f"Does this document about '{doc_text}' belong in a folder for '{path_name}'? Reply YES or NO."
                     try:
-                        import torch
-
-                        torch.set_num_threads(2)
-                        if self.task == "text-generation":
-                            res = self.generator(
-                                prompt,
-                                max_new_tokens=5,
-                                num_return_sequences=1,
-                                return_full_text=False,
-                            )
-                        else:
-                            res = self.generator(
-                                prompt, max_new_tokens=5, num_return_sequences=1
-                            )
-                        answer = res[0]["generated_text"].strip().upper()
+                        answer = self._run_prompt(prompt, 5).strip().upper()
 
                         if "NO" in answer:
                             low_confidence_files[k] = None
@@ -260,8 +296,73 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                 self.model_path = None
 
         self._model_initialized = False
+        self._gguf_active = False
+        self._gguf_failed = False
+        self._gguf_process = None
+        self._gguf_input_queue = None
+        self._gguf_output_queue = None
 
     def _init_model(self):
+        self._model_initialized = True
+        
+        if not self._gguf_failed and is_gguf_model_dir(self.model_path):
+            try:
+                self._gguf_active = True
+                self._gguf_input_queue = multiprocessing.Queue()
+                self._gguf_output_queue = multiprocessing.Queue()
+                self._gguf_process = multiprocessing.Process(
+                    target=gguf_worker_main,
+                    args=(self.model_path, self._gguf_input_queue, self._gguf_output_queue)
+                )
+                self._gguf_process.start()
+                
+                res = self._gguf_output_queue.get(timeout=10.0)
+                if not isinstance(res, dict) or "error" in res:
+                    raise Exception(res.get("error") if isinstance(res, dict) else "Unknown initialization error")
+                return
+            except Exception as e:
+                logging.error(f"GGUF initialization failed: {e}")
+                self._fallback_to_pytorch()
+                return
+
+        self._init_pytorch_model()
+
+    def _fallback_to_pytorch(self):
+        self._gguf_failed = True
+        self._gguf_active = False
+        if self._gguf_process:
+            try:
+                self._gguf_process.terminate()
+                self._gguf_process.join(timeout=1)
+                if self._gguf_process.is_alive():
+                    self._gguf_process.kill()
+                self._gguf_process.close()
+            except Exception:
+                pass
+            self._gguf_process = None
+
+        if getattr(sys, "frozen", False):
+            base_path = os.path.dirname(sys.executable)
+        else:
+            base_path = os.path.dirname(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            )
+
+        local_bundle_path = os.path.join(base_path, "offline_bundle", "model")
+        from app.config import get_app_dir
+        user_bundle_path = str(get_app_dir() / "model")
+
+        if not self.model_path or not os.path.exists(os.path.join(self.model_path, "config.json")):
+            if os.path.exists(local_bundle_path):
+                self.model_path = local_bundle_path
+            elif os.path.exists(user_bundle_path):
+                self.model_path = user_bundle_path
+            else:
+                self.model_path = None
+
+        self._init_pytorch_model()
+
+    def _init_pytorch_model(self):
         self._model_initialized = True
         if not self.model_path or not os.path.exists(self.model_path):
             logging.warning(
@@ -306,6 +407,40 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
             logging.error(f"Failed to load generative model: {e}")
             self.generator = None
 
+    def _run_prompt(self, prompt: str, max_tokens: int) -> str:
+        if self._gguf_active and not self._gguf_failed:
+            if not self._gguf_process or not self._gguf_process.is_alive():
+                logging.error("GGUF process died unexpectedly")
+                self._fallback_to_pytorch()
+            else:
+                try:
+                    self._gguf_input_queue.put({"prompt": prompt, "max_tokens": max_tokens})
+                    res = self._gguf_output_queue.get(timeout=8.0)
+                    if not isinstance(res, dict) or "error" in res or "text" not in res:
+                        raise Exception(res.get("error") if isinstance(res, dict) else "Null or incomplete response")
+                    return res["text"]
+                except Exception as e:
+                    logging.error(f"GGUF worker failed: {e}")
+                    self._fallback_to_pytorch()
+        
+        if self.generator is None:
+            return ""
+            
+        import torch
+        torch.set_num_threads(2)
+        if self.task == "text-generation":
+            res = self.generator(
+                prompt,
+                max_new_tokens=max_tokens,
+                num_return_sequences=1,
+                return_full_text=False,
+            )
+        else:
+            res = self.generator(
+                prompt, max_new_tokens=max_tokens, num_return_sequences=1
+            )
+        return res[0]["generated_text"]
+
     def _get_cluster_keywords(self, documents: list) -> str:
         if not documents:
             return "Miscellaneous"
@@ -313,7 +448,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         if not getattr(self, "_model_initialized", False):
             self._init_model()
 
-        if self.generator is None:
+        if self.generator is None and not (self._gguf_active and not self._gguf_failed):
             return super()._get_cluster_keywords(documents)
 
         try:
@@ -321,23 +456,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
             prompt = f"Generate a short, descriptive natural language folder name (1 to 4 words) for a folder containing these documents. Do not use hyphens. Return only the name.\nDocuments: {doc_text}\nFolder Name:"
 
             with block_external_network():
-                import torch
-
-                torch.set_num_threads(2)
-
-                if self.task == "text-generation":
-                    res = self.generator(
-                        prompt,
-                        max_new_tokens=15,
-                        num_return_sequences=1,
-                        return_full_text=False,
-                    )
-                else:
-                    res = self.generator(
-                        prompt, max_new_tokens=15, num_return_sequences=1
-                    )
-
-                name = res[0]["generated_text"].strip()
+                name = self._run_prompt(prompt, 15).strip()
 
                 if not name or len(name) < 2:
                     return super()._get_cluster_keywords(documents)
