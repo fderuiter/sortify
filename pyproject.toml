@@ -7,7 +7,7 @@ name = "smart-autosorter"
 version = "0.1.0"
 description = "AI File Organizer Pro"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.12"
 dependencies = [
     "pandas",
     "scikit-learn",

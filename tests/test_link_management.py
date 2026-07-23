@@ -45,6 +45,12 @@ except ImportError:
     pylnk3 = None
 
 
+def is_same_path(p1: str, p2: str) -> bool:
+    if p1 is None or p2 is None:
+        return p1 == p2
+    return os.path.normcase(os.path.abspath(p1)) == os.path.normcase(os.path.abspath(p2))
+
+
 def test_relative_symlink_update(tmp_path):
     if __import__("sys").platform == "win32":
         __import__("pytest").skip(
@@ -136,7 +142,7 @@ def test_windows_shortcut_update_mocked(tmp_path):
     ):
         # Make os.path.exists return True for our mocked shortcut and fallback to real os.path.exists for others
         def side_effect_exists(path):
-            if path == shortcut_path or ".shadow_" in str(path):
+            if is_same_path(path, shortcut_path) or ".shadow_" in str(path):
                 return True
             return original_exists(path)
 
@@ -145,7 +151,7 @@ def test_windows_shortcut_update_mocked(tmp_path):
 
         # Make os.remove do nothing for our mocked shortcut, fallback to real os.remove for others
         def side_effect_remove(path):
-            if path == shortcut_path or ".shadow_" in str(path):
+            if is_same_path(path, shortcut_path) or ".shadow_" in str(path):
                 return
             original_remove(path)
 
@@ -243,7 +249,7 @@ def test_windows_shortcut_update_in_place_mocked(tmp_path):
     ):
 
         def side_effect_exists(path):
-            if path == shortcut_path or ".shadow_" in str(path):
+            if is_same_path(path, shortcut_path) or ".shadow_" in str(path):
                 return True
             return original_exists(path)
 
@@ -251,7 +257,7 @@ def test_windows_shortcut_update_in_place_mocked(tmp_path):
         mock_lexists.side_effect = side_effect_exists
 
         def side_effect_samefile(f1, f2):
-            if f1 == shortcut_path and f2 == shortcut_path:
+            if is_same_path(f1, shortcut_path) and is_same_path(f2, shortcut_path):
                 return True
             if not original_exists(f1) or not original_exists(f2):
                 return False
@@ -260,7 +266,7 @@ def test_windows_shortcut_update_in_place_mocked(tmp_path):
         mock_samefile.side_effect = side_effect_samefile
 
         def side_effect_remove(path):
-            if path == shortcut_path or ".shadow_" in str(path):
+            if is_same_path(path, shortcut_path) or ".shadow_" in str(path):
                 return
             original_remove(path)
 
@@ -340,7 +346,7 @@ def test_windows_shortcut_update_exception(tmp_path, caplog):
     ):
 
         def side_effect_exists(path):
-            if path == shortcut_path or ".shadow_" in str(path):
+            if is_same_path(path, shortcut_path) or ".shadow_" in str(path):
                 return True
             return original_exists(path)
 
@@ -348,7 +354,7 @@ def test_windows_shortcut_update_exception(tmp_path, caplog):
         mock_lexists.side_effect = side_effect_exists
 
         def side_effect_samefile(f1, f2):
-            if f1 == shortcut_path and f2 == shortcut_path:
+            if is_same_path(f1, shortcut_path) and is_same_path(f2, shortcut_path):
                 return True
             if not original_exists(f1) or not original_exists(f2):
                 return False
@@ -357,7 +363,7 @@ def test_windows_shortcut_update_exception(tmp_path, caplog):
         mock_samefile.side_effect = side_effect_samefile
 
         def side_effect_remove(path):
-            if path == shortcut_path or ".shadow_" in str(path):
+            if is_same_path(path, shortcut_path) or ".shadow_" in str(path):
                 return
             original_remove(path)
 
