@@ -33,4 +33,4 @@ The application is built using `nicegui` and leverages asynchronous programming 
 
 - **Background Workers:** File scanning and incremental modeling run on a background thread (`pipeline_worker`).
 - **Mutual Exclusion Locks:** A `threading.Lock` (`_update_lock`) is used when updating the ML model due to a manual drag-and-drop file move. This prevents concurrent model modifications that could corrupt the sorting plan.
-- **Debouncing Timers:** The UI uses a debouncing mechanism (`threading.Timer`) set to 0.5 seconds when a user moves a file manually. This delays the recalculation of the clustering logic until the user finishes interacting, preventing UI freezes and redundant computations.
+- **Debouncing Timers:** The UI uses a debouncing mechanism (`threading.Timer`) set to 0.5 seconds when a user moves a file manually. This delays the recalculation of the clustering logic until the user finishes interacting, preventing UI freezes and redundant computations. See the [Python threading documentation](https://docs.python.org/3/library/threading.html) for more details.

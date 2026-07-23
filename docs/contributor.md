@@ -4,7 +4,7 @@ Welcome to the Smart AutoSorter AI Pro project! This guide will help you get sta
 
 ## Development Setup
 
-To set up your local development environment and sync dependencies, run the standard uv commands:
+To set up your local development environment and sync dependencies, refer to the [uv installation guide](https://github.com/astral-sh/uv) and the official [Python website](https://www.python.org/), then run the standard uv commands:
 
 ```bash
 uv sync
