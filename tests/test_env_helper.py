@@ -1,18 +1,13 @@
 import os
-import sys
-import subprocess
-from pathlib import Path
 from unittest import mock
 
-import pytest
-
+from app.config import get_app_dir
 from app.core.env_helper import (
     get_cleaned_env,
     get_subprocess_startupinfo,
-    spawn_background_process,
     run_background_process,
+    spawn_background_process,
 )
-from app.config import get_app_dir
 
 
 def test_get_cleaned_env_defaults():
@@ -22,10 +17,10 @@ def test_get_cleaned_env_defaults():
         "_MEIPASS": "/tmp/_MEI12345",
         "PYTHONPATH": "/tmp/frozen_app",
     }
-    
+
     with mock.patch.dict(os.environ, test_env, clear=True):
         cleaned = get_cleaned_env()
-        
+
         # Ensure _MEIPASS is removed
         assert "_MEIPASS" not in cleaned
         # Ensure the path contains other variables
@@ -41,9 +36,9 @@ def test_get_cleaned_env_custom_dict():
         "_MEIPASS": "abc",
         "PYTHONPATH": "xyz",
     }
-    
+
     cleaned = get_cleaned_env(input_env)
-    
+
     assert "_MEIPASS" not in cleaned
     assert cleaned["SOME_VAR"] == "value"
     assert cleaned["PYTHONPATH"] == str(get_app_dir() / "cache")
@@ -56,9 +51,11 @@ def test_get_subprocess_startupinfo_windows():
     mock_startupinfo_instance.wShowWindow = 0
     mock_startupinfo_class.return_value = mock_startupinfo_instance
 
-    with mock.patch("sys.platform", "win32"), \
-         mock.patch("subprocess.STARTUPINFO", mock_startupinfo_class, create=True), \
-         mock.patch("subprocess.STARTF_USESHOWWINDOW", 1, create=True):
+    with (
+        mock.patch("sys.platform", "win32"),
+        mock.patch("subprocess.STARTUPINFO", mock_startupinfo_class, create=True),
+        mock.patch("subprocess.STARTF_USESHOWWINDOW", 1, create=True),
+    ):
         startupinfo = get_subprocess_startupinfo()
         assert startupinfo is not None
         assert startupinfo.dwFlags & 1
@@ -74,10 +71,10 @@ def test_get_subprocess_startupinfo_non_windows():
 @mock.patch("subprocess.Popen")
 def test_spawn_background_process(mock_popen):
     cmd = ["python", "-c", "print('hello')"]
-    
+
     # Test without custom env
     spawn_background_process(cmd)
-    
+
     # Retrieve arguments passed to Popen
     mock_popen.assert_called_once()
     args, kwargs = mock_popen.call_args
@@ -90,10 +87,10 @@ def test_spawn_background_process(mock_popen):
 @mock.patch("subprocess.run")
 def test_run_background_process(mock_run):
     cmd = ["python", "-c", "print('hello')"]
-    
+
     # Test without custom env
     run_background_process(cmd)
-    
+
     # Retrieve arguments passed to run
     mock_run.assert_called_once()
     args, kwargs = mock_run.call_args
@@ -110,11 +107,13 @@ def test_run_background_process_win32(mock_run):
     mock_startupinfo_instance = mock.MagicMock()
     mock_startupinfo_class.return_value = mock_startupinfo_instance
 
-    with mock.patch("sys.platform", "win32"), \
-         mock.patch("subprocess.STARTUPINFO", mock_startupinfo_class, create=True), \
-         mock.patch("subprocess.STARTF_USESHOWWINDOW", 1, create=True):
+    with (
+        mock.patch("sys.platform", "win32"),
+        mock.patch("subprocess.STARTUPINFO", mock_startupinfo_class, create=True),
+        mock.patch("subprocess.STARTF_USESHOWWINDOW", 1, create=True),
+    ):
         run_background_process(cmd)
-        
+
         mock_run.assert_called_once()
         args, kwargs = mock_run.call_args
         assert "startupinfo" in kwargs
