@@ -24,7 +24,18 @@ dependencies = [
     "easyocr>=1.7.0",
     "sqlcipher3-wheels==0.5.7",
     "transformers>=4.57.6",
+    "torch",
+    "torchvision",
 ]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+torchvision = { index = "pytorch-cpu" }
 
 [project.scripts]
 smart-autosorter = "app.main:main"
