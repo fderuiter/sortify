@@ -34,6 +34,27 @@ class Settings(BaseSettings):
     EXPLORER_INTEGRATION: bool = Field(default=False)
     KEYWORD_RULES: dict = Field(default_factory=dict)
     LEARNED_RULES: dict = Field(default_factory=dict)
+    FOLDER_DEPTH_LIMIT: int = Field(default=100, gt=0)
+
+    @field_validator("FOLDER_DEPTH_LIMIT", mode="before")
+    @classmethod
+    def validate_folder_depth_limit(cls, v) -> int:
+        if isinstance(v, bool):
+            raise ValueError("FOLDER_DEPTH_LIMIT must be an integer, not a boolean.")
+        try:
+            if isinstance(v, str):
+                v = int(v)
+            elif isinstance(v, float):
+                if not v.is_integer():
+                    raise ValueError("FOLDER_DEPTH_LIMIT must be an integer.")
+                v = int(v)
+            if not isinstance(v, int):
+                raise ValueError("FOLDER_DEPTH_LIMIT must be an integer.")
+        except (ValueError, TypeError):
+            raise ValueError("FOLDER_DEPTH_LIMIT must be a valid positive integer.")
+        if v <= 0:
+            raise ValueError("FOLDER_DEPTH_LIMIT must be greater than 0.")
+        return v
 
     @field_validator("KEYWORD_RULES", "LEARNED_RULES")
     @classmethod

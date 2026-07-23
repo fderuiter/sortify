@@ -49,6 +49,12 @@
       "title": "Explorer Integration",
       "type": "boolean"
     },
+    "FOLDER_DEPTH_LIMIT": {
+      "default": 100,
+      "exclusiveMinimum": 0,
+      "title": "Folder Depth Limit",
+      "type": "integer"
+    },
     "KEYWORD_RULES": {
       "additionalProperties": true,
       "title": "Keyword Rules",

@@ -301,17 +301,30 @@ class HistoryManager:
                         ):
                             active_files_by_sig[curr_sig].remove(abs_path)
                         found = True
-                if not found:
-                    # Fallback Step B
-                    if (
-                        target_sig in active_files_by_sig
-                        and active_files_by_sig[target_sig]
-                    ):
-                        for idx, cand_path in enumerate(active_files_by_sig[target_sig]):
-                            if verify_hash(cand_path, file_hash):
-                                active_files_by_sig[target_sig].pop(idx)
+            if not found:
+                # Fallback Step B
+                if (
+                    target_sig in active_files_by_sig
+                    and active_files_by_sig[target_sig]
+                ):
+                    for idx, cand_path in enumerate(active_files_by_sig[target_sig]):
+                        if verify_hash(cand_path, file_hash):
+                            active_files_by_sig[target_sig].pop(idx)
+                            found = True
+                            break
+
+            if not found:
+                # Direct disk check fallback in case it was skipped by scanner due to depth limit
+                abs_path = os.path.join(base_dir, rel_path)
+                if os.path.lexists(abs_path):
+                    try:
+                        is_link = os.path.islink(abs_path)
+                        curr_symlink_target = os.readlink(abs_path) if is_link else None
+                        if is_link == bool(is_symlink) and (not is_link or curr_symlink_target == symlink_target):
+                            if verify_hash(abs_path, file_hash):
                                 found = True
-                                break
+                    except OSError:
+                        pass
 
             if not found:
                 missing.append(rel_path)
@@ -442,6 +455,18 @@ class HistoryManager:
                                     if verify_hash(cand_path, file_hash):
                                         current_abs = active_files_by_sig[target_sig].pop(idx)
                                         break
+
+                        if not current_abs:
+                            # Direct disk check fallback in case it was skipped by scanner due to depth limit
+                            if os.path.lexists(target_abs):
+                                try:
+                                    is_link = os.path.islink(target_abs)
+                                    curr_symlink_target = os.readlink(target_abs) if is_link else None
+                                    if is_link == bool(is_symlink) and (not is_link or curr_symlink_target == symlink_target):
+                                        if verify_hash(target_abs, file_hash):
+                                            current_abs = target_abs
+                                except OSError:
+                                    pass
                     
                     if not current_abs:
                         if not ignore_missing:
