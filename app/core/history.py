@@ -269,7 +269,8 @@ class HistoryManager:
             active_files_by_sig[sig].append(abs_path)
 
         def verify_hash(abs_path, expected_hash):
-            if not expected_hash: return True
+            if not expected_hash:
+                return True
             try:
                 from app.core.extractor import get_file_hash
                 return get_file_hash(abs_path) == expected_hash
@@ -392,7 +393,8 @@ class HistoryManager:
                 # First compute all intended moves
                 moves = []
                 def verify_hash(abs_path, expected_hash):
-                    if not expected_hash: return True
+                    if not expected_hash:
+                        return True
                     try:
                         from app.core.extractor import get_file_hash
                         return get_file_hash(abs_path) == expected_hash
@@ -442,7 +444,8 @@ class HistoryManager:
                                         break
                     
                     if not current_abs:
-                        if not ignore_missing: raise ValueError(f"Rollback validation failed: file hash mismatch or missing for {rel_path}")
+                        if not ignore_missing:
+                            raise ValueError(f"Rollback validation failed: file hash mismatch or missing for {rel_path}")
 
                     if current_abs:
                         if is_symlink:
