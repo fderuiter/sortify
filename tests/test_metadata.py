@@ -1,8 +1,4 @@
-import logging
-import os
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 from app.core.metadata import MetadataPass
 
@@ -38,9 +34,7 @@ def test_metadata_pass_not_a_file(tmp_path):
     subdir = tmp_path / "subdir"
     subdir.mkdir()
 
-    res = MetadataPass.run(
-        str(tmp_path), ["subdir"], settings, db, None, None
-    )
+    res = MetadataPass.run(str(tmp_path), ["subdir"], settings, db, None, None)
     assert res == []
 
 
@@ -219,8 +213,6 @@ def test_metadata_pass_invalid_db_records(tmp_path):
     file1.touch()
 
     with patch("app.core.metadata.get_file_hash", return_value="hash123"):
-        res = MetadataPass.run(
-            str(tmp_path), ["file1.txt"], settings, db, None, None
-        )
+        res = MetadataPass.run(str(tmp_path), ["file1.txt"], settings, db, None, None)
         # Should not be bypassed because none of the invalid records should map hash123
         assert res == []

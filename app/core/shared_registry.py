@@ -12,6 +12,7 @@ import os
 import socket
 from contextlib import contextmanager
 
+
 @contextmanager
 def block_external_network():
     """Block outgoing non-localhost network traffic."""
@@ -40,6 +41,7 @@ class SharedModelRegistry:
 
     @classmethod
     def get_instance(cls):
+        """Get the singleton instance of the SharedModelRegistry."""
         if cls._instance is None:
             cls._instance = cls()
         return cls._instance
@@ -57,21 +59,27 @@ class SharedModelRegistry:
         if model_id in self._expected_hashes:
             expected = self._expected_hashes[model_id]
             if not model_path or not os.path.exists(model_path):
-                raise FileNotFoundError(f"Model path {model_path} does not exist for integrity check.")
-            
+                raise FileNotFoundError(
+                    f"Model path {model_path} does not exist for integrity check."
+                )
+
             if os.path.isdir(model_path):
                 for filename, expected_hash in expected.items():
                     file_path = os.path.join(model_path, filename)
                     if not os.path.exists(file_path):
-                        raise FileNotFoundError(f"Required model file {file_path} is missing.")
-                    
+                        raise FileNotFoundError(
+                            f"Required model file {file_path} is missing."
+                        )
+
                     hasher = hashlib.sha256()
                     with open(file_path, "rb") as f:
                         for chunk in iter(lambda: f.read(65536), b""):
                             hasher.update(chunk)
                     actual_hash = hasher.hexdigest()
                     if actual_hash != expected_hash:
-                        raise ValueError(f"Integrity check failed for {filename}. Expected {expected_hash}, got {actual_hash}")
+                        raise ValueError(
+                            f"Integrity check failed for {filename}. Expected {expected_hash}, got {actual_hash}"
+                        )
             else:
                 # Single file
                 hasher = hashlib.sha256()
@@ -79,9 +87,14 @@ class SharedModelRegistry:
                     for chunk in iter(lambda: f.read(65536), b""):
                         hasher.update(chunk)
                 actual_hash = hasher.hexdigest()
-                expected_hash = expected.get(os.path.basename(model_path)) or list(expected.values())[0]
+                expected_hash = (
+                    expected.get(os.path.basename(model_path))
+                    or list(expected.values())[0]
+                )
                 if actual_hash != expected_hash:
-                    raise ValueError(f"Integrity check failed. Expected {expected_hash}, got {actual_hash}")
+                    raise ValueError(
+                        f"Integrity check failed. Expected {expected_hash}, got {actual_hash}"
+                    )
         return True
 
     def get_ocr_reader(self):
@@ -98,6 +111,7 @@ class SharedModelRegistry:
             try:
                 import easyocr
                 import torch
+
                 torch.set_num_threads(2)
                 # Create reader on CPU
                 self._models[model_id] = easyocr.Reader(["en"], gpu=False)
@@ -166,6 +180,7 @@ class SharedWorkerPool:
 
     @classmethod
     def get_instance(cls, max_workers=None):
+        """Get the singleton instance of the SharedWorkerPool."""
         if cls._instance is None:
             # Respect system limits / CPU counts to prevent starvation
             if max_workers is None:
@@ -175,18 +190,20 @@ class SharedWorkerPool:
 
     def __init__(self, max_workers: int):
         self._executor = concurrent.futures.ThreadPoolExecutor(
-            max_workers=max_workers,
-            thread_name_prefix="GlobalSharedWorker"
+            max_workers=max_workers, thread_name_prefix="GlobalSharedWorker"
         )
         self.max_workers = max_workers
 
     def submit(self, fn, *args, **kwargs):
         """Submit a task to the pool, ensuring offline boundaries are enforced."""
+
         def offline_wrapped_fn(*a, **kw):
             with block_external_network():
                 return fn(*a, **kw)
+
         return self._executor.submit(offline_wrapped_fn, *args, **kwargs)
 
     def shutdown(self, wait=True):
+        """Shutdown the background worker pool and release references."""
         self._executor.shutdown(wait=wait)
         SharedWorkerPool._instance = None

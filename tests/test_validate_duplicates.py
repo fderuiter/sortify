@@ -1,6 +1,5 @@
 import ast
-import tempfile
-import pytest
+
 from scripts.validate_duplicates import DuplicatePatternVisitor
 
 
@@ -33,7 +32,9 @@ def test_visitor_catches_secret_key():
     tree = ast.parse("key = parent / 'secret.key'")
     visitor.visit(tree)
     assert len(visitor.errors) == 1
-    assert "Direct reference to 'secret.key' database key file found" in visitor.errors[0]
+    assert (
+        "Direct reference to 'secret.key' database key file found" in visitor.errors[0]
+    )
 
 
 def test_visitor_catches_hardcoded_illegal_chars():

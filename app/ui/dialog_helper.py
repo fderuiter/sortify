@@ -39,7 +39,9 @@ def ask_directory_async(
                     "-e",
                     "end try",
                 ]
-                result = run_background_process(cmd, capture_output=True, text=True, check=True)
+                result = run_background_process(
+                    cmd, capture_output=True, text=True, check=True
+                )
                 output = result.stdout.strip()
                 if output.startswith("SUCCESS:"):
                     path = output[8:]
@@ -64,9 +66,7 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {{
 }}
 """
                 cmd = ["powershell", "-Command", script]
-                result = run_background_process(
-                    cmd, capture_output=True, text=True
-                )
+                result = run_background_process(cmd, capture_output=True, text=True)
                 output = result.stdout.strip()
                 if output.startswith("SUCCESS:"):
                     path = output[8:]
@@ -78,7 +78,6 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {{
                     success = False
         except Exception:
             success = False
-
 
         if not success:
             # Fallback

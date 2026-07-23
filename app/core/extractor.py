@@ -201,6 +201,7 @@ def build_corpus_generator(
     """
     if settings is None:
         from app.config import AppSettings
+
         try:
             settings = AppSettings()
         except Exception:
@@ -234,6 +235,7 @@ def build_corpus_generator(
             yield chunk
     else:
         from app.core.shared_registry import SharedWorkerPool
+
         pool = SharedWorkerPool.get_instance(max_workers=max_workers)
         item_to_future = {
             item: pool.submit(

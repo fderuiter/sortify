@@ -1,12 +1,10 @@
-import os
-import sys
-import tempfile
-import pytest
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from app.config import AppSettings
+from app.core.extractor_strategies import ImageExtractor, XlsxExtractor
 from app.core.verifier import is_ml_available
-from app.core.extractor_strategies import XlsxExtractor, ImageExtractor
 from app.ui.app import AutoSorterApp
 
 
@@ -66,19 +64,25 @@ def test_ocr_warning_dialog_on_scan():
     app.progress_bar = MagicMock()
     app.status_label = MagicMock()
     app.cancel_btn = MagicMock()
-    
+
     # Mocking files with images/pdfs and no ML
-    with patch("app.core.scanner.get_files_recursively", return_value=["file1.png", "file2.pdf"]):
+    with patch(
+        "app.core.scanner.get_files_recursively",
+        return_value=["file1.png", "file2.pdf"],
+    ):
         with patch("app.core.verifier.is_ml_available", return_value=False):
             with patch("app.core.metadata.MetadataPass.run", return_value=[]):
                 with patch("asyncio.sleep", return_value=None):
                     # Mock other methods to avoid side effects
                     app.app_session = MagicMock()
                     app.app_session.process_items = MagicMock(return_value=iter([]))
-                    
+
                     import asyncio
+
                     asyncio.run(app._scan_and_process_worker())
-                    app.show_ml_warning_dialog.assert_called_once_with("Visual text extraction (OCR)")
+                    app.show_ml_warning_dialog.assert_called_once_with(
+                        "Visual text extraction (OCR)"
+                    )
 
 
 def test_xlsx_extractor_fallback():
