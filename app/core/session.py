@@ -110,32 +110,6 @@ class AppSession:
             model_path=model_path,
         )
 
-    def save_cache_sync(self, locked_files, manual_folders):
-        """Save the cache synchronously."""
-        if not self.base_dir:
-            return
-        self.cache_manager.save_cache_sync(
-            self.base_dir, self.analyzer.corpus, locked_files, {}, manual_folders
-        )
-
-    def process_items(self, items_to_sort, callback, cancel_check):
-        """Build corpus generator for files."""
-        if not self.base_dir:
-            return
-        from app.core.extractor import build_corpus_generator
-
-        for chunk in build_corpus_generator(
-            self.base_dir,
-            items_to_sort,
-            callback,
-            max_workers=self.settings.MAX_WORKERS,
-            db=self.db,
-            chunk_size=50,
-            cancel_check=cancel_check,
-            settings=self.settings,
-        ):
-            yield chunk
-
     async def process_items_async(self, items_to_sort, cancel_check):
         """Build corpus asynchronous generator for files, yielded file-by-file sequentially."""
         if not self.base_dir:
@@ -166,39 +140,9 @@ class AppSession:
             self.base_dir, self.settings, locked_files=locked
         )
 
-    def load_cache(self):
-        """Load the cache for the current session."""
-        if not self.base_dir:
-            return None, None, None, None
-        return self.cache_manager.load_cache(self.base_dir)
-
-    def get_sessions(self):
-        """Get history sessions."""
-        return self.history_manager.get_sessions()
-
-    def check_missing_files(self, session_id):
-        """Check if files are missing from a session."""
-        return self.history_manager.check_missing_files(session_id)
-
     def rollback(self, session_id, ignore_missing=False):
         """Rollback a past session."""
         self.history_manager.rollback(session_id, ignore_missing=ignore_missing)
-
-    def update_document_path(self, old_path, new_path):
-        """Update document paths within session bounds."""
-        if not self.base_dir:
-            return
-        if old_path in self.analyzer.corpus:
-            self.analyzer.corpus[new_path] = self.analyzer.corpus.pop(old_path)
-        self.db.update_document_path(self.base_dir, old_path, new_path)
-
-    def remove_document(self, path):
-        """Remove document from session and db."""
-        if not self.base_dir:
-            return
-        if path in self.analyzer.corpus:
-            del self.analyzer.corpus[path]
-        self.db.remove_document(self.base_dir, path)
 
     def execute_moves(self, plan, resume=False):
         """Execute move operations."""
