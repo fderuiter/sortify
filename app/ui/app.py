@@ -154,7 +154,9 @@ class AutoSorterApp:
                         dialog.close()
                         self.revert_session(session_info)
                         
-                    ui.button("Revert", on_click=on_revert).props('color="negative" aria-label="Revert Button"')
+                    revert_btn = ui.button("Revert", on_click=on_revert).props('color="negative" aria-label="Revert Button"')
+                    if session_info.get("session_id") == "bypass_session":
+                        revert_btn.disable()
                     ui.button("Resume", on_click=on_resume).props('color="positive" aria-label="Resume Button"')
             dialog.open()
             
@@ -202,6 +204,13 @@ class AutoSorterApp:
         """Revert an interrupted sorting operation."""
         self.base_dir = session_info["base_dir"]
         self.app_session = AppSession(self.settings, self.base_dir, session_id=session_info["session_id"])
+        
+        if getattr(self.app_session.history_manager, "is_bypass", False) or session_info.get("session_id") == "bypass_session":
+            ui.notify("Rollback is disabled for this session/path.", type="warning")
+            self.app_session.close()
+            self.app_session = None
+            return
+
         self.status_label.set_text("Reverting sorting operation...")
         
         async def run():
@@ -283,6 +292,14 @@ class AutoSorterApp:
         self.status_label.set_text("Scanning directory...")
         self.cancel_btn.set_visibility(True)
         self._cancel_analysis_flag = False
+
+        if getattr(self.app_session.history_manager, "is_bypass", False):
+            self.meta_label.set_text("History tracking and rollback are disabled for this non-local path.")
+            self.meta_label.classes("text-red-500 mt-2", remove="text-cyan-500")
+            ui.notify("History tracking and rollback are disabled for non-local paths.", type="warning")
+        else:
+            self.meta_label.set_text("")
+            self.meta_label.classes("text-cyan-500 mt-2", remove="text-red-500")
 
         asyncio.create_task(self._scan_and_process_worker())
 

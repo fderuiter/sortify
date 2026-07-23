@@ -82,9 +82,17 @@ class AppSession:
         self.cache_manager = CacheManager(
             str(self.session_dir / "cache.db"), self.db_worker
         )
-        self.history_manager = HistoryManager(
-            self.db, self.cache_manager, str(self.session_dir / "history.db")
-        )
+        from app.core.path_utils import is_non_local_path
+        from app.core.history import DummyHistoryManager
+
+        if self.base_dir and is_non_local_path(self.base_dir):
+            self.history_manager = DummyHistoryManager(
+                self.db, self.cache_manager, str(self.session_dir / "history.db")
+            )
+        else:
+            self.history_manager = HistoryManager(
+                self.db, self.cache_manager, str(self.session_dir / "history.db")
+            )
 
         import sys
 

@@ -81,3 +81,92 @@ def is_valid_name(name: str) -> bool:
         return False
 
     return True
+
+
+def is_non_local_path(path: str) -> bool:
+    """Identify if a path resides on a network share, external, or removable drive.
+
+    This check is completely local and does not make any network requests.
+    """
+    if not path:
+        return False
+
+    import os
+    import sys
+
+    # 1. Clean and check UNC Paths (Windows and Unix-like UNC representations)
+    p = str(path).strip()
+    if p.startswith(r"\\") or p.startswith("//"):
+        return True
+
+    # 2. Windows Drive Types
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            drive, _ = os.path.splitdrive(os.path.abspath(p))
+            if drive:
+                drive_root = drive + "\\"
+                drive_type = ctypes.windll.kernel32.GetDriveTypeW(drive_root)
+                # DRIVE_REMOVABLE = 2, DRIVE_REMOTE = 4, DRIVE_CDROM = 5
+                if drive_type in (2, 4, 5):
+                    return True
+        except Exception:
+            pass
+
+    # 3. Unix Mount Points (macOS / Linux)
+    norm_p = os.path.normpath(os.path.abspath(p))
+    if (
+        norm_p.startswith("/Volumes/")
+        or norm_p.startswith("/media/")
+        or norm_p.startswith("/mnt/")
+    ):
+        return True
+
+    # 4. Check /proc/mounts on Linux for non-local filesystem types
+    if sys.platform.startswith("linux"):
+        try:
+            # Walk up to find the mount point
+            current = norm_p
+            mount_point = None
+            while current and current != "/":
+                if os.path.ismount(current):
+                    mount_point = current
+                    break
+                parent = os.path.dirname(current)
+                if parent == current:
+                    break
+                current = parent
+            if not mount_point:
+                mount_point = "/"
+
+            if os.path.exists("/proc/mounts"):
+                non_local_fs = {
+                    "nfs",
+                    "nfs4",
+                    "cifs",
+                    "smbfs",
+                    "sshfs",
+                    "davfs",
+                    "vboxsf",
+                    "fuse.sshfs",
+                    "fuse.rclone",
+                    "afs",
+                    "vfat",
+                    "exfat",
+                    "msdos",
+                    "iso9660",
+                    "udf",
+                }
+                with open("/proc/mounts", "r", encoding="utf-8", errors="ignore") as f:
+                    for line in f:
+                        parts = line.strip().split()
+                        if len(parts) >= 3:
+                            mount_p, fs_type = parts[1], parts[2]
+                            if mount_p == mount_point:
+                                if fs_type.lower() in non_local_fs:
+                                    return True
+        except Exception:
+            pass
+
+    return False
+

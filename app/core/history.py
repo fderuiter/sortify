@@ -11,6 +11,7 @@ from app.core.db_conn import get_db_connection
 
 class HistoryManager:
     """Manages full directory snapshots and rollback functionality."""
+    is_bypass = False
 
     def __init__(self, db, cache_manager, db_path=None):
         from pathlib import Path
@@ -713,3 +714,36 @@ class HistoryManager:
                 )
 
         return self.db.worker.execute_write(_write)
+
+
+class DummyHistoryManager(HistoryManager):
+    """Dummy snapshot manager that bypasses history database logging when a non-local drive is detected."""
+    is_bypass = True
+
+    def __init__(self, db, cache_manager, db_path=None):
+        self.db = db
+        self.cache_manager = cache_manager
+        self.db_path = db_path
+
+    def _init_db(self):
+        pass
+
+    def create_snapshot(self, base_dir: str) -> str:
+        """Avoid database write operations and return a bypass session ID."""
+        return "bypass_session"
+
+    def rollback(self, session_id: str, ignore_missing: bool = False):
+        """Safe no-op rollback."""
+        pass
+
+    def check_missing_files(self, session_id: str) -> List[str]:
+        """Return an empty list of missing files."""
+        return []
+
+    def get_sessions(self) -> List[Dict[str, Any]]:
+        """Return an empty list of historical sessions."""
+        return []
+
+    def _prune_snapshots(self, conn, limit=10):
+        pass
+
