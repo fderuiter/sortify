@@ -1,4 +1,5 @@
 import os
+import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -138,24 +139,16 @@ def test_spec_file_partitioning():
         )
     ]
     
-    # Mock PyInstaller so importing from it during spec execution succeeds
-    mock_pyinstaller = MagicMock()
-    mock_utils = MagicMock()
     mock_hooks = MagicMock()
-    mock_hooks.collect_all = MagicMock(return_value=([], [], []))
-    
-    with patch.dict("sys.modules", {
-        "PyInstaller": mock_pyinstaller,
-        "PyInstaller.utils": mock_utils,
-        "PyInstaller.utils.hooks": mock_hooks,
-    }), \
-         patch("importlib.util.find_spec", mock_find_spec), \
+    mock_hooks.collect_all.return_value = ([], [], [])
+
+    with patch("importlib.util.find_spec", mock_find_spec), \
          patch("os.walk", return_value=mock_walk_data), \
          patch("os.path.exists", return_value=True), \
-         patch.dict("sys.modules", {
+         patch.dict(sys.modules, {
              "PyInstaller": MagicMock(),
              "PyInstaller.utils": MagicMock(),
-             "PyInstaller.utils.hooks": mock_pyinstaller_hooks,
+             "PyInstaller.utils.hooks": mock_hooks,
          }):
         
         # Execute the spec file in our mock global context

@@ -1,11 +1,8 @@
 import os
 import tempfile
-import shutil
-from pathlib import Path
-import pytest
 
-from app.core.verifier import VerificationEngine, VirtualFilesystemTracker, VirtualNode
 from app.core.link_manager import LinkManager
+from app.core.verifier import VerificationEngine, VirtualFilesystemTracker, VirtualNode
 
 
 def test_circular_rename_dependency():
@@ -93,7 +90,7 @@ def test_broken_symlink_detection():
     
     assert result["success"] is False
     assert len(result["broken_links"]) > 0
-    assert any(l["type"] == "broken_symlink" for l in result["broken_links"])
+    assert any(link_item["type"] == "broken_symlink" for link_item in result["broken_links"])
     assert "Broken symlink target" in result["warnings"][0]
 
 
@@ -129,7 +126,7 @@ def test_physical_filesystem_remains_unaltered():
         initial_files = set(os.listdir(tmp_dir))
         
         # Run simulation
-        result = VerificationEngine.verify_plan_integrity(tmp_dir, plan)
+        _ = VerificationEngine.verify_plan_integrity(tmp_dir, plan)
         
         # Physical filesystem must remain completely unaltered!
         final_files = set(os.listdir(tmp_dir))

@@ -1,14 +1,12 @@
-import os
-import tempfile
-import socket
-import pytest
 import hashlib
+import socket
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from app.core.shared_registry import (
     SharedModelRegistry,
     SharedWorkerPool,
-    block_external_network,
 )
 
 
