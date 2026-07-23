@@ -1,12 +1,11 @@
 import os
-import sys
-import tempfile
-import pytest
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from app.config import AppSettings
+from app.core.extractor_strategies import ImageExtractor, XlsxExtractor
 from app.core.verifier import is_ml_available
-from app.core.extractor_strategies import XlsxExtractor, ImageExtractor
 from app.ui.app import AutoSorterApp
 
 
@@ -135,7 +134,16 @@ def test_spec_file_partitioning():
         )
     ]
     
-    with patch("importlib.util.find_spec", mock_find_spec), \
+    mock_collect_all = MagicMock(return_value=([], [], []))
+    mock_hooks = MagicMock()
+    mock_hooks.collect_all = mock_collect_all
+
+    with patch.dict("sys.modules", {
+             "PyInstaller": MagicMock(),
+             "PyInstaller.utils": MagicMock(),
+             "PyInstaller.utils.hooks": mock_hooks,
+         }), \
+         patch("importlib.util.find_spec", mock_find_spec), \
          patch("os.walk", return_value=mock_walk_data), \
          patch("os.path.exists", return_value=True):
         
