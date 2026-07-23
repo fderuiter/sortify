@@ -13,8 +13,8 @@ The system uses a two-phase pipeline to convert documents into structured sortin
 
 2. **Analysis (`app.core.analyzer`)**:
     - Extracted text chunks are fed incrementally into the `IncrementalAnalyzer`.
-    - `SentenceTransformer` transforms the text into dense numerical embeddings.
-    - `KMeans` is used to perform incremental topic modeling.
+    - `TfidfVectorizer` transforms the text into sparse numerical embeddings.
+    - `NMF` is used to perform incremental topic modeling.
     - Finally, a recursive clustering function creates a hierarchical sorting plan based on the dominant topics, identifying sub-topics where appropriate.
 
 ## Verifier Logic

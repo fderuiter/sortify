@@ -71,8 +71,6 @@ def run_demo(settings):
             max_workers=settings.MAX_WORKERS,
             db=db,
             chunk_size=50,
-            active_model_name=analyzer.active_model_name,
-            active_dimension=analyzer.active_dimension,
             cancel_check=cancel_check,
         )
 

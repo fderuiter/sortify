@@ -38,10 +38,6 @@ def teardown_module(module):
         shutil.rmtree(_test_dir, ignore_errors=True)
 
 
-def save_cache_sync(*args, **kwargs):
-    cache_manager.save_cache_sync(*args, **kwargs)
-
-
 @pytest.fixture(autouse=True)
 def clean_db():
     db.clear()
@@ -198,7 +194,7 @@ def test_conflict_resolution():
 
     # Pre-populate session cache with a locked choice
     locked_files = {"invoice_2025.txt": "Accounting"}  # user chose compliance path
-    save_cache_sync("test_conflict_res_base", corpus, locked_files, {}, set())
+    cache_manager.save_cache_sync("test_conflict_res_base", corpus, locked_files, {}, set())
 
     settings = SimpleNamespace(KEYWORD_RULES={"invoice": "Accounting"})
 

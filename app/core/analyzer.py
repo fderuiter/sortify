@@ -42,21 +42,6 @@ class IncrementalAnalyzer:
         """Terminate processes."""
         pass
 
-    @property
-    def active_model_name(self):
-        """Get the name of the currently active model."""
-        return self.model_name
-
-    @property
-    def active_dimension(self):
-        """Get the vector dimension of the currently active model."""
-        return None
-
-    @property
-    def last_reconstruction_error(self):
-        """Get the last reconstruction error from the underlying model."""
-        return self._last_reconstruction_error
-
     def partial_fit(
         self, base_dir: str, new_corpus: dict, runtime_settings=None
     ) -> None:

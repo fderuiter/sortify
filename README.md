@@ -7,7 +7,7 @@ It extracts text from various file formats, uses TF-IDF and NMF to cluster files
 ## Features
 - **Semantic Clustering:** Understands themes in your documents.
 - **Robust Extraction:** Supports PDF, DOCX, CSV, and XLSX.
-- **Modern UI:** Built with CustomTkinter.
+- **Modern UI:** Built with NiceGUI.
 
 ## System Limits & Constraints
 To ensure optimal performance and accuracy, Smart AutoSorter AI Pro enforces the following hardcoded constraints:
@@ -85,6 +85,6 @@ This package contains the domain logic and data manipulation features. New extra
 
 ### `ui/` Package (Presentation Layer)
 This package contains all graphical interface code. Interface updates should be confined to these modules.
-*   **`app.py`**: Main graphical user interface built with `customtkinter`.
+*   **`app.py`**: Main graphical user interface built with `nicegui`.
 *   **`console.py`**: Utility functions for printing status updates and visualizing directory structures.
 *   **`dialogs.py`**: Helper interface for launching native OS graphical directory selection windows.

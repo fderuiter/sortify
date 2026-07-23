@@ -86,7 +86,7 @@ def get_db_connection(db_path: str):
 
     # Enable Write-Ahead Logging (WAL) for simultaneous reads and writes
     conn.execute("PRAGMA journal_mode = WAL")
-    # Increase the database in-memory page cache to hold vector embeddings
+    # Increase the database in-memory page cache to hold text features and clustering data
     conn.execute("PRAGMA cache_size = -64000")  # 64MB cache
 
     # Disable mmap_size on Windows to prevent OS-level file locking issues with multiple connections

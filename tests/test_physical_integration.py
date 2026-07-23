@@ -37,10 +37,6 @@ def teardown_module(module):
         shutil.rmtree(_test_dir, ignore_errors=True)
 
 
-def save_cache_sync(*args, **kwargs):
-    cache_manager.save_cache_sync(*args, **kwargs)
-
-
 def test_physical_move(tmp_path):
     """Test that files are physically relocated from local source to local destination."""
     source_file = tmp_path / "source.txt"
