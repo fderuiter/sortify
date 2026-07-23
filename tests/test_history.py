@@ -4,33 +4,11 @@ from unittest.mock import patch
 
 import pytest
 
-from app.core.cache import CacheManager
-from app.core.db import Database
 from app.core.db_conn import get_db_connection
-from app.core.db_worker import DBWorker
-from app.core.history import HistoryManager
 
 
-@pytest.fixture
-def setup_history_env(tmp_path):
-    base_dir = str(tmp_path / "test_base")
-    os.makedirs(base_dir, exist_ok=True)
-
-    db_worker = DBWorker()
-    db_path = tmp_path / "test_docs.db"
-    db = Database(db_path, worker=db_worker)
-
-    cache_path = tmp_path / "test_cache.db"
-    cache = CacheManager(str(cache_path), worker=db_worker)
-
-    history_manager = HistoryManager(db, cache, str(tmp_path / "test_history.db"))
-
-    yield base_dir, db, history_manager
-    db_worker.stop()
-
-
-def test_incremental_sync_and_stop_on_failure(setup_history_env):
-    base_dir, db, history_manager = setup_history_env
+def test_incremental_sync_and_stop_on_failure(test_history_env):
+    base_dir, db, cache, history_manager, db_worker = test_history_env
 
     # Create two files
     file1_src = os.path.join(base_dir, "file1.txt")
@@ -108,8 +86,8 @@ def test_incremental_sync_and_stop_on_failure(setup_history_env):
     assert status == "failed"
 
 
-def test_rollback_cyclic_collision(setup_history_env):
-    base_dir, db, history_manager = setup_history_env
+def test_rollback_cyclic_collision(test_history_env):
+    base_dir, db, cache, history_manager, db_worker = test_history_env
 
     file1_src = os.path.join(base_dir, "A.txt")
     file2_src = os.path.join(base_dir, "B.txt")

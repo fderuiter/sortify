@@ -143,46 +143,6 @@ def generate_admin_guide():
 
         f.write(f"{install_offline.__doc__}\n\n")
 
-        # Offline Sideloading
-        f.write("## Offline Sideloading Deployment\n\n")
-        f.write(
-            "To deploy the application in a completely offline environment, you must sideload the model bundle. The application will bypass the setup download prompt and activate semantic local sorting automatically if it detects a valid local bundle on startup.\n\n"
-        )
-        f.write("### Folder Layout Requirements\n\n")
-        f.write(
-            "The offline bundle must be extracted into either the application's local project directory (e.g., `offline_bundle/`) or the user configuration directory (e.g., `~/.autosorter/`). If bundles exist in both locations, the local project directory takes priority. The directory structure must exactly match one of the following:\n\n"
-        )
-        f.write("Local Project Directory:\n")
-        f.write("```text\n")
-        f.write("offline_bundle/\n")
-        f.write("├── model/\n")
-        f.write("│   ├── config.json\n")
-        f.write("│   ├── pytorch_model.bin\n")
-        f.write("│   ├── tokenizer.json\n")
-        f.write("│   └── ... (other model weights)\n")
-        f.write("└── model_manifest.json\n")
-        f.write("```\n\n")
-        f.write("User Configuration Directory:\n")
-        f.write("```text\n")
-        f.write("~/.autosorter/\n")
-        f.write("├── model/\n")
-        f.write("│   ├── config.json\n")
-        f.write("│   ├── pytorch_model.bin\n")
-        f.write("│   ├── tokenizer.json\n")
-        f.write("│   └── ... (other model weights)\n")
-        f.write("└── model_manifest.json\n")
-        f.write("```\n\n")
-        f.write("### JSON Manifest Structure\n\n")
-        f.write(
-            "The `model_manifest.json` file must reside in the same parent directory as the `model/` folder. It maps the relative file paths of the model weights to their SHA256 checksums to guarantee integrity. The structure must be:\n\n"
-        )
-        f.write("```json\n")
-        f.write("{\n")
-        f.write('  "config.json": "e56f4d...",\n')
-        f.write('  "pytorch_model.bin": "a1b2c3..."\n')
-        f.write("}\n")
-        f.write("```\n\n")
-
 
 def update_security_md():
     """Scan for network dependencies and update SECURITY.md."""

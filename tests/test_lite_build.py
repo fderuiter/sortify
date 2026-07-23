@@ -77,7 +77,7 @@ def test_ocr_warning_dialog_on_scan():
                 with patch("asyncio.sleep", return_value=None):
                     # Mock other methods to avoid side effects
                     app.app_session = MagicMock()
-                    app.app_session.process_items = MagicMock(return_value=iter([]))
+                    app.app_session.process_items_async = MagicMock()
 
                     import asyncio
 
@@ -163,7 +163,6 @@ def test_spec_file_partitioning():
     ):
         # Execute the spec file in our mock global context
         exec(spec_content, mock_globals)
-
         # Now let's inspect the `datas` and `binaries` that were passed to `Analysis`
         # Analysis is called as Analysis(...)
         analysis_call = mock_globals["Analysis"].call_args
