@@ -20,27 +20,47 @@ _thread_local = threading.local()
 _original_connect = socket.socket.connect
 _original_connect_ex = socket.socket.connect_ex
 
+# Resolve and cache local IP addresses once at import time
+_local_ips = {
+    "127.0.0.1",
+    "localhost",
+    "::1",
+    "0.0.0.0",
+    "",
+}
+
+try:
+    _local_ips.add(socket.gethostname())
+    _local_ips.add(socket.getfqdn())
+except Exception:
+    pass
+
+try:
+    for info in socket.getaddrinfo(socket.gethostname(), None):
+        _local_ips.add(info[4][0])
+except Exception:
+    pass
+
+try:
+    for info in socket.getaddrinfo("localhost", None):
+        _local_ips.add(info[4][0])
+except Exception:
+    pass
+
 
 def _is_local_address(host: str) -> bool:
-    """Check if the given host/IP is local/loopback/unspecified."""
-    try:
-        allowed_hosts = {
-            "127.0.0.1",
-            "localhost",
-            "::1",
-            "0.0.0.0",
-            socket.gethostname(),
-            socket.getfqdn(),
-        }
-    except Exception:
-        allowed_hosts = {"127.0.0.1", "localhost", "::1", "0.0.0.0"}
-
-    if host in allowed_hosts:
+    """Check if the given host/IP is local/loopback/unspecified/private/link-local."""
+    if host in _local_ips:
         return True
 
     try:
         ip = ipaddress.ip_address(host)
-        return ip.is_loopback or ip.is_unspecified
+        return (
+            ip.is_loopback
+            or ip.is_unspecified
+            or ip.is_private
+            or ip.is_link_local
+        )
     except ValueError:
         pass
     return False
