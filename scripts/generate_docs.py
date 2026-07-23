@@ -9,10 +9,6 @@ from pathlib import Path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 
-def get_python_executable():
-    """Dynamically determine the best Python command/executable."""
-    return sys.executable
-
 
 def generate_api_docs():
     """Generate API reference markdown from python modules."""
@@ -122,7 +118,7 @@ def generate_admin_guide():
         env = os.environ.copy()
         env["COLUMNS"] = "80"
         result = subprocess.run(
-            ["uv", "run", "python", "sandbox_cli.py", "--help"],
+            ["uv", "run", sys.executable, "sandbox_cli.py", "--help"],
             capture_output=True,
             text=True,
             check=True,
