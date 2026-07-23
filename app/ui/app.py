@@ -37,6 +37,7 @@ class AutoSorterApp:
         self.observer = None
         self._debounce_task = None
         self._cancel_recalc_flag = False
+        self.loop = None
 
         self.contextual_rename = self.settings.CONTEXTUAL_RENAMING
         self.preserve_hierarchy = self.settings.PRESERVE_HIERARCHY
@@ -279,6 +280,11 @@ class AutoSorterApp:
 
     def start_analysis(self):
         """Start the background analysis of the selected directory."""
+        self.stop_watcher()
+        try:
+            self.loop = asyncio.get_running_loop()
+        except RuntimeError:
+            self.loop = None
         self.app_session = AppSession(self.settings, self.base_dir)
         self.status_label.set_text("Scanning directory...")
         self.cancel_btn.set_visibility(True)
@@ -347,6 +353,7 @@ class AutoSorterApp:
                 self.render_tree()
                 self.status_label.set_text("Analysis complete.")
                 self.execute_btn.enable()
+                self.start_watcher()
         except Exception as e:
             logger.error(f"Error scanning directory: {e}")
             self.status_label.set_text(f"Error: {e}")
@@ -458,6 +465,7 @@ class AutoSorterApp:
         self.execute_btn.disable()
         self.status_label.set_text("Executing sort...")
         self.progress_bar.set_value(0)
+        self.stop_watcher()
 
         async def run():
             success = False
@@ -472,14 +480,66 @@ class AutoSorterApp:
                 logger.error(f"Error executing sort: {e}")
                 ui.notify(f"Error: {e}", type="negative")
                 self.status_label.set_text("Sorting failed.")
+                
+                with ui.dialog() as error_dialog, ui.card().classes('w-full max-w-md'):
+                    ui.label("Move Transaction Error").classes("text-h6 text-red-500")
+                    ui.label(f"The organization process failed: {e}").classes("text-body1")
+                    ui.label("An automated rollback was successfully executed to restore files and index database.").classes("text-body2 text-gray-600")
+                    with ui.row().classes("w-full justify-end mt-4"):
+                        ui.button("Close", on_click=error_dialog.close).props('color="primary" aria-label="Close Error Dialog"')
+                error_dialog.open()
             finally:
                 self.plan = {}
                 self.render_tree()
+                self.execute_btn.enable()
+                self.start_watcher()
                 if success and self.app_session:
                     self.app_session.close()
                     self.app_session = None
 
         asyncio.create_task(run())
+
+    def start_watcher(self):
+        """Start the watchdog folder observer to monitor base_dir."""
+        if not self.base_dir or not os.path.exists(self.base_dir):
+            return
+        
+        self.stop_watcher()
+        
+        try:
+            self.loop = asyncio.get_running_loop()
+        except RuntimeError:
+            self.loop = None
+            
+        from watchdog.observers import Observer
+        from watchdog.events import FileSystemEventHandler
+
+        class FolderChangeHandler(FileSystemEventHandler):
+            def __init__(self, app):
+                self.app = app
+
+            def on_any_event(self, event):
+                if ".branches" in event.src_path or "autosorter.db" in event.src_path or "history.db" in event.src_path or "cache.db" in event.src_path or "plan.json" in event.src_path:
+                    return
+                if self.app.loop:
+                    self.app.loop.call_soon_threadsafe(self.app._rebuild_plan_async)
+
+        self.observer = Observer()
+        handler = FolderChangeHandler(self)
+        self.observer.schedule(handler, self.base_dir, recursive=True)
+        self.observer.start()
+        logger.info(f"Started folder observer for {self.base_dir}")
+
+    def stop_watcher(self):
+        """Stop the watchdog folder observer."""
+        if self.observer:
+            try:
+                self.observer.stop()
+                self.observer.join()
+            except Exception as e:
+                logger.error(f"Error stopping folder observer: {e}")
+            finally:
+                self.observer = None
 
     def get_tree_state(self):
         """Get a representation of the tree state."""
