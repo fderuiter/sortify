@@ -216,12 +216,12 @@ def update_security_md():
     )
 
     for root, dirs, files in os.walk("."):
-        # Exclude common external dependency dirs
+        # Exclude common external dependency and development/build dirs
         dirs[:] = [
             d
             for d in dirs
             if not d.startswith(".")
-            and d not in ("venv", "env", "__pycache__", "node_modules", "site-packages")
+            and d not in ("venv", ".venv", "env", "__pycache__", "node_modules", "site-packages", "tests", "build", "dist")
         ]
         for file in files:
             if not file.endswith(".py"):
