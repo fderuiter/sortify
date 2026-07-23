@@ -12,6 +12,7 @@ import os
 import socket
 from contextlib import contextmanager
 
+
 @contextmanager
 def block_external_network():
     """Block outgoing non-localhost network traffic."""
@@ -40,6 +41,7 @@ class SharedModelRegistry:
 
     @classmethod
     def get_instance(cls):
+        """Get the singleton instance of the SharedModelRegistry."""
         if cls._instance is None:
             cls._instance = cls()
         return cls._instance
@@ -166,6 +168,7 @@ class SharedWorkerPool:
 
     @classmethod
     def get_instance(cls, max_workers=None):
+        """Get the singleton instance of the SharedWorkerPool."""
         if cls._instance is None:
             # Respect system limits / CPU counts to prevent starvation
             if max_workers is None:
@@ -188,5 +191,6 @@ class SharedWorkerPool:
         return self._executor.submit(offline_wrapped_fn, *args, **kwargs)
 
     def shutdown(self, wait=True):
+        """Shutdown the executor pool and clear the singleton instance."""
         self._executor.shutdown(wait=wait)
         SharedWorkerPool._instance = None

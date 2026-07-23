@@ -1,14 +1,14 @@
-import os
-import asyncio
 from unittest.mock import MagicMock, patch
+
 import pytest
 
 from app.config import AppSettings
 from app.core.db import Database
 from app.core.db_worker import DBWorker
-from app.core.session import AppSession
 from app.core.extractor import build_corpus_generator_async, get_file_hash
+from app.core.session import AppSession
 from app.ui.app import AutoSorterApp
+
 
 @pytest.mark.anyio
 async def test_build_corpus_generator_async_sequential(tmp_path):

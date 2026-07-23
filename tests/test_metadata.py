@@ -1,8 +1,4 @@
-import logging
-import os
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 from app.core.metadata import MetadataPass
 
