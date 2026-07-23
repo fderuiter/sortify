@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     EXPLORER_INTEGRATION: bool = Field(default=False)
     KEYWORD_RULES: dict = Field(default_factory=dict)
     LEARNED_RULES: dict = Field(default_factory=dict)
+    POLICIES: list[dict] = Field(default_factory=list)
     VISUAL_TIMEOUT: int = Field(default=30, gt=0)
     IMAGE_MAX_DIMENSION: int = Field(default=1000, gt=0)
     IMAGE_SKIP_THRESHOLD: int = Field(default=3000, gt=0)
@@ -47,6 +48,65 @@ class Settings(BaseSettings):
 
         for keyword, target_path in v.items():
             validate_target_path(target_path, keyword=keyword)
+        return v
+
+    @field_validator("POLICIES")
+    @classmethod
+    def validate_policies(cls, v: list[dict]) -> list[dict]:
+        """Validate that unified policies have valid target paths, types, expression, and priority, and check for overlaps."""
+        from app.core.path_utils import validate_target_path
+
+        for rule in v:
+            if not isinstance(rule, dict):
+                raise ValueError("Each policy must be a dictionary.")
+            rule_type = rule.get("type")
+            if rule_type not in ("keyword", "pattern", "override"):
+                raise ValueError(f"Invalid policy type: {rule_type}. Must be keyword, pattern, or override.")
+
+            expression = rule.get("expression")
+            if not isinstance(expression, str) or not expression.strip():
+                raise ValueError("Policy expression must be a non-empty string.")
+
+            target_path = rule.get("target_path")
+            validate_target_path(target_path, keyword=expression)
+
+            if "priority" not in rule or not isinstance(rule["priority"], int):
+                raise ValueError("Policy must have an integer priority.")
+
+        # Overlap check
+        def is_masked_by(higher_rule, lower_rule) -> bool:
+            ha_type = higher_rule.get("type", "").lower()
+            lo_type = lower_rule.get("type", "").lower()
+            ha_expr = higher_rule.get("expression", "").lower()
+            lo_expr = lower_rule.get("expression", "").lower()
+
+            if not ha_expr or not lo_expr:
+                return False
+
+            if ha_expr in lo_expr:
+                if ha_type == "keyword":
+                    return True
+                if ha_type == "pattern":
+                    if lo_type in ("pattern", "override"):
+                        return True
+                if ha_type == "override" and lo_type == "override":
+                    return True
+            return False
+
+        sorted_policies = sorted(v, key=lambda x: x.get("priority", 0), reverse=True)
+        for i, lower_rule in enumerate(sorted_policies):
+            for higher_rule in sorted_policies[:i]:
+                if is_masked_by(higher_rule, lower_rule):
+                    msg = (
+                        f"Rule overlap detected: policy of type '{lower_rule['type']}' with expression "
+                        f"'{lower_rule['expression']}' (priority {lower_rule['priority']}) is fully masked/shadowed by "
+                        f"higher-priority policy of type '{higher_rule['type']}' with expression "
+                        f"'{higher_rule['expression']}' (priority {higher_rule['priority']})."
+                    )
+                    logging.warning(msg)
+                    print(f"WARNING: {msg}", file=sys.stderr)
+                    break
+
         return v
 
     AI_CONSENT_GRANTED: bool | None = Field(default=None)
