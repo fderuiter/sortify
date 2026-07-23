@@ -132,6 +132,21 @@ class AppSession:
         ):
             yield chunk
 
+    async def process_items_async(self, items_to_sort, cancel_check):
+        """Build corpus asynchronous generator for files, yielded file-by-file sequentially."""
+        if not self.base_dir:
+            return
+        from app.core.extractor import build_corpus_generator_async
+
+        async for item, text, file_hash, was_skipped in build_corpus_generator_async(
+            self.base_dir,
+            items_to_sort,
+            db=self.db,
+            cancel_check=cancel_check,
+            settings=self.settings,
+        ):
+            yield item, text, file_hash, was_skipped
+
     def partial_fit(self, chunk):
         """Incrementally train the analyzer."""
         if not self.base_dir:
