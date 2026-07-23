@@ -1,12 +1,13 @@
-import sys
 import os
-from unittest.mock import MagicMock, patch, call
+import sys
+from unittest.mock import MagicMock, patch
+
 import pytest
 
 from app.config import AppSettings
 from app.core.integration import is_admin, register_context_menu
+from app.ui.app import AutoSorterApp, run_app
 from app.ui.settings import show_settings
-from app.ui.app import run_app, AutoSorterApp
 
 
 @pytest.fixture(autouse=True)
@@ -281,7 +282,7 @@ def test_settings_toggle_on_explorer_integration_windows_failure(mock_winreg_and
 
 def test_run_app_directory_preload():
     """Verify that run_app resolves directory to absolute path and sets it on the app instance."""
-    with patch("app.ui.app.ui") as mock_ui, \
+    with patch("app.ui.app.ui"), \
          patch("app.ui.app.AutoSorterApp") as mock_app_class, \
          patch("os.path.exists", return_value=True):
          
