@@ -13,17 +13,12 @@
     {
       "pattern": "huggingface-hub",
       "match_type": "substring",
-      "description": "Model acquisition (e.g., `sentence-transformers/all-MiniLM-L6-v2`)."
+      "description": "Model acquisition (e.g., `facebook/opt-125m` for generative naming)."
     },
     {
       "pattern": "https://download\\.pytorch\\.org",
       "match_type": "regex",
       "description": "Fetching CPU-optimized PyTorch wheels."
-    },
-    {
-      "pattern": "all-MiniLM-L6-v2",
-      "match_type": "substring",
-      "description": "Runtime model download prompt in the UI wizard."
     },
     {
       "pattern": "actions/checkout",

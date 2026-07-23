@@ -13,7 +13,7 @@ def show_wizard(parent_app, settings):
         )
 
         ui.label(
-            "To use the Smart AutoSorter AI features, the application needs to download a small AI model (all-MiniLM-L6-v2)."
+            "To use the Smart AutoSorter AI features, the application needs to initialize the local keyword clustering engine (TF-IDF & NMF)."
         ).classes("mb-2").props('aria-label="Setup Description"')
         ui.label(
             "Your privacy is important to us. All processing will happen entirely offline."

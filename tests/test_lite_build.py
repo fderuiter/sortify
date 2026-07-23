@@ -74,7 +74,7 @@ def test_ocr_warning_dialog_on_scan():
                 with patch("asyncio.sleep", return_value=None):
                     # Mock other methods to avoid side effects
                     app.app_session = MagicMock()
-                    app.app_session.process_items = MagicMock(return_value=iter([]))
+                    app.app_session.process_items_async = MagicMock()
                     
                     import asyncio
                     asyncio.run(app._scan_and_process_worker())
