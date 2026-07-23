@@ -13,6 +13,9 @@ from app.log_filter import LogScrubbingFilter
 
 def main():
     """Execute the main application GUI or Demo."""
+    import multiprocessing
+    multiprocessing.freeze_support()
+
     settings = AppSettings()
 
     # Configure Centralized Logger
@@ -52,4 +55,6 @@ def main():
 
 
 if __name__ == "__main__":
+    import multiprocessing
+    multiprocessing.freeze_support()
     main()
