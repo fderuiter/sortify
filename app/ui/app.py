@@ -288,6 +288,7 @@ class AutoSorterApp:
 
     async def _scan_and_process_worker(self):
         try:
+            import threading
             from app.core.scanner import get_files_recursively
 
             files = await asyncio.to_thread(
@@ -296,27 +297,20 @@ class AutoSorterApp:
             self.total_files = len(files)
             self.completed_files = 0
 
-            from app.core.metadata import MetadataPass
+            # Progress tracking variables
+            lock = threading.Lock()
+            processed_count = 0
 
-            bypassed_files = await asyncio.to_thread(
-                MetadataPass.run,
-                self.app_session.base_dir,
-                files,
-                self.settings,
-                self.app_session.db,
-                None,
-                lambda: getattr(self, "_cancel_analysis_flag", False),
-            )
-            self.completed_files += len(bypassed_files)
-            if self.total_files > 0:
-                self.progress_bar.set_value(self.completed_files / self.total_files)
+            def progress_callback():
+                nonlocal processed_count
+                with lock:
+                    processed_count += 1
 
-            bypassed_set = set(bypassed_files)
-            items_to_sort = [f for f in files if f not in bypassed_set]
-
+            # Route ALL files through the core batch-extraction generator to ensure text is fully extracted.
+            # Do NOT use MetadataPass during scanning because that would bypass text extraction.
             generator = self.app_session.process_items(
-                items_to_sort,
-                None,
+                files,
+                progress_callback,
                 lambda: getattr(self, "_cancel_analysis_flag", False),
             )
 
@@ -325,20 +319,57 @@ class AutoSorterApp:
                     return next(generator)
                 except StopIteration:
                     return None
+                except Exception as e:
+                    logger.error(f"Error during batch text extraction: {e}", exc_info=True)
+                    raise e
+
+            failures = {}
 
             while True:
                 if self._cancel_analysis_flag:
                     break
 
-                chunk = await asyncio.to_thread(get_next_chunk)
+                try:
+                    chunk = await asyncio.to_thread(get_next_chunk)
+                except Exception as e:
+                    logger.error(f"Failed to retrieve next chunk of documents: {e}", exc_info=True)
+                    break
+
                 if chunk is None:
                     break
 
-                await asyncio.to_thread(self.app_session.partial_fit, chunk)
-                self.completed_files += len(chunk)
+                # Inspect chunk for failed files before fitting
+                for filepath, data in chunk.items():
+                    text = data.get("text", "")
+                    if text.startswith("[STATUS:"):
+                        status_val = text[8:-1]
+                        if status_val == "UNSUPPORTED":
+                            failures[filepath] = "Unsupported file format"
+                        elif status_val == "ENCRYPTED":
+                            failures[filepath] = "Encrypted file"
+                        elif status_val == "FAILED":
+                            failures[filepath] = "Extraction failed"
+                        elif status_val.startswith("ERROR: "):
+                            failures[filepath] = status_val[7:]
+
+                try:
+                    await asyncio.to_thread(self.app_session.partial_fit, chunk)
+                except Exception as e:
+                    logger.error(f"Failed during partial_fit for chunk: {e}", exc_info=True)
+                    for filepath in chunk:
+                        failures[filepath] = f"Analysis failure: {str(e)}"
+
+                with lock:
+                    self.completed_files = processed_count
                 if self.total_files > 0:
                     self.progress_bar.set_value(self.completed_files / self.total_files)
                 await asyncio.sleep(0.01)
+
+            # Update final progress
+            with lock:
+                self.completed_files = processed_count
+            if self.total_files > 0:
+                self.progress_bar.set_value(self.completed_files / self.total_files)
 
             if not self._cancel_analysis_flag:
                 self.plan = await asyncio.to_thread(
@@ -347,8 +378,30 @@ class AutoSorterApp:
                 self.render_tree()
                 self.status_label.set_text("Analysis complete.")
                 self.execute_btn.enable()
+
+                # Present a post-ingestion modal dialog summarizing all failed files and their respective error details.
+                if failures:
+                    with ui.dialog() as fail_dialog, ui.card().classes("w-11/12 max-w-2xl p-6"):
+                        fail_dialog.props("persistent")
+                        ui.label("Ingestion Failures").classes("text-h5 text-red-600 font-bold")
+                        ui.label(
+                            f"The following {len(failures)} document(s) failed to import or process correctly. "
+                            "Other compatible documents were successfully indexed."
+                        ).classes("text-gray-700 mb-4")
+                        
+                        with ui.scroll_area().classes("w-full h-80 border rounded p-3 bg-gray-50"):
+                            for filepath, err_msg in failures.items():
+                                with ui.row().classes("items-start mb-2 justify-between w-full border-b pb-2"):
+                                    with ui.column().classes("w-2/3"):
+                                        ui.label(filepath).classes("font-semibold text-gray-800 break-all")
+                                    with ui.column().classes("w-1/3 text-right"):
+                                        ui.label(err_msg).classes("text-sm text-red-500 italic")
+                        
+                        with ui.row().classes("w-full justify-end mt-4"):
+                            ui.button("Close", on_click=fail_dialog.close).classes("bg-blue-500 text-white").props('aria-label="Close Failures Dialog"')
+                    fail_dialog.open()
         except Exception as e:
-            logger.error(f"Error scanning directory: {e}")
+            logger.error(f"Error scanning directory: {e}", exc_info=True)
             self.status_label.set_text(f"Error: {e}")
         finally:
             self.cancel_btn.set_visibility(False)
