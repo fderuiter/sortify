@@ -51,7 +51,12 @@ def _remove_empty_dirs(path: str):
 
 
 def _execute_moves_recursive(
-    base_dir: str, plan: dict, db, current_dest: str = "", path_map: dict = None, db_updates_batch: list = None
+    base_dir: str,
+    plan: dict,
+    db,
+    current_dest: str = "",
+    path_map: dict = None,
+    db_updates_batch: list = None,
 ) -> None:
     """Recursively move files according to the plan."""
     if path_map is None:
@@ -177,10 +182,16 @@ def _execute_moves_recursive(
                 # Still record user verified target if needed even if not moving
                 if doc and doc.get("file_hash"):
                     if db_updates_batch is not None:
-                        db_updates_batch.append({
-                            'type': 'verified_target',
-                            'args': (base_dir, doc["file_hash"], current_dest.replace("\\", "/"))
-                        })
+                        db_updates_batch.append(
+                            {
+                                "type": "verified_target",
+                                "args": (
+                                    base_dir,
+                                    doc["file_hash"],
+                                    current_dest.replace("\\", "/"),
+                                ),
+                            }
+                        )
                     else:
                         db.set_user_verified_target(
                             base_dir, doc["file_hash"], current_dest.replace("\\", "/")
@@ -193,10 +204,16 @@ def _execute_moves_recursive(
             # Record user verified target and update filepath only after successful move
             if doc and doc.get("file_hash"):
                 if db_updates_batch is not None:
-                    db_updates_batch.append({
-                        'type': 'verified_target',
-                        'args': (base_dir, doc["file_hash"], current_dest.replace("\\", "/"))
-                    })
+                    db_updates_batch.append(
+                        {
+                            "type": "verified_target",
+                            "args": (
+                                base_dir,
+                                doc["file_hash"],
+                                current_dest.replace("\\", "/"),
+                            ),
+                        }
+                    )
                 else:
                     db.set_user_verified_target(
                         base_dir, doc["file_hash"], current_dest.replace("\\", "/")
@@ -205,21 +222,30 @@ def _execute_moves_recursive(
             # Update filepath in database
             rel_dest = os.path.relpath(dest_path, base_dir)
             if db_updates_batch is not None:
-                db_updates_batch.append({
-                    'type': 'document_path',
-                    'args': (base_dir, key, rel_dest)
-                })
+                db_updates_batch.append(
+                    {"type": "document_path", "args": (base_dir, key, rel_dest)}
+                )
             else:
                 db.update_document_path(base_dir, key, rel_dest)
         else:
             # It's a folder
             _execute_moves_recursive(
-                base_dir, content, db, os.path.join(current_dest, key), path_map, db_updates_batch
+                base_dir,
+                content,
+                db,
+                os.path.join(current_dest, key),
+                path_map,
+                db_updates_batch,
             )
 
 
 def execute_moves(
-    base_dir: str, plan: dict, db, history_manager, runtime_settings=None, resume: bool = False
+    base_dir: str,
+    plan: dict,
+    db,
+    history_manager,
+    runtime_settings=None,
+    resume: bool = False,
 ) -> dict:
     """Create directories and safely move files, tracking file-system errors."""
     if not resume:

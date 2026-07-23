@@ -131,41 +131,51 @@ class AutoSorterApp:
     def check_abandoned_sessions(self):
         """Check for abandoned sessions on startup and prompt for recovery."""
         from app.core.session import scan_abandoned_sessions_async
-        
+
         async def run():
             abandoned = await scan_abandoned_sessions_async()
             if not abandoned:
                 return
-                
+
             session_info = abandoned[0]
-            
-            with ui.dialog() as dialog, ui.card().classes('w-full max-w-md'):
+
+            with ui.dialog() as dialog, ui.card().classes("w-full max-w-md"):
                 dialog.props("persistent")
                 ui.label("Interrupted Session Detected").classes("text-h6 text-red-500")
-                ui.label("An application crash occurred during a previous file sorting operation. Files may be partially moved.")
+                ui.label(
+                    "An application crash occurred during a previous file sorting operation. Files may be partially moved."
+                )
                 ui.label(f"Location: {session_info['base_dir']}")
-                
+
                 with ui.row().classes("w-full justify-end mt-4 gap-2"):
+
                     def on_resume():
                         dialog.close()
                         self.resume_session(session_info)
-                        
+
                     def on_revert():
                         dialog.close()
                         self.revert_session(session_info)
-                        
-                    ui.button("Revert", on_click=on_revert).props('color="negative" aria-label="Revert Button"')
-                    ui.button("Resume", on_click=on_resume).props('color="positive" aria-label="Resume Button"')
+
+                    ui.button("Revert", on_click=on_revert).props(
+                        'color="negative" aria-label="Revert Button"'
+                    )
+                    ui.button("Resume", on_click=on_resume).props(
+                        'color="positive" aria-label="Resume Button"'
+                    )
             dialog.open()
-            
+
         asyncio.create_task(run())
 
     def resume_session(self, session_info):
         """Resume an interrupted sorting operation."""
         import json
+
         self.base_dir = session_info["base_dir"]
-        self.app_session = AppSession(self.settings, self.base_dir, session_id=session_info["session_id"])
-        
+        self.app_session = AppSession(
+            self.settings, self.base_dir, session_id=session_info["session_id"]
+        )
+
         try:
             with open(session_info["plan_path"], "r") as f:
                 self.plan = json.load(f)
@@ -173,9 +183,9 @@ class AutoSorterApp:
             ui.notify(f"Could not load plan: {e}", type="negative")
             self.app_session.close()
             return
-            
+
         self.status_label.set_text("Resuming sorting operation...")
-        
+
         async def run():
             success = False
             try:
@@ -201,9 +211,11 @@ class AutoSorterApp:
     def revert_session(self, session_info):
         """Revert an interrupted sorting operation."""
         self.base_dir = session_info["base_dir"]
-        self.app_session = AppSession(self.settings, self.base_dir, session_id=session_info["session_id"])
+        self.app_session = AppSession(
+            self.settings, self.base_dir, session_id=session_info["session_id"]
+        )
         self.status_label.set_text("Reverting sorting operation...")
-        
+
         async def run():
             success = False
             try:
@@ -228,16 +240,10 @@ class AutoSorterApp:
 
     def check_setup_wizard(self):
         """Check if the setup wizard needs to be shown on startup."""
-        import sys
-
         from app.config import get_app_dir
+        from app.core.path_utils import get_base_path
 
-        if getattr(sys, "frozen", False):
-            base_path = os.path.dirname(sys.executable)
-        else:
-            base_path = os.path.dirname(
-                os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            )
+        base_path = get_base_path(__file__)
 
         local_model_dir = os.path.join(base_path, "offline_bundle", "model")
         user_model_dir = get_app_dir() / "model"

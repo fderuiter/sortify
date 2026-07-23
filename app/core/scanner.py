@@ -7,7 +7,9 @@ from app.core.extractor_strategies import registry
 from app.core.link_manager import LinkManager
 
 
-def get_files_recursively(base: str, rel_path: str = "", include_hidden: bool = False) -> list:
+def get_files_recursively(
+    base: str, rel_path: str = "", include_hidden: bool = False
+) -> list:
     """Recursively list all files in a directory deterministically."""
     files = []
     if rel_path == "":
@@ -29,7 +31,11 @@ def get_files_recursively(base: str, rel_path: str = "", include_hidden: bool = 
                     LinkManager.register_link(base, entry_rel_path)
                     files.append(entry_rel_path)
                 elif entry.is_dir(follow_symlinks=False):
-                    files.extend(get_files_recursively(base, entry_rel_path, include_hidden=include_hidden))
+                    files.extend(
+                        get_files_recursively(
+                            base, entry_rel_path, include_hidden=include_hidden
+                        )
+                    )
                 else:
                     _, ext = os.path.splitext(entry.name)
                     if registry.is_supported(ext):

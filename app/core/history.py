@@ -56,9 +56,7 @@ class HistoryManager:
             except Exception:
                 pass
             try:
-                conn.execute(
-                    "ALTER TABLE snapshot_files ADD COLUMN file_hash TEXT"
-                )
+                conn.execute("ALTER TABLE snapshot_files ADD COLUMN file_hash TEXT")
             except Exception:
                 pass
             conn.execute("""
@@ -108,6 +106,7 @@ class HistoryManager:
                     if not is_symlink and st.st_size > 0:
                         try:
                             from app.core.extractor import get_file_hash
+
                             file_hash = get_file_hash(abs_path)
                         except Exception:
                             pass
@@ -273,11 +272,21 @@ class HistoryManager:
                 return True
             try:
                 from app.core.extractor import get_file_hash
+
                 return get_file_hash(abs_path) == expected_hash
             except Exception:
                 return False
+
         missing = []
-        for rel_path, inode, size, mtime, is_symlink, symlink_target, file_hash in snapshot_files:
+        for (
+            rel_path,
+            inode,
+            size,
+            mtime,
+            is_symlink,
+            symlink_target,
+            file_hash,
+        ) in snapshot_files:
             found = False
             target_sig = (size, mtime, is_symlink, symlink_target)
 
@@ -307,7 +316,9 @@ class HistoryManager:
                         target_sig in active_files_by_sig
                         and active_files_by_sig[target_sig]
                     ):
-                        for idx, cand_path in enumerate(active_files_by_sig[target_sig]):
+                        for idx, cand_path in enumerate(
+                            active_files_by_sig[target_sig]
+                        ):
                             if verify_hash(cand_path, file_hash):
                                 active_files_by_sig[target_sig].pop(idx)
                                 found = True
@@ -392,14 +403,17 @@ class HistoryManager:
 
                 # First compute all intended moves
                 moves = []
+
                 def verify_hash(abs_path, expected_hash):
                     if not expected_hash:
                         return True
                     try:
                         from app.core.extractor import get_file_hash
+
                         return get_file_hash(abs_path) == expected_hash
                     except Exception:
                         return False
+
                 symlinks_to_restore = []
                 for (
                     rel_path,
@@ -438,14 +452,20 @@ class HistoryManager:
                                 target_sig in active_files_by_sig
                                 and active_files_by_sig[target_sig]
                             ):
-                                for idx, cand_path in enumerate(active_files_by_sig[target_sig]):
+                                for idx, cand_path in enumerate(
+                                    active_files_by_sig[target_sig]
+                                ):
                                     if verify_hash(cand_path, file_hash):
-                                        current_abs = active_files_by_sig[target_sig].pop(idx)
+                                        current_abs = active_files_by_sig[
+                                            target_sig
+                                        ].pop(idx)
                                         break
-                    
+
                     if not current_abs:
                         if not ignore_missing:
-                            raise ValueError(f"Rollback validation failed: file hash mismatch or missing for {rel_path}")
+                            raise ValueError(
+                                f"Rollback validation failed: file hash mismatch or missing for {rel_path}"
+                            )
 
                     if current_abs:
                         if is_symlink:

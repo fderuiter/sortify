@@ -21,17 +21,21 @@ class MockDB:
         self.last_batch = updates
         self.updates.extend(updates)
 
+
 class MockHistoryManager:
     def create_snapshot(self, base_dir):
         return "snap-123"
+
 
 @pytest.fixture
 def db():
     return MockDB()
 
+
 @pytest.fixture
 def history_manager():
     return MockHistoryManager()
+
 
 def test_successful_folder_relocation(tmp_path, db, history_manager, monkeypatch):
     """
@@ -48,7 +52,7 @@ def test_successful_folder_relocation(tmp_path, db, history_manager, monkeypatch
     plan = {
         "target_dir": {
             "file1.txt": {"__type__": "file", "target_filename": "file1.txt"},
-            "file2.txt": {"__type__": "file", "target_filename": "file2.txt"}
+            "file2.txt": {"__type__": "file", "target_filename": "file2.txt"},
         }
     }
 
@@ -60,21 +64,21 @@ def test_successful_folder_relocation(tmp_path, db, history_manager, monkeypatch
 
     # Shutil move should be called twice
     assert move_mock.call_count == 2
-    
+
     # execute_batch_updates should be called exactly once
     assert db.execute_batch_updates_called == 1
-    
+
     # Should have 4 updates (verified_target + document_path for each file)
     assert len(db.last_batch) == 4
-    types = [u['type'] for u in db.last_batch]
-    assert types.count('verified_target') == 2
-    assert types.count('document_path') == 2
+    types = [u["type"] for u in db.last_batch]
+    assert types.count("verified_target") == 2
+    assert types.count("document_path") == 2
 
 
 def test_interrupted_folder_relocation(tmp_path, db, history_manager, monkeypatch):
     """
     Scenario: Interrupted Folder Relocation
-    If an individual physical move fails, the system must exclude that file from the 
+    If an individual physical move fails, the system must exclude that file from the
     final database update batch, and execute updates for files that succeeded prior to the error.
     """
     base_dir = str(tmp_path)
@@ -86,7 +90,7 @@ def test_interrupted_folder_relocation(tmp_path, db, history_manager, monkeypatc
     plan = {
         "target_dir": {
             "file1.txt": {"__type__": "file", "target_filename": "file1.txt"},
-            "file2.txt": {"__type__": "file", "target_filename": "file2.txt"}
+            "file2.txt": {"__type__": "file", "target_filename": "file2.txt"},
         }
     }
 
@@ -106,16 +110,16 @@ def test_interrupted_folder_relocation(tmp_path, db, history_manager, monkeypatc
     # but the batch should only contain updates for files processed BEFORE the error.
     assert len(move_calls) > 0
     assert "file2.txt" in move_calls[-1][0]
-    
+
     # execute_batch_updates should be called exactly once in the exception handler
     assert db.execute_batch_updates_called == 1
-    
+
     # Since file2 failed, its document_path AND verified_target updates will NOT be in the batch.
     # The batch should only contain updates for file1 (which succeeded).
     assert len(db.last_batch) == 2
     for item in db.last_batch:
-        assert "file1.txt" in str(item['args'])
-        assert "file2.txt" not in str(item['args'])
+        assert "file1.txt" in str(item["args"])
+        assert "file2.txt" not in str(item["args"])
 
 
 def test_cleanup_ordering(tmp_path, db, history_manager, monkeypatch):
@@ -139,15 +143,19 @@ def test_cleanup_ordering(tmp_path, db, history_manager, monkeypatch):
     call_order = []
 
     original_rmdir = os.rmdir
+
     def mock_rmdir(path):
         call_order.append("rmdir")
         original_rmdir(path)
+
     monkeypatch.setattr(os, "rmdir", mock_rmdir)
 
     original_execute = db.execute_batch_updates
+
     def mock_execute(updates):
         call_order.append("db_update")
         original_execute(updates)
+
     db.execute_batch_updates = mock_execute
 
     execute_moves(base_dir, plan, db, history_manager)

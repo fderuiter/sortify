@@ -45,7 +45,10 @@ def test_session_dual_path_resolution_local_priority(mock_app_session_env):
                     os.path.join(base_temp, "app", "core", "session.py"),
                 ):
                     session = AppSession(settings, base_dir=base_temp)
-                    assert Path(session.analyzer.model_path).resolve() == Path(local_model).resolve()
+                    assert (
+                        Path(session.analyzer.model_path).resolve()
+                        == Path(local_model).resolve()
+                    )
 
 
 def test_session_dual_path_resolution_user_fallback(mock_app_session_env):
@@ -67,7 +70,10 @@ def test_session_dual_path_resolution_user_fallback(mock_app_session_env):
                 os.path.join(base_temp, "app", "core", "session.py"),
             ):
                 session = AppSession(settings, base_dir=base_temp)
-                assert Path(session.analyzer.model_path).resolve() == Path(user_model).resolve()
+                assert (
+                    Path(session.analyzer.model_path).resolve()
+                    == Path(user_model).resolve()
+                )
 
 
 def test_session_dual_path_resolution_no_model(mock_app_session_env):
@@ -106,7 +112,9 @@ def test_strategy_dual_path_resolution_local_priority(mock_app_session_env):
                 os.path.join(base_temp, "app", "core", "analyzer_strategies.py"),
             ):
                 strategy = GenerativeNamingStrategy()
-                assert Path(strategy.model_path).resolve() == Path(local_model).resolve()
+                assert (
+                    Path(strategy.model_path).resolve() == Path(local_model).resolve()
+                )
 
 
 def test_strategy_dual_path_resolution_user_fallback(mock_app_session_env):

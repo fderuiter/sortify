@@ -3,7 +3,6 @@
 import logging
 import os
 import socket
-import sys
 from collections import defaultdict
 from contextlib import contextmanager
 from typing import List, Protocol
@@ -237,12 +236,9 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         self.generator = None
         self.task = None
 
-        if getattr(sys, "frozen", False):
-            base_path = os.path.dirname(sys.executable)
-        else:
-            base_path = os.path.dirname(
-                os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            )
+        from app.core.path_utils import get_base_path
+
+        base_path = get_base_path(__file__)
 
         local_bundle_path = os.path.join(base_path, "offline_bundle", "model")
 

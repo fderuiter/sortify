@@ -194,7 +194,9 @@ def test_conflict_resolution():
 
     # Pre-populate session cache with a locked choice
     locked_files = {"invoice_2025.txt": "Accounting"}  # user chose compliance path
-    cache_manager.save_cache_sync("test_conflict_res_base", corpus, locked_files, {}, set())
+    cache_manager.save_cache_sync(
+        "test_conflict_res_base", corpus, locked_files, {}, set()
+    )
 
     settings = SimpleNamespace(KEYWORD_RULES={"invoice": "Accounting"})
 
