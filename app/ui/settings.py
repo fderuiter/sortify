@@ -113,6 +113,8 @@ def show_settings(parent_app, settings):
 
                     from app.config import get_app_dir
 
+                    model_dir = get_app_dir() / "model"
+
                     ui.notify("Clearing model cache in background...")
 
                     async def do_reset():
