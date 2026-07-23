@@ -86,6 +86,13 @@ class AutoSorterApp:
                 .props('aria-label="Metadata Label"')
             )
 
+            self.warnings_label = (
+                ui.label("")
+                .classes("text-red-500 mt-2 font-bold text-center")
+                .props('aria-label="Warnings Label"')
+            )
+            self.warnings_label.set_visibility(False)
+
             with ui.row().classes("mt-4 items-center"):
                 ui.switch(
                     "Enable Contextual Renaming",
@@ -370,6 +377,7 @@ class AutoSorterApp:
                 self.plan = await asyncio.to_thread(
                     self.app_session.generate_sorting_plan
                 )
+                self.verify_current_plan()
                 self.render_tree()
                 self.status_label.set_text("Analysis complete.")
                 self.execute_btn.enable()
@@ -466,7 +474,7 @@ class AutoSorterApp:
                     return
 
                 self.plan = plan
-                self.plan_errors = {}
+                self.verify_current_plan()
                 self.render_tree()
                 self.status_label.set_text("Plan rebuilt.")
             except Exception as e:
@@ -503,8 +511,9 @@ class AutoSorterApp:
                         text += f" [{status}]"
                     if "error" in status.lower() or "locked" in status.lower():
                         icon = "error"
-                if k in self.plan_errors:
-                    text += f" (Error: {self.plan_errors[k]})"
+                if k in self.plan_errors or node_id in self.plan_errors:
+                    err_msg = self.plan_errors.get(node_id) or self.plan_errors.get(k)
+                    text += f" (Error: {err_msg})"
                     icon = "error"
                 nodes_list.append({"id": node_id, "text": text, "icon": icon})
 
@@ -610,6 +619,54 @@ class AutoSorterApp:
             return res
 
         return _convert(self.tree_nodes)
+
+    def verify_current_plan(self):
+        """Run path integrity verification on the current plan and update warnings."""
+        if not self.base_dir or not self.plan:
+            if hasattr(self, "warnings_label"):
+                self.warnings_label.set_text("")
+                self.warnings_label.set_visibility(False)
+            return
+
+        from app.core.verifier import VerificationEngine
+        integrity_result = VerificationEngine.verify_plan_integrity(self.base_dir, self.plan)
+
+        self.plan_errors = {}
+        if not integrity_result["success"]:
+            for item in integrity_result.get("collisions", []):
+                src_abs = item.get("source")
+                if src_abs:
+                    rel_src = os.path.relpath(src_abs, self.base_dir).replace("\\", "/")
+                    self.plan_errors[rel_src] = item["message"]
+                    self.plan_errors[os.path.basename(src_abs)] = item["message"]
+                dst_abs = item.get("path")
+                if dst_abs:
+                    rel_dst = os.path.relpath(dst_abs, self.base_dir).replace("\\", "/")
+                    self.plan_errors[rel_dst] = item["message"]
+                    self.plan_errors[os.path.basename(dst_abs)] = item["message"]
+
+            for item in integrity_result.get("circular_renames", []):
+                path_abs = item.get("path")
+                if path_abs:
+                    rel_path = os.path.relpath(path_abs, self.base_dir).replace("\\", "/")
+                    self.plan_errors[rel_path] = item["message"]
+                    self.plan_errors[os.path.basename(path_abs)] = item["message"]
+
+            for item in integrity_result.get("broken_links", []):
+                path_abs = item.get("path")
+                if path_abs:
+                    rel_path = os.path.relpath(path_abs, self.base_dir).replace("\\", "/")
+                    self.plan_errors[rel_path] = item["message"]
+                    self.plan_errors[os.path.basename(path_abs)] = item["message"]
+
+            warnings_text = "\n".join(integrity_result["warnings"])
+            if hasattr(self, "warnings_label"):
+                self.warnings_label.set_text(warnings_text)
+                self.warnings_label.set_visibility(True)
+        else:
+            if hasattr(self, "warnings_label"):
+                self.warnings_label.set_text("")
+                self.warnings_label.set_visibility(False)
 
 
 def run_app(settings, directory=None) -> None:
