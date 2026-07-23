@@ -10,6 +10,10 @@ The following parameters are extracted directly from the application's configura
 - **Default**: `False`
 - **Required**: `False`
 
+### `AI_ASSISTED_NAMING`
+- **Default**: `False`
+- **Required**: `False`
+
 ### `PRESERVE_HIERARCHY`
 - **Default**: `False`
 - **Required**: `False`
@@ -44,6 +48,18 @@ The following parameters are extracted directly from the application's configura
 
 ### `LEARNED_RULES`
 - **Default**: `PydanticUndefined`
+- **Required**: `False`
+
+### `VISUAL_TIMEOUT`
+- **Default**: `30`
+- **Required**: `False`
+
+### `IMAGE_MAX_DIMENSION`
+- **Default**: `1000`
+- **Required**: `False`
+
+### `IMAGE_SKIP_THRESHOLD`
+- **Default**: `3000`
 - **Required**: `False`
 
 ### `AI_CONSENT_GRANTED`

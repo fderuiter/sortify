@@ -8,7 +8,7 @@
     },
     "AI_ASSISTED_NAMING": {
       "default": false,
-      "title": "AI Assisted Naming",
+      "title": "Ai Assisted Naming",
       "type": "boolean"
     },
     "PRESERVE_HIERARCHY": {
@@ -54,6 +54,16 @@
       "title": "Explorer Integration",
       "type": "boolean"
     },
+    "KEYWORD_RULES": {
+      "additionalProperties": true,
+      "title": "Keyword Rules",
+      "type": "object"
+    },
+    "LEARNED_RULES": {
+      "additionalProperties": true,
+      "title": "Learned Rules",
+      "type": "object"
+    },
     "VISUAL_TIMEOUT": {
       "default": 30,
       "exclusiveMinimum": 0,
@@ -71,16 +81,6 @@
       "exclusiveMinimum": 0,
       "title": "Image Skip Threshold",
       "type": "integer"
-    },
-    "KEYWORD_RULES": {
-      "additionalProperties": true,
-      "title": "Keyword Rules",
-      "type": "object"
-    },
-    "LEARNED_RULES": {
-      "additionalProperties": true,
-      "title": "Learned Rules",
-      "type": "object"
     },
     "AI_CONSENT_GRANTED": {
       "anyOf": [
