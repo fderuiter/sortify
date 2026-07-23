@@ -105,6 +105,13 @@ def register_context_menu(enable: bool):
 
 
 if __name__ == "__main__":
+    # Add the project root to sys.path to ensure 'app' can be imported
+    import os
+    import sys
+    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    if project_root not in sys.path:
+        sys.path.insert(0, project_root)
+
     if len(sys.argv) > 1:
         action = sys.argv[1]
         try:
