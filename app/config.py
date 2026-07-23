@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     """Application settings schema."""
 
     CONTEXTUAL_RENAMING: bool = Field(default=False)
+    AI_ASSISTED_NAMING: bool = Field(default=False)
     PRESERVE_HIERARCHY: bool = Field(default=False)
     MAX_FOLDERS: int = Field(default=12, gt=0, le=50)
     MAX_WORKERS: int = Field(default=4, gt=0, le=64)

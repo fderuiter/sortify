@@ -96,11 +96,13 @@ class AppSession:
             active_model_path = user_model_path
 
         model_path = active_model_path if self.settings.AI_CONSENT_GRANTED else None
+        strategy_name = "generative" if getattr(self.settings, "AI_ASSISTED_NAMING", False) else "default"
 
         self.analyzer = IncrementalAnalyzer(
             self.settings.MAX_FOLDERS,
             self.settings.STOP_WORDS,
             self.db,
+            strategy_name=strategy_name,
             model_path=model_path,
         )
 

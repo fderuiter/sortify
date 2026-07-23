@@ -38,6 +38,15 @@ if sqlcipher_spec and sqlcipher_spec.submodule_search_locations:
 else:
     print("Warning: sqlcipher3 not found in active environment.")
 
+is_lite = os.environ.get("LITE_BUILD") == "1"
+excludes = []
+if is_lite:
+    excludes = [
+        'torch', 'torchvision', 'triton', 'nvidia', 'easyocr', 'scipy',
+        'sklearn', 'scikit-learn', 'pandas', 'cv2', 'numpy', 'skimage',
+        'scikit-image', 'sympy', 'lxml', 'mypy', 'matplotlib'
+    ]
+
 a = Analysis(
     ['app/main.py'],
     pathex=[],
@@ -47,7 +56,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=excludes,
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,

@@ -3,6 +3,16 @@
 import os
 
 
+def is_ml_available() -> bool:
+    """Check if heavy machine learning dependencies (torch, easyocr) are available."""
+    try:
+        import torch
+        import easyocr
+        return True
+    except ImportError:
+        return False
+
+
 class VerificationEngine:
     """Engine to verify file operations before execution."""
 

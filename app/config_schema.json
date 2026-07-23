@@ -6,6 +6,11 @@
       "title": "Contextual Renaming",
       "type": "boolean"
     },
+    "AI_ASSISTED_NAMING": {
+      "default": false,
+      "title": "AI Assisted Naming",
+      "type": "boolean"
+    },
     "PRESERVE_HIERARCHY": {
       "default": false,
       "title": "Preserve Hierarchy",

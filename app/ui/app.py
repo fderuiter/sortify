@@ -97,6 +97,11 @@ class AutoSorterApp:
                     value=self.preserve_hierarchy,
                     on_change=self.toggle_preserve_hierarchy,
                 ).props('aria-label="Preserve Hierarchy Switch"')
+                self.ai_naming_switch = ui.switch(
+                    "AI-Assisted Naming",
+                    value=getattr(self.settings, "AI_ASSISTED_NAMING", False),
+                    on_change=self.toggle_ai_assisted_naming,
+                ).props('aria-label="AI-Assisted Naming Switch"')
 
         with ui.row().classes("w-full h-96 mt-4 p-4"):
             self.tree_view = (
@@ -308,6 +313,15 @@ class AutoSorterApp:
             self.total_files = len(files)
             self.completed_files = 0
 
+            from app.core.verifier import is_ml_available
+            if not is_ml_available():
+                has_images_or_pdfs = any(
+                    os.path.splitext(f)[1].lower() in (".png", ".jpg", ".jpeg", ".pdf")
+                    for f in files
+                )
+                if has_images_or_pdfs:
+                    self.show_ml_warning_dialog("Visual text extraction (OCR)")
+
             from app.core.metadata import MetadataPass
 
             bypassed_files = await asyncio.to_thread(
@@ -386,6 +400,37 @@ class AutoSorterApp:
         """Toggle hierarchy preservation and rebuild the sorting plan."""
         self.settings.PRESERVE_HIERARCHY = e.value
         self._rebuild_plan_async()
+
+    def toggle_ai_assisted_naming(self, e):
+        """Toggle AI-assisted naming."""
+        from app.core.verifier import is_ml_available
+
+        if e.value and not is_ml_available():
+            self.show_ml_warning_dialog("AI-assisted naming")
+            self.ai_naming_switch.value = False
+            self.settings.AI_ASSISTED_NAMING = False
+        else:
+            self.settings.AI_ASSISTED_NAMING = e.value
+            self._rebuild_plan_async()
+
+    def show_ml_warning_dialog(self, feature_name: str):
+        """Show a clear, non-blocking warning dialogue explaining that the feature requires the full ML package."""
+        with ui.dialog() as dialog, ui.card().classes("w-96 p-6"):
+            ui.label("Feature Unavailable").classes("text-xl font-bold mb-4 text-red-500").props(
+                'aria-label="Warning Dialog Title"'
+            )
+            ui.label(
+                f"The '{feature_name}' feature requires heavy machine learning dependencies (like PyTorch and EasyOCR) "
+                "which are excluded from this lightweight build."
+            ).classes("mb-4").props('aria-label="Warning Description"')
+            ui.label(
+                "Please download the full ML installer bundle to access offline AI naming and visual text extraction."
+            ).classes("text-sm text-gray-500 mb-4").props('aria-label="Warning Suggestion"')
+            with ui.row().classes("w-full justify-end"):
+                ui.button("OK", on_click=dialog.close).classes("bg-blue-500 text-white").props(
+                    'aria-label="Warning OK Button"'
+                )
+        dialog.open()
 
     def _rebuild_plan_async(self):
         if not self.app_session or not self.base_dir:
