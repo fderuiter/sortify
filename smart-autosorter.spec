@@ -16,7 +16,6 @@ ml_packages = [
     'torch',
     'transformers',
     'sentence_transformers',
-    'llama_cpp',
     'huggingface_hub',
     'filelock',
     'regex',
