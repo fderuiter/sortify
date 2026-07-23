@@ -64,19 +64,10 @@ jobs:
       run: |
         uv run pytest --cov --cov-report=term tests/
 
-    - name: Generate Documentation
-      if: matrix.os == 'ubuntu-latest'
-      run: |
-        uv run python scripts/generate_docs.py
-        
     - name: Enforce Documentation Synchronization
       if: matrix.os == 'ubuntu-latest'
-      shell: bash
       run: |
-        if [[ -n $(git status -s docs/api_reference.md docs/admin_guide.md docs/ui.md SECURITY.md) ]]; then
-          echo "Documentation is out of sync! Please run 'uv run python scripts/generate_docs.py' and commit the changes."
-          exit 1
-        fi
+        uv run python scripts/validate_docs.py verify
         
     - name: Validate Documentation Integrity
       if: matrix.os == 'ubuntu-latest'

@@ -37,6 +37,7 @@ def generate_api_docs():
             module_name = ".".join(parts)
             f.write(f"## `{module_name}`\n\n")
             f.write(f"::: {module_name}\n\n")
+    return ["docs/api_reference.md"]
 
 
 def generate_ui_docs():
@@ -57,6 +58,7 @@ def generate_ui_docs():
             module_name = ".".join(parts)
             f.write(f"## `{module_name}`\n\n")
             f.write(f"::: {module_name}\n\n")
+    return ["docs/ui.md"]
 
 
 def generate_admin_guide():
@@ -182,6 +184,7 @@ def generate_admin_guide():
         f.write('  "pytorch_model.bin": "a1b2c3..."\n')
         f.write("}\n")
         f.write("```\n\n")
+    return ["docs/admin_guide.md"]
 
 
 def update_security_md():
@@ -344,6 +347,7 @@ def update_security_md():
 
     with open(sec_file, "w", encoding="utf-8", newline="\n") as f:
         f.writelines(out_lines)
+    return ["SECURITY.md"]
 
 
 if __name__ == "__main__":
