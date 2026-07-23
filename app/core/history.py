@@ -107,12 +107,8 @@ class HistoryManager:
                     file_hash = None
                     if not is_symlink and st.st_size > 0:
                         try:
-                            import hashlib
-                            hasher = hashlib.sha256()
-                            with open(abs_path, 'rb') as f_hash:
-                                while chunk := f_hash.read(8192):
-                                    hasher.update(chunk)
-                            file_hash = hasher.hexdigest()
+                            from app.core.extractor import get_file_hash
+                            file_hash = get_file_hash(abs_path)
                         except Exception:
                             pass
                     file_records.append(
@@ -275,12 +271,8 @@ class HistoryManager:
         def verify_hash(abs_path, expected_hash):
             if not expected_hash: return True
             try:
-                import hashlib
-                hasher = hashlib.sha256()
-                with open(abs_path, 'rb') as f_h:
-                    while chunk := f_h.read(8192):
-                        hasher.update(chunk)
-                return hasher.hexdigest() == expected_hash
+                from app.core.extractor import get_file_hash
+                return get_file_hash(abs_path) == expected_hash
             except Exception:
                 return False
         missing = []
@@ -402,12 +394,8 @@ class HistoryManager:
                 def verify_hash(abs_path, expected_hash):
                     if not expected_hash: return True
                     try:
-                        import hashlib
-                        hasher = hashlib.sha256()
-                        with open(abs_path, 'rb') as f_h:
-                            while chunk := f_h.read(8192):
-                                hasher.update(chunk)
-                        return hasher.hexdigest() == expected_hash
+                        from app.core.extractor import get_file_hash
+                        return get_file_hash(abs_path) == expected_hash
                     except Exception:
                         return False
                 symlinks_to_restore = []
