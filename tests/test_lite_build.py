@@ -94,3 +94,104 @@ def test_image_extractor_fallback():
         with patch("PIL.Image.open", return_value=MagicMock()):
             res = extractor.extract("dummy.png")
             assert res == "[STATUS:ERROR: Vision Model Offline]"
+
+
+def test_spec_file_partitioning():
+    """Verify that the smart-autosorter.spec file correctly partitions dynamic libraries and static files."""
+    spec_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "smart-autosorter.spec")
+    assert os.path.exists(spec_path)
+    
+    with open(spec_path, "r", encoding="utf-8") as f:
+        spec_content = f.read()
+        
+    # We will mock the PyInstaller classes/functions that are globally available when running a spec file.
+    mock_globals = {
+        "Analysis": MagicMock(),
+        "PYZ": MagicMock(),
+        "EXE": MagicMock(),
+        "COLLECT": MagicMock(),
+        "__file__": spec_path,
+    }
+    
+    # Let's mock importlib.util.find_spec to return a custom location for sqlcipher3
+    # and mock os.walk to return a mix of .so, .dll, .dylib, and standard files (.py, .pyc, .txt).
+    mock_sqlcipher_dir = "/mock/sqlcipher3"
+    
+    mock_find_spec = MagicMock()
+    mock_spec = MagicMock()
+    mock_spec.submodule_search_locations = [mock_sqlcipher_dir]
+    mock_find_spec.return_value = mock_spec
+    
+    mock_walk_data = [
+        (
+            "/mock/sqlcipher3",
+            [],
+            ["__init__.py", "_sqlite3.so", "_sqlite3.dll", "_sqlite3.dylib", "dbapi2.py"]
+        ),
+        (
+            "/mock/sqlcipher3/sub",
+            [],
+            ["extra.so", "doc.txt"]
+        )
+    ]
+    
+    with patch("importlib.util.find_spec", mock_find_spec), \
+         patch("os.walk", return_value=mock_walk_data), \
+         patch("os.path.exists", return_value=True):
+        
+        # Execute the spec file in our mock global context
+        exec(spec_content, mock_globals)
+        
+        # Now let's inspect the `datas` and `binaries` that were passed to `Analysis`
+        # Analysis is called as Analysis(...)
+        analysis_call = mock_globals["Analysis"].call_args
+        assert analysis_call is not None
+        
+        # Check kwargs
+        kwargs = analysis_call.kwargs
+        datas_list = kwargs.get("datas", [])
+        binaries_list = kwargs.get("binaries", [])
+        
+        # Filter lists to find elements starting with the mock path or target destination directory 'sqlcipher3'
+        sqlcipher_datas = [item for item in datas_list if "sqlcipher3" in item[1]]
+        sqlcipher_binaries = [item for item in binaries_list if "sqlcipher3" in item[1]]
+        
+        # Expected binaries:
+        # _sqlite3.so -> sqlcipher3
+        # _sqlite3.dll -> sqlcipher3
+        # _sqlite3.dylib -> sqlcipher3
+        # extra.so -> sqlcipher3/sub
+        expected_binaries = {
+            (os.path.join("/mock/sqlcipher3", "_sqlite3.so"), "sqlcipher3"),
+            (os.path.join("/mock/sqlcipher3", "_sqlite3.dll"), "sqlcipher3"),
+            (os.path.join("/mock/sqlcipher3", "_sqlite3.dylib"), "sqlcipher3"),
+            (os.path.join("/mock/sqlcipher3/sub", "extra.so"), os.path.join("sqlcipher3", "sub")),
+        }
+        
+        # Expected datas:
+        # __init__.py -> sqlcipher3
+        # dbapi2.py -> sqlcipher3
+        # doc.txt -> sqlcipher3/sub
+        expected_datas = {
+            (os.path.join("/mock/sqlcipher3", "__init__.py"), "sqlcipher3"),
+            (os.path.join("/mock/sqlcipher3", "dbapi2.py"), "sqlcipher3"),
+            (os.path.join("/mock/sqlcipher3/sub", "doc.txt"), os.path.join("sqlcipher3", "sub")),
+        }
+        
+        # Convert list of tuples to set for comparison (converting paths to match OS separator)
+        actual_binaries = {
+            (os.path.normpath(src), os.path.normpath(dst)) for src, dst in sqlcipher_binaries
+        }
+        actual_datas = {
+            (os.path.normpath(src), os.path.normpath(dst)) for src, dst in sqlcipher_datas
+        }
+        
+        normalized_expected_binaries = {
+            (os.path.normpath(src), os.path.normpath(dst)) for src, dst in expected_binaries
+        }
+        normalized_expected_datas = {
+            (os.path.normpath(src), os.path.normpath(dst)) for src, dst in expected_datas
+        }
+        
+        assert normalized_expected_binaries.issubset(actual_binaries) or normalized_expected_binaries == actual_binaries
+        assert normalized_expected_datas.issubset(actual_datas) or normalized_expected_datas == actual_datas
