@@ -185,6 +185,36 @@ def test_socket_sandbox_inactive_allows_external_connections():
         mock_connect_ex.assert_called_once_with(mock_socket, ("8.8.8.8", 80))
 
 
+def test_socket_sandbox_case_insensitivity_and_local_suffixes():
+    """Verify that the socket sandbox is case-insensitive and permits .local/.localhost suffixes."""
+    from app.core.shared_registry import (
+        safe_connect,
+        safe_connect_ex,
+        block_external_network,
+        _is_local_address,
+    )
+    mock_socket = MagicMock()
+
+    # Test cases for local addresses (various cases and suffixes)
+    assert _is_local_address("LOCALHOST") is True
+    assert _is_local_address("LocalHost") is True
+    assert _is_local_address("my-pc.local") is True
+    assert _is_local_address("MY-PC.LOCAL") is True
+    assert _is_local_address("my-server.localhost") is True
+
+    # Test case-insensitivity in safe_connect within active sandbox
+    with (
+        patch("app.core.shared_registry._original_connect") as mock_connect,
+        patch("app.core.shared_registry._original_connect_ex") as mock_connect_ex,
+    ):
+        with block_external_network():
+            safe_connect(mock_socket, ("LOCALHOST", 8080))
+            mock_connect.assert_called_once_with(mock_socket, ("LOCALHOST", 8080))
+
+            safe_connect_ex(mock_socket, ("my-machine.local", 8080))
+            mock_connect_ex.assert_called_once_with(mock_socket, ("my-machine.local", 8080))
+
+
 def test_check_ai_status_corrupt_or_missing(tmp_path, monkeypatch):
     """Verify check_ai_status correctly warns when models are corrupt/missing."""
     from app.config import AppSettings

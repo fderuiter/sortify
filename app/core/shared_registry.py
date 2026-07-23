@@ -30,27 +30,31 @@ _local_ips = {
 }
 
 try:
-    _local_ips.add(socket.gethostname())
-    _local_ips.add(socket.getfqdn())
+    _local_ips.add(socket.gethostname().lower())
+    _local_ips.add(socket.getfqdn().lower())
 except Exception:
     pass
 
 try:
     for info in socket.getaddrinfo(socket.gethostname(), None):
-        _local_ips.add(info[4][0])
+        _local_ips.add(info[4][0].lower())
 except Exception:
     pass
 
 try:
     for info in socket.getaddrinfo("localhost", None):
-        _local_ips.add(info[4][0])
+        _local_ips.add(info[4][0].lower())
 except Exception:
     pass
 
 
 def _is_local_address(host: str) -> bool:
     """Check if the given host/IP is local/loopback/unspecified/private/link-local."""
-    if host in _local_ips:
+    host_lower = host.lower()
+    if host_lower in _local_ips:
+        return True
+
+    if host_lower.endswith(".local") or host_lower.endswith(".localhost"):
         return True
 
     try:
