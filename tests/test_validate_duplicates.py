@@ -1,6 +1,5 @@
 import ast
-import tempfile
-import pytest
+
 from scripts.validate_duplicates import DuplicatePatternVisitor
 
 

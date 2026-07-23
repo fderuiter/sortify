@@ -1,15 +1,14 @@
-from unittest.mock import patch, MagicMock
-import os
-import sys
+from unittest.mock import patch
 
 # Ensure dummy settings are injected similar to other UI snapshot tests
 from app.config import AppSettings
 from app.ui.app import run_app
 
+
 def test_run_app_hardening():
     """Verify that run_app binds exclusively to 127.0.0.1 (local-only hardening)."""
     with patch("app.ui.app.ui") as mock_ui, \
-         patch("app.ui.app.AutoSorterApp") as mock_app_class:
+         patch("app.ui.app.AutoSorterApp"):
         
         settings = AppSettings()
         run_app(settings)

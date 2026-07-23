@@ -38,7 +38,7 @@ class MetadataPass:
                 if not os.path.isfile(item_path):
                     continue
                 # Ensure the file is readable
-                with open(item_path, "rb") as f:
+                with open(item_path, "rb"):
                     pass
             except (OSError, PermissionError, FileNotFoundError) as e:
                 logging.warning(
