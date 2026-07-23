@@ -6,6 +6,11 @@
       "title": "Contextual Renaming",
       "type": "boolean"
     },
+    "AI_ASSISTED_NAMING": {
+      "default": false,
+      "title": "Ai Assisted Naming",
+      "type": "boolean"
+    },
     "PRESERVE_HIERARCHY": {
       "default": false,
       "title": "Preserve Hierarchy",
@@ -58,6 +63,32 @@
       "additionalProperties": true,
       "title": "Learned Rules",
       "type": "object"
+    },
+    "POLICIES": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Policies",
+      "type": "array"
+    },
+    "VISUAL_TIMEOUT": {
+      "default": 30,
+      "exclusiveMinimum": 0,
+      "title": "Visual Timeout",
+      "type": "integer"
+    },
+    "IMAGE_MAX_DIMENSION": {
+      "default": 1000,
+      "exclusiveMinimum": 0,
+      "title": "Image Max Dimension",
+      "type": "integer"
+    },
+    "IMAGE_SKIP_THRESHOLD": {
+      "default": 3000,
+      "exclusiveMinimum": 0,
+      "title": "Image Skip Threshold",
+      "type": "integer"
     },
     "AI_CONSENT_GRANTED": {
       "anyOf": [

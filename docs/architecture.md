@@ -9,7 +9,7 @@ graph TD
     A[Directory Selection] --> B[File Extraction & Generator]
     B --> C[Chunked Yielding]
     C --> D[Incremental Analyzer (partial_fit)]
-    D --> E[SentenceTransformers & KMeans Clustering]
+    D --> E[TF-IDF & NMF Clustering]
     E --> F[Recursive Topic Grouping]
     F --> G[Generate Sorting Plan]
     G --> H[UI Tree Rendering]
@@ -25,11 +25,11 @@ See [IncrementalAnalyzer][app.core.analyzer.IncrementalAnalyzer] for details on 
 See [RecursiveKMeansStrategy][app.core.analyzer_strategies.RecursiveKMeansStrategy] for details on the hierarchical clustering approach used for deep folder structures.
 
 ### 3. Folder Naming Logic
-Folder names are generated dynamically using KMeans components. The folder naming logic selects the top 2 terms for each topic and concatenates them with a hyphen (e.g., `Finance-Money`). Words are capitalized based on a TF-IDF vectorizer of the cluster documents.
+Folder names are generated dynamically using NMF components. The folder naming logic selects the top 2 terms for each topic and concatenates them with a hyphen (e.g., `Finance-Money`). Words are capitalized based on a TF-IDF vectorizer of the cluster documents.
 
 ## Threading Model & UI Responsiveness
 
-The application is built using `customtkinter` and leverages threading to maintain a responsive user interface during heavy ML tasks.
+The application is built using `nicegui` and leverages asynchronous programming to maintain a responsive user interface during heavy ML tasks.
 
 - **Background Workers:** File scanning and incremental modeling run on a background thread (`pipeline_worker`).
 - **Mutual Exclusion Locks:** A `threading.Lock` (`_update_lock`) is used when updating the ML model due to a manual drag-and-drop file move. This prevents concurrent model modifications that could corrupt the sorting plan.

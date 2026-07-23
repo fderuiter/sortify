@@ -14,10 +14,15 @@ site/
 .ruff_cache/
 dist/
 settings.json
-.venv/
 sandbox/dataset/
 autosorter.db
 tests/corpus/
 
 # Auto-generated documentation
 quality_guardrails_cache.db
+
+# Offline bundles
+offline_bundle/*
+!offline_bundle/requirements.txt
+offline_bundle.zip
+

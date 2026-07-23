@@ -3,14 +3,11 @@
 import os
 import sys
 import threading
-from pathlib import Path
 
 try:
     from sqlcipher3 import dbapi2 as sqlite3
 except ImportError:
     import sqlite3
-
-from app.core.crypto import SessionCrypto
 
 # Global connection cache and lock
 _connection_cache = {}
@@ -47,8 +44,9 @@ def get_db_connection(db_path: str):
         if cache_key in _connection_cache:
             return _connection_cache[cache_key]
 
-    key_path = Path(db_path).parent / "secret.key"
-    crypto = SessionCrypto(key_path, Path(db_path))
+    from app.core.path_utils import resolve_db_crypto
+
+    crypto = resolve_db_crypto(db_path)
     raw_key = crypto.get_raw_key()
 
     def _open_conn(path: str) -> sqlite3.Connection:
@@ -86,7 +84,7 @@ def get_db_connection(db_path: str):
 
     # Enable Write-Ahead Logging (WAL) for simultaneous reads and writes
     conn.execute("PRAGMA journal_mode = WAL")
-    # Increase the database in-memory page cache to hold vector embeddings
+    # Increase the database in-memory page cache to hold text features and clustering data
     conn.execute("PRAGMA cache_size = -64000")  # 64MB cache
 
     # Disable mmap_size on Windows to prevent OS-level file locking issues with multiple connections

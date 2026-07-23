@@ -16,17 +16,25 @@ except ImportError:
     pylnk3 = None
 
 
+def _is_same_path(p1: str, p2: str) -> bool:
+    if p1 is None or p2 is None:
+        return p1 == p2
+    return os.path.normcase(os.path.abspath(p1)) == os.path.normcase(os.path.abspath(p2))
+
+
 def get_safe_path(dest_dir: str, filename: str, source_path: str = None) -> str:
     """Generate a safe file path to avoid overwriting existing files."""
     base, extension = os.path.splitext(filename)
     counter = 1
     safe_path = os.path.join(dest_dir, filename)
-    while os.path.exists(safe_path):
-        if source_path and os.path.exists(source_path):
+    while os.path.lexists(safe_path):
+        if source_path and os.path.lexists(source_path):
             try:
                 if os.path.samefile(safe_path, source_path):
                     return safe_path
             except OSError as e:
+                if _is_same_path(safe_path, source_path):
+                    return safe_path
                 logging.error(
                     f"Failed to verify if paths conflict for {safe_path} and {source_path}: {e}",
                     exc_info=True,
@@ -51,7 +59,12 @@ def _remove_empty_dirs(path: str):
 
 
 def _execute_moves_recursive(
-    base_dir: str, plan: dict, db, current_dest: str = "", path_map: dict = None
+    base_dir: str,
+    plan: dict,
+    db,
+    current_dest: str = "",
+    path_map: dict = None,
+    db_updates_batch: list = None,
 ) -> None:
     """Recursively move files according to the plan."""
     if path_map is None:
@@ -74,7 +87,7 @@ def _execute_moves_recursive(
 
             # It's a file, key is the original relative path
             source_path = os.path.join(base_dir, key)
-            if not os.path.exists(source_path):
+            if not os.path.lexists(source_path):
                 continue
 
             if isinstance(content, dict) and "target_filename" in content:
@@ -100,12 +113,13 @@ def _execute_moves_recursive(
                         os.path.join(os.path.dirname(source_path), original_target)
                     )
 
-                new_abs_target = path_map.get(abs_target, abs_target)
+                new_abs_target = path_map.get(
+                    os.path.normcase(os.path.abspath(abs_target)) if abs_target else abs_target,
+                    abs_target
+                )
 
                 # Check if we need to update the link
-                needs_update = (dest_path != source_path) or (
-                    new_abs_target != abs_target
-                )
+                needs_update = not _is_same_path(dest_path, source_path) or not _is_same_path(new_abs_target, abs_target)
 
                 if needs_update:
                     import uuid
@@ -126,7 +140,7 @@ def _execute_moves_recursive(
                                 )
 
                             os.replace(shadow_name, dest_path)
-                            if dest_path != source_path:
+                            if not _is_same_path(dest_path, source_path):
                                 os.remove(source_path)
                             moved_as_link = True
                         except Exception as e:
@@ -159,7 +173,7 @@ def _execute_moves_recursive(
                                 )
 
                             os.replace(shadow_name, dest_path)
-                            if dest_path != source_path:
+                            if not _is_same_path(dest_path, source_path):
                                 os.remove(source_path)
                             moved_as_link = True
                         except Exception as e:
@@ -171,93 +185,168 @@ def _execute_moves_recursive(
                             )
                             raise
 
-            # Record user verified target
             doc = db.get_document(base_dir, key)
-            if doc and doc.get("file_hash"):
-                db.set_user_verified_target(
-                    base_dir, doc["file_hash"], current_dest.replace("\\", "/")
-                )
 
             if dest_path == source_path:
+                # Still record user verified target if needed even if not moving
+                if doc and doc.get("file_hash"):
+                    if db_updates_batch is not None:
+                        db_updates_batch.append(
+                            {
+                                "type": "verified_target",
+                                "args": (
+                                    base_dir,
+                                    doc["file_hash"],
+                                    current_dest.replace("\\", "/"),
+                                ),
+                            }
+                        )
+                    else:
+                        db.set_user_verified_target(
+                            base_dir, doc["file_hash"], current_dest.replace("\\", "/")
+                        )
                 continue
 
             if not moved_as_link:
                 shutil.move(source_path, dest_path)
 
+            # Record user verified target and update filepath only after successful move
+            if doc and doc.get("file_hash"):
+                if db_updates_batch is not None:
+                    db_updates_batch.append(
+                        {
+                            "type": "verified_target",
+                            "args": (
+                                base_dir,
+                                doc["file_hash"],
+                                current_dest.replace("\\", "/"),
+                            ),
+                        }
+                    )
+                else:
+                    db.set_user_verified_target(
+                        base_dir, doc["file_hash"], current_dest.replace("\\", "/")
+                    )
+
             # Update filepath in database
             rel_dest = os.path.relpath(dest_path, base_dir)
-            db.update_document_path(base_dir, key, rel_dest)
+            if db_updates_batch is not None:
+                db_updates_batch.append(
+                    {"type": "document_path", "args": (base_dir, key, rel_dest)}
+                )
+            else:
+                db.update_document_path(base_dir, key, rel_dest)
         else:
             # It's a folder
             _execute_moves_recursive(
-                base_dir, content, db, os.path.join(current_dest, key), path_map
+                base_dir,
+                content,
+                db,
+                os.path.join(current_dest, key),
+                path_map,
+                db_updates_batch,
             )
 
 
 def execute_moves(
-    base_dir: str, plan: dict, db, history_manager, runtime_settings=None
+    base_dir: str,
+    plan: dict,
+    db,
+    history_manager,
+    runtime_settings=None,
+    resume: bool = False,
 ) -> dict:
     """Create directories and safely move files, tracking file-system errors."""
-    # Create a full snapshot of the directory tree and metadata before moving files
-    session_id = history_manager.create_snapshot(base_dir)
-    logging.info(f"Created snapshot session {session_id} for {base_dir}")
+    session_id = None
+    if not resume:
+        # Create a full snapshot of the directory tree and metadata before moving files
+        session_id = history_manager.create_snapshot(base_dir)
+        logging.info(f"Created snapshot session {session_id} for {base_dir}")
+    else:
+        logging.info(f"Resuming snapshot session for {base_dir}")
+        try:
+            sessions = history_manager.get_sessions()
+            for s in sessions:
+                if s["base_dir"] == base_dir and s["status"] == "active":
+                    session_id = s["session_id"]
+                    break
+        except Exception:
+            pass
 
     # Build path mapping to track where targets move
     moves_list = VerificationEngine.get_moves(base_dir, plan)
     path_map = {}
     for rel_src, src, dst in moves_list:
-        path_map[os.path.abspath(src)] = os.path.abspath(dst)
+        path_map[os.path.normcase(os.path.abspath(src))] = os.path.abspath(dst)
 
     # Execute all moves first
-    _execute_moves_recursive(base_dir, plan, db, "", path_map)
+    db_updates_batch = []
+    try:
+        _execute_moves_recursive(base_dir, plan, db, "", path_map, db_updates_batch)
+        
+        summary = {"deleted_folders": 0, "protected_folders": 0}
+        cleanup_enabled = (
+            getattr(runtime_settings, "CLEANUP_EMPTY_FOLDERS", True)
+            if runtime_settings
+            else True
+        )
 
-    summary = {"deleted_folders": 0, "protected_folders": 0}
-    cleanup_enabled = (
-        getattr(runtime_settings, "CLEANUP_EMPTY_FOLDERS", True)
-        if runtime_settings
-        else True
-    )
+        # Find the directory nodes in the plan
+        dirs_to_process = []
 
-    # Find the directory nodes in the plan
-    dirs_to_process = []
+        def _find_dir_nodes(node):
+            if not isinstance(node, dict) or node.get("__type__") in ("file", "directory"):
+                return
+            for k, v in node.items():
+                if isinstance(v, dict) and v.get("__type__") == "directory":
+                    dirs_to_process.append(v)
+                elif isinstance(v, dict) and v.get("__type__") != "file":
+                    _find_dir_nodes(v)
 
-    def _find_dir_nodes(node):
-        if not isinstance(node, dict) or node.get("__type__") in ("file", "directory"):
-            return
-        for k, v in node.items():
-            if isinstance(v, dict) and v.get("__type__") == "directory":
-                dirs_to_process.append(v)
-            elif isinstance(v, dict) and v.get("__type__") != "file":
-                _find_dir_nodes(v)
+        _find_dir_nodes(plan)
 
-    _find_dir_nodes(plan)
+        # Sort by descending depth to delete subdirectories before parents
+        dirs_to_process.sort(
+            key=lambda x: len(x["source_path"].split(os.sep)), reverse=True
+        )
 
-    # Sort by descending depth to delete subdirectories before parents
-    dirs_to_process.sort(
-        key=lambda x: len(x["source_path"].split(os.sep)), reverse=True
-    )
+        if cleanup_enabled:
+            for node in dirs_to_process:
+                if node.get("protected"):
+                    summary["protected_folders"] += 1
+                elif node.get("status") == "To Be Deleted":
+                    try:
+                        if os.path.isdir(node["source_path"]) and not os.listdir(
+                            node["source_path"]
+                        ):
+                            os.rmdir(node["source_path"])
+                            summary["deleted_folders"] += 1
+                    except OSError:
+                        pass
 
-    if cleanup_enabled:
-        for node in dirs_to_process:
-            if node.get("protected"):
+            # Guarantee complete cleanup of empty directories after all explicit plan folders are processed
+            for entry in os.listdir(base_dir):
+                entry_path = os.path.join(base_dir, entry)
+                if os.path.isdir(entry_path):
+                    _remove_empty_dirs(entry_path)
+        else:
+            for node in dirs_to_process:
                 summary["protected_folders"] += 1
-            elif node.get("status") == "To Be Deleted":
-                try:
-                    if os.path.isdir(node["source_path"]) and not os.listdir(
-                        node["source_path"]
-                    ):
-                        os.rmdir(node["source_path"])
-                        summary["deleted_folders"] += 1
-                except OSError:
-                    pass
 
-        # Guarantee complete cleanup of empty directories after all explicit plan folders are processed
-        for entry in os.listdir(base_dir):
-            entry_path = os.path.join(base_dir, entry)
-            if os.path.isdir(entry_path):
-                _remove_empty_dirs(entry_path)
-    else:
-        for node in dirs_to_process:
-            summary["protected_folders"] += 1
+        db.execute_batch_updates(db_updates_batch)
+        return summary
 
-    return summary
+    except Exception as e:
+        try:
+            db.execute_batch_updates(db_updates_batch)
+        except Exception:
+            pass
+            
+        if session_id:
+            logging.error(f"Error during background sorting: {e}. Initiating automatic rollback for session {session_id}")
+            try:
+                history_manager.rollback(session_id, ignore_missing=True)
+                logging.info(f"Automatic rollback completed successfully for session {session_id}")
+            except Exception as rollback_err:
+                logging.error(f"Automatic rollback failed for session {session_id}: {rollback_err}", exc_info=True)
+        raise e

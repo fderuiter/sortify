@@ -1,16 +1,33 @@
 """Verification engine for proactive move validation."""
 
-import logging
 import os
-import platform
-import shutil
-import tempfile
-
+import logging
 from app.core.link_manager import LinkManager
+
+try:
+    import pylnk3
+except ImportError:
+    pylnk3 = None
+
+
+def is_ml_available() -> bool:
+    """Check if heavy machine learning dependencies (torch, easyocr) are available."""
+    try:
+        import torch
+        import easyocr
+        return True
+    except ImportError:
+        return False
 
 
 class VerificationEngine:
     """Engine to verify file operations before execution."""
+
+    @staticmethod
+    def verify_plan_integrity(base_dir: str, plan: dict) -> dict:
+        """Run complete virtual filesystem simulation and integrity check."""
+        tracker = VirtualFilesystemTracker()
+        return tracker.verify_integrity(base_dir, plan)
 
     @staticmethod
     def get_moves(base_dir: str, plan: dict, current_dest: str = "") -> list:
@@ -42,182 +59,388 @@ class VerificationEngine:
                 )
         return moves
 
-    @staticmethod
-    def is_cloud_path(path: str) -> bool:
-        """Check if the given path resides within a cloud-synced folder."""
-        norm_path = os.path.normpath(os.path.abspath(path)).lower()
-        sys_platform = platform.system()
 
-        if sys_platform == "Darwin":
-            if (
-                f"library{os.sep}mobile documents" in norm_path
-                or "com~apple~clouddocs" in norm_path
-            ):
-                return True
-        elif sys_platform == "Windows":
-            env_vars = ["OneDrive", "OneDriveConsumer", "OneDriveCommercial"]
-            for var in env_vars:
-                env_val = os.environ.get(var)
-                if env_val:
-                    env_val_norm = os.path.normpath(os.path.abspath(env_val)).lower()
-                    if (
-                        norm_path.startswith(env_val_norm + os.sep)
-                        or norm_path == env_val_norm
-                    ):
-                        return True
-            # Fallback checks
-            if f"{os.sep}onedrive{os.sep}" in norm_path or norm_path.endswith(
-                f"{os.sep}onedrive"
-            ):
-                return True
-        return False
+class VirtualNode:
+    def __init__(self, path, is_dir, inode, size, symlink_target=None, shortcut_target=None):
+        self.path = os.path.abspath(path)
+        self.is_dir = is_dir
+        self.inode = inode
+        self.size = size
+        self.symlink_target = symlink_target
+        self.shortcut_target = shortcut_target
 
-    def has_cloud_targets(self, base_dir: str, plan: dict) -> bool:
-        """Check if any target path in the plan is a cloud-synced path."""
-        moves = self.get_moves(base_dir, plan)
-        for _, _, dst in moves:
-            if self.is_cloud_path(dst):
-                return True
-        return False
 
-    def _get_volume(self, path: str) -> str:
-        curr = os.path.abspath(path)
-        if platform.system() == "Windows":
-            return os.path.splitdrive(curr)[0] + "\\"
-        else:
-            while not os.path.exists(curr):
-                parent = os.path.dirname(curr)
-                if parent == curr:
-                    break
-                curr = parent
-            while not os.path.ismount(curr):
-                parent = os.path.dirname(curr)
-                if parent == curr:
-                    break
-                curr = parent
-            return curr
+class VirtualFilesystemTracker:
+    """In-memory virtual filesystem tracker to simulate file operations and verify path integrity."""
 
-    def _is_file_accessible(self, filepath: str) -> bool:
-        if not os.path.lexists(filepath):
-            return False
+    def __init__(self):
+        self.nodes = {}
+        self._inode_counter = 1000000
 
-        # Don't try to open symlinks for reading
-        if os.path.islink(filepath):
-            return os.access(filepath, os.R_OK)
+    def _get_next_inode(self) -> int:
+        self._inode_counter += 1
+        return self._inode_counter
 
+    def populate_from_disk(self, base_dir: str):
+        """Traverse base_dir recursively and populate the virtual filesystem."""
+        if not base_dir or not os.path.exists(base_dir):
+            return
+
+        base_dir_abs = os.path.abspath(base_dir)
+        
+        # Add base_dir itself
         try:
-            with open(filepath, "rb"):
-                pass
-            return True
-        except PermissionError:
-            return False
-        except IOError:
-            return False
+            st = os.stat(base_dir_abs)
+            inode = st.st_ino
+            size = st.st_size
+        except OSError:
+            inode = self._get_next_inode()
+            size = 0
+        self.nodes[base_dir_abs] = VirtualNode(base_dir_abs, is_dir=True, inode=inode, size=size)
 
-    def _check_symlink_privilege(self) -> bool:
-        """Test if the OS allows creating symbolic links."""
-        try:
-            with tempfile.TemporaryDirectory() as temp_dir:
-                test_src = os.path.join(temp_dir, ".test_symlink_src")
-                test_dst = os.path.join(temp_dir, ".test_symlink_dst")
-                with open(test_src, "w") as f:
-                    f.write("test")
-                os.symlink(test_src, test_dst)
-                return True
-        except Exception:
-            return False
-
-    def verify_plan(self, base_dir: str, plan: dict, cancel_check=None) -> dict:
-        """Verify the execution plan against constraints."""
-        errors = {}
-        moves = self.get_moves(base_dir, plan)
-
-        volumes = {}
-        for rel_src, src, dst in moves:
-            if cancel_check and cancel_check():
-                return {}
-            src_vol = self._get_volume(src)
-            dst_vol = self._get_volume(dst)
-
-            size = os.path.getsize(src) if os.path.exists(src) else 0
-
-            if src_vol not in volumes:
-                volumes[src_vol] = 0
-            if dst_vol not in volumes:
-                volumes[dst_vol] = 0
-
-            if src_vol != dst_vol:
-                volumes[src_vol] -= size
-                volumes[dst_vol] += size
-
-        for vol, net_change in volumes.items():
-            if net_change > 0:
+        for root, dirs, files in os.walk(base_dir):
+            for d in dirs:
+                dir_path = os.path.join(root, d)
+                abs_dir_path = os.path.abspath(dir_path)
                 try:
-                    usage = shutil.disk_usage(vol)
-                    if usage.free < net_change:
-                        for rel_src, src, dst in moves:
-                            if (
-                                self._get_volume(dst) == vol
-                                and self._get_volume(src) != vol
-                            ):
-                                errors[rel_src] = "Insufficient disk space"
-                except Exception as e:
-                    logging.error(
-                        f"Failed to check disk space for volume {vol}: {e}",
-                        exc_info=True,
-                    )
+                    st = os.stat(abs_dir_path)
+                    inode = st.st_ino
+                    size = st.st_size
+                except OSError:
+                    inode = self._get_next_inode()
+                    size = 0
+                self.nodes[abs_dir_path] = VirtualNode(abs_dir_path, is_dir=True, inode=inode, size=size)
 
-        is_windows = platform.system() == "Windows"
+            for f in files:
+                file_path = os.path.join(root, f)
+                abs_file_path = os.path.abspath(file_path)
 
-        # Check if we have symlink capabilities if we are moving any symlinks
-        symlink_privilege = None
+                # Check if symbolic link
+                symlink_target = None
+                if os.path.islink(abs_file_path):
+                    try:
+                        symlink_target = os.readlink(abs_file_path)
+                    except OSError:
+                        pass
 
-        from app.core.path_utils import is_valid_name
+                # Check if Windows shortcut (.lnk)
+                shortcut_target = None
+                if abs_file_path.lower().endswith(".lnk"):
+                    info = LinkManager.get_link_info(abs_file_path)
+                    if info and info.get("type") == "lnk":
+                        shortcut_target = info.get("target")
+                    elif pylnk3:
+                        try:
+                            lnk = pylnk3.parse(abs_file_path)
+                            shortcut_target = lnk.path
+                        except Exception:
+                            pass
 
-        for rel_src, src, dst in moves:
-            if cancel_check and cancel_check():
-                return {}
-            if rel_src in errors:
+                try:
+                    st = os.lstat(abs_file_path) if symlink_target else os.stat(abs_file_path)
+                    inode = st.st_ino
+                    size = st.st_size
+                except OSError:
+                    inode = self._get_next_inode()
+                    size = 0
+
+                self.nodes[abs_file_path] = VirtualNode(
+                    abs_file_path,
+                    is_dir=False,
+                    inode=inode,
+                    size=size,
+                    symlink_target=symlink_target,
+                    shortcut_target=shortcut_target
+                )
+
+    def populate_from_moves(self, moves_list: list):
+        """Ensure all source files in the moves are registered in the virtual filesystem."""
+        for rel_path, src, dst in moves_list:
+            abs_src = os.path.abspath(src)
+            if abs_src not in self.nodes:
+                inode = self._get_next_inode()
+                symlink_target = None
+                shortcut_target = None
+                
+                # Retrieve registered link info if available
+                link_info = LinkManager.get_link_info(abs_src)
+                if link_info:
+                    if link_info.get("type") == "symlink":
+                        symlink_target = link_info.get("target")
+                    elif link_info.get("type") == "lnk":
+                        shortcut_target = link_info.get("target")
+                else:
+                    if abs_src.lower().endswith(".lnk"):
+                        shortcut_target = "mock_target.exe"
+
+                self.nodes[abs_src] = VirtualNode(
+                    abs_src,
+                    is_dir=False,
+                    inode=inode,
+                    size=1024,  # default mock size
+                    symlink_target=symlink_target,
+                    shortcut_target=shortcut_target
+                )
+
+    def simulate_final_state(self, moves_list: list) -> dict:
+        """Return a new dict of nodes representing the filesystem state after executing all moves."""
+        final_nodes = {}
+
+        # 1. Start with copy of unmoved nodes
+        moved_srcs = {os.path.abspath(src) for _, src, _ in moves_list}
+        for path, node in self.nodes.items():
+            if path not in moved_srcs:
+                final_nodes[path] = node
+
+        # 2. Add moved nodes at their destinations
+        for rel_path, src, dst in moves_list:
+            abs_src = os.path.abspath(src)
+            abs_dst = os.path.abspath(dst)
+            node = self.nodes.get(abs_src)
+            if node:
+                new_node = VirtualNode(
+                    abs_dst,
+                    is_dir=node.is_dir,
+                    inode=node.inode,
+                    size=node.size,
+                    symlink_target=node.symlink_target,
+                    shortcut_target=node.shortcut_target
+                )
+                final_nodes[abs_dst] = new_node
+                
+                # Also ensure all intermediate parent directories are in the final_nodes
+                # unless they are already occupied by a file.
+                current = os.path.dirname(abs_dst)
+                while current and len(current) > 0:
+                    if current not in final_nodes:
+                        final_nodes[current] = VirtualNode(
+                            current,
+                            is_dir=True,
+                            inode=self._get_next_inode(),
+                            size=0
+                        )
+                    parent = os.path.dirname(current)
+                    if parent == current:
+                        break
+                    current = parent
+
+        return final_nodes
+
+    def check_collisions(self, moves_list: list, base_dir: str) -> list:
+        """Detect duplicate destination target collisions and blocked parent directory/ancestor paths."""
+        collisions = []
+        base_dir_abs = os.path.abspath(base_dir) if base_dir else ""
+        
+        dest_to_srcs = {}
+        for rel_path, src, dst in moves_list:
+            abs_src = os.path.abspath(src)
+            abs_dst = os.path.abspath(dst)
+            dest_to_srcs.setdefault(abs_dst, []).append(abs_src)
+
+        # 1. Duplicate target collision
+        for dst, srcs in dest_to_srcs.items():
+            if len(srcs) > 1:
+                collisions.append({
+                    "path": dst,
+                    "type": "duplicate_target",
+                    "sources": srcs,
+                    "message": f"Multiple files are planned to be moved to the same destination: {dst}"
+                })
+
+        # 2. Parent directory / target structure collisions
+        for rel_path, src, dst in moves_list:
+            abs_src = os.path.abspath(src)
+            abs_dst = os.path.abspath(dst)
+
+            # Check if any ancestor is a file (blocked parent directory)
+            current = os.path.dirname(abs_dst)
+            ancestor_collision = False
+            while current and len(current) >= len(base_dir_abs):
+                node = self.nodes.get(current)
+                if node and not node.is_dir:
+                    collisions.append({
+                        "path": abs_dst,
+                        "type": "parent_directory_collision",
+                        "blocked_by": current,
+                        "source": abs_src,
+                        "message": f"Destination path '{abs_dst}' is blocked because ancestor '{current}' is a file."
+                    })
+                    ancestor_collision = True
+                    break
+                parent = os.path.dirname(current)
+                if parent == current:
+                    break
+                current = parent
+
+            if ancestor_collision:
                 continue
 
-            if is_windows:
-                # Fallback validation for Windows invalid characters and reserved names
-                # Split the relative path components to check each directory and file name
-                import ntpath
+            # Check destination itself
+            node_at_dst = self.nodes.get(abs_dst)
+            if node_at_dst:
+                if node_at_dst.is_dir:
+                    collisions.append({
+                        "path": abs_dst,
+                        "type": "target_is_directory",
+                        "source": abs_src,
+                        "message": f"Destination path '{abs_dst}' is already an existing directory."
+                    })
+                else:
+                    is_dst_moving = any(os.path.abspath(s) == abs_dst for _, s, _ in moves_list)
+                    if not is_dst_moving and abs_src != abs_dst:
+                        collisions.append({
+                            "path": abs_dst,
+                            "type": "target_collision",
+                            "source": abs_src,
+                            "message": f"Destination path '{abs_dst}' is blocked by an existing file that is not being moved."
+                        })
 
-                rel_dst = ntpath.relpath(dst, base_dir)
-                parts = rel_dst.replace("\\", "/").split("/")
-                invalid_found = False
-                for part in parts:
-                    if part and not is_valid_name(part):
-                        invalid_found = True
-                        break
-                if invalid_found:
-                    errors[rel_src] = (
-                        "Path contains invalid characters or reserved names"
-                    )
-                    continue
+        return collisions
 
-            link_info = LinkManager.get_link_info(src)
-            if link_info and link_info["type"] == "symlink":
-                if symlink_privilege is None:
-                    symlink_privilege = self._check_symlink_privilege()
-                if not symlink_privilege:
-                    errors[rel_src] = (
-                        "Operating system blocks link modification due to permission constraints"
-                    )
-                    continue
+    def check_circular_renames(self, moves_list: list) -> list:
+        """Trace renaming dependencies and detect circular renames."""
+        move_map = {}
+        for rel_path, src, dst in moves_list:
+            abs_src = os.path.abspath(src)
+            abs_dst = os.path.abspath(dst)
+            if abs_src != abs_dst:
+                move_map[abs_src] = abs_dst
 
-            if is_windows:
-                if len(dst) >= 260:
-                    errors[rel_src] = "Path exceeds 260 characters"
+        cycles = []
+        visited = set()
+
+        for start_path in move_map:
+            if start_path in visited:
+                continue
+
+            path = start_path
+            current_chain = []
+            chain_set = set()
+
+            while path in move_map:
+                if path in chain_set:
+                    cycle_start_idx = current_chain.index(path)
+                    cycle = current_chain[cycle_start_idx:]
+                    cycles.append(cycle)
+                    break
+                if path in visited:
+                    break
+
+                current_chain.append(path)
+                chain_set.add(path)
+                path = move_map[path]
+
+            for p in current_chain:
+                visited.add(p)
+
+        circular_renames = []
+        for cycle in cycles:
+            cycle_str = " -> ".join(cycle) + f" -> {cycle[0]}"
+            message = f"Circular renaming dependency detected: {cycle_str}"
+            for path in cycle:
+                circular_renames.append({
+                    "path": path,
+                    "cycle": cycle,
+                    "message": message
+                })
+
+        return circular_renames
+
+    def check_broken_links(self, moves_list: list, base_dir: str, final_nodes: dict) -> list:
+        """Validate symbolic links and Windows shortcut targets after simulating moves."""
+        broken_links = []
+        base_dir_abs = os.path.abspath(base_dir) if base_dir else ""
+
+        path_map = {os.path.abspath(src): os.path.abspath(dst) for _, src, dst in moves_list}
+
+        for abs_path, node in final_nodes.items():
+            target_path = None
+            link_type = None
+
+            if node.symlink_target:
+                target_path = node.symlink_target
+                link_type = "symlink"
+            elif node.shortcut_target:
+                target_path = node.shortcut_target
+                link_type = "shortcut"
+
+            if not target_path:
+                continue
+
+            # Determine original absolute target path before moves
+            orig_src = None
+            for rel_path, src, dst in moves_list:
+                if os.path.abspath(dst) == abs_path:
+                    orig_src = os.path.abspath(src)
+                    break
+
+            if orig_src is None:
+                orig_src = abs_path
+
+            if os.path.isabs(target_path):
+                abs_target_orig = os.path.abspath(target_path)
             else:
-                if len(os.path.basename(dst)) > 255:
-                    errors[rel_src] = "Filename exceeds 255 characters"
-                elif len(dst) > 4096:
-                    errors[rel_src] = "Path exceeds 4096 characters"
+                abs_target_orig = os.path.abspath(os.path.join(os.path.dirname(orig_src), target_path))
 
-            if rel_src not in errors and not self._is_file_accessible(src):
-                errors[rel_src] = "File is locked or inaccessible"
+            # Final absolute target path after moves
+            abs_target_final = path_map.get(abs_target_orig, abs_target_orig)
 
-        return errors
+            # Verify target existence
+            is_inside_base = abs_target_final.startswith(base_dir_abs) if base_dir_abs else False
+            
+            if is_inside_base:
+                target_exists = abs_target_final in final_nodes
+            else:
+                target_exists = os.path.exists(abs_target_final)
+
+            if not target_exists:
+                message = f"Broken {link_type} target: '{abs_path}' points to '{abs_target_final}', which does not exist."
+                broken_links.append({
+                    "path": abs_path,
+                    "type": f"broken_{link_type}",
+                    "target": abs_target_final,
+                    "message": message
+                })
+
+        return broken_links
+
+    def verify_integrity(self, base_dir: str, plan: dict) -> dict:
+        """Run complete virtual filesystem simulation and integrity check."""
+        moves_list = VerificationEngine.get_moves(base_dir, plan)
+        
+        # Populate initial VFS state
+        self.populate_from_disk(base_dir)
+        self.populate_from_moves(moves_list)
+
+        # Trace and analyze issues
+        collisions = self.check_collisions(moves_list, base_dir)
+        circular_renames = self.check_circular_renames(moves_list)
+        
+        # Simulate final VFS state
+        final_nodes = self.simulate_final_state(moves_list)
+        
+        # Validate links in final VFS state
+        broken_links = self.check_broken_links(moves_list, base_dir, final_nodes)
+
+        # Consolidate all warnings
+        warnings = []
+        for c in collisions:
+            warnings.append(c["message"])
+        for r in circular_renames:
+            warnings.append(r["message"])
+        for l in broken_links:
+            warnings.append(l["message"])
+
+        # Eliminate duplicate messages in warnings
+        unique_warnings = list(dict.fromkeys(warnings))
+
+        success = len(collisions) == 0 and len(circular_renames) == 0 and len(broken_links) == 0
+
+        return {
+            "success": success,
+            "collisions": collisions,
+            "circular_renames": circular_renames,
+            "broken_links": broken_links,
+            "warnings": unique_warnings
+        }
+

@@ -13,12 +13,15 @@ class SessionCrypto:
     """Manages encryption and decryption of data per session."""
 
     def __init__(self, key_path: Path, db_path: Path):
-        self.key_path = key_path
-        self.db_path = db_path
+        self.db_path = Path(os.path.abspath(db_path))
+        self.key_path = Path(os.path.abspath(key_path))
         self._cipher = None
+        self._key = None
         self.keyring_service = "AutoSorter"
-        db_hash = hashlib.md5(str(db_path).encode("utf-8")).hexdigest()
+        db_hash = hashlib.md5(str(self.db_path).encode("utf-8")).hexdigest()
         self.keyring_account = f"DatabaseDecryptionKey_{db_hash}"
+        self.isolated_dir = self.db_path.parent / ".keys"
+        self.isolated_key_path = self.isolated_dir / f"{self.db_path.name}.key"
 
     def get_cipher(self):
         """Get or initialize the Fernet cipher instance."""
@@ -27,7 +30,7 @@ class SessionCrypto:
 
         key = None
 
-        # 1. Try loading from Keyring
+        # 1. OS Keyring Lookup
         try:
             key_str = keyring.get_password(self.keyring_service, self.keyring_account)
             if key_str:
@@ -35,28 +38,55 @@ class SessionCrypto:
         except Exception:
             pass
 
-        # 2. Check for Legacy Plaintext File
-        if key is None and self.key_path.exists():
+        # 2. Isolated Fallback Key Lookup
+        if key is None and self.isolated_key_path.exists():
             try:
-                with open(self.key_path, "rb") as f:
+                with open(self.isolated_key_path, "rb") as f:
                     key = f.read().strip()
-
-                # Try to migrate to keyring
-                try:
-                    keyring.set_password(
-                        self.keyring_service, self.keyring_account, key.decode("utf-8")
-                    )
-                    verify_str = keyring.get_password(
-                        self.keyring_service, self.keyring_account
-                    )
-                    if verify_str and verify_str.encode("utf-8") == key:
-                        os.unlink(self.key_path)  # Securely delete legacy file
-                except Exception:
-                    pass  # Fallback to keeping it in the file
             except Exception:
                 pass
 
-        # 3. Database Guard
+        # 3. Legacy Fallback Migration
+        if key is None and self.key_path.exists():
+            try:
+                with open(self.key_path, "rb") as f:
+                    legacy_key = f.read().strip()
+                if legacy_key:
+                    # Write/copy to isolated fallback key path
+                    self.isolated_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+                    try:
+                        os.chmod(self.isolated_dir, 0o700)
+                    except Exception:
+                        pass
+
+                    try:
+                        fd = os.open(
+                            str(self.isolated_key_path),
+                            os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+                            0o600,
+                        )
+                        with os.fdopen(fd, "wb") as f:
+                            f.write(legacy_key)
+                    except Exception:
+                        with open(self.isolated_key_path, "wb") as f:
+                            f.write(legacy_key)
+                        try:
+                            os.chmod(self.isolated_key_path, 0o600)
+                        except Exception:
+                            pass
+                    key = legacy_key
+
+                    # Try to migrate to keyring
+                    try:
+                        keyring.set_password(
+                            self.keyring_service, self.keyring_account, key.decode("utf-8")
+                        )
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+        # 4. Database Guard Check
         if key is None:
             if self.db_path.exists():
                 try:
@@ -81,7 +111,7 @@ class SessionCrypto:
                 except sqlite3.Error:
                     pass
 
-            # 4. Generate new key
+            # 5. New Key Generation
             key = Fernet.generate_key()
             saved_to_keyring = False
             try:
@@ -97,17 +127,34 @@ class SessionCrypto:
                 pass
 
             if not saved_to_keyring:
-                # Fallback to local file with strict permissions
-                fd = os.open(
-                    str(self.key_path), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600
-                )
-                with os.fdopen(fd, "wb") as f:
-                    f.write(key)
+                # Fallback to isolated fallback key path with secure permissions
+                self.isolated_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+                try:
+                    os.chmod(self.isolated_dir, 0o700)
+                except Exception:
+                    pass
+
+                try:
+                    fd = os.open(
+                        str(self.isolated_key_path),
+                        os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+                        0o600,
+                    )
+                    with os.fdopen(fd, "wb") as f:
+                        f.write(key)
+                except Exception:
+                    with open(self.isolated_key_path, "wb") as f:
+                        f.write(key)
+                    try:
+                        os.chmod(self.isolated_key_path, 0o600)
+                    except Exception:
+                        pass
 
         if key is None:
             raise RuntimeError("Database accessed but key file is missing.")
 
         try:
+            self._key = key
             self._cipher = Fernet(key)
             return self._cipher
         except Exception as e:
@@ -119,9 +166,9 @@ class SessionCrypto:
         """Get the raw key string for SQLCipher."""
         if self._cipher is None:
             self.get_cipher()
-        # Since _cipher is initialized, we can fetch it again using get_cipher logic, but we need the raw bytes.
-        # Actually, self._cipher._signing_key + self._cipher._encryption_key is the raw key, but let's just
-        # extract it the same way.
+        if hasattr(self, "_key") and self._key:
+            return self._key.decode("utf-8")
+        # Fallback (same hierarchy)
         key = None
         try:
             key_str = keyring.get_password(self.keyring_service, self.keyring_account)
@@ -129,9 +176,18 @@ class SessionCrypto:
                 key = key_str.encode("utf-8")
         except Exception:
             pass
+        if key is None and self.isolated_key_path.exists():
+            try:
+                with open(self.isolated_key_path, "rb") as f:
+                    key = f.read().strip()
+            except Exception:
+                pass
         if key is None and self.key_path.exists():
-            with open(self.key_path, "rb") as f:
-                key = f.read().strip()
+            try:
+                with open(self.key_path, "rb") as f:
+                    key = f.read().strip()
+            except Exception:
+                pass
         return key.decode("utf-8") if key else None
 
     def encrypt_text(self, text: str) -> bytes:

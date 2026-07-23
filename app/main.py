@@ -5,12 +5,17 @@ This script imports and runs the main application GUI or CLI demo.
 
 import argparse
 import logging
+from pathlib import Path
 
 from app.config import AppSettings
+from app.log_filter import LogScrubbingFilter
 
 
 def main():
     """Execute the main application GUI or Demo."""
+    import multiprocessing
+    multiprocessing.freeze_support()
+
     settings = AppSettings()
 
     # Configure Centralized Logger
@@ -19,6 +24,15 @@ def main():
         level=logging.ERROR,
         format="%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s",
     )
+
+    # Create and add the log scrubbing filter to the root logger
+    root_logger = logging.getLogger()
+
+    # Also apply to handlers to ensure child loggers are filtered
+    scrubber = LogScrubbingFilter(str(Path.home()))
+    root_logger.addFilter(scrubber)
+    for handler in root_logger.handlers:
+        handler.addFilter(scrubber)
 
     parser = argparse.ArgumentParser(description="Smart AutoSorter AI Pro")
     parser.add_argument(
@@ -41,4 +55,6 @@ def main():
 
 
 if __name__ == "__main__":
+    import multiprocessing
+    multiprocessing.freeze_support()
     main()

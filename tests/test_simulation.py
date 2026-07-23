@@ -41,10 +41,6 @@ def teardown_module(module):
         shutil.rmtree(_test_dir, ignore_errors=True)
 
 
-def save_cache_sync(*args, **kwargs):
-    cache_manager.save_cache_sync(*args, **kwargs)
-
-
 @pytest.fixture(scope="function", autouse=True)
 def clean_db():
     db.clear()

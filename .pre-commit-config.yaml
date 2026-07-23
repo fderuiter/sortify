@@ -53,4 +53,10 @@ repos:
         language: system
         files: '^\.github/AGENTS/.*$'
         pass_filenames: false
+      - id: validate-duplicates
+        name: Validate Duplicate System Utilities
+        entry: uv run python scripts/validate_duplicates.py
+        language: system
+        files: '\.py$'
+        pass_filenames: false
 
