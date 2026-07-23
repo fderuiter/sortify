@@ -82,6 +82,10 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.demo
 
+## `app.log_filter`
+
+::: app.log_filter
+
 ## `app.main`
 
 ::: app.main
