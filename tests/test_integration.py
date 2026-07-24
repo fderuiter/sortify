@@ -21,7 +21,10 @@ def mock_winreg_and_ctypes():
     mock_ctypes.windll.shell32.IsUserAnAdmin.return_value = False
     mock_ctypes.windll.shell32.ShellExecuteW.return_value = 42
 
-    with patch.dict(sys.modules, {"winreg": mock_winreg, "ctypes": mock_ctypes}):
+    with (
+        patch.dict(sys.modules, {"winreg": mock_winreg, "ctypes": mock_ctypes}),
+        patch("app.core.verifier.check_ai_status", return_value=(True, None)),
+    ):
         yield mock_winreg, mock_ctypes
 
 

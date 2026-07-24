@@ -114,6 +114,7 @@ def test_physical_filesystem_remains_unaltered():
 
         # Run simulation
         _ = VerificationEngine.verify_plan_integrity(tmp_dir, plan)
+
         # Physical filesystem must remain completely unaltered!
         final_files = set(os.listdir(tmp_dir))
         assert initial_files == final_files

@@ -144,6 +144,7 @@ def test_spec_file_partitioning():
         ),
         ("/mock/sqlcipher3/sub", [], ["extra.so", "doc.txt"]),
     ]
+
     mock_hooks = MagicMock()
     mock_hooks.collect_all.return_value = ([], [], [])
 
