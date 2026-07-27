@@ -8,14 +8,27 @@ import sys
 
 # Dynamic Windows DLL Path Injection
 if sys.platform == "win32" and getattr(sys, "frozen", False):
-    base_dir = getattr(sys, "_MEIPASS", os.path.dirname(sys.executable))
-    # Locate the folder where PyInstaller bundles the sqlcipher3 binaries
-    sqlcipher_dir = os.path.join(base_dir, "sqlcipher3")
-    if os.path.isdir(sqlcipher_dir):
+    base_dir = getattr(sys, "_MEIPASS", None)
+    if base_dir:
+        base_dir = os.path.abspath(base_dir)
         try:
-            os.add_dll_directory(sqlcipher_dir)
+            os.add_dll_directory(base_dir)
         except Exception:
-            # Log or ignore if already added
+            pass
+        
+        sqlcipher_dir = os.path.abspath(os.path.join(base_dir, "sqlcipher3"))
+        if os.path.isdir(sqlcipher_dir):
+            try:
+                os.add_dll_directory(sqlcipher_dir)
+            except Exception:
+                pass
+
+    exe_dir = os.path.dirname(sys.executable)
+    if exe_dir:
+        exe_dir = os.path.abspath(exe_dir)
+        try:
+            os.add_dll_directory(exe_dir)
+        except Exception:
             pass
 
 import argparse
