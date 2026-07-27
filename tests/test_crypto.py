@@ -2,6 +2,7 @@ import os
 import shutil
 import sqlite3
 from contextlib import closing
+from unittest.mock import MagicMock
 
 import keyring
 import pytest
@@ -268,3 +269,34 @@ def test_copy_db_to_new_system_without_keyring(tmp_path, monkeypatch):
     # Should successfully decrypt
     decrypted = crypto2.decrypt_text(encrypted)
     assert decrypted == original_text
+
+
+def test_standard_sqlite_fallback_rejection(tmp_path, monkeypatch):
+    """Verify that standard SQLite fallback connections are completely rejected during initialization."""
+    from app.core import db_conn
+    monkeypatch.setattr(db_conn, "HAS_SQLCIPHER", False)
+
+    db_path = tmp_path / "autosorter.db"
+    with pytest.raises(RuntimeError, match="SQLCipher library is missing"):
+        db_conn.get_db_connection(str(db_path))
+
+
+def test_missing_cipher_version_rejection(tmp_path, monkeypatch):
+    """Verify that if the driver lacks cipher capability or returns empty version, we reject and close."""
+    from app.core import db_conn
+    monkeypatch.setattr(db_conn, "HAS_SQLCIPHER", True)
+
+    # Mock sqlite3.connect to return a mock connection whose cursor returns empty for cipher_version
+    mock_conn = MagicMock()
+    mock_cursor = MagicMock()
+    mock_cursor.fetchone.return_value = (None,)  # empty version
+    mock_conn.cursor.return_value = mock_cursor
+
+    monkeypatch.setattr(db_conn.sqlite3, "connect", MagicMock(return_value=mock_conn))
+
+    db_path = tmp_path / "autosorter.db"
+    with pytest.raises(RuntimeError, match="SQLCipher is not active on this connection context"):
+        db_conn.get_db_connection(str(db_path))
+
+    mock_conn.close.assert_called()
+

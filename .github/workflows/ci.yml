@@ -64,6 +64,16 @@ jobs:
       run: |
         uv run pytest --cov --cov-report=term tests/
 
+    - name: Build executable (Lite)
+      if: matrix.os == 'windows-latest'
+      run: |
+        uv run python scripts/build.py --lite
+
+    - name: Verify compiled executable (Windows Smoke Test)
+      if: matrix.os == 'windows-latest'
+      run: |
+        dist/smart-autosorter/smart-autosorter.exe --smoke-test
+
     - name: Generate Documentation
       if: matrix.os == 'ubuntu-latest'
       run: |
