@@ -47,9 +47,9 @@ if sqlcipher_spec and sqlcipher_spec.submodule_search_locations:
             rel_path = os.path.relpath(abs_file_path, sqlcipher_dir)
             dest_dir = os.path.join('sqlcipher3', os.path.dirname(rel_path))
             
-            # Identify platform-specific binary extensions (.dll, .dylib, .so)
+            # Identify platform-specific binary extensions (.dll, .dylib, .so, .pyd)
             file_lower = file.lower()
-            if file_lower.endswith(('.dll', '.dylib', '.so')) or '.so.' in file_lower:
+            if file_lower.endswith(('.dll', '.dylib', '.so', '.pyd')) or '.so.' in file_lower:
                 binaries.append((abs_file_path, dest_dir))
             else:
                 datas.append((abs_file_path, dest_dir))

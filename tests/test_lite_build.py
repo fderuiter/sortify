@@ -139,6 +139,7 @@ def test_spec_file_partitioning():
                 "_sqlite3.so",
                 "_sqlite3.dll",
                 "_sqlite3.dylib",
+                "_sqlite3.pyd",
                 "dbapi2.py",
             ],
         ),
@@ -181,11 +182,13 @@ def test_spec_file_partitioning():
         # _sqlite3.so -> sqlcipher3
         # _sqlite3.dll -> sqlcipher3
         # _sqlite3.dylib -> sqlcipher3
+        # _sqlite3.pyd -> sqlcipher3
         # extra.so -> sqlcipher3/sub
         expected_binaries = {
             (os.path.join("/mock/sqlcipher3", "_sqlite3.so"), "sqlcipher3"),
             (os.path.join("/mock/sqlcipher3", "_sqlite3.dll"), "sqlcipher3"),
             (os.path.join("/mock/sqlcipher3", "_sqlite3.dylib"), "sqlcipher3"),
+            (os.path.join("/mock/sqlcipher3", "_sqlite3.pyd"), "sqlcipher3"),
             (
                 os.path.join("/mock/sqlcipher3/sub", "extra.so"),
                 os.path.join("sqlcipher3", "sub"),

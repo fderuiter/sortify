@@ -133,9 +133,9 @@ def test_socket_sandbox_blocking_of_external_and_allow_localhost():
     """Verify that socket sandboxing blocks external domains while allowing localhost/loopback."""
     from app.core.shared_registry import (
         apply_global_socket_sandbox,
+        block_external_network,
         safe_connect,
         safe_connect_ex,
-        block_external_network,
     )
 
     apply_global_socket_sandbox()
@@ -188,10 +188,10 @@ def test_socket_sandbox_inactive_allows_external_connections():
 def test_socket_sandbox_case_insensitivity_and_local_suffixes():
     """Verify that the socket sandbox is case-insensitive and permits .local/.localhost suffixes."""
     from app.core.shared_registry import (
+        _is_local_address,
+        block_external_network,
         safe_connect,
         safe_connect_ex,
-        block_external_network,
-        _is_local_address,
     )
     mock_socket = MagicMock()
 
