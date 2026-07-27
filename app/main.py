@@ -3,8 +3,8 @@
 This script imports and runs the main application GUI or CLI demo.
 """
 
-import sys
 import os
+import sys
 
 # Dynamic Windows DLL Path Injection
 if sys.platform == "win32" and getattr(sys, "frozen", False):
@@ -14,7 +14,7 @@ if sys.platform == "win32" and getattr(sys, "frozen", False):
     if os.path.isdir(sqlcipher_dir):
         try:
             os.add_dll_directory(sqlcipher_dir)
-        except Exception as e:
+        except Exception:
             # Log or ignore if already added
             pass
 
@@ -27,10 +27,10 @@ from app.log_filter import LogScrubbingFilter
 
 
 def run_smoke_test():
-    """Runs a complete database smoke test to verify SQLCipher encryption and connectivity."""
+    """Run a complete database smoke test to verify SQLCipher encryption and connectivity."""
     print("Starting automated database connection and encryption smoke test...")
-    import tempfile
     import shutil
+    import tempfile
     
     # Create a temporary directory for testing to avoid side effects
     temp_dir = tempfile.mkdtemp()
@@ -39,7 +39,7 @@ def run_smoke_test():
         print(f"Temporary database path: {db_path}")
         
         # Connect to the database using our actual connection function
-        from app.core.db_conn import get_db_connection, HAS_SQLCIPHER
+        from app.core.db_conn import HAS_SQLCIPHER, get_db_connection
         
         if not HAS_SQLCIPHER:
             print("Error: SQLCipher driver is missing from runtime environment!")
