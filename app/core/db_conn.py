@@ -6,9 +6,11 @@ import threading
 
 try:
     from sqlcipher3 import dbapi2 as sqlite3
+
     HAS_SQLCIPHER = True
 except ImportError:
     import sqlite3
+
     HAS_SQLCIPHER = False
 
 # Global connection cache and lock
@@ -53,7 +55,9 @@ def get_db_connection(db_path: str):
 
     def _open_conn(path: str) -> sqlite3.Connection:
         if not HAS_SQLCIPHER:
-            raise RuntimeError("SQLCipher library is missing. Standard SQLite fallback connections are blocked.")
+            raise RuntimeError(
+                "SQLCipher library is missing. Standard SQLite fallback connections are blocked."
+            )
 
         conn = sqlite3.connect(path, timeout=5.0, check_same_thread=False)
         if raw_key:
@@ -65,7 +69,9 @@ def get_db_connection(db_path: str):
             version = cursor.fetchone()
             if not version or not version[0]:
                 conn.close()
-                raise RuntimeError("SQLCipher is not active on this connection context.")
+                raise RuntimeError(
+                    "SQLCipher is not active on this connection context."
+                )
         except Exception:
             conn.close()
             raise

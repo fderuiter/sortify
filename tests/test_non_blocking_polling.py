@@ -27,6 +27,7 @@ def test_cooperative_queue_get_timeout():
 
 def test_cooperative_join_thread():
     """Verify cooperative_join joins a thread successfully."""
+
     def dummy():
         time.sleep(0.01)
 
@@ -45,12 +46,14 @@ async def test_verify_current_plan_async():
     app.base_dir = "/dummy/path"
     app.plan = {"file.txt": None}
 
-    with patch("app.core.verifier.VerificationEngine.verify_plan_integrity") as mock_verify:
+    with patch(
+        "app.core.verifier.VerificationEngine.verify_plan_integrity"
+    ) as mock_verify:
         mock_verify.return_value = {"success": True, "warnings": []}
-        
+
         # Call the async verify_current_plan
         await app.verify_current_plan()
-        
+
         mock_verify.assert_called_once_with("/dummy/path", {"file.txt": None})
 
 
@@ -63,14 +66,15 @@ async def test_update_ai_warning_async():
 
     with patch("app.core.verifier.check_ai_status") as mock_check_ai:
         mock_check_ai.return_value = (True, "")
-        
+
         # Call update_ai_warning which triggers a background task
         app.update_ai_warning()
-        
+
         # Yield control briefly to let the task run
         import asyncio
+
         await asyncio.sleep(0.1)
-        
+
         mock_check_ai.assert_called_once_with(settings)
         app.ai_warnings_label.set_text.assert_called_with("")
         app.ai_warnings_label.set_visibility.assert_called_with(False)

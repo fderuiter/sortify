@@ -55,16 +55,4 @@ class DBWorker:
         """Gracefully stop the worker thread and wait for it to finish."""
         self.q.put((None, None, None, None))
         if self.thread.is_alive():
-            import time
-            try:
-                import asyncio
-                loop = asyncio.get_running_loop()
-                if loop.is_running():
-                    loop.run_in_executor(None, self.thread.join, 1.0)
-                    return
-            except (RuntimeError, AssertionError):
-                pass
-
-            start_time = time.time()
-            while self.thread.is_alive() and (time.time() - start_time < 1.0):
-                time.sleep(0.01)
+            self.thread.join()

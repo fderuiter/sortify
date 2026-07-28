@@ -626,19 +626,7 @@ class AutoSorterApp:
         if self.observer:
             try:
                 self.observer.stop()
-                import time
-                try:
-                    import asyncio
-                    loop = asyncio.get_running_loop()
-                    if loop.is_running():
-                        loop.run_in_executor(None, self.observer.join, 1.0)
-                        return
-                except (RuntimeError, AssertionError):
-                    pass
-
-                start_time = time.time()
-                while self.observer.is_alive() and (time.time() - start_time < 1.0):
-                    time.sleep(0.01)
+                self.observer.join()
             except Exception as e:
                 logger.error(f"Error stopping folder observer: {e}")
             finally:
@@ -675,8 +663,7 @@ class AutoSorterApp:
         from app.core.verifier import VerificationEngine
 
         integrity_result = await asyncio.to_thread(
-            VerificationEngine.verify_plan_integrity,
-            self.base_dir, self.plan
+            VerificationEngine.verify_plan_integrity, self.base_dir, self.plan
         )
 
         self.plan_errors = {}
@@ -727,7 +714,10 @@ class AutoSorterApp:
 
         async def _run():
             from app.core.verifier import check_ai_status
-            is_healthy, warn_msg = await asyncio.to_thread(check_ai_status, self.settings)
+
+            is_healthy, warn_msg = await asyncio.to_thread(
+                check_ai_status, self.settings
+            )
             if not is_healthy:
                 self.ai_warnings_label.set_text(
                     warn_msg or "AI models are corrupt or missing."

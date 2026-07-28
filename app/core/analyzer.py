@@ -43,6 +43,7 @@ class IncrementalAnalyzer:
         if getattr(self, "strategy_name", None):
             try:
                 from app.core.analyzer_strategies import clustering_registry
+
                 strategy = clustering_registry.get_strategy(self.strategy_name)
                 if strategy and hasattr(strategy, "_fallback_to_pytorch"):
                     strategy._fallback_to_pytorch()
