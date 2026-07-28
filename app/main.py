@@ -8,6 +8,39 @@ import sys
 
 # Dynamic Windows DLL Path Injection
 if sys.platform == "win32" and getattr(sys, "frozen", False):
+    # Try to attach to parent console so that --smoke-test outputs to GHA logs
+    import ctypes
+
+    try:
+        if ctypes.windll.kernel32.AttachConsole(-1):
+            sys.stdout = open("CONOUT$", "w", encoding="utf-8")
+            sys.stderr = open("CONOUT$", "w", encoding="utf-8")
+    except Exception:
+        pass
+
+    # Safeguard standard streams to prevent crash on print when sys.stdout/err are None
+    class NullWriter:
+        """A helper class that discards any written output to mimic a stream."""
+
+        def write(self, text):
+            """Discard written text.
+
+            Parameters
+            ----------
+            text : str
+                The text to write.
+            """
+            pass
+
+        def flush(self):
+            """No-op flush to satisfy the stream interface."""
+            pass
+
+    if sys.stdout is None:
+        sys.stdout = NullWriter()
+    if sys.stderr is None:
+        sys.stderr = NullWriter()
+
     base_dir = getattr(sys, "_MEIPASS", None)
     if base_dir:
         base_dir = os.path.abspath(base_dir)
@@ -15,13 +48,20 @@ if sys.platform == "win32" and getattr(sys, "frozen", False):
             os.add_dll_directory(base_dir)
         except Exception:
             pass
-        
+
         sqlcipher_dir = os.path.abspath(os.path.join(base_dir, "sqlcipher3"))
         if os.path.isdir(sqlcipher_dir):
             try:
                 os.add_dll_directory(sqlcipher_dir)
             except Exception:
                 pass
+            # Recursively add all subdirectories of sqlcipher_dir to search path as well
+            for root, dirs, _ in os.walk(sqlcipher_dir):
+                for d in dirs:
+                    try:
+                        os.add_dll_directory(os.path.abspath(os.path.join(root, d)))
+                    except Exception:
+                        pass
 
     exe_dir = os.path.dirname(sys.executable)
     if exe_dir:
@@ -44,35 +84,39 @@ def run_smoke_test():
     print("Starting automated database connection and encryption smoke test...")
     import shutil
     import tempfile
-    
+
     # Create a temporary directory for testing to avoid side effects
     temp_dir = tempfile.mkdtemp()
     try:
         db_path = os.path.join(temp_dir, "smoke_test.db")
         print(f"Temporary database path: {db_path}")
-        
+
         # Connect to the database using our actual connection function
         from app.core.db_conn import HAS_SQLCIPHER, get_db_connection
-        
+
         if not HAS_SQLCIPHER:
             print("Error: SQLCipher driver is missing from runtime environment!")
             sys.exit(1)
-            
+
         conn = get_db_connection(db_path)
         print("Successfully opened connection and verified SQLCipher driver.")
-        
+
         # Create a test table, insert and read values
         with conn:
             cursor = conn.cursor()
-            cursor.execute("CREATE TABLE test_smoke (id INTEGER PRIMARY KEY, secret_val TEXT)")
-            cursor.execute("INSERT INTO test_smoke (secret_val) VALUES (?)", ("SuperSecretData",))
-            
+            cursor.execute(
+                "CREATE TABLE test_smoke (id INTEGER PRIMARY KEY, secret_val TEXT)"
+            )
+            cursor.execute(
+                "INSERT INTO test_smoke (secret_val) VALUES (?)", ("SuperSecretData",)
+            )
+
             cursor.execute("SELECT secret_val FROM test_smoke WHERE id = 1")
             row = cursor.fetchone()
             if not row or row[0] != "SuperSecretData":
                 print("Error: Data validation failed inside the encrypted database!")
                 sys.exit(1)
-                
+
             # Double check cipher version via PRAGMA
             cursor.execute("PRAGMA cipher_version;")
             ver = cursor.fetchone()
@@ -80,11 +124,12 @@ def run_smoke_test():
                 print("Error: PRAGMA cipher_version is empty! SQLCipher is not active.")
                 sys.exit(1)
             print(f"Verified SQLCipher active version: {ver[0]}")
-            
+
         print("Smoke test successfully completed. Encryption is active and verified!")
         sys.exit(0)
     except Exception as e:
         import traceback
+
         print(f"Smoke test failed with exception: {e}")
         traceback.print_exc()
         sys.exit(1)
@@ -106,7 +151,9 @@ def main():
         "--demo", action="store_true", help="Run interactive CLI demo mode"
     )
     parser.add_argument(
-        "--smoke-test", action="store_true", help="Run automated database smoke test and exit"
+        "--smoke-test",
+        action="store_true",
+        help="Run automated database smoke test and exit",
     )
     parser.add_argument(
         "directory", nargs="?", default=None, help="Directory to analyze automatically"

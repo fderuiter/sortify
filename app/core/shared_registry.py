@@ -59,12 +59,7 @@ def _is_local_address(host: str) -> bool:
 
     try:
         ip = ipaddress.ip_address(host)
-        return (
-            ip.is_loopback
-            or ip.is_unspecified
-            or ip.is_private
-            or ip.is_link_local
-        )
+        return ip.is_loopback or ip.is_unspecified or ip.is_private or ip.is_link_local
     except ValueError:
         pass
 

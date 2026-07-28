@@ -48,7 +48,9 @@ except ImportError:
 def is_same_path(p1: str, p2: str) -> bool:
     if p1 is None or p2 is None:
         return p1 == p2
-    return os.path.normcase(os.path.abspath(p1)) == os.path.normcase(os.path.abspath(p2))
+    return os.path.normcase(os.path.abspath(p1)) == os.path.normcase(
+        os.path.abspath(p2)
+    )
 
 
 def test_relative_symlink_update(tmp_path):

@@ -393,7 +393,7 @@ class AutoSorterApp:
                 self.plan = await asyncio.to_thread(
                     self.app_session.generate_sorting_plan
                 )
-                self.verify_current_plan()
+                await self.verify_current_plan()
                 self.render_tree()
                 self.status_label.set_text("Analysis complete.")
                 self.execute_btn.enable()
@@ -493,7 +493,7 @@ class AutoSorterApp:
                     return
 
                 self.plan = plan
-                self.verify_current_plan()
+                await self.verify_current_plan()
                 self.render_tree()
                 self.status_label.set_text("Plan rebuilt.")
             except Exception as e:
@@ -651,7 +651,7 @@ class AutoSorterApp:
 
         return _convert(self.tree_nodes)
 
-    def verify_current_plan(self):
+    async def verify_current_plan(self):
         """Run path integrity verification on the current plan and update warnings."""
         self.update_ai_warning()
         if not self.base_dir or not self.plan:
@@ -662,8 +662,8 @@ class AutoSorterApp:
 
         from app.core.verifier import VerificationEngine
 
-        integrity_result = VerificationEngine.verify_plan_integrity(
-            self.base_dir, self.plan
+        integrity_result = await asyncio.to_thread(
+            VerificationEngine.verify_plan_integrity, self.base_dir, self.plan
         )
 
         self.plan_errors = {}
@@ -711,17 +711,23 @@ class AutoSorterApp:
         """Update the UI with any AI status warnings."""
         if not hasattr(self, "ai_warnings_label"):
             return
-        from app.core.verifier import check_ai_status
 
-        is_healthy, warn_msg = check_ai_status(self.settings)
-        if not is_healthy:
-            self.ai_warnings_label.set_text(
-                warn_msg or "AI models are corrupt or missing."
+        async def _run():
+            from app.core.verifier import check_ai_status
+
+            is_healthy, warn_msg = await asyncio.to_thread(
+                check_ai_status, self.settings
             )
-            self.ai_warnings_label.set_visibility(True)
-        else:
-            self.ai_warnings_label.set_text("")
-            self.ai_warnings_label.set_visibility(False)
+            if not is_healthy:
+                self.ai_warnings_label.set_text(
+                    warn_msg or "AI models are corrupt or missing."
+                )
+                self.ai_warnings_label.set_visibility(True)
+            else:
+                self.ai_warnings_label.set_text("")
+                self.ai_warnings_label.set_visibility(False)
+
+        asyncio.create_task(_run())
 
 
 def run_app(settings, directory=None) -> None:

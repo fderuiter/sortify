@@ -173,6 +173,7 @@ def test_socket_sandbox_blocking_of_external_and_allow_localhost():
 def test_socket_sandbox_inactive_allows_external_connections():
     """Verify that when block_external_network is not active, external connections are allowed."""
     from app.core.shared_registry import safe_connect, safe_connect_ex
+
     mock_socket = MagicMock()
     with (
         patch("app.core.shared_registry._original_connect") as mock_connect,
@@ -193,6 +194,7 @@ def test_socket_sandbox_case_insensitivity_and_local_suffixes():
         safe_connect,
         safe_connect_ex,
     )
+
     mock_socket = MagicMock()
 
     # Test cases for local addresses (various cases and suffixes)
@@ -212,7 +214,9 @@ def test_socket_sandbox_case_insensitivity_and_local_suffixes():
             mock_connect.assert_called_once_with(mock_socket, ("LOCALHOST", 8080))
 
             safe_connect_ex(mock_socket, ("my-machine.local", 8080))
-            mock_connect_ex.assert_called_once_with(mock_socket, ("my-machine.local", 8080))
+            mock_connect_ex.assert_called_once_with(
+                mock_socket, ("my-machine.local", 8080)
+            )
 
 
 def test_check_ai_status_corrupt_or_missing(tmp_path, monkeypatch):
@@ -244,9 +248,14 @@ def test_is_local_address_dynamic_resolution():
     from app.core.shared_registry import _is_local_address
 
     # Mock getaddrinfo to return a private IP for a custom local hostname
-    with patch("socket.getaddrinfo", return_value=[(None, None, None, None, ("192.168.1.100", 0))]):
+    with patch(
+        "socket.getaddrinfo",
+        return_value=[(None, None, None, None, ("192.168.1.100", 0))],
+    ):
         assert _is_local_address("custom-local-host") is True
 
     # Mock getaddrinfo to return an external public IP
-    with patch("socket.getaddrinfo", return_value=[(None, None, None, None, ("8.8.8.8", 0))]):
+    with patch(
+        "socket.getaddrinfo", return_value=[(None, None, None, None, ("8.8.8.8", 0))]
+    ):
         assert _is_local_address("custom-external-host") is False

@@ -32,15 +32,23 @@ class IncrementalAnalyzer:
 
     def close(self):
         """Terminate processes."""
-        pass
+        self.terminate()
 
     def __del__(self):
         """Clean up."""
-        pass
+        self.terminate()
 
     def terminate(self):
         """Terminate processes."""
-        pass
+        if getattr(self, "strategy_name", None):
+            try:
+                from app.core.analyzer_strategies import clustering_registry
+
+                strategy = clustering_registry.get_strategy(self.strategy_name)
+                if strategy and hasattr(strategy, "_fallback_to_pytorch"):
+                    strategy._fallback_to_pytorch()
+            except Exception:
+                pass
 
     def partial_fit(
         self, base_dir: str, new_corpus: dict, runtime_settings=None

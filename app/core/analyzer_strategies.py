@@ -157,9 +157,11 @@ def is_gguf_model_dir(model_path: str) -> bool:
                 return True
     return False
 
+
 def gguf_worker_main(model_path, input_queue, output_queue):
     """Worker process main loop that handles local GGUF model generation."""
     import os
+
     gguf_file = None
     for root, _, files in os.walk(model_path):
         for file in files:
@@ -175,6 +177,7 @@ def gguf_worker_main(model_path, input_queue, output_queue):
 
     try:
         from llama_cpp import Llama
+
         llm = Llama(model_path=gguf_file, n_ctx=2048, verbose=False)
         output_queue.put({"status": "ready"})
     except Exception as e:
@@ -186,10 +189,10 @@ def gguf_worker_main(model_path, input_queue, output_queue):
             task = input_queue.get()
             if task is None:
                 break
-            
+
             prompt = task.get("prompt", "")
             max_tokens = task.get("max_tokens", 15)
-            
+
             res = llm(prompt, max_tokens=max_tokens, echo=False)
             generated_text = res["choices"][0]["text"].strip()
             output_queue.put({"text": generated_text})
@@ -227,6 +230,36 @@ class NegativeLogitBiasProcessor(LogitsProcessor):
                 else:
                     scores[:, token_id] += bias
         return scores
+
+
+def cooperative_queue_get(q, timeout=8.0):
+    """Retrieve an item from a queue using a non-blocking cooperative polling loop."""
+    import queue
+    import time
+
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+        try:
+            return q.get_nowait()
+        except queue.Empty:
+            pass
+        time.sleep(0.01)  # Cooperative sleep to yield control to other threads / GIL
+    raise queue.Empty
+
+
+def cooperative_join(target, timeout=1.0):
+    """Join a thread or process blockingly with cooperative GIL yielding to ensure complete termination."""
+    import time
+
+    start_time = time.time()
+    is_alive_fn = getattr(target, "is_alive", None)
+    if not is_alive_fn:
+        if hasattr(target, "join"):
+            target.join(timeout)
+        return
+
+    while is_alive_fn() and (time.time() - start_time < timeout):
+        time.sleep(0.01)
 
 
 class GenerativeNamingStrategy(RecursiveKMeansStrategy):
@@ -322,7 +355,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
 
     def _init_model(self):
         self._model_initialized = True
-        
+
         if not self._gguf_failed and is_gguf_model_dir(self.model_path):
             try:
                 self._gguf_active = True
@@ -330,13 +363,21 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                 self._gguf_output_queue = multiprocessing.Queue()
                 self._gguf_process = multiprocessing.Process(
                     target=gguf_worker_main,
-                    args=(self.model_path, self._gguf_input_queue, self._gguf_output_queue)
+                    args=(
+                        self.model_path,
+                        self._gguf_input_queue,
+                        self._gguf_output_queue,
+                    ),
                 )
                 self._gguf_process.start()
-                
-                res = self._gguf_output_queue.get(timeout=10.0)
+
+                res = cooperative_queue_get(self._gguf_output_queue, timeout=10.0)
                 if not isinstance(res, dict) or "error" in res:
-                    raise Exception(res.get("error") if isinstance(res, dict) else "Unknown initialization error")
+                    raise Exception(
+                        res.get("error")
+                        if isinstance(res, dict)
+                        else "Unknown initialization error"
+                    )
                 return
             except Exception as e:
                 logging.error(f"GGUF initialization failed: {e}")
@@ -351,7 +392,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         if self._gguf_process:
             try:
                 self._gguf_process.terminate()
-                self._gguf_process.join(timeout=1)
+                cooperative_join(self._gguf_process, timeout=1.0)
                 if self._gguf_process.is_alive():
                     self._gguf_process.kill()
                 self._gguf_process.close()
@@ -368,9 +409,12 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
 
         local_bundle_path = os.path.join(base_path, "offline_bundle", "model")
         from app.config import get_app_dir
+
         user_bundle_path = str(get_app_dir() / "model")
 
-        if not self.model_path or not os.path.exists(os.path.join(self.model_path, "config.json")):
+        if not self.model_path or not os.path.exists(
+            os.path.join(self.model_path, "config.json")
+        ):
             if os.path.exists(local_bundle_path):
                 self.model_path = local_bundle_path
             elif os.path.exists(user_bundle_path):
@@ -408,26 +452,33 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                 self._fallback_to_pytorch()
             else:
                 try:
-                    self._gguf_input_queue.put({"prompt": prompt, "max_tokens": max_tokens})
-                    res = self._gguf_output_queue.get(timeout=8.0)
+                    self._gguf_input_queue.put(
+                        {"prompt": prompt, "max_tokens": max_tokens}
+                    )
+                    res = cooperative_queue_get(self._gguf_output_queue, timeout=8.0)
                     if not isinstance(res, dict) or "error" in res or "text" not in res:
-                        raise Exception(res.get("error") if isinstance(res, dict) else "Null or incomplete response")
+                        raise Exception(
+                            res.get("error")
+                            if isinstance(res, dict)
+                            else "Null or incomplete response"
+                        )
                     return res["text"]
                 except Exception as e:
                     logging.error(f"GGUF worker failed: {e}")
                     self._fallback_to_pytorch()
-        
+
         if self.generator is None:
             return ""
-            
+
         import torch
         from transformers import LogitsProcessorList
+
         torch.set_num_threads(2)
-        
+
         logits_processor = LogitsProcessorList()
         if getattr(self, "token_biases", None):
             logits_processor.append(NegativeLogitBiasProcessor(self.token_biases))
-            
+
         if self.task == "text-generation":
             res = self.generator(
                 prompt,
