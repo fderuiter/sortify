@@ -1,11 +1,13 @@
-import pytest
 import queue
 import threading
 import time
 from unittest.mock import MagicMock, patch
-from app.core.analyzer_strategies import cooperative_queue_get, cooperative_join
-from app.ui.app import AutoSorterApp
+
+import pytest
+
 from app.config import AppSettings
+from app.core.analyzer_strategies import cooperative_join, cooperative_queue_get
+from app.ui.app import AutoSorterApp
 
 
 def test_cooperative_queue_get_success():
