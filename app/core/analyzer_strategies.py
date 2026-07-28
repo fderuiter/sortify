@@ -229,6 +229,43 @@ class NegativeLogitBiasProcessor(LogitsProcessor):
         return scores
 
 
+def cooperative_queue_get(q, timeout=8.0):
+    """Retrieve an item from a queue using a non-blocking cooperative polling loop."""
+    import queue
+    import time
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+        try:
+            return q.get_nowait()
+        except queue.Empty:
+            pass
+        time.sleep(0.01)  # Cooperative sleep to yield control to other threads / GIL
+    raise queue.Empty
+
+
+def cooperative_join(target, timeout=1.0):
+    """Cooperatively join a thread or process using non-blocking delays or executors."""
+    import time
+    # Try to offload to an executor if an event loop is running in the current thread
+    try:
+        import asyncio
+        loop = asyncio.get_running_loop()
+        if loop.is_running():
+            loop.run_in_executor(None, target.join, timeout)
+            return
+    except (RuntimeError, AssertionError):
+        pass
+
+    # Fallback to cooperative sleep-yielding loop
+    start_time = time.time()
+    is_alive_fn = getattr(target, "is_alive", None)
+    if not is_alive_fn:
+        return
+
+    while is_alive_fn() and (time.time() - start_time < timeout):
+        time.sleep(0.01)
+
+
 class GenerativeNamingStrategy(RecursiveKMeansStrategy):
     """Strategy that uses a generative model to create descriptive folder names."""
 
@@ -334,7 +371,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                 )
                 self._gguf_process.start()
                 
-                res = self._gguf_output_queue.get(timeout=10.0)
+                res = cooperative_queue_get(self._gguf_output_queue, timeout=10.0)
                 if not isinstance(res, dict) or "error" in res:
                     raise Exception(res.get("error") if isinstance(res, dict) else "Unknown initialization error")
                 return
@@ -351,7 +388,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         if self._gguf_process:
             try:
                 self._gguf_process.terminate()
-                self._gguf_process.join(timeout=1)
+                cooperative_join(self._gguf_process, timeout=1.0)
                 if self._gguf_process.is_alive():
                     self._gguf_process.kill()
                 self._gguf_process.close()
@@ -409,7 +446,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
             else:
                 try:
                     self._gguf_input_queue.put({"prompt": prompt, "max_tokens": max_tokens})
-                    res = self._gguf_output_queue.get(timeout=8.0)
+                    res = cooperative_queue_get(self._gguf_output_queue, timeout=8.0)
                     if not isinstance(res, dict) or "error" in res or "text" not in res:
                         raise Exception(res.get("error") if isinstance(res, dict) else "Null or incomplete response")
                     return res["text"]
