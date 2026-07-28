@@ -8,6 +8,39 @@ import sys
 
 # Dynamic Windows DLL Path Injection
 if sys.platform == "win32" and getattr(sys, "frozen", False):
+    # Try to attach to parent console so that --smoke-test outputs to GHA logs
+    import ctypes
+
+    try:
+        if ctypes.windll.kernel32.AttachConsole(-1):
+            sys.stdout = open("CONOUT$", "w", encoding="utf-8")
+            sys.stderr = open("CONOUT$", "w", encoding="utf-8")
+    except Exception:
+        pass
+
+    # Safeguard standard streams to prevent crash on print when sys.stdout/err are None
+    class NullWriter:
+        """A helper class that discards any written output to mimic a stream."""
+
+        def write(self, text):
+            """Discard written text.
+
+            Parameters
+            ----------
+            text : str
+                The text to write.
+            """
+            pass
+
+        def flush(self):
+            """No-op flush to satisfy the stream interface."""
+            pass
+
+    if sys.stdout is None:
+        sys.stdout = NullWriter()
+    if sys.stderr is None:
+        sys.stderr = NullWriter()
+
     base_dir = getattr(sys, "_MEIPASS", None)
     if base_dir:
         base_dir = os.path.abspath(base_dir)
@@ -22,6 +55,13 @@ if sys.platform == "win32" and getattr(sys, "frozen", False):
                 os.add_dll_directory(sqlcipher_dir)
             except Exception:
                 pass
+            # Recursively add all subdirectories of sqlcipher_dir to search path as well
+            for root, dirs, _ in os.walk(sqlcipher_dir):
+                for d in dirs:
+                    try:
+                        os.add_dll_directory(os.path.abspath(os.path.join(root, d)))
+                    except Exception:
+                        pass
 
     exe_dir = os.path.dirname(sys.executable)
     if exe_dir:
