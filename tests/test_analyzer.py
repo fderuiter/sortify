@@ -212,9 +212,9 @@ def test_document_to_document_similarity_matching():
     base_dir = "test_similarity_matching_base"
     db.clear(base_dir)
 
-    # Initialize analyzer
+    # Initialize analyzer with strategy_name=None to bypass heavy clustering
     analyzer = IncrementalAnalyzer(
-        max_folders=3, stop_words={"the", "and"}, db=db
+        max_folders=3, stop_words={"the", "and"}, db=db, strategy_name=None
     )
 
     # Historical document (manually verified/sorted to "Receipts")
@@ -249,7 +249,7 @@ def test_document_similarity_no_dilution():
     db.clear(base_dir)
 
     analyzer = IncrementalAnalyzer(
-        max_folders=3, stop_words={"the", "and"}, db=db
+        max_folders=3, stop_words={"the", "and"}, db=db, strategy_name=None
     )
 
     # Diverse historical documents sorted to the same folder "SharedFolder"
@@ -286,7 +286,7 @@ def test_document_similarity_guardrail_unverified():
     db.clear(base_dir)
 
     analyzer = IncrementalAnalyzer(
-        max_folders=3, stop_words={"the", "and"}, db=db
+        max_folders=3, stop_words={"the", "and"}, db=db, strategy_name=None
     )
 
     # Document in DB with NO verified target path (unverified)
@@ -303,10 +303,6 @@ def test_document_similarity_guardrail_unverified():
     plan = analyzer.generate_sorting_plan(base_dir)
 
     # Since there are no verified historical documents, new_space.txt should NOT be matched
-    # It should not be routed by similarity.
-    # (Since there are no folders or rules, it may go to cluster-based plans or Miscellaneous)
-    for folder in plan:
-        if isinstance(plan[folder], dict) and "new_space.txt" in plan[folder]:
-            file_info = plan[folder]["new_space.txt"]
-            assert file_info is None or file_info.get("routed_by") != "similarity"
+    # and the returned plan should be empty because we bypassed clustering.
+    assert plan == {}
 
