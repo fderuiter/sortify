@@ -17,6 +17,10 @@ class Database:
         from app.core.path_utils import resolve_db_crypto
 
         self.crypto = resolve_db_crypto(db_path)
+        import threading
+        self._cache_lock = threading.Lock()
+        self._cached_base_dir = None
+        self._cached_documents = None
         self.init_db()
 
     def init_db(self):
@@ -53,8 +57,62 @@ class Database:
                     )
                 conn.execute(f"PRAGMA user_version = {self.CURRENT_VERSION}")
 
+    def invalidate_cache(self):
+        """Invalidate the in-memory decrypted documents cache."""
+        with self._cache_lock:
+            self._cached_base_dir = None
+            self._cached_documents = None
+
+    def _populate_cache_if_needed(self, base_dir):
+        """Ensure the decrypted documents cache is populated for the base directory."""
+        if self._cached_base_dir == base_dir and self._cached_documents is not None:
+            return
+
+        with self._cache_lock:
+            if self._cached_base_dir == base_dir and self._cached_documents is not None:
+                return
+
+            self._cached_base_dir = None
+            self._cached_documents = None
+
+            conn = get_db_connection(self.db_path)
+            with conn:
+                cursor = conn.execute(
+                    "SELECT filepath, extracted_text, file_hash, user_verified_target_path FROM documents WHERE base_dir = ?",
+                    (base_dir,),
+                )
+                rows = cursor.fetchall()
+
+            import concurrent.futures
+
+            def _decrypt_row(row):
+                decrypted_text = (
+                    self.crypto.decrypt_text(row[1]) if row[1] is not None else None
+                )
+                return (row[0], decrypted_text, row[2], row[3])
+
+            results = []
+            if rows:
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    results = list(executor.map(_decrypt_row, rows))
+
+            self._cached_base_dir = base_dir
+            self._cached_documents = results
+
     def get_document(self, base_dir, filepath):
         """Retrieve a document by its base directory and filepath."""
+        self._populate_cache_if_needed(base_dir)
+        with self._cache_lock:
+            if self._cached_base_dir == base_dir and self._cached_documents is not None:
+                for row in self._cached_documents:
+                    if row[0] == filepath:
+                        return {
+                            "file_hash": row[2],
+                            "extracted_text": row[1],
+                        }
+                return None
+
+        # Fallback to DB
         conn = get_db_connection(self.db_path)
         with conn:
             cursor = conn.execute(
@@ -80,6 +138,7 @@ class Database:
         """Insert or update multiple documents in the database."""
         if not documents:
             return
+        self.invalidate_cache()
 
         def _write():
             conn = get_db_connection(self.db_path)
@@ -106,11 +165,18 @@ class Database:
                 """,
                     rows_to_insert,
                 )
+            self.invalidate_cache()
 
         self.worker.execute_write(_write)
 
     def get_all_documents(self, base_dir):
         """Retrieve all valid documents for a given base directory."""
+        self._populate_cache_if_needed(base_dir)
+        with self._cache_lock:
+            if self._cached_base_dir == base_dir and self._cached_documents is not None:
+                return list(self._cached_documents)
+
+        # Fallback to DB query directly if cache was invalidated concurrently
         conn = get_db_connection(self.db_path)
         with conn:
             cursor = conn.execute(
@@ -136,6 +202,7 @@ class Database:
 
     def set_user_verified_target(self, base_dir, file_hash, target_path):
         """Record the historical folder assignment for a specific document hash."""
+        self.invalidate_cache()
 
         def _write():
             conn = get_db_connection(self.db_path)
@@ -144,11 +211,13 @@ class Database:
                     "UPDATE documents SET user_verified_target_path = ? WHERE base_dir = ? AND file_hash = ?",
                     (target_path, base_dir, file_hash),
                 )
+            self.invalidate_cache()
 
         self.worker.execute_write(_write)
 
     def remove_document(self, base_dir, filepath):
         """Remove a document and its historical assignments when deleted."""
+        self.invalidate_cache()
 
         def _write():
             conn = get_db_connection(self.db_path)
@@ -157,11 +226,13 @@ class Database:
                     "DELETE FROM documents WHERE base_dir = ? AND filepath = ?",
                     (base_dir, filepath),
                 )
+            self.invalidate_cache()
 
         self.worker.execute_write(_write)
 
     def update_document_path(self, base_dir, old_filepath, new_filepath):
         """Update a document's path and historical assignment when moved."""
+        self.invalidate_cache()
         import os
 
         new_dir = os.path.dirname(new_filepath).replace("\\", "/")
@@ -173,6 +244,7 @@ class Database:
                     "UPDATE documents SET filepath = ?, user_verified_target_path = ? WHERE base_dir = ? AND filepath = ?",
                     (new_filepath, new_dir, base_dir, old_filepath),
                 )
+            self.invalidate_cache()
 
         self.worker.execute_write(_write)
 
@@ -180,6 +252,7 @@ class Database:
         """Execute all collected database updates in a single unified database transaction."""
         if not updates:
             return
+        self.invalidate_cache()
 
         def _write():
             conn = get_db_connection(self.db_path)
@@ -200,11 +273,13 @@ class Database:
                             "UPDATE documents SET filepath = ?, user_verified_target_path = ? WHERE base_dir = ? AND filepath = ?",
                             (new_filepath, new_dir, base_dir, old_filepath),
                         )
+            self.invalidate_cache()
 
         self.worker.execute_write(_write)
 
     def clear(self, base_dir=None):
         """Clear documents from the database. If base_dir is provided, only clear those."""
+        self.invalidate_cache()
 
         def _write():
             conn = get_db_connection(self.db_path)
@@ -215,5 +290,6 @@ class Database:
                     )
                 else:
                     conn.execute("DELETE FROM documents")
+            self.invalidate_cache()
 
         self.worker.execute_write(_write)
