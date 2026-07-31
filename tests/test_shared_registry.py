@@ -313,10 +313,15 @@ def test_onnx_thread_limits_application(monkeypatch):
         assert sess_opts.inter_op_num_threads == 2
 
 
-@patch("easyocr.Reader")
-@patch("torch.set_num_threads")
-def test_pytorch_thread_limits_selection(mock_set_threads, mock_easyocr_reader):
+def test_pytorch_thread_limits_selection(monkeypatch):
     """Verify PyTorch model loads use the configured dynamic thread limit."""
+    import sys
+    mock_easyocr = MagicMock()
+    mock_torch = MagicMock()
+
+    monkeypatch.setitem(sys.modules, "easyocr", mock_easyocr)
+    monkeypatch.setitem(sys.modules, "torch", mock_torch)
+
     SharedModelRegistry._instance = None
     registry = SharedModelRegistry.get_instance()
 
@@ -327,7 +332,7 @@ def test_pytorch_thread_limits_selection(mock_set_threads, mock_easyocr_reader):
         mock_settings_cls.return_value = mock_settings
 
         registry.get_ocr_reader()
-        mock_set_threads.assert_any_call(2)
+        mock_torch.set_num_threads.assert_any_call(2)
 
     # Case 2: custom settings (MODEL_THREADS = 4)
     with patch("app.config.AppSettings") as mock_settings_cls:
@@ -337,5 +342,5 @@ def test_pytorch_thread_limits_selection(mock_set_threads, mock_easyocr_reader):
 
         registry._models.pop("easyocr", None)
         registry.get_ocr_reader()
-        mock_set_threads.assert_any_call(4)
+        mock_torch.set_num_threads.assert_any_call(4)
 
