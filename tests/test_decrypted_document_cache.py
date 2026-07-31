@@ -221,5 +221,9 @@ def test_concurrent_read_write_safety(cache_test_env):
     for t in threads:
         t.join()
 
+    # Clear dead thread connections to release Windows file locks before asserting
+    from app.core.db_conn import clear_dead_thread_connections
+    clear_dead_thread_connections()
+
     # Verify no database errors and everything is stable
     assert len(db.get_all_documents(base_dir)) >= 1
