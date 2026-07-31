@@ -457,6 +457,7 @@ class HistoryManager:
 
     def rollback(self, session_id: str, ignore_missing: bool = False):
         """Revert directory and metadata state to the snapshot."""
+        self.db.invalidate_cache()
 
         def _write():
             missing = self.check_missing_files(session_id)
@@ -982,5 +983,6 @@ class HistoryManager:
                     "UPDATE sessions SET status = 'rolled_back' WHERE session_id = ?",
                     (session_id,),
                 )
+                self.db.invalidate_cache()
 
         return self.db.worker.execute_write(_write)
