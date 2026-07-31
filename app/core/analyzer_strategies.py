@@ -473,7 +473,8 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         import torch
         from transformers import LogitsProcessorList
 
-        torch.set_num_threads(2)
+        from app.core.shared_registry import SharedModelRegistry
+        torch.set_num_threads(SharedModelRegistry.get_instance().get_thread_limit())
 
         logits_processor = LogitsProcessorList()
         if getattr(self, "token_biases", None):

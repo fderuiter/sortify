@@ -90,6 +90,13 @@
       "title": "Image Skip Threshold",
       "type": "integer"
     },
+    "MODEL_THREADS": {
+      "default": 2,
+      "minimum": 1,
+      "maximum": 32,
+      "title": "Model Threads",
+      "type": "integer"
+    },
     "AI_CONSENT_GRANTED": {
       "anyOf": [
         {

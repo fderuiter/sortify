@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     VISUAL_TIMEOUT: int = Field(default=30, gt=0)
     IMAGE_MAX_DIMENSION: int = Field(default=1000, gt=0)
     IMAGE_SKIP_THRESHOLD: int = Field(default=3000, gt=0)
+    MODEL_THREADS: int = Field(default=2, ge=1, le=32)
 
     @field_validator("KEYWORD_RULES", "LEARNED_RULES")
     @classmethod
