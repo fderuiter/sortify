@@ -37,12 +37,31 @@ def clear_connection_cache():
     gc.collect()
 
 
+def clear_dead_thread_connections():
+    """Close and remove cached connections for threads that are no longer active to prevent file locking on Windows."""
+    global _connection_cache
+    active_thread_ids = {t.ident for t in threading.enumerate()}
+    with _cache_lock:
+        for key in list(_connection_cache.keys()):
+            _, thread_id = key
+            if thread_id not in active_thread_ids:
+                conn = _connection_cache.pop(key, None)
+                if conn:
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
+
+
 def get_db_connection(db_path: str):
     """Create and configure a new database connection with performance parameters."""
     global _connection_cache
     abs_path = os.path.abspath(db_path)
     thread_id = threading.get_ident()
     cache_key = (abs_path, thread_id)
+
+    # Automatically clean up connections for dead threads to prevent resource and lock leaks on Windows
+    clear_dead_thread_connections()
 
     with _cache_lock:
         if cache_key in _connection_cache:
