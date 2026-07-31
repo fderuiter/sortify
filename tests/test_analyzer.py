@@ -205,3 +205,108 @@ def test_conflict_resolution():
     assert "Accounting" in plan
     file_info = plan["Accounting"]["invoice_2025.txt"]
     assert file_info.get("is_conflicted", False) is False
+
+
+def test_document_to_document_similarity_matching():
+    # Setup base directory
+    base_dir = "test_similarity_matching_base"
+    db.clear(base_dir)
+
+    # Initialize analyzer
+    analyzer = IncrementalAnalyzer(
+        max_folders=3, stop_words={"the", "and"}, db=db
+    )
+
+    # Historical document (manually verified/sorted to "Receipts")
+    # Using more structured text to ensure strong cosine similarity
+    hist_text = "This is an invoice for laptop purchase from TechStore. Total amount due is $1200. Please pay by bank transfer."
+    db.upsert_document(base_dir, "historical_receipt.txt", "hash_hist_1", hist_text)
+    db.set_user_verified_target(base_dir, "hash_hist_1", "Receipts")
+
+    # Slightly modified unclassified document (no target path initially)
+    # The wording is slightly edited, but semantic similarity remains high
+    new_text = "This is an invoice for laptop purchase from TechStore. Total amount due is $1250. Please pay by card transfer."
+    corpus = {
+        "new_receipt.txt": new_text
+    }
+    analyzer.partial_fit(base_dir, corpus)
+
+    # Generate plan
+    plan = analyzer.generate_sorting_plan(base_dir)
+
+    # Verify that new_receipt.txt is automatically routed to "Receipts"
+    assert "Receipts" in plan
+    assert "new_receipt.txt" in plan["Receipts"]
+    file_info = plan["Receipts"]["new_receipt.txt"]
+    assert file_info["routed_by"] == "similarity"
+    assert "similarity >= 0.8" in file_info["match"]
+
+
+def test_document_similarity_no_dilution():
+    # Verify that diverse files in the same folder do not dilute or interfere
+    # with individual matching.
+    base_dir = "test_no_dilution_base"
+    db.clear(base_dir)
+
+    analyzer = IncrementalAnalyzer(
+        max_folders=3, stop_words={"the", "and"}, db=db
+    )
+
+    # Diverse historical documents sorted to the same folder "SharedFolder"
+    # Make them longer and distinct to showcase individual matching.
+    finance_text = "corporate financial document. quarterly earnings report and stock dividend distribution portfolios. asset balance sheet."
+    cooking_text = "cooking and dessert instructions. bake chocolate frosting cake and delicious muffins in the oven with sweet ingredients."
+    
+    db.upsert_document(base_dir, "hist_finance.txt", "hash_f", finance_text)
+    db.set_user_verified_target(base_dir, "hash_f", "SharedFolder")
+    
+    db.upsert_document(base_dir, "hist_cooking.txt", "hash_c", cooking_text)
+    db.set_user_verified_target(base_dir, "hash_c", "SharedFolder")
+
+    # New file slightly matching cooking_text only
+    new_cooking = "cooking and dessert instructions. bake chocolate frosting cake and delicious muffins in the oven with sweet ingredients. extra: cookie."
+    corpus = {
+        "new_cooking.txt": new_cooking
+    }
+    analyzer.partial_fit(base_dir, corpus)
+
+    plan = analyzer.generate_sorting_plan(base_dir)
+
+    # Should match hist_cooking.txt individually and route to "SharedFolder"
+    assert "SharedFolder" in plan
+    assert "new_cooking.txt" in plan["SharedFolder"]
+    file_info = plan["SharedFolder"]["new_cooking.txt"]
+    assert file_info["routed_by"] == "similarity"
+
+
+def test_document_similarity_guardrail_unverified():
+    # Verify Guardrail 2: only match against documents with a user-verified target path.
+    # Unverified documents in the DB (user_verified_target_path is None) must not be matched against.
+    base_dir = "test_guardrail_base"
+    db.clear(base_dir)
+
+    analyzer = IncrementalAnalyzer(
+        max_folders=3, stop_words={"the", "and"}, db=db
+    )
+
+    # Document in DB with NO verified target path (unverified)
+    unverified_text = "extremely unique text about space and rockets and Mars landing"
+    db.upsert_document(base_dir, "unverified_space.txt", "hash_s", unverified_text)
+
+    # New file with high similarity
+    new_space = "unique text about space rockets and Mars landing mission"
+    corpus = {
+        "new_space.txt": new_space
+    }
+    analyzer.partial_fit(base_dir, corpus)
+
+    plan = analyzer.generate_sorting_plan(base_dir)
+
+    # Since there are no verified historical documents, new_space.txt should NOT be matched
+    # It should not be routed by similarity.
+    # (Since there are no folders or rules, it may go to cluster-based plans or Miscellaneous)
+    for folder in plan:
+        if isinstance(plan[folder], dict) and "new_space.txt" in plan[folder]:
+            file_info = plan[folder]["new_space.txt"]
+            assert file_info is None or file_info.get("routed_by") != "similarity"
+
