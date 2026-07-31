@@ -117,6 +117,15 @@ def test_config_parameter_bounds():
     with pytest.raises(ValidationError):
         Settings(MAX_FEATURES=11)
 
+    # MODEL_THREADS: 1 to 32
+    with pytest.raises(ValidationError):
+        Settings(MODEL_THREADS=0)
+    with pytest.raises(ValidationError):
+        Settings(MODEL_THREADS=33)
+    assert Settings(MODEL_THREADS=1).MODEL_THREADS == 1
+    assert Settings(MODEL_THREADS=32).MODEL_THREADS == 32
+    assert Settings().MODEL_THREADS == 2
+
 
 def test_config_invalid_structures():
     """Test that invalid types/structures are rejected."""

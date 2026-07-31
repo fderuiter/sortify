@@ -259,3 +259,83 @@ def test_is_local_address_dynamic_resolution():
         "socket.getaddrinfo", return_value=[(None, None, None, None, ("8.8.8.8", 0))]
     ):
         assert _is_local_address("custom-external-host") is False
+
+
+def test_onnx_thread_limits_application(monkeypatch):
+    """Verify that ONNX InferenceSession applies intra-op and inter-op thread limits dynamically."""
+    import sys
+    mock_ort = MagicMock()
+    mock_sess_options = MagicMock()
+    mock_ort.SessionOptions.return_value = mock_sess_options
+
+    class DummyInferenceSession:
+        def __init__(self, model_path, sess_options=None, *args, **kwargs):
+            self.model_path = model_path
+            self.sess_options = sess_options
+
+    mock_ort.InferenceSession = DummyInferenceSession
+    monkeypatch.setitem(sys.modules, "onnxruntime", mock_ort)
+
+    SharedModelRegistry._instance = None
+    registry = SharedModelRegistry.get_instance()
+    registry.apply_onnx_thread_limits()
+
+    sess_opts = mock_ort.SessionOptions()
+
+    # Case 1: default settings (MODEL_THREADS = 2)
+    with patch("app.config.AppSettings") as mock_settings_cls:
+        mock_settings = MagicMock()
+        mock_settings.MODEL_THREADS = 2
+        mock_settings_cls.return_value = mock_settings
+
+        session = mock_ort.InferenceSession("some_model.onnx", sess_opts)
+        assert sess_opts.intra_op_num_threads == 2
+        assert sess_opts.inter_op_num_threads == 2
+
+    # Case 2: custom settings (MODEL_THREADS = 4)
+    with patch("app.config.AppSettings") as mock_settings_cls:
+        mock_settings = MagicMock()
+        mock_settings.MODEL_THREADS = 4
+        mock_settings_cls.return_value = mock_settings
+
+        session = mock_ort.InferenceSession("some_model.onnx", sess_opts)
+        assert sess_opts.intra_op_num_threads == 4
+        assert sess_opts.inter_op_num_threads == 4
+
+    # Case 3: out-of-bounds fallback (MODEL_THREADS = 100 -> fallback to 2)
+    with patch("app.config.AppSettings") as mock_settings_cls:
+        mock_settings = MagicMock()
+        mock_settings.MODEL_THREADS = 100
+        mock_settings_cls.return_value = mock_settings
+
+        session = mock_ort.InferenceSession("some_model.onnx", sess_opts)
+        assert sess_opts.intra_op_num_threads == 2
+        assert sess_opts.inter_op_num_threads == 2
+
+
+@patch("easyocr.Reader")
+@patch("torch.set_num_threads")
+def test_pytorch_thread_limits_selection(mock_set_threads, mock_easyocr_reader):
+    """Verify PyTorch model loads use the configured dynamic thread limit."""
+    SharedModelRegistry._instance = None
+    registry = SharedModelRegistry.get_instance()
+
+    # Case 1: default settings (MODEL_THREADS = 2)
+    with patch("app.config.AppSettings") as mock_settings_cls:
+        mock_settings = MagicMock()
+        mock_settings.MODEL_THREADS = 2
+        mock_settings_cls.return_value = mock_settings
+
+        registry.get_ocr_reader()
+        mock_set_threads.assert_any_call(2)
+
+    # Case 2: custom settings (MODEL_THREADS = 4)
+    with patch("app.config.AppSettings") as mock_settings_cls:
+        mock_settings = MagicMock()
+        mock_settings.MODEL_THREADS = 4
+        mock_settings_cls.return_value = mock_settings
+
+        registry._models.pop("easyocr", None)
+        registry.get_ocr_reader()
+        mock_set_threads.assert_any_call(4)
+

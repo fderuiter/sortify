@@ -151,6 +151,57 @@ class SharedModelRegistry:
         apply_global_socket_sandbox()
         self._models = {}
         self._expected_hashes = {}
+        self.apply_onnx_thread_limits()
+
+    def get_thread_limit(self) -> int:
+        """Get the current thread limit from configuration, falling back to 2."""
+        try:
+            from app.config import AppSettings
+            settings = AppSettings()
+            limit = getattr(settings, "MODEL_THREADS", 2)
+            if not isinstance(limit, int) or limit < 1 or limit > 32:
+                return 2
+            return limit
+        except Exception:
+            return 2
+
+    def apply_onnx_thread_limits(self):
+        """Apply thread limits dynamically to all initialized ONNX runtime sessions."""
+        try:
+            import onnxruntime as ort
+
+            if not hasattr(ort.InferenceSession, "_original_init"):
+                original_init = ort.InferenceSession.__init__
+                ort.InferenceSession._original_init = original_init
+
+                registry_instance = self
+
+                def wrapped_init(sess, model_path, sess_options=None, *args, **kwargs):
+                    thread_limit = registry_instance.get_thread_limit()
+                    if sess_options is None:
+                        sess_options = ort.SessionOptions()
+                    sess_options.intra_op_num_threads = thread_limit
+                    sess_options.inter_op_num_threads = thread_limit
+                    original_init(sess, model_path, sess_options, *args, **kwargs)
+
+                ort.InferenceSession.__init__ = wrapped_init
+        except ImportError:
+            pass
+
+    def get_onnx_session(self, model_path: str, sess_options=None):
+        """Lazily load and return an ONNX InferenceSession with configured thread limits."""
+        model_id = f"onnx_{model_path}"
+        if model_id not in self._models:
+            import onnxruntime as ort
+            if sess_options is None:
+                sess_options = ort.SessionOptions()
+            
+            thread_limit = self.get_thread_limit()
+            sess_options.intra_op_num_threads = thread_limit
+            sess_options.inter_op_num_threads = thread_limit
+            
+            self._models[model_id] = ort.InferenceSession(model_path, sess_options)
+        return self._models[model_id]
 
     def register_expected_hashes(self, model_id: str, hashes: dict[str, str]):
         """Register expected SHA-256 hashes for files of a model."""
@@ -214,7 +265,7 @@ class SharedModelRegistry:
                 import easyocr
                 import torch
 
-                torch.set_num_threads(2)
+                torch.set_num_threads(self.get_thread_limit())
                 # Create reader on CPU
                 self._models[model_id] = easyocr.Reader(["en"], gpu=False)
             except Exception as e:
@@ -244,7 +295,7 @@ class SharedModelRegistry:
                         pipeline,
                     )
 
-                    torch.set_num_threads(2)
+                    torch.set_num_threads(self.get_thread_limit())
 
                     tokenizer = AutoTokenizer.from_pretrained(
                         model_path, local_files_only=True
