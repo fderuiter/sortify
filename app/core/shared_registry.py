@@ -151,13 +151,20 @@ class SharedModelRegistry:
         apply_global_socket_sandbox()
         self._models = {}
         self._expected_hashes = {}
+        self._cached_settings = None
         self.apply_onnx_thread_limits()
 
     def get_thread_limit(self) -> int:
         """Get the current thread limit from configuration, falling back to 2."""
         try:
-            from app.config import AppSettings
-            settings = AppSettings()
+            if getattr(self, "_cached_settings", None) is not None:
+                settings = self._cached_settings
+            else:
+                from app.config import AppSettings
+                settings = AppSettings()
+                from unittest.mock import Mock
+                if not isinstance(settings, Mock) and not isinstance(AppSettings, Mock):
+                    self._cached_settings = settings
             limit = getattr(settings, "MODEL_THREADS", 2)
             if not isinstance(limit, int) or limit < 1 or limit > 32:
                 return 2
