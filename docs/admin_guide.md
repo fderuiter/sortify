@@ -66,6 +66,10 @@ The following parameters are extracted directly from the application's configura
 - **Default**: `3000`
 - **Required**: `False`
 
+### `MODEL_THREADS`
+- **Default**: `2`
+- **Required**: `False`
+
 ### `AI_CONSENT_GRANTED`
 - **Default**: `None`
 - **Required**: `False`

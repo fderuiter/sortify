@@ -1,10 +1,7 @@
 import os
-import queue
 import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 from app.core.analyzer_strategies import GenerativeNamingStrategy, gguf_worker_main
 from app.core.db import Database
