@@ -58,6 +58,14 @@ def cleanup_db_connections():
     clear_connection_cache()
 
 
+@pytest.fixture(autouse=True)
+def reset_shared_registry():
+    """Reset the SharedModelRegistry singleton after each test to prevent test pollution."""
+    yield
+    from app.core.shared_registry import SharedModelRegistry
+    SharedModelRegistry._instance = None
+
+
 @pytest.fixture(scope="session", autouse=True)
 def isolate_test_environment(monkeypatch_session):
     temp_dir = tempfile.mkdtemp(prefix="test_autosorter_appdir_")
