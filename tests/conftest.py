@@ -60,10 +60,23 @@ def cleanup_db_connections():
 
 @pytest.fixture(autouse=True)
 def reset_shared_registry():
-    """Reset the SharedModelRegistry singleton after each test to prevent test pollution."""
-    yield
-    from app.core.shared_registry import SharedModelRegistry
+    """Reset the SharedModelRegistry and SharedWorkerPool singletons before and after each test to prevent test pollution."""
+    from app.core.shared_registry import SharedModelRegistry, SharedWorkerPool
     SharedModelRegistry._instance = None
+    if SharedWorkerPool._instance is not None:
+        try:
+            SharedWorkerPool._instance.shutdown(wait=False)
+        except Exception:
+            pass
+        SharedWorkerPool._instance = None
+    yield
+    SharedModelRegistry._instance = None
+    if SharedWorkerPool._instance is not None:
+        try:
+            SharedWorkerPool._instance.shutdown(wait=False)
+        except Exception:
+            pass
+        SharedWorkerPool._instance = None
 
 
 @pytest.fixture(scope="session", autouse=True)
