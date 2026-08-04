@@ -364,6 +364,12 @@ class IncrementalAnalyzer:
 
                 strategy = clustering_registry.get_strategy(self.strategy_name)
                 if strategy:
+                    if hasattr(strategy, "set_db_context"):
+                        strategy.set_db_context(self.db, base_dir)
+                    else:
+                        strategy.db = self.db
+                        strategy.base_dir = base_dir
+
                     plan, error = strategy.generate_plan(
                         ai_filenames,
                         ai_documents,
