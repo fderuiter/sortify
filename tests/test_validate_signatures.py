@@ -1,8 +1,8 @@
-import ast
-import json
-import os
-import pytest
-from scripts.validate_signatures import extract_protocols, extract_cli, collect_current_definitions
+from scripts.validate_signatures import (
+    collect_current_definitions,
+    extract_cli,
+    extract_protocols,
+)
 
 
 def test_extract_protocols_empty_and_valid(tmp_path):
