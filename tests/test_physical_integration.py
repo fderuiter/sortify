@@ -43,7 +43,11 @@ def test_physical_move(tmp_path):
 
     plan = {
         "target_folder": {
-            "source.txt": {"__type__": "file", "target_filename": "source.txt"}
+            "source.txt": {
+                "__type__": "file",
+                "relative_source": "../source.txt",
+                "target_filename": "source.txt",
+            }
         }
     }
 
@@ -68,7 +72,11 @@ def test_naming_collision_resolution(tmp_path):
 
     plan = {
         "target_folder": {
-            "source.txt": {"__type__": "file", "target_filename": "source.txt"}
+            "source.txt": {
+                "__type__": "file",
+                "relative_source": "../source.txt",
+                "target_filename": "source.txt",
+            }
         }
     }
 
@@ -99,7 +107,11 @@ def test_empty_source_folder_cleanup(tmp_path):
 
     plan = {
         "target_folder": {
-            "a/b/c/move_me.txt": {"__type__": "file", "target_filename": "move_me.txt"}
+            "a/b/c/move_me.txt": {
+                "__type__": "file",
+                "relative_source": "../a/b/c/move_me.txt",
+                "target_filename": "move_me.txt",
+            }
         },
         "a_dir": {
             "__type__": "directory",

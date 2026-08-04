@@ -51,8 +51,16 @@ def test_successful_folder_relocation(tmp_path, db, history_manager, monkeypatch
 
     plan = {
         "target_dir": {
-            "file1.txt": {"__type__": "file", "target_filename": "file1.txt"},
-            "file2.txt": {"__type__": "file", "target_filename": "file2.txt"},
+            "file1.txt": {
+                "__type__": "file",
+                "relative_source": "../file1.txt",
+                "target_filename": "file1.txt",
+            },
+            "file2.txt": {
+                "__type__": "file",
+                "relative_source": "../file2.txt",
+                "target_filename": "file2.txt",
+            },
         }
     }
 
@@ -89,8 +97,16 @@ def test_interrupted_folder_relocation(tmp_path, db, history_manager, monkeypatc
 
     plan = {
         "target_dir": {
-            "file1.txt": {"__type__": "file", "target_filename": "file1.txt"},
-            "file2.txt": {"__type__": "file", "target_filename": "file2.txt"},
+            "file1.txt": {
+                "__type__": "file",
+                "relative_source": "../file1.txt",
+                "target_filename": "file1.txt",
+            },
+            "file2.txt": {
+                "__type__": "file",
+                "relative_source": "../file2.txt",
+                "target_filename": "file2.txt",
+            },
         }
     }
 

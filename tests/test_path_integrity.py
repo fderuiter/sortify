@@ -13,10 +13,18 @@ def test_circular_rename_dependency():
     # and folder1/fileA.txt moves to folder2/fileB.txt.
     plan = {
         "folder1": {
-            "folder2/fileB.txt": {"__type__": "file", "target_filename": "fileA.txt"}
+            "folder2/fileB.txt": {
+                "__type__": "file",
+                "relative_source": "../folder2/fileB.txt",
+                "target_filename": "fileA.txt",
+            }
         },
         "folder2": {
-            "folder1/fileA.txt": {"__type__": "file", "target_filename": "fileB.txt"}
+            "folder1/fileA.txt": {
+                "__type__": "file",
+                "relative_source": "../folder1/fileA.txt",
+                "target_filename": "fileB.txt",
+            }
         },
     }
 
@@ -40,7 +48,11 @@ def test_parent_directory_collision():
     plan = {
         "folder1": {
             "subfolder": {
-                "source_file.txt": {"__type__": "file", "target_filename": "file.txt"}
+                "source_file.txt": {
+                    "__type__": "file",
+                    "relative_source": "source_file.txt",
+                    "target_filename": "file.txt",
+                }
             }
         }
     }
@@ -67,7 +79,11 @@ def test_broken_symlink_detection():
     # Move sym_link.txt to deeper/sym_link.txt, but target.txt is not in the plan nor does it exist.
     plan = {
         "deeper": {
-            "sym_link.txt": {"__type__": "file", "target_filename": "sym_link.txt"}
+            "sym_link.txt": {
+                "__type__": "file",
+                "relative_source": "../sym_link.txt",
+                "target_filename": "sym_link.txt",
+            }
         }
     }
 

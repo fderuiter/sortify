@@ -81,12 +81,18 @@ def test_relative_symlink_update(tmp_path):
         "deeper_dir": {
             "link.txt": {
                 "__type__": "file",
+                "relative_source": "../link.txt",
                 "status": "Pending Move",
                 "source_path": "link.txt",
                 "target_filename": "link.txt",
             }
         },
-        "target_dir": {"data.txt": None},
+        "target_dir": {
+            "data.txt": {
+                "__type__": "file",
+                "relative_source": "data.txt",
+            }
+        },
     }
 
     execute_moves(base_dir, plan, db, history_manager)
@@ -171,12 +177,18 @@ def test_windows_shortcut_update_mocked(tmp_path):
             "subfolder": {
                 "app.lnk": {
                     "__type__": "file",
+                    "relative_source": "../app.lnk",
                     "status": "Pending Move",
                     "source_path": "app.lnk",
                     "target_filename": "app.lnk",
                 }
             },
-            "target_dir": {"app.exe": None},
+            "target_dir": {
+                "app.exe": {
+                    "__type__": "file",
+                    "relative_source": "app.exe",
+                }
+            },
         }
 
         # 3. Execute move
@@ -280,6 +292,7 @@ def test_windows_shortcut_update_in_place_mocked(tmp_path):
         plan = {
             "app.lnk": {
                 "__type__": "file",
+                "relative_source": "app.lnk",
                 "status": "Already Sorted",
                 "source_path": "app.lnk",
                 "target_filename": "app.lnk",
@@ -287,6 +300,7 @@ def test_windows_shortcut_update_in_place_mocked(tmp_path):
             "new_target_dir": {
                 "target_dir/app.exe": {
                     "__type__": "file",
+                    "relative_source": "../target_dir/app.exe",
                     "status": "Pending Move",
                     "source_path": "target_dir/app.exe",
                     "target_filename": "app.exe",
@@ -377,6 +391,7 @@ def test_windows_shortcut_update_exception(tmp_path, caplog):
             "subfolder": {
                 "app.lnk": {
                     "__type__": "file",
+                    "relative_source": "../app.lnk",
                     "status": "Pending Move",
                     "source_path": "app.lnk",
                     "target_filename": "app.lnk",
