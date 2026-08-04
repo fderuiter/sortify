@@ -158,7 +158,7 @@ def is_gguf_model_dir(model_path: str) -> bool:
     return False
 
 
-def gguf_worker_main(model_path, input_queue, output_queue):
+def gguf_worker_main(model_path, input_queue, output_queue, n_threads=None):
     """Worker process main loop that handles local GGUF model generation."""
     import os
 
@@ -178,7 +178,15 @@ def gguf_worker_main(model_path, input_queue, output_queue):
     try:
         from llama_cpp import Llama
 
-        llm = Llama(model_path=gguf_file, n_ctx=2048, verbose=False)
+        if n_threads is None:
+            try:
+                from app.core.shared_registry import SharedModelRegistry
+                n_threads = SharedModelRegistry.get_instance().get_thread_limit()
+            except Exception:
+                import multiprocessing
+                n_threads = os.cpu_count() or multiprocessing.cpu_count() or 2
+
+        llm = Llama(model_path=gguf_file, n_ctx=2048, verbose=False, n_threads=n_threads)
         output_queue.put({"status": "ready"})
     except Exception as e:
         output_queue.put({"error": str(e)})
@@ -361,12 +369,20 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                 self._gguf_active = True
                 self._gguf_input_queue = multiprocessing.Queue()
                 self._gguf_output_queue = multiprocessing.Queue()
+
+                from app.core.shared_registry import SharedModelRegistry
+                try:
+                    n_threads = SharedModelRegistry.get_instance().get_thread_limit()
+                except Exception:
+                    n_threads = os.cpu_count() or multiprocessing.cpu_count() or 2
+
                 self._gguf_process = multiprocessing.Process(
                     target=gguf_worker_main,
                     args=(
                         self.model_path,
                         self._gguf_input_queue,
                         self._gguf_output_queue,
+                        n_threads,
                     ),
                 )
                 self._gguf_process.start()
@@ -455,7 +471,9 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                     self._gguf_input_queue.put(
                         {"prompt": prompt, "max_tokens": max_tokens}
                     )
-                    res = cooperative_queue_get(self._gguf_output_queue, timeout=8.0)
+                    estimated_tokens = len(prompt) // 4
+                    timeout = max(8.0, min(60.0, 8.0 + (estimated_tokens / 20.0)))
+                    res = cooperative_queue_get(self._gguf_output_queue, timeout=timeout)
                     if not isinstance(res, dict) or "error" in res or "text" not in res:
                         raise Exception(
                             res.get("error")
@@ -605,6 +623,11 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                 logging.error(f"Failed to build logit biases: {e}")
         return token_biases
 
+    def set_db_context(self, db, base_dir):
+        """Set the database and base directory context for historical queries."""
+        self.db = db
+        self.base_dir = base_dir
+
     def _get_cluster_keywords(self, documents: list) -> str:
         if not documents:
             return "Miscellaneous"
@@ -615,9 +638,79 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         if self.generator is None and not (self._gguf_active and not self._gguf_failed):
             return super()._get_cluster_keywords(documents)
 
+        # Retrieve historical corrected outcomes from SQLite and query using TF-IDF + cosine similarity
+        db = getattr(self, "db", None)
+        base_dir = getattr(self, "base_dir", None)
+        historical_examples = []
+        if db and base_dir:
+            try:
+                all_docs = db.get_all_documents(base_dir)
+                for doc in all_docs:
+                    # doc is (filepath, decrypted_text, file_hash, user_verified_target_path)
+                    if len(doc) > 3 and doc[1] and doc[3]:
+                        historical_examples.append({
+                            "text": doc[1],
+                            "target_path": doc[3]
+                        })
+            except Exception as e:
+                logging.error(f"Error reading historical documents from DB: {e}")
+
+        few_shot_context = ""
+        if historical_examples:
+            try:
+                from sklearn.feature_extraction.text import TfidfVectorizer
+                from sklearn.metrics.pairwise import cosine_similarity
+
+                # Limit vocabulary features to 1,000 to keep CPU search speeds fast and minimize latency
+                stop_words_list = list(self.stop_words) if getattr(self, "stop_words", None) else "english"
+                vectorizer = TfidfVectorizer(stop_words=stop_words_list, max_features=1000)
+
+                hist_texts = [ex["text"] for ex in historical_examples]
+                target_text = " ".join(documents)[:1000]
+
+                # Fit on all texts to get accurate representation
+                all_texts = hist_texts + [target_text]
+                X = vectorizer.fit_transform(all_texts)
+
+                hist_vectors = X[:-1]
+                target_vector = X[-1:]
+
+                similarities = cosine_similarity(target_vector, hist_vectors).flatten()
+
+                # Get indices sorted by similarity descending
+                sorted_indices = similarities.argsort()[::-1]
+
+                # Retrieve top matching examples (up to 3) with similarity >= 0.1
+                top_examples = []
+                for idx in sorted_indices:
+                    if similarities[idx] >= 0.1:
+                        top_examples.append((historical_examples[idx], similarities[idx]))
+                        if len(top_examples) >= 3:
+                            break
+
+                if top_examples:
+                    few_shot_lines = []
+                    few_shot_lines.append("Here are some historical examples of documents and their corresponding user-corrected folder names:")
+                    for ex_idx, (ex, sim) in enumerate(top_examples):
+                        snippet = ex["text"][:500].replace("\n", " ").strip()
+                        folder_name = ex["target_path"]
+                        few_shot_lines.append(f"Example {ex_idx + 1}:\nDocument: {snippet}\nFolder Name: {folder_name}")
+                    few_shot_context = "\n\n".join(few_shot_lines) + "\n\n"
+            except Exception as e:
+                logging.error(f"Error querying TF-IDF historical examples: {e}")
+
         try:
             doc_text = " ".join(documents)[:1000]
-            prompt = f"Generate a short, descriptive natural language folder name (1 to 4 words) for a folder containing these documents. Do not use hyphens. Return only the name.\nDocuments: {doc_text}\nFolder Name:"
+            if few_shot_context:
+                prompt = (
+                    f"{few_shot_context}"
+                    f"Now, generate a short, descriptive natural language folder name (1 to 4 words) "
+                    f"for a folder containing these documents. Do not use hyphens. Return only the name.\n"
+                    f"Documents: {doc_text}\n"
+                    f"Folder Name:"
+                )
+            else:
+                prompt = f"Generate a short, descriptive natural language folder name (1 to 4 words) for a folder containing these documents. Do not use hyphens. Return only the name.\nDocuments: {doc_text}\nFolder Name:"
 
             with block_external_network():
                 name = self._run_prompt(prompt, 15).strip()
