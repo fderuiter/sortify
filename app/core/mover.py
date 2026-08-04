@@ -256,7 +256,7 @@ def _execute_moves_recursive(
                     )
 
             # Update filepath in database
-            rel_dest = os.path.relpath(dest_path, base_dir)
+            rel_dest = os.path.relpath(dest_path, base_dir).replace("\\", "/")
             if db_updates_batch is not None:
                 db_updates_batch.append(
                     {
@@ -343,7 +343,7 @@ def execute_moves(
 
         # Sort by descending depth to delete subdirectories before parents
         dirs_to_process.sort(
-            key=lambda x: len(x["source_path"].split(os.sep)), reverse=True
+            key=lambda x: len(x["source_path"].replace("\\", "/").split("/")), reverse=True
         )
 
         if cleanup_enabled:
