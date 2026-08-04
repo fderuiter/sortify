@@ -172,3 +172,39 @@ def test_system_safely_rejects_missing_relative_source_field(test_environment):
         ValueError, match="Missing required relative source metadata field"
     ):
         execute_moves(tmp_dir, invalid_plan, db, history_manager)
+
+
+def test_db_updates_use_forward_slashes_consistently(test_environment):
+    """
+    Ensure that even under simulated Windows-style path conditions or operations,
+    the relative destination path (rel_dest) stored in the database has backslashes normalized
+    to forward slashes for unified cross-platform path indexing.
+    """
+    tmp_dir, db, history_manager = test_environment
+
+    # Create manual source structure
+    source_subdir = os.path.join(tmp_dir, "nested_dir")
+    os.makedirs(source_subdir, exist_ok=True)
+    source_file = os.path.join(source_subdir, "item.txt")
+    with open(source_file, "w") as f:
+        f.write("item text")
+
+    plan = {
+        "nested_dir": {
+            "item.txt": {
+                "__type__": "file",
+                "relative_source": "item.txt",
+                "target_filename": "moved_item.txt",
+            }
+        }
+    }
+
+    # Pre-populate database with the document so get_document and path update triggers
+    db.upsert_document(tmp_dir, "nested_dir/item.txt", "item_hash", "item text")
+
+    execute_moves(tmp_dir, plan, db, history_manager)
+
+    # The document path should be updated in the database to use forward slashes
+    doc = db.get_document(tmp_dir, "nested_dir/moved_item.txt")
+    assert doc is not None
+    assert doc["file_hash"] == "item_hash"
