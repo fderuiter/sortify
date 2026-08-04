@@ -90,11 +90,26 @@ class VerificationEngine:
     @staticmethod
     def verify_plan_integrity(base_dir: str, plan: dict) -> dict:
         """Run complete virtual filesystem simulation and integrity check."""
-        tracker = VirtualFilesystemTracker()
-        return tracker.verify_integrity(base_dir, plan)
+        try:
+            tracker = VirtualFilesystemTracker()
+            return tracker.verify_integrity(base_dir, plan)
+        except ValueError as e:
+            return {
+                "success": False,
+                "collisions": [],
+                "circular_renames": [],
+                "broken_links": [],
+                "warnings": [str(e)],
+            }
 
     @staticmethod
-    def get_moves(base_dir: str, plan: dict, current_dest: str = "") -> list:
+    def get_moves(
+        base_dir: str,
+        plan: dict,
+        current_dest: str = "",
+        active_parent_path: str = "",
+        depth: int = 0,
+    ) -> list:
         """Get a flat list of moves from the plan."""
         moves = []
         for key, content in plan.items():
@@ -105,7 +120,20 @@ class VerificationEngine:
                 if isinstance(content, dict) and content.get("__type__") == "directory":
                     continue
 
-                source_path = os.path.join(base_dir, key)
+                if depth > 0:
+                    if not isinstance(content, dict) or "relative_source" not in content:
+                        raise ValueError(
+                            f"Missing required relative source metadata field for nested item '{key}'"
+                        )
+                    relative_source = content["relative_source"]
+                    rel_src_with_parent = os.path.join(active_parent_path, relative_source)
+                    source_path = os.path.normpath(os.path.join(base_dir, rel_src_with_parent))
+                else:
+                    if isinstance(content, dict) and "relative_source" in content:
+                        relative_source = content["relative_source"]
+                        source_path = os.path.normpath(os.path.join(base_dir, relative_source))
+                    else:
+                        source_path = os.path.normpath(os.path.join(base_dir, key))
 
                 if isinstance(content, dict) and "target_filename" in content:
                     filename = content["target_filename"]
@@ -118,7 +146,11 @@ class VerificationEngine:
             else:
                 moves.extend(
                     VerificationEngine.get_moves(
-                        base_dir, content, os.path.join(current_dest, key)
+                        base_dir,
+                        content,
+                        os.path.join(current_dest, key),
+                        os.path.join(active_parent_path, key),
+                        depth + 1,
                     )
                 )
         return moves

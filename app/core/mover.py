@@ -67,6 +67,8 @@ def _execute_moves_recursive(
     current_dest: str = "",
     path_map: dict = None,
     db_updates_batch: list = None,
+    active_parent_path: str = "",
+    depth: int = 0,
 ) -> None:
     """Recursively move files according to the plan."""
     if path_map is None:
@@ -87,8 +89,21 @@ def _execute_moves_recursive(
                 # Even if already sorted, the target might have moved, so we still process links
                 pass
 
-            # It's a file, key is the original relative path
-            source_path = os.path.join(base_dir, key)
+            if depth > 0:
+                if not isinstance(content, dict) or "relative_source" not in content:
+                    raise ValueError(
+                        f"Missing required relative source metadata field for nested item '{key}'"
+                    )
+                relative_source = content["relative_source"]
+                rel_src_with_parent = os.path.join(active_parent_path, relative_source)
+                source_path = os.path.normpath(os.path.join(base_dir, rel_src_with_parent))
+            else:
+                if isinstance(content, dict) and "relative_source" in content:
+                    relative_source = content["relative_source"]
+                    source_path = os.path.normpath(os.path.join(base_dir, relative_source))
+                else:
+                    source_path = os.path.normpath(os.path.join(base_dir, key))
+
             if not os.path.lexists(source_path):
                 continue
 
@@ -191,7 +206,8 @@ def _execute_moves_recursive(
                             )
                             raise
 
-            doc = db.get_document(base_dir, key)
+            source_rel_path = os.path.relpath(source_path, base_dir).replace("\\", "/")
+            doc = db.get_document(base_dir, source_rel_path)
 
             if dest_path == source_path:
                 # Still record user verified target if needed even if not moving
@@ -238,10 +254,10 @@ def _execute_moves_recursive(
             rel_dest = os.path.relpath(dest_path, base_dir)
             if db_updates_batch is not None:
                 db_updates_batch.append(
-                    {"type": "document_path", "args": (base_dir, key, rel_dest)}
+                    {"type": "document_path", "args": (base_dir, source_rel_path, rel_dest)}
                 )
             else:
-                db.update_document_path(base_dir, key, rel_dest)
+                db.update_document_path(base_dir, source_rel_path, rel_dest)
         else:
             # It's a folder
             _execute_moves_recursive(
@@ -251,6 +267,8 @@ def _execute_moves_recursive(
                 os.path.join(current_dest, key),
                 path_map,
                 db_updates_batch,
+                os.path.join(active_parent_path, key),
+                depth + 1,
             )
 
 

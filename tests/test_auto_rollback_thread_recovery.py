@@ -43,7 +43,15 @@ def test_automatic_rollback_on_failed_move(test_env):
     base_dir, db, cache, history_manager, db_worker = test_env
 
     # We want to move file1.txt to folder/file1.txt
-    plan = {"folder": {"file1.txt": {"__type__": "file", "status": "To Be Sorted"}}}
+    plan = {
+        "folder": {
+            "file1.txt": {
+                "__type__": "file",
+                "relative_source": "../file1.txt",
+                "status": "To Be Sorted",
+            }
+        }
+    }
 
     # Mock shutil.move to fail
     def mock_move(src, dst):

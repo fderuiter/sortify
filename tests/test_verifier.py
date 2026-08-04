@@ -8,8 +8,17 @@ def test_get_moves_flattens_plan():
     plan = {
         "file1.txt": None,
         "folder1": {
-            "file2.txt": {"__type__": "file", "target_filename": "renamed2.txt"},
-            "subfolder": {"file3.txt": None},
+            "file2.txt": {
+                "__type__": "file",
+                "relative_source": "file2.txt",
+                "target_filename": "renamed2.txt",
+            },
+            "subfolder": {
+                "file3.txt": {
+                    "__type__": "file",
+                    "relative_source": "file3.txt",
+                }
+            },
         },
         "folder2": {"__type__": "directory"},
     }
@@ -32,13 +41,13 @@ def test_get_moves_flattens_plan():
     # Check file2.txt
     assert moves[1] == (
         "file2.txt",
-        os.path.join(base_dir, "file2.txt"),
+        os.path.join(base_dir, "folder1", "file2.txt"),
         os.path.join(base_dir, "folder1", "renamed2.txt"),
     )
 
     # Check file3.txt
     assert moves[2] == (
         "file3.txt",
-        os.path.join(base_dir, "file3.txt"),
+        os.path.join(base_dir, "folder1", "subfolder", "file3.txt"),
         os.path.join(base_dir, "folder1", "subfolder", "file3.txt"),
     )
