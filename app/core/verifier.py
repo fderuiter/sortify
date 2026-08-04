@@ -111,6 +111,7 @@ class VerificationEngine:
         depth: int = 0,
     ) -> list:
         """Get a flat list of moves from the plan."""
+        base_dir = os.path.normpath(base_dir)
         moves = []
         for key, content in plan.items():
             if content is None or (
@@ -121,17 +122,26 @@ class VerificationEngine:
                     continue
 
                 if depth > 0:
-                    if not isinstance(content, dict) or "relative_source" not in content:
+                    if (
+                        not isinstance(content, dict)
+                        or "relative_source" not in content
+                    ):
                         raise ValueError(
                             f"Missing required relative source metadata field for nested item '{key}'"
                         )
                     relative_source = content["relative_source"]
-                    rel_src_with_parent = os.path.join(active_parent_path, relative_source)
-                    source_path = os.path.normpath(os.path.join(base_dir, rel_src_with_parent))
+                    rel_src_with_parent = os.path.join(
+                        active_parent_path, relative_source
+                    )
+                    source_path = os.path.normpath(
+                        os.path.join(base_dir, rel_src_with_parent)
+                    )
                 else:
                     if isinstance(content, dict) and "relative_source" in content:
                         relative_source = content["relative_source"]
-                        source_path = os.path.normpath(os.path.join(base_dir, relative_source))
+                        source_path = os.path.normpath(
+                            os.path.join(base_dir, relative_source)
+                        )
                     else:
                         source_path = os.path.normpath(os.path.join(base_dir, key))
 
@@ -141,7 +151,7 @@ class VerificationEngine:
                     filename = os.path.basename(key)
 
                 dest_dir = os.path.join(base_dir, current_dest)
-                dest_path = os.path.join(dest_dir, filename)
+                dest_path = os.path.normpath(os.path.join(dest_dir, filename))
                 moves.append((key, source_path, dest_path))
             else:
                 moves.extend(

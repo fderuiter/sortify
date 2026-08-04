@@ -1,14 +1,15 @@
 import os
 import tempfile
 from pathlib import Path
+
 import pytest
 
-from app.core.verifier import VerificationEngine
-from app.core.mover import execute_moves
+from app.core.cache import CacheManager
 from app.core.db import Database
 from app.core.db_worker import DBWorker
 from app.core.history import HistoryManager
-from app.core.cache import CacheManager
+from app.core.mover import execute_moves
+from app.core.verifier import VerificationEngine
 
 
 @pytest.fixture
@@ -32,7 +33,7 @@ def test_nested_three_levels_verifier_resolves_correct_source_path():
     The verification engine successfully resolves the correct source path
     for a file nested three levels deep.
     """
-    base_dir = "/base/dir"
+    base_dir = os.path.normpath("/base/dir")
     plan = {
         "dir1": {
             "dir2": {
@@ -161,8 +162,13 @@ def test_system_safely_rejects_missing_relative_source_field(test_environment):
     # 1. Verification engine should report success=False and have warning about missing relative_source
     result = VerificationEngine.verify_plan_integrity(tmp_dir, invalid_plan)
     assert result["success"] is False
-    assert any("Missing required relative source metadata field" in w for w in result["warnings"])
+    assert any(
+        "Missing required relative source metadata field" in w
+        for w in result["warnings"]
+    )
 
     # 2. Physical execution should reject and raise ValueError directly
-    with pytest.raises(ValueError, match="Missing required relative source metadata field"):
+    with pytest.raises(
+        ValueError, match="Missing required relative source metadata field"
+    ):
         execute_moves(tmp_dir, invalid_plan, db, history_manager)
