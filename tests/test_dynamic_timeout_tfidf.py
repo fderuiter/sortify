@@ -1,6 +1,5 @@
 import os
 import tempfile
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from app.core.analyzer_strategies import GenerativeNamingStrategy, gguf_worker_main
