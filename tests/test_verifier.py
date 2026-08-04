@@ -4,7 +4,7 @@ from app.core.verifier import VerificationEngine
 
 
 def test_get_moves_flattens_plan():
-    base_dir = "/base/dir"
+    base_dir = os.path.normpath("/base/dir")
     plan = {
         "file1.txt": None,
         "folder1": {

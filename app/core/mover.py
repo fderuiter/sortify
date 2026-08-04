@@ -71,6 +71,7 @@ def _execute_moves_recursive(
     depth: int = 0,
 ) -> None:
     """Recursively move files according to the plan."""
+    base_dir = os.path.normpath(base_dir)
     if path_map is None:
         path_map = {}
 
@@ -96,11 +97,15 @@ def _execute_moves_recursive(
                     )
                 relative_source = content["relative_source"]
                 rel_src_with_parent = os.path.join(active_parent_path, relative_source)
-                source_path = os.path.normpath(os.path.join(base_dir, rel_src_with_parent))
+                source_path = os.path.normpath(
+                    os.path.join(base_dir, rel_src_with_parent)
+                )
             else:
                 if isinstance(content, dict) and "relative_source" in content:
                     relative_source = content["relative_source"]
-                    source_path = os.path.normpath(os.path.join(base_dir, relative_source))
+                    source_path = os.path.normpath(
+                        os.path.join(base_dir, relative_source)
+                    )
                 else:
                     source_path = os.path.normpath(os.path.join(base_dir, key))
 
@@ -112,12 +117,12 @@ def _execute_moves_recursive(
             else:
                 filename = os.path.basename(key)
 
-            dest_dir = os.path.join(base_dir, current_dest)
+            dest_dir = os.path.normpath(os.path.join(base_dir, current_dest))
 
             if not os.path.exists(dest_dir):
                 os.makedirs(dest_dir, exist_ok=True)
 
-            dest_path = get_safe_path(dest_dir, filename, source_path)
+            dest_path = os.path.normpath(get_safe_path(dest_dir, filename, source_path))
 
             link_info = LinkManager.get_link_info(source_path)
             moved_as_link = False
@@ -254,7 +259,10 @@ def _execute_moves_recursive(
             rel_dest = os.path.relpath(dest_path, base_dir)
             if db_updates_batch is not None:
                 db_updates_batch.append(
-                    {"type": "document_path", "args": (base_dir, source_rel_path, rel_dest)}
+                    {
+                        "type": "document_path",
+                        "args": (base_dir, source_rel_path, rel_dest),
+                    }
                 )
             else:
                 db.update_document_path(base_dir, source_rel_path, rel_dest)
@@ -281,6 +289,7 @@ def execute_moves(
     resume: bool = False,
 ) -> dict:
     """Create directories and safely move files, tracking file-system errors."""
+    base_dir = os.path.normpath(base_dir)
     session_id = None
     if not resume:
         # Create a full snapshot of the directory tree and metadata before moving files
