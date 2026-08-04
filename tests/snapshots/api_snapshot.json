@@ -1,0 +1,152 @@
+{
+  "cli": {
+    "app/main.py": [
+      {
+        "args": [
+          "--demo"
+        ],
+        "caller": "parser",
+        "keywords": {
+          "action": "store_true",
+          "help": "Run interactive CLI demo mode"
+        },
+        "method": "add_argument"
+      },
+      {
+        "args": [
+          "--smoke-test"
+        ],
+        "caller": "parser",
+        "keywords": {
+          "action": "store_true",
+          "help": "Run automated database smoke test and exit"
+        },
+        "method": "add_argument"
+      },
+      {
+        "args": [
+          "directory"
+        ],
+        "caller": "parser",
+        "keywords": {
+          "default": null,
+          "help": "Directory to analyze automatically",
+          "nargs": "?"
+        },
+        "method": "add_argument"
+      }
+    ],
+    "sandbox_cli.py": [
+      {
+        "args": [
+          "reset"
+        ],
+        "caller": "subparsers",
+        "keywords": {
+          "help": "Reset the sandbox dataset to its golden state"
+        },
+        "method": "add_parser"
+      },
+      {
+        "args": [
+          "extract"
+        ],
+        "caller": "subparsers",
+        "keywords": {
+          "help": "Extract text from a specific sandbox file"
+        },
+        "method": "add_parser"
+      },
+      {
+        "args": [
+          "filename"
+        ],
+        "caller": "parser_extract",
+        "keywords": {
+          "help": "Name of the file in the sandbox dataset",
+          "type": "str"
+        },
+        "method": "add_argument"
+      },
+      {
+        "args": [
+          "analyze"
+        ],
+        "caller": "subparsers",
+        "keywords": {
+          "help": "Run the analysis pipeline on all sandbox files"
+        },
+        "method": "add_parser"
+      }
+    ]
+  },
+  "protocols": {
+    "ClusteringStrategy": {
+      "class_name": "ClusteringStrategy",
+      "methods": [
+        {
+          "name": "generate_plan",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "List[str]",
+              "default": null,
+              "name": "filenames"
+            },
+            {
+              "annotation": "List[str]",
+              "default": null,
+              "name": "documents"
+            },
+            {
+              "annotation": "int",
+              "default": null,
+              "name": "max_folders"
+            },
+            {
+              "annotation": "set",
+              "default": null,
+              "name": "stop_words"
+            },
+            {
+              "annotation": "int",
+              "default": "5",
+              "name": "max_depth"
+            },
+            {
+              "annotation": "int",
+              "default": "3",
+              "name": "max_features"
+            }
+          ],
+          "returns": "tuple[dict, float]"
+        }
+      ]
+    },
+    "DocumentExtractor": {
+      "class_name": "DocumentExtractor",
+      "methods": [
+        {
+          "name": "extract",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "file_path"
+            }
+          ],
+          "returns": "str"
+        }
+      ]
+    }
+  }
+}
