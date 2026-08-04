@@ -102,15 +102,16 @@ def test_gguf_worker_thread_adaptation():
                 )
 
 
-def test_sqlite_tfidf_few_shot_retrieval_and_injection():
+def test_sqlite_tfidf_few_shot_retrieval_and_injection(tmp_path):
     """Verify that historical document examples are retrieved from SQLite and
 
     correct matches are injected into the prompt based on TF-IDF + exact cosine
     similarity on CPU.
     """
+    from app.core.db_conn import clear_connection_cache
     db_worker = DBWorker()
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        db_path = Path(tmp_dir) / "test.db"
+    try:
+        db_path = tmp_path / "test.db"
         db = Database(db_path, db_worker)
 
         # Insert some historical documents
@@ -175,4 +176,6 @@ def test_sqlite_tfidf_few_shot_retrieval_and_injection():
         assert "Finance and Earnings" in prompt_fin
         assert "Cooking Recipes" not in prompt_fin
 
-    db_worker.stop()
+    finally:
+        db_worker.stop()
+        clear_connection_cache()
