@@ -23,11 +23,12 @@ def test_migration_from_v1(tmp_path):
         """)
 
     clear_connection_cache()
+
     # Initialize Database, which should trigger migration
     db_worker = DBWorker()
     db = Database(db_path=str(db_path), worker=db_worker)
     db_worker.stop()
-    db.init_db()
+    clear_connection_cache()
 
     # Verify migration
     with closing(get_db_connection(db_path)) as conn, conn:
@@ -56,6 +57,8 @@ def test_migration_from_v1(tmp_path):
             "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_term_frequencies_doc'"
         )
         assert cursor.fetchone() is not None
+
+    clear_connection_cache()
 
 
 def test_migration_from_v2(tmp_path):
@@ -77,11 +80,12 @@ def test_migration_from_v2(tmp_path):
         """)
 
     clear_connection_cache()
+
     # Initialize Database, which should trigger migration
     db_worker = DBWorker()
     db = Database(db_path=str(db_path), worker=db_worker)
     db_worker.stop()
-    db.init_db()
+    clear_connection_cache()
 
     # Verify migration
     with closing(get_db_connection(db_path)) as conn, conn:
@@ -111,6 +115,8 @@ def test_migration_from_v2(tmp_path):
         )
         assert cursor.fetchone() is not None
 
+    clear_connection_cache()
+
 
 def test_migration_from_empty(tmp_path):
     db_path = tmp_path / "test_empty.db"
@@ -119,7 +125,7 @@ def test_migration_from_empty(tmp_path):
     db_worker = DBWorker()
     db = Database(db_path=str(db_path), worker=db_worker)
     db_worker.stop()
-    db.init_db()
+    clear_connection_cache()
 
     # Verify creation
     with closing(get_db_connection(db_path)) as conn, conn:
@@ -148,3 +154,5 @@ def test_migration_from_empty(tmp_path):
             "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_term_frequencies_doc'"
         )
         assert cursor.fetchone() is not None
+
+    clear_connection_cache()

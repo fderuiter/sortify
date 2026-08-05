@@ -24,30 +24,33 @@ async def test_build_corpus_generator_async_sequential(tmp_path):
 
     db_path = tmp_path / "test.db"
     db_worker = DBWorker()
-    db = Database(db_path, db_worker)
+    try:
+        db = Database(db_path, db_worker)
 
-    settings = AppSettings()
+        settings = AppSettings()
 
-    # 1. Test sequential file-by-file extraction
-    gen = build_corpus_generator_async(
-        base_dir=str(base_dir),
-        items_to_sort=["file1.txt", "file2.txt"],
-        db=db,
-        settings=settings,
-    )
+        # 1. Test sequential file-by-file extraction
+        gen = build_corpus_generator_async(
+            base_dir=str(base_dir),
+            items_to_sort=["file1.txt", "file2.txt"],
+            db=db,
+            settings=settings,
+        )
 
-    results = []
-    async for item, text, fhash, was_skipped in gen:
-        results.append((item, text, fhash, was_skipped))
+        results = []
+        async for item, text, fhash, was_skipped in gen:
+            results.append((item, text, fhash, was_skipped))
 
-    assert len(results) == 2
-    assert results[0][0] == "file1.txt"
-    assert "Hello World!" in results[0][1]
-    assert results[0][3] is False  # extracted, not skipped
+        assert len(results) == 2
+        assert results[0][0] == "file1.txt"
+        assert "Hello World!" in results[0][1]
+        assert results[0][3] is False  # extracted, not skipped
 
-    assert results[1][0] == "file2.txt"
-    assert "Some other text content." in results[1][1]
-    assert results[1][3] is False
+        assert results[1][0] == "file2.txt"
+        assert "Some other text content." in results[1][1]
+        assert results[1][3] is False
+    finally:
+        db_worker.stop()
 
 
 @pytest.mark.anyio
@@ -61,30 +64,33 @@ async def test_build_corpus_generator_async_cache_skip(tmp_path):
 
     db_path = tmp_path / "test.db"
     db_worker = DBWorker()
-    db = Database(db_path, db_worker)
+    try:
+        db = Database(db_path, db_worker)
 
-    # Pre-populate database with matching hash
-    fhash = get_file_hash(str(file1))
-    db.upsert_document(
-        str(base_dir), "file1.txt", fhash, "This is extracted cached text!"
-    )
+        # Pre-populate database with matching hash
+        fhash = get_file_hash(str(file1))
+        db.upsert_document(
+            str(base_dir), "file1.txt", fhash, "This is extracted cached text!"
+        )
 
-    settings = AppSettings()
+        settings = AppSettings()
 
-    # Test that extraction is skipped
-    gen = build_corpus_generator_async(
-        base_dir=str(base_dir), items_to_sort=["file1.txt"], db=db, settings=settings
-    )
+        # Test that extraction is skipped
+        gen = build_corpus_generator_async(
+            base_dir=str(base_dir), items_to_sort=["file1.txt"], db=db, settings=settings
+        )
 
-    results = []
-    async for item, text, h, was_skipped in gen:
-        results.append((item, text, h, was_skipped))
+        results = []
+        async for item, text, h, was_skipped in gen:
+            results.append((item, text, h, was_skipped))
 
-    assert len(results) == 1
-    assert results[0][0] == "file1.txt"
-    assert results[0][1] == "This is extracted cached text!"
-    assert results[0][2] == fhash
-    assert results[0][3] is True  # was_skipped must be True
+        assert len(results) == 1
+        assert results[0][0] == "file1.txt"
+        assert results[0][1] == "This is extracted cached text!"
+        assert results[0][2] == fhash
+        assert results[0][3] is True  # was_skipped must be True
+    finally:
+        db_worker.stop()
 
 
 @pytest.mark.anyio
@@ -100,30 +106,33 @@ async def test_build_corpus_generator_async_cancellation(tmp_path):
 
     db_path = tmp_path / "test.db"
     db_worker = DBWorker()
-    db = Database(db_path, db_worker)
+    try:
+        db = Database(db_path, db_worker)
 
-    settings = AppSettings()
+        settings = AppSettings()
 
-    cancel_flag = False
+        cancel_flag = False
 
-    def cancel_check():
-        return cancel_flag
+        def cancel_check():
+            return cancel_flag
 
-    gen = build_corpus_generator_async(
-        base_dir=str(base_dir),
-        items_to_sort=["file1.txt", "file2.txt"],
-        db=db,
-        cancel_check=cancel_check,
-        settings=settings,
-    )
+        gen = build_corpus_generator_async(
+            base_dir=str(base_dir),
+            items_to_sort=["file1.txt", "file2.txt"],
+            db=db,
+            cancel_check=cancel_check,
+            settings=settings,
+        )
 
-    results = []
-    async for item, text, h, was_skipped in gen:
-        results.append((item, text, h, was_skipped))
-        cancel_flag = True  # Cancel after yielding first file
+        results = []
+        async for item, text, h, was_skipped in gen:
+            results.append((item, text, h, was_skipped))
+            cancel_flag = True  # Cancel after yielding first file
 
-    assert len(results) == 1
-    assert results[0][0] == "file1.txt"
+        assert len(results) == 1
+        assert results[0][0] == "file1.txt"
+    finally:
+        db_worker.stop()
 
 
 @pytest.mark.anyio
