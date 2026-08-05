@@ -224,6 +224,20 @@ class SemanticEmbeddingManager:
             logging.error(f"Error during background vector reconstruction: {e}")
         finally:
             logging.info("Background vector reconstruction finished.")
+            try:
+                from app.core.db_conn import _cache_lock, _connection_cache
+                tid = threading.get_ident()
+                with _cache_lock:
+                    for key in list(_connection_cache.keys()):
+                        if key[1] == tid:
+                            conn = _connection_cache.pop(key, None)
+                            if conn:
+                                try:
+                                    conn.close()
+                                except Exception:
+                                    pass
+            except Exception:
+                pass
 
     def generate_embedding(self, text: str | None) -> list[float]:
         """Generate vector embedding of active model dimensions."""
