@@ -39,19 +39,31 @@ if sys.platform == "win32" and getattr(sys, "frozen", False):
         except Exception:
             pass
 
-        sqlcipher_dir = os.path.abspath(os.path.join(base_dir, "sqlcipher3"))
-        if os.path.isdir(sqlcipher_dir):
+        # In PyInstaller 6+, modules and libraries are under the _internal folder
+        internal_dir = os.path.abspath(os.path.join(base_dir, "_internal"))
+        if os.path.isdir(internal_dir):
             try:
-                os.add_dll_directory(sqlcipher_dir)
+                os.add_dll_directory(internal_dir)
             except Exception:
                 pass
-            # Recursively add all subdirectories of sqlcipher_dir to search path as well
-            for root, dirs, _ in os.walk(sqlcipher_dir):
-                for d in dirs:
-                    try:
-                        os.add_dll_directory(os.path.abspath(os.path.join(root, d)))
-                    except Exception:
-                        pass
+
+        sqlcipher_dirs = [
+            os.path.abspath(os.path.join(base_dir, "sqlcipher3")),
+            os.path.abspath(os.path.join(base_dir, "_internal", "sqlcipher3")),
+        ]
+        for sqlcipher_dir in sqlcipher_dirs:
+            if os.path.isdir(sqlcipher_dir):
+                try:
+                    os.add_dll_directory(sqlcipher_dir)
+                except Exception:
+                    pass
+                # Recursively add all subdirectories of sqlcipher_dir to search path as well
+                for root, dirs, _ in os.walk(sqlcipher_dir):
+                    for d in dirs:
+                        try:
+                            os.add_dll_directory(os.path.abspath(os.path.join(root, d)))
+                        except Exception:
+                            pass
 
     exe_dir = os.path.dirname(sys.executable)
     if exe_dir:
@@ -60,6 +72,12 @@ if sys.platform == "win32" and getattr(sys, "frozen", False):
             os.add_dll_directory(exe_dir)
         except Exception:
             pass
+        exe_internal = os.path.abspath(os.path.join(exe_dir, "_internal"))
+        if os.path.isdir(exe_internal):
+            try:
+                os.add_dll_directory(exe_internal)
+            except Exception:
+                pass
 
 import argparse
 import logging
