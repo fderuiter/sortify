@@ -57,6 +57,23 @@ class Database:
                     )
                 conn.execute(f"PRAGMA user_version = {self.CURRENT_VERSION}")
 
+            # Initialize decoupled vector and metadata tables unconditionally
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS model_metadata (
+                    key TEXT PRIMARY KEY,
+                    value TEXT
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS document_vectors (
+                    base_dir TEXT,
+                    filepath TEXT,
+                    vector TEXT,
+                    PRIMARY KEY (base_dir, filepath),
+                    FOREIGN KEY (base_dir, filepath) REFERENCES documents(base_dir, filepath) ON DELETE CASCADE
+                )
+            """)
+
     def invalidate_cache(self):
         """Invalidate the in-memory decrypted documents cache."""
         with self._cache_lock:
@@ -293,3 +310,90 @@ class Database:
             self.invalidate_cache()
 
         self.worker.execute_write(_write)
+
+    def get_model_metadata(self, key: str) -> str | None:
+        conn = get_db_connection(self.db_path)
+        with conn:
+            cursor = conn.execute(
+                "SELECT value FROM model_metadata WHERE key = ?", (key,)
+            )
+            row = cursor.fetchone()
+            return row[0] if row else None
+
+    def set_model_metadata(self, key: str, value: str):
+        def _write():
+            conn = get_db_connection(self.db_path)
+            with conn:
+                conn.execute(
+                    """
+                    INSERT INTO model_metadata (key, value)
+                    VALUES (?, ?)
+                    ON CONFLICT(key) DO UPDATE SET value = excluded.value
+                    """,
+                    (key, value),
+                )
+        self.worker.execute_write(_write)
+
+    def get_document_vector(self, base_dir: str, filepath: str) -> list[float] | None:
+        conn = get_db_connection(self.db_path)
+        with conn:
+            cursor = conn.execute(
+                "SELECT vector FROM document_vectors WHERE base_dir = ? AND filepath = ?",
+                (base_dir, filepath),
+            )
+            row = cursor.fetchone()
+            if row and row[0]:
+                import json
+                try:
+                    return json.loads(row[0])
+                except Exception:
+                    return None
+            return None
+
+    def upsert_document_vectors(self, base_dir: str, vectors_data: list[tuple[str, list[float]]]):
+        if not vectors_data:
+            return
+        def _write():
+            import json
+            conn = get_db_connection(self.db_path)
+            with conn:
+                rows_to_insert = []
+                for filepath, vector in vectors_data:
+                    rows_to_insert.append((base_dir, filepath, json.dumps(vector)))
+                conn.executemany(
+                    """
+                    INSERT INTO document_vectors (base_dir, filepath, vector)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(base_dir, filepath) DO UPDATE SET
+                        vector = excluded.vector
+                    """,
+                    rows_to_insert,
+                )
+        self.worker.execute_write(_write)
+
+    def clear_all_document_vectors(self):
+        def _write():
+            conn = get_db_connection(self.db_path)
+            with conn:
+                conn.execute("DELETE FROM document_vectors")
+        self.worker.execute_write(_write)
+
+    def get_documents_missing_vectors(self, base_dir: str, limit: int = 50, offset: int = 0) -> list[tuple[str, str]]:
+        conn = get_db_connection(self.db_path)
+        with conn:
+            cursor = conn.execute(
+                """
+                SELECT d.filepath, d.extracted_text 
+                FROM documents d
+                LEFT JOIN document_vectors v ON d.base_dir = v.base_dir AND d.filepath = v.filepath
+                WHERE d.base_dir = ? AND v.vector IS NULL
+                LIMIT ? OFFSET ?
+                """,
+                (base_dir, limit, offset),
+            )
+            rows = cursor.fetchall()
+            results = []
+            for filepath, enc_text in rows:
+                dec_text = self.crypto.decrypt_text(enc_text) if enc_text is not None else None
+                results.append((filepath, dec_text))
+            return results
