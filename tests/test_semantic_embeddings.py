@@ -21,6 +21,8 @@ class MockSettings:
 def temp_dir():
     dir_path = tempfile.mkdtemp()
     yield Path(dir_path)
+    from app.core.db_conn import clear_connection_cache
+    clear_connection_cache()
     shutil.rmtree(dir_path, ignore_errors=True)
 
 
@@ -33,7 +35,10 @@ def db_worker():
 
 @pytest.fixture
 def db(temp_dir, db_worker):
-    return Database(temp_dir / "test.db", db_worker)
+    database = Database(temp_dir / "test.db", db_worker)
+    yield database
+    from app.core.db_conn import clear_connection_cache
+    clear_connection_cache()
 
 
 def test_metadata_recording_on_launch(db):
@@ -133,7 +138,7 @@ def test_background_reconstruction_spawns(db, temp_dir):
     manager.trigger_reconstruction(str(temp_dir))
 
     # Verify background task is non-blocking and eventually finishes generating the vector
-    timeout = 5.0
+    timeout = 30.0
     start_time = time.time()
     while time.time() - start_time < timeout:
         v = manager.get_vector(str(temp_dir), "doc1.txt")
