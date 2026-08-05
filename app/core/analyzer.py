@@ -140,6 +140,7 @@ class IncrementalAnalyzer:
             if not docs:
                 return {}
 
+            from app.core.db import LazyDecryptedDoc
             from app.core.extractor_strategies import registry
 
             supported_exts = set(registry._extractors.keys())
@@ -356,7 +357,7 @@ class IncrementalAnalyzer:
                         if not f_vector:
                             remaining_ai_filenames.append(f)
                             lazy_doc = ai_documents[idx]
-                            remaining_ai_documents.append(lazy_doc[1] if hasattr(lazy_doc, "__getitem__") else lazy_doc)
+                            remaining_ai_documents.append(lazy_doc[1] if isinstance(lazy_doc, LazyDecryptedDoc) else lazy_doc)
                             continue
 
                         best_sim = -1.0
@@ -396,7 +397,7 @@ class IncrementalAnalyzer:
                         else:
                             remaining_ai_filenames.append(f)
                             lazy_doc = ai_documents[idx]
-                            remaining_ai_documents.append(lazy_doc[1] if hasattr(lazy_doc, "__getitem__") else lazy_doc)
+                            remaining_ai_documents.append(lazy_doc[1] if isinstance(lazy_doc, LazyDecryptedDoc) else lazy_doc)
 
                     ai_filenames = remaining_ai_filenames
                     ai_documents = remaining_ai_documents
@@ -407,7 +408,7 @@ class IncrementalAnalyzer:
                     )
 
             # Ensure any remaining lazy docs are decrypted before running the clustering strategy
-            ai_documents = [doc[1] if hasattr(doc, "__getitem__") else doc for doc in ai_documents]
+            ai_documents = [doc[1] if isinstance(doc, LazyDecryptedDoc) else doc for doc in ai_documents]
 
             self._last_reconstruction_error = 0.0
 
