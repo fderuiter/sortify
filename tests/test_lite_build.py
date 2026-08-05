@@ -216,21 +216,15 @@ def test_spec_file_partitioning():
             return os.path.normcase(os.path.normpath(d))
 
         actual_binaries = {
-            (norm_p(src), norm_d(dst))
-            for src, dst in sqlcipher_binaries
+            (norm_p(src), norm_d(dst)) for src, dst in sqlcipher_binaries
         }
-        actual_datas = {
-            (norm_p(src), norm_d(dst))
-            for src, dst in sqlcipher_datas
-        }
+        actual_datas = {(norm_p(src), norm_d(dst)) for src, dst in sqlcipher_datas}
 
         normalized_expected_binaries = {
-            (norm_p(src), norm_d(dst))
-            for src, dst in expected_binaries
+            (norm_p(src), norm_d(dst)) for src, dst in expected_binaries
         }
         normalized_expected_datas = {
-            (norm_p(src), norm_d(dst))
-            for src, dst in expected_datas
+            (norm_p(src), norm_d(dst)) for src, dst in expected_datas
         }
 
         if not (
