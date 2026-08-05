@@ -22,16 +22,16 @@ class MyStrategy(Protocol):
 """
     protocol_file.write_text(protocol_code)
     protocols = extract_protocols(str(protocol_file))
-    
+
     assert "MyStrategy" in protocols
     my_strategy = protocols["MyStrategy"]
     assert my_strategy["class_name"] == "MyStrategy"
     assert len(my_strategy["methods"]) == 1
-    
+
     method = my_strategy["methods"][0]
     assert method["name"] == "run"
     assert method["returns"] == "dict"
-    
+
     # self, data, flag
     params = method["parameters"]
     assert len(params) == 3
@@ -52,7 +52,7 @@ parser.add_argument("--verbose", action="store_true", help="Enable verbose loggi
 """
     cli_file.write_text(cli_code)
     cli_calls = extract_cli(str(cli_file))
-    
+
     assert len(cli_calls) == 1
     call = cli_calls[0]
     assert call["caller"] == "parser"
@@ -60,7 +60,7 @@ parser.add_argument("--verbose", action="store_true", help="Enable verbose loggi
     assert call["args"] == ["--verbose"]
     assert call["keywords"] == {
         "action": "store_true",
-        "help": "Enable verbose logging"
+        "help": "Enable verbose logging",
     }
 
 
@@ -68,15 +68,15 @@ def test_collect_current_definitions():
     defs = collect_current_definitions()
     assert "protocols" in defs
     assert "cli" in defs
-    
+
     # Check that ClusteringStrategy is extracted
     assert "ClusteringStrategy" in defs["protocols"]
     assert "DocumentExtractor" in defs["protocols"]
-    
+
     # Check CLI keys
     assert "app/main.py" in defs["cli"]
     assert "sandbox_cli.py" in defs["cli"]
-    
+
     main_cli = defs["cli"]["app/main.py"]
     assert len(main_cli) > 0
     demo_arg = [arg for arg in main_cli if arg["args"] == ["--demo"]]

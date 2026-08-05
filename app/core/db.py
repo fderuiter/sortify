@@ -18,6 +18,7 @@ class Database:
 
         self.crypto = resolve_db_crypto(db_path)
         import threading
+
         self._cache_lock = threading.Lock()
         self._cached_base_dir = None
         self._cached_documents = None
@@ -323,6 +324,7 @@ class Database:
 
     def set_model_metadata(self, key: str, value: str):
         """Set model metadata value for a given key."""
+
         def _write():
             conn = get_db_connection(self.db_path)
             with conn:
@@ -334,6 +336,7 @@ class Database:
                     """,
                     (key, value),
                 )
+
         self.worker.execute_write(_write)
 
     def get_document_vector(self, base_dir: str, filepath: str) -> list[float] | None:
@@ -347,18 +350,23 @@ class Database:
             row = cursor.fetchone()
             if row and row[0]:
                 import json
+
                 try:
                     return json.loads(row[0])
                 except Exception:
                     return None
             return None
 
-    def upsert_document_vectors(self, base_dir: str, vectors_data: list[tuple[str, list[float]]]):
+    def upsert_document_vectors(
+        self, base_dir: str, vectors_data: list[tuple[str, list[float]]]
+    ):
         """Upsert document vector embeddings into the decoupled table."""
         if not vectors_data:
             return
+
         def _write():
             import json
+
             conn = get_db_connection(self.db_path)
             with conn:
                 rows_to_insert = []
@@ -373,17 +381,22 @@ class Database:
                     """,
                     rows_to_insert,
                 )
+
         self.worker.execute_write(_write)
 
     def clear_all_document_vectors(self):
         """Delete all document vectors from the decoupled table."""
+
         def _write():
             conn = get_db_connection(self.db_path)
             with conn:
                 conn.execute("DELETE FROM document_vectors")
+
         self.worker.execute_write(_write)
 
-    def get_documents_missing_vectors(self, base_dir: str, limit: int = 50, offset: int = 0) -> list[tuple[str, str]]:
+    def get_documents_missing_vectors(
+        self, base_dir: str, limit: int = 50, offset: int = 0
+    ) -> list[tuple[str, str]]:
         """Retrieve decrypted documents missing vector embeddings in batched format."""
         conn = get_db_connection(self.db_path)
         with conn:
@@ -400,6 +413,8 @@ class Database:
             rows = cursor.fetchall()
             results = []
             for filepath, enc_text in rows:
-                dec_text = self.crypto.decrypt_text(enc_text) if enc_text is not None else None
+                dec_text = (
+                    self.crypto.decrypt_text(enc_text) if enc_text is not None else None
+                )
                 results.append((filepath, dec_text))
             return results

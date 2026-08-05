@@ -28,6 +28,7 @@ def cache_test_env(tmp_path):
     yield base_dir, db, history_manager, db_worker
     db_worker.stop()
 
+
 def test_cache_population_on_first_read(cache_test_env):
     base_dir, db, _, _ = cache_test_env
     filepath = "doc1.txt"
@@ -38,7 +39,9 @@ def test_cache_population_on_first_read(cache_test_env):
     db.upsert_document(base_dir, filepath, file_hash, text)
 
     # First query - should decrypt and populate cache
-    with patch.object(db.crypto, "decrypt_text", wraps=db.crypto.decrypt_text) as mock_decrypt:
+    with patch.object(
+        db.crypto, "decrypt_text", wraps=db.crypto.decrypt_text
+    ) as mock_decrypt:
         docs1 = db.get_all_documents(base_dir)
         assert len(docs1) == 1
         assert docs1[0][0] == filepath
@@ -46,7 +49,9 @@ def test_cache_population_on_first_read(cache_test_env):
         assert mock_decrypt.call_count == 1
 
     # Second query - should be served from cache without calling decrypt_text
-    with patch.object(db.crypto, "decrypt_text", wraps=db.crypto.decrypt_text) as mock_decrypt:
+    with patch.object(
+        db.crypto, "decrypt_text", wraps=db.crypto.decrypt_text
+    ) as mock_decrypt:
         docs2 = db.get_all_documents(base_dir)
         assert len(docs2) == 1
         assert docs2[0][0] == filepath
@@ -54,11 +59,14 @@ def test_cache_population_on_first_read(cache_test_env):
         assert mock_decrypt.call_count == 0
 
     # Test get_document - should also be served from cache
-    with patch.object(db.crypto, "decrypt_text", wraps=db.crypto.decrypt_text) as mock_decrypt:
+    with patch.object(
+        db.crypto, "decrypt_text", wraps=db.crypto.decrypt_text
+    ) as mock_decrypt:
         doc = db.get_document(base_dir, filepath)
         assert doc is not None
         assert doc["extracted_text"] == text
         assert mock_decrypt.call_count == 0
+
 
 def test_cache_invalidation_on_upsert(cache_test_env):
     base_dir, db, _, _ = cache_test_env
@@ -79,10 +87,13 @@ def test_cache_invalidation_on_upsert(cache_test_env):
     db.upsert_document(base_dir, new_filepath, new_hash, new_text)
 
     # Cache should be invalidated, next read must decrypt
-    with patch.object(db.crypto, "decrypt_text", wraps=db.crypto.decrypt_text) as mock_decrypt:
+    with patch.object(
+        db.crypto, "decrypt_text", wraps=db.crypto.decrypt_text
+    ) as mock_decrypt:
         docs = db.get_all_documents(base_dir)
         assert len(docs) == 2
         assert mock_decrypt.call_count == 2
+
 
 def test_cache_invalidation_on_other_writes(cache_test_env):
     base_dir, db, _, _ = cache_test_env
@@ -93,7 +104,9 @@ def test_cache_invalidation_on_other_writes(cache_test_env):
 
     # Test remove_document invalidates cache
     db.remove_document(base_dir, "doc1.txt")
-    with patch.object(db.crypto, "decrypt_text", wraps=db.crypto.decrypt_text) as mock_decrypt:
+    with patch.object(
+        db.crypto, "decrypt_text", wraps=db.crypto.decrypt_text
+    ) as mock_decrypt:
         db.get_all_documents(base_dir)
         # Should be 0 documents, but still checked the DB (so query happened, 0 decryptions needed)
         assert mock_decrypt.call_count == 0
@@ -104,33 +117,39 @@ def test_cache_invalidation_on_other_writes(cache_test_env):
 
     # Test set_user_verified_target invalidates cache
     db.set_user_verified_target(base_dir, "hash1", "target_folder")
-    with patch.object(db.crypto, "decrypt_text", wraps=db.crypto.decrypt_text) as mock_decrypt:
+    with patch.object(
+        db.crypto, "decrypt_text", wraps=db.crypto.decrypt_text
+    ) as mock_decrypt:
         db.get_all_documents(base_dir)
         assert mock_decrypt.call_count == 1
 
     # Test update_document_path invalidates cache
     db.update_document_path(base_dir, "doc1.txt", "doc1_moved.txt")
-    with patch.object(db.crypto, "decrypt_text", wraps=db.crypto.decrypt_text) as mock_decrypt:
+    with patch.object(
+        db.crypto, "decrypt_text", wraps=db.crypto.decrypt_text
+    ) as mock_decrypt:
         db.get_all_documents(base_dir)
         assert mock_decrypt.call_count == 1
 
     # Test execute_batch_updates invalidates cache
-    db.execute_batch_updates([
-        {
-            "type": "verified_target",
-            "args": (base_dir, "hash1", "another_target")
-        }
-    ])
-    with patch.object(db.crypto, "decrypt_text", wraps=db.crypto.decrypt_text) as mock_decrypt:
+    db.execute_batch_updates(
+        [{"type": "verified_target", "args": (base_dir, "hash1", "another_target")}]
+    )
+    with patch.object(
+        db.crypto, "decrypt_text", wraps=db.crypto.decrypt_text
+    ) as mock_decrypt:
         db.get_all_documents(base_dir)
         assert mock_decrypt.call_count == 1
 
     # Test clear invalidates cache
     db.clear(base_dir)
-    with patch.object(db.crypto, "decrypt_text", wraps=db.crypto.decrypt_text) as mock_decrypt:
+    with patch.object(
+        db.crypto, "decrypt_text", wraps=db.crypto.decrypt_text
+    ) as mock_decrypt:
         docs = db.get_all_documents(base_dir)
         assert len(docs) == 0
         assert mock_decrypt.call_count == 0
+
 
 def test_single_active_base_directory_constraint(cache_test_env):
     base_dir, db, _, _ = cache_test_env
@@ -151,10 +170,13 @@ def test_single_active_base_directory_constraint(cache_test_env):
     assert db._cached_base_dir == dir_b
 
     # Read dir_a again - must re-decrypt because it was evicted
-    with patch.object(db.crypto, "decrypt_text", wraps=db.crypto.decrypt_text) as mock_decrypt:
+    with patch.object(
+        db.crypto, "decrypt_text", wraps=db.crypto.decrypt_text
+    ) as mock_decrypt:
         db.get_all_documents(dir_a)
         assert mock_decrypt.call_count == 1
         assert db._cached_base_dir == dir_a
+
 
 def test_rollback_invalidates_cache(cache_test_env):
     base_dir, db, history, _ = cache_test_env
@@ -173,6 +195,7 @@ def test_rollback_invalidates_cache(cache_test_env):
     # Cache should be invalidated
     assert db._cached_base_dir is None
     assert db._cached_documents is None
+
 
 def test_concurrent_read_write_safety(cache_test_env):
     base_dir, db, _, _ = cache_test_env
@@ -197,7 +220,9 @@ def test_concurrent_read_write_safety(cache_test_env):
         counter = 0
         while not stop_threads:
             try:
-                db.upsert_document(base_dir, f"doc_{counter}.txt", f"hash_{counter}", f"text_{counter}")
+                db.upsert_document(
+                    base_dir, f"doc_{counter}.txt", f"hash_{counter}", f"text_{counter}"
+                )
                 counter += 1
             except Exception:
                 pass
@@ -223,6 +248,7 @@ def test_concurrent_read_write_safety(cache_test_env):
 
     # Clear dead thread connections to release Windows file locks before asserting
     from app.core.db_conn import clear_dead_thread_connections
+
     clear_dead_thread_connections()
 
     # Verify no database errors and everything is stable

@@ -264,6 +264,7 @@ def test_is_local_address_dynamic_resolution():
 def test_onnx_thread_limits_application(monkeypatch):
     """Verify that ONNX InferenceSession applies intra-op and inter-op thread limits dynamically."""
     import sys
+
     mock_ort = MagicMock()
     mock_sess_options = MagicMock()
     mock_ort.SessionOptions.return_value = mock_sess_options
@@ -316,6 +317,7 @@ def test_onnx_thread_limits_application(monkeypatch):
 def test_pytorch_thread_limits_selection(monkeypatch):
     """Verify PyTorch model loads use the configured dynamic thread limit."""
     import sys
+
     mock_easyocr = MagicMock()
     mock_torch = MagicMock()
 
@@ -343,4 +345,3 @@ def test_pytorch_thread_limits_selection(monkeypatch):
         registry._models.pop("easyocr", None)
         registry.get_ocr_reader()
         mock_torch.set_num_threads.assert_any_call(4)
-

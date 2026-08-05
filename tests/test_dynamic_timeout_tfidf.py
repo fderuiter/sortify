@@ -22,9 +22,7 @@ def test_dynamic_timeout_scaling():
 
     # Case 1: Short prompt (approx 2 tokens)
     short_prompt = "Hi"
-    with patch(
-        "app.core.analyzer_strategies.cooperative_queue_get"
-    ) as mock_get:
+    with patch("app.core.analyzer_strategies.cooperative_queue_get") as mock_get:
         mock_get.return_value = {"text": "Descriptive Name"}
         res = strategy._run_prompt(short_prompt, 15)
         assert res == "Descriptive Name"
@@ -35,9 +33,7 @@ def test_dynamic_timeout_scaling():
 
     # Case 2: Long prompt (approx 1000 tokens / 4000 chars)
     long_prompt = "A" * 4000
-    with patch(
-        "app.core.analyzer_strategies.cooperative_queue_get"
-    ) as mock_get:
+    with patch("app.core.analyzer_strategies.cooperative_queue_get") as mock_get:
         mock_get.return_value = {"text": "Descriptive Name"}
         res = strategy._run_prompt(long_prompt, 15)
         assert res == "Descriptive Name"
@@ -48,9 +44,7 @@ def test_dynamic_timeout_scaling():
 
     # Case 3: Extremely long prompt (approx 2000 tokens / 8000 chars) -> Capped at 60.0s
     huge_prompt = "A" * 8000
-    with patch(
-        "app.core.analyzer_strategies.cooperative_queue_get"
-    ) as mock_get:
+    with patch("app.core.analyzer_strategies.cooperative_queue_get") as mock_get:
         mock_get.return_value = {"text": "Descriptive Name"}
         res = strategy._run_prompt(huge_prompt, 15)
         assert res == "Descriptive Name"
@@ -66,6 +60,7 @@ def test_gguf_worker_thread_adaptation():
     instance.
     """
     import sys
+
     mock_llama = MagicMock()
     mock_input_queue = MagicMock()
     mock_output_queue = MagicMock()
@@ -108,6 +103,7 @@ def test_sqlite_tfidf_few_shot_retrieval_and_injection(tmp_path):
     similarity on CPU.
     """
     from app.core.db_conn import clear_connection_cache
+
     db_worker = DBWorker()
     try:
         db_path = tmp_path / "test.db"
@@ -147,7 +143,9 @@ def test_sqlite_tfidf_few_shot_retrieval_and_injection(tmp_path):
         strategy._run_prompt = mock_run_prompt
 
         # Case 1: Target documents are similar to cooking/baking
-        target_docs = ["Baking delicious chocolate cakes and sweet cupcakes in the kitchen"]
+        target_docs = [
+            "Baking delicious chocolate cakes and sweet cupcakes in the kitchen"
+        ]
         name = strategy._get_cluster_keywords(target_docs)
 
         assert name == "Mocked Folder Name"
@@ -155,7 +153,10 @@ def test_sqlite_tfidf_few_shot_retrieval_and_injection(tmp_path):
 
         prompt = captured_prompts[0]
         # Verify few-shot context is present
-        assert "historical examples of documents and their corresponding user-corrected folder names" in prompt
+        assert (
+            "historical examples of documents and their corresponding user-corrected folder names"
+            in prompt
+        )
         # Verify that the cooking example was injected as a few-shot match
         assert "Cooking Recipes" in prompt
         assert "chocolate cookies, sweet muffins" in prompt
@@ -164,7 +165,9 @@ def test_sqlite_tfidf_few_shot_retrieval_and_injection(tmp_path):
         assert "Finance and Earnings" not in prompt
 
         # Case 2: Target documents are similar to corporate finance
-        target_docs_finance = ["The corporate financial portfolio showing balanced sheet dividends and stock reports."]
+        target_docs_finance = [
+            "The corporate financial portfolio showing balanced sheet dividends and stock reports."
+        ]
         captured_prompts.clear()
 
         name_fin = strategy._get_cluster_keywords(target_docs_finance)

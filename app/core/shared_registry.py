@@ -161,8 +161,10 @@ class SharedModelRegistry:
                 settings = self._cached_settings
             else:
                 from app.config import AppSettings
+
                 settings = AppSettings()
                 from unittest.mock import Mock
+
                 if not isinstance(settings, Mock) and not isinstance(AppSettings, Mock):
                     self._cached_settings = settings
             limit = getattr(settings, "MODEL_THREADS", 2)
@@ -200,13 +202,14 @@ class SharedModelRegistry:
         model_id = f"onnx_{model_path}"
         if model_id not in self._models:
             import onnxruntime as ort
+
             if sess_options is None:
                 sess_options = ort.SessionOptions()
-            
+
             thread_limit = self.get_thread_limit()
             sess_options.intra_op_num_threads = thread_limit
             sess_options.inter_op_num_threads = thread_limit
-            
+
             self._models[model_id] = ort.InferenceSession(model_path, sess_options)
         return self._models[model_id]
 

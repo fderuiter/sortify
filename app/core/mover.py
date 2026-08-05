@@ -343,7 +343,8 @@ def execute_moves(
 
         # Sort by descending depth to delete subdirectories before parents
         dirs_to_process.sort(
-            key=lambda x: len(x["source_path"].replace("\\", "/").split("/")), reverse=True
+            key=lambda x: len(x["source_path"].replace("\\", "/").split("/")),
+            reverse=True,
         )
 
         if cleanup_enabled:

@@ -18,10 +18,10 @@ class DimensionMismatchError(ValueError):
 
 def set_low_priority():
     """Set the current thread to low priority in a platform-independent way."""
+    if "CI" in os.environ or "PYTEST_CURRENT_TEST" in os.environ:
+        return
     try:
         if sys.platform != "win32":
-            import os
-
             os.nice(19)  # Lowest priority on Unix
         else:
             import ctypes
@@ -226,6 +226,7 @@ class SemanticEmbeddingManager:
             logging.info("Background vector reconstruction finished.")
             try:
                 from app.core.db_conn import _cache_lock, _connection_cache
+
                 tid = threading.get_ident()
                 with _cache_lock:
                     for key in list(_connection_cache.keys()):

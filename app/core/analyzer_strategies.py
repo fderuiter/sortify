@@ -181,12 +181,16 @@ def gguf_worker_main(model_path, input_queue, output_queue, n_threads=None):
         if n_threads is None:
             try:
                 from app.core.shared_registry import SharedModelRegistry
+
                 n_threads = SharedModelRegistry.get_instance().get_thread_limit()
             except Exception:
                 import multiprocessing
+
                 n_threads = os.cpu_count() or multiprocessing.cpu_count() or 2
 
-        llm = Llama(model_path=gguf_file, n_ctx=2048, verbose=False, n_threads=n_threads)
+        llm = Llama(
+            model_path=gguf_file, n_ctx=2048, verbose=False, n_threads=n_threads
+        )
         output_queue.put({"status": "ready"})
     except Exception as e:
         output_queue.put({"error": str(e)})
@@ -371,6 +375,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                 self._gguf_output_queue = multiprocessing.Queue()
 
                 from app.core.shared_registry import SharedModelRegistry
+
                 try:
                     n_threads = SharedModelRegistry.get_instance().get_thread_limit()
                 except Exception:
@@ -473,7 +478,9 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                     )
                     estimated_tokens = len(prompt) // 4
                     timeout = max(8.0, min(60.0, 8.0 + (estimated_tokens / 20.0)))
-                    res = cooperative_queue_get(self._gguf_output_queue, timeout=timeout)
+                    res = cooperative_queue_get(
+                        self._gguf_output_queue, timeout=timeout
+                    )
                     if not isinstance(res, dict) or "error" in res or "text" not in res:
                         raise Exception(
                             res.get("error")
@@ -492,6 +499,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         from transformers import LogitsProcessorList
 
         from app.core.shared_registry import SharedModelRegistry
+
         torch.set_num_threads(SharedModelRegistry.get_instance().get_thread_limit())
 
         logits_processor = LogitsProcessorList()
@@ -648,10 +656,9 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                 for doc in all_docs:
                     # doc is (filepath, decrypted_text, file_hash, user_verified_target_path)
                     if len(doc) > 3 and doc[1] and doc[3]:
-                        historical_examples.append({
-                            "text": doc[1],
-                            "target_path": doc[3]
-                        })
+                        historical_examples.append(
+                            {"text": doc[1], "target_path": doc[3]}
+                        )
             except Exception as e:
                 logging.error(f"Error reading historical documents from DB: {e}")
 
@@ -662,8 +669,14 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                 from sklearn.metrics.pairwise import cosine_similarity
 
                 # Limit vocabulary features to 1,000 to keep CPU search speeds fast and minimize latency
-                stop_words_list = list(self.stop_words) if getattr(self, "stop_words", None) else "english"
-                vectorizer = TfidfVectorizer(stop_words=stop_words_list, max_features=1000)
+                stop_words_list = (
+                    list(self.stop_words)
+                    if getattr(self, "stop_words", None)
+                    else "english"
+                )
+                vectorizer = TfidfVectorizer(
+                    stop_words=stop_words_list, max_features=1000
+                )
 
                 hist_texts = [ex["text"] for ex in historical_examples]
                 target_text = " ".join(documents)[:1000]
@@ -684,17 +697,23 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                 top_examples = []
                 for idx in sorted_indices:
                     if similarities[idx] >= 0.1:
-                        top_examples.append((historical_examples[idx], similarities[idx]))
+                        top_examples.append(
+                            (historical_examples[idx], similarities[idx])
+                        )
                         if len(top_examples) >= 3:
                             break
 
                 if top_examples:
                     few_shot_lines = []
-                    few_shot_lines.append("Here are some historical examples of documents and their corresponding user-corrected folder names:")
+                    few_shot_lines.append(
+                        "Here are some historical examples of documents and their corresponding user-corrected folder names:"
+                    )
                     for ex_idx, (ex, sim) in enumerate(top_examples):
                         snippet = ex["text"][:500].replace("\n", " ").strip()
                         folder_name = ex["target_path"]
-                        few_shot_lines.append(f"Example {ex_idx + 1}:\nDocument: {snippet}\nFolder Name: {folder_name}")
+                        few_shot_lines.append(
+                            f"Example {ex_idx + 1}:\nDocument: {snippet}\nFolder Name: {folder_name}"
+                        )
                     few_shot_context = "\n\n".join(few_shot_lines) + "\n\n"
             except Exception as e:
                 logging.error(f"Error querying TF-IDF historical examples: {e}")

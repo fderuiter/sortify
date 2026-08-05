@@ -68,6 +68,7 @@ def cleanup_db_connections():
 def reset_shared_registry():
     """Reset the SharedModelRegistry and SharedWorkerPool singletons before and after each test to prevent test pollution."""
     from app.core.shared_registry import SharedModelRegistry, SharedWorkerPool
+
     SharedModelRegistry._instance = None
     if SharedWorkerPool._instance is not None:
         try:
