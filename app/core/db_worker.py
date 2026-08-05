@@ -40,7 +40,9 @@ class DBWorker:
         result_q = queue.Queue()
         with self._lock:
             if self._stopped:
-                result_q.put(("error", RuntimeError("Database worker has been stopped")))
+                result_q.put(
+                    ("error", RuntimeError("Database worker has been stopped"))
+                )
                 return result_q
             self.q.put((func, args, kwargs, result_q))
         return result_q

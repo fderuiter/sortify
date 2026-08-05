@@ -226,9 +226,7 @@ def test_document_to_document_similarity_matching():
     # Slightly modified unclassified document (no target path initially)
     # The wording is slightly edited, but semantic similarity remains high
     new_text = "This is an invoice for laptop purchase from TechStore. Total amount due is $1250. Please pay by card transfer."
-    corpus = {
-        "new_receipt.txt": new_text
-    }
+    corpus = {"new_receipt.txt": new_text}
     analyzer.partial_fit(base_dir, corpus)
 
     # Generate plan
@@ -256,18 +254,16 @@ def test_document_similarity_no_dilution():
     # Make them longer and distinct to showcase individual matching.
     finance_text = "corporate financial document. quarterly earnings report and stock dividend distribution portfolios. asset balance sheet."
     cooking_text = "cooking and dessert instructions. bake chocolate frosting cake and delicious muffins in the oven with sweet ingredients."
-    
+
     db.upsert_document(base_dir, "hist_finance.txt", "hash_f", finance_text)
     db.set_user_verified_target(base_dir, "hash_f", "SharedFolder")
-    
+
     db.upsert_document(base_dir, "hist_cooking.txt", "hash_c", cooking_text)
     db.set_user_verified_target(base_dir, "hash_c", "SharedFolder")
 
     # New file slightly matching cooking_text only
     new_cooking = "cooking and dessert instructions. bake chocolate frosting cake and delicious muffins in the oven with sweet ingredients. extra: cookie."
-    corpus = {
-        "new_cooking.txt": new_cooking
-    }
+    corpus = {"new_cooking.txt": new_cooking}
     analyzer.partial_fit(base_dir, corpus)
 
     plan = analyzer.generate_sorting_plan(base_dir)
@@ -295,9 +291,7 @@ def test_document_similarity_guardrail_unverified():
 
     # New file with high similarity
     new_space = "unique text about space rockets and Mars landing mission"
-    corpus = {
-        "new_space.txt": new_space
-    }
+    corpus = {"new_space.txt": new_space}
     analyzer.partial_fit(base_dir, corpus)
 
     plan = analyzer.generate_sorting_plan(base_dir)
@@ -305,4 +299,3 @@ def test_document_similarity_guardrail_unverified():
     # Since there are no verified historical documents, new_space.txt should NOT be matched
     # and the returned plan should be empty because we bypassed clustering.
     assert plan == {}
-

@@ -17,8 +17,12 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SNAPSHOT_PATH = os.path.join(BASE_DIR, "tests", "snapshots", "api_snapshot.json")
 
 # Source files to parse
-ANALYZER_STRATEGIES_PATH = os.path.join(BASE_DIR, "app", "core", "analyzer_strategies.py")
-EXTRACTOR_STRATEGIES_PATH = os.path.join(BASE_DIR, "app", "core", "extractor_strategies.py")
+ANALYZER_STRATEGIES_PATH = os.path.join(
+    BASE_DIR, "app", "core", "analyzer_strategies.py"
+)
+EXTRACTOR_STRATEGIES_PATH = os.path.join(
+    BASE_DIR, "app", "core", "extractor_strategies.py"
+)
 MAIN_CLI_PATH = os.path.join(BASE_DIR, "app", "main.py")
 SANDBOX_CLI_PATH = os.path.join(BASE_DIR, "sandbox_cli.py")
 
@@ -49,10 +53,12 @@ def extract_protocols(file_path):
             for base in node.bases:
                 if isinstance(base, ast.Name) and base.id == "Protocol":
                     is_protocol = True
-                elif (isinstance(base, ast.Attribute) and 
-                      isinstance(base.value, ast.Name) and 
-                      base.value.id == "typing" and 
-                      base.attr == "Protocol"):
+                elif (
+                    isinstance(base, ast.Attribute)
+                    and isinstance(base.value, ast.Name)
+                    and base.value.id == "typing"
+                    and base.attr == "Protocol"
+                ):
                     is_protocol = True
 
             if is_protocol:
@@ -65,56 +71,94 @@ def extract_protocols(file_path):
                         default_map = {}
                         for i, default_node in enumerate(defaults):
                             arg_idx = len(all_args) - len(defaults) + i
-                            default_map[id(all_args[arg_idx])] = ast.unparse(default_node)
+                            default_map[id(all_args[arg_idx])] = ast.unparse(
+                                default_node
+                            )
 
                         params = []
                         for arg_node in all_args:
-                            annotation_str = ast.unparse(arg_node.annotation) if arg_node.annotation else None
+                            annotation_str = (
+                                ast.unparse(arg_node.annotation)
+                                if arg_node.annotation
+                                else None
+                            )
                             default_str = default_map.get(id(arg_node), None)
-                            params.append({
-                                "name": arg_node.arg,
-                                "annotation": annotation_str,
-                                "default": default_str
-                            })
+                            params.append(
+                                {
+                                    "name": arg_node.arg,
+                                    "annotation": annotation_str,
+                                    "default": default_str,
+                                }
+                            )
 
                         if body_node.args.vararg:
                             arg_node = body_node.args.vararg
-                            annotation_str = ast.unparse(arg_node.annotation) if arg_node.annotation else None
-                            params.append({
-                                "name": f"*{arg_node.arg}",
-                                "annotation": annotation_str,
-                                "default": None
-                            })
+                            annotation_str = (
+                                ast.unparse(arg_node.annotation)
+                                if arg_node.annotation
+                                else None
+                            )
+                            params.append(
+                                {
+                                    "name": f"*{arg_node.arg}",
+                                    "annotation": annotation_str,
+                                    "default": None,
+                                }
+                            )
 
-                        for kwarg, default_node in zip(body_node.args.kwonlyargs, body_node.args.kw_defaults):
-                            annotation_str = ast.unparse(kwarg.annotation) if kwarg.annotation else None
-                            default_str = ast.unparse(default_node) if default_node is not None else None
-                            params.append({
-                                "name": kwarg.arg,
-                                "annotation": annotation_str,
-                                "default": default_str
-                            })
+                        for kwarg, default_node in zip(
+                            body_node.args.kwonlyargs, body_node.args.kw_defaults
+                        ):
+                            annotation_str = (
+                                ast.unparse(kwarg.annotation)
+                                if kwarg.annotation
+                                else None
+                            )
+                            default_str = (
+                                ast.unparse(default_node)
+                                if default_node is not None
+                                else None
+                            )
+                            params.append(
+                                {
+                                    "name": kwarg.arg,
+                                    "annotation": annotation_str,
+                                    "default": default_str,
+                                }
+                            )
 
                         if body_node.args.kwarg:
                             arg_node = body_node.args.kwarg
-                            annotation_str = ast.unparse(arg_node.annotation) if arg_node.annotation else None
-                            params.append({
-                                "name": f"**{arg_node.arg}",
-                                "annotation": annotation_str,
-                                "default": None
-                            })
+                            annotation_str = (
+                                ast.unparse(arg_node.annotation)
+                                if arg_node.annotation
+                                else None
+                            )
+                            params.append(
+                                {
+                                    "name": f"**{arg_node.arg}",
+                                    "annotation": annotation_str,
+                                    "default": None,
+                                }
+                            )
 
-                        return_annotation = ast.unparse(body_node.returns) if body_node.returns else None
+                        return_annotation = (
+                            ast.unparse(body_node.returns)
+                            if body_node.returns
+                            else None
+                        )
 
-                        methods.append({
-                            "name": body_node.name,
-                            "parameters": params,
-                            "returns": return_annotation
-                        })
+                        methods.append(
+                            {
+                                "name": body_node.name,
+                                "parameters": params,
+                                "returns": return_annotation,
+                            }
+                        )
 
                 protocols[class_name] = {
                     "class_name": class_name,
-                    "methods": sorted(methods, key=lambda m: m["name"])
+                    "methods": sorted(methods, key=lambda m: m["name"]),
                 }
 
     return protocols
@@ -148,12 +192,14 @@ def extract_cli(file_path):
                         if kw.arg:
                             keywords[kw.arg] = get_ast_value(kw.value)
 
-                    cli_calls.append({
-                        "caller": caller,
-                        "method": method,
-                        "args": args,
-                        "keywords": keywords
-                    })
+                    cli_calls.append(
+                        {
+                            "caller": caller,
+                            "method": method,
+                            "args": args,
+                            "keywords": keywords,
+                        }
+                    )
 
     return cli_calls
 
@@ -185,7 +231,7 @@ def main():
         "--regenerate",
         action="store_true",
         dest="regenerate",
-        help="Update/regenerate the verified API/CLI baseline snapshot file."
+        help="Update/regenerate the verified API/CLI baseline snapshot file.",
     )
     args = parser.parse_args()
 
@@ -206,7 +252,7 @@ def main():
         print(
             f"Error: Baseline snapshot file does not exist at {SNAPSHOT_PATH}.\n"
             f"Run this script with --regenerate to initialize it.",
-            file=sys.stderr
+            file=sys.stderr,
         )
         sys.exit(1)
 
@@ -215,7 +261,10 @@ def main():
         try:
             snapshot_definitions = json.load(f)
         except Exception as e:
-            print(f"Error: Failed to parse checked-in baseline snapshot JSON: {e}", file=sys.stderr)
+            print(
+                f"Error: Failed to parse checked-in baseline snapshot JSON: {e}",
+                file=sys.stderr,
+            )
             sys.exit(1)
 
     # Compare current against snapshot
@@ -223,18 +272,34 @@ def main():
     snapshot_json = json.dumps(snapshot_definitions, indent=2, sort_keys=True)
 
     if current_json != snapshot_json:
-        print("FAIL: Public interface or CLI signature drift detected!", file=sys.stderr)
-        print("----------------------------------------------------------------", file=sys.stderr)
-        diff = list(difflib.unified_diff(
-            snapshot_json.splitlines(keepends=True),
-            current_json.splitlines(keepends=True),
-            fromfile=f"Snapshot ({os.path.relpath(SNAPSHOT_PATH, BASE_DIR)})",
-            tofile="Current Codebase",
-        ))
+        print(
+            "FAIL: Public interface or CLI signature drift detected!", file=sys.stderr
+        )
+        print(
+            "----------------------------------------------------------------",
+            file=sys.stderr,
+        )
+        diff = list(
+            difflib.unified_diff(
+                snapshot_json.splitlines(keepends=True),
+                current_json.splitlines(keepends=True),
+                fromfile=f"Snapshot ({os.path.relpath(SNAPSHOT_PATH, BASE_DIR)})",
+                tofile="Current Codebase",
+            )
+        )
         sys.stderr.writelines(diff)
-        print("----------------------------------------------------------------", file=sys.stderr)
-        print("If this change was intentional, update the baseline snapshot by running:", file=sys.stderr)
-        print(f"  python3 {os.path.relpath(__file__, BASE_DIR)} --regenerate", file=sys.stderr)
+        print(
+            "----------------------------------------------------------------",
+            file=sys.stderr,
+        )
+        print(
+            "If this change was intentional, update the baseline snapshot by running:",
+            file=sys.stderr,
+        )
+        print(
+            f"  python3 {os.path.relpath(__file__, BASE_DIR)} --regenerate",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     print("SUCCESS: Codebase signatures match baseline snapshot.")

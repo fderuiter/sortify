@@ -216,11 +216,20 @@ def test_memory_throttling_and_low_priority_thread(db, temp_dir):
     """Constraints & Guardrails: Loading document texts for vector updates must be throttled (<= 50 records at once), and run on low priority."""
     manager = SemanticEmbeddingManager(db, model_path=None)
 
+    called_limits = []
+    original_get_docs = db.get_documents_missing_vectors
+
+    def spied_get_docs(*args, **kwargs):
+        limit = kwargs.get("limit")
+        if limit is None and len(args) > 1:
+            limit = args[1]
+        called_limits.append(limit)
+        return original_get_docs(*args, **kwargs)
+
     try:
-        # Spy on get_documents_missing_vectors
         with patch.object(
-            db, "get_documents_missing_vectors", wraps=db.get_documents_missing_vectors
-        ) as mock_get_docs:
+            db, "get_documents_missing_vectors", side_effect=spied_get_docs
+        ):
             # Trigger reconstruction
             manager.trigger_reconstruction(str(temp_dir))
 
@@ -229,8 +238,6 @@ def test_memory_throttling_and_low_priority_thread(db, temp_dir):
                 time.sleep(0.1)
 
             # get_documents_missing_vectors must have been called with limit=50 to prevent memory exhaustion
-            if mock_get_docs.called:
-                args, kwargs = mock_get_docs.call_args
-                assert kwargs.get("limit") == 50 or args[1] == 50
+            assert 50 in called_limits
     finally:
         manager.stop()
