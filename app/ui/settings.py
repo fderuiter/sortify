@@ -26,7 +26,10 @@ def show_settings(parent_app, settings):
             e.sender.value = not e.value
             ui.notify(f"Failed to update Explorer integration: {ex}", type="negative")
 
-    with ui.dialog() as dialog, ui.card().classes("w-3/4 max-w-4xl p-6"):
+    from app.ui.dialog_helper import make_dialog_accessible
+
+    with ui.dialog() as dialog, ui.card().classes("w-3/4 max-w-4xl p-6 settings-dialog-card"):
+        make_dialog_accessible(dialog, "settings-dialog-card")
         with ui.row().classes("w-full justify-between items-center mb-6"):
             ui.label("Application Settings").classes("text-2xl font-bold").props(
                 'aria-label="Settings Dialog Title"'
@@ -160,32 +163,77 @@ def show_settings(parent_app, settings):
                 ui.label("Keyword Routing").classes("text-lg font-bold mb-2")
 
                 rules_container = ui.column().classes("w-full mb-4")
+                rules_rows = {}
+
+                def render_single_rule(kw, target):
+                    if kw in rules_rows:
+                        try:
+                            rules_rows[kw].delete()
+                        except Exception:
+                            pass
+                    with rules_container:
+                        with ui.row().classes(
+                            "w-full items-center justify-between border-b pb-2 mb-2"
+                        ) as row:
+                            rules_rows[kw] = row
+                            ui.label(kw).classes("w-1/4 font-mono")
+                            ui.label(target).classes(
+                                "w-1/2 font-mono text-gray-500"
+                            )
+
+                            btn = ui.button(
+                                "Delete", color="red"
+                            ).props("size=sm").classes("rule-delete-btn")
+
+                            def delete_rule(k=kw, r=row, b=btn):
+                                updated_rules = dict(settings.KEYWORD_RULES)
+                                if k in updated_rules:
+                                    del updated_rules[k]
+                                    settings.KEYWORD_RULES = updated_rules
+                                    ui.notify(
+                                        f"Rule for '{k}' deleted.", type="positive"
+                                    )
+
+                                # Shift focus first on the client side
+                                ui.run_javascript(f"""
+                                    const btnEl = document.getElementById('c{b.id}');
+                                    const rowEl = document.getElementById('c{r.id}');
+                                    if (btnEl && rowEl) {{
+                                        const container = rowEl.parentElement;
+                                        if (container) {{
+                                            const allButtons = Array.from(container.querySelectorAll('.rule-delete-btn'));
+                                            const index = allButtons.indexOf(btnEl);
+                                            let targetBtn = null;
+                                            if (allButtons.length > 1) {{
+                                                if (index < allButtons.length - 1) {{
+                                                    targetBtn = allButtons[index + 1];
+                                                }} else if (index > 0) {{
+                                                    targetBtn = allButtons[index - 1];
+                                                }}
+                                            }}
+                                            if (targetBtn) {{
+                                                targetBtn.focus();
+                                            }} else {{
+                                                const kwInput = document.querySelector('[aria-label="Keyword input"]');
+                                                if (kwInput) {{
+                                                    kwInput.focus();
+                                                }}
+                                            }}
+                                        }}
+                                    }}
+                                """)
+
+                                r.delete()
+                                if k in rules_rows:
+                                    del rules_rows[k]
+
+                            btn.on_click(delete_rule)
 
                 def render_rules():
                     rules_container.clear()
-                    with rules_container:
-                        for kw, target in settings.KEYWORD_RULES.items():
-                            with ui.row().classes(
-                                "w-full items-center justify-between border-b pb-2 mb-2"
-                            ):
-                                ui.label(kw).classes("w-1/4 font-mono")
-                                ui.label(target).classes(
-                                    "w-1/2 font-mono text-gray-500"
-                                )
-
-                                def delete_rule(k=kw):
-                                    updated_rules = dict(settings.KEYWORD_RULES)
-                                    if k in updated_rules:
-                                        del updated_rules[k]
-                                        settings.KEYWORD_RULES = updated_rules
-                                        ui.notify(
-                                            f"Rule for '{k}' deleted.", type="positive"
-                                        )
-                                        render_rules()
-
-                                ui.button(
-                                    "Delete", on_click=delete_rule, color="red"
-                                ).props("size=sm")
+                    rules_rows.clear()
+                    for kw, target in settings.KEYWORD_RULES.items():
+                        render_single_rule(kw, target)
 
                 render_rules()
 
@@ -215,7 +263,7 @@ def show_settings(parent_app, settings):
                             ui.notify(f"Rule for '{kw}' added.", type="positive")
                             kw_input.value = ""
                             target_input.value = ""
-                            render_rules()
+                            render_single_rule(kw, target)
                         except Exception as ex:
                             ui.notify(f"Invalid rule: {ex}", type="negative")
 

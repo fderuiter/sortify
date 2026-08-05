@@ -174,7 +174,8 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {{
                                     type="warning",
                                 )
 
-                            with ui.dialog() as dialog, ui.card().classes("w-96 p-6"):
+                            with ui.dialog() as dialog, ui.card().classes("w-96 p-6 manual-fallback-dialog-card"):
+                                make_dialog_accessible(dialog, "manual-fallback-dialog-card")
                                 ui.label(title).classes("text-lg font-bold mb-4")
                                 ui.label(
                                     "Please enter the directory path manually:"
@@ -272,3 +273,98 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {{
             _on_complete()
 
     threading.Thread(target=_run_dialog, daemon=True).start()
+
+
+def make_dialog_accessible(dialog, card_class: str, is_persistent: bool = False, on_escape=None):
+    """Make a NiceGUI dialog accessible by managing focus and Escape dismissal."""
+    from nicegui import ui
+
+    # Register custom_escape event to cleanly close the dialog
+    if on_escape:
+        dialog.on('custom_escape', on_escape)
+    else:
+        dialog.on('custom_escape', dialog.close)
+
+    def handle_value_change(e):
+        if e.value:
+            # Dialog is opening:
+            # 1. Record the current active element in the browser.
+            # 2. Wait a short time for the dialog to open, then focus the first title or interactive element.
+            ui.run_javascript(f"""
+                window._lastTriggeringElement = document.activeElement;
+                setTimeout(() => {{
+                    const card = document.querySelector('.{card_class}');
+                    if (card) {{
+                        const title = card.querySelector('h1, h2, h3, h4, h5, h6, .text-h6, .text-lg, .text-xl, .text-2xl, [role="heading"], [aria-label*="Title"], [aria-label*="title"]');
+                        if (title) {{
+                            if (!title.hasAttribute('tabindex')) {{
+                                title.setAttribute('tabindex', '-1');
+                            }}
+                            title.focus();
+                        }} else {{
+                            const interactive = card.querySelector('button, [href], input, select, textarea, [tabindex="0"]');
+                            if (interactive) {{
+                                interactive.focus();
+                            }}
+                        }}
+                    }}
+                }}, 150);
+            """)
+        else:
+            # Dialog is closing:
+            # Restore focus to the initiating element.
+            ui.run_javascript("""
+                if (window._lastTriggeringElement && typeof window._lastTriggeringElement.focus === 'function') {
+                    window._lastTriggeringElement.focus();
+                    window._lastTriggeringElement = null;
+                }
+            """)
+
+    dialog.on_value_change(handle_value_change)
+
+
+def preserve_slot_context(func):
+    """Decorator to preserve NiceGUI slot state contexts across asynchronous task/thread boundaries."""
+    from nicegui.slot import Slot
+    import asyncio
+    import functools
+
+    try:
+        stack = Slot.get_stack()
+        if not stack and Slot.stacks:
+            stack = next(iter(Slot.stacks.values()))
+    except Exception:
+        stack = None
+
+    if asyncio.iscoroutinefunction(func):
+        @functools.wraps(func)
+        async def wrapper(*args, **kwargs):
+            tid = id(asyncio.current_task()) if asyncio.current_task() else 0
+            if stack is not None and tid:
+                Slot.stacks[tid] = stack
+            try:
+                return await func(*args, **kwargs)
+            finally:
+                if stack is not None and tid in Slot.stacks:
+                    try:
+                        del Slot.stacks[tid]
+                    except Exception:
+                        pass
+        return wrapper
+    else:
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            tid = id(asyncio.current_task()) if asyncio.current_task() else 0
+            if stack is not None and tid:
+                Slot.stacks[tid] = stack
+            try:
+                return func(*args, **kwargs)
+            finally:
+                if stack is not None and tid in Slot.stacks:
+                    try:
+                        del Slot.stacks[tid]
+                    except Exception:
+                        pass
+        return wrapper
+
+
