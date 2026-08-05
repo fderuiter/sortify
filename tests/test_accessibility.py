@@ -32,7 +32,7 @@ def test_show_settings_accessible_dialog():
     mock_dialog_context.__exit__.return_value = None
 
     with (
-        mock.patch("sys.platform", "linux"),
+        mock.patch("app.core.integration.register_context_menu"),
         mock.patch("nicegui.ui.dialog", return_value=mock_dialog_context),
         mock.patch(
             "app.ui.dialog_helper.make_dialog_accessible"
