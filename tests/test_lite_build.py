@@ -227,11 +227,20 @@ def test_spec_file_partitioning():
             for src, dst in expected_datas
         }
 
-        assert (
+        if not (
             normalized_expected_binaries.issubset(actual_binaries)
             or normalized_expected_binaries == actual_binaries
-        )
-        assert (
+        ):
+            print("--- MISMATCHED BINARIES ---")
+            print("Expected - Actual:", normalized_expected_binaries - actual_binaries)
+            print("Actual - Expected:", actual_binaries - normalized_expected_binaries)
+            assert False, "Binaries partition mismatch!"
+
+        if not (
             normalized_expected_datas.issubset(actual_datas)
             or normalized_expected_datas == actual_datas
-        )
+        ):
+            print("--- MISMATCHED DATAS ---")
+            print("Expected - Actual:", normalized_expected_datas - actual_datas)
+            print("Actual - Expected:", actual_datas - normalized_expected_datas)
+            assert False, "Datas partition mismatch!"
