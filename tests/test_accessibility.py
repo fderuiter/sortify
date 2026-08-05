@@ -33,12 +33,13 @@ def test_show_settings_accessible_dialog():
 
     with (
         mock.patch("app.core.verifier.check_ai_status", return_value=(True, None)),
-        mock.patch("app.core.integration.register_context_menu"),
-        mock.patch("nicegui.ui.dialog", return_value=mock_dialog_context),
+        mock.patch("app.ui.settings.ui") as mock_settings_ui,
         mock.patch(
             "app.ui.dialog_helper.make_dialog_accessible"
         ) as mock_make_accessible,
     ):
+        mock_settings_ui.dialog.return_value = mock_dialog_context
+
         show_settings(mock_parent, mock_settings)
 
         # Verify make_dialog_accessible was called on the dialog with settings-dialog-card class
