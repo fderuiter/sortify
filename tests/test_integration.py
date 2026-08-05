@@ -17,12 +17,19 @@ def mock_winreg_and_ctypes():
     mock_winreg.HKEY_CLASSES_ROOT = "HKEY_CLASSES_ROOT"
     mock_winreg.REG_SZ = 1
 
-    mock_ctypes = MagicMock()
-    mock_ctypes.windll.shell32.IsUserAnAdmin.return_value = False
-    mock_ctypes.windll.shell32.ShellExecuteW.return_value = 42
+    import ctypes
+    mock_windll = MagicMock()
+    mock_windll.shell32.IsUserAnAdmin.return_value = False
+    mock_windll.shell32.ShellExecuteW.return_value = 42
+
+    class MockCtypesWrapper:
+        windll = mock_windll
+
+    mock_ctypes = MockCtypesWrapper()
 
     with (
-        patch.dict(sys.modules, {"winreg": mock_winreg, "ctypes": mock_ctypes}),
+        patch.dict(sys.modules, {"winreg": mock_winreg}),
+        patch.object(ctypes, "windll", mock_windll, create=True),
         patch("app.core.verifier.check_ai_status", return_value=(True, None)),
     ):
         yield mock_winreg, mock_ctypes
