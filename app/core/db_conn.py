@@ -60,12 +60,12 @@ def get_db_connection(db_path: str):
     thread_id = threading.get_ident()
     cache_key = (abs_path, thread_id)
 
-    # Automatically clean up connections for dead threads to prevent resource and lock leaks on Windows
-    clear_dead_thread_connections()
-
     with _cache_lock:
         if cache_key in _connection_cache:
             return _connection_cache[cache_key]
+
+    # Automatically clean up connections for dead threads to prevent resource and lock leaks on Windows
+    clear_dead_thread_connections()
 
     from app.core.path_utils import resolve_db_crypto
 

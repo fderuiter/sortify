@@ -136,7 +136,7 @@ class IncrementalAnalyzer:
     ) -> dict:
         """Generate a sorting plan based on the current model state."""
         try:
-            docs = self.db.get_all_documents(base_dir)
+            docs = self.db.get_all_documents_lazy(base_dir)
             if not docs:
                 return {}
 
@@ -199,7 +199,7 @@ class IncrementalAnalyzer:
             for d in docs:
                 if cancel_check and cancel_check():
                     return {}
-                f, doc = d[0], d[1]
+                f = d[0]
                 file_hash = d[2] if len(d) > 2 else None
                 assigned_folder = d[3] if len(d) > 3 else None
 
@@ -209,16 +209,25 @@ class IncrementalAnalyzer:
                     else hash_to_target.get(file_hash)
                 )
 
+                # Skip decryption for verified historical files only if there are no policies or keyword rules to check
+                if target is not None and not (sorted_policies or keyword_rules):
+                    historical_overrides[f] = (target, None)
+                    continue
+
                 filename_only = os.path.basename(f).lower()
-                doc_lower = doc.lower() if doc else ""
-
                 status_match = None
-                if doc and doc.startswith("[STATUS:"):
-                    status_match = doc[8:-1]
-
                 ext = os.path.splitext(f)[1].lower()
-                if ext not in supported_exts and not status_match:
+                if ext not in supported_exts:
                     status_match = "UNSUPPORTED"
+
+                # Lazily decrypt unassigned documents only if policies or keywords are defined
+                doc = None
+                doc_lower = ""
+                if status_match != "UNSUPPORTED" and (sorted_policies or keyword_rules):
+                    doc = d[1]
+                    doc_lower = doc.lower() if doc else ""
+                    if doc and doc.startswith("[STATUS:"):
+                        status_match = doc[8:-1]
 
                 # Check against unified policies first!
                 matched_policy = None
@@ -238,10 +247,9 @@ class IncrementalAnalyzer:
                             status_match,
                         )
                     )
+                    if target is not None:
+                        historical_overrides[f] = (target, status_match)
                     continue
-
-                if target is not None:
-                    historical_overrides[f] = (target, status_match)
 
                 matched = False
                 if keyword_rules:
@@ -260,6 +268,10 @@ class IncrementalAnalyzer:
                             matched = True
                             break
 
+                if target is not None:
+                    historical_overrides[f] = (target, status_match)
+                    continue
+
                 if not matched and status_match and learned_rules:
                     for keyword, target_folder in learned_rules.items():
                         if not keyword.strip():
@@ -276,10 +288,10 @@ class IncrementalAnalyzer:
                         unsupported_files.append((f, status_match))
                     else:
                         ai_filenames.append(f)
-                        ai_documents.append(doc)
+                        ai_documents.append(d)
 
             # Document-to-Document Content Similarity Matching Phase
-            historical_docs = []
+            historical_files = []
             for d in docs:
                 file_hash = d[2] if len(d) > 2 else None
                 assigned_folder = d[3] if len(d) > 3 else None
@@ -289,66 +301,115 @@ class IncrementalAnalyzer:
                     else hash_to_target.get(file_hash)
                 )
 
-                if target is not None and d[1]:
-                    historical_docs.append({
-                        "text": d[1],
-                        "target_folder": target,
-                        "filepath": d[0]
+                if target is not None:
+                    historical_files.append({
+                        "filepath": d[0],
+                        "target_folder": target
                     })
 
-            if historical_docs and ai_filenames:
+            if historical_files and ai_filenames:
                 try:
-                    import numpy as np
-                    from sklearn.feature_extraction.text import TfidfVectorizer
-                    from sklearn.metrics.pairwise import cosine_similarity
+                    # Load all precomputed term frequencies for base_dir
+                    tf_entries = self.db.get_term_frequencies(base_dir)
+                    
+                    # Organize and filter out custom and active stop-words dynamically in-memory (single-pass)
+                    active_stop_words = {w.lower().strip() for w in (self.stop_words or set())}
+                    doc_filtered_freqs = {}
+                    for filepath, term, frequency in tf_entries:
+                        if term not in active_stop_words:
+                            doc_filtered_freqs.setdefault(filepath, {})[term] = frequency
 
-                    historical_texts = [doc["text"] for doc in historical_docs]
-                    historical_targets = [doc["target_folder"] for doc in historical_docs]
+                    # Compute global Document Frequency (DF) and Inverse Document Frequency (IDF) dynamically
+                    from collections import defaultdict
+                    import math
+                    
+                    df = defaultdict(int)
+                    for filepath, term_freqs in doc_filtered_freqs.items():
+                        for term in term_freqs:
+                            df[term] += 1
+                    
+                    N = len(doc_filtered_freqs)
+                    idf = {}
+                    for term, count in df.items():
+                        # smooth_idf formula: ln((1 + N) / (1 + df)) + 1
+                        idf[term] = math.log((1 + N) / (1 + count)) + 1
 
-                    vectorizer = TfidfVectorizer(
-                        stop_words=list(self.stop_words), max_features=1000
-                    )
-                    safe_ai_documents = [d or "" for d in ai_documents]
-                    all_texts = historical_texts + safe_ai_documents
-                    vectorizer.fit(all_texts)
-
-                    historical_vectors = vectorizer.transform(historical_texts)
-                    new_docs_vectors = vectorizer.transform(safe_ai_documents)
-
-                    similarities = cosine_similarity(new_docs_vectors, historical_vectors)
+                    # Build unit L2-norm normalized TF-IDF vectors for each document
+                    doc_vectors = {}
+                    for filepath, term_freqs in doc_filtered_freqs.items():
+                        vec = {}
+                        square_sum = 0.0
+                        for term, freq in term_freqs.items():
+                            val = freq * idf[term]
+                            vec[term] = val
+                            square_sum += val * val
+                        
+                        norm = math.sqrt(square_sum)
+                        if norm > 0:
+                            for term in vec:
+                                vec[term] /= norm
+                        doc_vectors[filepath] = vec
 
                     remaining_ai_filenames = []
                     remaining_ai_documents = []
 
-                    for i, f in enumerate(ai_filenames):
-                        if len(historical_docs) > 0:
-                            max_sim = np.max(similarities[i])
-                            best_doc_idx = np.argmax(similarities[i])
-                            if max_sim >= 0.8:
-                                target_folder = historical_targets[best_doc_idx]
-                                keyword_plan_files.append(
-                                    (
-                                        f,
-                                        target_folder,
-                                        f"similarity >= 0.8 ({max_sim:.2f})",
-                                        "similarity",
-                                        None,
-                                    )
-                                )
+                    for idx, f in enumerate(ai_filenames):
+                        f_vector = doc_vectors.get(f, {})
+                        if not f_vector:
+                            remaining_ai_filenames.append(f)
+                            lazy_doc = ai_documents[idx]
+                            remaining_ai_documents.append(lazy_doc[1] if hasattr(lazy_doc, "__getitem__") else lazy_doc)
+                            continue
+
+                        best_sim = -1.0
+                        best_target_folder = None
+
+                        for hist in historical_files:
+                            hist_f = hist["filepath"]
+                            hist_vector = doc_vectors.get(hist_f, {})
+                            if not hist_vector:
+                                continue
+
+                            # Cosine similarity is the dot product of two unit L2-norm normalized vectors
+                            sim = 0.0
+                            if len(f_vector) > len(hist_vector):
+                                for term, val in hist_vector.items():
+                                    if term in f_vector:
+                                        sim += val * f_vector[term]
                             else:
-                                remaining_ai_filenames.append(f)
-                                remaining_ai_documents.append(ai_documents[i])
+                                for term, val in f_vector.items():
+                                    if term in hist_vector:
+                                        sim += val * hist_vector[term]
+
+                            if sim > best_sim:
+                                best_sim = sim
+                                best_target_folder = hist["target_folder"]
+
+                        if best_sim >= 0.8:
+                            keyword_plan_files.append(
+                                (
+                                    f,
+                                    best_target_folder,
+                                    f"similarity >= 0.8 ({best_sim:.2f})",
+                                    "similarity",
+                                    None,
+                                )
+                            )
                         else:
                             remaining_ai_filenames.append(f)
-                            remaining_ai_documents.append(ai_documents[i])
+                            lazy_doc = ai_documents[idx]
+                            remaining_ai_documents.append(lazy_doc[1] if hasattr(lazy_doc, "__getitem__") else lazy_doc)
 
                     ai_filenames = remaining_ai_filenames
                     ai_documents = remaining_ai_documents
                 except Exception as e:
                     logging.error(
-                        f"Failed during document-to-document similarity matching. Error: {str(e)}",
+                        f"Failed during memory-only document-to-document similarity matching. Error: {str(e)}",
                         exc_info=True,
                     )
+
+            # Ensure any remaining lazy docs are decrypted before running the clustering strategy
+            ai_documents = [doc[1] if hasattr(doc, "__getitem__") else doc for doc in ai_documents]
 
             self._last_reconstruction_error = 0.0
 

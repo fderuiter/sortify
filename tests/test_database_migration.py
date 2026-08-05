@@ -45,6 +45,18 @@ def test_migration_from_v1(tmp_path):
         )
         assert cursor.fetchone() is not None
 
+        cursor.execute("PRAGMA table_info(term_frequencies)")
+        tf_columns = [row[1] for row in cursor.fetchall()]
+        assert "base_dir" in tf_columns
+        assert "filepath" in tf_columns
+        assert "term" in tf_columns
+        assert "frequency" in tf_columns
+
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_term_frequencies_doc'"
+        )
+        assert cursor.fetchone() is not None
+
 
 def test_migration_from_v2(tmp_path):
     db_path = tmp_path / "test_v2.db"
@@ -87,6 +99,18 @@ def test_migration_from_v2(tmp_path):
         )
         assert cursor.fetchone() is not None
 
+        cursor.execute("PRAGMA table_info(term_frequencies)")
+        tf_columns = [row[1] for row in cursor.fetchall()]
+        assert "base_dir" in tf_columns
+        assert "filepath" in tf_columns
+        assert "term" in tf_columns
+        assert "frequency" in tf_columns
+
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_term_frequencies_doc'"
+        )
+        assert cursor.fetchone() is not None
+
 
 def test_migration_from_empty(tmp_path):
     db_path = tmp_path / "test_empty.db"
@@ -110,5 +134,17 @@ def test_migration_from_empty(tmp_path):
 
         cursor.execute(
             "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_documents_file_hash'"
+        )
+        assert cursor.fetchone() is not None
+
+        cursor.execute("PRAGMA table_info(term_frequencies)")
+        tf_columns = [row[1] for row in cursor.fetchall()]
+        assert "base_dir" in tf_columns
+        assert "filepath" in tf_columns
+        assert "term" in tf_columns
+        assert "frequency" in tf_columns
+
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_term_frequencies_doc'"
         )
         assert cursor.fetchone() is not None

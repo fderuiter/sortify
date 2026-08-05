@@ -6,10 +6,60 @@ from app.core.db_conn import get_db_connection
 from app.core.db_worker import DBWorker
 
 
+class LazyDecryptedDoc:
+    """A lazy-decrypted document that behaves exactly like a 4-tuple of (filepath, decrypted_text, file_hash, user_verified_target_path) but only performs decryption and SQLite fetching when accessed."""
+
+    def __init__(self, db, base_dir, filepath, file_hash, user_verified_target_path):
+        self.db = db
+        self.base_dir = base_dir
+        self.filepath = filepath
+        self.file_hash = file_hash
+        self.user_verified_target_path = user_verified_target_path
+        self._decrypted_text = None
+        self._is_decrypted = False
+
+    def __getitem__(self, index):
+        if index == 0:
+            return self.filepath
+        elif index == 1:
+            if not self._is_decrypted:
+                conn = get_db_connection(self.db.db_path)
+                with conn:
+                    cursor = conn.cursor()
+                    cursor.execute(
+                        "SELECT extracted_text FROM documents WHERE base_dir = ? AND filepath = ?",
+                        (self.base_dir, self.filepath),
+                    )
+                    row = cursor.fetchone()
+                    encrypted_text = row[0] if row else None
+
+                self._decrypted_text = (
+                    self.db.crypto.decrypt_text(encrypted_text)
+                    if encrypted_text is not None
+                    else None
+                )
+                self._is_decrypted = True
+            return self._decrypted_text
+        elif index == 2:
+            return self.file_hash
+        elif index == 3:
+            return self.user_verified_target_path
+        raise IndexError("Tuple index out of range")
+
+    def __len__(self):
+        return 4
+
+    def __iter__(self):
+        yield self[0]
+        yield self[1]
+        yield self[2]
+        yield self[3]
+
+
 class Database:
     """SQLite database abstraction for persistent storage of document state."""
 
-    CURRENT_VERSION = 4
+    CURRENT_VERSION = 5
 
     def __init__(self, db_path: Path, worker: DBWorker):
         self.db_path = str(db_path)
@@ -21,6 +71,7 @@ class Database:
         self._cache_lock = threading.Lock()
         self._cached_base_dir = None
         self._cached_documents = None
+        self._cached_term_frequencies = None
         self.init_db()
 
     def init_db(self):
@@ -45,6 +96,18 @@ class Database:
                 conn.execute(
                     "CREATE INDEX IF NOT EXISTS idx_documents_file_hash ON documents (base_dir, file_hash)"
                 )
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS term_frequencies (
+                        base_dir TEXT,
+                        filepath TEXT,
+                        term TEXT,
+                        frequency INTEGER,
+                        PRIMARY KEY (base_dir, filepath, term)
+                    )
+                """)
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_term_frequencies_doc ON term_frequencies (base_dir, filepath)"
+                )
                 conn.execute(f"PRAGMA user_version = {self.CURRENT_VERSION}")
             elif db_version < self.CURRENT_VERSION:
                 if db_version == 1:
@@ -55,6 +118,19 @@ class Database:
                     conn.execute(
                         "CREATE INDEX IF NOT EXISTS idx_documents_file_hash ON documents (base_dir, file_hash)"
                     )
+                if db_version <= 4:
+                    conn.execute("""
+                        CREATE TABLE IF NOT EXISTS term_frequencies (
+                            base_dir TEXT,
+                            filepath TEXT,
+                            term TEXT,
+                            frequency INTEGER,
+                            PRIMARY KEY (base_dir, filepath, term)
+                        )
+                    """)
+                    conn.execute(
+                        "CREATE INDEX IF NOT EXISTS idx_term_frequencies_doc ON term_frequencies (base_dir, filepath)"
+                    )
                 conn.execute(f"PRAGMA user_version = {self.CURRENT_VERSION}")
 
     def invalidate_cache(self):
@@ -62,6 +138,7 @@ class Database:
         with self._cache_lock:
             self._cached_base_dir = None
             self._cached_documents = None
+            self._cached_term_frequencies = None
 
     def _populate_cache_if_needed(self, base_dir):
         """Ensure the decrypted documents cache is populated for the base directory."""
@@ -143,7 +220,11 @@ class Database:
         def _write():
             conn = get_db_connection(self.db_path)
             with conn:
+                import re
+                from collections import Counter
+
                 rows_to_insert = []
+                freq_rows = []
                 for doc in documents:
                     base_dir, filepath, file_hash, extracted_text = doc
 
@@ -155,6 +236,18 @@ class Database:
 
                     rows_to_insert.append((base_dir, filepath, file_hash, enc_text))
 
+                    # Clean up old term frequencies before inserting new ones
+                    conn.execute(
+                        "DELETE FROM term_frequencies WHERE base_dir = ? AND filepath = ?",
+                        (base_dir, filepath),
+                    )
+
+                    if extracted_text:
+                        tokens = re.findall(r'\b\w+\b', extracted_text.lower())
+                        counts = Counter(tokens)
+                        for term, freq in counts.items():
+                            freq_rows.append((base_dir, filepath, term, freq))
+
                 conn.executemany(
                     """
                     INSERT INTO documents (base_dir, filepath, file_hash, extracted_text)
@@ -165,6 +258,15 @@ class Database:
                 """,
                     rows_to_insert,
                 )
+
+                if freq_rows:
+                    conn.executemany(
+                        """
+                        INSERT INTO term_frequencies (base_dir, filepath, term, frequency)
+                        VALUES (?, ?, ?, ?)
+                    """,
+                        freq_rows,
+                    )
             self.invalidate_cache()
 
         self.worker.execute_write(_write)
@@ -200,6 +302,31 @@ class Database:
 
             return results
 
+    def get_all_documents_lazy(self, base_dir):
+        """Retrieve all documents for a given base directory as lazy-decrypted tuples."""
+        with self._cache_lock:
+            if self._cached_base_dir == base_dir and self._cached_documents_lazy is not None:
+                return list(self._cached_documents_lazy)
+
+        conn = get_db_connection(self.db_path)
+        with conn:
+            cursor = conn.execute(
+                "SELECT filepath, file_hash, user_verified_target_path FROM documents WHERE base_dir = ?",
+                (base_dir,),
+            )
+            rows = cursor.fetchall()
+        
+        lazy_docs = [
+            LazyDecryptedDoc(self, base_dir, row[0], row[1], row[2])
+            for row in rows
+        ]
+
+        with self._cache_lock:
+            self._cached_base_dir = base_dir
+            self._cached_documents_lazy = lazy_docs
+
+        return lazy_docs
+
     def set_user_verified_target(self, base_dir, file_hash, target_path):
         """Record the historical folder assignment for a specific document hash."""
         self.invalidate_cache()
@@ -226,6 +353,10 @@ class Database:
                     "DELETE FROM documents WHERE base_dir = ? AND filepath = ?",
                     (base_dir, filepath),
                 )
+                conn.execute(
+                    "DELETE FROM term_frequencies WHERE base_dir = ? AND filepath = ?",
+                    (base_dir, filepath),
+                )
             self.invalidate_cache()
 
         self.worker.execute_write(_write)
@@ -243,6 +374,10 @@ class Database:
                 conn.execute(
                     "UPDATE documents SET filepath = ?, user_verified_target_path = ? WHERE base_dir = ? AND filepath = ?",
                     (new_filepath, new_dir, base_dir, old_filepath),
+                )
+                conn.execute(
+                    "UPDATE term_frequencies SET filepath = ? WHERE base_dir = ? AND filepath = ?",
+                    (new_filepath, base_dir, old_filepath),
                 )
             self.invalidate_cache()
 
@@ -273,6 +408,10 @@ class Database:
                             "UPDATE documents SET filepath = ?, user_verified_target_path = ? WHERE base_dir = ? AND filepath = ?",
                             (new_filepath, new_dir, base_dir, old_filepath),
                         )
+                        conn.execute(
+                            "UPDATE term_frequencies SET filepath = ? WHERE base_dir = ? AND filepath = ?",
+                            (new_filepath, base_dir, old_filepath),
+                        )
             self.invalidate_cache()
 
         self.worker.execute_write(_write)
@@ -288,8 +427,32 @@ class Database:
                     conn.execute(
                         "DELETE FROM documents WHERE base_dir = ?", (base_dir,)
                     )
+                    conn.execute(
+                        "DELETE FROM term_frequencies WHERE base_dir = ?", (base_dir,)
+                    )
                 else:
                     conn.execute("DELETE FROM documents")
+                    conn.execute("DELETE FROM term_frequencies")
             self.invalidate_cache()
 
         self.worker.execute_write(_write)
+
+    def get_term_frequencies(self, base_dir):
+        """Retrieve all term frequencies for documents in a given base directory."""
+        with self._cache_lock:
+            if self._cached_base_dir == base_dir and self._cached_term_frequencies is not None:
+                return list(self._cached_term_frequencies)
+
+        conn = get_db_connection(self.db_path)
+        with conn:
+            cursor = conn.execute(
+                "SELECT filepath, term, frequency FROM term_frequencies WHERE base_dir = ?",
+                (base_dir,),
+            )
+            rows = cursor.fetchall()
+
+        with self._cache_lock:
+            self._cached_base_dir = base_dir
+            self._cached_term_frequencies = rows
+
+        return rows

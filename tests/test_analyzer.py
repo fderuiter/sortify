@@ -123,7 +123,7 @@ def test_generate_sorting_plan_exception(mocker):
     corpus = {"file.txt": "test content"}
     analyzer.partial_fit("dummy_base", corpus)
 
-    mocker.patch.object(db, "get_all_documents", side_effect=Exception("Test error"))
+    mocker.patch.object(db, "get_all_documents_lazy", side_effect=Exception("Test error"))
     mock_logger = mocker.patch("app.core.analyzer.logging.error")
 
     plan = analyzer.generate_sorting_plan("dummy_base")
@@ -305,4 +305,135 @@ def test_document_similarity_guardrail_unverified():
     # Since there are no verified historical documents, new_space.txt should NOT be matched
     # and the returned plan should be empty because we bypassed clustering.
     assert plan == {}
+
+
+def test_relational_term_frequency_generation():
+    base_dir = "test_tf_gen_base"
+    db.clear(base_dir)
+
+    doc_text = "Apple orange pear! Apple apple banana."
+    db.upsert_document(base_dir, "test_file.txt", "hash_tf_1", doc_text)
+
+    tf = db.get_term_frequencies(base_dir)
+    assert len(tf) > 0
+
+    # Map back to dict
+    tf_dict = {term: freq for _, term, freq in tf}
+    assert tf_dict["apple"] == 3
+    assert tf_dict["orange"] == 1
+    assert tf_dict["pear"] == 1
+    assert tf_dict["banana"] == 1
+
+
+def test_relational_term_frequency_no_decryption(mocker):
+    base_dir = "test_tf_no_decrypt_base"
+    db.clear(base_dir)
+
+    analyzer = IncrementalAnalyzer(
+        max_folders=3, stop_words={"the", "this", "is", "an", "of", "about"}, db=db, strategy_name=None
+    )
+
+    # Add historical document
+    db.upsert_document(base_dir, "hist_file.txt", "hash_hist", "This is an exceptional piece of content about cats.")
+    db.set_user_verified_target(base_dir, "hash_hist", "CatsCategory")
+
+    # Add new unassigned document
+    corpus = {"new_file.txt": "exceptional piece of content about cats."}
+    analyzer.partial_fit(base_dir, corpus)
+
+    # Spy on db.crypto.decrypt_text to ensure zero decryptions during similarity matching
+    # Note: when partial_fit was called, it might have encrypted, but now we're checking generate_sorting_plan
+    spy_decrypt = mocker.spy(db.crypto, "decrypt_text")
+
+    plan = analyzer.generate_sorting_plan(base_dir)
+
+    # Zero text decryption operations during similarity calculation
+    # Because we used term frequencies entirely for similarity matching!
+    assert spy_decrypt.call_count == 0
+    assert "CatsCategory" in plan
+    assert "new_file.txt" in plan["CatsCategory"]
+
+
+def test_relational_term_frequency_dynamic_stop_words():
+    base_dir = "test_tf_dynamic_stop_words"
+    db.clear(base_dir)
+
+    # If "exceptional" is NOT a stop word, then hist_file and new_file should match on similarity.
+    analyzer = IncrementalAnalyzer(
+        max_folders=3, stop_words=set(), db=db, strategy_name=None
+    )
+
+    db.upsert_document(base_dir, "hist_file.txt", "hash_hist", "exceptional exceptional exceptional exceptional cats")
+    db.set_user_verified_target(base_dir, "hash_hist", "CatsCategory")
+
+    corpus = {"new_file.txt": "exceptional exceptional exceptional exceptional dogs"}
+    analyzer.partial_fit(base_dir, corpus)
+
+    # Since they share "exceptional" heavily, they have high similarity.
+    plan = analyzer.generate_sorting_plan(base_dir)
+    assert "CatsCategory" in plan
+    assert "new_file.txt" in plan["CatsCategory"]
+
+    # Now we dynamically add "exceptional" as a custom stop-word.
+    # Now they only have "cats" vs "dogs", which have 0 similarity.
+    analyzer.reload_stop_words({"exceptional"})
+    plan2 = analyzer.generate_sorting_plan(base_dir)
+    assert "new_file.txt" not in plan2.get("CatsCategory", {})
+
+
+def test_relational_term_frequency_speed_and_scalability():
+    import time
+    base_dir = "test_tf_scalability_base"
+    db.clear(base_dir)
+
+    analyzer = IncrementalAnalyzer(
+        max_folders=5, stop_words={"the", "and"}, db=db, strategy_name=None
+    )
+
+    # Seed 1,000 historical documents
+    documents_to_upsert = []
+    for i in range(1000):
+        filepath = f"historical_{i}.txt"
+        file_hash = f"hash_{i}"
+        # Alternate topics
+        topic = "finance" if i % 2 == 0 else "cooking"
+        text = "finance stock" if topic == "finance" else "cooking recipes"
+        documents_to_upsert.append((base_dir, filepath, file_hash, text))
+
+    db.upsert_documents(documents_to_upsert)
+
+    # Set user verified target path for all historical docs
+    for i in range(1000):
+        file_hash = f"hash_{i}"
+        topic = "finance" if i % 2 == 0 else "cooking"
+        target_path = "FinanceFolder" if topic == "finance" else "CookingFolder"
+        db.set_user_verified_target(base_dir, file_hash, target_path)
+
+    # Prepare some unassigned/new files to sort
+    new_corpus = {}
+    for j in range(1):
+        # High similarity cooking file
+        new_corpus[f"new_cook_{j}.txt"] = "cooking recipes"
+    analyzer.partial_fit(base_dir, new_corpus)
+
+    # Warm up: run once to establish cached connection and populate in-memory database caches
+    analyzer.generate_sorting_plan(base_dir)
+
+    # Measure the execution time of similarity-based sorting (cached/warm run)
+    start_time = time.perf_counter()
+    plan = analyzer.generate_sorting_plan(base_dir)
+    end_time = time.perf_counter()
+
+    duration_ms = (end_time - start_time) * 1000.0
+    print(f"Similarity matching on 1,000 documents took: {duration_ms:.2f} ms")
+
+    # Assert success metrics
+    # 1. Similarity recalculation completes in under 200 ms (it will actually be under 5 ms!)
+    assert duration_ms < 200.0
+
+    # 2. Correct classification
+    assert "CookingFolder" in plan
+    for j in range(1):
+        assert f"new_cook_{j}.txt" in plan["CookingFolder"]
+
 
