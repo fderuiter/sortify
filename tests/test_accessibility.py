@@ -32,6 +32,7 @@ def test_show_settings_accessible_dialog():
     mock_dialog_context.__exit__.return_value = None
 
     with (
+        mock.patch("app.core.verifier.check_ai_status", return_value=(True, None)),
         mock.patch("app.core.integration.register_context_menu"),
         mock.patch("nicegui.ui.dialog", return_value=mock_dialog_context),
         mock.patch(
