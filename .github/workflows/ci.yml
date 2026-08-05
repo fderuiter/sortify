@@ -64,10 +64,23 @@ jobs:
         uv run python scripts/test_cli.py
         
     - name: Test with pytest
+      id: run-tests
       env:
         SMOKE_TEST: "0"
       run: |
-        uv run pytest --cov --cov-report=term tests/
+        uv run pytest --cov --cov-report=term tests/ > pytest_out.log 2>&1 || (cat pytest_out.log && exit 1)
+
+    - name: Post failure to PR comment
+      if: failure() && matrix.os == 'windows-latest'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        if [ -f pytest_out.log ]; then
+          tail -n 100 pytest_out.log > short_out.log
+          echo -e "[CI/CD Failure Log]\n\n\`\`\`\n$(cat short_out.log)\n\`\`\`" > comment.txt
+          gh pr comment 236 -F comment.txt
+        fi
 
     - name: Build executable (Lite)
       if: matrix.os == 'windows-latest'
