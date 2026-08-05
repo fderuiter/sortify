@@ -208,22 +208,22 @@ def test_spec_file_partitioning():
             ),
         }
 
-        # Convert list of tuples to set for comparison (converting paths to match OS separator and resolving drive letters)
+        # Convert list of tuples to set for comparison (converting paths to match OS separator, resolving drive letters, and normalizing case)
         actual_binaries = {
-            (os.path.abspath(os.path.normpath(src)), os.path.normpath(dst))
+            (os.path.normcase(os.path.abspath(os.path.normpath(src))), os.path.normcase(os.path.normpath(dst)))
             for src, dst in sqlcipher_binaries
         }
         actual_datas = {
-            (os.path.abspath(os.path.normpath(src)), os.path.normpath(dst))
+            (os.path.normcase(os.path.abspath(os.path.normpath(src))), os.path.normcase(os.path.normpath(dst)))
             for src, dst in sqlcipher_datas
         }
 
         normalized_expected_binaries = {
-            (os.path.abspath(os.path.normpath(src)), os.path.normpath(dst))
+            (os.path.normcase(os.path.abspath(os.path.normpath(src))), os.path.normcase(os.path.normpath(dst)))
             for src, dst in expected_binaries
         }
         normalized_expected_datas = {
-            (os.path.abspath(os.path.normpath(src)), os.path.normpath(dst))
+            (os.path.normcase(os.path.abspath(os.path.normpath(src))), os.path.normcase(os.path.normpath(dst)))
             for src, dst in expected_datas
         }
 
