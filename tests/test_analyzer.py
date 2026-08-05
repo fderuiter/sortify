@@ -32,6 +32,9 @@ def teardown_module(module):
     global _test_dir, db_worker
     if db_worker:
         db_worker.stop()
+    from app.core.db_conn import clear_connection_cache
+
+    clear_connection_cache()
     import shutil
 
     if _test_dir:
