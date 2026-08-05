@@ -88,32 +88,7 @@ jobs:
           echo '```' >> $GITHUB_STEP_SUMMARY
           tail -n 150 pytest_out.log >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
-          python -c '
-import json, urllib.request, os
-if os.path.exists("pytest_out.log"):
-    with open("pytest_out.log", "r", encoding="utf-8", errors="ignore") as f:
-        lines = f.readlines()[-150:]
-    log_content = "".join(lines)
-    body = f"### pytest Windows Failure Log\n```\n{log_content}\n```"
-    token = os.environ.get("GITHUB_TOKEN")
-    if token:
-        req = urllib.request.Request(
-            "https://api.github.com/repos/fderuiter/sortify/issues/236/comments",
-            data=json.dumps({"body": body}).encode("utf-8"),
-            headers={
-                "Accept": "application/vnd.github+json",
-                "Authorization": f"Bearer {token}",
-                "X-GitHub-Api-Version": "2022-11-28",
-                "Content-Type": "application/json",
-            },
-            method="POST"
-        )
-        try:
-            with urllib.request.urlopen(req) as res:
-                print("Comment posted successfully!")
-        except Exception as e:
-            print(f"Error posting comment: {e}")
-          '
+          uv run python scripts/post_comment.py pytest_out.log "pytest Windows Failure Log"
         fi
 
     - name: Build executable (Lite)
@@ -139,32 +114,7 @@ if os.path.exists("pytest_out.log"):
           echo '```' >> $GITHUB_STEP_SUMMARY
           tail -n 150 smoke_test_out.log >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
-          python -c '
-import json, urllib.request, os
-if os.path.exists("smoke_test_out.log"):
-    with open("smoke_test_out.log", "r", encoding="utf-8", errors="ignore") as f:
-        lines = f.readlines()[-150:]
-    log_content = "".join(lines)
-    body = f"### Windows Smoke Test Failure Log\n```\n{log_content}\n```"
-    token = os.environ.get("GITHUB_TOKEN")
-    if token:
-        req = urllib.request.Request(
-            "https://api.github.com/repos/fderuiter/sortify/issues/236/comments",
-            data=json.dumps({"body": body}).encode("utf-8"),
-            headers={
-                "Accept": "application/vnd.github+json",
-                "Authorization": f"Bearer {token}",
-                "X-GitHub-Api-Version": "2022-11-28",
-                "Content-Type": "application/json",
-            },
-            method="POST"
-        )
-        try:
-            with urllib.request.urlopen(req) as res:
-                print("Comment posted successfully!")
-        except Exception as e:
-            print(f"Error posting comment: {e}")
-          '
+          uv run python scripts/post_comment.py smoke_test_out.log "Windows Smoke Test Failure Log"
         fi
 
     - name: Generate Documentation
