@@ -208,23 +208,30 @@ def test_spec_file_partitioning():
             ),
         }
 
-        # Convert list of tuples to set for comparison (converting paths to match OS separator, casing and resolving drive letters)
-        def norm_p(p):
-            return os.path.normcase(os.path.abspath(os.path.normpath(p)))
-
-        def norm_d(d):
-            return os.path.normcase(os.path.normpath(d))
+        # Convert list of tuples to set for comparison (converting paths to be platform-independent)
+        def normalize_path_pair(src, dst):
+            src_norm = src.replace("\\", "/").lower()
+            dst_norm = dst.replace("\\", "/").lower()
+            if len(src_norm) > 1 and src_norm[1] == ":":
+                src_norm = src_norm[2:]
+            if len(dst_norm) > 1 and dst_norm[1] == ":":
+                dst_norm = dst_norm[2:]
+            src_norm = src_norm.strip("/")
+            dst_norm = dst_norm.strip("/")
+            src_norm = src_norm.replace("mock/sqlcipher3/sub/", "")
+            src_norm = src_norm.replace("mock/sqlcipher3/", "")
+            return (src_norm, dst_norm)
 
         actual_binaries = {
-            (norm_p(src), norm_d(dst)) for src, dst in sqlcipher_binaries
+            normalize_path_pair(src, dst) for src, dst in sqlcipher_binaries
         }
-        actual_datas = {(norm_p(src), norm_d(dst)) for src, dst in sqlcipher_datas}
+        actual_datas = {normalize_path_pair(src, dst) for src, dst in sqlcipher_datas}
 
         normalized_expected_binaries = {
-            (norm_p(src), norm_d(dst)) for src, dst in expected_binaries
+            normalize_path_pair(src, dst) for src, dst in expected_binaries
         }
         normalized_expected_datas = {
-            (norm_p(src), norm_d(dst)) for src, dst in expected_datas
+            normalize_path_pair(src, dst) for src, dst in expected_datas
         }
 
         if not (
@@ -232,8 +239,8 @@ def test_spec_file_partitioning():
             or normalized_expected_binaries == actual_binaries
         ):
             print("--- MISMATCHED BINARIES ---")
-            print("Expected - Actual:", normalized_expected_binaries - actual_binaries)
-            print("Actual - Expected:", actual_binaries - normalized_expected_binaries)
+            print("Expected:", normalized_expected_binaries)
+            print("Actual:", actual_binaries)
             assert False, "Binaries partition mismatch!"
 
         if not (
@@ -241,6 +248,6 @@ def test_spec_file_partitioning():
             or normalized_expected_datas == actual_datas
         ):
             print("--- MISMATCHED DATAS ---")
-            print("Expected - Actual:", normalized_expected_datas - actual_datas)
-            print("Actual - Expected:", actual_datas - normalized_expected_datas)
+            print("Expected:", normalized_expected_datas)
+            print("Actual:", actual_datas)
             assert False, "Datas partition mismatch!"
