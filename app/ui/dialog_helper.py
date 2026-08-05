@@ -147,11 +147,7 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {{
                         try:
                             from nicegui.slot import Slot
 
-                            tid = (
-                                id(asyncio.current_task())
-                                if asyncio.current_task()
-                                else 0
-                            )
+                            tid = _safe_get_current_task_id()
                             if stack is not None:
                                 Slot.stacks[tid] = stack
                         except Exception:
@@ -256,7 +252,7 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {{
             try:
                 from nicegui.slot import Slot
 
-                tid = id(asyncio.current_task()) if asyncio.current_task() else 0
+                tid = _safe_get_current_task_id()
                 if stack is not None:
                     Slot.stacks[tid] = stack
             except Exception:
@@ -332,6 +328,16 @@ def make_dialog_accessible(
     dialog.on_value_change(handle_value_change)
 
 
+def _safe_get_current_task_id() -> int:
+    import asyncio
+
+    try:
+        task = asyncio.current_task()
+        return id(task) if task else 0
+    except RuntimeError:
+        return 0
+
+
 def preserve_slot_context(func):
     """Preserve NiceGUI slot state contexts across asynchronous task/thread boundaries."""
     import asyncio
@@ -350,11 +356,7 @@ def preserve_slot_context(func):
 
         @functools.wraps(func)
         async def wrapper(*args, **kwargs):
-            try:
-                task = asyncio.current_task()
-            except RuntimeError:
-                task = None
-            tid = id(task) if task else 0
+            tid = _safe_get_current_task_id()
             if stack is not None and tid:
                 Slot.stacks[tid] = stack
             try:
@@ -371,11 +373,7 @@ def preserve_slot_context(func):
 
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
-            try:
-                task = asyncio.current_task()
-            except RuntimeError:
-                task = None
-            tid = id(task) if task else 0
+            tid = _safe_get_current_task_id()
             if stack is not None and tid:
                 Slot.stacks[tid] = stack
             try:

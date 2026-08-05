@@ -199,7 +199,11 @@ def test_settings_toggle_on_explorer_integration_non_windows():
     settings = AppSettings()
     settings.EXPLORER_INTEGRATION = False
 
-    with patch("app.ui.settings.ui") as mock_ui, patch("sys.platform", "linux"):
+    with (
+        patch("app.ui.settings.ui") as mock_ui,
+        patch("sys.platform", "linux"),
+        patch("app.core.verifier.check_ai_status", return_value=(True, None)),
+    ):
         show_settings(parent_app, settings)
 
         # Find the switch call for context menu
@@ -241,6 +245,7 @@ def test_settings_toggle_on_explorer_integration_windows_success(
         patch("app.ui.settings.ui") as mock_ui,
         patch("sys.platform", "win32"),
         patch("app.core.integration.is_admin", return_value=True),
+        patch("app.core.verifier.check_ai_status", return_value=(True, None)),
     ):
         show_settings(parent_app, settings)
 
@@ -284,6 +289,7 @@ def test_settings_toggle_on_explorer_integration_windows_failure(
             "app.core.integration.register_context_menu",
             side_effect=RuntimeError("Elevation refused"),
         ),
+        patch("app.core.verifier.check_ai_status", return_value=(True, None)),
     ):
         show_settings(parent_app, settings)
 
