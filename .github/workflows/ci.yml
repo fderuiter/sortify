@@ -65,6 +65,7 @@ jobs:
         
     - name: Test with pytest
       id: run-tests
+      shell: bash
       env:
         SMOKE_TEST: "0"
       run: |
