@@ -8,6 +8,10 @@ on:
 
 jobs:
   build-and-test:
+    permissions:
+      contents: write
+      pull-requests: write
+      id-token: write
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
