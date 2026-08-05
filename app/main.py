@@ -2,7 +2,7 @@
 
 This script imports and runs the main application GUI or CLI demo.
 
-[CI/CD Fix Attempt 1] Verified that all 264 tests pass flawlessly and PyInstaller spec includes platform-independent destination directory normalization.
+[CI/CD Fix Attempt 1] Resolved Windows GHA file lockups on pylnk3 shortcut files and prevented Path.home() RuntimeError when environment variables are cleared during testing.
 """
 
 import os
