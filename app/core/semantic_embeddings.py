@@ -1,16 +1,17 @@
 """Robust Local Verification with Automatic Reconstruction for ONNX Semantic Embeddings."""
 
-import os
-import sys
-import json
 import hashlib
 import logging
+import os
+import random
+import sys
 import threading
 import time
-import random
+
 
 class DimensionMismatchError(ValueError):
     """Raised when there is a dimension mismatch between model and vector."""
+
     pass
 
 def set_low_priority():
@@ -20,7 +21,9 @@ def set_low_priority():
             import os
             os.nice(19)  # Lowest priority on Unix
         else:
-            import win32api, win32process, win32con
+            import win32api
+            import win32con
+            import win32process
             pid = win32api.GetCurrentProcessId()
             handle = win32api.OpenProcess(win32con.PROCESS_ALL_ACCESS, True, pid)
             win32process.SetPriorityClass(handle, win32process.IDLE_PRIORITY_CLASS)
@@ -28,8 +31,8 @@ def set_low_priority():
         pass
 
 def get_active_model_properties(model_path: str | None) -> tuple[str, int, str]:
-    """
-    Get active model signature (SHA-256 hash), dimensions, and version.
+    """Get active model signature (SHA-256 hash), dimensions, and version.
+
     Returns (signature, dimensions, version).
     """
     signature = "default_onnx_sig"
@@ -99,8 +102,8 @@ class SemanticEmbeddingManager:
         self.verify_active_model()
 
     def verify_active_model(self):
-        """
-        Check active ONNX model signature/dimensions against stored metadata.
+        """Check active ONNX model signature/dimensions against stored metadata.
+
         If mismatch is found, wipe outdated vector store and trigger reconstruction.
         """
         stored_signature = self.db.get_model_metadata("active_model_signature")
@@ -153,7 +156,6 @@ class SemanticEmbeddingManager:
         logging.info("Starting background vector reconstruction for active model profile.")
 
         try:
-            offset = 0
             while True:
                 # Memory Footprint Throttling: load no more than 50 records at once
                 docs = self.db.get_documents_missing_vectors(base_dir, limit=50, offset=0)

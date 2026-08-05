@@ -1,15 +1,14 @@
-import os
-import tempfile
 import shutil
+import tempfile
 import time
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
 from app.core.db import Database
 from app.core.db_worker import DBWorker
-from app.core.semantic_embeddings import SemanticEmbeddingManager, get_active_model_properties
+from app.core.semantic_embeddings import SemanticEmbeddingManager
 
 
 class MockSettings:
