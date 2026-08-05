@@ -40,6 +40,20 @@ class Settings(BaseSettings):
     IMAGE_MAX_DIMENSION: int = Field(default=1000, gt=0)
     IMAGE_SKIP_THRESHOLD: int = Field(default=3000, gt=0)
     MODEL_THREADS: int = Field(default=2, ge=1, le=32)
+    PROTECTED_PATHS: list[str] = Field(default_factory=list)
+
+    @field_validator("PROTECTED_PATHS")
+    @classmethod
+    def validate_protected_paths(cls, v: list[str]) -> list[str]:
+        """Validate that each path is an absolute literal directory path."""
+        for path in v:
+            if not isinstance(path, str):
+                raise ValueError("Each protected path must be a string.")
+            if not os.path.isabs(path):
+                raise ValueError(f"Protected path must be an absolute path: '{path}'")
+            if any(char in path for char in ("*", "?", "[", "]")):
+                raise ValueError(f"Wildcard patterns or glob characters are not allowed in protected path: '{path}'")
+        return v
 
     @field_validator("KEYWORD_RULES", "LEARNED_RULES")
     @classmethod

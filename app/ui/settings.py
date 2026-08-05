@@ -48,6 +48,17 @@ def show_settings(parent_app, settings):
 
         with ui.tab_panels(tabs, value="General").classes("w-full mt-4"):
             with ui.tab_panel("General"):
+                if getattr(settings, "_has_validation_errors", False):
+                    with ui.card().classes("bg-red-50 border-red-200 border p-4 mb-4 w-full"):
+                        with ui.row().classes("items-center gap-2 text-red-800"):
+                            ui.icon("error", size="sm")
+                            ui.label("Configuration Warning").classes("font-bold")
+                        ui.label(
+                            "One or more settings in your configuration file were invalid. "
+                            "Default values are being used temporarily to prevent app crash, and saving is suspended "
+                            "until the configuration file is fixed or reset."
+                        ).classes("text-red-900 text-sm mt-1").props('aria-label="Configuration Warning Label"')
+
                 ui.label("System Integration").classes("text-lg font-bold mb-2")
                 ui.switch(
                     "Enable Windows Explorer Context Menu",
@@ -71,6 +82,74 @@ def show_settings(parent_app, settings):
                     value=settings.CLEANUP_EMPTY_FOLDERS,
                     on_change=on_cleanup_change,
                 ).props('aria-label="Cleanup empty directories toggle"')
+
+                ui.label("Protected Directories").classes("text-md font-bold mt-4 mb-1")
+                ui.label("Never delete these empty directories (absolute paths only):").classes("text-sm text-gray-500 mb-2")
+
+                protected_container = ui.column().classes("w-full mb-4")
+
+                def render_protected_paths():
+                    protected_container.clear()
+                    paths = getattr(settings, "PROTECTED_PATHS", [])
+                    with protected_container:
+                        if not paths:
+                            ui.label("No protected directories configured.").classes("text-sm text-gray-400 italic")
+                        else:
+                            for idx, path in enumerate(paths):
+                                with ui.row().classes("w-full items-center justify-between border-b pb-2 mb-2"):
+                                    ui.label(path).classes("font-mono text-sm")
+
+                                    def delete_path(idx_to_del=idx):
+                                        current_paths = list(getattr(settings, "PROTECTED_PATHS", []))
+                                        if 0 <= idx_to_del < len(current_paths):
+                                            removed = current_paths.pop(idx_to_del)
+                                            try:
+                                                settings.PROTECTED_PATHS = current_paths
+                                                ui.notify(f"Removed protection for '{removed}'.", type="positive")
+                                                render_protected_paths()
+                                            except Exception as ex:
+                                                ui.notify(f"Failed to remove path: {ex}", type="negative")
+
+                                    ui.button("Remove", on_click=delete_path, color="red").props("size=sm")
+
+                render_protected_paths()
+
+                with ui.row().classes("w-full items-center gap-4 mt-2"):
+                    new_path_input = ui.input("Add Protected Directory Path").props(
+                        'placeholder="e.g. /absolute/path" aria-label="Add Protected Directory Path input" class="w-2/3"'
+                    )
+
+                    def add_protected_path():
+                        val = new_path_input.value
+                        if not val or not val.strip():
+                            ui.notify("Path cannot be empty.", type="warning")
+                            return
+                        val = val.strip()
+                        current_paths = list(getattr(settings, "PROTECTED_PATHS", []))
+                        if val in current_paths:
+                            ui.notify("Path is already protected.", type="warning")
+                            return
+
+                        updated_paths = current_paths + [val]
+                        try:
+                            settings.PROTECTED_PATHS = updated_paths
+                            ui.notify(f"Protected path added: {val}", type="positive")
+                            new_path_input.value = ""
+                            render_protected_paths()
+                        except Exception as ex:
+                            ui.notify(f"Invalid absolute path: {ex}", type="negative")
+
+                    ui.button("Add", on_click=add_protected_path).props('aria-label="Add Protected Path Button"')
+
+                    def clear_all_protected():
+                        try:
+                            settings.PROTECTED_PATHS = []
+                            ui.notify("Cleared all protected paths.", type="positive")
+                            render_protected_paths()
+                        except Exception as ex:
+                            ui.notify(f"Failed to clear paths: {ex}", type="negative")
+
+                    ui.button("Clear All", on_click=clear_all_protected, color="red").props('aria-label="Clear All Protected Paths Button"')
 
                 ui.label("Processing Limits").classes("text-lg font-bold mt-4 mb-2")
 
