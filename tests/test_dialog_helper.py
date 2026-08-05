@@ -21,7 +21,10 @@ async def test_ask_directory_async_macos():
         mock.patch("app.ui.dialog_helper.run_background_process", mock_run),
     ):
         ask_directory_async(None, "Select Folder", callback, None, None)
-        await asyncio.sleep(0.1)
+        for _ in range(100):
+            if callback.called:
+                break
+            await asyncio.sleep(0.02)
 
         # Check that background process ran
         mock_run.assert_called_once()
@@ -47,7 +50,10 @@ async def test_ask_directory_async_windows_success():
         mock.patch("app.ui.dialog_helper.run_background_process", mock_run),
     ):
         ask_directory_async(None, "Select Folder", callback, None, None)
-        await asyncio.sleep(0.1)
+        for _ in range(100):
+            if callback.called:
+                break
+            await asyncio.sleep(0.02)
 
         mock_run.assert_called_once()
         args, kwargs = mock_run.call_args
@@ -76,7 +82,10 @@ async def test_ask_directory_async_linux_zenity():
         mock.patch("app.ui.dialog_helper.run_background_process", mock_run),
     ):
         ask_directory_async(None, "Select Folder", callback, None, None)
-        await asyncio.sleep(0.1)
+        for _ in range(100):
+            if callback.called:
+                break
+            await asyncio.sleep(0.02)
 
         mock_run.assert_called_once()
         args, kwargs = mock_run.call_args
@@ -106,7 +115,10 @@ async def test_ask_directory_async_linux_kdialog():
         mock.patch("app.ui.dialog_helper.run_background_process", mock_run),
     ):
         ask_directory_async(None, "Select Folder", callback, None, None)
-        await asyncio.sleep(0.1)
+        for _ in range(100):
+            if callback.called:
+                break
+            await asyncio.sleep(0.02)
 
         mock_run.assert_called_once()
         args, kwargs = mock_run.call_args
@@ -130,7 +142,10 @@ async def test_ask_directory_async_linux_none_fallback():
         mock.patch("nicegui.ui", mock_ui),
     ):
         ask_directory_async(None, "Select Folder", callback, None, None)
-        await asyncio.sleep(0.1)
+        for _ in range(100):
+            if mock_ui.dialog.called:
+                break
+            await asyncio.sleep(0.02)
 
         # Verify that NiceGUI ui components (like notifying or dialog) were invoked
         mock_ui.notify.assert_called_with(
@@ -158,7 +173,10 @@ async def test_ask_directory_async_windows_restricted_fallback():
         mock.patch("nicegui.ui", mock_ui),
     ):
         ask_directory_async(None, "Select Folder", callback, None, None)
-        await asyncio.sleep(0.1)
+        for _ in range(100):
+            if mock_ui.dialog.called:
+                break
+            await asyncio.sleep(0.02)
 
         mock_ui.notify.assert_called_with(
             "Could not open native folder picker (PowerShell may be restricted). Please enter path manually.",

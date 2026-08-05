@@ -73,7 +73,10 @@ async def test_update_ai_warning_async():
         # Yield control briefly to let the task run
         import asyncio
 
-        await asyncio.sleep(0.1)
+        for _ in range(100):
+            if mock_check_ai.called:
+                break
+            await asyncio.sleep(0.02)
 
         mock_check_ai.assert_called_once_with(settings)
         app.ai_warnings_label.set_text.assert_called_with("")

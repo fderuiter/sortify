@@ -110,7 +110,10 @@ async def test_ui_recovery_and_watcher_restart(tmp_path):
         app.execute_sort()
 
         # Let the async task run
-        await asyncio.sleep(0.1)
+        for _ in range(100):
+            if mock_start_watcher.called:
+                break
+            await asyncio.sleep(0.02)
 
         # Acceptance Criteria Check:
         # 1. stop_watcher should be called before execution starts
