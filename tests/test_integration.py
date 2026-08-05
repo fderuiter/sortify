@@ -18,9 +18,20 @@ def mock_winreg_and_ctypes():
     mock_winreg.REG_SZ = 1
 
     import ctypes
-    mock_windll = MagicMock()
-    mock_windll.shell32.IsUserAnAdmin.return_value = False
-    mock_windll.shell32.ShellExecuteW.return_value = 42
+
+    class MockWindll:
+        def __init__(self, real_windll=None):
+            self._real_windll = real_windll
+            self.shell32 = MagicMock()
+            self.shell32.IsUserAnAdmin.return_value = False
+            self.shell32.ShellExecuteW.return_value = 42
+
+        def __getattr__(self, name):
+            if self._real_windll is not None:
+                return getattr(self._real_windll, name)
+            raise AttributeError(name)
+
+    mock_windll = MockWindll(getattr(ctypes, "windll", None))
 
     class MockCtypesWrapper:
         windll = mock_windll
