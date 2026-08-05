@@ -946,11 +946,18 @@ class HistoryManager:
 
                 # Clean empty directories
                 from app.core.mover import _remove_empty_dirs
+                from app.config import AppSettings
+                try:
+                    app_settings = AppSettings()
+                    protected_paths = getattr(app_settings, "PROTECTED_PATHS", [])
+                    protected_paths = [os.path.normpath(p) for p in protected_paths]
+                except Exception:
+                    protected_paths = None
 
                 for entry in os.listdir(base_dir):
                     entry_path = os.path.join(base_dir, entry)
                     if os.path.isdir(entry_path):
-                        _remove_empty_dirs(entry_path)
+                        _remove_empty_dirs(entry_path, protected_paths)
 
                 # Restore Cache
                 cur = conn.execute(

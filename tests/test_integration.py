@@ -373,3 +373,47 @@ def test_main_cli_directory_argument():
         mock_run_app.assert_called_once_with(
             mock_settings_class.return_value, "/some/test/directory"
         )
+
+
+def test_settings_protected_paths_ui():
+    """Verify that protected directories list manager behaves correctly in the UI."""
+    parent_app = MagicMock()
+    settings = AppSettings()
+    settings.PROTECTED_PATHS = ["/var/protected_one"]
+
+    with patch("app.ui.settings.ui") as mock_ui:
+        show_settings(parent_app, settings)
+
+        # Let's find the add_protected_path function inside settings view
+        # We can locate it by searching the mock_ui.button calls for "Add" or similar
+        add_btn_callback = None
+        for call_args in mock_ui.button.call_args_list:
+            args, kwargs = call_args
+            if len(args) > 0 and args[0] == "Add" and "on_click" in kwargs:
+                add_btn_callback = kwargs["on_click"]
+                break
+
+        assert add_btn_callback is not None
+
+        # Let's simulate entering a valid path
+        mock_input = mock_ui.input.return_value.props.return_value
+        mock_input.value = "/var/protected_two"
+
+        # Click the add button
+        add_btn_callback()
+
+        # The path should be added
+        assert "/var/protected_two" in settings.PROTECTED_PATHS
+        mock_ui.notify.assert_any_call("Protected path added: /var/protected_two", type="positive")
+
+        # Let's try adding an invalid path (e.g. relative path)
+        mock_input.value = "relative/path"
+        mock_ui.notify.reset_mock()
+        add_btn_callback()
+
+        # It should show error notification, and settings shouldn't contain relative/path
+        assert "relative/path" not in settings.PROTECTED_PATHS
+        assert mock_ui.notify.call_count >= 1
+        last_call_args, last_call_kwargs = mock_ui.notify.call_args
+        assert last_call_kwargs.get("type") == "negative"
+
