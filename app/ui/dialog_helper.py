@@ -350,7 +350,11 @@ def preserve_slot_context(func):
 
         @functools.wraps(func)
         async def wrapper(*args, **kwargs):
-            tid = id(asyncio.current_task()) if asyncio.current_task() else 0
+            try:
+                task = asyncio.current_task()
+            except RuntimeError:
+                task = None
+            tid = id(task) if task else 0
             if stack is not None and tid:
                 Slot.stacks[tid] = stack
             try:
@@ -367,7 +371,11 @@ def preserve_slot_context(func):
 
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
-            tid = id(asyncio.current_task()) if asyncio.current_task() else 0
+            try:
+                task = asyncio.current_task()
+            except RuntimeError:
+                task = None
+            tid = id(task) if task else 0
             if stack is not None and tid:
                 Slot.stacks[tid] = stack
             try:
