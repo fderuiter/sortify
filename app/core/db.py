@@ -75,6 +75,7 @@ class Database:
         self._cached_base_dir = None
         self._cached_documents = None
         self._cached_term_frequencies = None
+        self._cached_documents_lazy = None
         self.init_db()
 
     def init_db(self):
@@ -142,6 +143,7 @@ class Database:
             self._cached_base_dir = None
             self._cached_documents = None
             self._cached_term_frequencies = None
+            self._cached_documents_lazy = None
 
     def _populate_cache_if_needed(self, base_dir):
         """Ensure the decrypted documents cache is populated for the base directory."""
