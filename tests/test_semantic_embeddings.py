@@ -226,18 +226,17 @@ def test_memory_throttling_and_low_priority_thread(db, temp_dir):
         called_limits.append(limit)
         return original_get_docs(*args, **kwargs)
 
+    db.get_documents_missing_vectors = spied_get_docs
     try:
-        with patch.object(
-            db, "get_documents_missing_vectors", side_effect=spied_get_docs
-        ):
-            # Trigger reconstruction
-            manager.trigger_reconstruction(str(temp_dir))
+        # Trigger reconstruction
+        manager.trigger_reconstruction(str(temp_dir))
 
-            # Wait for thread to finish
-            while manager.is_reconstruction_active():
-                time.sleep(0.1)
+        # Wait for thread to finish
+        while manager.is_reconstruction_active():
+            time.sleep(0.1)
 
-            # get_documents_missing_vectors must have been called with limit=50 to prevent memory exhaustion
-            assert 50 in called_limits
+        # get_documents_missing_vectors must have been called with limit=50 to prevent memory exhaustion
+        assert 50 in called_limits
     finally:
+        db.get_documents_missing_vectors = original_get_docs
         manager.stop()
