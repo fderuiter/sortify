@@ -123,7 +123,7 @@ def test_spec_file_partitioning():
 
     # Let's mock importlib.util.find_spec to return a custom location for sqlcipher3
     # and mock os.walk to return a mix of .so, .dll, .dylib, and standard files (.py, .pyc, .txt).
-    mock_sqlcipher_dir = "/mock/sqlcipher3"
+    mock_sqlcipher_dir = os.path.abspath(os.path.normpath("/mock/sqlcipher3"))
 
     mock_find_spec = MagicMock()
     mock_spec = MagicMock()
@@ -132,7 +132,7 @@ def test_spec_file_partitioning():
 
     mock_walk_data = [
         (
-            "/mock/sqlcipher3",
+            mock_sqlcipher_dir,
             [],
             [
                 "__init__.py",
@@ -143,7 +143,7 @@ def test_spec_file_partitioning():
                 "dbapi2.py",
             ],
         ),
-        ("/mock/sqlcipher3/sub", [], ["extra.so", "doc.txt"]),
+        (os.path.join(mock_sqlcipher_dir, "sub"), [], ["extra.so", "doc.txt"]),
     ]
 
     mock_hooks = MagicMock()
@@ -185,12 +185,12 @@ def test_spec_file_partitioning():
         # _sqlite3.pyd -> sqlcipher3
         # extra.so -> sqlcipher3/sub
         expected_binaries = {
-            (os.path.join("/mock/sqlcipher3", "_sqlite3.so"), "sqlcipher3"),
-            (os.path.join("/mock/sqlcipher3", "_sqlite3.dll"), "sqlcipher3"),
-            (os.path.join("/mock/sqlcipher3", "_sqlite3.dylib"), "sqlcipher3"),
-            (os.path.join("/mock/sqlcipher3", "_sqlite3.pyd"), "sqlcipher3"),
+            (os.path.join(mock_sqlcipher_dir, "_sqlite3.so"), "sqlcipher3"),
+            (os.path.join(mock_sqlcipher_dir, "_sqlite3.dll"), "sqlcipher3"),
+            (os.path.join(mock_sqlcipher_dir, "_sqlite3.dylib"), "sqlcipher3"),
+            (os.path.join(mock_sqlcipher_dir, "_sqlite3.pyd"), "sqlcipher3"),
             (
-                os.path.join("/mock/sqlcipher3/sub", "extra.so"),
+                os.path.join(mock_sqlcipher_dir, "sub", "extra.so"),
                 os.path.join("sqlcipher3", "sub"),
             ),
         }
@@ -200,30 +200,36 @@ def test_spec_file_partitioning():
         # dbapi2.py -> sqlcipher3
         # doc.txt -> sqlcipher3/sub
         expected_datas = {
-            (os.path.join("/mock/sqlcipher3", "__init__.py"), "sqlcipher3"),
-            (os.path.join("/mock/sqlcipher3", "dbapi2.py"), "sqlcipher3"),
+            (os.path.join(mock_sqlcipher_dir, "__init__.py"), "sqlcipher3"),
+            (os.path.join(mock_sqlcipher_dir, "dbapi2.py"), "sqlcipher3"),
             (
-                os.path.join("/mock/sqlcipher3/sub", "doc.txt"),
+                os.path.join(mock_sqlcipher_dir, "sub", "doc.txt"),
                 os.path.join("sqlcipher3", "sub"),
             ),
         }
 
-        # Convert list of tuples to set for comparison (converting paths to match OS separator, resolving drive letters, and normalizing case)
+        # Convert list of tuples to set for comparison (converting paths to match OS separator, casing and resolving drive letters)
+        def norm_p(p):
+            return os.path.normcase(os.path.abspath(os.path.normpath(p)))
+
+        def norm_d(d):
+            return os.path.normcase(os.path.normpath(d))
+
         actual_binaries = {
-            (os.path.normcase(os.path.abspath(os.path.normpath(src))), os.path.normcase(os.path.normpath(dst)))
+            (norm_p(src), norm_d(dst))
             for src, dst in sqlcipher_binaries
         }
         actual_datas = {
-            (os.path.normcase(os.path.abspath(os.path.normpath(src))), os.path.normcase(os.path.normpath(dst)))
+            (norm_p(src), norm_d(dst))
             for src, dst in sqlcipher_datas
         }
 
         normalized_expected_binaries = {
-            (os.path.normcase(os.path.abspath(os.path.normpath(src))), os.path.normcase(os.path.normpath(dst)))
+            (norm_p(src), norm_d(dst))
             for src, dst in expected_binaries
         }
         normalized_expected_datas = {
-            (os.path.normcase(os.path.abspath(os.path.normpath(src))), os.path.normcase(os.path.normpath(dst)))
+            (norm_p(src), norm_d(dst))
             for src, dst in expected_datas
         }
 
