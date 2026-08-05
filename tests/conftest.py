@@ -55,6 +55,12 @@ def sync_db_worker():
 def cleanup_db_connections():
     """Ensure database connections are closed after each test to prevent Windows file locking issues."""
     yield
+    try:
+        from app.core.semantic_embeddings import SemanticEmbeddingManager
+
+        SemanticEmbeddingManager.stop_all()
+    except Exception:
+        pass
     clear_connection_cache()
 
 

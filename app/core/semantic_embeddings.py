@@ -7,6 +7,7 @@ import random
 import sys
 import threading
 import time
+import weakref
 
 
 class DimensionMismatchError(ValueError):
@@ -92,6 +93,21 @@ def get_active_model_properties(model_path: str | None) -> tuple[str, int, str]:
 class SemanticEmbeddingManager:
     """Manages active ONNX model profiles and schedules background vector reconstruction."""
 
+    _active_instances = weakref.WeakSet()
+    _instances_lock = threading.Lock()
+
+    @classmethod
+    def stop_all(cls):
+        """Stop all active SemanticEmbeddingManager threads gracefully."""
+        with cls._instances_lock:
+            instances = list(cls._active_instances)
+            cls._active_instances.clear()
+        for inst in instances:
+            try:
+                inst.stop()
+            except Exception:
+                pass
+
     def __init__(self, db, model_path: str | None = None):
         self.db = db
         self.model_path = model_path
@@ -99,6 +115,9 @@ class SemanticEmbeddingManager:
         self._reconstruction_active = False
         self._stop_requested = False
         self._lock = threading.Lock()
+
+        with self._instances_lock:
+            self._active_instances.add(self)
 
         # Load active model properties from disk/file
         self.signature, self.dimensions, self.version = get_active_model_properties(

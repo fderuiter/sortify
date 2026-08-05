@@ -8,16 +8,6 @@ import sys
 
 # Dynamic Windows DLL Path Injection
 if sys.platform == "win32" and getattr(sys, "frozen", False):
-    # Try to attach to parent console so that --smoke-test outputs to GHA logs
-    import ctypes
-
-    try:
-        if ctypes.windll.kernel32.AttachConsole(-1):
-            sys.stdout = open("CONOUT$", "w", encoding="utf-8")
-            sys.stderr = open("CONOUT$", "w", encoding="utf-8")
-    except Exception:
-        pass
-
     # Safeguard standard streams to prevent crash on print when sys.stdout/err are None
     class NullWriter:
         """A helper class that discards any written output to mimic a stream."""
