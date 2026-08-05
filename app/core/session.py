@@ -13,7 +13,7 @@ from app.core.history import HistoryManager
 
 
 async def scan_abandoned_sessions_async():
-    """Scan for unclosed session folders containing active session databases."""
+    """Scan for unclosed session folders containing active session databases or failed/active sessions with trapped files."""
     import asyncio
 
     def _scan():
@@ -28,10 +28,6 @@ async def scan_abandoned_sessions_async():
             if not session_dir.is_dir():
                 continue
 
-            plan_path = session_dir / "plan.json"
-            if not plan_path.exists():
-                continue
-
             history_db = session_dir / "history.db"
             if not history_db.exists():
                 continue
@@ -40,20 +36,49 @@ async def scan_abandoned_sessions_async():
                 conn = sqlite3.connect(history_db)
                 cursor = conn.cursor()
                 cursor.execute(
-                    "SELECT session_id, base_dir, status FROM sessions ORDER BY timestamp DESC LIMIT 1"
+                    "SELECT session_id, base_dir, status FROM sessions ORDER BY timestamp DESC"
                 )
-                row = cursor.fetchone()
+                rows = cursor.fetchall()
                 conn.close()
 
-                if row and row[2] == "active":
-                    abandoned.append(
-                        {
-                            "session_id": row[0],
-                            "base_dir": row[1],
-                            "session_dir": str(session_dir),
-                            "plan_path": str(plan_path),
-                        }
-                    )
+                trapped_sessions = []
+                for row in rows:
+                    sid, base_dir, status = row
+                    if status in ("active", "failed"):
+                        branch_dir = os.path.join(base_dir, ".branches", sid)
+                        has_files = False
+                        if os.path.exists(branch_dir):
+                            for root, dirs, files in os.walk(branch_dir):
+                                if files:
+                                    has_files = True
+                                    break
+                        if has_files:
+                            trapped_sessions.append({
+                                "session_id": sid,
+                                "base_dir": base_dir,
+                                "session_dir": str(session_dir),
+                                "status": status,
+                                "has_trapped_files": True,
+                                "safety_folder": branch_dir,
+                            })
+
+                if trapped_sessions:
+                    abandoned.extend(trapped_sessions)
+                else:
+                    plan_path = session_dir / "plan.json"
+                    if plan_path.exists() and rows:
+                        for row in rows:
+                            sid, base_dir, status = row
+                            if status == "active":
+                                abandoned.append({
+                                    "session_id": sid,
+                                    "base_dir": base_dir,
+                                    "session_dir": str(session_dir),
+                                    "plan_path": str(plan_path),
+                                    "status": status,
+                                    "has_trapped_files": False,
+                                })
+                                break
             except Exception:
                 pass
 
