@@ -154,8 +154,11 @@ class Database:
             if self._cached_base_dir == base_dir and self._cached_documents is not None:
                 return
 
-            self._cached_base_dir = None
-            self._cached_documents = None
+            if self._cached_base_dir != base_dir:
+                self._cached_base_dir = None
+                self._cached_documents = None
+                self._cached_term_frequencies = None
+                self._cached_documents_lazy = None
 
             conn = get_db_connection(self.db_path)
             with conn:
@@ -313,6 +316,12 @@ class Database:
             if self._cached_base_dir == base_dir and self._cached_documents_lazy is not None:
                 return list(self._cached_documents_lazy)
 
+            if self._cached_base_dir != base_dir:
+                self._cached_base_dir = None
+                self._cached_documents = None
+                self._cached_term_frequencies = None
+                self._cached_documents_lazy = None
+
         conn = get_db_connection(self.db_path)
         with conn:
             cursor = conn.execute(
@@ -447,6 +456,12 @@ class Database:
         with self._cache_lock:
             if self._cached_base_dir == base_dir and self._cached_term_frequencies is not None:
                 return list(self._cached_term_frequencies)
+
+            if self._cached_base_dir != base_dir:
+                self._cached_base_dir = None
+                self._cached_documents = None
+                self._cached_term_frequencies = None
+                self._cached_documents_lazy = None
 
         conn = get_db_connection(self.db_path)
         with conn:
