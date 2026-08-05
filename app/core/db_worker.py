@@ -37,13 +37,12 @@ class DBWorker:
 
     def submit_write(self, func, *args, **kwargs):
         """Submit a database write operation to the queue without waiting for completion."""
+        result_q = queue.Queue()
         with self._lock:
             if self._stopped:
-                result_q = queue.Queue()
                 result_q.put(("error", RuntimeError("Database worker has been stopped")))
                 return result_q
-        result_q = queue.Queue()
-        self.q.put((func, args, kwargs, result_q))
+            self.q.put((func, args, kwargs, result_q))
         return result_q
 
     def execute_write(self, func, *args, **kwargs):
@@ -59,12 +58,21 @@ class DBWorker:
         with self._lock:
             if self._stopped:
                 return
-        self.q.put((func, args, kwargs, None))
+            self.q.put((func, args, kwargs, None))
 
     def stop(self):
         """Gracefully stop the worker thread and wait for it to finish."""
+        try:
+            from app.core.semantic_embeddings import SemanticEmbeddingManager
+
+            SemanticEmbeddingManager.stop_all()
+        except Exception:
+            pass
+
         with self._lock:
+            if self._stopped:
+                return
             self._stopped = True
-        self.q.put((None, None, None, None))
+            self.q.put((None, None, None, None))
         if self.thread.is_alive():
             self.thread.join()
