@@ -199,6 +199,7 @@ class AutoSorterApp:
         import os
         import shutil
         import sqlite3
+
         from app.core.mover import get_safe_path
         from app.ui.dialog_helper import ask_directory_async
 
@@ -247,7 +248,7 @@ class AutoSorterApp:
                 def select_original():
                     run_recovery(restore_to_original=True)
 
-                restore_btn = ui.button(
+                ui.button(
                     "Restore to Original Folders", 
                     on_click=select_original
                 ).classes("w-full bg-blue-600 text-white").props('aria-label="Restore to Original Folders"')
@@ -277,7 +278,7 @@ class AutoSorterApp:
                             return
                         run_recovery(restore_to_original=False, custom_path=custom_path)
 
-                    export_btn = ui.button(
+                    ui.button(
                         "Export to Custom Folder", 
                         on_click=select_export
                     ).classes("bg-green-600 text-white flex-1").props('aria-label="Export to Custom Folder"')
