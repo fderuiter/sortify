@@ -123,7 +123,9 @@ def test_generate_sorting_plan_exception(mocker):
     corpus = {"file.txt": "test content"}
     analyzer.partial_fit("dummy_base", corpus)
 
-    mocker.patch.object(db, "get_all_documents_lazy", side_effect=Exception("Test error"))
+    mocker.patch.object(
+        db, "get_all_documents_lazy", side_effect=Exception("Test error")
+    )
     mock_logger = mocker.patch("app.core.analyzer.logging.error")
 
     plan = analyzer.generate_sorting_plan("dummy_base")
@@ -226,9 +228,7 @@ def test_document_to_document_similarity_matching():
     # Slightly modified unclassified document (no target path initially)
     # The wording is slightly edited, but semantic similarity remains high
     new_text = "This is an invoice for laptop purchase from TechStore. Total amount due is $1250. Please pay by card transfer."
-    corpus = {
-        "new_receipt.txt": new_text
-    }
+    corpus = {"new_receipt.txt": new_text}
     analyzer.partial_fit(base_dir, corpus)
 
     # Generate plan
@@ -256,18 +256,16 @@ def test_document_similarity_no_dilution():
     # Make them longer and distinct to showcase individual matching.
     finance_text = "corporate financial document. quarterly earnings report and stock dividend distribution portfolios. asset balance sheet."
     cooking_text = "cooking and dessert instructions. bake chocolate frosting cake and delicious muffins in the oven with sweet ingredients."
-    
+
     db.upsert_document(base_dir, "hist_finance.txt", "hash_f", finance_text)
     db.set_user_verified_target(base_dir, "hash_f", "SharedFolder")
-    
+
     db.upsert_document(base_dir, "hist_cooking.txt", "hash_c", cooking_text)
     db.set_user_verified_target(base_dir, "hash_c", "SharedFolder")
 
     # New file slightly matching cooking_text only
     new_cooking = "cooking and dessert instructions. bake chocolate frosting cake and delicious muffins in the oven with sweet ingredients. extra: cookie."
-    corpus = {
-        "new_cooking.txt": new_cooking
-    }
+    corpus = {"new_cooking.txt": new_cooking}
     analyzer.partial_fit(base_dir, corpus)
 
     plan = analyzer.generate_sorting_plan(base_dir)
@@ -295,9 +293,7 @@ def test_document_similarity_guardrail_unverified():
 
     # New file with high similarity
     new_space = "unique text about space rockets and Mars landing mission"
-    corpus = {
-        "new_space.txt": new_space
-    }
+    corpus = {"new_space.txt": new_space}
     analyzer.partial_fit(base_dir, corpus)
 
     plan = analyzer.generate_sorting_plan(base_dir)
@@ -330,11 +326,19 @@ def test_relational_term_frequency_no_decryption(mocker):
     db.clear(base_dir)
 
     analyzer = IncrementalAnalyzer(
-        max_folders=3, stop_words={"the", "this", "is", "an", "of", "about"}, db=db, strategy_name=None
+        max_folders=3,
+        stop_words={"the", "this", "is", "an", "of", "about"},
+        db=db,
+        strategy_name=None,
     )
 
     # Add historical document
-    db.upsert_document(base_dir, "hist_file.txt", "hash_hist", "This is an exceptional piece of content about cats.")
+    db.upsert_document(
+        base_dir,
+        "hist_file.txt",
+        "hash_hist",
+        "This is an exceptional piece of content about cats.",
+    )
     db.set_user_verified_target(base_dir, "hash_hist", "CatsCategory")
 
     # Add new unassigned document
@@ -363,7 +367,12 @@ def test_relational_term_frequency_dynamic_stop_words():
         max_folders=3, stop_words=set(), db=db, strategy_name=None
     )
 
-    db.upsert_document(base_dir, "hist_file.txt", "hash_hist", "exceptional exceptional exceptional exceptional cats")
+    db.upsert_document(
+        base_dir,
+        "hist_file.txt",
+        "hash_hist",
+        "exceptional exceptional exceptional exceptional cats",
+    )
     db.set_user_verified_target(base_dir, "hash_hist", "CatsCategory")
 
     corpus = {"new_file.txt": "exceptional exceptional exceptional exceptional dogs"}
@@ -383,6 +392,7 @@ def test_relational_term_frequency_dynamic_stop_words():
 
 def test_relational_term_frequency_speed_and_scalability():
     import time
+
     base_dir = "test_tf_scalability_base"
     db.clear(base_dir)
 
@@ -402,12 +412,25 @@ def test_relational_term_frequency_speed_and_scalability():
 
     db.upsert_documents(documents_to_upsert)
 
-    # Set user verified target path for all historical docs
-    for i in range(1000):
-        file_hash = f"hash_{i}"
-        topic = "finance" if i % 2 == 0 else "cooking"
-        target_path = "FinanceFolder" if topic == "finance" else "CookingFolder"
-        db.set_user_verified_target(base_dir, file_hash, target_path)
+    # Set user verified target path for all historical docs in a single bulk transaction to prevent 1000 slow disk syncs
+    def _bulk_set_targets():
+        from app.core.db_conn import get_db_connection
+
+        conn = get_db_connection(db.db_path)
+        with conn:
+            data = []
+            for i in range(1000):
+                file_hash = f"hash_{i}"
+                topic = "finance" if i % 2 == 0 else "cooking"
+                target_path = "FinanceFolder" if topic == "finance" else "CookingFolder"
+                data.append((target_path, base_dir, file_hash))
+            conn.executemany(
+                "UPDATE documents SET user_verified_target_path = ? WHERE base_dir = ? AND file_hash = ?",
+                data,
+            )
+
+    db.worker.execute_write(_bulk_set_targets)
+    db.invalidate_cache()
 
     # Prepare some unassigned/new files to sort
     new_corpus = {}
@@ -435,5 +458,3 @@ def test_relational_term_frequency_speed_and_scalability():
     assert "CookingFolder" in plan
     for j in range(1):
         assert f"new_cook_{j}.txt" in plan["CookingFolder"]
-
-
