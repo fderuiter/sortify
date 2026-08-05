@@ -72,8 +72,9 @@ jobs:
       shell: bash
       env:
         SMOKE_TEST: "0"
+        PYTHONUNBUFFERED: "1"
       run: |
-        uv run pytest --cov --cov-report=term tests/ > pytest_out.log 2>&1 || (cat pytest_out.log && exit 1)
+        uv run pytest -v --cov --cov-report=term tests/ > pytest_out.log 2>&1 || (cat pytest_out.log && exit 1)
 
     - name: Post failure to PR comment
       if: failure() && matrix.os == 'windows-latest'
