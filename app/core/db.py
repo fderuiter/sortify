@@ -19,6 +19,7 @@ class LazyDecryptedDoc:
         self._is_decrypted = False
 
     def __getitem__(self, index):
+        """Get item at index."""
         if index == 0:
             return self.filepath
         elif index == 1:
@@ -47,9 +48,11 @@ class LazyDecryptedDoc:
         raise IndexError("Tuple index out of range")
 
     def __len__(self):
+        """Get tuple length."""
         return 4
 
     def __iter__(self):
+        """Iterate over elements."""
         yield self[0]
         yield self[1]
         yield self[2]

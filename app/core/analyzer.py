@@ -247,8 +247,6 @@ class IncrementalAnalyzer:
                             status_match,
                         )
                     )
-                    if target is not None:
-                        historical_overrides[f] = (target, status_match)
                     continue
 
                 matched = False
@@ -320,8 +318,8 @@ class IncrementalAnalyzer:
                             doc_filtered_freqs.setdefault(filepath, {})[term] = frequency
 
                     # Compute global Document Frequency (DF) and Inverse Document Frequency (IDF) dynamically
-                    from collections import defaultdict
                     import math
+                    from collections import defaultdict
                     
                     df = defaultdict(int)
                     for filepath, term_freqs in doc_filtered_freqs.items():
