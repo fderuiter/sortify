@@ -208,6 +208,15 @@ class AutoSorterApp:
         session_dir = session_info["session_dir"]
         history_db_path = os.path.join(session_dir, "history.db")
 
+        def _update_session_resolved_sync(db_path, sess_id):
+            conn = sqlite3.connect(db_path)
+            with conn:
+                conn.execute(
+                    "UPDATE sessions SET status = 'resolved' WHERE session_id = ?",
+                    (sess_id,),
+                )
+            conn.close()
+
         # Get list of all files in safety folder to show/process
         files_to_recover = []
         if os.path.exists(safety_folder):
@@ -323,13 +332,7 @@ class AutoSorterApp:
                             shutil.rmtree(branches_dir, ignore_errors=True)
 
                         if os.path.exists(history_db_path):
-                            conn = sqlite3.connect(history_db_path)
-                            with conn:
-                                conn.execute(
-                                    "UPDATE sessions SET status = 'resolved' WHERE session_id = ?",
-                                    (session_id,),
-                                )
-                            conn.close()
+                            await asyncio.to_thread(_update_session_resolved_sync, history_db_path, session_id)
                     except Exception as db_ex:
                         errors.append(f"DB update failed: {str(db_ex)}")
 
