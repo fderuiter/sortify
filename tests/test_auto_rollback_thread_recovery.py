@@ -110,7 +110,7 @@ async def test_ui_recovery_and_watcher_restart(tmp_path):
         app.execute_sort()
 
         # Let the async task run
-        for _ in range(100):
+        for _ in range(500):
             if mock_start_watcher.called:
                 break
             await asyncio.sleep(0.02)

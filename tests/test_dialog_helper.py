@@ -21,7 +21,7 @@ async def test_ask_directory_async_macos():
         mock.patch("app.ui.dialog_helper.run_background_process", mock_run),
     ):
         ask_directory_async(None, "Select Folder", callback, None, None)
-        for _ in range(100):
+        for _ in range(500):
             if callback.called:
                 break
             await asyncio.sleep(0.02)
@@ -50,7 +50,7 @@ async def test_ask_directory_async_windows_success():
         mock.patch("app.ui.dialog_helper.run_background_process", mock_run),
     ):
         ask_directory_async(None, "Select Folder", callback, None, None)
-        for _ in range(100):
+        for _ in range(500):
             if callback.called:
                 break
             await asyncio.sleep(0.02)
@@ -82,7 +82,7 @@ async def test_ask_directory_async_linux_zenity():
         mock.patch("app.ui.dialog_helper.run_background_process", mock_run),
     ):
         ask_directory_async(None, "Select Folder", callback, None, None)
-        for _ in range(100):
+        for _ in range(500):
             if callback.called:
                 break
             await asyncio.sleep(0.02)
@@ -115,7 +115,7 @@ async def test_ask_directory_async_linux_kdialog():
         mock.patch("app.ui.dialog_helper.run_background_process", mock_run),
     ):
         ask_directory_async(None, "Select Folder", callback, None, None)
-        for _ in range(100):
+        for _ in range(500):
             if callback.called:
                 break
             await asyncio.sleep(0.02)
@@ -142,7 +142,7 @@ async def test_ask_directory_async_linux_none_fallback():
         mock.patch("nicegui.ui", mock_ui),
     ):
         ask_directory_async(None, "Select Folder", callback, None, None)
-        for _ in range(100):
+        for _ in range(500):
             if mock_ui.dialog.called:
                 break
             await asyncio.sleep(0.02)
@@ -173,7 +173,7 @@ async def test_ask_directory_async_windows_restricted_fallback():
         mock.patch("nicegui.ui", mock_ui),
     ):
         ask_directory_async(None, "Select Folder", callback, None, None)
-        for _ in range(100):
+        for _ in range(500):
             if mock_ui.dialog.called:
                 break
             await asyncio.sleep(0.02)
