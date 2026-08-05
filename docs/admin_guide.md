@@ -70,6 +70,10 @@ The following parameters are extracted directly from the application's configura
 - **Default**: `2`
 - **Required**: `False`
 
+### `PROTECTED_PATHS`
+- **Default**: `PydanticUndefined`
+- **Required**: `False`
+
 ### `AI_CONSENT_GRANTED`
 - **Default**: `None`
 - **Required**: `False`
