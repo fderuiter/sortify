@@ -174,8 +174,15 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {{
                                     type="warning",
                                 )
 
-                            with ui.dialog() as dialog, ui.card().classes("w-96 p-6 manual-fallback-dialog-card"):
-                                make_dialog_accessible(dialog, "manual-fallback-dialog-card")
+                            with (
+                                ui.dialog() as dialog,
+                                ui.card().classes(
+                                    "w-96 p-6 manual-fallback-dialog-card"
+                                ),
+                            ):
+                                make_dialog_accessible(
+                                    dialog, "manual-fallback-dialog-card"
+                                )
                                 ui.label(title).classes("text-lg font-bold mb-4")
                                 ui.label(
                                     "Please enter the directory path manually:"
@@ -275,15 +282,17 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {{
     threading.Thread(target=_run_dialog, daemon=True).start()
 
 
-def make_dialog_accessible(dialog, card_class: str, is_persistent: bool = False, on_escape=None):
+def make_dialog_accessible(
+    dialog, card_class: str, is_persistent: bool = False, on_escape=None
+):
     """Make a NiceGUI dialog accessible by managing focus and Escape dismissal."""
     from nicegui import ui
 
     # Register custom_escape event to cleanly close the dialog
     if on_escape:
-        dialog.on('custom_escape', on_escape)
+        dialog.on("custom_escape", on_escape)
     else:
-        dialog.on('custom_escape', dialog.close)
+        dialog.on("custom_escape", dialog.close)
 
     def handle_value_change(e):
         if e.value:
@@ -324,10 +333,11 @@ def make_dialog_accessible(dialog, card_class: str, is_persistent: bool = False,
 
 
 def preserve_slot_context(func):
-    """Decorator to preserve NiceGUI slot state contexts across asynchronous task/thread boundaries."""
-    from nicegui.slot import Slot
+    """Preserve NiceGUI slot state contexts across asynchronous task/thread boundaries."""
     import asyncio
     import functools
+
+    from nicegui.slot import Slot
 
     try:
         stack = Slot.get_stack()
@@ -337,6 +347,7 @@ def preserve_slot_context(func):
         stack = None
 
     if asyncio.iscoroutinefunction(func):
+
         @functools.wraps(func)
         async def wrapper(*args, **kwargs):
             tid = id(asyncio.current_task()) if asyncio.current_task() else 0
@@ -350,8 +361,10 @@ def preserve_slot_context(func):
                         del Slot.stacks[tid]
                     except Exception:
                         pass
+
         return wrapper
     else:
+
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
             tid = id(asyncio.current_task()) if asyncio.current_task() else 0
@@ -365,6 +378,5 @@ def preserve_slot_context(func):
                         del Slot.stacks[tid]
                     except Exception:
                         pass
+
         return wrapper
-
-

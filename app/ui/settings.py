@@ -28,7 +28,10 @@ def show_settings(parent_app, settings):
 
     from app.ui.dialog_helper import make_dialog_accessible
 
-    with ui.dialog() as dialog, ui.card().classes("w-3/4 max-w-4xl p-6 settings-dialog-card"):
+    with (
+        ui.dialog() as dialog,
+        ui.card().classes("w-3/4 max-w-4xl p-6 settings-dialog-card"),
+    ):
         make_dialog_accessible(dialog, "settings-dialog-card")
         with ui.row().classes("w-full justify-between items-center mb-6"):
             ui.label("Application Settings").classes("text-2xl font-bold").props(
@@ -177,13 +180,13 @@ def show_settings(parent_app, settings):
                         ) as row:
                             rules_rows[kw] = row
                             ui.label(kw).classes("w-1/4 font-mono")
-                            ui.label(target).classes(
-                                "w-1/2 font-mono text-gray-500"
-                            )
+                            ui.label(target).classes("w-1/2 font-mono text-gray-500")
 
-                            btn = ui.button(
-                                "Delete", color="red"
-                            ).props("size=sm").classes("rule-delete-btn")
+                            btn = (
+                                ui.button("Delete", color="red")
+                                .props("size=sm")
+                                .classes("rule-delete-btn")
+                            )
 
                             def delete_rule(k=kw, r=row, b=btn):
                                 updated_rules = dict(settings.KEYWORD_RULES)

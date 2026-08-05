@@ -9,6 +9,7 @@ def show_wizard(parent_app, settings):
     """Show the initial setup wizard."""
     with ui.dialog() as dialog, ui.card().classes("w-96 p-6 wizard-dialog-card"):
         from app.ui.dialog_helper import make_dialog_accessible
+
         make_dialog_accessible(dialog, "wizard-dialog-card")
         ui.label("AI Features Setup").classes("text-xl font-bold mb-4").props(
             'aria-label="Setup Wizard Title"'

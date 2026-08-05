@@ -159,7 +159,13 @@ class AutoSorterApp:
         with ui.dialog() as self.recalc_dialog:
             self.recalc_dialog.props("persistent")
             from app.ui.dialog_helper import make_dialog_accessible
-            make_dialog_accessible(self.recalc_dialog, "recalc-dialog-card", is_persistent=True, on_escape=self.cancel_recalc)
+
+            make_dialog_accessible(
+                self.recalc_dialog,
+                "recalc-dialog-card",
+                is_persistent=True,
+                on_escape=self.cancel_recalc,
+            )
             with ui.card().classes("items-center recalc-dialog-card"):
                 ui.label("Recalculating plan...")
                 ui.spinner(size="lg")
@@ -188,10 +194,16 @@ class AutoSorterApp:
 
             session_info = abandoned[0]
 
-            with ui.dialog() as dialog, ui.card().classes("w-full max-w-md recovery-dialog-card"):
+            with (
+                ui.dialog() as dialog,
+                ui.card().classes("w-full max-w-md recovery-dialog-card"),
+            ):
                 dialog.props("persistent")
                 from app.ui.dialog_helper import make_dialog_accessible
-                make_dialog_accessible(dialog, "recovery-dialog-card", is_persistent=True)
+
+                make_dialog_accessible(
+                    dialog, "recovery-dialog-card", is_persistent=True
+                )
                 ui.label("Interrupted Session Detected").classes("text-h6 text-red-500")
                 ui.label(
                     "An application crash occurred during a previous file sorting operation. Files may be partially moved."
@@ -347,6 +359,7 @@ class AutoSorterApp:
         self._cancel_analysis_flag = False
 
         from app.ui.dialog_helper import preserve_slot_context
+
         asyncio.create_task(preserve_slot_context(self._scan_and_process_worker)())
 
     async def _scan_and_process_worker(self):
@@ -469,8 +482,12 @@ class AutoSorterApp:
 
     def show_ml_warning_dialog(self, feature_name: str):
         """Show a clear, non-blocking warning dialogue explaining that the feature requires the full ML package."""
-        with ui.dialog() as dialog, ui.card().classes("w-96 p-6 ml-warning-dialog-card"):
+        with (
+            ui.dialog() as dialog,
+            ui.card().classes("w-96 p-6 ml-warning-dialog-card"),
+        ):
             from app.ui.dialog_helper import make_dialog_accessible
+
             make_dialog_accessible(dialog, "ml-warning-dialog-card")
             ui.label("Feature Unavailable").classes(
                 "text-xl font-bold mb-4 text-red-500"
@@ -594,8 +611,12 @@ class AutoSorterApp:
                 ui.notify(f"Error: {e}", type="negative")
                 self.status_label.set_text("Sorting failed.")
 
-                with ui.dialog() as error_dialog, ui.card().classes("w-full max-w-md error-dialog-card"):
+                with (
+                    ui.dialog() as error_dialog,
+                    ui.card().classes("w-full max-w-md error-dialog-card"),
+                ):
                     from app.ui.dialog_helper import make_dialog_accessible
+
                     make_dialog_accessible(error_dialog, "error-dialog-card")
                     ui.label("Move Transaction Error").classes("text-h6 text-red-500")
                     ui.label(f"The organization process failed: {e}").classes(
