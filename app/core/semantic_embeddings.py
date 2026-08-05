@@ -14,20 +14,24 @@ class DimensionMismatchError(ValueError):
 
     pass
 
+
 def set_low_priority():
     """Set the current thread to low priority in a platform-independent way."""
     try:
         if sys.platform != "win32":
             import os
+
             os.nice(19)  # Lowest priority on Unix
         else:
-            import win32api
-            import win32con
-            import win32process
-            handle = win32api.GetCurrentThread()
-            win32process.SetThreadPriority(handle, win32con.THREAD_PRIORITY_BELOW_NORMAL)
+            import ctypes
+
+            # GetCurrentThread returns a pseudo-handle for the current thread
+            handle = ctypes.windll.kernel32.GetCurrentThread()
+            # THREAD_PRIORITY_BELOW_NORMAL is -1. Using ctypes is extremely robust and does not depend on pywin32
+            ctypes.windll.kernel32.SetThreadPriority(handle, -1)
     except Exception:
         pass
+
 
 def get_active_model_properties(model_path: str | None) -> tuple[str, int, str]:
     """Get active model signature (SHA-256 hash), dimensions, and version.
@@ -64,6 +68,7 @@ def get_active_model_properties(model_path: str | None) -> tuple[str, int, str]:
             # Try reading dimensions from the model if onnxruntime is available
             try:
                 import onnxruntime as ort
+
                 sess = ort.InferenceSession(onnx_file)
                 out = sess.get_outputs()[0]
                 if out.shape and len(out.shape) >= 2:
@@ -92,10 +97,13 @@ class SemanticEmbeddingManager:
         self.model_path = model_path
         self._reconstruction_thread = None
         self._reconstruction_active = False
+        self._stop_requested = False
         self._lock = threading.Lock()
 
         # Load active model properties from disk/file
-        self.signature, self.dimensions, self.version = get_active_model_properties(model_path)
+        self.signature, self.dimensions, self.version = get_active_model_properties(
+            model_path
+        )
 
         # Initialize global metadata and verify profile
         self.verify_active_model()
@@ -110,14 +118,16 @@ class SemanticEmbeddingManager:
         stored_version = self.db.get_model_metadata("active_model_version")
 
         try:
-            stored_dimensions = int(stored_dimensions_str) if stored_dimensions_str else None
+            stored_dimensions = (
+                int(stored_dimensions_str) if stored_dimensions_str else None
+            )
         except ValueError:
             stored_dimensions = None
 
         mismatch = (
-            stored_signature != self.signature or
-            stored_dimensions != self.dimensions or
-            stored_version != self.version
+            stored_signature != self.signature
+            or stored_dimensions != self.dimensions
+            or stored_version != self.version
         )
 
         if mismatch:
@@ -141,31 +151,52 @@ class SemanticEmbeddingManager:
         with self._lock:
             if self._reconstruction_thread and self._reconstruction_thread.is_alive():
                 return
+            self._stop_requested = False
             self._reconstruction_thread = threading.Thread(
                 target=self._run_reconstruction,
                 args=(base_dir,),
                 name="VectorReconstructionThread",
-                daemon=True
+                daemon=True,
             )
             self._reconstruction_thread.start()
+
+    def stop(self):
+        """Stop background reconstruction thread gracefully."""
+        with self._lock:
+            self._stop_requested = True
+        if self._reconstruction_thread and self._reconstruction_thread.is_alive():
+            self._reconstruction_thread.join(timeout=10.0)
 
     def _run_reconstruction(self, base_dir: str):
         """Background thread target for embedding generation."""
         set_low_priority()
-        logging.info("Starting background vector reconstruction for active model profile.")
+        logging.info(
+            "Starting background vector reconstruction for active model profile."
+        )
 
         try:
             while True:
+                with self._lock:
+                    if self._stop_requested:
+                        break
                 # Memory Footprint Throttling: load no more than 50 records at once
-                docs = self.db.get_documents_missing_vectors(base_dir, limit=50, offset=0)
+                docs = self.db.get_documents_missing_vectors(
+                    base_dir, limit=50, offset=0
+                )
                 if not docs:
                     break
 
                 batch = []
                 for filepath, text in docs:
+                    with self._lock:
+                        if self._stop_requested:
+                            break
                     vector = self.generate_embedding(text)
                     batch.append((filepath, vector))
 
+                with self._lock:
+                    if self._stop_requested:
+                        break
                 self.db.upsert_document_vectors(base_dir, batch)
 
                 # Cooperative pause to ensure UI thread remains highly responsive

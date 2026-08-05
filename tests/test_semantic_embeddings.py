@@ -22,6 +22,7 @@ def temp_dir():
     dir_path = tempfile.mkdtemp()
     yield Path(dir_path)
     from app.core.db_conn import clear_connection_cache
+
     clear_connection_cache()
     shutil.rmtree(dir_path, ignore_errors=True)
 
@@ -38,6 +39,7 @@ def db(temp_dir, db_worker):
     database = Database(temp_dir / "test.db", db_worker)
     yield database
     from app.core.db_conn import clear_connection_cache
+
     clear_connection_cache()
 
 
@@ -63,7 +65,7 @@ def test_decoupled_vector_storage(db):
         base_dir="/base",
         filepath="doc1.txt",
         file_hash="hash1",
-        extracted_text="Some text content here"
+        extracted_text="Some text content here",
     )
 
     # Insert a vector for this document
@@ -77,7 +79,9 @@ def test_decoupled_vector_storage(db):
     assert docs[0][0] == "doc1.txt"
     assert docs[0][1] == "Some text content here"
     # Ensure vector field is not present in standard document entities
-    assert len(docs[0]) == 4  # (filepath, extracted_text, file_hash, user_verified_target_path)
+    assert (
+        len(docs[0]) == 4
+    )  # (filepath, extracted_text, file_hash, user_verified_target_path)
 
     # Check that vector is retrieved decoupled / separately
     vector = db.get_document_vector("/base", "doc1.txt")
@@ -93,9 +97,11 @@ def test_swapping_model_triggers_purge_and_reconstruction(db, temp_dir):
         base_dir=str(temp_dir),
         filepath="doc1.txt",
         file_hash="hash1",
-        extracted_text="First doc"
+        extracted_text="First doc",
     )
-    db.upsert_document_vectors(str(temp_dir), [("doc1.txt", [0.5] * manager.dimensions)])
+    db.upsert_document_vectors(
+        str(temp_dir), [("doc1.txt", [0.5] * manager.dimensions)]
+    )
 
     # Verify we have vectors stored
     stored_vector = manager.get_vector(str(temp_dir), "doc1.txt")
@@ -103,7 +109,9 @@ def test_swapping_model_triggers_purge_and_reconstruction(db, temp_dir):
 
     # Now, let's simulate swapping the model by instantiating a manager with different active properties
     # Let's patch get_active_model_properties to return new properties (different signature and dimensions)
-    with patch("app.core.semantic_embeddings.get_active_model_properties") as mock_props:
+    with patch(
+        "app.core.semantic_embeddings.get_active_model_properties"
+    ) as mock_props:
         mock_props.return_value = ("new_onnx_sig_hash", 128, "2.0.0")
 
         # Initialize new manager, which triggers verify_active_model on startup
@@ -123,36 +131,39 @@ def test_background_reconstruction_spawns(db, temp_dir):
     """Requirement 4: Background thread is automatically spawned to reconstruct missing embeddings."""
     manager = SemanticEmbeddingManager(db, model_path=None)
 
-    # Put a document missing vector
-    db.upsert_document(
-        base_dir=str(temp_dir),
-        filepath="doc1.txt",
-        file_hash="hash1",
-        extracted_text="Content to vectorise"
-    )
+    try:
+        # Put a document missing vector
+        db.upsert_document(
+            base_dir=str(temp_dir),
+            filepath="doc1.txt",
+            file_hash="hash1",
+            extracted_text="Content to vectorise",
+        )
 
-    # Ensure no vector is present
-    assert manager.get_vector(str(temp_dir), "doc1.txt") is None
+        # Ensure no vector is present
+        assert manager.get_vector(str(temp_dir), "doc1.txt") is None
 
-    # Trigger reconstruction
-    manager.trigger_reconstruction(str(temp_dir))
+        # Trigger reconstruction
+        manager.trigger_reconstruction(str(temp_dir))
 
-    # Verify background task is non-blocking and eventually finishes generating the vector
-    timeout = 30.0
-    start_time = time.time()
-    while time.time() - start_time < timeout:
+        # Verify background task is non-blocking and eventually finishes generating the vector
+        timeout = 30.0
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            v = manager.get_vector(str(temp_dir), "doc1.txt")
+            if v is not None:
+                break
+            time.sleep(0.1)
+
         v = manager.get_vector(str(temp_dir), "doc1.txt")
-        if v is not None:
-            break
-        time.sleep(0.1)
+        assert v is not None
+        assert len(v) == manager.dimensions
 
-    v = manager.get_vector(str(temp_dir), "doc1.txt")
-    assert v is not None
-    assert len(v) == manager.dimensions
-
-    # Wait for the background thread to finish completely before ending the test
-    while manager.is_reconstruction_active():
-        time.sleep(0.1)
+        # Wait for the background thread to finish completely before ending the test
+        while manager.is_reconstruction_active():
+            time.sleep(0.1)
+    finally:
+        manager.stop()
 
 
 def test_graceful_fallback_during_reconstruction(db, temp_dir):
@@ -160,45 +171,66 @@ def test_graceful_fallback_during_reconstruction(db, temp_dir):
     from app.core.analyzer import IncrementalAnalyzer
 
     analyzer = IncrementalAnalyzer(
-        max_folders=5,
-        stop_words={"the"},
-        db=db,
-        model_path=None
+        max_folders=5, stop_words={"the"}, db=db, model_path=None
     )
 
-    # Set background reconstruction to active
-    analyzer.embedding_manager._reconstruction_active = True
-    with patch.object(analyzer.embedding_manager, "is_reconstruction_active", return_value=True):
-        # We also patch standard TF-IDF similarity calculation to verify it gets called
-        with patch("sklearn.feature_extraction.text.TfidfVectorizer.fit") as mock_tfidf_fit:
-            # Prepare some documents
-            db.upsert_documents([
-                (str(temp_dir), "doc1.txt", "hash1", "Historical document content"),
-                (str(temp_dir), "doc2.txt", "hash2", "New document content to sort"),
-            ])
-            db.set_user_verified_target(str(temp_dir), "hash1", "FolderA")
+    try:
+        # Set background reconstruction to active
+        analyzer.embedding_manager._reconstruction_active = True
+        with patch.object(
+            analyzer.embedding_manager, "is_reconstruction_active", return_value=True
+        ):
+            # We also patch standard TF-IDF similarity calculation to verify it gets called
+            with patch(
+                "sklearn.feature_extraction.text.TfidfVectorizer.fit"
+            ) as mock_tfidf_fit:
+                # Prepare some documents
+                db.upsert_documents(
+                    [
+                        (
+                            str(temp_dir),
+                            "doc1.txt",
+                            "hash1",
+                            "Historical document content",
+                        ),
+                        (
+                            str(temp_dir),
+                            "doc2.txt",
+                            "hash2",
+                            "New document content to sort",
+                        ),
+                    ]
+                )
+                db.set_user_verified_target(str(temp_dir), "hash1", "FolderA")
 
-            # Try generating sorting plan during reconstruction
-            plan = analyzer.generate_sorting_plan(str(temp_dir))
+                # Try generating sorting plan during reconstruction
+                plan = analyzer.generate_sorting_plan(str(temp_dir))
 
-            # It must fall back gracefully to text similarity (TF-IDF vectorizer is called)
-            assert mock_tfidf_fit.called
+                # It must fall back gracefully to text similarity (TF-IDF vectorizer is called)
+                assert mock_tfidf_fit.called
+    finally:
+        analyzer.close()
 
 
 def test_memory_throttling_and_low_priority_thread(db, temp_dir):
     """Constraints & Guardrails: Loading document texts for vector updates must be throttled (<= 50 records at once), and run on low priority."""
     manager = SemanticEmbeddingManager(db, model_path=None)
 
-    # Spy on get_documents_missing_vectors
-    with patch.object(db, "get_documents_missing_vectors", wraps=db.get_documents_missing_vectors) as mock_get_docs:
-        # Trigger reconstruction
-        manager.trigger_reconstruction(str(temp_dir))
+    try:
+        # Spy on get_documents_missing_vectors
+        with patch.object(
+            db, "get_documents_missing_vectors", wraps=db.get_documents_missing_vectors
+        ) as mock_get_docs:
+            # Trigger reconstruction
+            manager.trigger_reconstruction(str(temp_dir))
 
-        # Wait for thread to finish
-        while manager.is_reconstruction_active():
-            time.sleep(0.1)
+            # Wait for thread to finish
+            while manager.is_reconstruction_active():
+                time.sleep(0.1)
 
-        # get_documents_missing_vectors must have been called with limit=50 to prevent memory exhaustion
-        if mock_get_docs.called:
-            args, kwargs = mock_get_docs.call_args
-            assert kwargs.get("limit") == 50 or args[1] == 50
+            # get_documents_missing_vectors must have been called with limit=50 to prevent memory exhaustion
+            if mock_get_docs.called:
+                args, kwargs = mock_get_docs.call_args
+                assert kwargs.get("limit") == 50 or args[1] == 50
+    finally:
+        manager.stop()
