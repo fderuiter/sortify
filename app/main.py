@@ -71,63 +71,87 @@ from app.log_filter import LogScrubbingFilter
 
 def run_smoke_test():
     """Run a complete database smoke test to verify SQLCipher encryption and connectivity."""
-    print("Starting automated database connection and encryption smoke test...")
-    import shutil
-    import tempfile
-
-    # Create a temporary directory for testing to avoid side effects
-    temp_dir = tempfile.mkdtemp()
-    try:
-        db_path = os.path.join(temp_dir, "smoke_test.db")
-        print(f"Temporary database path: {db_path}")
-
-        # Connect to the database using our actual connection function
-        from app.core.db_conn import HAS_SQLCIPHER, get_db_connection
-
-        if not HAS_SQLCIPHER:
-            print("Error: SQLCipher driver is missing from runtime environment!")
-            sys.exit(1)
-
-        conn = get_db_connection(db_path)
-        print("Successfully opened connection and verified SQLCipher driver.")
-
-        # Create a test table, insert and read values
-        with conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                "CREATE TABLE test_smoke (id INTEGER PRIMARY KEY, secret_val TEXT)"
-            )
-            cursor.execute(
-                "INSERT INTO test_smoke (secret_val) VALUES (?)", ("SuperSecretData",)
-            )
-
-            cursor.execute("SELECT secret_val FROM test_smoke WHERE id = 1")
-            row = cursor.fetchone()
-            if not row or row[0] != "SuperSecretData":
-                print("Error: Data validation failed inside the encrypted database!")
-                sys.exit(1)
-
-            # Double check cipher version via PRAGMA
-            cursor.execute("PRAGMA cipher_version;")
-            ver = cursor.fetchone()
-            if not ver or not ver[0]:
-                print("Error: PRAGMA cipher_version is empty! SQLCipher is not active.")
-                sys.exit(1)
-            print(f"Verified SQLCipher active version: {ver[0]}")
-
-        print("Smoke test successfully completed. Encryption is active and verified!")
-        sys.exit(0)
-    except Exception as e:
-        import traceback
-
-        print(f"Smoke test failed with exception: {e}")
-        traceback.print_exc()
-        sys.exit(1)
-    finally:
+    log_file = None
+    if sys.platform == "win32" and getattr(sys, "frozen", False):
         try:
-            shutil.rmtree(temp_dir)
+            log_file = open("smoke_test_out.log", "w", encoding="utf-8")
+            sys.stdout = log_file
+            sys.stderr = log_file
         except Exception:
             pass
+
+    try:
+        print("Starting automated database connection and encryption smoke test...")
+        import shutil
+        import tempfile
+
+        # Create a temporary directory for testing to avoid side effects
+        temp_dir = tempfile.mkdtemp()
+        try:
+            db_path = os.path.join(temp_dir, "smoke_test.db")
+            print(f"Temporary database path: {db_path}")
+
+            # Connect to the database using our actual connection function
+            from app.core.db_conn import HAS_SQLCIPHER, get_db_connection
+
+            if not HAS_SQLCIPHER:
+                print("Error: SQLCipher driver is missing from runtime environment!")
+                sys.exit(1)
+
+            conn = get_db_connection(db_path)
+            print("Successfully opened connection and verified SQLCipher driver.")
+
+            # Create a test table, insert and read values
+            with conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "CREATE TABLE test_smoke (id INTEGER PRIMARY KEY, secret_val TEXT)"
+                )
+                cursor.execute(
+                    "INSERT INTO test_smoke (secret_val) VALUES (?)",
+                    ("SuperSecretData",),
+                )
+
+                cursor.execute("SELECT secret_val FROM test_smoke WHERE id = 1")
+                row = cursor.fetchone()
+                if not row or row[0] != "SuperSecretData":
+                    print(
+                        "Error: Data validation failed inside the encrypted database!"
+                    )
+                    sys.exit(1)
+
+                # Double check cipher version via PRAGMA
+                cursor.execute("PRAGMA cipher_version;")
+                ver = cursor.fetchone()
+                if not ver or not ver[0]:
+                    print(
+                        "Error: PRAGMA cipher_version is empty! SQLCipher is not active."
+                    )
+                    sys.exit(1)
+                print(f"Verified SQLCipher active version: {ver[0]}")
+
+            print(
+                "Smoke test successfully completed. Encryption is active and verified!"
+            )
+            sys.exit(0)
+        except Exception as e:
+            import traceback
+
+            print(f"Smoke test failed with exception: {e}")
+            traceback.print_exc()
+            sys.exit(1)
+        finally:
+            try:
+                shutil.rmtree(temp_dir)
+            except Exception:
+                pass
+    finally:
+        if log_file:
+            try:
+                log_file.flush()
+                log_file.close()
+            except Exception:
+                pass
 
 
 def main():

@@ -45,7 +45,7 @@ if sqlcipher_spec and sqlcipher_spec.submodule_search_locations:
         for file in files:
             abs_file_path = os.path.join(root, file)
             rel_path = os.path.relpath(abs_file_path, sqlcipher_dir)
-            dest_dir = os.path.join('sqlcipher3', os.path.dirname(rel_path))
+            dest_dir = os.path.join('sqlcipher3', os.path.dirname(rel_path)).replace('\\', '/')
             
             # Identify platform-specific binary extensions (.dll, .dylib, .so, .pyd)
             file_lower = file.lower()
