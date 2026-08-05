@@ -73,6 +73,7 @@ jobs:
 
     - name: Post failure to PR comment
       if: failure() && matrix.os == 'windows-latest'
+      continue-on-error: true
       shell: bash
       run: |
         if [ -f pytest_out.log ]; then
@@ -91,8 +92,23 @@ jobs:
 
     - name: Verify compiled executable (Windows Smoke Test)
       if: matrix.os == 'windows-latest'
+      shell: bash
       run: |
-        dist/smart-autosorter/smart-autosorter.exe --smoke-test
+        dist/smart-autosorter/smart-autosorter.exe --smoke-test > smoke_test_out.log 2>&1 || (cat smoke_test_out.log && exit 1)
+
+    - name: Post smoke test failure to PR comment
+      if: failure() && matrix.os == 'windows-latest'
+      continue-on-error: true
+      shell: bash
+      run: |
+        if [ -f smoke_test_out.log ]; then
+          tail -n 150 smoke_test_out.log > smoke_test_traceback.log
+          git config --global user.name "GHA Bot"
+          git config --global user.email "gha@bot.local"
+          git add smoke_test_traceback.log
+          git commit -m "chore: upload smoke test traceback on windows failure [skip ci]" || true
+          git push || true
+        fi
 
     - name: Generate Documentation
       if: matrix.os == 'ubuntu-latest'
