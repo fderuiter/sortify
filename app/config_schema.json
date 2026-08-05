@@ -183,6 +183,14 @@
       "title": "Stop Words",
       "type": "array",
       "uniqueItems": true
+    },
+    "PROTECTED_PATHS": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Protected Paths",
+      "type": "array"
     }
   },
   "title": "Settings",

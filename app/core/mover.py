@@ -46,15 +46,23 @@ def get_safe_path(dest_dir: str, filename: str, source_path: str = None) -> str:
     return safe_path
 
 
-def _remove_empty_dirs(path: str):
-    """Recursively remove empty directories."""
+def _remove_empty_dirs(path: str, protected_paths: list[str] = None):
+    """Recursively remove empty directories, respecting protected paths."""
+    if protected_paths:
+        norm_path = os.path.normpath(path)
+        for p in protected_paths:
+            c_parts = norm_path.split(os.sep)
+            p_parts = p.split(os.sep)
+            if len(p_parts) <= len(c_parts) and c_parts[:len(p_parts)] == p_parts:
+                return
+
     if not os.path.isdir(path):
         return
 
     for entry in os.listdir(path):
         entry_path = os.path.join(path, entry)
         if os.path.isdir(entry_path):
-            _remove_empty_dirs(entry_path)
+            _remove_empty_dirs(entry_path, protected_paths)
 
     if not os.listdir(path):
         os.rmdir(path)
@@ -348,8 +356,22 @@ def execute_moves(
         )
 
         if cleanup_enabled:
+            protected_paths = getattr(runtime_settings, "PROTECTED_PATHS", [])
+            protected_paths = [os.path.normpath(p) for p in protected_paths]
+
             for node in dirs_to_process:
-                if node.get("protected"):
+                is_protected = node.get("protected")
+                source_path = node.get("source_path")
+                if not is_protected and source_path:
+                    norm_src = os.path.normpath(source_path)
+                    for p in protected_paths:
+                        c_parts = norm_src.split(os.sep)
+                        p_parts = p.split(os.sep)
+                        if len(p_parts) <= len(c_parts) and c_parts[:len(p_parts)] == p_parts:
+                            is_protected = True
+                            break
+
+                if is_protected:
                     summary["protected_folders"] += 1
                 elif node.get("status") == "To Be Deleted":
                     try:
@@ -365,7 +387,7 @@ def execute_moves(
             for entry in os.listdir(base_dir):
                 entry_path = os.path.join(base_dir, entry)
                 if os.path.isdir(entry_path):
-                    _remove_empty_dirs(entry_path)
+                    _remove_empty_dirs(entry_path, protected_paths)
         else:
             for node in dirs_to_process:
                 summary["protected_folders"] += 1

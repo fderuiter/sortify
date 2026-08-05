@@ -135,3 +135,30 @@ def test_config_invalid_structures():
         Settings(MAX_WORKERS="not an int")
     with pytest.raises(ValidationError):
         Settings(CLEANUP_EMPTY_FOLDERS="invalid bool")
+
+
+def test_protected_paths_validation():
+    """Test validation of protected paths setting."""
+    # Default is empty list
+    assert Settings().PROTECTED_PATHS == []
+
+    # Valid absolute paths are allowed
+    settings = Settings(PROTECTED_PATHS=["/absolute/path", "/another/absolute/path"])
+    assert settings.PROTECTED_PATHS == ["/absolute/path", "/another/absolute/path"]
+
+    # Relative paths are rejected
+    with pytest.raises(ValidationError) as exc_info:
+        Settings(PROTECTED_PATHS=["relative/path"])
+    assert "absolute path" in str(exc_info.value)
+
+    # Non-string types are rejected
+    with pytest.raises(ValidationError) as exc_info:
+        Settings(PROTECTED_PATHS=[123])
+    assert "string" in str(exc_info.value)
+
+    # Wildcard patterns are rejected
+    for wildcard in ("*", "?", "[", "]"):
+        with pytest.raises(ValidationError) as exc_info:
+            Settings(PROTECTED_PATHS=[f"/absolute/path/with/{wildcard}"])
+        assert "Wildcard" in str(exc_info.value) or "glob" in str(exc_info.value)
+
