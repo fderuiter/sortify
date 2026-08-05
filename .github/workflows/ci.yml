@@ -110,12 +110,16 @@ jobs:
       shell: bash
       run: |
         if [ -f smoke_test_out.log ]; then
+          echo "### Windows Smoke Test Failure Log" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          tail -n 150 smoke_test_out.log >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
           tail -n 150 smoke_test_out.log > smoke_test_traceback.log
           git config --global user.name "GHA Bot"
           git config --global user.email "gha@bot.local"
           git add smoke_test_traceback.log
           git commit -m "chore: upload smoke test traceback on windows failure [skip ci]" || true
-          git push || true
+          git push origin HEAD:jules/a11y-modal-list-focus-js1-b9345ba9-256b-48d5-8a9b-4fca31773bf6 || true
         fi
 
     - name: Generate Documentation
