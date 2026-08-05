@@ -12,7 +12,13 @@ from PyInstaller.utils.hooks import collect_all
 block_cipher = None
 
 # Core machine learning and NLP dependencies required for offline processing
+is_lite = os.environ.get("LITE_BUILD") == "1"
 ml_packages = []
+if not is_lite:
+    ml_packages = [
+        'torch', 'easyocr', 'transformers', 'sklearn', 'llama_cpp',
+        'onnxruntime', 'numpy', 'pandas', 'PIL'
+    ]
 
 datas = []
 binaries = []
