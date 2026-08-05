@@ -145,19 +145,19 @@ async def test_process_items_async_wrapping(tmp_path):
 
     settings = AppSettings()
     session = AppSession(settings, str(base_dir))
+    try:
+        gen = session.process_items_async(["file1.txt"], lambda: False)
 
-    gen = session.process_items_async(["file1.txt"], lambda: False)
+        results = []
+        async for res in gen:
+            results.append(res)
 
-    results = []
-    async for res in gen:
-        results.append(res)
-
-    assert len(results) == 1
-    assert results[0][0] == "file1.txt"
-    assert "Wrappy wrap" in results[0][1]
-    assert results[0][3] is False
-
-    session.close()
+        assert len(results) == 1
+        assert results[0][0] == "file1.txt"
+        assert "Wrappy wrap" in results[0][1]
+        assert results[0][3] is False
+    finally:
+        session.close()
 
 
 @pytest.mark.anyio
