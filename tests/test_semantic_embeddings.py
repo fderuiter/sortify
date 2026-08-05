@@ -145,6 +145,10 @@ def test_background_reconstruction_spawns(db, temp_dir):
     assert v is not None
     assert len(v) == manager.dimensions
 
+    # Wait for the background thread to finish completely before ending the test
+    while manager.is_reconstruction_active():
+        time.sleep(0.1)
+
 
 def test_graceful_fallback_during_reconstruction(db, temp_dir):
     """Requirement 5: Document sorting/similarity requests completed during background reconstruction fall back gracefully to text similarity."""

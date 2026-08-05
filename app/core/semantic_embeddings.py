@@ -24,9 +24,8 @@ def set_low_priority():
             import win32api
             import win32con
             import win32process
-            pid = win32api.GetCurrentProcessId()
-            handle = win32api.OpenProcess(win32con.PROCESS_ALL_ACCESS, True, pid)
-            win32process.SetPriorityClass(handle, win32process.IDLE_PRIORITY_CLASS)
+            handle = win32api.GetCurrentThread()
+            win32process.SetThreadPriority(handle, win32con.THREAD_PRIORITY_IDLE)
     except Exception:
         pass
 
