@@ -30,6 +30,10 @@ class IncrementalAnalyzer:
         self.corpus = {}
         self._last_reconstruction_error = 0.0
 
+        from app.core.semantic_embeddings import SemanticEmbeddingManager
+
+        self.embedding_manager = SemanticEmbeddingManager(self.db, self.model_path)
+
     def close(self):
         """Terminate processes."""
         self.terminate()
@@ -40,6 +44,11 @@ class IncrementalAnalyzer:
 
     def terminate(self):
         """Terminate processes."""
+        if hasattr(self, "embedding_manager") and self.embedding_manager:
+            try:
+                self.embedding_manager.stop()
+            except Exception:
+                pass
         if getattr(self, "strategy_name", None):
             try:
                 from app.core.analyzer_strategies import clustering_registry
@@ -290,32 +299,92 @@ class IncrementalAnalyzer:
                 )
 
                 if target is not None and d[1]:
-                    historical_docs.append({
-                        "text": d[1],
-                        "target_folder": target,
-                        "filepath": d[0]
-                    })
+                    historical_docs.append(
+                        {"text": d[1], "target_folder": target, "filepath": d[0]}
+                    )
 
             if historical_docs and ai_filenames:
                 try:
                     import numpy as np
-                    from sklearn.feature_extraction.text import TfidfVectorizer
                     from sklearn.metrics.pairwise import cosine_similarity
 
-                    historical_texts = [doc["text"] for doc in historical_docs]
-                    historical_targets = [doc["target_folder"] for doc in historical_docs]
+                    # Check if embedding reconstruction is active
+                    use_semantic = True
+                    if self.embedding_manager.is_reconstruction_active():
+                        use_semantic = False
+                        logging.info(
+                            "Background reconstruction active, falling back to standard text similarity."
+                        )
+                    else:
+                        # Try to load vector embeddings for historical docs
+                        hist_vectors = []
+                        for doc in historical_docs:
+                            vector = self.embedding_manager.get_vector(
+                                base_dir, doc["filepath"]
+                            )
+                            if (
+                                not vector
+                                or not self.embedding_manager.validate_vector_dimension(
+                                    vector
+                                )
+                            ):
+                                use_semantic = False
+                                logging.info(
+                                    "Obsolete/missing vectors or dimension mismatch detected. Initiating cleanup and background recovery."
+                                )
+                                # Re-verify model to perform purge of outdated vectors
+                                self.embedding_manager.verify_active_model()
+                                # Trigger background reconstruction
+                                self.embedding_manager.trigger_reconstruction(base_dir)
+                                break
+                            hist_vectors.append(vector)
 
-                    vectorizer = TfidfVectorizer(
-                        stop_words=list(self.stop_words), max_features=1000
-                    )
-                    safe_ai_documents = [d or "" for d in ai_documents]
-                    all_texts = historical_texts + safe_ai_documents
-                    vectorizer.fit(all_texts)
+                    if use_semantic:
+                        # Generate on-the-fly embeddings for AI files
+                        ai_vectors = []
+                        try:
+                            for doc_text in ai_documents:
+                                v = self.embedding_manager.generate_embedding(doc_text)
+                                if not self.embedding_manager.validate_vector_dimension(
+                                    v
+                                ):
+                                    raise ValueError(
+                                        "Generated vector dimensions do not match the active model dimensions."
+                                    )
+                                ai_vectors.append(v)
+                        except Exception as e:
+                            logging.error(
+                                f"Error generating active model vectors: {e}. Falling back to standard text similarity."
+                            )
+                            use_semantic = False
 
-                    historical_vectors = vectorizer.transform(historical_texts)
-                    new_docs_vectors = vectorizer.transform(safe_ai_documents)
+                    if use_semantic:
+                        # Calculate similarity using vector embeddings
+                        similarities = cosine_similarity(
+                            np.array(ai_vectors), np.array(hist_vectors)
+                        )
+                    else:
+                        # Fallback gracefully to standard TF-IDF text similarity
+                        from sklearn.feature_extraction.text import TfidfVectorizer
 
-                    similarities = cosine_similarity(new_docs_vectors, historical_vectors)
+                        historical_texts = [doc["text"] for doc in historical_docs]
+                        vectorizer = TfidfVectorizer(
+                            stop_words=list(self.stop_words), max_features=1000
+                        )
+                        safe_ai_documents = [d or "" for d in ai_documents]
+                        all_texts = historical_texts + safe_ai_documents
+                        vectorizer.fit(all_texts)
+
+                        historical_vectors = vectorizer.transform(historical_texts)
+                        new_docs_vectors = vectorizer.transform(safe_ai_documents)
+
+                        similarities = cosine_similarity(
+                            new_docs_vectors, historical_vectors
+                        )
+
+                    historical_targets = [
+                        doc["target_folder"] for doc in historical_docs
+                    ]
 
                     remaining_ai_filenames = []
                     remaining_ai_documents = []
