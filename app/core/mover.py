@@ -53,7 +53,7 @@ def _remove_empty_dirs(path: str, protected_paths: list[str] = None):
         for p in protected_paths:
             c_parts = norm_path.split(os.sep)
             p_parts = p.split(os.sep)
-            if len(p_parts) <= len(c_parts) and c_parts[:len(p_parts)] == p_parts:
+            if len(p_parts) <= len(c_parts) and c_parts[: len(p_parts)] == p_parts:
                 return
 
     if not os.path.isdir(path):
@@ -367,7 +367,10 @@ def execute_moves(
                     for p in protected_paths:
                         c_parts = norm_src.split(os.sep)
                         p_parts = p.split(os.sep)
-                        if len(p_parts) <= len(c_parts) and c_parts[:len(p_parts)] == p_parts:
+                        if (
+                            len(p_parts) <= len(c_parts)
+                            and c_parts[: len(p_parts)] == p_parts
+                        ):
                             is_protected = True
                             break
 
