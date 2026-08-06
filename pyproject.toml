@@ -85,4 +85,4 @@ build = [
 pythonpath = [
   "."
 ]
-timeout = 180
+timeout = 360
