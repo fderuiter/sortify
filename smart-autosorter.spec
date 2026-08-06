@@ -62,6 +62,39 @@ if sqlcipher_spec and sqlcipher_spec.submodule_search_locations:
 else:
     print("Warning: sqlcipher3 not found in active environment.")
 
+# On Windows, find and bundle any dependent OpenSSL/SQLCipher DLLs from the active Python or virtualenv environments
+if platform.system().lower() == "windows" or sys.platform == "win32":
+    search_dirs = [
+        sys.prefix,
+        sys.base_prefix,
+        os.path.dirname(sys.executable),
+    ]
+    # Add Library/bin and DLLs subdirectory of sys.prefix / sys.base_prefix if they exist
+    for sd in list(search_dirs):
+        if sd:
+            lib_bin = os.path.join(sd, "Library", "bin")
+            if os.path.isdir(lib_bin):
+                search_dirs.append(lib_bin)
+            dlls_dir = os.path.join(sd, "DLLs")
+            if os.path.isdir(dlls_dir):
+                search_dirs.append(dlls_dir)
+                
+    found_dlls = set()
+    dll_patterns = ["libcrypto", "libssl", "sqlcipher", "libsqlcipher"]
+    for s_dir in search_dirs:
+        if not s_dir or not os.path.isdir(s_dir):
+            continue
+        for file in os.listdir(s_dir):
+            file_lower = file.lower()
+            if file_lower.endswith(".dll") and any(pat in file_lower for pat in dll_patterns):
+                dll_path = os.path.abspath(os.path.join(s_dir, file))
+                if dll_path not in found_dlls:
+                    found_dlls.add(dll_path)
+                    print(f"Bundling required Windows dependency DLL: {dll_path}")
+                    # Place in root and sqlcipher3 to be absolutely certain it's resolved
+                    binaries.append((dll_path, '.'))
+                    binaries.append((dll_path, 'sqlcipher3'))
+
 is_lite = os.environ.get("LITE_BUILD") == "1"
 excludes = ['tkinter', 'tcl', 'tk', '_tkinter']
 if is_lite:
