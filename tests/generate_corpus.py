@@ -11,6 +11,23 @@ LARGE_CORPUS_DIR = "tests/large_corpus"
 def create_corpus():
     os.makedirs(CORPUS_DIR, exist_ok=True)
 
+    # Prevent parallel worker processes from stomping on each other's files
+    expected_files = [
+        "finance_report.txt",
+        "tech_notes.txt",
+        "empty.txt",
+        "health_doc.docx",
+        "finance_data.csv",
+        "tech_data.xlsx",
+        "science_doc.pdf",
+    ]
+    if all(
+        os.path.exists(os.path.join(CORPUS_DIR, f))
+        and (f == "empty.txt" or os.path.getsize(os.path.join(CORPUS_DIR, f)) > 0)
+        for f in expected_files
+    ):
+        return
+
     # 1. Plain text files
     with open(os.path.join(CORPUS_DIR, "finance_report.txt"), "w") as f:
         f.write(

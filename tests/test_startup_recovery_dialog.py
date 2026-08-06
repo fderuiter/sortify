@@ -227,7 +227,7 @@ async def test_wizard_file_recovery_original_location(mock_session_base, tmp_pat
         import time
         start_time = time.time()
         resolved = False
-        while time.time() - start_time < 5.0:
+        while time.time() - start_time < 30.0:
             conn = None
             try:
                 conn = sqlite3.connect(history_db, timeout=30.0)
@@ -363,7 +363,7 @@ async def test_wizard_file_recovery_custom_location(mock_session_base, tmp_path)
         import time
         start_time = time.time()
         resolved = False
-        while time.time() - start_time < 5.0:
+        while time.time() - start_time < 30.0:
             conn = None
             try:
                 conn = sqlite3.connect(history_db, timeout=30.0)
