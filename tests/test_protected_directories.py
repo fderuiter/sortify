@@ -136,3 +136,21 @@ def test_execute_moves_with_protected_paths(tmp_path):
     # Check that summary correctly reflects protected and deleted folders
     assert summary["protected_folders"] == 1
     assert summary["deleted_folders"] == 1
+
+
+def test_is_subpath_or_equal():
+    from app.core.mover import is_subpath_or_equal
+
+    assert is_subpath_or_equal("/app/dir", "/app/dir") is True
+    assert is_subpath_or_equal("/app/dir/sub", "/app/dir") is True
+    assert is_subpath_or_equal("/app/dir2", "/app/dir") is False
+    assert is_subpath_or_equal("/app/dir/sub", "/app/dir/sub/nested") is False
+    assert is_subpath_or_equal(None, "/app/dir") is False
+    assert is_subpath_or_equal("/app/dir", None) is False
+
+    # Test case-insensitivity which is important on Windows and macOS if file system is case-insensitive
+    import sys
+
+    if sys.platform == "win32":
+        assert is_subpath_or_equal("/APP/DIR/SUB", "/app/dir") is True
+        assert is_subpath_or_equal("/app/dir/sub", "/APP/DIR") is True
