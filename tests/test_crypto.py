@@ -312,7 +312,9 @@ def test_decryption_failure_safe_error_propagation(tmp_path, monkeypatch, caplog
     3. Log a clear, scrubbed error message without raw keys or credentials.
     4. Can successfully load the original intact database once the keyring/key is restored.
     """
+    import gc
     import logging
+    from contextlib import closing
 
     from app.core import db_conn
     from app.core.path_utils import resolve_db_crypto
@@ -326,13 +328,17 @@ def test_decryption_failure_safe_error_propagation(tmp_path, monkeypatch, caplog
     correct_key = crypto.get_raw_key()
     assert correct_key is not None
 
-    # Connect and write some initial data to the database
-    conn = db_conn.sqlite3.connect(str(db_path), timeout=5.0, check_same_thread=False)
-    conn.execute(f"PRAGMA key = '{correct_key}'")
-    conn.execute("CREATE TABLE test_table (id INTEGER PRIMARY KEY, value TEXT)")
-    conn.execute("INSERT INTO test_table (value) VALUES ('secret_data')")
-    conn.commit()
-    conn.close()
+    def create_initial_db(path, key):
+        with closing(
+            db_conn.sqlite3.connect(str(path), timeout=30.0, check_same_thread=False)
+        ) as conn:
+            conn.execute(f"PRAGMA key = '{key}'")
+            conn.execute("CREATE TABLE test_table (id INTEGER PRIMARY KEY, value TEXT)")
+            conn.execute("INSERT INTO test_table (value) VALUES ('secret_data')")
+            conn.commit()
+
+    create_initial_db(db_path, correct_key)
+    gc.collect()
 
     # Verify database file physically exists on disk
     assert db_path.exists()
@@ -391,10 +397,13 @@ def test_decryption_failure_safe_error_propagation(tmp_path, monkeypatch, caplog
     db_conn.clear_connection_cache()
 
     # Attempt connection again. It should load successfully, and we should be able to read our original data.
-    conn2 = db_conn.get_db_connection(str(db_path))
-    cursor = conn2.execute("SELECT value FROM test_table")
-    row = cursor.fetchone()
-    assert row is not None
-    assert row[0] == "secret_data"
-    conn2.close()
+    def verify_db_contents(path):
+        with closing(db_conn.get_db_connection(str(path))) as conn:
+            cursor = conn.execute("SELECT value FROM test_table")
+            row = cursor.fetchone()
+            assert row is not None
+            assert row[0] == "secret_data"
+
+    verify_db_contents(db_path)
     db_conn.clear_connection_cache()
+    gc.collect()
