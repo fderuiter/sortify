@@ -212,7 +212,7 @@ class AutoSorterApp:
         def _update_session_resolved_sync(db_path, sess_id):
             conn = None
             try:
-                conn = sqlite3.connect(db_path)
+                conn = sqlite3.connect(db_path, timeout=30.0)
                 with conn:
                     conn.execute(
                         "UPDATE sessions SET status = 'resolved' WHERE session_id = ?",
