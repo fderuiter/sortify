@@ -19,12 +19,26 @@ def mock_winreg_and_ctypes():
 
     import ctypes
 
+    class MockShell32:
+        def __init__(self, real_shell=None):
+            self._real_shell = real_shell
+            self.IsUserAnAdmin = MagicMock()
+            self.IsUserAnAdmin.return_value = False
+            self.ShellExecuteW = MagicMock()
+            self.ShellExecuteW.return_value = 42
+
+        def __getattr__(self, name):
+            if self._real_shell is not None:
+                return getattr(self._real_shell, name)
+            raise AttributeError(name)
+
     class MockWindll:
         def __init__(self, real_windll=None):
             self._real_windll = real_windll
-            self.shell32 = MagicMock()
-            self.shell32.IsUserAnAdmin.return_value = False
-            self.shell32.ShellExecuteW.return_value = 42
+            real_shell32 = (
+                getattr(real_windll, "shell32", None) if real_windll else None
+            )
+            self.shell32 = MockShell32(real_shell32)
 
         def __getattr__(self, name):
             if self._real_windll is not None:
@@ -422,7 +436,9 @@ def test_settings_protected_paths_ui():
 
         # The path should be added
         assert "/var/protected_two" in settings.PROTECTED_PATHS
-        mock_ui.notify.assert_any_call("Protected path added: /var/protected_two", type="positive")
+        mock_ui.notify.assert_any_call(
+            "Protected path added: /var/protected_two", type="positive"
+        )
 
         # Let's try adding an invalid path (e.g. relative path)
         mock_input.value = "relative/path"
@@ -434,4 +450,3 @@ def test_settings_protected_paths_ui():
         assert mock_ui.notify.call_count >= 1
         last_call_args, last_call_kwargs = mock_ui.notify.call_args
         assert last_call_kwargs.get("type") == "negative"
-
