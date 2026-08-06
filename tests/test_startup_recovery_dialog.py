@@ -286,7 +286,7 @@ async def test_wizard_file_recovery_custom_location(mock_session_base, tmp_path)
     session_dir.mkdir()
 
     history_db = session_dir / "history.db"
-    conn = sqlite3.connect(history_db)
+    conn = sqlite3.connect(history_db, timeout=30.0)
     try:
         with conn:
             conn.execute(
