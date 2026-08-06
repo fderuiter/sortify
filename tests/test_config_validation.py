@@ -161,4 +161,3 @@ def test_protected_paths_validation():
         with pytest.raises(ValidationError) as exc_info:
             Settings(PROTECTED_PATHS=[f"/absolute/path/with/{wildcard}"])
         assert "Wildcard" in str(exc_info.value) or "glob" in str(exc_info.value)
-

@@ -92,10 +92,17 @@
     },
     "MODEL_THREADS": {
       "default": 2,
-      "minimum": 1,
       "maximum": 32,
+      "minimum": 1,
       "title": "Model Threads",
       "type": "integer"
+    },
+    "PROTECTED_PATHS": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Protected Paths",
+      "type": "array"
     },
     "AI_CONSENT_GRANTED": {
       "anyOf": [
@@ -183,14 +190,6 @@
       "title": "Stop Words",
       "type": "array",
       "uniqueItems": true
-    },
-    "PROTECTED_PATHS": {
-      "default": [],
-      "items": {
-        "type": "string"
-      },
-      "title": "Protected Paths",
-      "type": "array"
     }
   },
   "title": "Settings",

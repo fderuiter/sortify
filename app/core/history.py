@@ -945,8 +945,9 @@ class HistoryManager:
                     raise e
 
                 # Clean empty directories
-                from app.core.mover import _remove_empty_dirs
                 from app.config import AppSettings
+                from app.core.mover import _remove_empty_dirs
+
                 try:
                     app_settings = AppSettings()
                     protected_paths = getattr(app_settings, "PROTECTED_PATHS", [])

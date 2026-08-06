@@ -12,7 +12,13 @@ from PyInstaller.utils.hooks import collect_all
 block_cipher = None
 
 # Core machine learning and NLP dependencies required for offline processing
+is_lite = os.environ.get("LITE_BUILD") == "1"
 ml_packages = []
+if not is_lite:
+    ml_packages = [
+        'torch', 'easyocr', 'transformers', 'sklearn', 'llama_cpp',
+        'onnxruntime', 'numpy', 'pandas', 'PIL'
+    ]
 
 datas = []
 binaries = []
@@ -55,6 +61,63 @@ if sqlcipher_spec and sqlcipher_spec.submodule_search_locations:
                 datas.append((abs_file_path, dest_dir))
 else:
     print("Warning: sqlcipher3 not found in active environment.")
+
+# On Windows, find and bundle any dependent OpenSSL/SQLCipher DLLs from the active Python or virtualenv environments
+if platform.system().lower() == "windows" or sys.platform == "win32":
+    search_dirs = [
+        sys.prefix,
+        sys.base_prefix,
+        os.path.dirname(sys.executable),
+    ]
+    # Add Library/bin, DLLs and Scripts subdirectories of sys.prefix / sys.base_prefix if they exist
+    for sd in list(search_dirs):
+        if sd:
+            lib_bin = os.path.join(sd, "Library", "bin")
+            if os.path.isdir(lib_bin):
+                search_dirs.append(lib_bin)
+            dlls_dir = os.path.join(sd, "DLLs")
+            if os.path.isdir(dlls_dir):
+                search_dirs.append(dlls_dir)
+            scripts_dir = os.path.join(sd, "Scripts")
+            if os.path.isdir(scripts_dir):
+                search_dirs.append(scripts_dir)
+                
+    found_dlls = set()
+    dll_patterns = ["libcrypto", "libssl", "sqlcipher", "libsqlcipher"]
+    
+    # 1. Check recursively inside the installed sqlcipher3 package directory itself for any DLLs
+    if sqlcipher_spec and sqlcipher_spec.submodule_search_locations:
+        sqlcipher_dir = sqlcipher_spec.submodule_search_locations[0]
+        for root, dirs, files in os.walk(sqlcipher_dir):
+            for file in files:
+                file_lower = file.lower()
+                if file_lower.endswith(".dll"):
+                    dll_path = os.path.abspath(os.path.join(root, file))
+                    if dll_path not in found_dlls:
+                        found_dlls.add(dll_path)
+                        print(f"Bundling required Windows dependency DLL from sqlcipher3 package: {dll_path}")
+                        binaries.append((dll_path, '.'))
+                        binaries.append((dll_path, 'sqlcipher3'))
+
+    # 2. Check the standard search directories for matching DLL patterns
+    for s_dir in search_dirs:
+        if not s_dir or not os.path.isdir(s_dir):
+            continue
+        try:
+            files_in_dir = os.listdir(s_dir)
+        except Exception as scan_err:
+            print(f"Warning: Could not list directory {s_dir} during DLL discovery: {scan_err}")
+            continue
+        for file in files_in_dir:
+            file_lower = file.lower()
+            if file_lower.endswith(".dll") and any(pat in file_lower for pat in dll_patterns):
+                dll_path = os.path.abspath(os.path.join(s_dir, file))
+                if dll_path not in found_dlls:
+                    found_dlls.add(dll_path)
+                    print(f"Bundling required Windows dependency DLL: {dll_path}")
+                    # Place in root and sqlcipher3 to be absolutely certain it's resolved
+                    binaries.append((dll_path, '.'))
+                    binaries.append((dll_path, 'sqlcipher3'))
 
 is_lite = os.environ.get("LITE_BUILD") == "1"
 excludes = ['tkinter', 'tcl', 'tk', '_tkinter']

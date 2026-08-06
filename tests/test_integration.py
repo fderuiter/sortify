@@ -10,19 +10,33 @@ from app.ui.app import AutoSorterApp, run_app
 from app.ui.settings import show_settings
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture()
 def mock_winreg_and_ctypes():
     """Mock winreg and ctypes modules for platform-independent testing."""
     mock_winreg = MagicMock()
     mock_winreg.HKEY_CLASSES_ROOT = "HKEY_CLASSES_ROOT"
     mock_winreg.REG_SZ = 1
 
-    mock_ctypes = MagicMock()
-    mock_ctypes.windll.shell32.IsUserAnAdmin.return_value = False
-    mock_ctypes.windll.shell32.ShellExecuteW.return_value = 42
+    mock_shell32 = MagicMock()
+    mock_shell32.IsUserAnAdmin = MagicMock(return_value=False)
+    mock_shell32.ShellExecuteW = MagicMock(return_value=42)
+
+    mock_windll = MagicMock()
+    mock_windll.shell32 = mock_shell32
+
+    # Create a clean mock for ctypes module in integration namespace
+    mock_ctypes_module = MagicMock()
+    mock_ctypes_module.windll = mock_windll
+
+    class MockCtypesWrapper:
+        pass
+
+    mock_ctypes = MockCtypesWrapper()
+    mock_ctypes.windll = mock_windll
 
     with (
-        patch.dict(sys.modules, {"winreg": mock_winreg, "ctypes": mock_ctypes}),
+        patch("app.core.integration.winreg", mock_winreg, create=True),
+        patch("app.core.integration.ctypes", mock_ctypes_module),
         patch("app.core.verifier.check_ai_status", return_value=(True, None)),
     ):
         yield mock_winreg, mock_ctypes
@@ -404,7 +418,9 @@ def test_settings_protected_paths_ui():
 
         # The path should be added
         assert "/var/protected_two" in settings.PROTECTED_PATHS
-        mock_ui.notify.assert_any_call("Protected path added: /var/protected_two", type="positive")
+        mock_ui.notify.assert_any_call(
+            "Protected path added: /var/protected_two", type="positive"
+        )
 
         # Let's try adding an invalid path (e.g. relative path)
         mock_input.value = "relative/path"
@@ -416,4 +432,3 @@ def test_settings_protected_paths_ui():
         assert mock_ui.notify.call_count >= 1
         last_call_args, last_call_kwargs = mock_ui.notify.call_args
         assert last_call_kwargs.get("type") == "negative"
-
