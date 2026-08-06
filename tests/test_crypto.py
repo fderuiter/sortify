@@ -312,9 +312,10 @@ def test_decryption_failure_safe_error_propagation(tmp_path, monkeypatch, caplog
     3. Log a clear, scrubbed error message without raw keys or credentials.
     4. Can successfully load the original intact database once the keyring/key is restored.
     """
+    import logging
+
     from app.core import db_conn
     from app.core.path_utils import resolve_db_crypto
-    import logging
 
     db_path = tmp_path / "secure_autosorter.db"
     wal_path = tmp_path / "secure_autosorter.db-wal"
@@ -384,7 +385,9 @@ def test_decryption_failure_safe_error_propagation(tmp_path, monkeypatch, caplog
     # and that the raw key/password is completely scrubbed from logs.
     log_text = caplog.text
     assert "Database decryption failed" in log_text
-    assert "locked OS keyring" in log_text or "mismatched cryptographic keys" in log_text
+    assert (
+        "locked OS keyring" in log_text or "mismatched cryptographic keys" in log_text
+    )
     assert "secure_autosorter.db" in log_text
     assert mismatched_key not in log_text
     assert correct_key not in log_text
@@ -403,4 +406,3 @@ def test_decryption_failure_safe_error_propagation(tmp_path, monkeypatch, caplog
     assert row is not None
     assert row[0] == "secret_data"
     conn2.close()
-

@@ -225,6 +225,7 @@ async def test_wizard_file_recovery_original_location(mock_session_base, tmp_pat
         # Poll until the session status is updated to resolved in the database
         # This prevents any timing-related race conditions on slow Windows CI runners
         import time
+
         start_time = time.time()
         resolved = False
         while time.time() - start_time < 30.0:
@@ -232,7 +233,9 @@ async def test_wizard_file_recovery_original_location(mock_session_base, tmp_pat
             try:
                 conn = sqlite3.connect(history_db, timeout=30.0)
                 cursor = conn.cursor()
-                cursor.execute("SELECT status FROM sessions WHERE session_id = ?", (session_id,))
+                cursor.execute(
+                    "SELECT status FROM sessions WHERE session_id = ?", (session_id,)
+                )
                 row = cursor.fetchone()
                 if row and row[0] == "resolved":
                     resolved = True
@@ -247,7 +250,9 @@ async def test_wizard_file_recovery_original_location(mock_session_base, tmp_pat
                         pass
             await asyncio.sleep(0.05)
 
-        assert resolved, "Recovery wizard failed to update session status to 'resolved' within timeout"
+        assert resolved, (
+            "Recovery wizard failed to update session status to 'resolved' within timeout"
+        )
 
     # Let's check the result:
     # 1. Trapped file should be recovered. Since test_doc.txt existed, it should be named test_doc_1.txt
@@ -268,7 +273,9 @@ async def test_wizard_file_recovery_original_location(mock_session_base, tmp_pat
     conn = sqlite3.connect(history_db, timeout=30.0)
     try:
         cursor = conn.cursor()
-        cursor.execute("SELECT status FROM sessions WHERE session_id = ?", (session_id,))
+        cursor.execute(
+            "SELECT status FROM sessions WHERE session_id = ?", (session_id,)
+        )
         row = cursor.fetchone()
         assert row[0] == "resolved"
     finally:
@@ -361,6 +368,7 @@ async def test_wizard_file_recovery_custom_location(mock_session_base, tmp_path)
         # Poll until the session status is updated to resolved in the database
         # This prevents any timing-related race conditions on slow Windows CI runners
         import time
+
         start_time = time.time()
         resolved = False
         while time.time() - start_time < 30.0:
@@ -368,7 +376,9 @@ async def test_wizard_file_recovery_custom_location(mock_session_base, tmp_path)
             try:
                 conn = sqlite3.connect(history_db, timeout=30.0)
                 cursor = conn.cursor()
-                cursor.execute("SELECT status FROM sessions WHERE session_id = ?", (session_id,))
+                cursor.execute(
+                    "SELECT status FROM sessions WHERE session_id = ?", (session_id,)
+                )
                 row = cursor.fetchone()
                 if row and row[0] == "resolved":
                     resolved = True
@@ -383,7 +393,9 @@ async def test_wizard_file_recovery_custom_location(mock_session_base, tmp_path)
                         pass
             await asyncio.sleep(0.05)
 
-        assert resolved, "Recovery wizard failed to update session status to 'resolved' within timeout"
+        assert resolved, (
+            "Recovery wizard failed to update session status to 'resolved' within timeout"
+        )
 
     # Verify the custom export:
     exported_file = custom_export_dir / "sub_folder" / "trapped_export.txt"
@@ -398,7 +410,9 @@ async def test_wizard_file_recovery_custom_location(mock_session_base, tmp_path)
     conn = sqlite3.connect(history_db, timeout=30.0)
     try:
         cursor = conn.cursor()
-        cursor.execute("SELECT status FROM sessions WHERE session_id = ?", (session_id,))
+        cursor.execute(
+            "SELECT status FROM sessions WHERE session_id = ?", (session_id,)
+        )
         row = cursor.fetchone()
         assert row[0] == "resolved"
     finally:

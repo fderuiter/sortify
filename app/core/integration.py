@@ -14,7 +14,6 @@ except ImportError:
     winreg = None
 
 
-
 def is_admin():
     """Check if the current process has administrative privileges."""
     if sys.platform != "win32":
