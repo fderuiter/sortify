@@ -221,11 +221,15 @@ class AutoSorterApp:
             dialog.props("persistent")
 
             # Title & Header
-            ui.label("Startup Recovery Wizard").classes("text-xl font-bold text-red-600").props('aria-label="Recovery Wizard Title"')
+            ui.label("Startup Recovery Wizard").classes(
+                "text-xl font-bold text-red-600"
+            ).props('aria-label="Recovery Wizard Title"')
             ui.label(
                 f"An interrupted or failed file rollback was detected. There are {len(files_to_recover)} trapped files in a hidden safety folder."
             ).classes("text-sm text-gray-700")
-            ui.label(f"Original directory: {base_dir}").classes("text-xs text-gray-500 font-mono")
+            ui.label(f"Original directory: {base_dir}").classes(
+                "text-xs text-gray-500 font-mono"
+            )
 
             # Custom area for wizard steps
             wizard_content = ui.column().classes("w-full gap-4")
@@ -233,54 +237,69 @@ class AutoSorterApp:
             # Step 1: Options
             with wizard_content:
                 ui.label("Choose a recovery method:").classes("font-semibold text-sm")
-                
+
                 # Option 1: Restore to original paths
                 def select_original():
                     run_recovery(restore_to_original=True)
 
                 ui.button(
-                    "Restore to Original Folders", 
-                    on_click=select_original
-                ).classes("w-full bg-blue-600 text-white").props('aria-label="Restore to Original Folders"')
+                    "Restore to Original Folders", on_click=select_original
+                ).classes("w-full bg-blue-600 text-white").props(
+                    'aria-label="Restore to Original Folders"'
+                )
 
-                ui.label("OR").classes("text-center w-full text-xs font-bold text-gray-400")
+                ui.label("OR").classes(
+                    "text-center w-full text-xs font-bold text-gray-400"
+                )
 
                 # Option 2: Export to custom folder
                 default_export_path = os.path.join(base_dir, "Recovered Files")
                 export_input = ui.input(
-                    label="Custom Export Folder", 
-                    value=default_export_path
+                    label="Custom Export Folder", value=default_export_path
                 ).classes("w-full")
 
                 def on_browse_click():
                     def on_dir_selected(path):
                         if path:
                             export_input.set_value(path)
-                    ask_directory_async(None, "Select Export Folder", on_dir_selected, None, None)
+
+                    ask_directory_async(
+                        None, "Select Export Folder", on_dir_selected, None, None
+                    )
 
                 with ui.row().classes("w-full items-center gap-2"):
-                    ui.button("Browse", on_click=on_browse_click).classes("bg-gray-200 text-black")
-                    
+                    ui.button("Browse", on_click=on_browse_click).classes(
+                        "bg-gray-200 text-black"
+                    )
+
                     def select_export():
                         custom_path = export_input.value.strip()
                         if not custom_path:
-                            ui.notify("Please specify or browse for a custom export folder.", type="warning")
+                            ui.notify(
+                                "Please specify or browse for a custom export folder.",
+                                type="warning",
+                            )
                             return
                         run_recovery(restore_to_original=False, custom_path=custom_path)
 
                     ui.button(
-                        "Export to Custom Folder", 
-                        on_click=select_export
-                    ).classes("bg-green-600 text-white flex-1").props('aria-label="Export to Custom Folder"')
+                        "Export to Custom Folder", on_click=select_export
+                    ).classes("bg-green-600 text-white flex-1").props(
+                        'aria-label="Export to Custom Folder"'
+                    )
 
             def run_recovery(restore_to_original=True, custom_path=None):
                 # Clear step 1 content
                 wizard_content.clear()
-                
+
                 with wizard_content:
-                    ui.label("Recovering files... Please wait.").classes("font-semibold text-sm")
+                    ui.label("Recovering files... Please wait.").classes(
+                        "font-semibold text-sm"
+                    )
                     progress = ui.linear_progress(value=0).classes("w-full")
-                    status_lbl = ui.label("Initializing...").classes("text-xs text-gray-500")
+                    status_lbl = ui.label("Initializing...").classes(
+                        "text-xs text-gray-500"
+                    )
 
                 async def do_work():
                     total = len(files_to_recover)
@@ -297,12 +316,14 @@ class AutoSorterApp:
 
                             dest_dir = os.path.dirname(target_full_path)
                             filename = os.path.basename(rel_path)
-                            
+
                             os.makedirs(dest_dir, exist_ok=True)
-                            
+
                             # Apply safe pathing rules (prevent overwrites)
-                            safe_dst = get_safe_path(dest_dir, filename, source_path=full_path)
-                            
+                            safe_dst = get_safe_path(
+                                dest_dir, filename, source_path=full_path
+                            )
+
                             # Move file
                             shutil.move(full_path, safe_dst)
                             success_count += 1
@@ -316,34 +337,48 @@ class AutoSorterApp:
                     # Update session status to 'resolved' and prune/clear hidden folder
                     try:
                         shutil.rmtree(safety_folder, ignore_errors=True)
-                        
+
                         # Also check if .branches is empty and remove it if so
                         branches_dir = os.path.dirname(safety_folder)
-                        if os.path.exists(branches_dir) and not os.listdir(branches_dir):
+                        if os.path.exists(branches_dir) and not os.listdir(
+                            branches_dir
+                        ):
                             shutil.rmtree(branches_dir, ignore_errors=True)
 
                         if os.path.exists(history_db_path):
-                            self._resolve_session_status(history_db_path, session_id)
+                            await asyncio.to_thread(
+                                self._resolve_session_status,
+                                history_db_path,
+                                session_id,
+                            )
                     except Exception as db_ex:
                         errors.append(f"DB update failed: {str(db_ex)}")
 
                     wizard_content.clear()
                     with wizard_content:
                         if errors:
-                            ui.label("Recovery completed with errors:").classes("font-semibold text-sm text-red-500")
+                            ui.label("Recovery completed with errors:").classes(
+                                "font-semibold text-sm text-red-500"
+                            )
                             with ui.scroll_area().classes("h-32 w-full border p-2"):
                                 for err in errors:
                                     ui.label(err).classes("text-xs text-red-500")
                         else:
-                            ui.label("All files successfully recovered!").classes("font-semibold text-sm text-green-600")
-                            ui.label("The hidden safety folder has been cleared, and the session status is updated to resolved.").classes("text-xs text-gray-600")
+                            ui.label("All files successfully recovered!").classes(
+                                "font-semibold text-sm text-green-600"
+                            )
+                            ui.label(
+                                "The hidden safety folder has been cleared, and the session status is updated to resolved."
+                            ).classes("text-xs text-gray-600")
 
                         def on_finish():
                             dialog.close()
                             if self.base_dir:
                                 self.start_analysis()
 
-                        ui.button("Finish", on_click=on_finish).classes("w-full bg-blue-600 text-white mt-4").props('aria-label="Finish Button"')
+                        ui.button("Finish", on_click=on_finish).classes(
+                            "w-full bg-blue-600 text-white mt-4"
+                        ).props('aria-label="Finish Button"')
 
                 asyncio.create_task(do_work())
 
@@ -352,7 +387,7 @@ class AutoSorterApp:
     def _resolve_session_status(self, history_db_path, session_id):
         """Resolve session status in a synchronous context to respect architecture guidelines."""
         import sqlite3
-        conn = sqlite3.connect(history_db_path)
+        conn = sqlite3.connect(history_db_path, timeout=30.0)
         with conn:
             conn.execute(
                 "UPDATE sessions SET status = 'resolved' WHERE session_id = ?",

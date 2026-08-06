@@ -52,7 +52,9 @@ class Settings(BaseSettings):
             if not os.path.isabs(path):
                 raise ValueError(f"Protected path must be an absolute path: '{path}'")
             if any(char in path for char in ("*", "?", "[", "]")):
-                raise ValueError(f"Wildcard patterns or glob characters are not allowed in protected path: '{path}'")
+                raise ValueError(
+                    f"Wildcard patterns or glob characters are not allowed in protected path: '{path}'"
+                )
         return v
 
     @field_validator("KEYWORD_RULES", "LEARNED_RULES")

@@ -39,19 +39,31 @@ if sys.platform == "win32" and getattr(sys, "frozen", False):
         except Exception:
             pass
 
-        sqlcipher_dir = os.path.abspath(os.path.join(base_dir, "sqlcipher3"))
-        if os.path.isdir(sqlcipher_dir):
+        # In PyInstaller 6+, modules and libraries are under the _internal folder
+        internal_dir = os.path.abspath(os.path.join(base_dir, "_internal"))
+        if os.path.isdir(internal_dir):
             try:
-                os.add_dll_directory(sqlcipher_dir)
+                os.add_dll_directory(internal_dir)
             except Exception:
                 pass
-            # Recursively add all subdirectories of sqlcipher_dir to search path as well
-            for root, dirs, _ in os.walk(sqlcipher_dir):
-                for d in dirs:
-                    try:
-                        os.add_dll_directory(os.path.abspath(os.path.join(root, d)))
-                    except Exception:
-                        pass
+
+        sqlcipher_dirs = [
+            os.path.abspath(os.path.join(base_dir, "sqlcipher3")),
+            os.path.abspath(os.path.join(base_dir, "_internal", "sqlcipher3")),
+        ]
+        for sqlcipher_dir in sqlcipher_dirs:
+            if os.path.isdir(sqlcipher_dir):
+                try:
+                    os.add_dll_directory(sqlcipher_dir)
+                except Exception:
+                    pass
+                # Recursively add all subdirectories of sqlcipher_dir to search path as well
+                for root, dirs, _ in os.walk(sqlcipher_dir):
+                    for d in dirs:
+                        try:
+                            os.add_dll_directory(os.path.abspath(os.path.join(root, d)))
+                        except Exception:
+                            pass
 
     exe_dir = os.path.dirname(sys.executable)
     if exe_dir:
@@ -60,6 +72,36 @@ if sys.platform == "win32" and getattr(sys, "frozen", False):
             os.add_dll_directory(exe_dir)
         except Exception:
             pass
+        exe_internal = os.path.abspath(os.path.join(exe_dir, "_internal"))
+        if os.path.isdir(exe_internal):
+            try:
+                os.add_dll_directory(exe_internal)
+            except Exception:
+                pass
+
+    # Prepend all resolved directories to the PATH environment variable to guarantee OS-level DLL resolution
+    if base_dir:
+        paths_to_add = [base_dir]
+        if os.path.isdir(internal_dir):
+            paths_to_add.append(internal_dir)
+        for sqlcipher_dir in sqlcipher_dirs:
+            if os.path.isdir(sqlcipher_dir):
+                paths_to_add.append(sqlcipher_dir)
+                for root, dirs, _ in os.walk(sqlcipher_dir):
+                    for d in dirs:
+                        paths_to_add.append(os.path.abspath(os.path.join(root, d)))
+        if exe_dir:
+            paths_to_add.append(exe_dir)
+            if os.path.isdir(exe_internal):
+                paths_to_add.append(exe_internal)
+
+        unique_paths = []
+        for p in paths_to_add:
+            abs_p = os.path.abspath(p)
+            if abs_p not in unique_paths and os.path.isdir(abs_p):
+                unique_paths.append(abs_p)
+
+        os.environ["PATH"] = ";".join(unique_paths) + ";" + os.environ.get("PATH", "")
 
 import argparse
 import logging
@@ -67,6 +109,32 @@ from pathlib import Path
 
 from app.config import AppSettings
 from app.log_filter import LogScrubbingFilter
+
+
+def write_smoke_test_error(message, include_traceback=False):
+    """Write smoke test diagnostic error message and traceback to file."""
+    import traceback
+
+    try:
+        err_str = message
+        if include_traceback:
+            err_str += "\n" + traceback.format_exc()
+        # 1. Write to current working directory
+        with open("smoke_test_error.txt", "w", encoding="utf-8") as f:
+            f.write(err_str)
+    except Exception:
+        pass
+    try:
+        # 2. Write next to executable if frozen
+        if getattr(sys, "frozen", False):
+            exe_dir = os.path.dirname(sys.executable)
+            if exe_dir:
+                with open(
+                    os.path.join(exe_dir, "smoke_test_error.txt"), "w", encoding="utf-8"
+                ) as f:
+                    f.write(err_str)
+    except Exception:
+        pass
 
 
 def run_smoke_test():
@@ -78,6 +146,19 @@ def run_smoke_test():
     # Create a temporary directory for testing to avoid side effects
     temp_dir = tempfile.mkdtemp()
     try:
+        # Pre-flight check: try importing sqlcipher3 directly to log any specific DLL load failures
+        try:
+            from sqlcipher3 import dbapi2 as sqlite3_direct  # noqa: F401
+
+            print("Direct sqlcipher3 import successful.")
+        except Exception as import_err:
+            import traceback  # noqa: F401
+
+            write_smoke_test_error(
+                f"Pre-flight import of sqlcipher3 failed with exception: {import_err}",
+                include_traceback=True,
+            )
+
         db_path = os.path.join(temp_dir, "smoke_test.db")
         print(f"Temporary database path: {db_path}")
 
@@ -85,7 +166,9 @@ def run_smoke_test():
         from app.core.db_conn import HAS_SQLCIPHER, get_db_connection
 
         if not HAS_SQLCIPHER:
-            print("Error: SQLCipher driver is missing from runtime environment!")
+            err_msg = "Error: SQLCipher driver is missing from runtime environment!"
+            print(err_msg)
+            write_smoke_test_error(err_msg, include_traceback=False)
             sys.exit(1)
 
         conn = get_db_connection(db_path)
@@ -104,24 +187,29 @@ def run_smoke_test():
             cursor.execute("SELECT secret_val FROM test_smoke WHERE id = 1")
             row = cursor.fetchone()
             if not row or row[0] != "SuperSecretData":
-                print("Error: Data validation failed inside the encrypted database!")
+                err_msg = "Error: Data validation failed inside the encrypted database!"
+                print(err_msg)
+                write_smoke_test_error(err_msg, include_traceback=False)
                 sys.exit(1)
 
             # Double check cipher version via PRAGMA
             cursor.execute("PRAGMA cipher_version;")
             ver = cursor.fetchone()
             if not ver or not ver[0]:
-                print("Error: PRAGMA cipher_version is empty! SQLCipher is not active.")
+                err_msg = (
+                    "Error: PRAGMA cipher_version is empty! SQLCipher is not active."
+                )
+                print(err_msg)
+                write_smoke_test_error(err_msg, include_traceback=False)
                 sys.exit(1)
             print(f"Verified SQLCipher active version: {ver[0]}")
 
         print("Smoke test successfully completed. Encryption is active and verified!")
         sys.exit(0)
     except Exception as e:
-        import traceback
-
-        print(f"Smoke test failed with exception: {e}")
-        traceback.print_exc()
+        err_msg = f"Smoke test failed with exception: {e}"
+        print(err_msg)
+        write_smoke_test_error(err_msg, include_traceback=True)
         sys.exit(1)
     finally:
         try:

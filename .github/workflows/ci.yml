@@ -66,8 +66,13 @@ jobs:
     - name: Test with pytest
       env:
         SMOKE_TEST: "0"
+      shell: bash
       run: |
-        uv run pytest --cov --cov-report=term tests/
+        if [[ "${{ matrix.os }}" == "ubuntu-latest" ]]; then
+          uv run pytest --cov --cov-report=term tests/
+        else
+          uv run pytest tests/
+        fi
 
     - name: Build executable (Lite)
       if: matrix.os == 'windows-latest'
@@ -76,8 +81,23 @@ jobs:
 
     - name: Verify compiled executable (Windows Smoke Test)
       if: matrix.os == 'windows-latest'
+      shell: python
       run: |
-        dist/smart-autosorter/smart-autosorter.exe --smoke-test
+        import subprocess, sys, os
+        res = subprocess.run([r"dist/smart-autosorter/smart-autosorter.exe", "--smoke-test"])
+        if res.returncode != 0:
+            print(f"Smoke test failed with exit code {res.returncode}")
+            found_log = False
+            for path in ["smoke_test_error.txt", r"dist/smart-autosorter/smoke_test_error.txt"]:
+                if os.path.exists(path):
+                    with open(path, "r", encoding="utf-8") as f:
+                        print("=== smoke_test_error.txt ===")
+                        print(f.read())
+                    found_log = True
+                    break
+            if not found_log:
+                print("No smoke_test_error.txt found.")
+            sys.exit(res.returncode)
 
     - name: Generate Documentation
       if: matrix.os == 'ubuntu-latest'

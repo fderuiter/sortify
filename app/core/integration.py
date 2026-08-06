@@ -4,15 +4,21 @@ Provides utilities to register or unregister the application
 in the Windows Explorer context menu.
 """
 
+import ctypes
 import os
 import sys
+
+try:
+    import winreg
+except ImportError:
+    winreg = None
+
 
 
 def is_admin():
     """Check if the current process has administrative privileges."""
     if sys.platform != "win32":
         return False
-    import ctypes
 
     try:
         return ctypes.windll.shell32.IsUserAnAdmin()
@@ -24,8 +30,6 @@ def register_context_menu(enable: bool):
     """Register or unregister context menu handles."""
     if sys.platform != "win32":
         raise OSError("Context menu integration is only available on Windows.")
-
-    import ctypes
 
     # We will invoke a separate process for elevation if not admin
     if not is_admin():
@@ -44,8 +48,6 @@ def register_context_menu(enable: bool):
         return True
 
     # If we are admin, do the registry changes
-    import winreg
-
     from app.core.path_utils import is_packaged
 
     if is_packaged():
