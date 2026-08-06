@@ -84,7 +84,12 @@ if platform.system().lower() == "windows" or sys.platform == "win32":
     for s_dir in search_dirs:
         if not s_dir or not os.path.isdir(s_dir):
             continue
-        for file in os.listdir(s_dir):
+        try:
+            files_in_dir = os.listdir(s_dir)
+        except Exception as scan_err:
+            print(f"Warning: Could not list directory {s_dir} during DLL discovery: {scan_err}")
+            continue
+        for file in files_in_dir:
             file_lower = file.lower()
             if file_lower.endswith(".dll") and any(pat in file_lower for pat in dll_patterns):
                 dll_path = os.path.abspath(os.path.join(s_dir, file))
