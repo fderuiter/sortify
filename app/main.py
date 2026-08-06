@@ -79,6 +79,30 @@ if sys.platform == "win32" and getattr(sys, "frozen", False):
             except Exception:
                 pass
 
+    # Prepend all resolved directories to the PATH environment variable to guarantee OS-level DLL resolution
+    if base_dir:
+        paths_to_add = [base_dir]
+        if os.path.isdir(internal_dir):
+            paths_to_add.append(internal_dir)
+        for sqlcipher_dir in sqlcipher_dirs:
+            if os.path.isdir(sqlcipher_dir):
+                paths_to_add.append(sqlcipher_dir)
+                for root, dirs, _ in os.walk(sqlcipher_dir):
+                    for d in dirs:
+                        paths_to_add.append(os.path.abspath(os.path.join(root, d)))
+        if exe_dir:
+            paths_to_add.append(exe_dir)
+            if os.path.isdir(exe_internal):
+                paths_to_add.append(exe_internal)
+
+        unique_paths = []
+        for p in paths_to_add:
+            abs_p = os.path.abspath(p)
+            if abs_p not in unique_paths and os.path.isdir(abs_p):
+                unique_paths.append(abs_p)
+
+        os.environ["PATH"] = ";".join(unique_paths) + ";" + os.environ.get("PATH", "")
+
 import argparse
 import logging
 from pathlib import Path
@@ -90,6 +114,7 @@ from app.log_filter import LogScrubbingFilter
 def write_smoke_test_error(message, include_traceback=False):
     """Write smoke test diagnostic error message and traceback to file."""
     import traceback
+
     try:
         err_str = message
         if include_traceback:
@@ -104,7 +129,9 @@ def write_smoke_test_error(message, include_traceback=False):
         if getattr(sys, "frozen", False):
             exe_dir = os.path.dirname(sys.executable)
             if exe_dir:
-                with open(os.path.join(exe_dir, "smoke_test_error.txt"), "w", encoding="utf-8") as f:
+                with open(
+                    os.path.join(exe_dir, "smoke_test_error.txt"), "w", encoding="utf-8"
+                ) as f:
                     f.write(err_str)
     except Exception:
         pass
@@ -122,10 +149,15 @@ def run_smoke_test():
         # Pre-flight check: try importing sqlcipher3 directly to log any specific DLL load failures
         try:
             from sqlcipher3 import dbapi2 as sqlite3_direct  # noqa: F401
+
             print("Direct sqlcipher3 import successful.")
         except Exception as import_err:
             import traceback  # noqa: F401
-            write_smoke_test_error(f"Pre-flight import of sqlcipher3 failed with exception: {import_err}", include_traceback=True)
+
+            write_smoke_test_error(
+                f"Pre-flight import of sqlcipher3 failed with exception: {import_err}",
+                include_traceback=True,
+            )
 
         db_path = os.path.join(temp_dir, "smoke_test.db")
         print(f"Temporary database path: {db_path}")
@@ -164,7 +196,9 @@ def run_smoke_test():
             cursor.execute("PRAGMA cipher_version;")
             ver = cursor.fetchone()
             if not ver or not ver[0]:
-                err_msg = "Error: PRAGMA cipher_version is empty! SQLCipher is not active."
+                err_msg = (
+                    "Error: PRAGMA cipher_version is empty! SQLCipher is not active."
+                )
                 print(err_msg)
                 write_smoke_test_error(err_msg, include_traceback=False)
                 sys.exit(1)
