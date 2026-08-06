@@ -21,7 +21,7 @@ history_manager = None
 
 def setup_module(module):
     global _test_dir, db_worker, db, cache_manager, history_manager
-    _test_dir = tempfile.mkdtemp()
+    _test_dir = os.path.normpath(tempfile.mkdtemp())
     db_worker = DBWorker()
     db = Database(Path(_test_dir) / "test.db", db_worker)
     cache_manager = CacheManager(str(Path(_test_dir) / "cache.db"), db_worker)
@@ -64,7 +64,7 @@ def test_similarity_routed_leaves_history_empty():
     Test that moving a document automatically via similarity matching changes its current path
     but leaves its user-verified history empty.
     """
-    base_dir = tempfile.mkdtemp(dir=_test_dir)
+    base_dir = os.path.normpath(tempfile.mkdtemp(dir=_test_dir))
     
     filename_verified = "verified_doc.txt"
     filename_sim = "similarity_doc.txt"
@@ -116,7 +116,7 @@ def test_dynamic_re_evaluation_on_subsequent_runs():
     Test that subsequent file classification runs re-evaluate AI-routed documents
     using the semantic analyzer instead of bypassing it.
     """
-    base_dir = tempfile.mkdtemp(dir=_test_dir)
+    base_dir = os.path.normpath(tempfile.mkdtemp(dir=_test_dir))
     
     # Create two files:
     # 1. One is manually verified in the past (e.g. user_verified_target_path is set)
@@ -163,7 +163,7 @@ def test_llm_prompt_few_shot_only_contains_verified_historical_examples():
     Test that few-shot prompts generated for the LLM contain only manually corrected
     or explicitly verified historical examples.
     """
-    base_dir = tempfile.mkdtemp(dir=_test_dir)
+    base_dir = os.path.normpath(tempfile.mkdtemp(dir=_test_dir))
     
     # Put two files in DB:
     # 1. One user-verified (has user_verified_target_path)
@@ -197,7 +197,7 @@ def test_batch_updates_transaction_execution():
     Test that batch update operations successfully execute both path updates and manual
     user-verified overrides within a single transaction.
     """
-    base_dir = tempfile.mkdtemp(dir=_test_dir)
+    base_dir = os.path.normpath(tempfile.mkdtemp(dir=_test_dir))
     
     # Create two files
     f1, f2 = "f1.txt", "f2.txt"
