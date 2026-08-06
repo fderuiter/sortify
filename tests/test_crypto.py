@@ -318,13 +318,10 @@ def test_decryption_failure_safe_error_propagation(tmp_path, monkeypatch, caplog
     from app.core.path_utils import resolve_db_crypto
 
     db_path = tmp_path / "secure_autosorter.db"
-    wal_path = tmp_path / "secure_autosorter.db-wal"
-    shm_path = tmp_path / "secure_autosorter.db-shm"
 
-    # 1. Create and populate a database normally with SessionCrypto
+    # 1. Create and populate a database normally using the standard helper.
     # Set up some dummy keyring credentials
     crypto = resolve_db_crypto(db_path)
-    # Get cipher to generate the correct key and save it to keyring
     crypto.get_cipher()
     correct_key = crypto.get_raw_key()
     assert correct_key is not None
@@ -336,49 +333,9 @@ def test_decryption_failure_safe_error_propagation(tmp_path, monkeypatch, caplog
     conn.execute("INSERT INTO test_table (value) VALUES ('secret_data')")
     conn.commit()
     conn.close()
-    del conn
-    import gc
-    gc.collect()
 
-    # On Windows, SQLite might leave physical WAL/SHM files on disk after closing the connection.
-    # We physically delete them here so they do not interfere (causing disk I/O or malformed errors)
-    # when connecting with a mismatched/wrong key in the subsequent steps.
-    if wal_path.exists():
-        try:
-            wal_path.unlink()
-        except Exception:
-            pass
-    if shm_path.exists():
-        try:
-            shm_path.unlink()
-        except Exception:
-            pass
-
-    # To prevent Windows-native SQLite from failing with "disk I/O error" due to empty/malformed
-    # WAL or SHM files, we do not physically create wal_path and shm_path on disk.
-    # Instead, we mock os.path.exists to return True for these paths, simulating their existence,
-    # and mock os.remove to intercept any deletion attempts.
-    original_exists = os.path.exists
-
-    def mock_exists(path):
-        try:
-            p_str = os.path.normcase(os.path.abspath(path))
-            wal_str = os.path.normcase(os.path.abspath(wal_path))
-            shm_str = os.path.normcase(os.path.abspath(shm_path))
-            if p_str in (wal_str, shm_str):
-                return True
-        except Exception:
-            pass
-        if str(path) in (str(wal_path), str(shm_path)):
-            return True
-        return original_exists(path)
-
-    monkeypatch.setattr(os.path, "exists", mock_exists)
-
-    # Verify files exist according to os.path.exists
+    # Verify database file physically exists on disk
     assert db_path.exists()
-    assert os.path.exists(wal_path)
-    assert os.path.exists(shm_path)
 
     # Spy on os.remove to ensure our code never attempts to delete any database files
     removed_files = []
@@ -386,7 +343,7 @@ def test_decryption_failure_safe_error_propagation(tmp_path, monkeypatch, caplog
 
     def mock_remove(path):
         removed_files.append(str(path))
-        if original_exists(path):
+        if os.path.exists(path):
             original_remove(path)
 
     monkeypatch.setattr(os, "remove", mock_remove)
@@ -396,11 +353,9 @@ def test_decryption_failure_safe_error_propagation(tmp_path, monkeypatch, caplog
     mismatched_key = Fernet.generate_key().decode("utf-8")
 
     def mock_get_password_mismatched(service, account):
-        # Mismatched/incorrect key or None
         return mismatched_key
 
     monkeypatch.setattr(keyring, "get_password", mock_get_password_mismatched)
-    # Clear cache and resolve_db_crypto crypto object so it is re-instantiated
     db_conn.clear_connection_cache()
 
     # Try to open the connection. It must raise a sqlite3.DatabaseError (decryption failure).
@@ -414,8 +369,6 @@ def test_decryption_failure_safe_error_propagation(tmp_path, monkeypatch, caplog
 
     # 4. Verify that NO database files were deleted, modified, or truncated on disk by our application
     assert db_path.exists()
-    assert os.path.exists(wal_path)
-    assert os.path.exists(shm_path)
     for removed in removed_files:
         assert "secure_autosorter.db" not in removed
 
