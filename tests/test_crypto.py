@@ -345,6 +345,8 @@ def test_decryption_failure_safe_error_propagation(tmp_path, monkeypatch, caplog
     except Exception:
         pass
     del conn
+    import gc
+    gc.collect()
 
     # On Windows, SQLite might leave physical WAL/SHM files on disk after closing the connection.
     # We physically delete them here so they do not interfere (causing disk I/O or malformed errors)
