@@ -33,7 +33,7 @@ async def test_scan_failed_session_with_trapped_files(mock_session_base, tmp_pat
     session_dir.mkdir()
 
     history_db = session_dir / "history.db"
-    conn = sqlite3.connect(history_db)
+    conn = sqlite3.connect(history_db, timeout=30.0)
     try:
         with conn:
             conn.execute(
@@ -74,7 +74,7 @@ async def test_scan_does_not_prompt_if_safety_folder_empty(mock_session_base, tm
     session_dir.mkdir()
 
     history_db = session_dir / "history.db"
-    conn = sqlite3.connect(history_db)
+    conn = sqlite3.connect(history_db, timeout=30.0)
     try:
         with conn:
             conn.execute(
@@ -109,7 +109,7 @@ async def test_ui_recovery_wizard_trigger(mock_session_base, tmp_path):
     session_dir.mkdir()
 
     history_db = session_dir / "history.db"
-    conn = sqlite3.connect(history_db)
+    conn = sqlite3.connect(history_db, timeout=30.0)
     try:
         with conn:
             conn.execute(
@@ -152,7 +152,7 @@ async def test_wizard_file_recovery_original_location(mock_session_base, tmp_pat
 
     # Database Setup
     history_db = session_dir / "history.db"
-    conn = sqlite3.connect(history_db)
+    conn = sqlite3.connect(history_db, timeout=30.0)
     try:
         with conn:
             conn.execute(
@@ -230,7 +230,7 @@ async def test_wizard_file_recovery_original_location(mock_session_base, tmp_pat
         while time.time() - start_time < 5.0:
             conn = None
             try:
-                conn = sqlite3.connect(history_db)
+                conn = sqlite3.connect(history_db, timeout=30.0)
                 cursor = conn.cursor()
                 cursor.execute("SELECT status FROM sessions WHERE session_id = ?", (session_id,))
                 row = cursor.fetchone()
@@ -265,7 +265,7 @@ async def test_wizard_file_recovery_original_location(mock_session_base, tmp_pat
     assert not os.path.exists(branch_dir)
 
     # 4. Status in database should be updated to 'resolved'
-    conn = sqlite3.connect(history_db)
+    conn = sqlite3.connect(history_db, timeout=30.0)
     try:
         cursor = conn.cursor()
         cursor.execute("SELECT status FROM sessions WHERE session_id = ?", (session_id,))
@@ -366,7 +366,7 @@ async def test_wizard_file_recovery_custom_location(mock_session_base, tmp_path)
         while time.time() - start_time < 5.0:
             conn = None
             try:
-                conn = sqlite3.connect(history_db)
+                conn = sqlite3.connect(history_db, timeout=30.0)
                 cursor = conn.cursor()
                 cursor.execute("SELECT status FROM sessions WHERE session_id = ?", (session_id,))
                 row = cursor.fetchone()
@@ -395,7 +395,7 @@ async def test_wizard_file_recovery_custom_location(mock_session_base, tmp_path)
     assert not os.path.exists(branch_dir)
 
     # Verify status is resolved
-    conn = sqlite3.connect(history_db)
+    conn = sqlite3.connect(history_db, timeout=30.0)
     try:
         cursor = conn.cursor()
         cursor.execute("SELECT status FROM sessions WHERE session_id = ?", (session_id,))
