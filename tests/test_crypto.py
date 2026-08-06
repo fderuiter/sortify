@@ -330,20 +330,12 @@ def test_decryption_failure_safe_error_propagation(tmp_path, monkeypatch, caplog
     assert correct_key is not None
 
     # Connect and write some initial data to the database
-    conn = db_conn.get_db_connection(str(db_path))
+    conn = db_conn.sqlite3.connect(str(db_path), timeout=5.0, check_same_thread=False)
+    conn.execute(f"PRAGMA key = '{correct_key}'")
     conn.execute("CREATE TABLE test_table (id INTEGER PRIMARY KEY, value TEXT)")
     conn.execute("INSERT INTO test_table (value) VALUES ('secret_data')")
     conn.commit()
-    # Switch back to DELETE mode so SQLite cleanly checkpoints and deletes WAL and SHM files
-    try:
-        conn.execute("PRAGMA journal_mode = DELETE")
-    except Exception:
-        pass
-    db_conn.clear_connection_cache()
-    try:
-        conn.close()
-    except Exception:
-        pass
+    conn.close()
     del conn
     import gc
     gc.collect()
