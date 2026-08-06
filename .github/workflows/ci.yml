@@ -66,8 +66,13 @@ jobs:
     - name: Test with pytest
       env:
         SMOKE_TEST: "0"
+      shell: bash
       run: |
-        uv run pytest --cov --cov-report=term tests/
+        if [[ "${{ matrix.os }}" == "ubuntu-latest" ]]; then
+          uv run pytest --cov --cov-report=term tests/
+        else
+          uv run pytest tests/
+        fi
 
     - name: Build executable (Lite)
       if: matrix.os == 'windows-latest'
