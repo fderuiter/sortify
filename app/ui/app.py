@@ -210,13 +210,20 @@ class AutoSorterApp:
         history_db_path = os.path.join(session_dir, "history.db")
 
         def _update_session_resolved_sync(db_path, sess_id):
-            conn = sqlite3.connect(db_path)
-            with conn:
-                conn.execute(
-                    "UPDATE sessions SET status = 'resolved' WHERE session_id = ?",
-                    (sess_id,),
-                )
-            conn.close()
+            conn = None
+            try:
+                conn = sqlite3.connect(db_path)
+                with conn:
+                    conn.execute(
+                        "UPDATE sessions SET status = 'resolved' WHERE session_id = ?",
+                        (sess_id,),
+                    )
+            finally:
+                if conn is not None:
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
 
         # Get list of all files in safety folder to show/process
         files_to_recover = []

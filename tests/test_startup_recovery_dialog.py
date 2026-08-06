@@ -34,15 +34,17 @@ async def test_scan_failed_session_with_trapped_files(mock_session_base, tmp_pat
 
     history_db = session_dir / "history.db"
     conn = sqlite3.connect(history_db)
-    with conn:
-        conn.execute(
-            "CREATE TABLE sessions (session_id TEXT, timestamp REAL, base_dir TEXT, status TEXT)"
-        )
-        conn.execute(
-            "INSERT INTO sessions VALUES (?, ?, ?, ?)",
-            (session_id, 100.0, str(tmp_path / "user_data"), "failed"),
-        )
-    conn.close()
+    try:
+        with conn:
+            conn.execute(
+                "CREATE TABLE sessions (session_id TEXT, timestamp REAL, base_dir TEXT, status TEXT)"
+            )
+            conn.execute(
+                "INSERT INTO sessions VALUES (?, ?, ?, ?)",
+                (session_id, 100.0, str(tmp_path / "user_data"), "failed"),
+            )
+    finally:
+        conn.close()
 
     # Create safety folder inside user_data
     user_data = tmp_path / "user_data"
@@ -73,15 +75,17 @@ async def test_scan_does_not_prompt_if_safety_folder_empty(mock_session_base, tm
 
     history_db = session_dir / "history.db"
     conn = sqlite3.connect(history_db)
-    with conn:
-        conn.execute(
-            "CREATE TABLE sessions (session_id TEXT, timestamp REAL, base_dir TEXT, status TEXT)"
-        )
-        conn.execute(
-            "INSERT INTO sessions VALUES (?, ?, ?, ?)",
-            (session_id, 100.0, str(tmp_path / "user_data"), "failed"),
-        )
-    conn.close()
+    try:
+        with conn:
+            conn.execute(
+                "CREATE TABLE sessions (session_id TEXT, timestamp REAL, base_dir TEXT, status TEXT)"
+            )
+            conn.execute(
+                "INSERT INTO sessions VALUES (?, ?, ?, ?)",
+                (session_id, 100.0, str(tmp_path / "user_data"), "failed"),
+            )
+    finally:
+        conn.close()
 
     # Create safety folder inside user_data but KEEP IT EMPTY
     user_data = tmp_path / "user_data"
@@ -106,15 +110,17 @@ async def test_ui_recovery_wizard_trigger(mock_session_base, tmp_path):
 
     history_db = session_dir / "history.db"
     conn = sqlite3.connect(history_db)
-    with conn:
-        conn.execute(
-            "CREATE TABLE sessions (session_id TEXT, timestamp REAL, base_dir TEXT, status TEXT)"
-        )
-        conn.execute(
-            "INSERT INTO sessions VALUES (?, ?, ?, ?)",
-            (session_id, 100.0, str(tmp_path / "user_data"), "failed"),
-        )
-    conn.close()
+    try:
+        with conn:
+            conn.execute(
+                "CREATE TABLE sessions (session_id TEXT, timestamp REAL, base_dir TEXT, status TEXT)"
+            )
+            conn.execute(
+                "INSERT INTO sessions VALUES (?, ?, ?, ?)",
+                (session_id, 100.0, str(tmp_path / "user_data"), "failed"),
+            )
+    finally:
+        conn.close()
 
     user_data = tmp_path / "user_data"
     user_data.mkdir()
@@ -147,15 +153,17 @@ async def test_wizard_file_recovery_original_location(mock_session_base, tmp_pat
     # Database Setup
     history_db = session_dir / "history.db"
     conn = sqlite3.connect(history_db)
-    with conn:
-        conn.execute(
-            "CREATE TABLE sessions (session_id TEXT, timestamp REAL, base_dir TEXT, status TEXT)"
-        )
-        conn.execute(
-            "INSERT INTO sessions VALUES (?, ?, ?, ?)",
-            (session_id, 100.0, str(tmp_path / "user_data"), "failed"),
-        )
-    conn.close()
+    try:
+        with conn:
+            conn.execute(
+                "CREATE TABLE sessions (session_id TEXT, timestamp REAL, base_dir TEXT, status TEXT)"
+            )
+            conn.execute(
+                "INSERT INTO sessions VALUES (?, ?, ?, ?)",
+                (session_id, 100.0, str(tmp_path / "user_data"), "failed"),
+            )
+    finally:
+        conn.close()
 
     # Prepare directories & trapped files
     user_data = tmp_path / "user_data"
@@ -220,17 +228,23 @@ async def test_wizard_file_recovery_original_location(mock_session_base, tmp_pat
         start_time = time.time()
         resolved = False
         while time.time() - start_time < 5.0:
+            conn = None
             try:
                 conn = sqlite3.connect(history_db)
                 cursor = conn.cursor()
                 cursor.execute("SELECT status FROM sessions WHERE session_id = ?", (session_id,))
                 row = cursor.fetchone()
-                conn.close()
                 if row and row[0] == "resolved":
                     resolved = True
                     break
             except Exception:
                 pass
+            finally:
+                if conn is not None:
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
             await asyncio.sleep(0.05)
 
         assert resolved, "Recovery wizard failed to update session status to 'resolved' within timeout"
@@ -252,11 +266,13 @@ async def test_wizard_file_recovery_original_location(mock_session_base, tmp_pat
 
     # 4. Status in database should be updated to 'resolved'
     conn = sqlite3.connect(history_db)
-    cursor = conn.cursor()
-    cursor.execute("SELECT status FROM sessions WHERE session_id = ?", (session_id,))
-    row = cursor.fetchone()
-    assert row[0] == "resolved"
-    conn.close()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT status FROM sessions WHERE session_id = ?", (session_id,))
+        row = cursor.fetchone()
+        assert row[0] == "resolved"
+    finally:
+        conn.close()
 
 
 @pytest.mark.anyio
@@ -271,15 +287,17 @@ async def test_wizard_file_recovery_custom_location(mock_session_base, tmp_path)
 
     history_db = session_dir / "history.db"
     conn = sqlite3.connect(history_db)
-    with conn:
-        conn.execute(
-            "CREATE TABLE sessions (session_id TEXT, timestamp REAL, base_dir TEXT, status TEXT)"
-        )
-        conn.execute(
-            "INSERT INTO sessions VALUES (?, ?, ?, ?)",
-            (session_id, 100.0, str(tmp_path / "user_data"), "failed"),
-        )
-    conn.close()
+    try:
+        with conn:
+            conn.execute(
+                "CREATE TABLE sessions (session_id TEXT, timestamp REAL, base_dir TEXT, status TEXT)"
+            )
+            conn.execute(
+                "INSERT INTO sessions VALUES (?, ?, ?, ?)",
+                (session_id, 100.0, str(tmp_path / "user_data"), "failed"),
+            )
+    finally:
+        conn.close()
 
     user_data = tmp_path / "user_data"
     user_data.mkdir()
@@ -346,17 +364,23 @@ async def test_wizard_file_recovery_custom_location(mock_session_base, tmp_path)
         start_time = time.time()
         resolved = False
         while time.time() - start_time < 5.0:
+            conn = None
             try:
                 conn = sqlite3.connect(history_db)
                 cursor = conn.cursor()
                 cursor.execute("SELECT status FROM sessions WHERE session_id = ?", (session_id,))
                 row = cursor.fetchone()
-                conn.close()
                 if row and row[0] == "resolved":
                     resolved = True
                     break
             except Exception:
                 pass
+            finally:
+                if conn is not None:
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
             await asyncio.sleep(0.05)
 
         assert resolved, "Recovery wizard failed to update session status to 'resolved' within timeout"
@@ -372,8 +396,10 @@ async def test_wizard_file_recovery_custom_location(mock_session_base, tmp_path)
 
     # Verify status is resolved
     conn = sqlite3.connect(history_db)
-    cursor = conn.cursor()
-    cursor.execute("SELECT status FROM sessions WHERE session_id = ?", (session_id,))
-    row = cursor.fetchone()
-    assert row[0] == "resolved"
-    conn.close()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT status FROM sessions WHERE session_id = ?", (session_id,))
+        row = cursor.fetchone()
+        assert row[0] == "resolved"
+    finally:
+        conn.close()
