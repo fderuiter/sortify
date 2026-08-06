@@ -214,7 +214,26 @@ async def test_wizard_file_recovery_original_location(mock_session_base, tmp_pat
         if restore_on_click:
             restore_on_click()
 
-        await asyncio.sleep(0.2)
+        # Poll until the session status is updated to resolved in the database
+        # This prevents any timing-related race conditions on slow Windows CI runners
+        import time
+        start_time = time.time()
+        resolved = False
+        while time.time() - start_time < 5.0:
+            try:
+                conn = sqlite3.connect(history_db)
+                cursor = conn.cursor()
+                cursor.execute("SELECT status FROM sessions WHERE session_id = ?", (session_id,))
+                row = cursor.fetchone()
+                conn.close()
+                if row and row[0] == "resolved":
+                    resolved = True
+                    break
+            except Exception:
+                pass
+            await asyncio.sleep(0.05)
+
+        assert resolved, "Recovery wizard failed to update session status to 'resolved' within timeout"
 
     # Let's check the result:
     # 1. Trapped file should be recovered. Since test_doc.txt existed, it should be named test_doc_1.txt
@@ -321,7 +340,26 @@ async def test_wizard_file_recovery_custom_location(mock_session_base, tmp_path)
         if export_on_click:
             export_on_click()
 
-        await asyncio.sleep(0.2)
+        # Poll until the session status is updated to resolved in the database
+        # This prevents any timing-related race conditions on slow Windows CI runners
+        import time
+        start_time = time.time()
+        resolved = False
+        while time.time() - start_time < 5.0:
+            try:
+                conn = sqlite3.connect(history_db)
+                cursor = conn.cursor()
+                cursor.execute("SELECT status FROM sessions WHERE session_id = ?", (session_id,))
+                row = cursor.fetchone()
+                conn.close()
+                if row and row[0] == "resolved":
+                    resolved = True
+                    break
+            except Exception:
+                pass
+            await asyncio.sleep(0.05)
+
+        assert resolved, "Recovery wizard failed to update session status to 'resolved' within timeout"
 
     # Verify the custom export:
     exported_file = custom_export_dir / "sub_folder" / "trapped_export.txt"
