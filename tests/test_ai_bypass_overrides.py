@@ -34,7 +34,7 @@ def test_similarity_routed_leaves_history_empty(test_history_env):
 
     # Longer structured texts to guarantee high similarity match (> 0.8)
     hist_text = "This is an invoice for laptop purchase from TechStore. Total amount due is $1200. Please pay by bank transfer."
-    new_text = "This is an invoice for laptop purchase from TechStore. Total amount due is $1250. Please pay by card transfer."
+    new_text = "This is an invoice for laptop purchase from TechStore. Total amount due is $1201. Please pay by bank transfer."
 
     with open(os.path.join(base_dir, filename_verified), "w") as f:
         f.write(hist_text)
@@ -87,7 +87,7 @@ def test_dynamic_re_evaluation_on_subsequent_runs(test_history_env):
 
     # Longer structured texts to guarantee high similarity match (> 0.8)
     hist_text = "This is an invoice for laptop purchase from TechStore. Total amount due is $1200. Please pay by bank transfer."
-    new_text = "This is an invoice for laptop purchase from TechStore. Total amount due is $1250. Please pay by card transfer."
+    new_text = "This is an invoice for laptop purchase from TechStore. Total amount due is $1201. Please pay by bank transfer."
 
     with open(os.path.join(base_dir, filename_verified), "w") as f:
         f.write(hist_text)
