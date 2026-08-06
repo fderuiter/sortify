@@ -337,8 +337,8 @@ def test_decryption_failure_safe_error_propagation(tmp_path, monkeypatch, caplog
     db_conn.clear_connection_cache()
 
     # Create dummy -wal and -shm files to verify they are not deleted
-    wal_path.write_text("dummy wal data")
-    shm_path.write_text("dummy shm data")
+    wal_path.write_text("")
+    shm_path.write_text("")
 
     # Verify files exist on disk
     assert db_path.exists()

@@ -110,7 +110,12 @@ def get_db_connection(db_path: str):
         conn = _open_conn(db_path)
     except sqlite3.DatabaseError as e:
         err_msg = str(e).lower()
-        if "file is not a database" in err_msg or "file is encrypted" in err_msg:
+        if (
+            "file is not a database" in err_msg
+            or "file is encrypted" in err_msg
+            or "not a database" in err_msg
+            or "encrypted" in err_msg
+        ):
             logger.error(
                 "Database decryption failed: The database is encrypted or is not a valid database. "
                 "This indicates a locked OS keyring, mismatched cryptographic keys, or decryption failure. "
