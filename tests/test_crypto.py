@@ -397,3 +397,4 @@ def test_decryption_failure_safe_error_propagation(tmp_path, monkeypatch, caplog
     assert row is not None
     assert row[0] == "secret_data"
     conn2.close()
+    db_conn.clear_connection_cache()
