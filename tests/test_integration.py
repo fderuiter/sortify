@@ -35,7 +35,7 @@ def mock_winreg_and_ctypes():
     mock_ctypes.windll = mock_windll
 
     with (
-        patch.dict(sys.modules, {"winreg": mock_winreg}),
+        patch("app.core.integration.winreg", mock_winreg, create=True),
         patch("app.core.integration.ctypes", mock_ctypes_module),
         patch("app.core.verifier.check_ai_status", return_value=(True, None)),
     ):

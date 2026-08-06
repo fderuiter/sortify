@@ -8,6 +8,12 @@ import ctypes
 import os
 import sys
 
+try:
+    import winreg
+except ImportError:
+    winreg = None
+
+
 
 def is_admin():
     """Check if the current process has administrative privileges."""
@@ -42,8 +48,6 @@ def register_context_menu(enable: bool):
         return True
 
     # If we are admin, do the registry changes
-    import winreg
-
     from app.core.path_utils import is_packaged
 
     if is_packaged():
