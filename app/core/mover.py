@@ -24,6 +24,17 @@ def _is_same_path(p1: str, p2: str) -> bool:
     )
 
 
+def is_subpath_or_equal(child: str, parent: str) -> bool:
+    """Check if child path is equal to or nested within parent path (case-insensitive)."""
+    if child is None or parent is None:
+        return False
+    abs_child = os.path.normcase(os.path.abspath(child))
+    abs_parent = os.path.normcase(os.path.abspath(parent))
+    if abs_child == abs_parent:
+        return True
+    return abs_child.startswith(abs_parent + os.sep)
+
+
 def get_safe_path(dest_dir: str, filename: str, source_path: str = None) -> str:
     """Generate a safe file path to avoid overwriting existing files."""
     base, extension = os.path.splitext(filename)
@@ -49,11 +60,8 @@ def get_safe_path(dest_dir: str, filename: str, source_path: str = None) -> str:
 def _remove_empty_dirs(path: str, protected_paths: list[str] = None):
     """Recursively remove empty directories, respecting protected paths."""
     if protected_paths:
-        norm_path = os.path.normpath(path)
         for p in protected_paths:
-            c_parts = norm_path.split(os.sep)
-            p_parts = p.split(os.sep)
-            if len(p_parts) <= len(c_parts) and c_parts[: len(p_parts)] == p_parts:
+            if is_subpath_or_equal(path, p):
                 return
 
     if not os.path.isdir(path):
@@ -363,14 +371,8 @@ def execute_moves(
                 is_protected = node.get("protected")
                 source_path = node.get("source_path")
                 if not is_protected and source_path:
-                    norm_src = os.path.normpath(source_path)
                     for p in protected_paths:
-                        c_parts = norm_src.split(os.sep)
-                        p_parts = p.split(os.sep)
-                        if (
-                            len(p_parts) <= len(c_parts)
-                            and c_parts[: len(p_parts)] == p_parts
-                        ):
+                        if is_subpath_or_equal(source_path, p):
                             is_protected = True
                             break
 
