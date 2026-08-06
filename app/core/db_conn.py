@@ -1,8 +1,11 @@
 """Database connection module."""
 
+import logging
 import os
 import sys
 import threading
+
+logger = logging.getLogger(__name__)
 
 try:
     from sqlcipher3 import dbapi2 as sqlite3
@@ -108,13 +111,18 @@ def get_db_connection(db_path: str):
     except sqlite3.DatabaseError as e:
         err_msg = str(e).lower()
         if "file is not a database" in err_msg or "file is encrypted" in err_msg:
-            # Legacy unencrypted database or invalid key. Delete files and recreate.
-            for ext in ["", "-wal", "-shm"]:
-                target_file = f"{db_path}{ext}"
-                if os.path.exists(target_file):
-                    os.remove(target_file)
-            conn = _open_conn(db_path)
+            logger.error(
+                "Database decryption failed: The database is encrypted or is not a valid database. "
+                "This indicates a locked OS keyring, mismatched cryptographic keys, or decryption failure. "
+                f"Database path: '{db_path}'. Error detail: {e}"
+            )
+            raise sqlite3.DatabaseError(
+                f"Failed to decrypt database at '{db_path}'. Please ensure your OS keyring is unlocked and configured correctly."
+            ) from e
         else:
+            logger.error(
+                f"Database error encountered: {e}. Database path: '{db_path}'"
+            )
             raise
 
     # Enable Write-Ahead Logging (WAL) for simultaneous reads and writes

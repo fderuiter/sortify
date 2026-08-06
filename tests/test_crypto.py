@@ -303,3 +303,104 @@ def test_missing_cipher_version_rejection(tmp_path, monkeypatch):
         db_conn.get_db_connection(str(db_path))
 
     mock_conn.close.assert_called()
+
+
+def test_decryption_failure_safe_error_propagation(tmp_path, monkeypatch, caplog):
+    """Verify that when decryption fails, we:
+    1. Immediately halt execution and raise a descriptive DatabaseError.
+    2. Do NOT delete or modify any database files on disk (db, -wal, -shm).
+    3. Log a clear, scrubbed error message without raw keys or credentials.
+    4. Can successfully load the original intact database once the keyring/key is restored.
+    """
+    from app.core import db_conn
+    from app.core.path_utils import resolve_db_crypto
+    import logging
+
+    db_path = tmp_path / "secure_autosorter.db"
+    wal_path = tmp_path / "secure_autosorter.db-wal"
+    shm_path = tmp_path / "secure_autosorter.db-shm"
+
+    # 1. Create and populate a database normally with SessionCrypto
+    # Set up some dummy keyring credentials
+    crypto = resolve_db_crypto(db_path)
+    # Get cipher to generate the correct key and save it to keyring
+    crypto.get_cipher()
+    correct_key = crypto.get_raw_key()
+    assert correct_key is not None
+
+    # Connect and write some initial data to the database
+    conn = db_conn.get_db_connection(str(db_path))
+    conn.execute("CREATE TABLE test_table (id INTEGER PRIMARY KEY, value TEXT)")
+    conn.execute("INSERT INTO test_table (value) VALUES ('secret_data')")
+    conn.commit()
+    db_conn.clear_connection_cache()
+
+    # Create dummy -wal and -shm files to verify they are not deleted
+    wal_path.write_text("dummy wal data")
+    shm_path.write_text("dummy shm data")
+
+    # Verify files exist on disk
+    assert db_path.exists()
+    assert wal_path.exists()
+    assert shm_path.exists()
+
+    # Spy on os.remove to ensure our code never attempts to delete any database files
+    removed_files = []
+    original_remove = os.remove
+
+    def mock_remove(path):
+        removed_files.append(str(path))
+        original_remove(path)
+
+    monkeypatch.setattr(os, "remove", mock_remove)
+
+    # 2. Simulate a locked/misconfigured keyring on subsequent startup
+    # We mock keyring to return a mismatched/wrong key (or None)
+    mismatched_key = Fernet.generate_key().decode("utf-8")
+
+    def mock_get_password_mismatched(service, account):
+        # Mismatched/incorrect key or None
+        return mismatched_key
+
+    monkeypatch.setattr(keyring, "get_password", mock_get_password_mismatched)
+    # Clear cache and resolve_db_crypto crypto object so it is re-instantiated
+    db_conn.clear_connection_cache()
+
+    # Try to open the connection. It must raise a sqlite3.DatabaseError (decryption failure).
+    with caplog.at_level(logging.ERROR):
+        with pytest.raises(db_conn.sqlite3.DatabaseError) as exc_info:
+            db_conn.get_db_connection(str(db_path))
+
+    # 3. Verify that the descriptive exception was raised
+    assert "Failed to decrypt database" in str(exc_info.value)
+    assert "OS keyring" in str(exc_info.value)
+
+    # 4. Verify that NO database files were deleted, modified, or truncated on disk by our application
+    assert db_path.exists()
+    for removed in removed_files:
+        assert "secure_autosorter.db" not in removed
+
+    # 5. Verify the logs contain a descriptive error message indicating decryption or keyring failure
+    # and that the raw key/password is completely scrubbed from logs.
+    log_text = caplog.text
+    assert "Database decryption failed" in log_text
+    assert "locked OS keyring" in log_text or "mismatched cryptographic keys" in log_text
+    assert "secure_autosorter.db" in log_text
+    assert mismatched_key not in log_text
+    assert correct_key not in log_text
+
+    # 6. Correct the keyring configuration (restore correct key)
+    def mock_get_password_correct(service, account):
+        return correct_key
+
+    monkeypatch.setattr(keyring, "get_password", mock_get_password_correct)
+    db_conn.clear_connection_cache()
+
+    # Attempt connection again. It should load successfully, and we should be able to read our original data.
+    conn2 = db_conn.get_db_connection(str(db_path))
+    cursor = conn2.execute("SELECT value FROM test_table")
+    row = cursor.fetchone()
+    assert row is not None
+    assert row[0] == "secret_data"
+    conn2.close()
+
