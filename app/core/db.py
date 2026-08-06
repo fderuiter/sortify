@@ -251,16 +251,13 @@ class Database:
     def update_document_path(self, base_dir, old_filepath, new_filepath):
         """Update a document's path and historical assignment when moved."""
         self.invalidate_cache()
-        import os
-
-        new_dir = os.path.dirname(new_filepath).replace("\\", "/")
 
         def _write():
             conn = get_db_connection(self.db_path)
             with conn:
                 conn.execute(
-                    "UPDATE documents SET filepath = ?, user_verified_target_path = ? WHERE base_dir = ? AND filepath = ?",
-                    (new_filepath, new_dir, base_dir, old_filepath),
+                    "UPDATE documents SET filepath = ? WHERE base_dir = ? AND filepath = ?",
+                    (new_filepath, base_dir, old_filepath),
                 )
             self.invalidate_cache()
 
@@ -284,12 +281,9 @@ class Database:
                         )
                     elif item["type"] == "document_path":
                         base_dir, old_filepath, new_filepath = item["args"]
-                        import os
-
-                        new_dir = os.path.dirname(new_filepath).replace("\\", "/")
                         conn.execute(
-                            "UPDATE documents SET filepath = ?, user_verified_target_path = ? WHERE base_dir = ? AND filepath = ?",
-                            (new_filepath, new_dir, base_dir, old_filepath),
+                            "UPDATE documents SET filepath = ? WHERE base_dir = ? AND filepath = ?",
+                            (new_filepath, base_dir, old_filepath),
                         )
             self.invalidate_cache()
 

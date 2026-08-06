@@ -222,9 +222,11 @@ def _execute_moves_recursive(
             source_rel_path = os.path.relpath(source_path, base_dir).replace("\\", "/")
             doc = db.get_document(base_dir, source_rel_path)
 
+            is_similarity = isinstance(content, dict) and content.get("routed_by") == "similarity"
+
             if dest_path == source_path:
                 # Still record user verified target if needed even if not moving
-                if doc and doc.get("file_hash"):
+                if doc and doc.get("file_hash") and not is_similarity:
                     if db_updates_batch is not None:
                         db_updates_batch.append(
                             {
@@ -246,7 +248,7 @@ def _execute_moves_recursive(
                 shutil.move(source_path, dest_path)
 
             # Record user verified target and update filepath only after successful move
-            if doc and doc.get("file_hash"):
+            if doc and doc.get("file_hash") and not is_similarity:
                 if db_updates_batch is not None:
                     db_updates_batch.append(
                         {
