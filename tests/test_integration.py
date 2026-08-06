@@ -19,45 +19,66 @@ def mock_winreg_and_ctypes():
 
     import ctypes
 
-    class MockShell32:
-        def __init__(self, real_shell=None):
-            self._real_shell = real_shell
-            self.IsUserAnAdmin = MagicMock()
-            self.IsUserAnAdmin.return_value = False
-            self.ShellExecuteW = MagicMock()
-            self.ShellExecuteW.return_value = 42
-
-        def __getattr__(self, name):
-            if self._real_shell is not None:
-                return getattr(self._real_shell, name)
-            raise AttributeError(name)
-
-    class MockWindll:
-        def __init__(self, real_windll=None):
-            self._real_windll = real_windll
-            real_shell32 = (
-                getattr(real_windll, "shell32", None) if real_windll else None
-            )
-            self.shell32 = MockShell32(real_shell32)
-
-        def __getattr__(self, name):
-            if self._real_windll is not None:
-                return getattr(self._real_windll, name)
-            raise AttributeError(name)
-
-    mock_windll = MockWindll(getattr(ctypes, "windll", None))
-
     class MockCtypesWrapper:
-        windll = mock_windll
+        pass
 
     mock_ctypes = MockCtypesWrapper()
 
-    with (
-        patch.dict(sys.modules, {"winreg": mock_winreg}),
-        patch.object(ctypes, "windll", mock_windll, create=True),
-        patch("app.core.verifier.check_ai_status", return_value=(True, None)),
-    ):
-        yield mock_winreg, mock_ctypes
+    if hasattr(ctypes, "windll"):
+        # On Windows, override only the specific functions on the real native shell32 to prevent breaking standard library/testing tools
+        real_shell32 = ctypes.windll.shell32
+        
+        orig_is_admin = getattr(real_shell32, "IsUserAnAdmin", None)
+        orig_shell_execute = getattr(real_shell32, "ShellExecuteW", None)
+
+        mock_is_admin = MagicMock(return_value=False)
+        mock_shell_execute = MagicMock(return_value=42)
+
+        real_shell32.IsUserAnAdmin = mock_is_admin
+        real_shell32.ShellExecuteW = mock_shell_execute
+
+        mock_ctypes.windll = ctypes.windll
+
+        try:
+            with (
+                patch.dict(sys.modules, {"winreg": mock_winreg}),
+                patch("app.core.verifier.check_ai_status", return_value=(True, None)),
+            ):
+                yield mock_winreg, mock_ctypes
+        finally:
+            if orig_is_admin is not None:
+                real_shell32.IsUserAnAdmin = orig_is_admin
+            else:
+                try:
+                    delattr(real_shell32, "IsUserAnAdmin")
+                except AttributeError:
+                    pass
+
+            if orig_shell_execute is not None:
+                real_shell32.ShellExecuteW = orig_shell_execute
+            else:
+                try:
+                    delattr(real_shell32, "ShellExecuteW")
+                except AttributeError:
+                    pass
+    else:
+        # On Linux/macOS, ctypes.windll doesn't exist natively.
+        # We can construct a simple mock windll and shell32.
+        mock_shell32 = MagicMock()
+        mock_shell32.IsUserAnAdmin = MagicMock(return_value=False)
+        mock_shell32.ShellExecuteW = MagicMock(return_value=42)
+
+        mock_windll = MagicMock()
+        mock_windll.shell32 = mock_shell32
+
+        mock_ctypes.windll = mock_windll
+
+        with (
+            patch.dict(sys.modules, {"winreg": mock_winreg}),
+            patch.object(ctypes, "windll", mock_windll, create=True),
+            patch("app.core.verifier.check_ai_status", return_value=(True, None)),
+        ):
+            yield mock_winreg, mock_ctypes
 
 
 def test_non_windows_platform_guardrail():
