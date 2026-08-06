@@ -1,9 +1,9 @@
 import asyncio
 import os
-import shutil
 import sqlite3
-import pytest
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from app.config import AppSettings
 from app.core.session import scan_abandoned_sessions_async

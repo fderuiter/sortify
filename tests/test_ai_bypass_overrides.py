@@ -2,7 +2,7 @@ import os
 import shutil
 import tempfile
 from pathlib import Path
-from types import SimpleNamespace
+
 import pytest
 
 from app.core.analyzer import IncrementalAnalyzer

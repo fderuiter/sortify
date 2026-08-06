@@ -198,7 +198,7 @@ class AutoSorterApp:
         """Display the interactive recovery wizard for a failed rollback session with trapped files."""
         import os
         import shutil
-        import sqlite3
+
         from app.core.mover import get_safe_path
         from app.ui.dialog_helper import ask_directory_async
 
@@ -238,7 +238,7 @@ class AutoSorterApp:
                 def select_original():
                     run_recovery(restore_to_original=True)
 
-                restore_btn = ui.button(
+                ui.button(
                     "Restore to Original Folders", 
                     on_click=select_original
                 ).classes("w-full bg-blue-600 text-white").props('aria-label="Restore to Original Folders"')
@@ -268,7 +268,7 @@ class AutoSorterApp:
                             return
                         run_recovery(restore_to_original=False, custom_path=custom_path)
 
-                    export_btn = ui.button(
+                    ui.button(
                         "Export to Custom Folder", 
                         on_click=select_export
                     ).classes("bg-green-600 text-white flex-1").props('aria-label="Export to Custom Folder"')
@@ -323,13 +323,7 @@ class AutoSorterApp:
                             shutil.rmtree(branches_dir, ignore_errors=True)
 
                         if os.path.exists(history_db_path):
-                            conn = sqlite3.connect(history_db_path)
-                            with conn:
-                                conn.execute(
-                                    "UPDATE sessions SET status = 'resolved' WHERE session_id = ?",
-                                    (session_id,),
-                                )
-                            conn.close()
+                            self._resolve_session_status(history_db_path, session_id)
                     except Exception as db_ex:
                         errors.append(f"DB update failed: {str(db_ex)}")
 
@@ -354,6 +348,17 @@ class AutoSorterApp:
                 asyncio.create_task(do_work())
 
         dialog.open()
+
+    def _resolve_session_status(self, history_db_path, session_id):
+        """Resolve session status in a synchronous context to respect architecture guidelines."""
+        import sqlite3
+        conn = sqlite3.connect(history_db_path)
+        with conn:
+            conn.execute(
+                "UPDATE sessions SET status = 'resolved' WHERE session_id = ?",
+                (session_id,),
+            )
+        conn.close()
 
     def resume_session(self, session_info):
         """Resume an interrupted sorting operation."""

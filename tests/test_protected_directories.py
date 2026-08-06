@@ -1,8 +1,4 @@
-import os
-import shutil
-from pathlib import Path
 from unittest import mock
-import pytest
 
 from app.config import Settings
 from app.core.mover import _remove_empty_dirs, execute_moves
