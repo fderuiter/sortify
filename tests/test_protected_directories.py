@@ -142,6 +142,8 @@ def test_is_subpath_or_equal():
     from app.core.mover import is_subpath_or_equal
 
     assert is_subpath_or_equal("/app/dir", "/app/dir") is True
+    assert is_subpath_or_equal("/app/dir/", "/app/dir") is True
+    assert is_subpath_or_equal("/app/dir", "/app/dir/") is True
     assert is_subpath_or_equal("/app/dir/sub", "/app/dir") is True
     assert is_subpath_or_equal("/app/dir/sub", "/app/dir/") is True
     assert is_subpath_or_equal("/app/dir2", "/app/dir") is False
@@ -151,6 +153,7 @@ def test_is_subpath_or_equal():
 
     # Root path checks
     assert is_subpath_or_equal("/app", "/") is True
+    assert is_subpath_or_equal("/", "/") is True
 
     # Test case-insensitivity which is important on Windows and macOS if file system is case-insensitive
     import sys
@@ -160,3 +163,5 @@ def test_is_subpath_or_equal():
         assert is_subpath_or_equal("/app/dir/sub", "/APP/DIR") is True
         assert is_subpath_or_equal("C:\\foo\\bar", "C:\\") is True
         assert is_subpath_or_equal("C:\\foo\\bar", "C:\\foo\\") is True
+        assert is_subpath_or_equal("C:\\foo", "C:\\foo\\") is True
+        assert is_subpath_or_equal("C:\\foo\\", "C:\\foo") is True
