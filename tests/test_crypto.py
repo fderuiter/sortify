@@ -336,6 +336,20 @@ def test_decryption_failure_safe_error_propagation(tmp_path, monkeypatch, caplog
     conn.commit()
     db_conn.clear_connection_cache()
 
+    # On Windows, SQLite might leave physical WAL/SHM files on disk after closing the connection.
+    # We physically delete them here so they do not interfere (causing disk I/O or malformed errors)
+    # when connecting with a mismatched/wrong key in the subsequent steps.
+    if wal_path.exists():
+        try:
+            wal_path.unlink()
+        except Exception:
+            pass
+    if shm_path.exists():
+        try:
+            shm_path.unlink()
+        except Exception:
+            pass
+
     # To prevent Windows-native SQLite from failing with "disk I/O error" due to empty/malformed
     # WAL or SHM files, we do not physically create wal_path and shm_path on disk.
     # Instead, we mock os.path.exists to return True for these paths, simulating their existence,
@@ -343,6 +357,14 @@ def test_decryption_failure_safe_error_propagation(tmp_path, monkeypatch, caplog
     original_exists = os.path.exists
 
     def mock_exists(path):
+        try:
+            p_str = os.path.normcase(os.path.abspath(path))
+            wal_str = os.path.normcase(os.path.abspath(wal_path))
+            shm_str = os.path.normcase(os.path.abspath(shm_path))
+            if p_str in (wal_str, shm_str):
+                return True
+        except Exception:
+            pass
         if str(path) in (str(wal_path), str(shm_path)):
             return True
         return original_exists(path)
