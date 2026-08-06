@@ -143,10 +143,14 @@ def test_is_subpath_or_equal():
 
     assert is_subpath_or_equal("/app/dir", "/app/dir") is True
     assert is_subpath_or_equal("/app/dir/sub", "/app/dir") is True
+    assert is_subpath_or_equal("/app/dir/sub", "/app/dir/") is True
     assert is_subpath_or_equal("/app/dir2", "/app/dir") is False
     assert is_subpath_or_equal("/app/dir/sub", "/app/dir/sub/nested") is False
     assert is_subpath_or_equal(None, "/app/dir") is False
     assert is_subpath_or_equal("/app/dir", None) is False
+
+    # Root path checks
+    assert is_subpath_or_equal("/app", "/") is True
 
     # Test case-insensitivity which is important on Windows and macOS if file system is case-insensitive
     import sys
@@ -154,3 +158,5 @@ def test_is_subpath_or_equal():
     if sys.platform == "win32":
         assert is_subpath_or_equal("/APP/DIR/SUB", "/app/dir") is True
         assert is_subpath_or_equal("/app/dir/sub", "/APP/DIR") is True
+        assert is_subpath_or_equal("C:\\foo\\bar", "C:\\") is True
+        assert is_subpath_or_equal("C:\\foo\\bar", "C:\\foo\\") is True

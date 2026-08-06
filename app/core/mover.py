@@ -32,7 +32,9 @@ def is_subpath_or_equal(child: str, parent: str) -> bool:
     abs_parent = os.path.normcase(os.path.abspath(parent))
     if abs_child == abs_parent:
         return True
-    return abs_child.startswith(abs_parent + os.sep)
+    if not abs_parent.endswith(os.sep):
+        abs_parent += os.sep
+    return abs_child.startswith(abs_parent)
 
 
 def get_safe_path(dest_dir: str, filename: str, source_path: str = None) -> str:
