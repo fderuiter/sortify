@@ -120,9 +120,7 @@ def get_db_connection(db_path: str):
                 f"Failed to decrypt database at '{db_path}'. Please ensure your OS keyring is unlocked and configured correctly."
             ) from e
         else:
-            logger.error(
-                f"Database error encountered: {e}. Database path: '{db_path}'"
-            )
+            logger.error(f"Database error encountered: {e}. Database path: '{db_path}'")
             raise
 
     # Enable Write-Ahead Logging (WAL) for simultaneous reads and writes
