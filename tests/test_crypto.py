@@ -334,7 +334,17 @@ def test_decryption_failure_safe_error_propagation(tmp_path, monkeypatch, caplog
     conn.execute("CREATE TABLE test_table (id INTEGER PRIMARY KEY, value TEXT)")
     conn.execute("INSERT INTO test_table (value) VALUES ('secret_data')")
     conn.commit()
+    # Switch back to DELETE mode so SQLite cleanly checkpoints and deletes WAL and SHM files
+    try:
+        conn.execute("PRAGMA journal_mode = DELETE")
+    except Exception:
+        pass
     db_conn.clear_connection_cache()
+    try:
+        conn.close()
+    except Exception:
+        pass
+    del conn
 
     # On Windows, SQLite might leave physical WAL/SHM files on disk after closing the connection.
     # We physically delete them here so they do not interfere (causing disk I/O or malformed errors)
