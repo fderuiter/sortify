@@ -19,7 +19,9 @@ def mock_session_base(tmp_path, monkeypatch):
     def mock_get_session_base_dir():
         return session_base
 
-    monkeypatch.setattr("app.core.path_utils.get_session_base_dir", mock_get_session_base_dir)
+    monkeypatch.setattr(
+        "app.core.path_utils.get_session_base_dir", mock_get_session_base_dir
+    )
     return session_base
 
 
@@ -158,7 +160,7 @@ async def test_wizard_file_recovery_original_location(mock_session_base, tmp_pat
     # Prepare directories & trapped files
     user_data = tmp_path / "user_data"
     user_data.mkdir()
-    
+
     # Pre-create a file in user_data to trigger duplicate resolving name conflict rule
     existing_file = user_data / "test_doc.txt"
     with open(existing_file, "w") as f:
@@ -166,7 +168,7 @@ async def test_wizard_file_recovery_original_location(mock_session_base, tmp_pat
 
     branch_dir = user_data / ".branches" / session_id
     branch_dir.mkdir(parents=True)
-    
+
     trapped_file = branch_dir / "test_doc.txt"
     with open(trapped_file, "w") as f:
         f.write("trapped file data")
@@ -318,7 +320,7 @@ async def test_wizard_file_recovery_custom_location(mock_session_base, tmp_path)
 
         if export_on_click:
             export_on_click()
-            
+
         await asyncio.sleep(0.2)
 
     # Verify the custom export:

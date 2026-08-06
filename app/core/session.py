@@ -53,14 +53,16 @@ async def scan_abandoned_sessions_async():
                                     has_files = True
                                     break
                         if has_files:
-                            trapped_sessions.append({
-                                "session_id": sid,
-                                "base_dir": base_dir,
-                                "session_dir": str(session_dir),
-                                "status": status,
-                                "has_trapped_files": True,
-                                "safety_folder": branch_dir,
-                            })
+                            trapped_sessions.append(
+                                {
+                                    "session_id": sid,
+                                    "base_dir": base_dir,
+                                    "session_dir": str(session_dir),
+                                    "status": status,
+                                    "has_trapped_files": True,
+                                    "safety_folder": branch_dir,
+                                }
+                            )
 
                 if trapped_sessions:
                     abandoned.extend(trapped_sessions)
@@ -70,14 +72,16 @@ async def scan_abandoned_sessions_async():
                         for row in rows:
                             sid, base_dir, status = row
                             if status == "active":
-                                abandoned.append({
-                                    "session_id": sid,
-                                    "base_dir": base_dir,
-                                    "session_dir": str(session_dir),
-                                    "plan_path": str(plan_path),
-                                    "status": status,
-                                    "has_trapped_files": False,
-                                })
+                                abandoned.append(
+                                    {
+                                        "session_id": sid,
+                                        "base_dir": base_dir,
+                                        "session_dir": str(session_dir),
+                                        "plan_path": str(plan_path),
+                                        "status": status,
+                                        "has_trapped_files": False,
+                                    }
+                                )
                                 break
             except Exception:
                 pass
