@@ -75,13 +75,14 @@ def get_db_connection(db_path: str):
     crypto = resolve_db_crypto(db_path)
     raw_key = crypto.get_raw_key()
 
-    def _open_conn(path: str) -> sqlite3.Connection:
-        if not HAS_SQLCIPHER:
-            raise RuntimeError(
-                "SQLCipher library is missing. Standard SQLite fallback connections are blocked."
-            )
+    if not HAS_SQLCIPHER:
+        raise RuntimeError(
+            "SQLCipher library is missing. Standard SQLite fallback connections are blocked."
+        )
 
-        conn = sqlite3.connect(path, timeout=5.0, check_same_thread=False)
+    conn = None
+    try:
+        conn = sqlite3.connect(abs_path, timeout=5.0, check_same_thread=False)
         if raw_key:
             conn.execute(f"PRAGMA key = '{raw_key}'")
 
@@ -90,50 +91,49 @@ def get_db_connection(db_path: str):
             cursor.execute("PRAGMA cipher_version;")
             version = cursor.fetchone()
             if not version or not version[0]:
-                conn.close()
                 raise RuntimeError(
                     "SQLCipher is not active on this connection context."
                 )
         except Exception:
-            conn.close()
             raise
 
         # Test database validity to catch unencrypted legacy databases or bad keys
-        try:
-            conn.execute("PRAGMA user_version;")
-        except sqlite3.Error:
-            conn.close()
+        conn.execute("PRAGMA user_version;")
+
+        # Enable Write-Ahead Logging (WAL) for simultaneous reads and writes
+        conn.execute("PRAGMA journal_mode = WAL")
+        # Increase the database in-memory page cache to hold text features and clustering data
+        conn.execute("PRAGMA cache_size = -64000")  # 64MB cache
+
+        # Disable mmap_size on Windows to prevent OS-level file locking issues with multiple connections
+        if sys.platform != "win32":
+            # Enforce optimized disk page allocations
+            conn.execute("PRAGMA mmap_size = 268435456")  # 256MB mmap
+
+        # Ensure database size remains stable under rapid writes
+        conn.execute(
+            "PRAGMA journal_size_limit = 67108864"
+        )  # 64MB limit for WAL/rollback logs
+        # Set synchronous mode to NORMAL for WAL
+        conn.execute("PRAGMA synchronous = NORMAL")
+
+    except Exception as e:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+        if isinstance(e, sqlite3.Error):
+            logger.error(
+                "Database decryption failed: The database is encrypted or is not a valid database. "
+                "This indicates a locked OS keyring, mismatched cryptographic keys, or decryption failure. "
+                f"Database path: '{db_path}'. Error detail: {e}"
+            )
+            raise sqlite3.DatabaseError(
+                f"Failed to decrypt database at '{db_path}'. Please ensure your OS keyring is unlocked and configured correctly."
+            ) from e
+        else:
             raise
-        return conn
-
-    try:
-        conn = _open_conn(db_path)
-    except sqlite3.Error as e:
-        logger.error(
-            "Database decryption failed: The database is encrypted or is not a valid database. "
-            "This indicates a locked OS keyring, mismatched cryptographic keys, or decryption failure. "
-            f"Database path: '{db_path}'. Error detail: {e}"
-        )
-        raise sqlite3.DatabaseError(
-            f"Failed to decrypt database at '{db_path}'. Please ensure your OS keyring is unlocked and configured correctly."
-        ) from e
-
-    # Enable Write-Ahead Logging (WAL) for simultaneous reads and writes
-    conn.execute("PRAGMA journal_mode = WAL")
-    # Increase the database in-memory page cache to hold text features and clustering data
-    conn.execute("PRAGMA cache_size = -64000")  # 64MB cache
-
-    # Disable mmap_size on Windows to prevent OS-level file locking issues with multiple connections
-    if sys.platform != "win32":
-        # Enforce optimized disk page allocations
-        conn.execute("PRAGMA mmap_size = 268435456")  # 256MB mmap
-
-    # Ensure database size remains stable under rapid writes
-    conn.execute(
-        "PRAGMA journal_size_limit = 67108864"
-    )  # 64MB limit for WAL/rollback logs
-    # Set synchronous mode to NORMAL for WAL
-    conn.execute("PRAGMA synchronous = NORMAL")
 
     with _cache_lock:
         _connection_cache[cache_key] = conn
