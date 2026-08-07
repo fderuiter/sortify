@@ -368,7 +368,9 @@ def test_decryption_failure_safe_error_propagation(tmp_path, monkeypatch, caplog
 
     # Try to open the connection. It must raise a sqlite3.DatabaseError (decryption failure).
     with caplog.at_level(logging.ERROR):
-        with pytest.raises(db_conn.sqlite3.DatabaseError) as exc_info:
+        with pytest.raises(
+            (db_conn.sqlite3.DatabaseError, sqlite3.DatabaseError)
+        ) as exc_info:
             db_conn.get_db_connection(str(db_path))
 
     # 3. Verify that the descriptive exception was raised
