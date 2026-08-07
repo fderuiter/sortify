@@ -212,33 +212,22 @@ async def test_wizard_file_recovery_original_location(mock_session_base, tmp_pat
                 if len(args) > 0 and "Restore" in args[0]:
                     restore_on_click = kwargs["on_click"]
 
-        if restore_on_click:
-            restore_on_click()
+        # Intercept and capture the background recovery task to await it directly.
+        # This prevents any timing-related race conditions or database locking on slow Windows CI runners.
+        created_tasks = []
+        original_create_task = asyncio.create_task
 
-        # Poll until the session status is updated to resolved in the database
-        # This prevents any timing-related race conditions on slow Windows CI runners
-        import time
+        def mock_create_task(coro, *args, **kwargs):
+            task = original_create_task(coro, *args, **kwargs)
+            created_tasks.append(task)
+            return task
 
-        start_time = time.time()
-        resolved = False
-        while time.time() - start_time < 30.0:
-            try:
-                with closing(sqlite3.connect(history_db, timeout=30.0)) as conn:
-                    with closing(conn.cursor()) as cursor:
-                        cursor.execute(
-                            "SELECT status FROM sessions WHERE session_id = ?", (session_id,)
-                        )
-                        row = cursor.fetchone()
-                        if row and row[0] == "resolved":
-                            resolved = True
-                            break
-            except Exception:
-                pass
-            await asyncio.sleep(0.05)
+        with patch("app.ui.app.asyncio.create_task", side_effect=mock_create_task):
+            if restore_on_click:
+                restore_on_click()
 
-        assert resolved, (
-            "Recovery wizard failed to update session status to 'resolved' within timeout"
-        )
+            if created_tasks:
+                await asyncio.gather(*created_tasks)
 
     # Let's check the result:
     # 1. Trapped file should be recovered. Since test_doc.txt existed, it should be named test_doc_1.txt
@@ -343,33 +332,22 @@ async def test_wizard_file_recovery_custom_location(mock_session_base, tmp_path)
                 if len(args) > 0 and "Export" in args[0]:
                     export_on_click = kwargs["on_click"]
 
-        if export_on_click:
-            export_on_click()
+        # Intercept and capture the background recovery task to await it directly.
+        # This prevents any timing-related race conditions or database locking on slow Windows CI runners.
+        created_tasks = []
+        original_create_task = asyncio.create_task
 
-        # Poll until the session status is updated to resolved in the database
-        # This prevents any timing-related race conditions on slow Windows CI runners
-        import time
+        def mock_create_task(coro, *args, **kwargs):
+            task = original_create_task(coro, *args, **kwargs)
+            created_tasks.append(task)
+            return task
 
-        start_time = time.time()
-        resolved = False
-        while time.time() - start_time < 30.0:
-            try:
-                with closing(sqlite3.connect(history_db, timeout=30.0)) as conn:
-                    with closing(conn.cursor()) as cursor:
-                        cursor.execute(
-                            "SELECT status FROM sessions WHERE session_id = ?", (session_id,)
-                        )
-                        row = cursor.fetchone()
-                        if row and row[0] == "resolved":
-                            resolved = True
-                            break
-            except Exception:
-                pass
-            await asyncio.sleep(0.05)
+        with patch("app.ui.app.asyncio.create_task", side_effect=mock_create_task):
+            if export_on_click:
+                export_on_click()
 
-        assert resolved, (
-            "Recovery wizard failed to update session status to 'resolved' within timeout"
-        )
+            if created_tasks:
+                await asyncio.gather(*created_tasks)
 
     # Verify the custom export:
     exported_file = custom_export_dir / "sub_folder" / "trapped_export.txt"

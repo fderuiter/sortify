@@ -33,13 +33,13 @@ async def scan_abandoned_sessions_async():
                 continue
 
             try:
-                conn = sqlite3.connect(history_db, timeout=30.0)
-                cursor = conn.cursor()
-                cursor.execute(
-                    "SELECT session_id, base_dir, status FROM sessions ORDER BY timestamp DESC"
-                )
-                rows = cursor.fetchall()
-                conn.close()
+                from contextlib import closing
+                with closing(sqlite3.connect(history_db, timeout=30.0)) as conn:
+                    with closing(conn.cursor()) as cursor:
+                        cursor.execute(
+                            "SELECT session_id, base_dir, status FROM sessions ORDER BY timestamp DESC"
+                        )
+                        rows = cursor.fetchall()
 
                 trapped_sessions = []
                 for row in rows:
