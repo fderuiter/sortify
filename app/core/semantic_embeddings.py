@@ -82,6 +82,11 @@ def get_active_model_properties(model_path: str | None) -> tuple[str, int, str]:
 
                 # Try reading dimensions from the model if onnxruntime is available
                 try:
+                    from app.core.shared_registry import SharedModelRegistry
+
+                    # Ensure thread limits are applied via SharedModelRegistry initialization
+                    _ = SharedModelRegistry.get_instance()
+
                     import onnxruntime as ort
 
                     sess = ort.InferenceSession(onnx_file)
@@ -283,6 +288,104 @@ class SemanticEmbeddingManager:
         """Generate vector embedding of active model dimensions."""
         # Clean the text or default to empty
         text = text or ""
+
+        # If model is valid and model_path is provided, try loading local ONNX model
+        if self.model_path and getattr(self, "is_model_valid", True):
+            try:
+                onnx_file = None
+                if os.path.exists(self.model_path):
+                    if os.path.isdir(self.model_path):
+                        for root, _, files in os.walk(self.model_path):
+                            for f in files:
+                                if f.lower().endswith(".onnx"):
+                                    onnx_file = os.path.join(root, f)
+                                    break
+                            if onnx_file:
+                                break
+                    elif self.model_path.lower().endswith(".onnx"):
+                        onnx_file = self.model_path
+
+                if onnx_file and os.path.exists(onnx_file):
+                    tokenizer_path = (
+                        self.model_path
+                        if os.path.isdir(self.model_path)
+                        else os.path.dirname(self.model_path)
+                    )
+
+                    # Ensure offline boundaries using block_external_network
+                    from app.core.shared_registry import (
+                        SharedModelRegistry,
+                        block_external_network,
+                    )
+
+                    registry = SharedModelRegistry.get_instance()
+
+                    # Cache tokenizer in the shared registry to avoid heavy disk loads per text
+                    tokenizer_key = f"tokenizer_{tokenizer_path}"
+                    tokenizer = registry._models.get(tokenizer_key)
+
+                    if tokenizer is None:
+                        with block_external_network(reason="tokenizer initialization"):
+                            from transformers import AutoTokenizer
+
+                            tokenizer = AutoTokenizer.from_pretrained(
+                                tokenizer_path, local_files_only=True
+                            )
+                        registry._models[tokenizer_key] = tokenizer
+
+                    # Load/get ONNX session from registry (which applies thread limits)
+                    session = registry.get_onnx_session(onnx_file)
+
+                    # Tokenize input text
+                    inputs = tokenizer(
+                        text, padding=True, truncation=True, return_tensors="np"
+                    )
+
+                    # Prepare inputs for ONNX session run
+                    import numpy as np
+
+                    session_inputs = {}
+                    for node in session.get_inputs():
+                        if node.name in inputs:
+                            session_inputs[node.name] = inputs[node.name]
+
+                    # Run model session inference
+                    outputs = session.run(None, session_inputs)
+                    token_embeddings = outputs[0]
+
+                    # Retrieve attention mask
+                    if "attention_mask" in inputs:
+                        attention_mask = inputs["attention_mask"]
+                    else:
+                        attention_mask = np.ones(
+                            token_embeddings.shape[:2], dtype=np.int64
+                        )
+
+                    # Standard Mean Pooling:
+                    # embedding = sum(token_embeddings * attention_mask) / sum(attention_mask)
+                    input_mask_expanded = np.expand_dims(attention_mask, axis=-1)
+                    sum_embeddings = np.sum(
+                        token_embeddings * input_mask_expanded, axis=1
+                    )
+                    sum_mask = np.sum(input_mask_expanded, axis=1)
+                    sum_mask = np.clip(sum_mask, a_min=1e-9, a_max=None)
+                    embedding = sum_embeddings / sum_mask
+                    embedding_vector = embedding[0]
+
+                    # L2 Normalization
+                    norm = np.linalg.norm(embedding_vector)
+                    if norm > 0:
+                        normalized_embedding = embedding_vector / norm
+                    else:
+                        normalized_embedding = embedding_vector
+
+                    return normalized_embedding.tolist()
+
+            except Exception as e:
+                logging.error(
+                    f"Local ONNX embedding generation failed: {e}. Falling back to deterministic dummy generator."
+                )
+
         # Deterministically seed random to ensure consistent embeddings for the same text
         h = hashlib.sha256(text.encode("utf-8")).digest()
         rng = random.Random(h)

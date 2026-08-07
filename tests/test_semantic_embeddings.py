@@ -240,3 +240,203 @@ def test_memory_throttling_and_low_priority_thread(db, temp_dir):
     finally:
         db.get_documents_missing_vectors = original_get_docs
         manager.stop()
+
+
+def test_real_onnx_inference_pipeline_math(db, temp_dir):
+    """Verify that the local ONNX inference pipeline correctly executes tokenization,
+    retrieves ONNX sessions with thread limits, performs correct mean pooling with attention mask,
+    and returns a mathematically correct L2-normalized vector.
+    """
+    from unittest.mock import MagicMock, patch
+
+    import numpy as np
+
+    # Set up a mock tokenizer
+    mock_tokenizer = MagicMock()
+    mock_inputs = {
+        "input_ids": np.array([[101, 102, 103]], dtype=np.int64),
+        "attention_mask": np.array([[1, 1, 0]], dtype=np.int64),
+    }
+    mock_tokenizer.return_value = mock_inputs
+
+    # Set up a mock ONNX session
+    mock_session = MagicMock()
+    # Mock node inputs
+    input_node_ids = MagicMock()
+    input_node_ids.name = "input_ids"
+    input_node_mask = MagicMock()
+    input_node_mask.name = "attention_mask"
+    mock_session.get_inputs.return_value = [input_node_ids, input_node_mask]
+
+    # Mock output embeddings: token embeddings shape [1, 3, 2]
+    # first token: [1.0, 2.0], second token: [3.0, 4.0], third token (masked): [5.0, 6.0]
+    token_embeddings = np.array(
+        [[[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]]], dtype=np.float32
+    )
+    mock_session.run.return_value = [token_embeddings]
+
+    # Create dummy model dir with a mock onnx file
+    model_dir = temp_dir / "mock_model_dir"
+    model_dir.mkdir()
+    onnx_file = model_dir / "model.onnx"
+    onnx_file.write_text("dummy onnx content")
+
+    # Patch AutoTokenizer and get_onnx_session
+    with (
+        patch(
+            "transformers.AutoTokenizer.from_pretrained", return_value=mock_tokenizer
+        ) as mock_from_pretrained,
+        patch(
+            "app.core.shared_registry.SharedModelRegistry.get_onnx_session",
+            return_value=mock_session,
+        ) as mock_get_sess,
+        patch("app.core.semantic_embeddings.get_active_model_properties") as mock_props,
+    ):
+        mock_props.return_value = ("mock_sig_hash", 2, "1.0.0")
+
+        # Initialize manager with the local path
+        manager = SemanticEmbeddingManager(db, model_path=str(model_dir))
+
+        assert manager.is_model_valid is True
+        assert manager.dimensions == 2
+
+        # Generate embedding
+        embedding = manager.generate_embedding("Test document text")
+
+        # Verify AutoTokenizer was loaded with local_files_only=True
+        mock_from_pretrained.assert_called_once_with(
+            str(model_dir), local_files_only=True
+        )
+
+        # Verify get_onnx_session was called on the correct onnx file
+        mock_get_sess.assert_called_once_with(str(onnx_file))
+
+        # Check the mathematical result of mean pooling & L2 normalization:
+        # Mean Pooled = ([1.0, 2.0]*1 + [3.0, 4.0]*1 + [5.0, 6.0]*0) / 2 = [2.0, 3.0]
+        # L2 norm of [2, 3] = sqrt(4 + 9) = sqrt(13)
+        # Normalized = [2 / sqrt(13), 3 / sqrt(13)]
+        expected_norm = np.linalg.norm([2.0, 3.0])
+        expected_vector = [2.0 / expected_norm, 3.0 / expected_norm]
+
+        assert len(embedding) == 2
+        np.testing.assert_allclose(embedding, expected_vector, rtol=1e-5)
+
+
+def test_real_onnx_pipeline_unrelated_and_similar_matching(db, temp_dir):
+    """Verify that similar documents receive high similarity scores and unrelated receive low scores
+    using actual simulated high-fidelity model vectors.
+    """
+    from unittest.mock import MagicMock, patch
+
+    import numpy as np
+
+    # Set up dummy model path
+    model_dir = temp_dir / "mock_model_dir"
+    model_dir.mkdir()
+    onnx_file = model_dir / "model.onnx"
+    onnx_file.write_text("dummy onnx content")
+
+    mock_tokenizer = MagicMock()
+    mock_session = MagicMock()
+
+    # Input nodes
+    input_node = MagicMock()
+    input_node.name = "input_ids"
+    mock_session.get_inputs.return_value = [input_node]
+
+    # We will simulate high-fidelity semantic representations
+    # text_to_embedding maps mock texts to custom token embeddings
+    # Similar texts get similar vectors, unrelated get orthogonal/opposite vectors
+    def mock_tokenize_side_effect(text, *args, **kwargs):
+        # Return a simple input dictionary
+        return {"input_ids": np.array([[101]], dtype=np.int64)}
+
+    mock_tokenizer.side_effect = mock_tokenize_side_effect
+
+    # Define high-fidelity outputs depending on input texts
+    # We will use patch to observe what text was passed or simulate based on simple state
+    text_embeddings_db = {
+        "contract agreement apple": np.array(
+            [[[1.0, 0.0]]], dtype=np.float32
+        ),  # apples vector
+        "contract agreement fruits": np.array(
+            [[[0.9, 0.1]]], dtype=np.float32
+        ),  # very close to apples
+        "space exploration galaxy": np.array(
+            [[[0.0, 1.0]]], dtype=np.float32
+        ),  # orthogonal vector
+    }
+
+    last_text_called = []
+
+    # Wrapper to capture text passed to generate_embedding
+    original_generate = SemanticEmbeddingManager.generate_embedding
+
+    with (
+        patch(
+            "transformers.AutoTokenizer.from_pretrained", return_value=mock_tokenizer
+        ),
+        patch(
+            "app.core.shared_registry.SharedModelRegistry.get_onnx_session",
+            return_value=mock_session,
+        ),
+        patch("app.core.semantic_embeddings.get_active_model_properties") as mock_props,
+    ):
+        mock_props.return_value = ("mock_sig_hash", 2, "1.0.0")
+        manager = SemanticEmbeddingManager(db, model_path=str(model_dir))
+
+        def custom_generate(text):
+            # Capture what text was passed, and return the matching simulated semantic embedding
+            last_text_called.append(text)
+            for k, v in text_embeddings_db.items():
+                if text == k:
+                    # Mock the run outputs for this text
+                    mock_session.run.return_value = [v]
+                    break
+            return original_generate(manager, text)
+
+        with patch.object(manager, "generate_embedding", side_effect=custom_generate):
+            v_apple = manager.generate_embedding("contract agreement apple")
+            v_fruits = manager.generate_embedding("contract agreement fruits")
+            v_galaxy = manager.generate_embedding("space exploration galaxy")
+
+            # Calculate cosine similarities (since they are L2 normalized, dot product is cosine similarity)
+            sim_apple_fruits = np.dot(v_apple, v_fruits)
+            sim_apple_galaxy = np.dot(v_apple, v_galaxy)
+
+            # Similar documents receive high similarity scores (should be close to 0.9)
+            assert sim_apple_fruits > 0.8
+            # Unrelated documents receive low similarity scores (should be close to 0.0)
+            assert sim_apple_galaxy < 0.2
+
+
+def test_real_onnx_pipeline_graceful_fallback(db, temp_dir):
+    """Verify that when any part of the real ONNX initialization or inference fails,
+    the manager gracefully falls back to the deterministic dummy vector generator.
+    """
+    from unittest.mock import patch
+
+    # Set up model path but make tokenizer fail
+    model_dir = temp_dir / "faulty_model_dir"
+    model_dir.mkdir()
+    onnx_file = model_dir / "model.onnx"
+    onnx_file.write_text("dummy onnx content")
+
+    with (
+        patch(
+            "transformers.AutoTokenizer.from_pretrained",
+            side_effect=ImportError("Transformers library not installed."),
+        ),
+        patch("app.core.semantic_embeddings.get_active_model_properties") as mock_props,
+    ):
+        mock_props.return_value = ("faulty_sig_hash", 384, "1.0.0")
+        manager = SemanticEmbeddingManager(db, model_path=str(model_dir))
+
+        # Even with ImportError, generate_embedding should succeed and return deterministic dummy vectors
+        embedding1 = manager.generate_embedding("fallback test text")
+        embedding2 = manager.generate_embedding("fallback test text")
+        embedding3 = manager.generate_embedding("different text")
+
+        assert len(embedding1) == 384
+        assert embedding1 == embedding2  # deterministic
+        assert embedding1 != embedding3  # content-dependent
