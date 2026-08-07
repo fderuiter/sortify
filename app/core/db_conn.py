@@ -90,8 +90,10 @@ def get_db_connection(db_path: str):
     from contextlib import closing
 
     conn = None
+    conn_established = False
     try:
         conn = sqlite3.connect(abs_path, timeout=30.0, check_same_thread=False)
+        conn_established = True
         if raw_key:
             with closing(conn.cursor()) as cursor:
                 cursor.execute(f"PRAGMA key = '{raw_key}'")
@@ -190,7 +192,12 @@ def get_db_connection(db_path: str):
                     "failed to decrypt database",
                 )
             )
-            or ("disk i/o error" in err_msg_lower and raw_key and db_existed)
+            or (
+                "disk i/o error" in err_msg_lower
+                and raw_key
+                and db_existed
+                and (conn_established or os.path.exists(f"{db_path}-wal"))
+            )
         )
 
         if is_decryption_err and not isinstance(
