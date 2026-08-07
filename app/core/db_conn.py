@@ -7,6 +7,13 @@ import threading
 
 logger = logging.getLogger(__name__)
 
+# Run user-space bootstrapping to download, register, and verify precompiled native binaries
+try:
+    from app.core.user_space_bootstrap import bootstrap_binaries
+    bootstrap_binaries()
+except Exception as exc:
+    logger.error(f"User-space bootstrapping failed: {exc}")
+
 try:
     from sqlcipher3 import dbapi2 as sqlite3
 
