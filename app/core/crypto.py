@@ -92,20 +92,22 @@ class SessionCrypto:
         if key is None:
             if self.db_path.exists():
                 try:
-                    conn = sqlite3.connect(str(self.db_path))
-                    try:
-                        cursor = conn.execute(
-                            "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='documents'"
-                        )
-                        if cursor.fetchone()[0] > 0:
-                            # It might be encrypted, so query will fail, but if it's plaintext, it will succeed
-                            cursor = conn.execute("SELECT count(*) FROM documents")
-                            if cursor.fetchone()[0] > 0:
-                                raise RuntimeError(
-                                    "Database accessed but key file is missing."
-                                )
-                    finally:
-                        conn.close()
+                    from contextlib import closing
+
+                    has_docs = False
+                    with closing(sqlite3.connect(str(self.db_path))) as conn:
+                        with closing(conn.cursor()) as cursor:
+                            cursor.execute(
+                                "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='documents'"
+                            )
+                            row = cursor.fetchone()
+                            if row and row[0] > 0:
+                                cursor.execute("SELECT count(*) FROM documents")
+                                d_row = cursor.fetchone()
+                                if d_row and d_row[0] > 0:
+                                    has_docs = True
+                    if has_docs:
+                        raise RuntimeError("Database accessed but key file is missing.")
                 except sqlite3.DatabaseError:
                     # If it's encrypted with SQLCipher, sqlite3 will fail with "file is not a database"
                     # which means it's an existing DB! We cannot read it without a key.
