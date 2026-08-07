@@ -13,8 +13,26 @@ class SessionCrypto:
     """Manages encryption and decryption of data per session."""
 
     def __init__(self, key_path: Path, db_path: Path):
-        self.db_path = Path(os.path.abspath(db_path))
-        self.key_path = Path(os.path.abspath(key_path))
+        import sys
+
+        def _canonicalize(p):
+            abs_p = os.path.normpath(os.path.abspath(str(p)))
+            if sys.platform == "win32":
+                try:
+                    abs_p = os.path.normpath(os.path.realpath(abs_p))
+                except Exception:
+                    pass
+                if len(abs_p) > 1 and abs_p[1] == ":":
+                    abs_p = abs_p[0].upper() + abs_p[1:]
+            else:
+                try:
+                    abs_p = os.path.normpath(os.path.realpath(abs_p))
+                except Exception:
+                    pass
+            return Path(abs_p)
+
+        self.db_path = _canonicalize(db_path)
+        self.key_path = _canonicalize(key_path)
         self._cipher = None
         self._key = None
         self.keyring_service = "AutoSorter"
