@@ -123,6 +123,14 @@ def get_db_connection(db_path: str):
             or "cryptographic" in err_msg
             or "invalid key" in err_msg
             or "wrong key" in err_msg
+            or "authentication" in err_msg
+            or "password" in err_msg
+            or "passphrase" in err_msg
+            or "mac" in err_msg
+            or "bad decrypt" in err_msg
+            or "invalid password" in err_msg
+            or "key mismatch" in err_msg
+            or "mismatched key" in err_msg
         ):
             logger.error(
                 "Database decryption failed: The database is encrypted or is not a valid database. "
