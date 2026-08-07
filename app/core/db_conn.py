@@ -194,11 +194,14 @@ def get_db_connection(db_path: str):
             # We copy the database (and WAL/SHM sidecars, if they exist) to a temporary, isolated
             # directory by copying raw bytes directly (avoiding metadata/ACL copy failures on Windows)
             # and trying to connect to the temp copy.
+            import shutil
             import tempfile
             from pathlib import Path
 
             try:
-                with tempfile.TemporaryDirectory() as temp_dir:
+                determined_is_decryption_err = False
+                temp_dir = tempfile.mkdtemp()
+                try:
                     temp_db_path = Path(temp_dir) / "temp_db.db"
                     with open(os.path.abspath(db_path), "rb") as f_in:
                         with open(temp_db_path, "wb") as f_out:
@@ -222,7 +225,7 @@ def get_db_connection(db_path: str):
                         with closing(temp_conn.cursor()) as cursor:
                             cursor.execute(f"PRAGMA key = '{raw_key}'")
                             cursor.execute("PRAGMA user_version;")
-                        is_decryption_err = False
+                        determined_is_decryption_err = False
                     except Exception as temp_e:
                         temp_err_msg = str(temp_e).lower()
                         if any(
@@ -243,7 +246,7 @@ def get_db_connection(db_path: str):
                                 "disk i/o error",
                             )
                         ):
-                            is_decryption_err = True
+                            determined_is_decryption_err = True
                     finally:
                         if temp_conn:
                             try:
@@ -251,6 +254,13 @@ def get_db_connection(db_path: str):
                             except Exception:
                                 pass
                             temp_conn = None
+
+                    is_decryption_err = determined_is_decryption_err
+                finally:
+                    try:
+                        shutil.rmtree(temp_dir, ignore_errors=True)
+                    except Exception:
+                        pass
             except Exception:
                 is_decryption_err = False
 
