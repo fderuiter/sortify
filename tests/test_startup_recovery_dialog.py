@@ -33,15 +33,18 @@ async def test_scan_failed_session_with_trapped_files(mock_session_base, tmp_pat
     session_dir.mkdir()
 
     history_db = session_dir / "history.db"
-    conn = get_db_connection(str(history_db))
-    with conn:
-        conn.execute(
-            "CREATE TABLE sessions (session_id TEXT, timestamp REAL, base_dir TEXT, status TEXT)"
-        )
-        conn.execute(
-            "INSERT INTO sessions VALUES (?, ?, ?, ?)",
-            (session_id, 100.0, str(tmp_path / "user_data"), "failed"),
-        )
+    conn = get_db_connection(str(history_db), cached=False)
+    try:
+        with conn:
+            conn.execute(
+                "CREATE TABLE sessions (session_id TEXT, timestamp REAL, base_dir TEXT, status TEXT)"
+            )
+            conn.execute(
+                "INSERT INTO sessions VALUES (?, ?, ?, ?)",
+                (session_id, 100.0, str(tmp_path / "user_data"), "failed"),
+            )
+    finally:
+        conn.close()
 
     # Create safety folder inside user_data
     user_data = tmp_path / "user_data"
@@ -71,15 +74,18 @@ async def test_scan_does_not_prompt_if_safety_folder_empty(mock_session_base, tm
     session_dir.mkdir()
 
     history_db = session_dir / "history.db"
-    conn = get_db_connection(str(history_db))
-    with conn:
-        conn.execute(
-            "CREATE TABLE sessions (session_id TEXT, timestamp REAL, base_dir TEXT, status TEXT)"
-        )
-        conn.execute(
-            "INSERT INTO sessions VALUES (?, ?, ?, ?)",
-            (session_id, 100.0, str(tmp_path / "user_data"), "failed"),
-        )
+    conn = get_db_connection(str(history_db), cached=False)
+    try:
+        with conn:
+            conn.execute(
+                "CREATE TABLE sessions (session_id TEXT, timestamp REAL, base_dir TEXT, status TEXT)"
+            )
+            conn.execute(
+                "INSERT INTO sessions VALUES (?, ?, ?, ?)",
+                (session_id, 100.0, str(tmp_path / "user_data"), "failed"),
+            )
+    finally:
+        conn.close()
 
     # Create safety folder inside user_data but KEEP IT EMPTY
     user_data = tmp_path / "user_data"
@@ -103,15 +109,18 @@ async def test_ui_recovery_wizard_trigger(mock_session_base, tmp_path):
     session_dir.mkdir()
 
     history_db = session_dir / "history.db"
-    conn = get_db_connection(str(history_db))
-    with conn:
-        conn.execute(
-            "CREATE TABLE sessions (session_id TEXT, timestamp REAL, base_dir TEXT, status TEXT)"
-        )
-        conn.execute(
-            "INSERT INTO sessions VALUES (?, ?, ?, ?)",
-            (session_id, 100.0, str(tmp_path / "user_data"), "failed"),
-        )
+    conn = get_db_connection(str(history_db), cached=False)
+    try:
+        with conn:
+            conn.execute(
+                "CREATE TABLE sessions (session_id TEXT, timestamp REAL, base_dir TEXT, status TEXT)"
+            )
+            conn.execute(
+                "INSERT INTO sessions VALUES (?, ?, ?, ?)",
+                (session_id, 100.0, str(tmp_path / "user_data"), "failed"),
+            )
+    finally:
+        conn.close()
 
     user_data = tmp_path / "user_data"
     user_data.mkdir()
@@ -150,15 +159,18 @@ async def test_wizard_file_recovery_original_location(mock_session_base, tmp_pat
 
     # Database Setup
     history_db = session_dir / "history.db"
-    conn = get_db_connection(str(history_db))
-    with conn:
-        conn.execute(
-            "CREATE TABLE sessions (session_id TEXT, timestamp REAL, base_dir TEXT, status TEXT)"
-        )
-        conn.execute(
-            "INSERT INTO sessions VALUES (?, ?, ?, ?)",
-            (session_id, 100.0, str(tmp_path / "user_data"), "failed"),
-        )
+    conn = get_db_connection(str(history_db), cached=False)
+    try:
+        with conn:
+            conn.execute(
+                "CREATE TABLE sessions (session_id TEXT, timestamp REAL, base_dir TEXT, status TEXT)"
+            )
+            conn.execute(
+                "INSERT INTO sessions VALUES (?, ?, ?, ?)",
+                (session_id, 100.0, str(tmp_path / "user_data"), "failed"),
+            )
+    finally:
+        conn.close()
 
     # Prepare directories & trapped files
     user_data = tmp_path / "user_data"
@@ -225,15 +237,19 @@ async def test_wizard_file_recovery_original_location(mock_session_base, tmp_pat
         resolved = False
         while time.time() - start_time < 30.0:
             try:
-                conn = get_db_connection(str(history_db))
-                cursor = conn.cursor()
-                cursor.execute(
-                    "SELECT status FROM sessions WHERE session_id = ?", (session_id,)
-                )
-                row = cursor.fetchone()
-                if row and row[0] == "resolved":
-                    resolved = True
-                    break
+                conn = get_db_connection(str(history_db), cached=False)
+                try:
+                    cursor = conn.cursor()
+                    cursor.execute(
+                        "SELECT status FROM sessions WHERE session_id = ?",
+                        (session_id,),
+                    )
+                    row = cursor.fetchone()
+                    if row and row[0] == "resolved":
+                        resolved = True
+                        break
+                finally:
+                    conn.close()
             except Exception:
                 pass
             await asyncio.sleep(0.05)
@@ -242,27 +258,35 @@ async def test_wizard_file_recovery_original_location(mock_session_base, tmp_pat
             "Recovery wizard failed to update session status to 'resolved' within timeout"
         )
 
-    # Let's check the result:
-    # 1. Trapped file should be recovered. Since test_doc.txt existed, it should be named test_doc_1.txt
-    recovered_safe = user_data / "test_doc_1.txt"
-    assert os.path.exists(recovered_safe)
-    with open(recovered_safe, "r") as f:
-        assert f.read() == "trapped file data"
+        # Let's check the result inside the mock context:
+        # 1. Trapped file should be recovered. Since test_doc.txt existed, it should be named test_doc_1.txt
+        recovered_safe = user_data / "test_doc_1.txt"
+        assert os.path.exists(recovered_safe)
+        with open(recovered_safe, "r") as f:
+            assert f.read() == "trapped file data"
 
-    # 2. Existing file should be untouched
-    assert os.path.exists(existing_file)
-    with open(existing_file, "r") as f:
-        assert f.read() == "already exists"
+        # 2. Existing file should be untouched
+        assert os.path.exists(existing_file)
+        with open(existing_file, "r") as f:
+            assert f.read() == "already exists"
 
-    # 3. Hidden safety folder and its parents should be cleaned up / deleted
-    assert not os.path.exists(branch_dir)
+        # 3. Hidden safety folder and its parents should be cleaned up / deleted
+        assert not os.path.exists(branch_dir)
 
-    # 4. Status in database should be updated to 'resolved'
-    conn = get_db_connection(str(history_db))
-    cursor = conn.cursor()
-    cursor.execute("SELECT status FROM sessions WHERE session_id = ?", (session_id,))
-    row = cursor.fetchone()
-    assert row[0] == "resolved"
+        # 4. Status in database should be updated to 'resolved'
+        conn = get_db_connection(str(history_db), cached=False)
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT status FROM sessions WHERE session_id = ?", (session_id,)
+            )
+            row = cursor.fetchone()
+            assert row[0] == "resolved"
+        finally:
+            conn.close()
+
+        # Let any final background tasks (like do_work's last lines) finish under the mocks
+        await asyncio.sleep(0.1)
 
 
 @pytest.mark.anyio
@@ -276,15 +300,18 @@ async def test_wizard_file_recovery_custom_location(mock_session_base, tmp_path)
     session_dir.mkdir()
 
     history_db = session_dir / "history.db"
-    conn = get_db_connection(str(history_db))
-    with conn:
-        conn.execute(
-            "CREATE TABLE sessions (session_id TEXT, timestamp REAL, base_dir TEXT, status TEXT)"
-        )
-        conn.execute(
-            "INSERT INTO sessions VALUES (?, ?, ?, ?)",
-            (session_id, 100.0, str(tmp_path / "user_data"), "failed"),
-        )
+    conn = get_db_connection(str(history_db), cached=False)
+    try:
+        with conn:
+            conn.execute(
+                "CREATE TABLE sessions (session_id TEXT, timestamp REAL, base_dir TEXT, status TEXT)"
+            )
+            conn.execute(
+                "INSERT INTO sessions VALUES (?, ?, ?, ?)",
+                (session_id, 100.0, str(tmp_path / "user_data"), "failed"),
+            )
+    finally:
+        conn.close()
 
     user_data = tmp_path / "user_data"
     user_data.mkdir()
@@ -353,15 +380,19 @@ async def test_wizard_file_recovery_custom_location(mock_session_base, tmp_path)
         resolved = False
         while time.time() - start_time < 30.0:
             try:
-                conn = get_db_connection(str(history_db))
-                cursor = conn.cursor()
-                cursor.execute(
-                    "SELECT status FROM sessions WHERE session_id = ?", (session_id,)
-                )
-                row = cursor.fetchone()
-                if row and row[0] == "resolved":
-                    resolved = True
-                    break
+                conn = get_db_connection(str(history_db), cached=False)
+                try:
+                    cursor = conn.cursor()
+                    cursor.execute(
+                        "SELECT status FROM sessions WHERE session_id = ?",
+                        (session_id,),
+                    )
+                    row = cursor.fetchone()
+                    if row and row[0] == "resolved":
+                        resolved = True
+                        break
+                finally:
+                    conn.close()
             except Exception:
                 pass
             await asyncio.sleep(0.05)
@@ -370,18 +401,26 @@ async def test_wizard_file_recovery_custom_location(mock_session_base, tmp_path)
             "Recovery wizard failed to update session status to 'resolved' within timeout"
         )
 
-    # Verify the custom export:
-    exported_file = custom_export_dir / "sub_folder" / "trapped_export.txt"
-    assert os.path.exists(exported_file)
-    with open(exported_file, "r") as f:
-        assert f.read() == "data for custom export"
+        # Verify the custom export:
+        exported_file = custom_export_dir / "sub_folder" / "trapped_export.txt"
+        assert os.path.exists(exported_file)
+        with open(exported_file, "r") as f:
+            assert f.read() == "data for custom export"
 
-    # Verify safety folder is cleaned up
-    assert not os.path.exists(branch_dir)
+        # Verify safety folder is cleaned up
+        assert not os.path.exists(branch_dir)
 
-    # Verify status is resolved
-    conn = get_db_connection(str(history_db))
-    cursor = conn.cursor()
-    cursor.execute("SELECT status FROM sessions WHERE session_id = ?", (session_id,))
-    row = cursor.fetchone()
-    assert row[0] == "resolved"
+        # Verify status is resolved
+        conn = get_db_connection(str(history_db), cached=False)
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT status FROM sessions WHERE session_id = ?", (session_id,)
+            )
+            row = cursor.fetchone()
+            assert row[0] == "resolved"
+        finally:
+            conn.close()
+
+        # Let any final background tasks finish under the mocks
+        await asyncio.sleep(0.1)

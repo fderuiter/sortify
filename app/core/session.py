@@ -34,12 +34,15 @@ async def scan_abandoned_sessions_async():
             try:
                 from app.core.db_conn import get_db_connection
 
-                conn = get_db_connection(str(history_db))
-                cursor = conn.cursor()
-                cursor.execute(
-                    "SELECT session_id, base_dir, status FROM sessions ORDER BY timestamp DESC"
-                )
-                rows = cursor.fetchall()
+                conn = get_db_connection(str(history_db), cached=False)
+                try:
+                    cursor = conn.cursor()
+                    cursor.execute(
+                        "SELECT session_id, base_dir, status FROM sessions ORDER BY timestamp DESC"
+                    )
+                    rows = cursor.fetchall()
+                finally:
+                    conn.close()
 
                 trapped_sessions = []
                 for row in rows:

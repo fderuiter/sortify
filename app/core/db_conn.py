@@ -53,7 +53,7 @@ def clear_dead_thread_connections():
                         pass
 
 
-def get_db_connection(db_path: str):
+def get_db_connection(db_path: str, cached: bool = True):
     """Create and configure a new database connection with performance parameters."""
     global _connection_cache
     abs_path = os.path.normpath(os.path.abspath(db_path))
@@ -79,9 +79,10 @@ def get_db_connection(db_path: str):
     # Automatically clean up connections for dead threads to prevent resource and lock leaks on Windows
     clear_dead_thread_connections()
 
-    with _cache_lock:
-        if cache_key in _connection_cache:
-            return _connection_cache[cache_key]
+    if cached:
+        with _cache_lock:
+            if cache_key in _connection_cache:
+                return _connection_cache[cache_key]
 
     from app.core.path_utils import resolve_db_crypto
 
@@ -150,7 +151,8 @@ def get_db_connection(db_path: str):
     # Set synchronous mode to NORMAL for WAL
     conn.execute("PRAGMA synchronous = NORMAL")
 
-    with _cache_lock:
-        _connection_cache[cache_key] = conn
+    if cached:
+        with _cache_lock:
+            _connection_cache[cache_key] = conn
 
     return conn
