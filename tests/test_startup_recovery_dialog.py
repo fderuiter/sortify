@@ -1,6 +1,7 @@
 import asyncio
 import os
 import sqlite3
+from contextlib import closing
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -33,18 +34,16 @@ async def test_scan_failed_session_with_trapped_files(mock_session_base, tmp_pat
     session_dir.mkdir()
 
     history_db = session_dir / "history.db"
-    conn = sqlite3.connect(history_db, timeout=30.0)
-    try:
-        with conn:
-            conn.execute(
+    with closing(sqlite3.connect(history_db, timeout=30.0)) as conn:
+        with closing(conn.cursor()) as cursor:
+            cursor.execute(
                 "CREATE TABLE sessions (session_id TEXT, timestamp REAL, base_dir TEXT, status TEXT)"
             )
-            conn.execute(
+            cursor.execute(
                 "INSERT INTO sessions VALUES (?, ?, ?, ?)",
                 (session_id, 100.0, str(tmp_path / "user_data"), "failed"),
             )
-    finally:
-        conn.close()
+        conn.commit()
 
     # Create safety folder inside user_data
     user_data = tmp_path / "user_data"
@@ -74,18 +73,16 @@ async def test_scan_does_not_prompt_if_safety_folder_empty(mock_session_base, tm
     session_dir.mkdir()
 
     history_db = session_dir / "history.db"
-    conn = sqlite3.connect(history_db, timeout=30.0)
-    try:
-        with conn:
-            conn.execute(
+    with closing(sqlite3.connect(history_db, timeout=30.0)) as conn:
+        with closing(conn.cursor()) as cursor:
+            cursor.execute(
                 "CREATE TABLE sessions (session_id TEXT, timestamp REAL, base_dir TEXT, status TEXT)"
             )
-            conn.execute(
+            cursor.execute(
                 "INSERT INTO sessions VALUES (?, ?, ?, ?)",
                 (session_id, 100.0, str(tmp_path / "user_data"), "failed"),
             )
-    finally:
-        conn.close()
+        conn.commit()
 
     # Create safety folder inside user_data but KEEP IT EMPTY
     user_data = tmp_path / "user_data"
@@ -109,18 +106,16 @@ async def test_ui_recovery_wizard_trigger(mock_session_base, tmp_path):
     session_dir.mkdir()
 
     history_db = session_dir / "history.db"
-    conn = sqlite3.connect(history_db, timeout=30.0)
-    try:
-        with conn:
-            conn.execute(
+    with closing(sqlite3.connect(history_db, timeout=30.0)) as conn:
+        with closing(conn.cursor()) as cursor:
+            cursor.execute(
                 "CREATE TABLE sessions (session_id TEXT, timestamp REAL, base_dir TEXT, status TEXT)"
             )
-            conn.execute(
+            cursor.execute(
                 "INSERT INTO sessions VALUES (?, ?, ?, ?)",
                 (session_id, 100.0, str(tmp_path / "user_data"), "failed"),
             )
-    finally:
-        conn.close()
+        conn.commit()
 
     user_data = tmp_path / "user_data"
     user_data.mkdir()
@@ -152,18 +147,16 @@ async def test_wizard_file_recovery_original_location(mock_session_base, tmp_pat
 
     # Database Setup
     history_db = session_dir / "history.db"
-    conn = sqlite3.connect(history_db, timeout=30.0)
-    try:
-        with conn:
-            conn.execute(
+    with closing(sqlite3.connect(history_db, timeout=30.0)) as conn:
+        with closing(conn.cursor()) as cursor:
+            cursor.execute(
                 "CREATE TABLE sessions (session_id TEXT, timestamp REAL, base_dir TEXT, status TEXT)"
             )
-            conn.execute(
+            cursor.execute(
                 "INSERT INTO sessions VALUES (?, ?, ?, ?)",
                 (session_id, 100.0, str(tmp_path / "user_data"), "failed"),
             )
-    finally:
-        conn.close()
+        conn.commit()
 
     # Prepare directories & trapped files
     user_data = tmp_path / "user_data"
@@ -229,25 +222,18 @@ async def test_wizard_file_recovery_original_location(mock_session_base, tmp_pat
         start_time = time.time()
         resolved = False
         while time.time() - start_time < 30.0:
-            conn = None
             try:
-                conn = sqlite3.connect(history_db, timeout=30.0)
-                cursor = conn.cursor()
-                cursor.execute(
-                    "SELECT status FROM sessions WHERE session_id = ?", (session_id,)
-                )
-                row = cursor.fetchone()
-                if row and row[0] == "resolved":
-                    resolved = True
-                    break
+                with closing(sqlite3.connect(history_db, timeout=30.0)) as conn:
+                    with closing(conn.cursor()) as cursor:
+                        cursor.execute(
+                            "SELECT status FROM sessions WHERE session_id = ?", (session_id,)
+                        )
+                        row = cursor.fetchone()
+                        if row and row[0] == "resolved":
+                            resolved = True
+                            break
             except Exception:
                 pass
-            finally:
-                if conn is not None:
-                    try:
-                        conn.close()
-                    except Exception:
-                        pass
             await asyncio.sleep(0.05)
 
         assert resolved, (
@@ -270,16 +256,13 @@ async def test_wizard_file_recovery_original_location(mock_session_base, tmp_pat
     assert not os.path.exists(branch_dir)
 
     # 4. Status in database should be updated to 'resolved'
-    conn = sqlite3.connect(history_db, timeout=30.0)
-    try:
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT status FROM sessions WHERE session_id = ?", (session_id,)
-        )
-        row = cursor.fetchone()
-        assert row[0] == "resolved"
-    finally:
-        conn.close()
+    with closing(sqlite3.connect(history_db, timeout=30.0)) as conn:
+        with closing(conn.cursor()) as cursor:
+            cursor.execute(
+                "SELECT status FROM sessions WHERE session_id = ?", (session_id,)
+            )
+            row = cursor.fetchone()
+            assert row[0] == "resolved"
 
 
 @pytest.mark.anyio
@@ -293,18 +276,16 @@ async def test_wizard_file_recovery_custom_location(mock_session_base, tmp_path)
     session_dir.mkdir()
 
     history_db = session_dir / "history.db"
-    conn = sqlite3.connect(history_db, timeout=30.0)
-    try:
-        with conn:
-            conn.execute(
+    with closing(sqlite3.connect(history_db, timeout=30.0)) as conn:
+        with closing(conn.cursor()) as cursor:
+            cursor.execute(
                 "CREATE TABLE sessions (session_id TEXT, timestamp REAL, base_dir TEXT, status TEXT)"
             )
-            conn.execute(
+            cursor.execute(
                 "INSERT INTO sessions VALUES (?, ?, ?, ?)",
                 (session_id, 100.0, str(tmp_path / "user_data"), "failed"),
             )
-    finally:
-        conn.close()
+        conn.commit()
 
     user_data = tmp_path / "user_data"
     user_data.mkdir()
@@ -372,25 +353,18 @@ async def test_wizard_file_recovery_custom_location(mock_session_base, tmp_path)
         start_time = time.time()
         resolved = False
         while time.time() - start_time < 30.0:
-            conn = None
             try:
-                conn = sqlite3.connect(history_db, timeout=30.0)
-                cursor = conn.cursor()
-                cursor.execute(
-                    "SELECT status FROM sessions WHERE session_id = ?", (session_id,)
-                )
-                row = cursor.fetchone()
-                if row and row[0] == "resolved":
-                    resolved = True
-                    break
+                with closing(sqlite3.connect(history_db, timeout=30.0)) as conn:
+                    with closing(conn.cursor()) as cursor:
+                        cursor.execute(
+                            "SELECT status FROM sessions WHERE session_id = ?", (session_id,)
+                        )
+                        row = cursor.fetchone()
+                        if row and row[0] == "resolved":
+                            resolved = True
+                            break
             except Exception:
                 pass
-            finally:
-                if conn is not None:
-                    try:
-                        conn.close()
-                    except Exception:
-                        pass
             await asyncio.sleep(0.05)
 
         assert resolved, (
@@ -407,13 +381,10 @@ async def test_wizard_file_recovery_custom_location(mock_session_base, tmp_path)
     assert not os.path.exists(branch_dir)
 
     # Verify status is resolved
-    conn = sqlite3.connect(history_db, timeout=30.0)
-    try:
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT status FROM sessions WHERE session_id = ?", (session_id,)
-        )
-        row = cursor.fetchone()
-        assert row[0] == "resolved"
-    finally:
-        conn.close()
+    with closing(sqlite3.connect(history_db, timeout=30.0)) as conn:
+        with closing(conn.cursor()) as cursor:
+            cursor.execute(
+                "SELECT status FROM sessions WHERE session_id = ?", (session_id,)
+            )
+            row = cursor.fetchone()
+            assert row[0] == "resolved"
