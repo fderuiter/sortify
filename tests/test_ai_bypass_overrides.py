@@ -10,6 +10,11 @@ from app.core.mover import execute_moves
 
 
 def resolve_test_path(path):
+    """Resolve and canonicalize paths consistently across different operating systems.
+    
+    On Windows (win32), it resolves short 8.3 names and strips the extended-length prefixes.
+    On non-Windows platforms (macOS/Linux), it resolves physical symlinks (like /var or /tmp).
+    """
     path_str = str(path)
     abs_path = os.path.normpath(os.path.abspath(path_str))
     if sys.platform == "win32":
