@@ -131,21 +131,24 @@ def test_fallback_to_tfidf_when_onnx_missing_or_corrupt(temp_env):
     db.upsert_documents(documents_to_add)
 
     # Case 1: Initialize analyzer with a non-existent model path (entirely missing model files)
+    import os
+
     from app.core.semantic_embeddings import ModelProperties
 
-    with patch(
-        "app.core.semantic_embeddings.get_active_model_properties",
-        return_value=ModelProperties("missing_sig", 384, "1.0.0", is_valid=False),
-    ):
-        analyzer = IncrementalAnalyzer(
-            max_folders=2,
-            stop_words={"the", "and"},
-            db=db,
-            strategy_name="default",
-            model_path="non_existent_directory_path",
-        )
-
+    analyzer = None
     try:
+        with patch(
+            "app.core.semantic_embeddings.get_active_model_properties",
+            return_value=ModelProperties("missing_sig", 384, "1.0.0", is_valid=False),
+        ):
+            analyzer = IncrementalAnalyzer(
+                max_folders=2,
+                stop_words={"the", "and"},
+                db=db,
+                strategy_name="default",
+                model_path=os.path.join(base_dir, "non_existent_directory_path"),
+            )
+
         with patch(
             "sklearn.feature_extraction.text.TfidfVectorizer.fit_transform",
             wraps=TfidfVectorizer.fit_transform,
@@ -153,24 +156,26 @@ def test_fallback_to_tfidf_when_onnx_missing_or_corrupt(temp_env):
             analyzer.generate_sorting_plan(base_dir)
             assert mock_tfidf.called
     finally:
-        analyzer.close()
+        if analyzer:
+            analyzer.close()
 
     # Case 2: Initialize analyzer with a corrupt model path (ONNX present but corrupt/unusable)
     from app.core.semantic_embeddings import ModelProperties
 
-    with patch(
-        "app.core.semantic_embeddings.get_active_model_properties",
-        return_value=ModelProperties("corrupt_sig", 384, "1.0.0", is_valid=False),
-    ):
-        analyzer_corrupt = IncrementalAnalyzer(
-            max_folders=2,
-            stop_words={"the", "and"},
-            db=db,
-            strategy_name="default",
-            model_path=model_path,  # model_path contains mock model which fails to load
-        )
-
+    analyzer_corrupt = None
     try:
+        with patch(
+            "app.core.semantic_embeddings.get_active_model_properties",
+            return_value=ModelProperties("corrupt_sig", 384, "1.0.0", is_valid=False),
+        ):
+            analyzer_corrupt = IncrementalAnalyzer(
+                max_folders=2,
+                stop_words={"the", "and"},
+                db=db,
+                strategy_name="default",
+                model_path=model_path,  # model_path contains mock model which fails to load
+            )
+
         with patch(
             "sklearn.feature_extraction.text.TfidfVectorizer.fit_transform",
             wraps=TfidfVectorizer.fit_transform,
@@ -178,7 +183,8 @@ def test_fallback_to_tfidf_when_onnx_missing_or_corrupt(temp_env):
             analyzer_corrupt.generate_sorting_plan(base_dir)
             assert mock_tfidf.called
     finally:
-        analyzer_corrupt.close()
+        if analyzer_corrupt:
+            analyzer_corrupt.close()
 
 
 def test_dense_vector_calculations_in_hierarchical_clustering():
