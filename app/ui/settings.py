@@ -2,6 +2,8 @@
 
 from nicegui import ui
 
+from app.ui.dialog_helper import get_dialog_card_classes
+
 
 def show_settings(parent_app, settings):
     """Show the settings dialog."""
@@ -26,8 +28,8 @@ def show_settings(parent_app, settings):
             e.sender.value = not e.value
             ui.notify(f"Failed to update Explorer integration: {ex}", type="negative")
 
-    with ui.dialog() as dialog, ui.card().classes("w-3/4 max-w-4xl p-6"):
-        with ui.row().classes("w-full justify-between items-center mb-6"):
+    with ui.dialog() as dialog, ui.card().classes(get_dialog_card_classes("xl")):
+        with ui.row().classes("w-full justify-between items-center mb-6 flex-wrap gap-2"):
             ui.label("Application Settings").classes("text-2xl font-bold").props(
                 'aria-label="Settings Dialog Title"'
             )
@@ -134,7 +136,7 @@ def show_settings(parent_app, settings):
 
                 render_protected_paths()
 
-                with ui.row().classes("w-full items-center gap-4 mt-2"):
+                with ui.row().classes("w-full items-center gap-4 mt-2 flex-wrap"):
                     new_path_input = ui.input("Add Protected Directory Path").props(
                         'placeholder="e.g. /absolute/path" aria-label="Add Protected Directory Path input" class="w-2/3"'
                     )
@@ -215,9 +217,9 @@ def show_settings(parent_app, settings):
                 is_healthy, warn_msg = check_ai_status(settings)
                 if not is_healthy:
                     with ui.card().classes(
-                        "bg-amber-50 border-amber-200 border p-4 mb-4"
+                        "bg-amber-50 border-amber-200 border p-4 mb-4 w-full"
                     ):
-                        with ui.row().classes("items-center gap-2 text-amber-800"):
+                        with ui.row().classes("items-center gap-2 text-amber-800 flex-wrap"):
                             ui.icon("warning", size="sm")
                             ui.label("AI System Warning").classes("font-bold")
                         ui.label(
@@ -227,9 +229,9 @@ def show_settings(parent_app, settings):
                         )
                 else:
                     with ui.card().classes(
-                        "bg-green-50 border-green-200 border p-4 mb-4"
+                        "bg-green-50 border-green-200 border p-4 mb-4 w-full"
                     ):
-                        with ui.row().classes("items-center gap-2 text-green-800"):
+                        with ui.row().classes("items-center gap-2 text-green-800 flex-wrap"):
                             ui.icon("check_circle", size="sm")
                             ui.label("AI System Status").classes("font-bold")
                         ui.label(
@@ -293,7 +295,7 @@ def show_settings(parent_app, settings):
                 render_rules()
 
                 ui.label("Add New Rule").classes("text-md font-bold mt-4 mb-2")
-                with ui.row().classes("w-full items-center gap-4"):
+                with ui.row().classes("w-full items-center gap-4 flex-wrap"):
                     kw_input = ui.input("Keyword").props(
                         'placeholder="e.g. invoice" aria-label="Keyword input"'
                     )

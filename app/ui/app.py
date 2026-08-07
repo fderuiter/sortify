@@ -7,7 +7,7 @@ import os
 from nicegui import ui
 
 from app.core.session import AppSession
-from app.ui.dialog_helper import ask_directory_async
+from app.ui.dialog_helper import ask_directory_async, get_dialog_card_classes
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +50,7 @@ class AutoSorterApp:
             ui.label("AI File Organizer Pro").classes("text-h6").props(
                 'aria-label="Application Title"'
             )
-            with ui.row():
+            with ui.row().classes("flex-wrap gap-2"):
                 ui.button("Settings", on_click=self.show_settings_view).props(
                     'aria-label="Settings Button"'
                 )
@@ -69,7 +69,7 @@ class AutoSorterApp:
             )
             self.progress_bar = (
                 ui.linear_progress(value=0)
-                .classes("w-1/2 mt-4")
+                .classes("w-full max-w-md min-w-[320px] mt-4")
                 .props('aria-label="Progress Bar"')
             )
 
@@ -96,13 +96,13 @@ class AutoSorterApp:
             self.ai_warnings_label = (
                 ui.label("")
                 .classes(
-                    "text-amber-600 mt-2 font-bold text-center bg-amber-50 border border-amber-200 p-2 rounded w-1/2"
+                    "text-amber-600 mt-2 font-bold text-center bg-amber-50 border border-amber-200 p-2 rounded w-full max-w-lg min-w-[320px]"
                 )
                 .props('aria-label="AI Offline Warning Label"')
             )
             self.ai_warnings_label.set_visibility(False)
 
-            with ui.row().classes("mt-4 items-center"):
+            with ui.row().classes("mt-4 items-center flex-wrap justify-center gap-4"):
                 ui.switch(
                     "Enable Contextual Renaming",
                     value=self.contextual_rename,
@@ -119,14 +119,14 @@ class AutoSorterApp:
                     on_change=self.toggle_ai_assisted_naming,
                 ).props('aria-label="AI-Assisted Naming Switch"')
 
-        with ui.row().classes("w-full h-96 mt-4 p-4"):
+        with ui.scroll_area().classes("w-full h-96 mt-4 p-4 border rounded"):
             self.tree_view = (
                 ui.tree([], label_key="text", children_key="children")
                 .classes("w-full")
                 .props('default-expand-all aria-label="Sorting Plan Tree"')
             )
 
-        with ui.row().classes("w-full justify-center mt-4"):
+        with ui.row().classes("w-full justify-center mt-4 flex-wrap gap-2"):
             self.execute_btn = (
                 ui.button("Approve & Execute Sort", on_click=self.execute_sort)
                 .classes("bg-green-500")
@@ -136,7 +136,7 @@ class AutoSorterApp:
 
         with ui.dialog() as self.recalc_dialog:
             self.recalc_dialog.props("persistent")
-            with ui.card().classes("items-center"):
+            with ui.card().classes("items-center w-full max-w-md min-w-[320px] p-6"):
                 ui.label("Recalculating plan...")
                 ui.spinner(size="lg")
                 ui.button("Cancel", on_click=self.cancel_recalc).props(
@@ -166,7 +166,7 @@ class AutoSorterApp:
                 self.show_recovery_wizard(session_info)
                 return
 
-            with ui.dialog() as dialog, ui.card().classes("w-full max-w-md"):
+            with ui.dialog() as dialog, ui.card().classes(get_dialog_card_classes("md")):
                 dialog.props("persistent")
                 ui.label("Interrupted Session Detected").classes("text-h6 text-red-500")
                 ui.label(
@@ -174,7 +174,7 @@ class AutoSorterApp:
                 )
                 ui.label(f"Location: {session_info['base_dir']}")
 
-                with ui.row().classes("w-full justify-end mt-4 gap-2"):
+                with ui.row().classes("w-full justify-end mt-4 gap-2 flex-wrap"):
 
                     def on_resume():
                         dialog.close()
@@ -234,7 +234,7 @@ class AutoSorterApp:
                     rel_path = os.path.relpath(full_path, safety_folder)
                     files_to_recover.append((full_path, rel_path))
 
-        with ui.dialog() as dialog, ui.card().classes("w-[500px] p-6 gap-4"):
+        with ui.dialog() as dialog, ui.card().classes(get_dialog_card_classes("lg")):
             dialog.props("persistent")
 
             # Title & Header
@@ -651,7 +651,7 @@ class AutoSorterApp:
 
     def show_ml_warning_dialog(self, feature_name: str):
         """Show a clear, non-blocking warning dialogue explaining that the feature requires the full ML package."""
-        with ui.dialog() as dialog, ui.card().classes("w-96 p-6"):
+        with ui.dialog() as dialog, ui.card().classes(get_dialog_card_classes("md")):
             ui.label("Feature Unavailable").classes(
                 "text-xl font-bold mb-4 text-red-500"
             ).props('aria-label="Warning Dialog Title"')
@@ -664,7 +664,7 @@ class AutoSorterApp:
             ).classes("text-sm text-gray-500 mb-4").props(
                 'aria-label="Warning Suggestion"'
             )
-            with ui.row().classes("w-full justify-end"):
+            with ui.row().classes("w-full justify-end flex-wrap gap-2"):
                 ui.button("OK", on_click=dialog.close).classes(
                     "bg-blue-500 text-white"
                 ).props('aria-label="Warning OK Button"')
@@ -771,7 +771,7 @@ class AutoSorterApp:
                 ui.notify(f"Error: {e}", type="negative")
                 self.status_label.set_text("Sorting failed.")
 
-                with ui.dialog() as error_dialog, ui.card().classes("w-full max-w-md"):
+                with ui.dialog() as error_dialog, ui.card().classes(get_dialog_card_classes("md")):
                     ui.label("Move Transaction Error").classes("text-h6 text-red-500")
                     ui.label(f"The organization process failed: {e}").classes(
                         "text-body1"
@@ -779,7 +779,7 @@ class AutoSorterApp:
                     ui.label(
                         "An automated rollback was successfully executed to restore files and index database."
                     ).classes("text-body2 text-gray-600")
-                    with ui.row().classes("w-full justify-end mt-4"):
+                    with ui.row().classes("w-full justify-end mt-4 flex-wrap gap-2"):
                         ui.button("Close", on_click=error_dialog.close).props(
                             'color="primary" aria-label="Close Error Dialog"'
                         )
