@@ -43,13 +43,24 @@ def test_db_worker_sandbox_permits_local_connections():
         ):
 
             def connect_local():
-                s = socket.socket()
+                s1 = socket.socket()
                 try:
-                    s.connect(("127.0.0.1", 8080))
-                    s.connect_ex(("localhost", 5432))
-                    s.connect(("my-local-db.local", 3306))
+                    s1.connect(("127.0.0.1", 8080))
                 finally:
-                    s.close()
+                    s1.close()
+
+                s2 = socket.socket()
+                try:
+                    s2.connect_ex(("localhost", 5432))
+                finally:
+                    s2.close()
+
+                s3 = socket.socket()
+                try:
+                    s3.connect(("my-local-db.local", 3306))
+                finally:
+                    s3.close()
+
                 return "local_ok"
 
             res = db_worker.execute_write(connect_local)
