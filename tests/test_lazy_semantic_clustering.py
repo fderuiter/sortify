@@ -66,14 +66,13 @@ def test_semantic_clustering_lazy_generation_and_caching(temp_env):
     for item in documents_to_add:
         assert db.get_document_vector(base_dir, item[1]) is None
 
-    # Initialize analyzer with our mock model_path and mock onnxruntime InferenceSession
-    from unittest.mock import MagicMock
-    mock_output = MagicMock()
-    mock_output.shape = [None, 384]
-    mock_session = MagicMock()
-    mock_session.get_outputs.return_value = [mock_output]
+    # Initialize analyzer with our mock model_path and mock get_active_model_properties
+    from app.core.semantic_embeddings import ModelProperties
 
-    with patch("onnxruntime.InferenceSession", return_value=mock_session):
+    with patch(
+        "app.core.semantic_embeddings.get_active_model_properties",
+        return_value=ModelProperties("valid_sig", 384, "1.0.0", is_valid=True),
+    ):
         analyzer = IncrementalAnalyzer(
             max_folders=2,
             stop_words={"the", "and", "from", "for"},
@@ -147,7 +146,12 @@ def test_fallback_to_tfidf_when_onnx_missing_or_corrupt(temp_env):
         analyzer.close()
 
     # Case 2: Initialize analyzer with a corrupt model path (ONNX present but corrupt/unusable)
-    with patch("onnxruntime.InferenceSession", side_effect=Exception("Corrupt model on disk")):
+    from app.core.semantic_embeddings import ModelProperties
+
+    with patch(
+        "app.core.semantic_embeddings.get_active_model_properties",
+        return_value=ModelProperties("corrupt_sig", 384, "1.0.0", is_valid=False),
+    ):
         analyzer_corrupt = IncrementalAnalyzer(
             max_folders=2,
             stop_words={"the", "and"},
