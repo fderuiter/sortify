@@ -34,6 +34,7 @@ async def scan_abandoned_sessions_async():
 
             try:
                 from contextlib import closing
+
                 with closing(sqlite3.connect(history_db, timeout=30.0)) as conn:
                     with closing(conn.cursor()) as cursor:
                         cursor.execute(

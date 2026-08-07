@@ -159,24 +159,32 @@ def get_db_connection(db_path: str):
                     "NotSupportedError",
                 )
             )
-            or any(
-                msg in err_msg_lower
-                for msg in (
-                    "not a database",
-                    "encrypted",
-                    "disk i/o error",
-                    "malformed",
-                    "authentication",
-                    "password",
-                    "passphrase",
-                    "mac",
-                    "bad decrypt",
-                    "mismatch",
-                )
+        )
+
+        # Ensure we only treat actual decryption or key mismatch errors as decryption failures,
+        # propagating standard SQLite operational/locking errors normally.
+        is_decryption_err = is_sqlite_or_db_err and any(
+            msg in err_msg_lower
+            for msg in (
+                "not a database",
+                "encrypted",
+                "disk i/o error",
+                "malformed",
+                "authentication",
+                "password",
+                "passphrase",
+                "mac",
+                "bad decrypt",
+                "mismatch",
+                "wrong key",
+                "invalid key",
+                "decryption",
+                "cryptographic",
+                "failed to decrypt database",
             )
         )
 
-        if is_sqlite_or_db_err and not isinstance(
+        if is_decryption_err and not isinstance(
             e, (RuntimeError, SystemExit, KeyboardInterrupt)
         ):
             logger.error(
