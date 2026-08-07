@@ -17,6 +17,14 @@ class DBWorker:
         self.thread.start()
 
     def _run(self):
+        try:
+            from app.core.shared_registry import _thread_local
+
+            _thread_local.sandboxed = True
+            _thread_local.reason = "database worker execution"
+        except Exception:
+            pass
+
         while True:
             func, args, kwargs, result_q = self.q.get()
             if func is None:
