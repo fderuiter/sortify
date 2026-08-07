@@ -14,7 +14,10 @@ def test_db_worker_sandbox_blocks_external_connections():
 
             def connect_external():
                 s = socket.socket()
-                s.connect(("8.8.8.8", 80))
+                try:
+                    s.connect(("8.8.8.8", 80))
+                finally:
+                    s.close()
 
             # Submitting a connection to an external address must raise PermissionError
             with pytest.raises(
@@ -41,9 +44,12 @@ def test_db_worker_sandbox_permits_local_connections():
 
             def connect_local():
                 s = socket.socket()
-                s.connect(("127.0.0.1", 8080))
-                s.connect_ex(("localhost", 5432))
-                s.connect(("my-local-db.local", 3306))
+                try:
+                    s.connect(("127.0.0.1", 8080))
+                    s.connect_ex(("localhost", 5432))
+                    s.connect(("my-local-db.local", 3306))
+                finally:
+                    s.close()
                 return "local_ok"
 
             res = db_worker.execute_write(connect_local)
@@ -63,7 +69,10 @@ def test_db_worker_sandbox_fails_safely_without_crashing():
 
         def connect_bad():
             s = socket.socket()
-            s.connect(("example.com", 80))
+            try:
+                s.connect(("example.com", 80))
+            finally:
+                s.close()
 
         # This should fail with PermissionError
         with pytest.raises(
