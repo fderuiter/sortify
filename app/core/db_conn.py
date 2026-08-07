@@ -101,14 +101,14 @@ def get_db_connection(db_path: str):
         # Test database validity to catch unencrypted legacy databases or bad keys
         try:
             conn.execute("PRAGMA user_version;")
-        except sqlite3.DatabaseError:
+        except sqlite3.Error:
             conn.close()
             raise
         return conn
 
     try:
         conn = _open_conn(db_path)
-    except sqlite3.DatabaseError as e:
+    except sqlite3.Error as e:
         err_msg = str(e).lower()
         if (
             "file is not a database" in err_msg

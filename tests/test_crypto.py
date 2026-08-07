@@ -340,8 +340,10 @@ def test_decryption_failure_safe_error_propagation(tmp_path, monkeypatch, caplog
     create_initial_db(db_path, correct_key)
     gc.collect()
 
-    # Verify database file physically exists on disk
+    # Verify database file physically exists on disk and record its size
     assert db_path.exists()
+    initial_size = db_path.stat().st_size
+    assert initial_size > 0
 
     # Spy on os.remove to ensure our code never attempts to delete any database files
     removed_files = []
@@ -375,6 +377,7 @@ def test_decryption_failure_safe_error_propagation(tmp_path, monkeypatch, caplog
 
     # 4. Verify that NO database files were deleted, modified, or truncated on disk by our application
     assert db_path.exists()
+    assert db_path.stat().st_size == initial_size
     for removed in removed_files:
         assert "secure_autosorter.db" not in removed
 
