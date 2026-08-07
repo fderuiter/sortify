@@ -398,11 +398,17 @@ def test_decryption_failure_safe_error_propagation(tmp_path, monkeypatch, caplog
 
     # Attempt connection again. It should load successfully, and we should be able to read our original data.
     def verify_db_contents(path):
-        with closing(db_conn.get_db_connection(str(path))) as conn:
+        conn = db_conn.get_db_connection(str(path))
+        try:
             cursor = conn.execute("SELECT value FROM test_table")
             row = cursor.fetchone()
             assert row is not None
             assert row[0] == "secret_data"
+        finally:
+            try:
+                conn.execute("PRAGMA journal_mode = DELETE")
+            except Exception:
+                pass
 
     verify_db_contents(db_path)
     db_conn.clear_connection_cache()
