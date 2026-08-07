@@ -90,10 +90,8 @@ def get_db_connection(db_path: str):
     from contextlib import closing
 
     conn = None
-    conn_established = False
     try:
         conn = sqlite3.connect(abs_path, timeout=30.0, check_same_thread=False)
-        conn_established = True
         if raw_key:
             with closing(conn.cursor()) as cursor:
                 cursor.execute(f"PRAGMA key = '{raw_key}'")
@@ -172,31 +170,27 @@ def get_db_connection(db_path: str):
 
         # Ensure we only treat actual decryption or key mismatch errors as decryption failures,
         # propagating standard SQLite operational/locking errors normally.
-        is_decryption_err = (
-            is_sqlite_or_db_err
-            and conn_established
-            and (
-                any(
-                    msg in err_msg_lower
-                    for msg in (
-                        "not a database",
-                        "encrypted",
-                        "malformed",
-                        "authentication",
-                        "password",
-                        "passphrase",
-                        "mac",
-                        "bad decrypt",
-                        "mismatch",
-                        "wrong key",
-                        "invalid key",
-                        "decryption",
-                        "cryptographic",
-                        "failed to decrypt database",
-                    )
+        is_decryption_err = is_sqlite_or_db_err and (
+            any(
+                msg in err_msg_lower
+                for msg in (
+                    "not a database",
+                    "encrypted",
+                    "malformed",
+                    "authentication",
+                    "password",
+                    "passphrase",
+                    "mac",
+                    "bad decrypt",
+                    "mismatch",
+                    "wrong key",
+                    "invalid key",
+                    "decryption",
+                    "cryptographic",
+                    "failed to decrypt database",
                 )
-                or ("disk i/o error" in err_msg_lower and raw_key and db_existed)
             )
+            or ("disk i/o error" in err_msg_lower and raw_key and db_existed)
         )
 
         if is_decryption_err and not isinstance(
