@@ -86,7 +86,10 @@ def test_shared_worker_pool_offline_enforcement():
 
     def task_trying_to_connect():
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.connect(("8.8.8.8", 53))
+        try:
+            s.connect(("8.8.8.8", 53))
+        finally:
+            s.close()
 
     future = pool.submit(task_trying_to_connect)
     with pytest.raises(
@@ -96,7 +99,10 @@ def test_shared_worker_pool_offline_enforcement():
 
     def task_trying_to_connect_ex():
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.connect_ex(("8.8.8.8", 53))
+        try:
+            s.connect_ex(("8.8.8.8", 53))
+        finally:
+            s.close()
 
     future_ex = pool.submit(task_trying_to_connect_ex)
     with pytest.raises(
