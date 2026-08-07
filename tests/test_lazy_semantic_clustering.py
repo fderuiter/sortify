@@ -66,14 +66,21 @@ def test_semantic_clustering_lazy_generation_and_caching(temp_env):
     for item in documents_to_add:
         assert db.get_document_vector(base_dir, item[1]) is None
 
-    # Initialize analyzer with our mock model_path
-    analyzer = IncrementalAnalyzer(
-        max_folders=2,
-        stop_words={"the", "and", "from", "for"},
-        db=db,
-        strategy_name="default",  # RecursiveKMeansStrategy
-        model_path=model_path,
-    )
+    # Initialize analyzer with our mock model_path and mock onnxruntime InferenceSession
+    from unittest.mock import MagicMock
+    mock_output = MagicMock()
+    mock_output.shape = [None, 384]
+    mock_session = MagicMock()
+    mock_session.get_outputs.return_value = [mock_output]
+
+    with patch("onnxruntime.InferenceSession", return_value=mock_session):
+        analyzer = IncrementalAnalyzer(
+            max_folders=2,
+            stop_words={"the", "and", "from", "for"},
+            db=db,
+            strategy_name="default",  # RecursiveKMeansStrategy
+            model_path=model_path,
+        )
 
     try:
         # 2. Run the sorting plan
@@ -115,7 +122,12 @@ def test_fallback_to_tfidf_when_onnx_missing_or_corrupt(temp_env):
     ]
     db.upsert_documents(documents_to_add)
 
-    # Initialize analyzer with a non-existent model path (missing model files)
+    # Track if standard TF-IDF vectorizer gets used. We raise a direct BaseException
+    # subclass to bypass any catch-all Exception blocks within the strategy code.
+    class TFIDFFallbackTriggered(BaseException):
+        pass
+
+    # Case 1: Initialize analyzer with a non-existent model path (entirely missing model files)
     analyzer = IncrementalAnalyzer(
         max_folders=2,
         stop_words={"the", "and"},
@@ -125,21 +137,33 @@ def test_fallback_to_tfidf_when_onnx_missing_or_corrupt(temp_env):
     )
 
     try:
-        # Track if standard TF-IDF vectorizer gets used. We raise a direct BaseException
-        # subclass to bypass any catch-all Exception blocks within the strategy code.
-        class TFIDFFallbackTriggered(BaseException):
-            pass
-
         with patch(
             "sklearn.feature_extraction.text.TfidfVectorizer.fit_transform",
             side_effect=TFIDFFallbackTriggered("TF-IDF Used"),
         ) as mock_tfidf:
-            try:
+            with pytest.raises(TFIDFFallbackTriggered):
                 analyzer.generate_sorting_plan(base_dir)
-            except TFIDFFallbackTriggered as e:
-                assert str(e) == "TF-IDF Used"
     finally:
         analyzer.close()
+
+    # Case 2: Initialize analyzer with a corrupt model path (ONNX present but corrupt/unusable)
+    analyzer_corrupt = IncrementalAnalyzer(
+        max_folders=2,
+        stop_words={"the", "and"},
+        db=db,
+        strategy_name="default",
+        model_path=model_path,  # model_path contains mock model which fails to load
+    )
+
+    try:
+        with patch(
+            "sklearn.feature_extraction.text.TfidfVectorizer.fit_transform",
+            side_effect=TFIDFFallbackTriggered("TF-IDF Used"),
+        ) as mock_tfidf:
+            with pytest.raises(TFIDFFallbackTriggered):
+                analyzer_corrupt.generate_sorting_plan(base_dir)
+    finally:
+        analyzer_corrupt.close()
 
 
 def test_dense_vector_calculations_in_hierarchical_clustering():

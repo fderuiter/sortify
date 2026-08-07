@@ -34,6 +34,15 @@ def set_low_priority():
         pass
 
 
+class ModelProperties(tuple):
+    """Subclass of tuple to hold signature, dimensions, and version while tracking validity."""
+
+    def __new__(cls, signature: str, dimensions: int, version: str, is_valid: bool = True):
+        obj = super().__new__(cls, (signature, dimensions, version))
+        obj.is_valid = is_valid
+        return obj
+
+
 def get_active_model_properties(model_path: str | None) -> tuple[str, int, str]:
     """Get active model signature (SHA-256 hash), dimensions, and version.
 
@@ -42,6 +51,7 @@ def get_active_model_properties(model_path: str | None) -> tuple[str, int, str]:
     signature = "default_onnx_sig"
     dimensions = 384
     version = "1.0.0"
+    is_valid = True
 
     if model_path and os.path.exists(model_path):
         onnx_file = None
@@ -77,7 +87,7 @@ def get_active_model_properties(model_path: str | None) -> tuple[str, int, str]:
                     if not isinstance(dimensions, int):
                         dimensions = 384
             except Exception:
-                pass
+                is_valid = False
 
             version_file = os.path.join(os.path.dirname(onnx_file), "version.txt")
             if os.path.exists(version_file):
@@ -86,8 +96,10 @@ def get_active_model_properties(model_path: str | None) -> tuple[str, int, str]:
                         version = vf.read().strip()
                 except Exception:
                     pass
+        else:
+            is_valid = False
 
-    return signature, dimensions, version
+    return ModelProperties(signature, dimensions, version, is_valid)
 
 
 class SemanticEmbeddingManager:
@@ -120,9 +132,11 @@ class SemanticEmbeddingManager:
             self._active_instances.add(self)
 
         # Load active model properties from disk/file
-        self.signature, self.dimensions, self.version = get_active_model_properties(
-            model_path
-        )
+        properties = get_active_model_properties(model_path)
+        self.signature = properties[0]
+        self.dimensions = properties[1]
+        self.version = properties[2]
+        self.is_model_valid = getattr(properties, "is_valid", True)
 
         # Initialize global metadata and verify profile
         self.verify_active_model()
