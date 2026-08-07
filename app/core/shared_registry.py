@@ -86,13 +86,16 @@ def safe_connect(self, address):
                 raise PermissionError(
                     f"External network connections are blocked during {reason}: {host}"
                 )
-    is_self_mock = hasattr(self, "_is_mock") or type(self).__name__ in (
-        "Mock",
-        "MagicMock",
+    is_self_mock = (
+        hasattr(self, "_is_mock")
+        or "Mock" in type(self).__name__
+        or "mock" in type(self).__name__
     )
-    is_orig_mock = hasattr(_original_connect, "_is_mock") or type(
-        _original_connect
-    ).__name__ in ("Mock", "MagicMock")
+    is_orig_mock = (
+        hasattr(_original_connect, "_is_mock")
+        or "Mock" in type(_original_connect).__name__
+        or "mock" in type(_original_connect).__name__
+    )
     if is_self_mock and not is_orig_mock:
         return None
     return _original_connect(self, address)
@@ -108,13 +111,16 @@ def safe_connect_ex(self, address):
                 raise PermissionError(
                     f"External network connections are blocked during {reason}: {host}"
                 )
-    is_self_mock = hasattr(self, "_is_mock") or type(self).__name__ in (
-        "Mock",
-        "MagicMock",
+    is_self_mock = (
+        hasattr(self, "_is_mock")
+        or "Mock" in type(self).__name__
+        or "mock" in type(self).__name__
     )
-    is_orig_mock = hasattr(_original_connect_ex, "_is_mock") or type(
-        _original_connect_ex
-    ).__name__ in ("Mock", "MagicMock")
+    is_orig_mock = (
+        hasattr(_original_connect_ex, "_is_mock")
+        or "Mock" in type(_original_connect_ex).__name__
+        or "mock" in type(_original_connect_ex).__name__
+    )
     if is_self_mock and not is_orig_mock:
         return 0
     return _original_connect_ex(self, address)
