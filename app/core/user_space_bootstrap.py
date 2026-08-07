@@ -5,12 +5,12 @@ a writable folder in the user's home directory, dynamically registers search
 paths, and verifies database encryption.
 """
 
-import os
-import sys
-import shutil
-import logging
-from pathlib import Path
 import importlib.util
+import logging
+import os
+import shutil
+import sys
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -96,15 +96,21 @@ def inject_bootstrap_paths():
                 pass
 
             paths = [str(bin_dir), str(sqlcipher3_path)]
-            os.environ["PATH"] = (
-                ";".join(paths) + ";" + os.environ.get("PATH", "")
-            )
+            os.environ["PATH"] = ";".join(paths) + ";" + os.environ.get("PATH", "")
 
 
 def bootstrap_binaries(force_download: bool = False) -> bool:
     """Identify host platform, download or copy binaries, and register paths."""
     bin_dir = get_bootstrap_bin_dir()
     sqlcipher3_path = bin_dir / "sqlcipher3"
+
+    # 0. Check if sqlcipher3 is already fully functional in the host environment without bootstrapping
+    if not force_download:
+        if verify_sqlcipher_encryption():
+            logger.info(
+                "Host environment has fully functional SQLCipher active. Skipping bootstrapping."
+            )
+            return True
 
     # 1. Check if native binaries are already present (Subsequent launches bypass)
     if sqlcipher3_path.exists() and not force_download:
@@ -145,9 +151,7 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
 
             req = urllib.request.Request(
                 url,
-                headers={
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
-                },
+                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"},
             )
             with urllib.request.urlopen(req, timeout=10.0) as response:
                 zip_data = response.read()
@@ -161,10 +165,7 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
                 zip_ref.extractall(temp_extract_dir)
 
             extracted_sqlcipher_dir = temp_extract_dir / "sqlcipher3"
-            if (
-                extracted_sqlcipher_dir.exists()
-                and extracted_sqlcipher_dir.is_dir()
-            ):
+            if extracted_sqlcipher_dir.exists() and extracted_sqlcipher_dir.is_dir():
                 if sqlcipher3_path.exists():
                     shutil.rmtree(sqlcipher3_path)
                 shutil.move(str(extracted_sqlcipher_dir), str(sqlcipher3_path))
@@ -209,11 +210,15 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
     # 4. Dynamically inject the paths
     inject_bootstrap_paths()
 
+    # Clear sys.modules of sqlcipher3 to force reload from the newly injected paths
+    if "sqlcipher3" in sys.modules:
+        for k in list(sys.modules.keys()):
+            if k == "sqlcipher3" or k.startswith("sqlcipher3."):
+                sys.modules.pop(k, None)
+
     # 5. Execute pre-flight verification
     if verify_sqlcipher_encryption():
-        logger.info(
-            "Startup pre-flight database encryption verification successful!"
-        )
+        logger.info("Startup pre-flight database encryption verification successful!")
         return True
     else:
         raise RuntimeError(
