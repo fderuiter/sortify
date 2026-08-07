@@ -43,8 +43,9 @@ def resolve_test_path(path):
 @pytest.fixture
 def mock_session_base(tmp_path, monkeypatch):
     """Isolate the session base directory so it scans from a known clean temp location."""
-    session_base = Path(resolve_test_path(tmp_path / "autosorter_sessions"))
-    session_base.mkdir(parents=True, exist_ok=True)
+    session_base_path = tmp_path / "autosorter_sessions"
+    session_base_path.mkdir(parents=True, exist_ok=True)
+    session_base = Path(resolve_test_path(session_base_path))
 
     def mock_get_session_base_dir():
         return session_base
@@ -263,19 +264,22 @@ async def test_wizard_file_recovery_original_location(mock_session_base, tmp_pat
         if restore_on_click:
             restore_on_click()
 
-        # Give the event loop a brief moment to schedule the task
-        await asyncio.sleep(0.05)
-
         # Find and await the background recovery task to complete
         recovery_task = None
         for task in asyncio.all_tasks():
             coro = task.get_coro()
-            if coro and "do_work" in coro.__name__:
-                recovery_task = task
-                break
+            if coro:
+                name = getattr(coro, "__name__", "") or ""
+                qualname = getattr(coro, "__qualname__", "") or ""
+                if "do_work" in name or "do_work" in qualname:
+                    recovery_task = task
+                    break
 
         if recovery_task:
             await recovery_task
+        else:
+            # Fallback sleep if not immediately registered or already finished
+            await asyncio.sleep(0.1)
 
         # Let's check the result inside the mock context:
         # 1. Trapped file should be recovered. Since test_doc.txt existed, it should be named test_doc_1.txt
@@ -392,19 +396,22 @@ async def test_wizard_file_recovery_custom_location(mock_session_base, tmp_path)
         if export_on_click:
             export_on_click()
 
-        # Give the event loop a brief moment to schedule the task
-        await asyncio.sleep(0.05)
-
         # Find and await the background recovery task to complete
         recovery_task = None
         for task in asyncio.all_tasks():
             coro = task.get_coro()
-            if coro and "do_work" in coro.__name__:
-                recovery_task = task
-                break
+            if coro:
+                name = getattr(coro, "__name__", "") or ""
+                qualname = getattr(coro, "__qualname__", "") or ""
+                if "do_work" in name or "do_work" in qualname:
+                    recovery_task = task
+                    break
 
         if recovery_task:
             await recovery_task
+        else:
+            # Fallback sleep if not immediately registered or already finished
+            await asyncio.sleep(0.1)
 
         # Verify the custom export:
         exported_file = custom_export_dir / "sub_folder" / "trapped_export.txt"

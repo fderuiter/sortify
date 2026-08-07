@@ -146,8 +146,9 @@ def test_history_env(tmp_path):
     # Resolve the existing tmp_path directory first to guarantee canonical long path / casing
     resolved_tmp = Path(resolve_test_path(tmp_path))
 
-    base_dir = resolve_test_path(resolved_tmp / "test_base")
-    os.makedirs(base_dir, exist_ok=True)
+    base_dir_path = resolved_tmp / "test_base"
+    os.makedirs(base_dir_path, exist_ok=True)
+    base_dir = resolve_test_path(base_dir_path)
 
     db_worker = DBWorker()
     db_path = resolve_test_path(resolved_tmp / "test_docs.db")
