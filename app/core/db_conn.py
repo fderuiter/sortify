@@ -168,7 +168,6 @@ def get_db_connection(db_path: str):
             for msg in (
                 "not a database",
                 "encrypted",
-                "disk i/o error",
                 "malformed",
                 "authentication",
                 "password",
