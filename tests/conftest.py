@@ -154,12 +154,14 @@ def socket_mock(monkeypatch):
         try:
             frame = sys._getframe()
             while frame:
-                filename = frame.f_code.co_filename
-                if (
-                    "test_db_worker_sandbox" in filename
-                    or "test_shared_registry" in filename
-                ):
-                    return True
+                filename = getattr(frame.f_code, "co_filename", None)
+                if filename:
+                    filename_lower = filename.lower()
+                    if (
+                        "test_db_worker_sandbox" in filename_lower
+                        or "test_shared_registry" in filename_lower
+                    ):
+                        return True
                 frame = frame.f_back
         except Exception:
             pass
