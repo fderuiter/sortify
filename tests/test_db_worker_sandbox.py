@@ -13,8 +13,11 @@ def test_db_worker_sandbox_blocks_external_connections():
         with patch("app.core.shared_registry._original_connect") as mock_orig_connect:
 
             def connect_external():
-                mock_socket = MagicMock()
-                socket.socket.connect(mock_socket, ("8.8.8.8", 80))
+                s = socket.socket()
+                try:
+                    s.connect(("8.8.8.8", 80))
+                finally:
+                    s.close()
 
             # Submitting a connection to an external address must raise PermissionError
             with pytest.raises(
@@ -40,10 +43,24 @@ def test_db_worker_sandbox_permits_local_connections():
         ):
 
             def connect_local():
-                mock_socket = MagicMock()
-                socket.socket.connect(mock_socket, ("127.0.0.1", 8080))
-                socket.socket.connect_ex(mock_socket, ("localhost", 5432))
-                socket.socket.connect(mock_socket, ("my-local-db.local", 3306))
+                s1 = socket.socket()
+                try:
+                    s1.connect(("127.0.0.1", 8080))
+                finally:
+                    s1.close()
+
+                s2 = socket.socket()
+                try:
+                    s2.connect_ex(("localhost", 5432))
+                finally:
+                    s2.close()
+
+                s3 = socket.socket()
+                try:
+                    s3.connect(("my-local-db.local", 3306))
+                finally:
+                    s3.close()
+
                 return "local_ok"
 
             res = db_worker.execute_write(connect_local)
@@ -62,8 +79,11 @@ def test_db_worker_sandbox_fails_safely_without_crashing():
     try:
 
         def connect_bad():
-            mock_socket = MagicMock()
-            socket.socket.connect(mock_socket, ("example.com", 80))
+            s = socket.socket()
+            try:
+                s.connect(("example.com", 80))
+            finally:
+                s.close()
 
         # This should fail with PermissionError
         with pytest.raises(
