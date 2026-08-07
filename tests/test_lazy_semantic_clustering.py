@@ -30,6 +30,9 @@ def temp_env():
 
         yield str(tmp_path), db, str(model_dir), db_worker
         db_worker.stop()
+        from app.core.db_conn import clear_connection_cache
+
+        clear_connection_cache()
 
 
 def test_semantic_clustering_lazy_generation_and_caching(temp_env):
