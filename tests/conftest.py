@@ -135,3 +135,51 @@ def test_history_env(tmp_path):
 
     yield base_dir, db, cache, history_manager, db_worker
     db_worker.stop()
+
+
+@pytest.fixture
+def socket_mock(monkeypatch):
+    """Fixture that selectively mocks socket connect operations only for test-created sockets,
+    preventing any potential background/system loopback connection failures on Windows.
+    """
+    import socket
+    from unittest.mock import MagicMock
+
+    import app.core.shared_registry
+
+    real_connect = app.core.shared_registry._original_connect
+    real_connect_ex = app.core.shared_registry._original_connect_ex
+    real_init = socket.socket.__init__
+
+    test_socket_ids = set()
+
+    def patched_init(self, *args, **kwargs):
+        real_init(self, *args, **kwargs)
+        test_socket_ids.add(id(self))
+
+    monkeypatch.setattr(socket.socket, "__init__", patched_init)
+
+    mock_connect = MagicMock()
+    mock_connect_ex = MagicMock()
+
+    def side_effect_connect(self, address):
+        if id(self) in test_socket_ids:
+            return mock_connect(self, address)
+        return real_connect(self, address)
+
+    def side_effect_connect_ex(self, address):
+        if id(self) in test_socket_ids:
+            return mock_connect_ex(self, address)
+        return real_connect_ex(self, address)
+
+    mock_connect_wrapper = MagicMock(side_effect=side_effect_connect)
+    mock_connect_ex_wrapper = MagicMock(side_effect=side_effect_connect_ex)
+
+    monkeypatch.setattr(
+        app.core.shared_registry, "_original_connect", mock_connect_wrapper
+    )
+    monkeypatch.setattr(
+        app.core.shared_registry, "_original_connect_ex", mock_connect_ex_wrapper
+    )
+
+    yield mock_connect, mock_connect_ex

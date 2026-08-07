@@ -130,7 +130,12 @@ def safe_connect(self, address):
             or "argument 1" in err_msg
             or "must be" in err_msg
             or "requires a" in err_msg
-        ) and ("not" in err_msg or "mock" in err_msg or "descriptor" in err_msg or "apply" in err_msg):
+        ) and (
+            "not" in err_msg
+            or "mock" in err_msg
+            or "descriptor" in err_msg
+            or "apply" in err_msg
+        ):
             return None
         raise
 
@@ -189,7 +194,12 @@ def safe_connect_ex(self, address):
             or "argument 1" in err_msg
             or "must be" in err_msg
             or "requires a" in err_msg
-        ) and ("not" in err_msg or "mock" in err_msg or "descriptor" in err_msg or "apply" in err_msg):
+        ) and (
+            "not" in err_msg
+            or "mock" in err_msg
+            or "descriptor" in err_msg
+            or "apply" in err_msg
+        ):
             return 0
         raise
 
