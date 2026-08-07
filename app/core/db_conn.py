@@ -80,42 +80,44 @@ def get_db_connection(db_path: str):
             "SQLCipher library is missing. Standard SQLite fallback connections are blocked."
         )
 
+    from contextlib import closing
+
     conn = None
     try:
         conn = sqlite3.connect(abs_path, timeout=5.0, check_same_thread=False)
         if raw_key:
-            conn.execute(f"PRAGMA key = '{raw_key}'")
+            with closing(conn.cursor()) as cursor:
+                cursor.execute(f"PRAGMA key = '{raw_key}'")
 
-        try:
-            cursor = conn.cursor()
+        with closing(conn.cursor()) as cursor:
             cursor.execute("PRAGMA cipher_version;")
             version = cursor.fetchone()
             if not version or not version[0]:
                 raise RuntimeError(
                     "SQLCipher is not active on this connection context."
                 )
-        except Exception:
-            raise
 
         # Test database validity to catch unencrypted legacy databases or bad keys
-        conn.execute("PRAGMA user_version;")
+        with closing(conn.cursor()) as cursor:
+            cursor.execute("PRAGMA user_version;")
 
         # Enable Write-Ahead Logging (WAL) for simultaneous reads and writes
-        conn.execute("PRAGMA journal_mode = WAL")
-        # Increase the database in-memory page cache to hold text features and clustering data
-        conn.execute("PRAGMA cache_size = -64000")  # 64MB cache
+        with closing(conn.cursor()) as cursor:
+            cursor.execute("PRAGMA journal_mode = WAL")
+            # Increase the database in-memory page cache to hold text features and clustering data
+            cursor.execute("PRAGMA cache_size = -64000")  # 64MB cache
 
-        # Disable mmap_size on Windows to prevent OS-level file locking issues with multiple connections
-        if sys.platform != "win32":
-            # Enforce optimized disk page allocations
-            conn.execute("PRAGMA mmap_size = 268435456")  # 256MB mmap
+            # Disable mmap_size on Windows to prevent OS-level file locking issues with multiple connections
+            if sys.platform != "win32":
+                # Enforce optimized disk page allocations
+                cursor.execute("PRAGMA mmap_size = 268435456")  # 256MB mmap
 
-        # Ensure database size remains stable under rapid writes
-        conn.execute(
-            "PRAGMA journal_size_limit = 67108864"
-        )  # 64MB limit for WAL/rollback logs
-        # Set synchronous mode to NORMAL for WAL
-        conn.execute("PRAGMA synchronous = NORMAL")
+            # Ensure database size remains stable under rapid writes
+            cursor.execute(
+                "PRAGMA journal_size_limit = 67108864"
+            )  # 64MB limit for WAL/rollback logs
+            # Set synchronous mode to NORMAL for WAL
+            cursor.execute("PRAGMA synchronous = NORMAL")
 
     except Exception as e:
         if conn:
@@ -123,6 +125,7 @@ def get_db_connection(db_path: str):
                 conn.close()
             except Exception:
                 pass
+        conn = None
         import sqlite3 as std_sqlite3
 
         # Safe extraction of module and class names to prevent AttributeError when __module__ is None
