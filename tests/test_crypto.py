@@ -332,10 +332,13 @@ def test_decryption_failure_safe_error_propagation(tmp_path, monkeypatch, caplog
         with closing(
             db_conn.sqlite3.connect(str(path), timeout=30.0, check_same_thread=False)
         ) as conn:
-            conn.execute(f"PRAGMA key = '{key}'")
-            conn.execute("CREATE TABLE test_table (id INTEGER PRIMARY KEY, value TEXT)")
-            conn.execute("INSERT INTO test_table (value) VALUES ('secret_data')")
-            conn.commit()
+            with closing(conn.cursor()) as cursor:
+                cursor.execute(f"PRAGMA key = '{key}'")
+                cursor.execute(
+                    "CREATE TABLE test_table (id INTEGER PRIMARY KEY, value TEXT)"
+                )
+                cursor.execute("INSERT INTO test_table (value) VALUES ('secret_data')")
+                conn.commit()
 
     create_initial_db(db_path, correct_key)
     gc.collect()
@@ -461,12 +464,14 @@ def test_decryption_failure_safe_error_propagation(tmp_path, monkeypatch, caplog
     def verify_db_contents(path):
         conn = db_conn.get_db_connection(str(path))
         try:
-            cursor = conn.execute("SELECT value FROM test_table")
-            row = cursor.fetchone()
-            assert row is not None
-            assert row[0] == "secret_data"
+            with closing(conn.cursor()) as cursor:
+                cursor.execute("SELECT value FROM test_table")
+                row = cursor.fetchone()
+                assert row is not None
+                assert row[0] == "secret_data"
             # Switch journal mode back to DELETE while connection is open
-            conn.execute("PRAGMA journal_mode = DELETE")
+            with closing(conn.cursor()) as cursor:
+                cursor.execute("PRAGMA journal_mode = DELETE")
         finally:
             # Deterministically clear the connection cache to close the connection and release all locks
             db_conn.clear_connection_cache()
