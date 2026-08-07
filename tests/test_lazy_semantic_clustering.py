@@ -1,3 +1,10 @@
+"""Tests for lazy semantic vector generation and TF-IDF fallback mechanisms.
+
+These tests verify lazy generation of embeddings on-the-fly and proper fallback
+to standard TF-IDF when ONNX models are corrupt, missing, or unusable. All tests
+ensure clean thread termination and database connection clearing for safe Windows execution.
+"""
+
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
