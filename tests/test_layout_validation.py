@@ -1,11 +1,10 @@
 import ast
-import glob
-import os
+from pathlib import Path
 
 import pytest
 
 # Paths to scan
-UI_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "app", "ui"))
+UI_DIR = Path(__file__).resolve().parent.parent / "app" / "ui"
 
 
 def is_rigid_layout_class(cls_name: str) -> bool:
@@ -50,7 +49,7 @@ def is_rigid_layout_class(cls_name: str) -> bool:
 
 def test_no_rigid_sizes_in_dialog_cards():
     """Headless unit test to assert that dialog card classes do not use rigid height/width classes."""
-    ui_files = glob.glob(os.path.join(UI_DIR, "*.py"))
+    ui_files = list(UI_DIR.glob("*.py"))
     assert ui_files, f"No UI files found in {UI_DIR}"
 
     failures = []
@@ -60,7 +59,7 @@ def test_no_rigid_sizes_in_dialog_cards():
             content = f.read()
 
         try:
-            tree = ast.parse(content, filename=file_path)
+            tree = ast.parse(content, filename=str(file_path))
         except SyntaxError as e:
             failures.append(f"Syntax error in {file_path}: {e}")
             continue
@@ -72,10 +71,10 @@ def test_no_rigid_sizes_in_dialog_cards():
                 # Check for constant assignments like STANDARD_DIALOG_CARD_MD = "..."
                 for target in node.targets:
                     if isinstance(target, ast.Name):
-                        if isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
+                        if isinstance(node.value, ast.Constant) and isinstance(
+                            node.value.value, str
+                        ):
                             assigned_constants[target.id] = node.value.value
-                        elif isinstance(node.value, ast.Str):  # compatibility for older Python
-                            assigned_constants[target.id] = node.value.s
 
         class DialogCardVisitor(ast.NodeVisitor):
             def visit_Call(self, node):
@@ -85,9 +84,15 @@ def test_no_rigid_sizes_in_dialog_cards():
                     subject = node.func.value
                     is_card_call = False
                     if isinstance(subject, ast.Call):
-                        if isinstance(subject.func, ast.Attribute) and subject.func.attr == "card":
+                        if (
+                            isinstance(subject.func, ast.Attribute)
+                            and subject.func.attr == "card"
+                        ):
                             is_card_call = True
-                        elif isinstance(subject.func, ast.Name) and subject.func.id == "card":
+                        elif (
+                            isinstance(subject.func, ast.Name)
+                            and subject.func.id == "card"
+                        ):
                             is_card_call = True
 
                     # Also detect ui.card() used within dialog context via AST parent/child or general check
@@ -96,11 +101,14 @@ def test_no_rigid_sizes_in_dialog_cards():
                         # Extract the classes passed to the call
                         for arg in node.args:
                             cls_str = ""
-                            if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                            if isinstance(arg, ast.Constant) and isinstance(
+                                arg.value, str
+                            ):
                                 cls_str = arg.value
-                            elif isinstance(arg, ast.Str):
-                                cls_str = arg.s
-                            elif isinstance(arg, ast.Name) and arg.id in assigned_constants:
+                            elif (
+                                isinstance(arg, ast.Name)
+                                and arg.id in assigned_constants
+                            ):
                                 cls_str = assigned_constants[arg.id]
 
                             if cls_str:
@@ -110,7 +118,7 @@ def test_no_rigid_sizes_in_dialog_cards():
                                     if is_rigid_layout_class(cls):
                                         failures.append(
                                             f"Rigid layout class '{cls}' used in card at "
-                                            f"{os.path.basename(file_path)}:line {node.lineno}"
+                                            f"{file_path.name}:line {node.lineno}"
                                         )
 
                 self.generic_visit(node)
@@ -125,7 +133,7 @@ def test_no_rigid_sizes_in_dialog_cards():
                     if is_rigid_layout_class(cls):
                         failures.append(
                             f"Rigid layout class '{cls}' used in constant '{const_name}' "
-                            f"in {os.path.basename(file_path)}"
+                            f"in {file_path.name}"
                         )
 
     # If any rigid sizes are found, fail the test suite
@@ -155,4 +163,3 @@ def test_is_rigid_layout_class_validation():
     assert is_rigid_layout_class("min-h-[100px]") is False
     assert is_rigid_layout_class("p-6") is False
     assert is_rigid_layout_class("gap-4") is False
-
