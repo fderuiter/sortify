@@ -19,10 +19,7 @@ from app.core.db import Database
 from app.core.db_worker import DBWorker
 
 
-class TFIDFFallbackTriggered(BaseException):
-    """Exception raised to signal standard TF-IDF text similarity fallback has been triggered."""
-
-    pass
+from sklearn.feature_extraction.text import TfidfVectorizer
 
 
 @pytest.fixture
@@ -152,10 +149,10 @@ def test_fallback_to_tfidf_when_onnx_missing_or_corrupt(temp_env):
     try:
         with patch(
             "sklearn.feature_extraction.text.TfidfVectorizer.fit_transform",
-            side_effect=TFIDFFallbackTriggered("TF-IDF Used"),
+            wraps=TfidfVectorizer.fit_transform,
         ) as mock_tfidf:
-            with pytest.raises(TFIDFFallbackTriggered):
-                analyzer.generate_sorting_plan(base_dir)
+            analyzer.generate_sorting_plan(base_dir)
+            assert mock_tfidf.called
     finally:
         analyzer.close()
 
@@ -177,10 +174,10 @@ def test_fallback_to_tfidf_when_onnx_missing_or_corrupt(temp_env):
     try:
         with patch(
             "sklearn.feature_extraction.text.TfidfVectorizer.fit_transform",
-            side_effect=TFIDFFallbackTriggered("TF-IDF Used"),
+            wraps=TfidfVectorizer.fit_transform,
         ) as mock_tfidf:
-            with pytest.raises(TFIDFFallbackTriggered):
-                analyzer_corrupt.generate_sorting_plan(base_dir)
+            analyzer_corrupt.generate_sorting_plan(base_dir)
+            assert mock_tfidf.called
     finally:
         analyzer_corrupt.close()
 
