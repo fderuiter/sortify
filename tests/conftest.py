@@ -115,23 +115,31 @@ def monkeypatch_session():
 def test_history_env(tmp_path):
     """Consolidated test environment helper for history, database, and cache."""
     import os
+    import sys
 
     from app.core.cache import CacheManager
     from app.core.db import Database
     from app.core.db_worker import DBWorker
     from app.core.history import HistoryManager
 
-    base_dir = os.path.normpath(os.path.realpath(os.path.abspath(str(tmp_path / "test_base"))))
+    def resolve_test_path(path):
+        path_str = str(path)
+        if sys.platform == "win32":
+            return os.path.normpath(os.path.abspath(path_str))
+        else:
+            return os.path.normpath(os.path.realpath(os.path.abspath(path_str)))
+
+    base_dir = resolve_test_path(tmp_path / "test_base")
     os.makedirs(base_dir, exist_ok=True)
 
     db_worker = DBWorker()
-    db_path = os.path.normpath(os.path.realpath(os.path.abspath(str(tmp_path / "test_docs.db"))))
+    db_path = resolve_test_path(tmp_path / "test_docs.db")
     db = Database(db_path, worker=db_worker)
 
-    cache_path = os.path.normpath(os.path.realpath(os.path.abspath(str(tmp_path / "test_cache.db"))))
+    cache_path = resolve_test_path(tmp_path / "test_cache.db")
     cache = CacheManager(str(cache_path), worker=db_worker)
 
-    history_manager = HistoryManager(db, cache, os.path.normpath(os.path.realpath(os.path.abspath(str(tmp_path / "test_history.db")))))
+    history_manager = HistoryManager(db, cache, resolve_test_path(tmp_path / "test_history.db"))
 
     yield base_dir, db, cache, history_manager, db_worker
     db_worker.stop()

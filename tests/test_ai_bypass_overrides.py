@@ -1,4 +1,5 @@
 import os
+import sys
 from unittest.mock import patch
 
 import pytest
@@ -6,6 +7,14 @@ import pytest
 from app.core.analyzer import IncrementalAnalyzer
 from app.core.analyzer_strategies import GenerativeNamingStrategy
 from app.core.mover import execute_moves
+
+
+def resolve_test_path(path):
+    path_str = str(path)
+    if sys.platform == "win32":
+        return os.path.normpath(os.path.abspath(path_str))
+    else:
+        return os.path.normpath(os.path.realpath(os.path.abspath(path_str)))
 
 
 @pytest.fixture(autouse=True)
@@ -38,7 +47,7 @@ def test_similarity_routed_leaves_history_empty(test_history_env):
     but leaves its user-verified history empty.
     """
     base_dir, db, cache_manager, history_manager, db_worker = test_history_env
-    base_dir = os.path.normpath(os.path.realpath(os.path.abspath(base_dir)))
+    base_dir = resolve_test_path(base_dir)
 
     filename_verified = "verified_doc.txt"
     filename_sim = "similarity_doc.txt"
@@ -92,7 +101,7 @@ def test_dynamic_re_evaluation_on_subsequent_runs(test_history_env):
     using the semantic analyzer instead of bypassing it.
     """
     base_dir, db, cache_manager, history_manager, db_worker = test_history_env
-    base_dir = os.path.normpath(os.path.realpath(os.path.abspath(base_dir)))
+    base_dir = resolve_test_path(base_dir)
 
     filename_verified = "verified_doc.txt"
     filename_sim = "similarity_doc.txt"
@@ -139,7 +148,7 @@ def test_llm_prompt_few_shot_only_contains_verified_historical_examples(
     or explicitly verified historical examples.
     """
     base_dir, db, cache_manager, history_manager, db_worker = test_history_env
-    base_dir = os.path.normpath(os.path.realpath(os.path.abspath(base_dir)))
+    base_dir = resolve_test_path(base_dir)
 
     # Put two files in DB:
     # 1. One user-verified (has user_verified_target_path)
@@ -175,7 +184,7 @@ def test_batch_updates_transaction_execution(test_history_env):
     user-verified overrides within a single transaction.
     """
     base_dir, db, cache_manager, history_manager, db_worker = test_history_env
-    base_dir = os.path.normpath(os.path.realpath(os.path.abspath(base_dir)))
+    base_dir = resolve_test_path(base_dir)
 
     # Create two files
     f1, f2 = "f1.txt", "f2.txt"
