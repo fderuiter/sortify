@@ -376,9 +376,17 @@ def test_decryption_failure_safe_error_propagation(tmp_path, monkeypatch, caplog
         isinstance(exc_info.value, (db_conn.sqlite3.Error, sqlite3.Error))
         or "sqlite" in type(exc_info.value).__module__.lower()
         or "sqlcipher" in type(exc_info.value).__module__.lower()
+        or type(exc_info.value).__name__ == "Error"
         or any(
             term in type(exc_info.value).__name__
-            for term in ("Error", "DatabaseError", "OperationalError")
+            for term in (
+                "DatabaseError",
+                "OperationalError",
+                "IntegrityError",
+                "InternalError",
+                "ProgrammingError",
+                "NotSupportedError",
+            )
         )
     )
     assert is_database_error, f"Expected a database error, got {type(exc_info.value)}"

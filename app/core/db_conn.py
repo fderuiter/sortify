@@ -130,9 +130,17 @@ def get_db_connection(db_path: str):
             isinstance(e, (sqlite3.Error, std_sqlite3.Error))
             or "sqlite" in type(e).__module__.lower()
             or "sqlcipher" in type(e).__module__.lower()
+            or type(e).__name__ == "Error"
             or any(
                 term in type(e).__name__
-                for term in ("Error", "DatabaseError", "OperationalError")
+                for term in (
+                    "DatabaseError",
+                    "OperationalError",
+                    "IntegrityError",
+                    "InternalError",
+                    "ProgrammingError",
+                    "NotSupportedError",
+                )
             )
         )
 
