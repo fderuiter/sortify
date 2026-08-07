@@ -1,74 +1,68 @@
 import socket
-from unittest.mock import patch
 
 import pytest
 
 from app.core.db_worker import DBWorker
 
 
-def test_db_worker_sandbox_blocks_external_connections():
+def test_db_worker_sandbox_blocks_external_connections(socket_mock):
     """Verify that the background DBWorker thread blocks external connection attempts and raises a permission error."""
+    mock_connect, _ = socket_mock
     db_worker = DBWorker()
     try:
-        with patch("app.core.shared_registry._original_connect") as mock_orig_connect:
 
-            def connect_external():
-                s = socket.socket()
-                try:
-                    s.connect(("8.8.8.8", 80))
-                finally:
-                    s.close()
+        def connect_external():
+            s = socket.socket()
+            try:
+                s.connect(("8.8.8.8", 80))
+            finally:
+                s.close()
 
-            # Submitting a connection to an external address must raise PermissionError
-            with pytest.raises(
-                PermissionError, match="External network connections are blocked"
-            ):
-                db_worker.execute_write(connect_external)
+        # Submitting a connection to an external address must raise PermissionError
+        with pytest.raises(
+            PermissionError, match="External network connections are blocked"
+        ):
+            db_worker.execute_write(connect_external)
 
-            # Ensure the original connect was never invoked for the external target
-            mock_orig_connect.assert_not_called()
+        # Ensure the original connect was never invoked for the external target
+        mock_connect.assert_not_called()
     finally:
         db_worker.stop()
 
 
-def test_db_worker_sandbox_permits_local_connections():
+def test_db_worker_sandbox_permits_local_connections(socket_mock):
     """Verify that local database/network operations (loopback and private/local subnets) complete successfully."""
+    mock_connect, mock_connect_ex = socket_mock
     db_worker = DBWorker()
     try:
-        with (
-            patch("app.core.shared_registry._original_connect") as mock_orig_connect,
-            patch(
-                "app.core.shared_registry._original_connect_ex"
-            ) as mock_orig_connect_ex,
-        ):
 
-            def connect_local():
-                s1 = socket.socket()
-                try:
-                    s1.connect(("127.0.0.1", 8080))
-                finally:
-                    s1.close()
+        def connect_local():
+            s1 = socket.socket()
+            try:
+                s1.connect(("127.0.0.1", 8080))
+            finally:
+                s1.close()
 
-                s2 = socket.socket()
-                try:
-                    s2.connect_ex(("localhost", 5432))
-                finally:
-                    s2.close()
+            s2 = socket.socket()
+            try:
+                s2.connect_ex(("localhost", 5432))
+            finally:
+                s2.close()
 
-                s3 = socket.socket()
-                try:
-                    s3.connect(("my-local-db.local", 3306))
-                finally:
-                    s3.close()
+            s3 = socket.socket()
+            try:
+                s3.connect(("my-local-db.local", 3306))
+            finally:
+                s3.close()
 
-                return "local_ok"
+            return "local_ok"
 
-            res = db_worker.execute_write(connect_local)
-            assert res == "local_ok"
+        res = db_worker.execute_write(connect_local)
+        assert res == "local_ok"
 
-            # Ensure original socket connect operations were permitted and called
-            assert mock_orig_connect.call_count >= 2
-            assert mock_orig_connect_ex.call_count >= 1
+        # Ensure original socket connect operations were permitted and called on the mocks
+        assert mock_connect.call_count >= 2
+        assert mock_connect_ex.call_count >= 1
     finally:
         db_worker.stop()
 

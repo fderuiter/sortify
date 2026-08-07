@@ -135,7 +135,7 @@ def test_session_db_and_cache_isolation():
     assert fut2.result() == ("session_2_db", "session_2_settings")
 
 
-def test_socket_sandbox_blocking_of_external_and_allow_localhost():
+def test_socket_sandbox_blocking_of_external_and_allow_localhost(socket_mock):
     """Verify that socket sandboxing blocks external domains while allowing localhost/loopback."""
     from app.core.shared_registry import (
         apply_global_socket_sandbox,
@@ -143,6 +143,8 @@ def test_socket_sandbox_blocking_of_external_and_allow_localhost():
         safe_connect,
         safe_connect_ex,
     )
+
+    mock_connect, mock_connect_ex = socket_mock
 
     apply_global_socket_sandbox()
 
@@ -168,51 +170,45 @@ def test_socket_sandbox_blocking_of_external_and_allow_localhost():
                 s.close()
 
     # Try connecting to localhost
-    with (
-        patch("app.core.shared_registry._original_connect") as mock_connect,
-        patch("app.core.shared_registry._original_connect_ex") as mock_connect_ex,
-    ):
-        with block_external_network():
-            s1 = socket.socket()
-            try:
-                safe_connect(s1, ("127.0.0.1", 8080))
-                mock_connect.assert_called_once_with(s1, ("127.0.0.1", 8080))
-            finally:
-                s1.close()
-
-        with block_external_network():
-            s2 = socket.socket()
-            try:
-                safe_connect_ex(s2, ("localhost", 8080))
-                mock_connect_ex.assert_called_once_with(s2, ("localhost", 8080))
-            finally:
-                s2.close()
-
-
-def test_socket_sandbox_inactive_allows_external_connections():
-    """Verify that when block_external_network is not active, external connections are allowed."""
-    from app.core.shared_registry import safe_connect, safe_connect_ex
-
-    with (
-        patch("app.core.shared_registry._original_connect") as mock_connect,
-        patch("app.core.shared_registry._original_connect_ex") as mock_connect_ex,
-    ):
+    with block_external_network():
         s1 = socket.socket()
         try:
-            safe_connect(s1, ("8.8.8.8", 80))
-            mock_connect.assert_called_once_with(s1, ("8.8.8.8", 80))
+            safe_connect(s1, ("127.0.0.1", 8080))
+            mock_connect.assert_called_once_with(s1, ("127.0.0.1", 8080))
         finally:
             s1.close()
 
+    with block_external_network():
         s2 = socket.socket()
         try:
-            safe_connect_ex(s2, ("8.8.8.8", 80))
-            mock_connect_ex.assert_called_once_with(s2, ("8.8.8.8", 80))
+            safe_connect_ex(s2, ("localhost", 8080))
+            mock_connect_ex.assert_called_once_with(s2, ("localhost", 8080))
         finally:
             s2.close()
 
 
-def test_socket_sandbox_case_insensitivity_and_local_suffixes():
+def test_socket_sandbox_inactive_allows_external_connections(socket_mock):
+    """Verify that when block_external_network is not active, external connections are allowed."""
+    from app.core.shared_registry import safe_connect, safe_connect_ex
+
+    mock_connect, mock_connect_ex = socket_mock
+
+    s1 = socket.socket()
+    try:
+        safe_connect(s1, ("8.8.8.8", 80))
+        mock_connect.assert_called_once_with(s1, ("8.8.8.8", 80))
+    finally:
+        s1.close()
+
+    s2 = socket.socket()
+    try:
+        safe_connect_ex(s2, ("8.8.8.8", 80))
+        mock_connect_ex.assert_called_once_with(s2, ("8.8.8.8", 80))
+    finally:
+        s2.close()
+
+
+def test_socket_sandbox_case_insensitivity_and_local_suffixes(socket_mock):
     """Verify that the socket sandbox is case-insensitive and permits .local/.localhost suffixes."""
     from app.core.shared_registry import (
         _is_local_address,
@@ -220,6 +216,8 @@ def test_socket_sandbox_case_insensitivity_and_local_suffixes():
         safe_connect,
         safe_connect_ex,
     )
+
+    mock_connect, mock_connect_ex = socket_mock
 
     # Test cases for local addresses (various cases and suffixes)
     assert _is_local_address("LOCALHOST") is True
@@ -229,24 +227,20 @@ def test_socket_sandbox_case_insensitivity_and_local_suffixes():
     assert _is_local_address("my-server.localhost") is True
 
     # Test case-insensitivity in safe_connect within active sandbox
-    with (
-        patch("app.core.shared_registry._original_connect") as mock_connect,
-        patch("app.core.shared_registry._original_connect_ex") as mock_connect_ex,
-    ):
-        with block_external_network():
-            s1 = socket.socket()
-            try:
-                safe_connect(s1, ("LOCALHOST", 8080))
-                mock_connect.assert_called_once_with(s1, ("LOCALHOST", 8080))
-            finally:
-                s1.close()
+    with block_external_network():
+        s1 = socket.socket()
+        try:
+            safe_connect(s1, ("LOCALHOST", 8080))
+            mock_connect.assert_called_once_with(s1, ("LOCALHOST", 8080))
+        finally:
+            s1.close()
 
-            s2 = socket.socket()
-            try:
-                safe_connect_ex(s2, ("my-machine.local", 8080))
-                mock_connect_ex.assert_called_once_with(s2, ("my-machine.local", 8080))
-            finally:
-                s2.close()
+        s2 = socket.socket()
+        try:
+            safe_connect_ex(s2, ("my-machine.local", 8080))
+            mock_connect_ex.assert_called_once_with(s2, ("my-machine.local", 8080))
+        finally:
+            s2.close()
 
 
 def test_check_ai_status_corrupt_or_missing(tmp_path, monkeypatch):
