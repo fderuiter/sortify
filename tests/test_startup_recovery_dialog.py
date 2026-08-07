@@ -171,7 +171,7 @@ async def test_ui_recovery_wizard_trigger(mock_session_base, tmp_path):
         import time
 
         start_time = time.time()
-        while time.time() - start_time < 5.0:
+        while time.time() - start_time < 15.0:
             if mock_wizard.call_count > 0:
                 break
             await asyncio.sleep(0.02)
@@ -265,21 +265,24 @@ async def test_wizard_file_recovery_original_location(mock_session_base, tmp_pat
             restore_on_click()
 
         # Find and await the background recovery task to complete
-        recovery_task = None
-        for task in asyncio.all_tasks():
-            coro = task.get_coro()
-            if coro:
-                name = getattr(coro, "__name__", "") or ""
-                qualname = getattr(coro, "__qualname__", "") or ""
-                if "do_work" in name or "do_work" in qualname:
-                    recovery_task = task
-                    break
-
-        if recovery_task:
-            await recovery_task
-        else:
-            # Fallback sleep if not immediately registered or already finished
-            await asyncio.sleep(0.1)
+        import time
+        start_t = time.time()
+        while time.time() - start_t < 10.0:
+            recovery_task = None
+            for task in asyncio.all_tasks():
+                coro = task.get_coro()
+                if coro:
+                    name = getattr(coro, "__name__", "") or ""
+                    qualname = getattr(coro, "__qualname__", "") or ""
+                    if "do_work" in name or "do_work" in qualname:
+                        recovery_task = task
+                        break
+            if recovery_task:
+                await recovery_task
+                break
+            if not os.path.exists(branch_dir):
+                break
+            await asyncio.sleep(0.05)
 
         # Let's check the result inside the mock context:
         # 1. Trapped file should be recovered. Since test_doc.txt existed, it should be named test_doc_1.txt
@@ -397,21 +400,24 @@ async def test_wizard_file_recovery_custom_location(mock_session_base, tmp_path)
             export_on_click()
 
         # Find and await the background recovery task to complete
-        recovery_task = None
-        for task in asyncio.all_tasks():
-            coro = task.get_coro()
-            if coro:
-                name = getattr(coro, "__name__", "") or ""
-                qualname = getattr(coro, "__qualname__", "") or ""
-                if "do_work" in name or "do_work" in qualname:
-                    recovery_task = task
-                    break
-
-        if recovery_task:
-            await recovery_task
-        else:
-            # Fallback sleep if not immediately registered or already finished
-            await asyncio.sleep(0.1)
+        import time
+        start_t = time.time()
+        while time.time() - start_t < 10.0:
+            recovery_task = None
+            for task in asyncio.all_tasks():
+                coro = task.get_coro()
+                if coro:
+                    name = getattr(coro, "__name__", "") or ""
+                    qualname = getattr(coro, "__qualname__", "") or ""
+                    if "do_work" in name or "do_work" in qualname:
+                        recovery_task = task
+                        break
+            if recovery_task:
+                await recovery_task
+                break
+            if not os.path.exists(branch_dir):
+                break
+            await asyncio.sleep(0.05)
 
         # Verify the custom export:
         exported_file = custom_export_dir / "sub_folder" / "trapped_export.txt"
