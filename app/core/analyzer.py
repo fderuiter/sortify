@@ -30,6 +30,25 @@ class IncrementalAnalyzer:
         self.corpus = {}
         self._last_reconstruction_error = 0.0
 
+        if not self.model_path:
+            from app.config import get_app_dir
+            from app.core.path_utils import get_base_path
+
+            try:
+                base_path = get_base_path(__file__)
+            except Exception:
+                base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            local_bundle_path = os.path.join(base_path, "offline_bundle", "model")
+            try:
+                user_bundle_path = str(get_app_dir() / "model")
+            except Exception:
+                user_bundle_path = os.path.expanduser("~/.smart-autosorter/model")
+
+            if os.path.exists(local_bundle_path):
+                self.model_path = local_bundle_path
+            elif os.path.exists(user_bundle_path):
+                self.model_path = user_bundle_path
+
         from app.core.semantic_embeddings import SemanticEmbeddingManager
 
         self.embedding_manager = SemanticEmbeddingManager(self.db, self.model_path)
@@ -439,6 +458,69 @@ class IncrementalAnalyzer:
                         strategy.db = self.db
                         strategy.base_dir = base_dir
 
+                    # Check if local ONNX model files are present and not corrupt
+                    has_onnx = False
+                    if self.model_path and os.path.exists(self.model_path):
+                        if os.path.isdir(self.model_path):
+                            for root, _, files in os.walk(self.model_path):
+                                for f_item in files:
+                                    if f_item.lower().endswith(".onnx"):
+                                        if (
+                                            os.path.getsize(os.path.join(root, f_item))
+                                            > 1024
+                                        ):
+                                            has_onnx = True
+                                            break
+                                if has_onnx:
+                                    break
+                        elif self.model_path.lower().endswith(".onnx"):
+                            if os.path.getsize(self.model_path) > 1024:
+                                has_onnx = True
+
+                    use_semantic = has_onnx
+                    pre_fetched_vectors = None
+
+                    if use_semantic and ai_filenames:
+                        try:
+                            # Identify missing vectors, generate them on-the-fly and cache to DB sequentially in sorting thread
+                            vectors = []
+                            newly_generated = []
+                            for f_name, doc_text in zip(ai_filenames, ai_documents):
+                                v = self.embedding_manager.get_vector(base_dir, f_name)
+                                if (
+                                    v is not None
+                                    and self.embedding_manager.validate_vector_dimension(
+                                        v
+                                    )
+                                ):
+                                    vectors.append(v)
+                                else:
+                                    generated_v = (
+                                        self.embedding_manager.generate_embedding(
+                                            doc_text
+                                        )
+                                    )
+                                    if not self.embedding_manager.validate_vector_dimension(
+                                        generated_v
+                                    ):
+                                        raise ValueError(
+                                            "Generated vector dimensions do not match the active model dimensions."
+                                        )
+                                    vectors.append(generated_v)
+                                    newly_generated.append((f_name, generated_v))
+
+                            if newly_generated:
+                                self.db.upsert_document_vectors(
+                                    base_dir, newly_generated
+                                )
+
+                            pre_fetched_vectors = vectors
+                        except Exception as e:
+                            logging.error(
+                                f"Lazy semantic vector generation/caching failed: {e}. Falling back to standard TF-IDF."
+                            )
+                            pre_fetched_vectors = None
+
                     plan, error = strategy.generate_plan(
                         ai_filenames,
                         ai_documents,
@@ -446,6 +528,7 @@ class IncrementalAnalyzer:
                         self.stop_words,
                         max_depth,
                         max_features,
+                        pre_fetched_vectors=pre_fetched_vectors,
                     )
                     self._last_reconstruction_error = error
                 else:
