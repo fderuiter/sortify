@@ -121,6 +121,11 @@
               "annotation": "int",
               "default": "3",
               "name": "max_features"
+            },
+            {
+              "annotation": "List[list] | None",
+              "default": "None",
+              "name": "pre_fetched_vectors"
             }
           ],
           "returns": "tuple[dict, float]"
