@@ -15,7 +15,9 @@ from app.core.db_worker import DBWorker
 @pytest.fixture
 def temp_env():
     """Create a temporary test environment with database and mock ONNX model."""
-    with tempfile.TemporaryDirectory() as tmp_dir:
+    import shutil
+    tmp_dir = tempfile.mkdtemp()
+    try:
         tmp_path = Path(tmp_dir)
         db_worker = DBWorker()
         db_path = tmp_path / "test.db"
@@ -29,10 +31,12 @@ def temp_env():
             f.write(b"a" * 2048)  # Size > 1024 bytes
 
         yield str(tmp_path), db, str(model_dir), db_worker
+    finally:
         db_worker.stop()
         from app.core.db_conn import clear_connection_cache
 
         clear_connection_cache()
+        shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
 def test_semantic_clustering_lazy_generation_and_caching(temp_env):
