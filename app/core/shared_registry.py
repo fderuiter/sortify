@@ -31,19 +31,6 @@ _local_ips = {
 
 try:
     _local_ips.add(socket.gethostname().lower())
-    _local_ips.add(socket.getfqdn().lower())
-except Exception:
-    pass
-
-try:
-    for info in socket.getaddrinfo(socket.gethostname(), None):
-        _local_ips.add(info[4][0].lower())
-except Exception:
-    pass
-
-try:
-    for info in socket.getaddrinfo("localhost", None):
-        _local_ips.add(info[4][0].lower())
 except Exception:
     pass
 
