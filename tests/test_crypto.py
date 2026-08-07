@@ -410,6 +410,9 @@ def test_decryption_failure_safe_error_propagation(tmp_path, monkeypatch, caplog
             except Exception:
                 pass
 
+    # 7. Clean up connection handles and run garbage collection.
+    # On Windows, clearing the cache and invoking gc.collect() immediately releases
+    # active file descriptors on the database file, ensuring no locks persist.
     verify_db_contents(db_path)
     db_conn.clear_connection_cache()
     gc.collect()
