@@ -125,7 +125,15 @@ def get_db_connection(db_path: str):
                 conn.close()
             except Exception:
                 pass
+        # Clear all local variables to break traceback-held reference cycles on Windows GHA
         conn = None
+        cursor = None
+        version = None
+        crypto = None
+        raw_key = None
+        cache_key = None
+        abs_path = None
+
         import sqlite3 as std_sqlite3
 
         # Safe extraction of module and class names to prevent AttributeError when __module__ is None

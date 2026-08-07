@@ -376,23 +376,25 @@ def test_decryption_failure_safe_error_propagation(tmp_path, monkeypatch, caplog
     db_conn.clear_connection_cache()
 
     # Try to open the connection. It must raise a sqlite3.DatabaseError (decryption failure).
-    with caplog.at_level(logging.ERROR):
-        with pytest.raises(Exception) as exc_info:
+    exc_str = ""
+    exc_type = None
+    module_name = ""
+    class_name = ""
+    is_instance_db_err = False
+
+    try:
+        with caplog.at_level(logging.ERROR):
             db_conn.get_db_connection(str(db_path))
+    except Exception as e:
+        exc_str = str(e)
+        exc_type = type(e)
+        module_name = getattr(exc_type, "__module__", "") or ""
+        module_name = str(module_name).lower()
+        class_name = getattr(exc_type, "__name__", "") or ""
+        is_instance_db_err = isinstance(e, (db_conn.sqlite3.Error, sqlite3.Error))
+        # Explicitly clear exception and traceback reference to allow GC to release Windows file locks
+        e = None
 
-    # Safe extraction of the exception value and strings to prevent any reference cycle holding locks
-    exc_val = exc_info.value
-    exc_str = str(exc_val)
-    exc_type = type(exc_val)
-    module_name = getattr(exc_type, "__module__", "") or ""
-    module_name = str(module_name).lower()
-    class_name = getattr(exc_type, "__name__", "") or ""
-
-    is_instance_db_err = isinstance(exc_val, (db_conn.sqlite3.Error, sqlite3.Error))
-
-    # Explicitly clear exception and traceback reference to allow GC to release Windows file locks
-    del exc_info
-    del exc_val
     db_conn.clear_connection_cache()
     gc.collect()
 
@@ -475,6 +477,9 @@ def test_decryption_failure_safe_error_propagation(tmp_path, monkeypatch, caplog
         finally:
             # Deterministically clear the connection cache to close the connection and release all locks
             db_conn.clear_connection_cache()
+            conn = None
+            cursor = None
+            row = None
             gc.collect()
 
     # 7. Clean up connection handles and run garbage collection.
