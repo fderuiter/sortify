@@ -90,10 +90,8 @@ def get_db_connection(db_path: str):
     from contextlib import closing
 
     conn = None
-    conn_established = False
     try:
         conn = sqlite3.connect(abs_path, timeout=30.0, check_same_thread=False)
-        conn_established = True
         if raw_key:
             with closing(conn.cursor()) as cursor:
                 cursor.execute(f"PRAGMA key = '{raw_key}'")
@@ -134,14 +132,6 @@ def get_db_connection(db_path: str):
                 conn.close()
             except Exception:
                 pass
-        # Clear all local variables to break traceback-held reference cycles on Windows GHA
-        conn = None
-        cursor = None
-        version = None
-        crypto = None
-        raw_key = None
-        cache_key = None
-        abs_path = None
 
         import sqlite3 as std_sqlite3
 
@@ -172,33 +162,109 @@ def get_db_connection(db_path: str):
 
         # Ensure we only treat actual decryption or key mismatch errors as decryption failures,
         # propagating standard SQLite operational/locking errors normally.
-        is_decryption_err = is_sqlite_or_db_err and (
-            any(
-                msg in err_msg_lower
-                for msg in (
-                    "not a database",
-                    "encrypted",
-                    "malformed",
-                    "authentication",
-                    "password",
-                    "passphrase",
-                    "mac",
-                    "bad decrypt",
-                    "mismatch",
-                    "wrong key",
-                    "invalid key",
-                    "decryption",
-                    "cryptographic",
-                    "failed to decrypt database",
-                )
-            )
-            or (
-                "disk i/o error" in err_msg_lower
-                and raw_key
-                and db_existed
-                and (conn_established or os.path.exists(f"{db_path}-wal"))
+        is_decryption_err = is_sqlite_or_db_err and any(
+            msg in err_msg_lower
+            for msg in (
+                "not a database",
+                "encrypted",
+                "malformed",
+                "authentication",
+                "password",
+                "passphrase",
+                "mac",
+                "bad decrypt",
+                "mismatch",
+                "wrong key",
+                "invalid key",
+                "decryption",
+                "cryptographic",
+                "failed to decrypt database",
             )
         )
+
+        if (
+            not is_decryption_err
+            and is_sqlite_or_db_err
+            and "disk i/o error" in err_msg_lower
+            and raw_key
+            and db_existed
+        ):
+            # Differentiate a transient Windows file lock error from a true decryption failure
+            # by copying the database (and WAL/SHM if they exist) to a temporary, isolated location
+            # and attempting to connect there.
+            import shutil
+            import tempfile
+            import uuid
+            from pathlib import Path
+
+            temp_dir = (
+                Path(tempfile.gettempdir())
+                / f"sortify_decryption_test_{uuid.uuid4().hex}"
+            )
+            try:
+                temp_dir.mkdir(parents=True, exist_ok=True)
+                temp_db_path = temp_dir / "db.db"
+                shutil.copy2(os.path.abspath(db_path), temp_db_path)
+                for ext in ("-wal", "-shm"):
+                    orig_ext = f"{os.path.abspath(db_path)}{ext}"
+                    if os.path.exists(orig_ext):
+                        try:
+                            shutil.copy2(orig_ext, f"{temp_db_path}{ext}")
+                        except Exception:
+                            pass
+
+                temp_conn = None
+                try:
+                    temp_conn = sqlite3.connect(
+                        str(temp_db_path), timeout=5.0, check_same_thread=False
+                    )
+                    with closing(temp_conn.cursor()) as cursor:
+                        cursor.execute(f"PRAGMA key = '{raw_key}'")
+                        cursor.execute("PRAGMA user_version;")
+                    is_decryption_err = False
+                except Exception as temp_e:
+                    temp_err_msg = str(temp_e).lower()
+                    if any(
+                        msg in temp_err_msg
+                        for msg in (
+                            "not a database",
+                            "encrypted",
+                            "malformed",
+                            "authentication",
+                            "password",
+                            "mac",
+                            "bad decrypt",
+                            "mismatch",
+                            "wrong key",
+                            "invalid key",
+                            "decryption",
+                            "cryptographic",
+                            "disk i/o error",
+                        )
+                    ):
+                        is_decryption_err = True
+                finally:
+                    if temp_conn:
+                        try:
+                            temp_conn.close()
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+            finally:
+                try:
+                    shutil.rmtree(temp_dir, ignore_errors=True)
+                except Exception:
+                    pass
+
+        # Clear all local variables to break traceback-held reference cycles on Windows GHA
+        conn = None
+        cursor = None
+        version = None
+        crypto = None
+        raw_key = None
+        cache_key = None
+        abs_path = None
 
         if is_decryption_err and not isinstance(
             e, (RuntimeError, SystemExit, KeyboardInterrupt)
