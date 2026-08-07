@@ -85,8 +85,11 @@ def test_shared_worker_pool_offline_enforcement():
     pool = SharedWorkerPool.get_instance()
 
     def task_trying_to_connect():
-        mock_socket = MagicMock()
-        socket.socket.connect(mock_socket, ("8.8.8.8", 53))
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            s.connect(("8.8.8.8", 53))
+        finally:
+            s.close()
 
     future = pool.submit(task_trying_to_connect)
     with pytest.raises(
@@ -95,8 +98,11 @@ def test_shared_worker_pool_offline_enforcement():
         future.result()
 
     def task_trying_to_connect_ex():
-        mock_socket = MagicMock()
-        socket.socket.connect_ex(mock_socket, ("8.8.8.8", 53))
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            s.connect_ex(("8.8.8.8", 53))
+        finally:
+            s.close()
 
     future_ex = pool.submit(task_trying_to_connect_ex)
     with pytest.raises(
@@ -140,21 +146,26 @@ def test_socket_sandbox_blocking_of_external_and_allow_localhost():
 
     apply_global_socket_sandbox()
 
-    # Create a mock socket
-    mock_socket = MagicMock()
-
     # Try connecting to external domain
     with pytest.raises(
         PermissionError, match="External network connections are blocked"
     ):
         with block_external_network():
-            safe_connect(mock_socket, ("8.8.8.8", 80))
+            s = socket.socket()
+            try:
+                safe_connect(s, ("8.8.8.8", 80))
+            finally:
+                s.close()
 
     with pytest.raises(
         PermissionError, match="External network connections are blocked"
     ):
         with block_external_network():
-            safe_connect_ex(mock_socket, ("8.8.8.8", 80))
+            s = socket.socket()
+            try:
+                safe_connect_ex(s, ("8.8.8.8", 80))
+            finally:
+                s.close()
 
     # Try connecting to localhost
     with (
@@ -162,28 +173,43 @@ def test_socket_sandbox_blocking_of_external_and_allow_localhost():
         patch("app.core.shared_registry._original_connect_ex") as mock_connect_ex,
     ):
         with block_external_network():
-            safe_connect(mock_socket, ("127.0.0.1", 8080))
-        mock_connect.assert_called_once_with(mock_socket, ("127.0.0.1", 8080))
+            s1 = socket.socket()
+            try:
+                safe_connect(s1, ("127.0.0.1", 8080))
+                mock_connect.assert_called_once_with(s1, ("127.0.0.1", 8080))
+            finally:
+                s1.close()
 
         with block_external_network():
-            safe_connect_ex(mock_socket, ("localhost", 8080))
-        mock_connect_ex.assert_called_once_with(mock_socket, ("localhost", 8080))
+            s2 = socket.socket()
+            try:
+                safe_connect_ex(s2, ("localhost", 8080))
+                mock_connect_ex.assert_called_once_with(s2, ("localhost", 8080))
+            finally:
+                s2.close()
 
 
 def test_socket_sandbox_inactive_allows_external_connections():
     """Verify that when block_external_network is not active, external connections are allowed."""
     from app.core.shared_registry import safe_connect, safe_connect_ex
 
-    mock_socket = MagicMock()
     with (
         patch("app.core.shared_registry._original_connect") as mock_connect,
         patch("app.core.shared_registry._original_connect_ex") as mock_connect_ex,
     ):
-        safe_connect(mock_socket, ("8.8.8.8", 80))
-        mock_connect.assert_called_once_with(mock_socket, ("8.8.8.8", 80))
+        s1 = socket.socket()
+        try:
+            safe_connect(s1, ("8.8.8.8", 80))
+            mock_connect.assert_called_once_with(s1, ("8.8.8.8", 80))
+        finally:
+            s1.close()
 
-        safe_connect_ex(mock_socket, ("8.8.8.8", 80))
-        mock_connect_ex.assert_called_once_with(mock_socket, ("8.8.8.8", 80))
+        s2 = socket.socket()
+        try:
+            safe_connect_ex(s2, ("8.8.8.8", 80))
+            mock_connect_ex.assert_called_once_with(s2, ("8.8.8.8", 80))
+        finally:
+            s2.close()
 
 
 def test_socket_sandbox_case_insensitivity_and_local_suffixes():
@@ -194,8 +220,6 @@ def test_socket_sandbox_case_insensitivity_and_local_suffixes():
         safe_connect,
         safe_connect_ex,
     )
-
-    mock_socket = MagicMock()
 
     # Test cases for local addresses (various cases and suffixes)
     assert _is_local_address("LOCALHOST") is True
@@ -210,13 +234,21 @@ def test_socket_sandbox_case_insensitivity_and_local_suffixes():
         patch("app.core.shared_registry._original_connect_ex") as mock_connect_ex,
     ):
         with block_external_network():
-            safe_connect(mock_socket, ("LOCALHOST", 8080))
-            mock_connect.assert_called_once_with(mock_socket, ("LOCALHOST", 8080))
+            s1 = socket.socket()
+            try:
+                safe_connect(s1, ("LOCALHOST", 8080))
+                mock_connect.assert_called_once_with(s1, ("LOCALHOST", 8080))
+            finally:
+                s1.close()
 
-            safe_connect_ex(mock_socket, ("my-machine.local", 8080))
-            mock_connect_ex.assert_called_once_with(
-                mock_socket, ("my-machine.local", 8080)
-            )
+            s2 = socket.socket()
+            try:
+                safe_connect_ex(s2, ("my-machine.local", 8080))
+                mock_connect_ex.assert_called_once_with(
+                    s2, ("my-machine.local", 8080)
+                )
+            finally:
+                s2.close()
 
 
 def test_check_ai_status_corrupt_or_missing(tmp_path, monkeypatch):
