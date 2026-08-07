@@ -163,24 +163,27 @@ def get_db_connection(db_path: str):
 
         # Ensure we only treat actual decryption or key mismatch errors as decryption failures,
         # propagating standard SQLite operational/locking errors normally.
-        is_decryption_err = is_sqlite_or_db_err and any(
-            msg in err_msg_lower
-            for msg in (
-                "not a database",
-                "encrypted",
-                "malformed",
-                "authentication",
-                "password",
-                "passphrase",
-                "mac",
-                "bad decrypt",
-                "mismatch",
-                "wrong key",
-                "invalid key",
-                "decryption",
-                "cryptographic",
-                "failed to decrypt database",
+        is_decryption_err = is_sqlite_or_db_err and (
+            any(
+                msg in err_msg_lower
+                for msg in (
+                    "not a database",
+                    "encrypted",
+                    "malformed",
+                    "authentication",
+                    "password",
+                    "passphrase",
+                    "mac",
+                    "bad decrypt",
+                    "mismatch",
+                    "wrong key",
+                    "invalid key",
+                    "decryption",
+                    "cryptographic",
+                    "failed to decrypt database",
+                )
             )
+            or ("disk i/o error" in err_msg_lower and raw_key)
         )
 
         if is_decryption_err and not isinstance(
