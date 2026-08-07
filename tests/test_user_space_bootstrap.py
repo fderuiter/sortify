@@ -1,7 +1,7 @@
 import io
+import os
 import sys
 import zipfile
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -97,15 +97,20 @@ def test_inject_bootstrap_paths():
 
 def test_bootstrap_binaries_bypass_if_cached(tmp_path):
     """Verify that if binaries are cached and verified, we bypass all download and fallback steps."""
-    from app.config import get_app_dir
 
     mock_app_dir = tmp_path / ".autosorter"
     mock_sqlcipher = mock_app_dir / "binaries" / "sqlcipher3"
     mock_sqlcipher.mkdir(parents=True)
 
     with (
-        patch("app.core.user_space_bootstrap.get_bootstrap_bin_dir", return_value=mock_app_dir / "binaries"),
-        patch("app.core.user_space_bootstrap.verify_sqlcipher_encryption", return_value=True),
+        patch(
+            "app.core.user_space_bootstrap.get_bootstrap_bin_dir",
+            return_value=mock_app_dir / "binaries",
+        ),
+        patch(
+            "app.core.user_space_bootstrap.verify_sqlcipher_encryption",
+            return_value=True,
+        ),
         patch("app.core.user_space_bootstrap.check_internet_connection") as mock_check,
         patch("importlib.util.find_spec") as mock_find,
     ):
@@ -131,10 +136,18 @@ def test_bootstrap_binaries_download_flow(tmp_path):
     mock_response.read.return_value = zip_data
 
     with (
-        patch("app.core.user_space_bootstrap.get_bootstrap_bin_dir", return_value=mock_bin_dir),
-        patch("app.core.user_space_bootstrap.check_internet_connection", return_value=True),
+        patch(
+            "app.core.user_space_bootstrap.get_bootstrap_bin_dir",
+            return_value=mock_bin_dir,
+        ),
+        patch(
+            "app.core.user_space_bootstrap.check_internet_connection", return_value=True
+        ),
         patch("urllib.request.urlopen", return_value=mock_response),
-        patch("app.core.user_space_bootstrap.verify_sqlcipher_encryption", return_value=True),
+        patch(
+            "app.core.user_space_bootstrap.verify_sqlcipher_encryption",
+            return_value=True,
+        ),
         patch("app.core.user_space_bootstrap.inject_bootstrap_paths"),
     ):
         res = bootstrap_binaries(force_download=True)
@@ -156,12 +169,20 @@ def test_bootstrap_binaries_download_failed_fallback(tmp_path):
     mock_spec.submodule_search_locations = [str(mock_local_sqlcipher_dir)]
 
     with (
-        patch("app.core.user_space_bootstrap.get_bootstrap_bin_dir", return_value=mock_bin_dir),
-        patch("app.core.user_space_bootstrap.check_internet_connection", return_value=True),
+        patch(
+            "app.core.user_space_bootstrap.get_bootstrap_bin_dir",
+            return_value=mock_bin_dir,
+        ),
+        patch(
+            "app.core.user_space_bootstrap.check_internet_connection", return_value=True
+        ),
         # force urlopen to fail
         patch("urllib.request.urlopen", side_effect=Exception("Download error")),
         patch("importlib.util.find_spec", return_value=mock_spec),
-        patch("app.core.user_space_bootstrap.verify_sqlcipher_encryption", return_value=True),
+        patch(
+            "app.core.user_space_bootstrap.verify_sqlcipher_encryption",
+            side_effect=[False, True],
+        ),
         patch("app.core.user_space_bootstrap.inject_bootstrap_paths"),
     ):
         res = bootstrap_binaries()
@@ -182,10 +203,19 @@ def test_bootstrap_binaries_failed_verification(tmp_path):
     mock_spec.submodule_search_locations = [str(mock_local_sqlcipher_dir)]
 
     with (
-        patch("app.core.user_space_bootstrap.get_bootstrap_bin_dir", return_value=mock_bin_dir),
-        patch("app.core.user_space_bootstrap.check_internet_connection", return_value=False),
+        patch(
+            "app.core.user_space_bootstrap.get_bootstrap_bin_dir",
+            return_value=mock_bin_dir,
+        ),
+        patch(
+            "app.core.user_space_bootstrap.check_internet_connection",
+            return_value=False,
+        ),
         patch("importlib.util.find_spec", return_value=mock_spec),
-        patch("app.core.user_space_bootstrap.verify_sqlcipher_encryption", return_value=False),
+        patch(
+            "app.core.user_space_bootstrap.verify_sqlcipher_encryption",
+            return_value=False,
+        ),
         patch("app.core.user_space_bootstrap.inject_bootstrap_paths"),
     ):
         with pytest.raises(RuntimeError, match="Startup verification failed"):
