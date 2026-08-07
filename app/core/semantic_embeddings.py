@@ -147,6 +147,25 @@ class SemanticEmbeddingManager:
         # Initialize global metadata and verify profile
         self.verify_active_model()
 
+    @property
+    def is_mock(self) -> bool:
+        """Returns True if the engine is running in mock state (no valid physical model file exists)."""
+        if not self.model_path:
+            return True
+
+        properties = get_active_model_properties(self.model_path)
+        is_valid = getattr(properties, "is_valid", False)
+
+        if is_valid != self.is_model_valid:
+            self.signature = properties[0]
+            self.dimensions = properties[1]
+            self.version = properties[2]
+            self.is_model_valid = is_valid
+            if is_valid:
+                self.verify_active_model()
+
+        return not self.is_model_valid
+
     def verify_active_model(self):
         """Check active ONNX model signature/dimensions against stored metadata.
 
