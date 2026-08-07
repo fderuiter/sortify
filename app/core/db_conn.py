@@ -182,6 +182,7 @@ def get_db_connection(db_path: str):
             )
         )
 
+        temp_conn = None
         if (
             not is_decryption_err
             and is_sqlite_or_db_err
@@ -190,22 +191,66 @@ def get_db_connection(db_path: str):
             and db_existed
         ):
             # Differentiate a transient Windows file lock error from a true decryption failure:
-            # If the database file (or WAL/SHM sidecars, if they exist) is locked by another process
-            # or concurrent test execution, trying to open it for reading in Python will raise a
-            # PermissionError or OSError. If we can successfully open all existing files for reading,
-            # we know there is no OS-level exclusive file lock/sharing violation, and the "disk i/o error"
-            # must be a true decryption/WAL-recovery failure.
+            # We copy the database (and WAL/SHM sidecars, if they exist) to a temporary, isolated
+            # directory by copying raw bytes directly (avoiding metadata/ACL copy failures on Windows)
+            # and trying to connect to the temp copy.
+            import tempfile
+            from pathlib import Path
+
             try:
-                # 1. Main DB file check
-                with open(os.path.abspath(db_path), "rb"):
-                    pass
-                # 2. Sidecar WAL/SHM file checks
-                for ext in ("-wal", "-shm"):
-                    sidecar = f"{os.path.abspath(db_path)}{ext}"
-                    if os.path.exists(sidecar):
-                        with open(sidecar, "rb"):
-                            pass
-                is_decryption_err = True
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    temp_db_path = Path(temp_dir) / "temp_db.db"
+                    with open(os.path.abspath(db_path), "rb") as f_in:
+                        with open(temp_db_path, "wb") as f_out:
+                            f_out.write(f_in.read())
+
+                    for ext in ("-wal", "-shm"):
+                        sidecar = f"{os.path.abspath(db_path)}{ext}"
+                        if os.path.exists(sidecar):
+                            try:
+                                with open(sidecar, "rb") as f_in:
+                                    with open(f"{temp_db_path}{ext}", "wb") as f_out:
+                                        f_out.write(f_in.read())
+                            except Exception:
+                                pass
+
+                    temp_conn = None
+                    try:
+                        temp_conn = sqlite3.connect(
+                            str(temp_db_path), timeout=5.0, check_same_thread=False
+                        )
+                        with closing(temp_conn.cursor()) as cursor:
+                            cursor.execute(f"PRAGMA key = '{raw_key}'")
+                            cursor.execute("PRAGMA user_version;")
+                        is_decryption_err = False
+                    except Exception as temp_e:
+                        temp_err_msg = str(temp_e).lower()
+                        if any(
+                            msg in temp_err_msg
+                            for msg in (
+                                "not a database",
+                                "encrypted",
+                                "malformed",
+                                "authentication",
+                                "password",
+                                "mac",
+                                "bad decrypt",
+                                "mismatch",
+                                "wrong key",
+                                "invalid key",
+                                "decryption",
+                                "cryptographic",
+                                "disk i/o error",
+                            )
+                        ):
+                            is_decryption_err = True
+                    finally:
+                        if temp_conn:
+                            try:
+                                temp_conn.close()
+                            except Exception:
+                                pass
+                            temp_conn = None
             except Exception:
                 is_decryption_err = False
 
