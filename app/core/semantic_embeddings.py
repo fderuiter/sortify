@@ -54,49 +54,52 @@ def get_active_model_properties(model_path: str | None) -> tuple[str, int, str]:
     version = "1.0.0"
     is_valid = True
 
-    if model_path and os.path.exists(model_path):
-        onnx_file = None
-        if os.path.isdir(model_path):
-            for root, _, files in os.walk(model_path):
-                for f in files:
-                    if f.lower().endswith(".onnx"):
-                        onnx_file = os.path.join(root, f)
+    if model_path is not None:
+        if os.path.exists(model_path):
+            onnx_file = None
+            if os.path.isdir(model_path):
+                for root, _, files in os.walk(model_path):
+                    for f in files:
+                        if f.lower().endswith(".onnx"):
+                            onnx_file = os.path.join(root, f)
+                            break
+                    if onnx_file:
                         break
-                if onnx_file:
-                    break
-        elif model_path.lower().endswith(".onnx"):
-            onnx_file = model_path
+            elif model_path.lower().endswith(".onnx"):
+                onnx_file = model_path
 
-        if onnx_file and os.path.exists(onnx_file):
-            hasher = hashlib.sha256()
-            try:
-                with open(onnx_file, "rb") as f:
-                    for chunk in iter(lambda: f.read(65536), b""):
-                        hasher.update(chunk)
-                signature = hasher.hexdigest()
-            except Exception:
-                signature = f"sig_{os.path.basename(onnx_file)}"
-
-            # Try reading dimensions from the model if onnxruntime is available
-            try:
-                import onnxruntime as ort
-
-                sess = ort.InferenceSession(onnx_file)
-                out = sess.get_outputs()[0]
-                if out.shape and len(out.shape) >= 2:
-                    dimensions = out.shape[-1]
-                    if not isinstance(dimensions, int):
-                        dimensions = 384
-            except Exception:
-                is_valid = False
-
-            version_file = os.path.join(os.path.dirname(onnx_file), "version.txt")
-            if os.path.exists(version_file):
+            if onnx_file and os.path.exists(onnx_file):
+                hasher = hashlib.sha256()
                 try:
-                    with open(version_file, "r") as vf:
-                        version = vf.read().strip()
+                    with open(onnx_file, "rb") as f:
+                        for chunk in iter(lambda: f.read(65536), b""):
+                            hasher.update(chunk)
+                    signature = hasher.hexdigest()
                 except Exception:
-                    pass
+                    signature = f"sig_{os.path.basename(onnx_file)}"
+
+                # Try reading dimensions from the model if onnxruntime is available
+                try:
+                    import onnxruntime as ort
+
+                    sess = ort.InferenceSession(onnx_file)
+                    out = sess.get_outputs()[0]
+                    if out.shape and len(out.shape) >= 2:
+                        dimensions = out.shape[-1]
+                        if not isinstance(dimensions, int):
+                            dimensions = 384
+                except Exception:
+                    is_valid = False
+
+                version_file = os.path.join(os.path.dirname(onnx_file), "version.txt")
+                if os.path.exists(version_file):
+                    try:
+                        with open(version_file, "r") as vf:
+                            version = vf.read().strip()
+                    except Exception:
+                        pass
+            else:
+                is_valid = False
         else:
             is_valid = False
 
