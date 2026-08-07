@@ -118,6 +118,11 @@ def get_db_connection(db_path: str):
             or "disk i/o error" in err_msg
             or "malformed" in err_msg
             or "decryption failed" in err_msg
+            or "decryption" in err_msg
+            or "invalid decrypt" in err_msg
+            or "cryptographic" in err_msg
+            or "invalid key" in err_msg
+            or "wrong key" in err_msg
         ):
             logger.error(
                 "Database decryption failed: The database is encrypted or is not a valid database. "
