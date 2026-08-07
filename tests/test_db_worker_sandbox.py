@@ -1,27 +1,9 @@
 import socket
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
 from app.core.db_worker import DBWorker
-
-
-@pytest.fixture(autouse=True)
-def mock_socket_class():
-    with patch("socket.socket") as mock_sock_cls:
-
-        def create_mock_socket(*args, **kwargs):
-            from app.core.shared_registry import safe_connect, safe_connect_ex
-
-            mock_inst = MagicMock()
-            mock_inst.connect.side_effect = lambda addr: safe_connect(mock_inst, addr)
-            mock_inst.connect_ex.side_effect = lambda addr: safe_connect_ex(
-                mock_inst, addr
-            )
-            return mock_inst
-
-        mock_sock_cls.side_effect = create_mock_socket
-        yield mock_sock_cls
 
 
 def test_db_worker_sandbox_blocks_external_connections():
