@@ -328,37 +328,43 @@ class IncrementalAnalyzer:
                     from sklearn.metrics.pairwise import cosine_similarity
 
                     # Check if embedding reconstruction is active
-                    use_semantic = getattr(
-                        self.embedding_manager, "is_model_valid", True
-                    )
-                    if self.embedding_manager.is_reconstruction_active():
+                    if self.embedding_manager.is_mock:
                         use_semantic = False
                         logging.info(
-                            "Background reconstruction active, falling back to standard text similarity."
+                            "Semantic engine in mock state, bypassing semantic routing and using text similarity."
                         )
                     else:
-                        # Try to load vector embeddings for historical docs
-                        hist_vectors = []
-                        for doc in historical_docs:
-                            vector = self.embedding_manager.get_vector(
-                                base_dir, doc["filepath"]
+                        use_semantic = getattr(
+                            self.embedding_manager, "is_model_valid", True
+                        )
+                        if self.embedding_manager.is_reconstruction_active():
+                            use_semantic = False
+                            logging.info(
+                                "Background reconstruction active, falling back to standard text similarity."
                             )
-                            if (
-                                not vector
-                                or not self.embedding_manager.validate_vector_dimension(
-                                    vector
+                        else:
+                            # Try to load vector embeddings for historical docs
+                            hist_vectors = []
+                            for doc in historical_docs:
+                                vector = self.embedding_manager.get_vector(
+                                    base_dir, doc["filepath"]
                                 )
-                            ):
-                                use_semantic = False
-                                logging.info(
-                                    "Obsolete/missing vectors or dimension mismatch detected. Initiating cleanup and background recovery."
-                                )
-                                # Re-verify model to perform purge of outdated vectors
-                                self.embedding_manager.verify_active_model()
-                                # Trigger background reconstruction
-                                self.embedding_manager.trigger_reconstruction(base_dir)
-                                break
-                            hist_vectors.append(vector)
+                                if (
+                                    not vector
+                                    or not self.embedding_manager.validate_vector_dimension(
+                                        vector
+                                    )
+                                ):
+                                    use_semantic = False
+                                    logging.info(
+                                        "Obsolete/missing vectors or dimension mismatch detected. Initiating cleanup and background recovery."
+                                    )
+                                    # Re-verify model to perform purge of outdated vectors
+                                    self.embedding_manager.verify_active_model()
+                                    # Trigger background reconstruction
+                                    self.embedding_manager.trigger_reconstruction(base_dir)
+                                    break
+                                hist_vectors.append(vector)
 
                     if use_semantic:
                         # Generate on-the-fly embeddings for AI files
@@ -442,7 +448,11 @@ class IncrementalAnalyzer:
 
             self._last_reconstruction_error = 0.0
 
-            if self.strategy_name:
+            active_strategy_name = self.strategy_name
+            if self.strategy_name and self.embedding_manager.is_mock:
+                active_strategy_name = "default"
+
+            if active_strategy_name:
                 max_depth = (
                     getattr(runtime_settings, "MAX_DEPTH", 5) if runtime_settings else 5
                 )
@@ -452,7 +462,7 @@ class IncrementalAnalyzer:
                     else 3
                 )
 
-                strategy = clustering_registry.get_strategy(self.strategy_name)
+                strategy = clustering_registry.get_strategy(active_strategy_name)
                 if strategy:
                     if hasattr(strategy, "set_db_context"):
                         strategy.set_db_context(self.db, base_dir)
@@ -460,28 +470,7 @@ class IncrementalAnalyzer:
                         strategy.db = self.db
                         strategy.base_dir = base_dir
 
-                    # Check if local ONNX model files are present and not corrupt
-                    has_onnx = False
-                    if self.model_path and os.path.exists(self.model_path):
-                        if os.path.isdir(self.model_path):
-                            for root, _, files in os.walk(self.model_path):
-                                for f_item in files:
-                                    if f_item.lower().endswith(".onnx"):
-                                        if (
-                                            os.path.getsize(os.path.join(root, f_item))
-                                            > 1024
-                                        ):
-                                            has_onnx = True
-                                            break
-                                if has_onnx:
-                                    break
-                        elif self.model_path.lower().endswith(".onnx"):
-                            if os.path.getsize(self.model_path) > 1024:
-                                has_onnx = True
-
-                    use_semantic = has_onnx and getattr(
-                        self.embedding_manager, "is_model_valid", True
-                    )
+                    use_semantic = not self.embedding_manager.is_mock
                     pre_fetched_vectors = None
 
                     if use_semantic and ai_filenames:
