@@ -328,7 +328,9 @@ class IncrementalAnalyzer:
                     from sklearn.metrics.pairwise import cosine_similarity
 
                     # Check if embedding reconstruction is active
-                    use_semantic = getattr(self.embedding_manager, "is_model_valid", True)
+                    use_semantic = getattr(
+                        self.embedding_manager, "is_model_valid", True
+                    )
                     if self.embedding_manager.is_reconstruction_active():
                         use_semantic = False
                         logging.info(
@@ -477,7 +479,9 @@ class IncrementalAnalyzer:
                             if os.path.getsize(self.model_path) > 1024:
                                 has_onnx = True
 
-                    use_semantic = has_onnx and getattr(self.embedding_manager, "is_model_valid", True)
+                    use_semantic = has_onnx and getattr(
+                        self.embedding_manager, "is_model_valid", True
+                    )
                     pre_fetched_vectors = None
 
                     if use_semantic and ai_filenames:

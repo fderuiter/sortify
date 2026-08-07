@@ -10,6 +10,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from sklearn.feature_extraction.text import TfidfVectorizer
 
 from app.core.analyzer import IncrementalAnalyzer
 from app.core.analyzer_strategies import (
@@ -19,13 +20,11 @@ from app.core.db import Database
 from app.core.db_worker import DBWorker
 
 
-from sklearn.feature_extraction.text import TfidfVectorizer
-
-
 @pytest.fixture
 def temp_env():
     """Create a temporary test environment with database and mock ONNX model."""
     import shutil
+
     tmp_dir = tempfile.mkdtemp()
     try:
         tmp_path = Path(tmp_dir)
