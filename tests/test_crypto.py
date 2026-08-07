@@ -377,18 +377,25 @@ def test_decryption_failure_safe_error_propagation(tmp_path, monkeypatch, caplog
         with pytest.raises(Exception) as exc_info:
             db_conn.get_db_connection(str(db_path))
 
-    # Deterministically clear connection cache and run GC to release any file locks on Windows
+    # Safe extraction of the exception value and strings to prevent any reference cycle holding locks
+    exc_val = exc_info.value
+    exc_str = str(exc_val)
+    exc_type = type(exc_val)
+    module_name = getattr(exc_type, "__module__", "") or ""
+    module_name = str(module_name).lower()
+    class_name = getattr(exc_type, "__name__", "") or ""
+
+    is_instance_db_err = isinstance(exc_val, (db_conn.sqlite3.Error, sqlite3.Error))
+
+    # Explicitly clear exception and traceback reference to allow GC to release Windows file locks
+    del exc_info
+    del exc_val
     db_conn.clear_connection_cache()
     gc.collect()
 
-    # Safe extraction of module and class names to prevent AttributeError when __module__ is None
-    module_name = getattr(type(exc_info.value), "__module__", "") or ""
-    module_name = str(module_name).lower()
-    class_name = getattr(type(exc_info.value), "__name__", "") or ""
-
     # Verify that the exception raised is indeed a DatabaseError variant
     is_database_error = (
-        isinstance(exc_info.value, (db_conn.sqlite3.Error, sqlite3.Error))
+        is_instance_db_err
         or "sqlite" in module_name
         or "sqlcipher" in module_name
         or class_name == "Error"
@@ -404,7 +411,7 @@ def test_decryption_failure_safe_error_propagation(tmp_path, monkeypatch, caplog
             )
         )
         or any(
-            msg in str(exc_info.value).lower()
+            msg in exc_str.lower()
             for msg in (
                 "not a database",
                 "encrypted",
@@ -420,11 +427,11 @@ def test_decryption_failure_safe_error_propagation(tmp_path, monkeypatch, caplog
             )
         )
     )
-    assert is_database_error, f"Expected a database error, got {type(exc_info.value)}"
+    assert is_database_error, f"Expected a database error, got {exc_type}"
 
     # 3. Verify that the descriptive exception was raised
-    assert "Failed to decrypt database" in str(exc_info.value)
-    assert "OS keyring" in str(exc_info.value)
+    assert "Failed to decrypt database" in exc_str
+    assert "OS keyring" in exc_str
 
     # 4. Verify that NO database files were deleted, modified, or truncated on disk by our application
     assert db_path.exists()
