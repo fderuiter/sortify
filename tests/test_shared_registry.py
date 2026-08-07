@@ -244,9 +244,7 @@ def test_socket_sandbox_case_insensitivity_and_local_suffixes():
             s2 = socket.socket()
             try:
                 safe_connect_ex(s2, ("my-machine.local", 8080))
-                mock_connect_ex.assert_called_once_with(
-                    s2, ("my-machine.local", 8080)
-                )
+                mock_connect_ex.assert_called_once_with(s2, ("my-machine.local", 8080))
             finally:
                 s2.close()
 
