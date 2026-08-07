@@ -1,5 +1,6 @@
 import asyncio
 import os
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -10,10 +11,38 @@ from app.core.session import scan_abandoned_sessions_async
 from app.ui.app import AutoSorterApp
 
 
+def resolve_test_path(path):
+    """Resolve and canonicalize paths consistently across different operating systems.
+
+    On Windows (win32), it resolves short 8.3 names and strips the extended-length prefixes.
+    On non-Windows platforms (macOS/Linux), it resolves physical symlinks (like /var or /tmp).
+    """
+    import sys
+    path_str = str(path)
+    abs_path = os.path.normpath(os.path.abspath(path_str))
+    if sys.platform == "win32":
+        try:
+            abs_path = os.path.normpath(os.path.realpath(abs_path))
+        except Exception:
+            pass
+        if abs_path.startswith("\\\\?\\UNC\\"):
+            abs_path = "\\" + abs_path[7:]
+        elif abs_path.startswith("\\\\?\\"):
+            abs_path = abs_path[4:]
+        if len(abs_path) > 1 and abs_path[1] == ":":
+            abs_path = abs_path[0].upper() + abs_path[1:]
+    else:
+        try:
+            abs_path = os.path.normpath(os.path.realpath(abs_path))
+        except Exception:
+            pass
+    return abs_path
+
+
 @pytest.fixture
 def mock_session_base(tmp_path, monkeypatch):
     """Isolate the session base directory so it scans from a known clean temp location."""
-    session_base = tmp_path / "autosorter_sessions"
+    session_base = Path(resolve_test_path(tmp_path / "autosorter_sessions"))
     session_base.mkdir(parents=True, exist_ok=True)
 
     def mock_get_session_base_dir():
@@ -28,6 +57,7 @@ def mock_session_base(tmp_path, monkeypatch):
 @pytest.mark.anyio
 async def test_scan_failed_session_with_trapped_files(mock_session_base, tmp_path):
     """Verify that scan_abandoned_sessions_async properly identifies failed sessions with unrecovered files."""
+    resolved_tmp = Path(resolve_test_path(tmp_path))
     session_id = "failed-session-123"
     session_dir = mock_session_base / session_id
     session_dir.mkdir()
@@ -41,13 +71,13 @@ async def test_scan_failed_session_with_trapped_files(mock_session_base, tmp_pat
             )
             conn.execute(
                 "INSERT INTO sessions VALUES (?, ?, ?, ?)",
-                (session_id, 100.0, str(tmp_path / "user_data"), "failed"),
+                (session_id, 100.0, str(resolved_tmp / "user_data"), "failed"),
             )
     finally:
         conn.close()
 
     # Create safety folder inside user_data
-    user_data = tmp_path / "user_data"
+    user_data = resolved_tmp / "user_data"
     user_data.mkdir()
     branch_dir = user_data / ".branches" / session_id
     branch_dir.mkdir(parents=True)
@@ -69,6 +99,7 @@ async def test_scan_failed_session_with_trapped_files(mock_session_base, tmp_pat
 @pytest.mark.anyio
 async def test_scan_does_not_prompt_if_safety_folder_empty(mock_session_base, tmp_path):
     """Verify that the system does not identify failed sessions if the safety folder contains no files."""
+    resolved_tmp = Path(resolve_test_path(tmp_path))
     session_id = "empty-session-456"
     session_dir = mock_session_base / session_id
     session_dir.mkdir()
@@ -82,13 +113,13 @@ async def test_scan_does_not_prompt_if_safety_folder_empty(mock_session_base, tm
             )
             conn.execute(
                 "INSERT INTO sessions VALUES (?, ?, ?, ?)",
-                (session_id, 100.0, str(tmp_path / "user_data"), "failed"),
+                (session_id, 100.0, str(resolved_tmp / "user_data"), "failed"),
             )
     finally:
         conn.close()
 
     # Create safety folder inside user_data but KEEP IT EMPTY
-    user_data = tmp_path / "user_data"
+    user_data = resolved_tmp / "user_data"
     user_data.mkdir()
     branch_dir = user_data / ".branches" / session_id
     branch_dir.mkdir(parents=True)
@@ -101,6 +132,7 @@ async def test_scan_does_not_prompt_if_safety_folder_empty(mock_session_base, tm
 @pytest.mark.anyio
 async def test_ui_recovery_wizard_trigger(mock_session_base, tmp_path):
     """Verify that AutoSorterApp triggers the show_recovery_wizard on startup when an eligible session is found."""
+    resolved_tmp = Path(resolve_test_path(tmp_path))
     settings = AppSettings()
     settings.AI_CONSENT_GRANTED = False
 
@@ -117,12 +149,12 @@ async def test_ui_recovery_wizard_trigger(mock_session_base, tmp_path):
             )
             conn.execute(
                 "INSERT INTO sessions VALUES (?, ?, ?, ?)",
-                (session_id, 100.0, str(tmp_path / "user_data"), "failed"),
+                (session_id, 100.0, str(resolved_tmp / "user_data"), "failed"),
             )
     finally:
         conn.close()
 
-    user_data = tmp_path / "user_data"
+    user_data = resolved_tmp / "user_data"
     user_data.mkdir()
     branch_dir = user_data / ".branches" / session_id
     branch_dir.mkdir(parents=True)
@@ -150,6 +182,7 @@ async def test_ui_recovery_wizard_trigger(mock_session_base, tmp_path):
 @pytest.mark.anyio
 async def test_wizard_file_recovery_original_location(mock_session_base, tmp_path):
     """Verify the file recovery logic (Restore to Original Folders) works correctly and resolves duplicate names."""
+    resolved_tmp = Path(resolve_test_path(tmp_path))
     settings = AppSettings()
     settings.AI_CONSENT_GRANTED = False
 
@@ -167,13 +200,13 @@ async def test_wizard_file_recovery_original_location(mock_session_base, tmp_pat
             )
             conn.execute(
                 "INSERT INTO sessions VALUES (?, ?, ?, ?)",
-                (session_id, 100.0, str(tmp_path / "user_data"), "failed"),
+                (session_id, 100.0, str(resolved_tmp / "user_data"), "failed"),
             )
     finally:
         conn.close()
 
     # Prepare directories & trapped files
-    user_data = tmp_path / "user_data"
+    user_data = resolved_tmp / "user_data"
     user_data.mkdir()
 
     # Pre-create a file in user_data to trigger duplicate resolving name conflict rule
@@ -292,6 +325,7 @@ async def test_wizard_file_recovery_original_location(mock_session_base, tmp_pat
 @pytest.mark.anyio
 async def test_wizard_file_recovery_custom_location(mock_session_base, tmp_path):
     """Verify that exporting to a custom folder works correctly, preserving structure."""
+    resolved_tmp = Path(resolve_test_path(tmp_path))
     settings = AppSettings()
     settings.AI_CONSENT_GRANTED = False
 
@@ -308,12 +342,12 @@ async def test_wizard_file_recovery_custom_location(mock_session_base, tmp_path)
             )
             conn.execute(
                 "INSERT INTO sessions VALUES (?, ?, ?, ?)",
-                (session_id, 100.0, str(tmp_path / "user_data"), "failed"),
+                (session_id, 100.0, str(resolved_tmp / "user_data"), "failed"),
             )
     finally:
         conn.close()
 
-    user_data = tmp_path / "user_data"
+    user_data = resolved_tmp / "user_data"
     user_data.mkdir()
 
     branch_dir = user_data / ".branches" / session_id
@@ -325,7 +359,7 @@ async def test_wizard_file_recovery_custom_location(mock_session_base, tmp_path)
 
     app = AutoSorterApp(settings)
 
-    custom_export_dir = tmp_path / "my_custom_recovery"
+    custom_export_dir = resolved_tmp / "my_custom_recovery"
 
     session_info = {
         "session_id": session_id,
