@@ -78,9 +78,15 @@ def test_semantic_clustering_lazy_generation_and_caching(temp_env):
     # Initialize analyzer with our mock model_path and mock get_active_model_properties
     from app.core.semantic_embeddings import ModelProperties
 
-    with patch(
-        "app.core.semantic_embeddings.get_active_model_properties",
-        return_value=ModelProperties("valid_sig", 384, "1.0.0", is_valid=True),
+    with (
+        patch(
+            "app.core.semantic_embeddings.get_active_model_properties",
+            return_value=ModelProperties("valid_sig", 384, "1.0.0", is_valid=True),
+        ),
+        patch(
+            "onnxruntime.InferenceSession",
+            side_effect=Exception("Mock InferenceSession failure for lazy caching test"),
+        ),
     ):
         analyzer = IncrementalAnalyzer(
             max_folders=2,

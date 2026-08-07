@@ -428,6 +428,10 @@ def test_real_onnx_pipeline_graceful_fallback(db, temp_dir):
             side_effect=ImportError("Transformers library not installed."),
         ),
         patch("app.core.semantic_embeddings.get_active_model_properties") as mock_props,
+        patch(
+            "onnxruntime.InferenceSession",
+            side_effect=Exception("Mock InferenceSession failure"),
+        ),
     ):
         mock_props.return_value = ("faulty_sig_hash", 384, "1.0.0")
         manager = SemanticEmbeddingManager(db, model_path=str(model_dir))
