@@ -11,6 +11,25 @@ from app.core.env_helper import run_background_process
 logger = logging.getLogger(__name__)
 
 
+# Standardized responsive fluid layout helpers
+STANDARD_DIALOG_CARD_MD = "w-full min-w-[320px] max-w-md p-6"
+STANDARD_DIALOG_CARD_LG = "w-full min-w-[320px] max-w-lg p-6 gap-4"
+STANDARD_DIALOG_CARD_XL = "w-full min-w-[320px] max-w-4xl p-6"
+
+
+def get_dialog_card_classes(size="md", extra=""):
+    """Get standardized, fluid-width layout classes for dialog cards to ensure responsiveness."""
+    classes = {
+        "md": STANDARD_DIALOG_CARD_MD,
+        "lg": STANDARD_DIALOG_CARD_LG,
+        "xl": STANDARD_DIALOG_CARD_XL,
+    }
+    base = classes.get(size, STANDARD_DIALOG_CARD_MD)
+    if extra:
+        return f"{base} {extra}"
+    return base
+
+
 def ask_directory_async(
     parent, title, callback, disable_ui_callback, enable_ui_callback
 ):
@@ -174,7 +193,7 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {{
                                     type="warning",
                                 )
 
-                            with ui.dialog() as dialog, ui.card().classes("w-96 p-6"):
+                            with ui.dialog() as dialog, ui.card().classes(get_dialog_card_classes("md")):
                                 ui.label(title).classes("text-lg font-bold mb-4")
                                 ui.label(
                                     "Please enter the directory path manually:"
@@ -210,7 +229,7 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {{
                                     if callback:
                                         callback("")
 
-                                with ui.row().classes("w-full justify-end gap-2"):
+                                with ui.row().classes("w-full justify-end gap-2 flex-wrap"):
                                     ui.button("Cancel", on_click=on_cancel).classes(
                                         "bg-gray-200 text-black"
                                     )

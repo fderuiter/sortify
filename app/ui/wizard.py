@@ -4,10 +4,12 @@ import asyncio
 
 from nicegui import ui
 
+from app.ui.dialog_helper import get_dialog_card_classes
+
 
 def show_wizard(parent_app, settings):
     """Show the initial setup wizard."""
-    with ui.dialog() as dialog, ui.card().classes("w-96 p-6"):
+    with ui.dialog() as dialog, ui.card().classes(get_dialog_card_classes("md")):
         ui.label("AI Features Setup").classes("text-xl font-bold mb-4").props(
             'aria-label="Setup Wizard Title"'
         )
@@ -47,7 +49,7 @@ def show_wizard(parent_app, settings):
             ui.notify("Offline mode enabled.", type="info")
             dialog.close()
 
-        with ui.row().classes("w-full justify-between"):
+        with ui.row().classes("w-full justify-between flex-wrap gap-2"):
             ui.button("Accept & Download", on_click=accept).classes(
                 "bg-green-500 text-white"
             ).props('aria-label="Accept and Download Button"')
