@@ -11,10 +11,14 @@ from app.core.mover import execute_moves
 
 def resolve_test_path(path):
     path_str = str(path)
+    abs_path = os.path.normpath(os.path.abspath(path_str))
     if sys.platform == "win32":
-        return os.path.normpath(os.path.abspath(path_str))
+        abs_path = os.path.normpath(os.path.realpath(abs_path))
+        if len(abs_path) > 1 and abs_path[1] == ":":
+            abs_path = abs_path[0].upper() + abs_path[1:]
     else:
-        return os.path.normpath(os.path.realpath(os.path.abspath(path_str)))
+        abs_path = os.path.normpath(os.path.realpath(abs_path))
+    return abs_path
 
 
 @pytest.fixture(autouse=True)
