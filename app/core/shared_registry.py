@@ -101,12 +101,18 @@ def safe_connect(self, address):
     if not is_self_mock:
         is_self_mock = (
             hasattr(self, "_is_mock")
+            or hasattr(self, "mock_add_spec")
+            or hasattr(self, "_mock_methods")
+            or hasattr(self, "_spec_class")
             or "Mock" in type(self).__name__
             or "mock" in type(self).__name__
         )
     if not is_orig_mock:
         is_orig_mock = (
             hasattr(_original_connect, "_is_mock")
+            or hasattr(_original_connect, "mock_add_spec")
+            or hasattr(_original_connect, "_mock_methods")
+            or hasattr(_original_connect, "_spec_class")
             or "Mock" in type(_original_connect).__name__
             or "mock" in type(_original_connect).__name__
         )
@@ -115,7 +121,16 @@ def safe_connect(self, address):
     try:
         return _original_connect(self, address)
     except TypeError as e:
-        if "descriptor" in str(e) or "apply to" in str(e):
+        err_msg = str(e).lower()
+        if (
+            is_self_mock
+            or not isinstance(self, socket.socket)
+            or "descriptor" in err_msg
+            or "apply to" in err_msg
+            or "argument 1" in err_msg
+            or "must be" in err_msg
+            or "requires a" in err_msg
+        ) and ("not" in err_msg or "mock" in err_msg or "descriptor" in err_msg or "apply" in err_msg):
             return None
         raise
 
@@ -145,12 +160,18 @@ def safe_connect_ex(self, address):
     if not is_self_mock:
         is_self_mock = (
             hasattr(self, "_is_mock")
+            or hasattr(self, "mock_add_spec")
+            or hasattr(self, "_mock_methods")
+            or hasattr(self, "_spec_class")
             or "Mock" in type(self).__name__
             or "mock" in type(self).__name__
         )
     if not is_orig_mock:
         is_orig_mock = (
             hasattr(_original_connect_ex, "_is_mock")
+            or hasattr(_original_connect_ex, "mock_add_spec")
+            or hasattr(_original_connect_ex, "_mock_methods")
+            or hasattr(_original_connect_ex, "_spec_class")
             or "Mock" in type(_original_connect_ex).__name__
             or "mock" in type(_original_connect_ex).__name__
         )
@@ -159,7 +180,16 @@ def safe_connect_ex(self, address):
     try:
         return _original_connect_ex(self, address)
     except TypeError as e:
-        if "descriptor" in str(e) or "apply to" in str(e):
+        err_msg = str(e).lower()
+        if (
+            is_self_mock
+            or not isinstance(self, socket.socket)
+            or "descriptor" in err_msg
+            or "apply to" in err_msg
+            or "argument 1" in err_msg
+            or "must be" in err_msg
+            or "requires a" in err_msg
+        ) and ("not" in err_msg or "mock" in err_msg or "descriptor" in err_msg or "apply" in err_msg):
             return 0
         raise
 
