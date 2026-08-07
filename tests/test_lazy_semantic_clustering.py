@@ -75,20 +75,23 @@ def test_semantic_clustering_lazy_generation_and_caching(temp_env):
         model_path=model_path,
     )
 
-    # 2. Run the sorting plan
-    plan = analyzer.generate_sorting_plan(base_dir)
+    try:
+        # 2. Run the sorting plan
+        plan = analyzer.generate_sorting_plan(base_dir)
 
-    # 3. Verify that new vector embeddings were generated on-the-fly and CACHED to the DB!
-    for item in documents_to_add:
-        filepath = item[1]
-        cached_vector = db.get_document_vector(base_dir, filepath)
-        assert cached_vector is not None
-        assert len(cached_vector) == analyzer.embedding_manager.dimensions
+        # 3. Verify that new vector embeddings were generated on-the-fly and CACHED to the DB!
+        for item in documents_to_add:
+            filepath = item[1]
+            cached_vector = db.get_document_vector(base_dir, filepath)
+            assert cached_vector is not None
+            assert len(cached_vector) == analyzer.embedding_manager.dimensions
 
-    # 4. Verify that the sorting plan grouped related documents semantically
-    # "pizza receipt" files should be clustered together, "consulting invoice" files together
-    assert isinstance(plan, dict)
-    assert len(plan) > 0
+        # 4. Verify that the sorting plan grouped related documents semantically
+        # "pizza receipt" files should be clustered together, "consulting invoice" files together
+        assert isinstance(plan, dict)
+        assert len(plan) > 0
+    finally:
+        analyzer.close()
 
 
 def test_fallback_to_tfidf_when_onnx_missing_or_corrupt(temp_env):
@@ -121,15 +124,22 @@ def test_fallback_to_tfidf_when_onnx_missing_or_corrupt(temp_env):
         model_path="non_existent_directory_path",
     )
 
-    # Track if standard TF-IDF vectorizer gets used
-    with patch(
-        "sklearn.feature_extraction.text.TfidfVectorizer.fit_transform",
-        side_effect=ValueError("TF-IDF Used"),
-    ) as mock_tfidf:
-        try:
-            analyzer.generate_sorting_plan(base_dir)
-        except ValueError as e:
-            assert str(e) == "TF-IDF Used"
+    try:
+        # Track if standard TF-IDF vectorizer gets used. We raise a direct BaseException
+        # subclass to bypass any catch-all Exception blocks within the strategy code.
+        class TFIDFFallbackTriggered(BaseException):
+            pass
+
+        with patch(
+            "sklearn.feature_extraction.text.TfidfVectorizer.fit_transform",
+            side_effect=TFIDFFallbackTriggered("TF-IDF Used"),
+        ) as mock_tfidf:
+            try:
+                analyzer.generate_sorting_plan(base_dir)
+            except TFIDFFallbackTriggered as e:
+                assert str(e) == "TF-IDF Used"
+    finally:
+        analyzer.close()
 
 
 def test_dense_vector_calculations_in_hierarchical_clustering():
