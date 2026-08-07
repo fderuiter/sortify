@@ -14,6 +14,10 @@ def resolve_test_path(path):
     abs_path = os.path.normpath(os.path.abspath(path_str))
     if sys.platform == "win32":
         abs_path = os.path.normpath(os.path.realpath(abs_path))
+        if abs_path.startswith("\\\\?\\UNC\\"):
+            abs_path = "\\" + abs_path[7:]
+        elif abs_path.startswith("\\\\?\\"):
+            abs_path = abs_path[4:]
         if len(abs_path) > 1 and abs_path[1] == ":":
             abs_path = abs_path[0].upper() + abs_path[1:]
     else:

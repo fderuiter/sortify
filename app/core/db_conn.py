@@ -62,6 +62,10 @@ def get_db_connection(db_path: str):
             abs_path = os.path.normpath(os.path.realpath(abs_path))
         except Exception:
             pass
+        if abs_path.startswith("\\\\?\\UNC\\"):
+            abs_path = "\\" + abs_path[7:]
+        elif abs_path.startswith("\\\\?\\"):
+            abs_path = abs_path[4:]
         if len(abs_path) > 1 and abs_path[1] == ":":
             abs_path = abs_path[0].upper() + abs_path[1:]
     else:

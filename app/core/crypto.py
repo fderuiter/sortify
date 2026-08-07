@@ -22,6 +22,10 @@ class SessionCrypto:
                     abs_p = os.path.normpath(os.path.realpath(abs_p))
                 except Exception:
                     pass
+                if abs_p.startswith("\\\\?\\UNC\\"):
+                    abs_p = "\\" + abs_p[7:]
+                elif abs_p.startswith("\\\\?\\"):
+                    abs_p = abs_p[4:]
                 if len(abs_p) > 1 and abs_p[1] == ":":
                     abs_p = abs_p[0].upper() + abs_p[1:]
             else:
