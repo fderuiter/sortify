@@ -109,40 +109,14 @@ def get_db_connection(db_path: str):
     try:
         conn = _open_conn(db_path)
     except sqlite3.Error as e:
-        err_msg = str(e).lower()
-        if (
-            "file is not a database" in err_msg
-            or "file is encrypted" in err_msg
-            or "not a database" in err_msg
-            or "encrypted" in err_msg
-            or "disk i/o error" in err_msg
-            or "malformed" in err_msg
-            or "decryption failed" in err_msg
-            or "decryption" in err_msg
-            or "invalid decrypt" in err_msg
-            or "cryptographic" in err_msg
-            or "invalid key" in err_msg
-            or "wrong key" in err_msg
-            or "authentication" in err_msg
-            or "password" in err_msg
-            or "passphrase" in err_msg
-            or "mac" in err_msg
-            or "bad decrypt" in err_msg
-            or "invalid password" in err_msg
-            or "key mismatch" in err_msg
-            or "mismatched key" in err_msg
-        ):
-            logger.error(
-                "Database decryption failed: The database is encrypted or is not a valid database. "
-                "This indicates a locked OS keyring, mismatched cryptographic keys, or decryption failure. "
-                f"Database path: '{db_path}'. Error detail: {e}"
-            )
-            raise sqlite3.DatabaseError(
-                f"Failed to decrypt database at '{db_path}'. Please ensure your OS keyring is unlocked and configured correctly."
-            ) from e
-        else:
-            logger.error(f"Database error encountered: {e}. Database path: '{db_path}'")
-            raise
+        logger.error(
+            "Database decryption failed: The database is encrypted or is not a valid database. "
+            "This indicates a locked OS keyring, mismatched cryptographic keys, or decryption failure. "
+            f"Database path: '{db_path}'. Error detail: {e}"
+        )
+        raise sqlite3.DatabaseError(
+            f"Failed to decrypt database at '{db_path}'. Please ensure your OS keyring is unlocked and configured correctly."
+        ) from e
 
     # Enable Write-Ahead Logging (WAL) for simultaneous reads and writes
     conn.execute("PRAGMA journal_mode = WAL")
