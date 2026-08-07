@@ -29,6 +29,7 @@ class ClusteringStrategy(Protocol):
         stop_words: set,
         max_depth: int = 5,
         max_features: int = 3,
+        pre_fetched_vectors: List[list] | None = None,
     ) -> tuple[dict, float]:
         """Return the clustering plan and the total reconstruction error."""
         ...
@@ -45,6 +46,7 @@ class RecursiveKMeansStrategy:
         stop_words: set,
         max_depth: int = 5,
         max_features: int = 3,
+        pre_fetched_vectors: List[list] | None = None,
     ) -> tuple[dict, float]:
         """Return a hierarchical clustering plan and error using KMeans."""
         self.stop_words = stop_words
@@ -52,6 +54,12 @@ class RecursiveKMeansStrategy:
         self.max_depth = max_depth
         self.max_features = max_features
         self._error = 0.0
+
+        if pre_fetched_vectors is not None:
+            self._vector_map = {f: v for f, v in zip(filenames, pre_fetched_vectors)}
+        else:
+            self._vector_map = {}
+
         plan = self._cluster_recursive(filenames, documents, depth=1)
         return plan, self._error
 
@@ -86,17 +94,33 @@ class RecursiveKMeansStrategy:
                 plan[f] = None
             return {"Miscellaneous": plan} if depth == 1 else plan
 
-        try:
-            from sklearn.feature_extraction.text import TfidfVectorizer
+        use_dense_vectors = False
+        if getattr(self, "_vector_map", None):
+            try:
+                import numpy as np
 
-            vectorizer = TfidfVectorizer(
-                stop_words=list(self.stop_words), max_features=1000
-            )
-            X = vectorizer.fit_transform(documents)
-        except Exception:
-            for f in filenames:
-                plan[f] = None
-            return {"Miscellaneous": plan} if depth == 1 else plan
+                if all(f in self._vector_map for f in filenames):
+                    X_list = [self._vector_map[f] for f in filenames]
+                    X = np.array(X_list)
+                    use_dense_vectors = True
+            except Exception as e:
+                logging.error(
+                    f"Failed to prepare dense vectors for clustering step: {e}"
+                )
+                use_dense_vectors = False
+
+        if not use_dense_vectors:
+            try:
+                from sklearn.feature_extraction.text import TfidfVectorizer
+
+                vectorizer = TfidfVectorizer(
+                    stop_words=list(self.stop_words), max_features=1000
+                )
+                X = vectorizer.fit_transform(documents)
+            except Exception:
+                for f in filenames:
+                    plan[f] = None
+                return {"Miscellaneous": plan} if depth == 1 else plan
 
         actual_k = min(self.max_folders, len(documents) // 2)
         if actual_k < 2:
@@ -285,10 +309,17 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         stop_words: set,
         max_depth: int = 5,
         max_features: int = 3,
+        pre_fetched_vectors: List[list] | None = None,
     ) -> tuple[dict, float]:
         """Generate a hierarchical plan of folder names using generative modeling."""
         plan, error = super().generate_plan(
-            filenames, documents, max_folders, stop_words, max_depth, max_features
+            filenames,
+            documents,
+            max_folders,
+            stop_words,
+            max_depth,
+            max_features,
+            pre_fetched_vectors,
         )
 
         if not getattr(self, "_model_initialized", False):
