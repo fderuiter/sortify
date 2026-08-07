@@ -261,6 +261,18 @@ def test_is_local_address_dynamic_resolution():
         assert _is_local_address("custom-external-host") is False
 
 
+def test_is_local_address_bypasses_dns_when_sandboxed():
+    """Verify that _is_local_address completely bypasses getaddrinfo calls when sandboxed."""
+    from app.core.shared_registry import _is_local_address, block_external_network
+
+    with patch("socket.getaddrinfo") as mock_getaddrinfo:
+        with block_external_network(reason="test offline bypass"):
+            res = _is_local_address("custom-external-host")
+            # When sandboxed, it should immediately return False without querying DNS
+            assert res is False
+            mock_getaddrinfo.assert_not_called()
+
+
 def test_onnx_thread_limits_application(monkeypatch):
     """Verify that ONNX InferenceSession applies intra-op and inter-op thread limits dynamically."""
     import sys

@@ -63,7 +63,12 @@ def _is_local_address(host: str) -> bool:
     except ValueError:
         pass
 
-    # Try resolving hostname dynamically to check if its IPs are local/private/loopback
+    # Try resolving hostname dynamically to check if its IPs are local/private/loopback.
+    # To prevent information leaks and potential thread hangs during sandboxed offline execution,
+    # we completely bypass dynamic name resolution when sandboxing is active.
+    if getattr(_thread_local, "sandboxed", False):
+        return False
+
     try:
         for info in socket.getaddrinfo(host, None):
             resolved_ip = info[4][0]
