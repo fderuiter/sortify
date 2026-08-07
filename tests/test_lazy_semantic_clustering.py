@@ -147,13 +147,14 @@ def test_fallback_to_tfidf_when_onnx_missing_or_corrupt(temp_env):
         analyzer.close()
 
     # Case 2: Initialize analyzer with a corrupt model path (ONNX present but corrupt/unusable)
-    analyzer_corrupt = IncrementalAnalyzer(
-        max_folders=2,
-        stop_words={"the", "and"},
-        db=db,
-        strategy_name="default",
-        model_path=model_path,  # model_path contains mock model which fails to load
-    )
+    with patch("onnxruntime.InferenceSession", side_effect=Exception("Corrupt model on disk")):
+        analyzer_corrupt = IncrementalAnalyzer(
+            max_folders=2,
+            stop_words={"the", "and"},
+            db=db,
+            strategy_name="default",
+            model_path=model_path,  # model_path contains mock model which fails to load
+        )
 
     try:
         with patch(
