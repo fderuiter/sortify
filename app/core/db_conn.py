@@ -133,6 +133,7 @@ def get_db_connection(db_path: str):
             except Exception:
                 pass
 
+        temp_conn = None
         import sqlite3 as std_sqlite3
 
         # Safe extraction of module and class names to prevent AttributeError when __module__ is None
@@ -265,6 +266,7 @@ def get_db_connection(db_path: str):
         raw_key = None
         cache_key = None
         abs_path = None
+        temp_conn = None
 
         if is_decryption_err and not isinstance(
             e, (RuntimeError, SystemExit, KeyboardInterrupt)
