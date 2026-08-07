@@ -377,6 +377,10 @@ def test_decryption_failure_safe_error_propagation(tmp_path, monkeypatch, caplog
         with pytest.raises(Exception) as exc_info:
             db_conn.get_db_connection(str(db_path))
 
+    # Deterministically clear connection cache and run GC to release any file locks on Windows
+    db_conn.clear_connection_cache()
+    gc.collect()
+
     # Safe extraction of module and class names to prevent AttributeError when __module__ is None
     module_name = getattr(type(exc_info.value), "__module__", "") or ""
     module_name = str(module_name).lower()
