@@ -404,15 +404,14 @@ def test_decryption_failure_safe_error_propagation(tmp_path, monkeypatch, caplog
             row = cursor.fetchone()
             assert row is not None
             assert row[0] == "secret_data"
+            # Switch journal mode back to DELETE while connection is open
+            conn.execute("PRAGMA journal_mode = DELETE")
         finally:
-            try:
-                conn.execute("PRAGMA journal_mode = DELETE")
-            except Exception:
-                pass
+            # Deterministically clear the connection cache to close the connection and release all locks
+            db_conn.clear_connection_cache()
+            gc.collect()
 
     # 7. Clean up connection handles and run garbage collection.
     # On Windows, clearing the cache and invoking gc.collect() immediately releases
     # active file descriptors on the database file, ensuring no locks persist.
     verify_db_contents(db_path)
-    db_conn.clear_connection_cache()
-    gc.collect()
