@@ -56,7 +56,19 @@ def clear_dead_thread_connections():
 def get_db_connection(db_path: str):
     """Create and configure a new database connection with performance parameters."""
     global _connection_cache
-    abs_path = os.path.abspath(db_path)
+    abs_path = os.path.normpath(os.path.abspath(db_path))
+    if sys.platform == "win32":
+        try:
+            abs_path = os.path.normpath(os.path.realpath(abs_path))
+        except Exception:
+            pass
+        if len(abs_path) > 1 and abs_path[1] == ":":
+            abs_path = abs_path[0].upper() + abs_path[1:]
+    else:
+        try:
+            abs_path = os.path.normpath(os.path.realpath(abs_path))
+        except Exception:
+            pass
     thread_id = threading.get_ident()
     cache_key = (abs_path, thread_id)
 
@@ -69,7 +81,7 @@ def get_db_connection(db_path: str):
 
     from app.core.path_utils import resolve_db_crypto
 
-    crypto = resolve_db_crypto(db_path)
+    crypto = resolve_db_crypto(abs_path)
     raw_key = crypto.get_raw_key()
 
     def _open_conn(path: str) -> sqlite3.Connection:
@@ -104,16 +116,16 @@ def get_db_connection(db_path: str):
         return conn
 
     try:
-        conn = _open_conn(db_path)
+        conn = _open_conn(abs_path)
     except sqlite3.DatabaseError as e:
         err_msg = str(e).lower()
         if "file is not a database" in err_msg or "file is encrypted" in err_msg:
             # Legacy unencrypted database or invalid key. Delete files and recreate.
             for ext in ["", "-wal", "-shm"]:
-                target_file = f"{db_path}{ext}"
+                target_file = f"{abs_path}{ext}"
                 if os.path.exists(target_file):
                     os.remove(target_file)
-            conn = _open_conn(db_path)
+            conn = _open_conn(abs_path)
         else:
             raise
 
