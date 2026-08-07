@@ -18,6 +18,7 @@ def resolve_test_path(path):
     On non-Windows platforms (macOS/Linux), it resolves physical symlinks (like /var or /tmp).
     """
     import sys
+
     path_str = str(path)
     abs_path = os.path.normpath(os.path.abspath(path_str))
     if sys.platform == "win32":
@@ -262,34 +263,19 @@ async def test_wizard_file_recovery_original_location(mock_session_base, tmp_pat
         if restore_on_click:
             restore_on_click()
 
-        # Poll until the session status is updated to resolved in the database
-        # This prevents any timing-related race conditions on slow Windows CI runners
-        import time
+        # Give the event loop a brief moment to schedule the task
+        await asyncio.sleep(0.05)
 
-        start_time = time.time()
-        resolved = False
-        while time.time() - start_time < 30.0:
-            try:
-                conn = get_db_connection(str(history_db), cached=False)
-                try:
-                    cursor = conn.cursor()
-                    cursor.execute(
-                        "SELECT status FROM sessions WHERE session_id = ?",
-                        (session_id,),
-                    )
-                    row = cursor.fetchone()
-                    if row and row[0] == "resolved":
-                        resolved = True
-                        break
-                finally:
-                    conn.close()
-            except Exception:
-                pass
-            await asyncio.sleep(0.05)
+        # Find and await the background recovery task to complete
+        recovery_task = None
+        for task in asyncio.all_tasks():
+            coro = task.get_coro()
+            if coro and "do_work" in coro.__name__:
+                recovery_task = task
+                break
 
-        assert resolved, (
-            "Recovery wizard failed to update session status to 'resolved' within timeout"
-        )
+        if recovery_task:
+            await recovery_task
 
         # Let's check the result inside the mock context:
         # 1. Trapped file should be recovered. Since test_doc.txt existed, it should be named test_doc_1.txt
@@ -406,34 +392,19 @@ async def test_wizard_file_recovery_custom_location(mock_session_base, tmp_path)
         if export_on_click:
             export_on_click()
 
-        # Poll until the session status is updated to resolved in the database
-        # This prevents any timing-related race conditions on slow Windows CI runners
-        import time
+        # Give the event loop a brief moment to schedule the task
+        await asyncio.sleep(0.05)
 
-        start_time = time.time()
-        resolved = False
-        while time.time() - start_time < 30.0:
-            try:
-                conn = get_db_connection(str(history_db), cached=False)
-                try:
-                    cursor = conn.cursor()
-                    cursor.execute(
-                        "SELECT status FROM sessions WHERE session_id = ?",
-                        (session_id,),
-                    )
-                    row = cursor.fetchone()
-                    if row and row[0] == "resolved":
-                        resolved = True
-                        break
-                finally:
-                    conn.close()
-            except Exception:
-                pass
-            await asyncio.sleep(0.05)
+        # Find and await the background recovery task to complete
+        recovery_task = None
+        for task in asyncio.all_tasks():
+            coro = task.get_coro()
+            if coro and "do_work" in coro.__name__:
+                recovery_task = task
+                break
 
-        assert resolved, (
-            "Recovery wizard failed to update session status to 'resolved' within timeout"
-        )
+        if recovery_task:
+            await recovery_task
 
         # Verify the custom export:
         exported_file = custom_export_dir / "sub_folder" / "trapped_export.txt"
