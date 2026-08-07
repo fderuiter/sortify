@@ -125,7 +125,20 @@ def get_db_connection(db_path: str):
                 pass
         import sqlite3 as std_sqlite3
 
-        if isinstance(e, (sqlite3.Error, std_sqlite3.Error)):
+        # Broad detection of SQLite/SQLCipher database and connection errors
+        is_sqlite_or_db_err = (
+            isinstance(e, (sqlite3.Error, std_sqlite3.Error))
+            or "sqlite" in type(e).__module__.lower()
+            or "sqlcipher" in type(e).__module__.lower()
+            or any(
+                term in type(e).__name__
+                for term in ("Error", "DatabaseError", "OperationalError")
+            )
+        )
+
+        if is_sqlite_or_db_err and not isinstance(
+            e, (RuntimeError, SystemExit, KeyboardInterrupt)
+        ):
             logger.error(
                 "Database decryption failed: The database is encrypted or is not a valid database. "
                 "This indicates a locked OS keyring, mismatched cryptographic keys, or decryption failure. "
