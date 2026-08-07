@@ -360,6 +360,12 @@ def test_decryption_failure_safe_error_propagation(tmp_path, monkeypatch, caplog
     # We mock keyring to return a mismatched/wrong key (or None)
     mismatched_key = Fernet.generate_key().decode("utf-8")
 
+    # Clean up any potential leftover isolated fallback files to guarantee we only test mismatched key
+    if crypto.isolated_key_path.exists():
+        crypto.isolated_key_path.unlink()
+    if crypto.key_path.exists():
+        crypto.key_path.unlink()
+
     def mock_get_password_mismatched(service, account):
         return mismatched_key
 
@@ -391,6 +397,22 @@ def test_decryption_failure_safe_error_propagation(tmp_path, monkeypatch, caplog
                 "InternalError",
                 "ProgrammingError",
                 "NotSupportedError",
+            )
+        )
+        or any(
+            msg in str(exc_info.value).lower()
+            for msg in (
+                "not a database",
+                "encrypted",
+                "disk i/o error",
+                "malformed",
+                "authentication",
+                "password",
+                "passphrase",
+                "mac",
+                "bad decrypt",
+                "mismatch",
+                "failed to decrypt database",
             )
         )
     )

@@ -129,6 +129,7 @@ def get_db_connection(db_path: str):
         module_name = getattr(type(e), "__module__", "") or ""
         module_name = str(module_name).lower()
         class_name = getattr(type(e), "__name__", "") or ""
+        err_msg_lower = str(e).lower()
 
         # Broad detection of SQLite/SQLCipher database and connection errors
         is_sqlite_or_db_err = (
@@ -145,6 +146,21 @@ def get_db_connection(db_path: str):
                     "InternalError",
                     "ProgrammingError",
                     "NotSupportedError",
+                )
+            )
+            or any(
+                msg in err_msg_lower
+                for msg in (
+                    "not a database",
+                    "encrypted",
+                    "disk i/o error",
+                    "malformed",
+                    "authentication",
+                    "password",
+                    "passphrase",
+                    "mac",
+                    "bad decrypt",
+                    "mismatch",
                 )
             )
         )
