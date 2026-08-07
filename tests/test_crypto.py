@@ -371,14 +371,19 @@ def test_decryption_failure_safe_error_propagation(tmp_path, monkeypatch, caplog
         with pytest.raises(Exception) as exc_info:
             db_conn.get_db_connection(str(db_path))
 
+    # Safe extraction of module and class names to prevent AttributeError when __module__ is None
+    module_name = getattr(type(exc_info.value), "__module__", "") or ""
+    module_name = str(module_name).lower()
+    class_name = getattr(type(exc_info.value), "__name__", "") or ""
+
     # Verify that the exception raised is indeed a DatabaseError variant
     is_database_error = (
         isinstance(exc_info.value, (db_conn.sqlite3.Error, sqlite3.Error))
-        or "sqlite" in type(exc_info.value).__module__.lower()
-        or "sqlcipher" in type(exc_info.value).__module__.lower()
-        or type(exc_info.value).__name__ == "Error"
+        or "sqlite" in module_name
+        or "sqlcipher" in module_name
+        or class_name == "Error"
         or any(
-            term in type(exc_info.value).__name__
+            term in class_name
             for term in (
                 "DatabaseError",
                 "OperationalError",
