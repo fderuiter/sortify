@@ -3,7 +3,6 @@
 import json
 import os
 import shutil
-import sqlite3
 
 from app.config import get_app_dir
 from app.core.analyzer import IncrementalAnalyzer
@@ -33,13 +32,14 @@ async def scan_abandoned_sessions_async():
                 continue
 
             try:
-                conn = sqlite3.connect(history_db, timeout=30.0)
+                from app.core.db_conn import get_db_connection
+
+                conn = get_db_connection(str(history_db))
                 cursor = conn.cursor()
                 cursor.execute(
                     "SELECT session_id, base_dir, status FROM sessions ORDER BY timestamp DESC"
                 )
                 rows = cursor.fetchall()
-                conn.close()
 
                 trapped_sessions = []
                 for row in rows:

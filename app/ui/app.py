@@ -386,15 +386,14 @@ class AutoSorterApp:
 
     def _resolve_session_status(self, history_db_path, session_id):
         """Resolve session status in a synchronous context to respect architecture guidelines."""
-        import sqlite3
+        from app.core.db_conn import get_db_connection
 
-        conn = sqlite3.connect(history_db_path, timeout=30.0)
+        conn = get_db_connection(history_db_path)
         with conn:
             conn.execute(
                 "UPDATE sessions SET status = 'resolved' WHERE session_id = ?",
                 (session_id,),
             )
-        conn.close()
 
     def resume_session(self, session_info):
         """Resume an interrupted sorting operation."""
