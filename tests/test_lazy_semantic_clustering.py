@@ -19,6 +19,12 @@ from app.core.db import Database
 from app.core.db_worker import DBWorker
 
 
+class TFIDFFallbackTriggered(BaseException):
+    """Exception raised to signal standard TF-IDF text similarity fallback has been triggered."""
+
+    pass
+
+
 @pytest.fixture
 def temp_env():
     """Create a temporary test environment with database and mock ONNX model."""
@@ -128,19 +134,20 @@ def test_fallback_to_tfidf_when_onnx_missing_or_corrupt(temp_env):
     ]
     db.upsert_documents(documents_to_add)
 
-    # Track if standard TF-IDF vectorizer gets used. We raise a direct BaseException
-    # subclass to bypass any catch-all Exception blocks within the strategy code.
-    class TFIDFFallbackTriggered(BaseException):
-        pass
-
     # Case 1: Initialize analyzer with a non-existent model path (entirely missing model files)
-    analyzer = IncrementalAnalyzer(
-        max_folders=2,
-        stop_words={"the", "and"},
-        db=db,
-        strategy_name="default",
-        model_path="non_existent_directory_path",
-    )
+    from app.core.semantic_embeddings import ModelProperties
+
+    with patch(
+        "app.core.semantic_embeddings.get_active_model_properties",
+        return_value=ModelProperties("missing_sig", 384, "1.0.0", is_valid=False),
+    ):
+        analyzer = IncrementalAnalyzer(
+            max_folders=2,
+            stop_words={"the", "and"},
+            db=db,
+            strategy_name="default",
+            model_path="non_existent_directory_path",
+        )
 
     try:
         with patch(
