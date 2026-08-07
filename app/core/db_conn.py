@@ -123,7 +123,9 @@ def get_db_connection(db_path: str):
                 conn.close()
             except Exception:
                 pass
-        if isinstance(e, sqlite3.Error):
+        import sqlite3 as std_sqlite3
+
+        if isinstance(e, (sqlite3.Error, std_sqlite3.Error)):
             logger.error(
                 "Database decryption failed: The database is encrypted or is not a valid database. "
                 "This indicates a locked OS keyring, mismatched cryptographic keys, or decryption failure. "
