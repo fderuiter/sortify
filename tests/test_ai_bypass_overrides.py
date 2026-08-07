@@ -1,8 +1,18 @@
 import os
+from unittest.mock import patch
+
+import pytest
 
 from app.core.analyzer import IncrementalAnalyzer
 from app.core.analyzer_strategies import GenerativeNamingStrategy
 from app.core.mover import execute_moves
+
+
+@pytest.fixture(autouse=True)
+def mock_trigger_reconstruction():
+    """Mock background vector reconstruction trigger to prevent background threads on Windows."""
+    with patch("app.core.semantic_embeddings.SemanticEmbeddingManager.trigger_reconstruction") as mock:
+        yield mock
 
 
 def add_relative_source_to_plan(plan, current_dest=""):
