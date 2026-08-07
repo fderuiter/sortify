@@ -84,7 +84,7 @@ def get_db_connection(db_path: str):
 
     conn = None
     try:
-        conn = sqlite3.connect(abs_path, timeout=5.0, check_same_thread=False)
+        conn = sqlite3.connect(abs_path, timeout=30.0, check_same_thread=False)
         if raw_key:
             with closing(conn.cursor()) as cursor:
                 cursor.execute(f"PRAGMA key = '{raw_key}'")
