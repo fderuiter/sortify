@@ -142,33 +142,39 @@ def socket_mock(monkeypatch):
     """Fixture that selectively mocks socket connect operations only for test-created sockets,
     preventing any potential background/system loopback connection failures on Windows.
     """
-    import socket
+    import sys
     from unittest.mock import MagicMock
 
     import app.core.shared_registry
 
     real_connect = app.core.shared_registry._original_connect
     real_connect_ex = app.core.shared_registry._original_connect_ex
-    real_init = socket.socket.__init__
 
-    test_socket_ids = set()
-
-    def patched_init(self, *args, **kwargs):
-        real_init(self, *args, **kwargs)
-        test_socket_ids.add(id(self))
-
-    monkeypatch.setattr(socket.socket, "__init__", patched_init)
+    def is_called_from_test():
+        try:
+            frame = sys._getframe()
+            while frame:
+                filename = frame.f_code.co_filename
+                if (
+                    "test_db_worker_sandbox" in filename
+                    or "test_shared_registry" in filename
+                ):
+                    return True
+                frame = frame.f_back
+        except Exception:
+            pass
+        return False
 
     mock_connect = MagicMock()
     mock_connect_ex = MagicMock()
 
     def side_effect_connect(self, address):
-        if id(self) in test_socket_ids:
+        if is_called_from_test():
             return mock_connect(self, address)
         return real_connect(self, address)
 
     def side_effect_connect_ex(self, address):
-        if id(self) in test_socket_ids:
+        if is_called_from_test():
             return mock_connect_ex(self, address)
         return real_connect_ex(self, address)
 
