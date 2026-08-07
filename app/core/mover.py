@@ -232,7 +232,9 @@ def _execute_moves_recursive(
             source_rel_path = os.path.relpath(source_path, base_dir).replace("\\", "/")
             doc = db.get_document(base_dir, source_rel_path)
 
-            is_similarity = isinstance(content, dict) and content.get("routed_by") == "similarity"
+            is_similarity = (
+                isinstance(content, dict) and content.get("routed_by") == "similarity"
+            )
 
             if dest_path == source_path:
                 # Still record user verified target if needed even if not moving

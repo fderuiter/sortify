@@ -11,14 +11,17 @@ from app.core.mover import execute_moves
 
 def resolve_test_path(path):
     """Resolve and canonicalize paths consistently across different operating systems.
-    
+
     On Windows (win32), it resolves short 8.3 names and strips the extended-length prefixes.
     On non-Windows platforms (macOS/Linux), it resolves physical symlinks (like /var or /tmp).
     """
     path_str = str(path)
     abs_path = os.path.normpath(os.path.abspath(path_str))
     if sys.platform == "win32":
-        abs_path = os.path.normpath(os.path.realpath(abs_path))
+        try:
+            abs_path = os.path.normpath(os.path.realpath(abs_path))
+        except Exception:
+            pass
         if abs_path.startswith("\\\\?\\UNC\\"):
             abs_path = "\\" + abs_path[7:]
         elif abs_path.startswith("\\\\?\\"):
@@ -26,14 +29,19 @@ def resolve_test_path(path):
         if len(abs_path) > 1 and abs_path[1] == ":":
             abs_path = abs_path[0].upper() + abs_path[1:]
     else:
-        abs_path = os.path.normpath(os.path.realpath(abs_path))
+        try:
+            abs_path = os.path.normpath(os.path.realpath(abs_path))
+        except Exception:
+            pass
     return abs_path
 
 
 @pytest.fixture(autouse=True)
 def mock_trigger_reconstruction():
     """Mock background vector reconstruction trigger to prevent background threads on Windows."""
-    with patch("app.core.semantic_embeddings.SemanticEmbeddingManager.trigger_reconstruction") as mock:
+    with patch(
+        "app.core.semantic_embeddings.SemanticEmbeddingManager.trigger_reconstruction"
+    ) as mock:
         yield mock
 
 

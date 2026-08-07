@@ -126,7 +126,10 @@ def test_history_env(tmp_path):
         path_str = str(path)
         abs_path = os.path.normpath(os.path.abspath(path_str))
         if sys.platform == "win32":
-            abs_path = os.path.normpath(os.path.realpath(abs_path))
+            try:
+                abs_path = os.path.normpath(os.path.realpath(abs_path))
+            except Exception:
+                pass
             if abs_path.startswith("\\\\?\\UNC\\"):
                 abs_path = "\\" + abs_path[7:]
             elif abs_path.startswith("\\\\?\\"):
@@ -134,7 +137,10 @@ def test_history_env(tmp_path):
             if len(abs_path) > 1 and abs_path[1] == ":":
                 abs_path = abs_path[0].upper() + abs_path[1:]
         else:
-            abs_path = os.path.normpath(os.path.realpath(abs_path))
+            try:
+                abs_path = os.path.normpath(os.path.realpath(abs_path))
+            except Exception:
+                pass
         return abs_path
 
     # Resolve the existing tmp_path directory first to guarantee canonical long path / casing
@@ -150,7 +156,9 @@ def test_history_env(tmp_path):
     cache_path = resolve_test_path(resolved_tmp / "test_cache.db")
     cache = CacheManager(cache_path, worker=db_worker)
 
-    history_manager = HistoryManager(db, cache, resolve_test_path(resolved_tmp / "test_history.db"))
+    history_manager = HistoryManager(
+        db, cache, resolve_test_path(resolved_tmp / "test_history.db")
+    )
 
     yield base_dir, db, cache, history_manager, db_worker
     db_worker.stop()

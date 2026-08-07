@@ -387,6 +387,7 @@ class AutoSorterApp:
     def _resolve_session_status(self, history_db_path, session_id):
         """Resolve session status in a synchronous context to respect architecture guidelines."""
         import sqlite3
+
         conn = sqlite3.connect(history_db_path, timeout=30.0)
         with conn:
             conn.execute(
