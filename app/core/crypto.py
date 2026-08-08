@@ -92,6 +92,7 @@ class SessionCrypto:
             if self.db_path.exists():
                 try:
                     from contextlib import closing
+
                     from app.core.db_conn import sqlite3
 
                     has_docs = False
