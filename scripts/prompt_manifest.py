@@ -19,10 +19,12 @@ def parse_and_validate_prompt(filepath: Path) -> tuple[dict, str]:
     If no frontmatter is present, treats the entire file as body_text.
     """
     try:
-        with open(filepath, "r", encoding="utf-8") as f:
-            content = f.read()
+        with open(filepath, "rb") as f:
+            content_bytes = f.read()
     except Exception as e:
         raise ValueError(f"Error reading file {filepath.name}: {e}")
+
+    content = content_bytes.decode("utf-8")
 
     # Normalize line endings to LF
     content_lf = content.replace("\r\n", "\n")
@@ -133,12 +135,18 @@ def verify():
         print(f"Error: Manifest file {MANIFEST_PATH} does not exist.", file=sys.stderr)
         sys.exit(1)
 
-    with open(MANIFEST_PATH, "r", encoding="utf-8") as f:
-        try:
-            manifest_hashes = json.load(f)
-        except json.JSONDecodeError:
-            print("Error: Manifest file is not valid JSON.", file=sys.stderr)
-            sys.exit(1)
+    try:
+        with open(MANIFEST_PATH, "rb") as f:
+            manifest_bytes = f.read()
+    except Exception as e:
+        print(f"Error reading manifest file {MANIFEST_PATH}: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        manifest_hashes = json.loads(manifest_bytes.decode("utf-8"))
+    except json.JSONDecodeError:
+        print("Error: Manifest file is not valid JSON.", file=sys.stderr)
+        sys.exit(1)
 
     try:
         current_hashes = get_hashes()
