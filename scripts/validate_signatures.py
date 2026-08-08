@@ -348,8 +348,9 @@ def scan_core_modules():
     classes_data = {}
     functions_data = {}
 
-    for root, _, files in os.walk(core_dir):
-        for file in files:
+    for root, dirs, files in os.walk(core_dir):
+        dirs.sort()
+        for file in sorted(files):
             if file.endswith(".py"):
                 file_path = os.path.join(root, file)
                 rel_path = os.path.relpath(file_path, BASE_DIR)

@@ -10,13 +10,13 @@ from typing import List, Protocol
 
 
 @contextmanager
-def block_external_network():
+def _block_external_network():
     """Block outgoing non-localhost network traffic during naming generation."""
     from app.core.shared_registry import (
-        block_external_network as _block_external_network,
+        block_external_network as _block_external,
     )
 
-    with _block_external_network(reason="folder naming"):
+    with _block_external(reason="folder naming"):
         yield
 
 
@@ -387,7 +387,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                     low_confidence_files.update(lc_v)
             return new_node, low_confidence_files
 
-        with block_external_network():
+        with _block_external_network():
             new_plan, lc_files = filter_plan(plan)
 
         if lc_files:
@@ -956,7 +956,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                 prompt = f"Generate a short, descriptive natural language folder name (1 to 4 words) for a folder containing these documents. Do not use hyphens. Return only the name.\nDocuments: {doc_text}\nFolder Name:"
 
             naming_grammar = 'root ::= word (" " word)? (" " word)? (" " word)?\nword ::= [a-zA-Z0-9]+'
-            with block_external_network():
+            with _block_external_network():
                 name = self._run_prompt(prompt, 15, grammar=naming_grammar).strip()
 
                 # Cleanup the generated name
