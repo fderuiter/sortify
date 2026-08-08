@@ -398,8 +398,8 @@ def test_pytorch_thread_limits_selection(monkeypatch):
 
 def test_no_dns_during_import():
     """Verify that no DNS or hostname resolution runs during the module import phase."""
-    import sys
     import importlib
+    import sys
 
     # Remove from sys.modules if already imported to force a fresh reload/import
     if "app.core.shared_registry" in sys.modules:
