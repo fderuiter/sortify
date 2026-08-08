@@ -862,18 +862,11 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                         # doc is (filepath, decrypted_text, file_hash, user_verified_target_path)
                         if len(doc) > 3 and doc[1] and doc[3]:
                             filepath = doc[0]
-                            decrypted_text = doc[1]
-                            ext = os.path.splitext(filepath)[1].lower()
-                            # Exclude non-textual attachments, image files, and skipped/unsupported files
-                            if ext in {".png", ".jpg", ".jpeg"} or ext not in {
-                                ".txt",
-                                ".docx",
-                                ".csv",
-                                ".xlsx",
-                                ".xls",
-                                ".pdf",
-                            }:
+                            if not filepath.lower().endswith(
+                                (".txt", ".docx", ".csv", ".xlsx", ".xls", ".pdf")
+                            ):
                                 continue
+                            decrypted_text = doc[1]
                             if decrypted_text.startswith("[STATUS:"):
                                 continue
 

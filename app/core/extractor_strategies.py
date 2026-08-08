@@ -337,7 +337,7 @@ class AudioExtractor:
                     except Exception as e:
                         logging.warning(f"Failed to terminate process: {e}")
                     try:
-                        process.wait(timeout=0.5)
+                        process.wait(timeout=0.1)
                     except subprocess.TimeoutExpired:
                         logging.warning(
                             "Whisper process did not terminate, forcing kill."
@@ -347,7 +347,7 @@ class AudioExtractor:
                         except Exception as e:
                             logging.warning(f"Failed to kill process: {e}")
                         try:
-                            process.wait()
+                            process.wait(timeout=0.1)
                         except Exception:
                             pass
                     except Exception:

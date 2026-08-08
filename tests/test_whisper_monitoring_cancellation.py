@@ -37,11 +37,11 @@ import time
 
 # Output a standard Whisper segment timestamp
 print("[00:00.000 --> 00:05.000] Hello segment 1", flush=True)
-time.sleep(0.1)
+time.sleep(0.01)
 print("[00:05.000 --> 00:10.000] Hello segment 2", flush=True)
-time.sleep(0.1)
+time.sleep(0.01)
 print("[00:10.000 --> 00:15.000] Hello segment 3", flush=True)
-time.sleep(0.5)
+time.sleep(0.01)
 print("[00:15.000 --> 00:20.000] Hello segment 4", flush=True)
 """)
 
