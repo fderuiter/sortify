@@ -146,8 +146,31 @@ def test_spec_file_partitioning():
         ("/mock/sqlcipher3/sub", [], ["extra.so", "doc.txt"]),
     ]
 
+    def mock_collect_all(package_name):
+        if package_name == "sqlcipher3":
+            m_binaries = [
+                (os.path.join("/mock/sqlcipher3", "_sqlite3.so"), "sqlcipher3"),
+                (os.path.join("/mock/sqlcipher3", "_sqlite3.dll"), "sqlcipher3"),
+                (os.path.join("/mock/sqlcipher3", "_sqlite3.dylib"), "sqlcipher3"),
+                (os.path.join("/mock/sqlcipher3", "_sqlite3.pyd"), "sqlcipher3"),
+                (
+                    os.path.join("/mock/sqlcipher3/sub", "extra.so"),
+                    os.path.join("sqlcipher3", "sub"),
+                ),
+            ]
+            m_datas = [
+                (os.path.join("/mock/sqlcipher3", "__init__.py"), "sqlcipher3"),
+                (os.path.join("/mock/sqlcipher3", "dbapi2.py"), "sqlcipher3"),
+                (
+                    os.path.join("/mock/sqlcipher3/sub", "doc.txt"),
+                    os.path.join("sqlcipher3", "sub"),
+                ),
+            ]
+            return m_datas, m_binaries, []
+        return [], [], []
+
     mock_hooks = MagicMock()
-    mock_hooks.collect_all.return_value = ([], [], [])
+    mock_hooks.collect_all.side_effect = mock_collect_all
 
     with (
         patch("importlib.util.find_spec", mock_find_spec),
