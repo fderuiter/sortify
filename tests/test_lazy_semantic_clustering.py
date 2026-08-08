@@ -84,8 +84,8 @@ def test_semantic_clustering_lazy_generation_and_caching(temp_env):
             return_value=ModelProperties("valid_sig", 384, "1.0.0", is_valid=True),
         ),
         patch(
-            "onnxruntime.InferenceSession",
-            side_effect=Exception("Mock InferenceSession failure for lazy caching test"),
+            "transformers.AutoTokenizer.from_pretrained",
+            side_effect=OSError("Mock tokenizer missing for lazy caching test"),
         ),
     ):
         analyzer = IncrementalAnalyzer(
