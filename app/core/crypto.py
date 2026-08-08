@@ -5,10 +5,10 @@ import os
 
 try:
     import sqlite3
-except ImportError:
+except Exception:
     try:
         from sqlcipher3 import dbapi2 as sqlite3
-    except ImportError:
+    except Exception:
         sqlite3 = None
 from pathlib import Path
 

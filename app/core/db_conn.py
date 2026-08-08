@@ -21,11 +21,11 @@ try:
     HAS_SQLCIPHER = True
     import sys
     sys.modules["sqlite3"] = sqlite3
-except ImportError:
+except Exception:
     HAS_SQLCIPHER = False
     try:
         import sqlite3
-    except ImportError:
+    except Exception:
         import types
         sqlite3_mock = types.ModuleType("sqlite3")
         sqlite3_mock.Error = Exception
