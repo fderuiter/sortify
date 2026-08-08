@@ -1,6 +1,5 @@
 """Setup wizard module using NiceGUI."""
 
-import asyncio
 
 from nicegui import ui
 
@@ -21,15 +20,11 @@ def show_wizard(parent_app, settings):
             "Your privacy is important to us. All processing will happen entirely offline."
         ).classes("mb-4").props('aria-label="Privacy Description"')
 
-        progress = (
-            ui.linear_progress(value=0)
-            .classes("w-full mb-2")
-            .props('aria-label="Download Progress Bar"')
+        ui.linear_progress(value=0).classes("w-full mb-2").props(
+            'aria-label="Download Progress Bar"'
         )
-        status = (
-            ui.label("")
-            .classes("text-sm text-gray-500 mb-4")
-            .props('aria-label="Download Status"')
+        ui.label("").classes("text-sm text-gray-500 mb-4").props(
+            'aria-label="Download Status"'
         )
 
         async def accept():
