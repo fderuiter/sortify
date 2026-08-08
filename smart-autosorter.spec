@@ -62,6 +62,20 @@ if sqlcipher_spec and sqlcipher_spec.submodule_search_locations:
 else:
     print("Warning: sqlcipher3 not found in active environment.")
 
+# Explicitly bundle local precompiled platform libraries for offline usage
+app_binaries_src = os.path.join('app', 'binaries')
+if os.path.exists(app_binaries_src):
+    for root, dirs, files in os.walk(app_binaries_src):
+        for file in files:
+            abs_file_path = os.path.abspath(os.path.join(root, file))
+            # Determine destination subdirectory in the package (under app/binaries)
+            rel_sub = os.path.relpath(root, app_binaries_src)
+            if rel_sub == '.':
+                dest_dir = os.path.join('app', 'binaries')
+            else:
+                dest_dir = os.path.join('app', 'binaries', rel_sub)
+            datas.append((abs_file_path, dest_dir))
+
 # On Windows, find and bundle any dependent OpenSSL/SQLCipher DLLs from the active Python or virtualenv environments
 if platform.system().lower() == "windows" or sys.platform == "win32":
     search_dirs = [
