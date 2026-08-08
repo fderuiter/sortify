@@ -218,6 +218,13 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
                             pass
                         if p not in os.environ.get("PATH", ""):
                             os.environ["PATH"] = p + ";" + os.environ.get("PATH", "")
+
+        # Clear sys.modules of sqlcipher3 and _sqlite3 to force reload from the newly registered paths
+        if "sqlcipher3" in sys.modules or "_sqlite3" in sys.modules:
+            for k in list(sys.modules.keys()):
+                if k in ("sqlcipher3", "_sqlite3") or k.startswith("sqlcipher3."):
+                    sys.modules.pop(k, None)
+
         if verify_sqlcipher_encryption():
             logger.info("SQLCipher verified active inside frozen PyInstaller environment.")
             return True
@@ -302,7 +309,7 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
                 if p and os.path.isdir(p) and p not in search_dirs:
                     search_dirs.append(p)
 
-            dll_patterns = ["libcrypto", "libssl", "sqlcipher", "libsqlcipher", "sqlite3"]
+            dll_patterns = ["libcrypto", "libssl", "sqlcipher", "libsqlcipher"]
             found_dlls = set()
             for s_dir in search_dirs:
                 if not s_dir or not os.path.isdir(s_dir):
