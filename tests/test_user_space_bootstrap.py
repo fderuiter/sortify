@@ -115,19 +115,18 @@ def test_bootstrap_binaries_bypass_if_cached(tmp_path):
 
 
 def test_bootstrap_binaries_download_flow(tmp_path):
-    """Verify that when binaries are missing and internet is available, we download and extract successfully."""
+    """Verify that when binaries are missing, we bypass download and resolve locally instead."""
     mock_bin_dir = tmp_path / "binaries"
     mock_bin_dir.mkdir()
 
-    # Create dummy zip with a file or sqlcipher3 folder
-    zip_buffer = io.BytesIO()
-    with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
-        zip_file.writestr("sqlcipher3/dummy.txt", "dummy file content")
-    zip_data = zip_buffer.getvalue()
+    mock_local_sqlcipher_dir = tmp_path / "local_sqlcipher"
+    mock_local_sqlcipher_dir.mkdir()
+    (mock_local_sqlcipher_dir / "native_module.so").write_text("compiled code")
 
-    mock_response = MagicMock()
-    mock_response.__enter__.return_value = mock_response
-    mock_response.read.return_value = zip_data
+    mock_spec = MagicMock()
+    mock_spec.submodule_search_locations = [str(mock_local_sqlcipher_dir)]
+
+    mock_urlopen = MagicMock()
 
     with (
         patch(
@@ -135,9 +134,11 @@ def test_bootstrap_binaries_download_flow(tmp_path):
             return_value=mock_bin_dir,
         ),
         patch(
-            "app.core.user_space_bootstrap.check_internet_connection", return_value=True
+            "app.core.user_space_bootstrap.check_internet_connection",
+            return_value=True,
         ),
-        patch("urllib.request.urlopen", return_value=mock_response),
+        patch("urllib.request.urlopen", mock_urlopen),
+        patch("importlib.util.find_spec", return_value=mock_spec),
         patch(
             "app.core.user_space_bootstrap.verify_sqlcipher_encryption",
             return_value=True,
@@ -146,8 +147,9 @@ def test_bootstrap_binaries_download_flow(tmp_path):
     ):
         res = bootstrap_binaries(force_download=True)
         assert res is True
+        mock_urlopen.assert_not_called()
         assert (mock_bin_dir / "sqlcipher3").exists()
-        assert (mock_bin_dir / "sqlcipher3" / "dummy.txt").exists()
+        assert (mock_bin_dir / "sqlcipher3" / "native_module.so").exists()
 
 
 def test_bootstrap_binaries_download_failed_fallback(tmp_path):
@@ -192,6 +194,7 @@ def test_bootstrap_binaries_failed_verification(tmp_path):
 
     mock_local_sqlcipher_dir = tmp_path / "local_sqlcipher"
     mock_local_sqlcipher_dir.mkdir()
+    (mock_local_sqlcipher_dir / "native_module.so").write_text("compiled code")
 
     mock_spec = MagicMock()
     mock_spec.submodule_search_locations = [str(mock_local_sqlcipher_dir)]
@@ -213,4 +216,50 @@ def test_bootstrap_binaries_failed_verification(tmp_path):
         patch("app.core.user_space_bootstrap.inject_bootstrap_paths"),
     ):
         with pytest.raises(RuntimeError, match="Startup verification failed"):
+            bootstrap_binaries()
+
+
+def test_bootstrap_binaries_missing_wheels(tmp_path):
+    """Verify that if local SQLCipher wheels are missing, we raise a descriptive RuntimeError."""
+    mock_bin_dir = tmp_path / "binaries"
+    mock_bin_dir.mkdir()
+
+    with (
+        patch(
+            "app.core.user_space_bootstrap.get_bootstrap_bin_dir",
+            return_value=mock_bin_dir,
+        ),
+        patch("importlib.util.find_spec", return_value=None),
+        patch(
+            "app.core.user_space_bootstrap.verify_sqlcipher_encryption",
+            return_value=False,
+        ),
+    ):
+        with pytest.raises(RuntimeError, match="SQLCipher local native library/wheels are missing"):
+            bootstrap_binaries()
+
+
+def test_bootstrap_binaries_incompatible_architecture(tmp_path):
+    """Verify that if local SQLCipher binaries exist but are incompatible, we raise a descriptive RuntimeError."""
+    mock_bin_dir = tmp_path / "binaries"
+    mock_bin_dir.mkdir()
+
+    mock_local_sqlcipher_dir = tmp_path / "local_sqlcipher"
+    mock_local_sqlcipher_dir.mkdir()
+
+    mock_spec = MagicMock()
+    mock_spec.submodule_search_locations = [str(mock_local_sqlcipher_dir)]
+
+    with (
+        patch(
+            "app.core.user_space_bootstrap.get_bootstrap_bin_dir",
+            return_value=mock_bin_dir,
+        ),
+        patch("importlib.util.find_spec", return_value=mock_spec),
+        patch(
+            "app.core.user_space_bootstrap.verify_sqlcipher_encryption",
+            return_value=False,
+        ),
+    ):
+        with pytest.raises(RuntimeError, match="incompatible with current platform/architecture"):
             bootstrap_binaries()

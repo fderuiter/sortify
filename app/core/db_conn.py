@@ -13,7 +13,13 @@ try:
 
     bootstrap_binaries()
 except Exception as exc:
-    logger.error(f"User-space bootstrapping failed: {exc}")
+    logger.critical(
+        f"CRITICAL STARTUP ERROR: Database encryption bootstrapping failed: {exc}\n"
+        "Please ensure the SQLCipher wheels/packages are correctly installed in your offline environment."
+    )
+    raise RuntimeError(
+        f"Database encryption bootstrap failed. SQLCipher binaries are missing, invalid, or failed to copy: {exc}"
+    ) from exc
 
 try:
     from sqlcipher3 import dbapi2 as sqlite3
