@@ -56,6 +56,7 @@ def update_binaries_and_manifest():
         has_sqlite3_dll = any(f.lower() == "sqlite3.dll" for f in copied_files)
         if not has_sqlite3_dll:
             dll_src = None
+            # 1. Search sys.prefix (virtualenv)
             if sys.prefix:
                 candidate = Path(sys.prefix) / "Library" / "bin" / "sqlite3.dll"
                 if candidate.exists():
@@ -70,6 +71,32 @@ def update_binaries_and_manifest():
                                 break
                         if dll_src:
                             break
+            # 2. Search sys.base_prefix as a fallback if different
+            if not dll_src and sys.base_prefix and sys.base_prefix != sys.prefix:
+                candidate = Path(sys.base_prefix) / "Library" / "bin" / "sqlite3.dll"
+                if candidate.exists():
+                    dll_src = candidate
+                else:
+                    for root, dirs, files in os.walk(sys.base_prefix):
+                        if any(p in root.lower() for p in ('site-packages/torch', 'site-packages/easyocr', 'site-packages/scipy')):
+                            continue
+                        for file in files:
+                            if file.lower() == "sqlite3.dll":
+                                dll_src = Path(root) / file
+                                break
+                        if dll_src:
+                            break
+            # 3. Search directory of python executable
+            if not dll_src and sys.executable:
+                exe_dir = os.path.dirname(sys.executable)
+                if exe_dir:
+                    candidate = Path(exe_dir) / "Library" / "bin" / "sqlite3.dll"
+                    if candidate.exists():
+                        dll_src = candidate
+                    else:
+                        candidate2 = Path(exe_dir) / "sqlite3.dll"
+                        if candidate2.exists():
+                            dll_src = candidate2
             if dll_src and dll_src.exists():
                 dest_path = target_dir / "sqlite3.dll"
                 shutil.copy2(dll_src, dest_path)
