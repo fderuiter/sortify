@@ -220,6 +220,16 @@ def is_standard_sqlite_binary(dest_name, src_path):
         # Allow it only if it originates from sqlcipher3 or app/binaries
         if 'sqlcipher3' in src_lower or 'app/binaries' in src_lower or 'app_binaries' in src_lower:
             return False
+        if sys.prefix:
+            prefix_lower = sys.prefix.lower().replace('\\', '/')
+            # Make sure it's in the virtual environment prefix and NOT in the base python prefix
+            if prefix_lower in src_lower:
+                if sys.base_prefix:
+                    base_lower = sys.base_prefix.lower().replace('\\', '/')
+                    if base_lower in src_lower and base_lower != prefix_lower:
+                        # It's actually from the base python prefix, so it is standard
+                        return True
+                return False
         return True
     return False
 
@@ -232,6 +242,27 @@ if sqlcipher_spec and sqlcipher_spec.submodule_search_locations:
         for file in files:
             if file.lower() == "sqlite3.dll":
                 custom_sqlite3_dll = os.path.abspath(os.path.join(root, file))
+                break
+        if custom_sqlite3_dll:
+            break
+
+if not custom_sqlite3_dll and sys.prefix:
+    # Walk the active virtual environment to find the custom sqlite3.dll
+    prefix_lower = sys.prefix.lower().replace('\\', '/')
+    base_lower = sys.base_prefix.lower().replace('\\', '/') if sys.base_prefix else None
+    
+    for root, dirs, files in os.walk(sys.prefix):
+        # Skip some common heavy directories to make it faster
+        if any(p in root.lower() for p in ('site-packages/torch', 'site-packages/easyocr', 'site-packages/scipy')):
+            continue
+        for file in files:
+            if file.lower() == "sqlite3.dll":
+                candidate_path = os.path.abspath(os.path.join(root, file))
+                cand_lower = candidate_path.lower().replace('\\', '/')
+                # Make sure it's not from base_prefix
+                if base_lower and base_lower in cand_lower and base_lower != prefix_lower:
+                    continue
+                custom_sqlite3_dll = candidate_path
                 break
         if custom_sqlite3_dll:
             break
