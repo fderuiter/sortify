@@ -289,4 +289,15 @@ def test_is_standard_sqlite_binary():
     assert is_standard_sqlite_binary("sqlite3.dll", "C:\\env\\app\\binaries\\windows\\sqlite3.dll") is False
     assert is_standard_sqlite_binary("some_other_library.dll", "C:\\Python312\\DLLs\\some_other_library.dll") is False
 
+    # Verify virtualenv prefix support
+    if sys.prefix:
+        venv_path_win = os.path.join(sys.prefix, "Library", "bin", "sqlite3.dll")
+        venv_path_unix = os.path.join(sys.prefix, "lib", "libsqlite3.so")
+        assert is_standard_sqlite_binary("sqlite3.dll", venv_path_win) is False
+        assert is_standard_sqlite_binary("sqlite3", venv_path_unix) is False
+
+    if sys.base_prefix and sys.base_prefix != sys.prefix:
+        base_path_win = os.path.join(sys.base_prefix, "DLLs", "sqlite3.dll")
+        assert is_standard_sqlite_binary("sqlite3.dll", base_path_win) is True
+
 
