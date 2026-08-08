@@ -49,7 +49,9 @@ def is_rigid_layout_class(cls_name: str) -> bool:
 
 def test_no_rigid_sizes_in_dialog_cards():
     """Headless unit test to assert that dialog card classes do not use rigid height/width classes."""
+    print(f"Resolving UI directory path: {UI_DIR}")
     ui_files = list(UI_DIR.glob("*.py"))
+    print(f"Matched UI files to scan: {[f.name for f in ui_files]}")
     assert ui_files, f"No UI files found in {UI_DIR}"
 
     failures = []
