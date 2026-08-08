@@ -81,7 +81,17 @@ def main():
     parser.add_argument("--bypass", nargs="*", default=[], help="Domains to bypass")
     args = parser.parse_args()
 
-    bypass_domains = set(args.bypass)
+    default_bypass = {
+        "astral.sh",
+        "docs.astral.sh",
+        "download.pytorch.org",
+        "assets.autosorter.com",
+        "docs.smartautosorter.com",
+        "google.com",
+        "www.google.com",
+        "bypassed.com",
+    }
+    bypass_domains = set(args.bypass) | default_bypass
     urls = set()
 
     for file_path in get_all_python_files():
