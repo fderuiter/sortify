@@ -228,24 +228,17 @@ def is_standard_sqlite_asset(dest, src):
     dest_lower = dest.lower().replace('\\', '/')
     src_lower = src.lower().replace('\\', '/')
     
-    # We want to keep SQLCipher's own sqlite3 / _sqlite3 assets
-    if "sqlcipher3" in dest_lower or "sqlcipher3" in src_lower:
-        return False
-        
     filename_dest = os.path.basename(dest_lower)
     filename_src = os.path.basename(src_lower)
     
-    # Filter out standard SQLite binaries / DLLs
-    for pat in ("_sqlite3", "sqlite3", "libsqlite3"):
-        if pat in filename_dest or pat in filename_src:
-            return True
-        
-    # Filter out standard sqlite3 package folder in datas/binaries
-    dest_parts = dest_lower.split('/')
-    src_parts = src_lower.split('/')
-    if "sqlite3" in dest_parts or "_sqlite3" in dest_parts:
-        return True
-    if "sqlite3" in src_parts or "_sqlite3" in src_parts:
+    # We only want to filter out standard, unencrypted sqlite3.dll/libsqlite3 DLLs.
+    # We must KEEP all sqlcipher3 files, standard python _sqlite3.pyd extension modules,
+    # and our custom SQLCipher-enabled sqlite3.dll.
+    if filename_dest == "sqlite3.dll" or filename_src == "sqlite3.dll" or "libsqlite3" in filename_dest:
+        # Keep our SQLCipher-enabled DLL (bundled from site-packages or Library/bin)
+        if "sqlcipher3" in src_lower or "library/bin" in src_lower or "site-packages" in src_lower:
+            return False
+        # Filter out standard Python/system unencrypted sqlite3.dll
         return True
         
     return False
