@@ -157,9 +157,17 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
 
         hasher = hashlib.sha256()
         try:
-            with open(file_path, "rb") as fh:
-                while chunk := fh.read(8192):
-                    hasher.update(chunk)
+            is_text_file = file_path.suffix in (".py", ".pyi", ".typed")
+            if is_text_file:
+                with open(file_path, "r", encoding="utf-8-sig", newline=None) as fh:
+                    content = fh.read()
+                # Normalize all line endings to LF (\n)
+                normalized_bytes = content.replace("\r\n", "\n").encode("utf-8")
+                hasher.update(normalized_bytes)
+            else:
+                with open(file_path, "rb") as fh:
+                    while chunk := fh.read(8192):
+                        hasher.update(chunk)
             actual_hash = hasher.hexdigest()
         except Exception as e:
             raise RuntimeError(
