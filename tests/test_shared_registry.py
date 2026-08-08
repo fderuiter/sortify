@@ -394,3 +394,25 @@ def test_pytorch_thread_limits_selection(monkeypatch):
         registry._models.pop("easyocr", None)
         registry.get_ocr_reader()
         mock_torch.set_num_threads.assert_any_call(4)
+
+
+def test_no_dns_during_import():
+    """Verify that no DNS or hostname resolution runs during the module import phase."""
+    import sys
+    import importlib
+
+    # Remove from sys.modules if already imported to force a fresh reload/import
+    if "app.core.shared_registry" in sys.modules:
+        del sys.modules["app.core.shared_registry"]
+
+    mock_gethostname = MagicMock(
+        side_effect=RuntimeError(
+            "socket.gethostname() should not be called at import time!"
+        )
+    )
+    with patch("socket.gethostname", mock_gethostname):
+        # Importing should not trigger the gethostname call
+        import app.core.shared_registry
+
+        importlib.reload(app.core.shared_registry)
+

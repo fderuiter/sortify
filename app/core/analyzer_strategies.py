@@ -8,12 +8,14 @@ from collections import defaultdict
 from contextlib import contextmanager
 from typing import List, Protocol
 
-from app.core.shared_registry import block_external_network as _block_external_network
-
 
 @contextmanager
 def block_external_network():
     """Block outgoing non-localhost network traffic during naming generation."""
+    from app.core.shared_registry import (
+        block_external_network as _block_external_network,
+    )
+
     with _block_external_network(reason="folder naming"):
         yield
 
