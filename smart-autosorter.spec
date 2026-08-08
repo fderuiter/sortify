@@ -236,10 +236,13 @@ def is_standard_sqlite_asset(dest, src):
     # and our custom SQLCipher-enabled sqlite3.dll.
     if filename_dest == "sqlite3.dll" or filename_src == "sqlite3.dll" or "libsqlite3" in filename_dest:
         # Keep our SQLCipher-enabled DLL (bundled from site-packages or Library/bin)
-        virtualenv_dir = sys.prefix.lower().replace('\\', '/') if sys.prefix else ""
         if "sqlcipher3" in src_lower or "library/bin" in src_lower or "site-packages" in src_lower:
             return False
-        if virtualenv_dir and sys.prefix != sys.base_prefix and virtualenv_dir in src_lower:
+        if ".venv" in src_lower or "/venv/" in src_lower or "/virtualenv/" in src_lower:
+            return False
+        virtualenv_dir = sys.prefix.lower().replace('\\', '/') if sys.prefix else ""
+        is_venv = (sys.prefix != sys.base_prefix) or hasattr(sys, "real_prefix") or (sys.prefix and os.path.exists(os.path.join(sys.prefix, "pyvenv.cfg")))
+        if virtualenv_dir and is_venv and virtualenv_dir in src_lower:
             return False
         # Filter out standard Python/system unencrypted sqlite3.dll
         return True

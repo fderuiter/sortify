@@ -386,6 +386,30 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
             ]
             found_dll_names = set()
             found_dlls = set()
+
+            # 1. Check recursively inside the installed sqlcipher3 package directory itself for any DLLs
+            if spec and spec.submodule_search_locations:
+                sqlcipher_dir = spec.submodule_search_locations[0]
+                for root, dirs, files in os.walk(sqlcipher_dir):
+                    for file in files:
+                        file_lower = file.lower()
+                        if file_lower.endswith(".dll"):
+                            dll_path = os.path.abspath(os.path.join(root, file))
+                            if file_lower not in found_dll_names:
+                                found_dll_names.add(file_lower)
+                                found_dlls.add(dll_path)
+                                logger.info(
+                                    f"Copying required Windows dependency DLL from sqlcipher3 package: {dll_path}"
+                                )
+                                try:
+                                    shutil.copy2(dll_path, bin_dir)
+                                    shutil.copy2(dll_path, sqlcipher3_path)
+                                except Exception as copy_dll_err:
+                                    logger.warning(
+                                        f"Failed to copy DLL {dll_path}: {copy_dll_err}"
+                                    )
+
+            # 2. Check the standard search directories for matching DLL patterns
             for s_dir in search_dirs:
                 if not s_dir or not os.path.isdir(s_dir):
                     continue
