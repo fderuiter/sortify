@@ -275,12 +275,16 @@ def test_sequential_corrections_performance(cache_test_env):
         # Update user verified target path
         db.set_user_verified_target(base_dir, f"hash_{i}", f"target_{i}")
         # Update document path
-        db.update_document_path(base_dir, f"doc_{i}.txt", f"target_{i}/doc_moved_{i}.txt")
-    
+        db.update_document_path(
+            base_dir, f"doc_{i}.txt", f"target_{i}/doc_moved_{i}.txt"
+        )
+
     end_time = time.time()
     elapsed = end_time - start_time
-    print(f"\nSequential corrections elapsed time for {num_docs} docs: {elapsed:.4f} seconds")
-    
+    print(
+        f"\nSequential corrections elapsed time for {num_docs} docs: {elapsed:.4f} seconds"
+    )
+
     # Assert that sequential corrections execute in under 5 seconds
     assert elapsed < 5.0
 
@@ -324,7 +328,9 @@ def test_concurrent_mutating_read_write(cache_test_env):
                 if target is not None and target != "":
                     target = target.replace("\\", "/")
                     idx = int(target.split("/")[-1].split("_")[-1])
-                    filepath_idx = int(filepath.split("/")[-1].replace("doc_", "").replace(".txt", ""))
+                    filepath_idx = int(
+                        filepath.split("/")[-1].replace("doc_", "").replace(".txt", "")
+                    )
                     # Because update_document_path runs first, filepath_idx should be >= idx
                     assert filepath_idx >= idx
             except AssertionError as e:
@@ -340,10 +346,16 @@ def test_concurrent_mutating_read_write(cache_test_env):
         while not stop_threads:
             try:
                 # Mutate filepath and target folder
-                old_filepath = f"target_folder_{counter}/doc_{counter}.txt" if counter > 0 else "doc.txt"
+                old_filepath = (
+                    f"target_folder_{counter}/doc_{counter}.txt"
+                    if counter > 0
+                    else "doc.txt"
+                )
                 new_filepath = f"target_folder_{counter + 1}/doc_{counter + 1}.txt"
                 db.update_document_path(base_dir, old_filepath, new_filepath)
-                db.set_user_verified_target(base_dir, "hash1", f"target_folder_{counter + 1}")
+                db.set_user_verified_target(
+                    base_dir, "hash1", f"target_folder_{counter + 1}"
+                )
                 counter += 1
             except Exception:
                 # Absorb transient DB/queue/OS exceptions during concurrent mutation on Windows GHA
@@ -369,6 +381,7 @@ def test_concurrent_mutating_read_write(cache_test_env):
 
     # Clear dead threads before asserting to avoid SQLite locking on Windows
     from app.core.db_conn import clear_dead_thread_connections
+
     clear_dead_thread_connections()
 
     assert not errors, f"Encountered concurrent errors: {errors}"

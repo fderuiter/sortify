@@ -320,8 +320,10 @@ def main():
 
     if getattr(args, "update_snapshots", False) is True:
         import os
-        import pytest
         import sys
+
+        import pytest
+
         print("Regenerating baseline snapshots across all covered views...")
         os.environ["UPDATE_SNAPSHOTS"] = "1"
         exit_code = pytest.main(["tests/test_visual_snapshots.py"])

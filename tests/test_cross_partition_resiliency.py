@@ -1,6 +1,7 @@
 import os
 import shutil
 from unittest.mock import patch
+
 import pytest
 
 from app.core.db_conn import get_db_connection
@@ -63,7 +64,9 @@ def test_single_file_cross_partition_move_failure(test_history_env):
 
     # 5. Execute move and expect failure/rollback
     with patch("app.core.mover.shutil.move", side_effect=mock_move):
-        with pytest.raises(PermissionError, match="Simulated cross-partition source deletion failure"):
+        with pytest.raises(
+            PermissionError, match="Simulated cross-partition source deletion failure"
+        ):
             execute_moves(base_dir, plan, db, history_manager)
 
     # 6. Verify filesystem boundaries
@@ -138,7 +141,7 @@ def test_batch_file_cross_partition_move_failure(test_history_env):
                 "__type__": "file",
                 "relative_source": "../fileB.txt",
                 "target_filename": "fileB.txt",
-            }
+            },
         }
     }
 
@@ -151,12 +154,17 @@ def test_batch_file_cross_partition_move_failure(test_history_env):
         if src == fileB_src and dst == fileB_dst:
             os.makedirs(os.path.dirname(dst), exist_ok=True)
             shutil.copy2(src, dst)
-            raise PermissionError("Simulated batch element B cross-partition source deletion failure.")
+            raise PermissionError(
+                "Simulated batch element B cross-partition source deletion failure."
+            )
         return original_move(src, dst)
 
     # 5. Execute move and expect failure/rollback
     with patch("app.core.mover.shutil.move", side_effect=mock_move):
-        with pytest.raises(PermissionError, match="Simulated batch element B cross-partition source deletion failure"):
+        with pytest.raises(
+            PermissionError,
+            match="Simulated batch element B cross-partition source deletion failure",
+        ):
             execute_moves(base_dir, plan, db, history_manager)
 
     # 6. Verify filesystem boundaries after rollback

@@ -183,37 +183,85 @@ def test_validate_policies_not_dict_direct():
 def test_validate_policies_invalid_type():
     """Test that a ValueError is raised for invalid policy type."""
     with pytest.raises(ValidationError) as exc_info:
-        Settings(POLICIES=[{"type": "invalid", "expression": "abc", "target_path": "valid", "priority": 1}])
+        Settings(
+            POLICIES=[
+                {
+                    "type": "invalid",
+                    "expression": "abc",
+                    "target_path": "valid",
+                    "priority": 1,
+                }
+            ]
+        )
     assert "Invalid policy type" in str(exc_info.value)
 
 
 def test_validate_policies_invalid_expression():
     """Test that a ValueError is raised if policy expression is empty or not a string."""
     with pytest.raises(ValidationError) as exc_info:
-        Settings(POLICIES=[{"type": "keyword", "expression": 123, "target_path": "valid", "priority": 1}])
+        Settings(
+            POLICIES=[
+                {
+                    "type": "keyword",
+                    "expression": 123,
+                    "target_path": "valid",
+                    "priority": 1,
+                }
+            ]
+        )
     assert "Policy expression must be a non-empty string" in str(exc_info.value)
 
     with pytest.raises(ValidationError) as exc_info2:
-        Settings(POLICIES=[{"type": "keyword", "expression": "   ", "target_path": "valid", "priority": 1}])
+        Settings(
+            POLICIES=[
+                {
+                    "type": "keyword",
+                    "expression": "   ",
+                    "target_path": "valid",
+                    "priority": 1,
+                }
+            ]
+        )
     assert "Policy expression must be a non-empty string" in str(exc_info2.value)
 
 
 def test_validate_policies_invalid_priority():
     """Test that a ValueError is raised if policy does not have an integer priority."""
     with pytest.raises(ValidationError) as exc_info:
-        Settings(POLICIES=[{"type": "keyword", "expression": "abc", "target_path": "valid"}])
+        Settings(
+            POLICIES=[{"type": "keyword", "expression": "abc", "target_path": "valid"}]
+        )
     assert "Policy must have an integer priority" in str(exc_info.value)
 
     with pytest.raises(ValidationError) as exc_info2:
-        Settings(POLICIES=[{"type": "keyword", "expression": "abc", "target_path": "valid", "priority": "high"}])
+        Settings(
+            POLICIES=[
+                {
+                    "type": "keyword",
+                    "expression": "abc",
+                    "target_path": "valid",
+                    "priority": "high",
+                }
+            ]
+        )
     assert "Policy must have an integer priority" in str(exc_info2.value)
 
 
 def test_policy_overlap_keyword_masks_keyword(caplog):
     """Test that rule overlap is detected when a keyword masks another keyword."""
     policies = [
-        {"type": "keyword", "expression": "abc", "target_path": "path1", "priority": 10},
-        {"type": "keyword", "expression": "abcde", "target_path": "path2", "priority": 5},
+        {
+            "type": "keyword",
+            "expression": "abc",
+            "target_path": "path1",
+            "priority": 10,
+        },
+        {
+            "type": "keyword",
+            "expression": "abcde",
+            "target_path": "path2",
+            "priority": 5,
+        },
     ]
     with caplog.at_level(logging.WARNING):
         Settings(POLICIES=policies)
@@ -224,8 +272,18 @@ def test_policy_overlap_keyword_masks_keyword(caplog):
 def test_policy_overlap_pattern_masks_pattern(caplog):
     """Test that rule overlap is detected when a pattern masks another pattern."""
     policies = [
-        {"type": "pattern", "expression": "abc", "target_path": "path1", "priority": 10},
-        {"type": "pattern", "expression": "abcde", "target_path": "path2", "priority": 5},
+        {
+            "type": "pattern",
+            "expression": "abc",
+            "target_path": "path1",
+            "priority": 10,
+        },
+        {
+            "type": "pattern",
+            "expression": "abcde",
+            "target_path": "path2",
+            "priority": 5,
+        },
     ]
     with caplog.at_level(logging.WARNING):
         Settings(POLICIES=policies)
@@ -235,8 +293,18 @@ def test_policy_overlap_pattern_masks_pattern(caplog):
 def test_policy_overlap_pattern_masks_override(caplog):
     """Test that rule overlap is detected when a pattern masks an override."""
     policies = [
-        {"type": "pattern", "expression": "abc", "target_path": "path1", "priority": 10},
-        {"type": "override", "expression": "abcde", "target_path": "path2", "priority": 5},
+        {
+            "type": "pattern",
+            "expression": "abc",
+            "target_path": "path1",
+            "priority": 10,
+        },
+        {
+            "type": "override",
+            "expression": "abcde",
+            "target_path": "path2",
+            "priority": 5,
+        },
     ]
     with caplog.at_level(logging.WARNING):
         Settings(POLICIES=policies)
@@ -246,8 +314,18 @@ def test_policy_overlap_pattern_masks_override(caplog):
 def test_policy_overlap_override_masks_override(caplog):
     """Test that rule overlap is detected when an override masks another override."""
     policies = [
-        {"type": "override", "expression": "abc", "target_path": "path1", "priority": 10},
-        {"type": "override", "expression": "abcde", "target_path": "path2", "priority": 5},
+        {
+            "type": "override",
+            "expression": "abc",
+            "target_path": "path1",
+            "priority": 10,
+        },
+        {
+            "type": "override",
+            "expression": "abcde",
+            "target_path": "path2",
+            "priority": 5,
+        },
     ]
     with caplog.at_level(logging.WARNING):
         Settings(POLICIES=policies)
@@ -257,8 +335,18 @@ def test_policy_overlap_override_masks_override(caplog):
 def test_policy_no_overlap_pattern_does_not_mask_keyword(caplog):
     """A higher priority pattern should NOT mask a lower priority keyword."""
     policies = [
-        {"type": "pattern", "expression": "abc", "target_path": "path1", "priority": 10},
-        {"type": "keyword", "expression": "abcde", "target_path": "path2", "priority": 5},
+        {
+            "type": "pattern",
+            "expression": "abc",
+            "target_path": "path1",
+            "priority": 10,
+        },
+        {
+            "type": "keyword",
+            "expression": "abcde",
+            "target_path": "path2",
+            "priority": 5,
+        },
     ]
     caplog.clear()
     with caplog.at_level(logging.WARNING):
@@ -269,8 +357,18 @@ def test_policy_no_overlap_pattern_does_not_mask_keyword(caplog):
 def test_policy_no_overlap_override_does_not_mask_pattern(caplog):
     """A higher priority override should NOT mask a lower priority pattern."""
     policies = [
-        {"type": "override", "expression": "abc", "target_path": "path1", "priority": 10},
-        {"type": "pattern", "expression": "abcde", "target_path": "path2", "priority": 5},
+        {
+            "type": "override",
+            "expression": "abc",
+            "target_path": "path1",
+            "priority": 10,
+        },
+        {
+            "type": "pattern",
+            "expression": "abcde",
+            "target_path": "path2",
+            "priority": 5,
+        },
     ]
     caplog.clear()
     with caplog.at_level(logging.WARNING):
@@ -281,7 +379,12 @@ def test_policy_no_overlap_override_does_not_mask_pattern(caplog):
 def test_policy_no_overlap_different_expressions(caplog):
     """Test that completely different expressions do not trigger any overlap warning (branch of is_masked_by where ha_expr is not in lo_expr)."""
     policies = [
-        {"type": "keyword", "expression": "abc", "target_path": "path1", "priority": 10},
+        {
+            "type": "keyword",
+            "expression": "abc",
+            "target_path": "path1",
+            "priority": 10,
+        },
         {"type": "keyword", "expression": "xyz", "target_path": "path2", "priority": 5},
     ]
     caplog.clear()
@@ -292,13 +395,24 @@ def test_policy_no_overlap_different_expressions(caplog):
 
 def test_policy_overlap_empty_expr_branch():
     """Test the branch in is_masked_by where an expression lower() is empty using a custom str subclass."""
+
     class TrickStr(str):
         def lower(self):
             return ""
 
     policies = [
-        {"type": "keyword", "expression": TrickStr("abc"), "target_path": "path1", "priority": 10},
-        {"type": "keyword", "expression": TrickStr("abcde"), "target_path": "path2", "priority": 5},
+        {
+            "type": "keyword",
+            "expression": TrickStr("abc"),
+            "target_path": "path1",
+            "priority": 10,
+        },
+        {
+            "type": "keyword",
+            "expression": TrickStr("abcde"),
+            "target_path": "path2",
+            "priority": 5,
+        },
     ]
     settings = Settings(POLICIES=policies)
     assert len(settings.POLICIES) == 2
@@ -306,7 +420,10 @@ def test_policy_overlap_empty_expr_branch():
 
 def test_app_settings_init_validation_error():
     """Test that AppSettings exits with code 1 if Settings initialization fails."""
-    with patch("sys.exit", side_effect=SystemExit) as mock_exit, patch.dict(os.environ, {"MAX_WORKERS": "invalid"}):
+    with (
+        patch("sys.exit", side_effect=SystemExit) as mock_exit,
+        patch.dict(os.environ, {"MAX_WORKERS": "invalid"}),
+    ):
         with pytest.raises(SystemExit):
             AppSettings()
         mock_exit.assert_called_once_with(1)
@@ -315,10 +432,12 @@ def test_app_settings_init_validation_error():
 def test_app_settings_load_no_schema_file(tmp_path):
     """Test AppSettings load when config_schema.json does not exist."""
     from pathlib import Path
+
     mock_filepath = tmp_path / "settings.json"
     mock_filepath.write_text(json.dumps({"MAX_WORKERS": 8}))
 
     original_exists = Path.exists
+
     def mock_exists(self):
         if "config_schema.json" in str(self):
             return False
@@ -342,10 +461,9 @@ def test_app_settings_load_invalid_root_schema(tmp_path, caplog):
 def test_app_settings_load_schema_and_pydantic_error(tmp_path, caplog):
     """Test AppSettings load with both schema mismatch and setattr failure to cover branch 253->257."""
     mock_filepath = tmp_path / "settings.json"
-    mock_filepath.write_text(json.dumps({
-        "UNKNOWN_KEY": "some_value",
-        "MAX_WORKERS": "invalid"
-    }))
+    mock_filepath.write_text(
+        json.dumps({"UNKNOWN_KEY": "some_value", "MAX_WORKERS": "invalid"})
+    )
 
     caplog.clear()
     with caplog.at_level(logging.WARNING):
@@ -390,6 +508,7 @@ def test_app_settings_save_failure(tmp_path, caplog):
 
     # Mock open to raise permission error during save
     original_open = open
+
     def mock_open_write_fail(file, mode="r", *args, **kwargs):
         if file == str(mock_filepath) and "w" in mode:
             raise PermissionError("Write permission denied")
@@ -399,4 +518,3 @@ def test_app_settings_save_failure(tmp_path, caplog):
         with caplog.at_level(logging.ERROR):
             app_settings._save()
     assert "Failed to save settings: Write permission denied" in caplog.text
-

@@ -57,8 +57,10 @@ def main():
 
     # app/main.py demo flag mentioned in contributor.md
     main_expected = [
-        "--demo", "Run interactive CLI demo mode",
-        "--update-snapshots", "Regenerate reference baseline snapshots"
+        "--demo",
+        "Run interactive CLI demo mode",
+        "--update-snapshots",
+        "Regenerate reference baseline snapshots",
     ]
     if not run_command([sys.executable, "app/main.py", "--help"], main_expected):
         success = False

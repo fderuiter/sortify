@@ -319,8 +319,14 @@ class IncrementalAnalyzer:
 
                 if target is not None and d[1]:
                     from app.core.extractor_strategies import registry
+
                     ext = os.path.splitext(d[0])[1].lower()
-                    if ext not in {".png", ".jpg", ".jpeg"} and registry.is_supported(ext) and not d[1].startswith("[STATUS:") and d[1].strip():
+                    if (
+                        ext not in {".png", ".jpg", ".jpeg"}
+                        and registry.is_supported(ext)
+                        and not d[1].startswith("[STATUS:")
+                        and d[1].strip()
+                    ):
                         historical_docs.append(
                             {"text": d[1], "target_folder": target, "filepath": d[0]}
                         )
@@ -401,7 +407,9 @@ class IncrementalAnalyzer:
 
                         historical_texts = [doc["text"] for doc in historical_docs]
                         vectorizer = TfidfVectorizer(
-                            stop_words=list(self.stop_words), max_features=1000, sublinear_tf=True
+                            stop_words=list(self.stop_words),
+                            max_features=1000,
+                            sublinear_tf=True,
                         )
                         safe_ai_documents = [d or "" for d in ai_documents]
                         vectorizer.fit(historical_texts)

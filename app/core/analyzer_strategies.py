@@ -715,7 +715,11 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         top_examples = []
         few_shot_context = ""
         # Filter out non-textual attachments and skipped/unsupported files from target documents
-        filtered_documents = [doc for doc in documents if doc and not doc.startswith("[STATUS:") and doc.strip()]
+        filtered_documents = [
+            doc
+            for doc in documents
+            if doc and not doc.startswith("[STATUS:") and doc.strip()
+        ]
         if not filtered_documents:
             filtered_documents = documents
 
@@ -769,12 +773,24 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
 
                             hist_vectors = []
                             hist_meta = []
-                            supported_exts_set = {".txt", ".docx", ".csv", ".xlsx", ".xls", ".pdf"}
+                            supported_exts_set = {
+                                ".txt",
+                                ".docx",
+                                ".csv",
+                                ".xlsx",
+                                ".xls",
+                                ".pdf",
+                            }
                             for filepath, user_verified_target, vector_str in rows:
-                                dot_idx = filepath.rfind('.')
-                                ext = filepath[dot_idx:].lower() if dot_idx != -1 else ""
+                                dot_idx = filepath.rfind(".")
+                                ext = (
+                                    filepath[dot_idx:].lower() if dot_idx != -1 else ""
+                                )
                                 # Exclude non-textual attachments and image files from semantic similarity
-                                if ext in {".png", ".jpg", ".jpeg"} or ext not in supported_exts_set:
+                                if (
+                                    ext in {".png", ".jpg", ".jpeg"}
+                                    or ext not in supported_exts_set
+                                ):
                                     continue
 
                                 if vector_str:
@@ -837,8 +853,10 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
             historical_examples = []
             if db and base_dir:
                 try:
-                    from app.core.extractor_strategies import registry
                     import os
+
+                    from app.core.extractor_strategies import registry
+
                     all_docs = db.get_all_documents(base_dir)
                     for doc in all_docs:
                         # doc is (filepath, decrypted_text, file_hash, user_verified_target_path)
@@ -847,7 +865,11 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                             decrypted_text = doc[1]
                             ext = os.path.splitext(filepath)[1].lower()
                             # Exclude non-textual attachments, image files, and skipped/unsupported files
-                            if ext in {".png", ".jpg", ".jpeg"} or not registry.is_supported(ext):
+                            if ext in {
+                                ".png",
+                                ".jpg",
+                                ".jpeg",
+                            } or not registry.is_supported(ext):
                                 continue
                             if decrypted_text.startswith("[STATUS:"):
                                 continue

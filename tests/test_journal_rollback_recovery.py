@@ -54,8 +54,14 @@ def test_normal_rollback_writes_and_deletes_journal(test_history_env):
         conn = get_db_connection(db.db_path)
         with conn:
             conn.execute("DELETE FROM documents WHERE base_dir = ?", (base_dir,))
+
     db.worker.execute_write(_update_db)
-    db.upsert_document(base_dir, os.path.join("organized", "test_doc.txt"), "hash_val", "extracted text")
+    db.upsert_document(
+        base_dir,
+        os.path.join("organized", "test_doc.txt"),
+        "hash_val",
+        "extracted text",
+    )
 
     # 4. Mock the internal move execution to verify journal file exists right before file relocation
     original_move = shutil.move
@@ -78,7 +84,9 @@ def test_normal_rollback_writes_and_deletes_journal(test_history_env):
         history_manager.rollback(session_id)
 
     # 5. Assertions
-    assert journal_found_during_move is True, "Journal was not written before file relocations!"
+    assert journal_found_during_move is True, (
+        "Journal was not written before file relocations!"
+    )
     assert not journal_path.exists(), "Journal was not deleted on successful rollback!"
 
 
@@ -97,7 +105,7 @@ async def test_scanner_detects_interrupted_rollback(mock_session_base, tmp_path)
         "base_dir": str(tmp_path / "target_dir"),
         "moves": [["/some/src", "/some/dst"]],
         "symlinks": [],
-        "shortcuts": []
+        "shortcuts": [],
     }
     with open(journal_path, "w") as f:
         json.dump(journal_data, f, indent=2)
@@ -148,7 +156,7 @@ def test_resume_interrupted_rollback(test_history_env):
             [file2_dst, file2_original]  # Pending move
         ],
         "symlinks": [],
-        "shortcuts": []
+        "shortcuts": [],
     }
     with open(journal_path, "w") as f:
         json.dump(journal_data, f, indent=2)
@@ -187,8 +195,12 @@ def test_revert_interrupted_rollback(test_history_env):
     with open(file2_organized, "w") as f:
         f.write("content 2")
 
-    db.upsert_document(base_dir, os.path.join("organized", "file1.txt"), "hash1", "text1")
-    db.upsert_document(base_dir, os.path.join("organized", "file2.txt"), "hash2", "text2")
+    db.upsert_document(
+        base_dir, os.path.join("organized", "file1.txt"), "hash1", "text1"
+    )
+    db.upsert_document(
+        base_dir, os.path.join("organized", "file2.txt"), "hash2", "text2"
+    )
 
     # Take safety snapshot (which represents pre-rollback state)
     safety_session_id = history_manager.create_snapshot(base_dir)
@@ -205,10 +217,10 @@ def test_revert_interrupted_rollback(test_history_env):
         "base_dir": base_dir,
         "moves": [
             [file1_organized, file1_root],
-            [file2_organized, os.path.join(base_dir, "file2.txt")]
+            [file2_organized, os.path.join(base_dir, "file2.txt")],
         ],
         "symlinks": [],
-        "shortcuts": []
+        "shortcuts": [],
     }
     with open(journal_path, "w") as f:
         json.dump(journal_data, f, indent=2)
@@ -263,7 +275,7 @@ async def test_ui_rollback_recovery_dialog_trigger(mock_session_base, tmp_path):
         "base_dir": str(tmp_path / "user_data"),
         "moves": [],
         "symlinks": [],
-        "shortcuts": []
+        "shortcuts": [],
     }
     with open(journal_path, "w") as f:
         json.dump(journal_data, f, indent=2)
@@ -280,7 +292,9 @@ async def test_ui_rollback_recovery_dialog_trigger(mock_session_base, tmp_path):
 
 
 @pytest.mark.anyio
-async def test_ui_rollback_dialog_resume_and_revert_actions(mock_session_base, tmp_path):
+async def test_ui_rollback_dialog_resume_and_revert_actions(
+    mock_session_base, tmp_path
+):
     """Verify that the dialog's Resume and Revert buttons invoke the correct backend recovery methods."""
     settings = AppSettings()
     settings.AI_CONSENT_GRANTED = False
@@ -296,7 +310,7 @@ async def test_ui_rollback_dialog_resume_and_revert_actions(mock_session_base, t
         "session_dir": str(session_dir),
         "journal_path": str(session_dir / "rollback_journal.json"),
         "is_rollback_recovery": True,
-        "status": "interrupted_rollback"
+        "status": "interrupted_rollback",
     }
 
     app = AutoSorterApp(settings)
