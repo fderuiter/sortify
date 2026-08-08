@@ -202,6 +202,204 @@ class ImageExtractor:
             return "[STATUS:ERROR: Vision Model Failure]"
 
 
+def get_audio_duration(file_path: str) -> float:
+    """Determine duration of WAV/MP3/M4A files or return estimated fallback."""
+    import os
+    ext = os.path.splitext(file_path)[1].lower()
+    try:
+        if os.path.getsize(file_path) == 0:
+            return 0.0
+    except Exception:
+        pass
+
+    if ext == ".wav":
+        try:
+            import wave
+            with wave.open(file_path, "rb") as f:
+                frames = f.getnframes()
+                rate = f.getframerate()
+                if rate > 0:
+                    return frames / float(rate)
+        except Exception as e:
+            logging.debug(f"Failed to get WAV duration for {file_path}: {e}")
+    elif ext == ".mp3":
+        try:
+            size = os.path.getsize(file_path)
+            return size / 16000.0  # Assumes 128 kbps average
+        except Exception as e:
+            logging.debug(f"Failed to get MP3 size for {file_path}: {e}")
+    elif ext == ".m4a":
+        try:
+            size = os.path.getsize(file_path)
+            return size / 12000.0  # Assumes 96 kbps average
+        except Exception as e:
+            logging.debug(f"Failed to get M4A size for {file_path}: {e}")
+
+    return 100.0
+
+
+class AudioExtractor:
+    """Extractor for transcribing audio files using a local Whisper subprocess."""
+
+    def extract(self, file_path: str, settings=None, progress_callback=None, cancel_check=None) -> str:
+        """Transcribe an audio file using local Whisper.
+
+        Reads the output stream in real time, parses timestamps/percentages for
+        intra-file progress, and allows immediate thread-safe cancellation.
+        """
+        import re
+        import queue
+        import threading
+        import subprocess
+        from app.core.env_helper import spawn_background_process
+
+        total_duration = get_audio_duration(file_path) or 100.0
+        if total_duration <= 0:
+            total_duration = 100.0
+
+        whisper_cmd = "whisper"
+        if settings and hasattr(settings, "WHISPER_CMD"):
+            whisper_cmd = settings.WHISPER_CMD
+
+        if isinstance(whisper_cmd, list):
+            cmd = list(whisper_cmd) + [file_path, "--output_format", "txt", "--device", "cpu"]
+        else:
+            cmd = [whisper_cmd, file_path, "--output_format", "txt", "--device", "cpu"]
+
+        cmd = [str(arg) for arg in cmd]
+        logging.info(f"Launching Whisper subprocess: {' '.join(cmd)}")
+
+        try:
+            process = spawn_background_process(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+            )
+        except FileNotFoundError:
+            logging.error(f"Whisper executable '{whisper_cmd}' not found on system.")
+            return f"[STATUS:ERROR: Whisper model offline or '{whisper_cmd}' not found]"
+        except Exception as e:
+            logging.error(f"Failed to spawn Whisper process: {e}")
+            return f"[STATUS:ERROR: {str(e)}]"
+
+        transcription_lines = []
+
+        # Timestamps regex matching HH:MM:SS.mmm --> HH:MM:SS.mmm or MM:SS.mmm --> MM:SS.mmm
+        ts_long = re.compile(
+            r"(\d{2}):(\d{2}):(\d{2})[.,](\d+)\s*-->\s*(\d{2}):(\d{2}):(\d{2})[.,](\d+)"
+        )
+        ts_short = re.compile(
+            r"(\d{2}):(\d{2})[.,](\d+)\s*-->\s*(\d{2}):(\d{2})[.,](\d+)"
+        )
+        percent_re = re.compile(r"(\d+(?:\.\d+)?)\s*%")
+
+        # Set up a thread-safe queue reader to read from the subprocess standard output
+        q = queue.Queue()
+
+        def reader_thread_func(stream, queue_obj):
+            try:
+                for line in iter(stream.readline, ""):
+                    queue_obj.put(line)
+            except Exception:
+                pass
+            finally:
+                stream.close()
+
+        t = threading.Thread(target=reader_thread_func, args=(process.stdout, q))
+        t.daemon = True
+        t.start()
+
+        try:
+            while True:
+                # 1. Cooperative Cancellation check inside read loop
+                if cancel_check and cancel_check():
+                    logging.info("Cancellation requested, terminating Whisper process.")
+                    process.terminate()
+                    try:
+                        process.wait(timeout=1.5)
+                    except subprocess.TimeoutExpired:
+                        logging.warning("Whisper process did not terminate, forcing kill.")
+                        process.kill()
+                        process.wait()
+                    return "[STATUS:CANCELLED]"
+
+                # 2. Check if subprocess terminated and no more logs to read
+                if process.poll() is not None and q.empty():
+                    break
+
+                # 3. Non-blocking queue read with short timeout
+                try:
+                    line = q.get(timeout=0.05)
+                except queue.Empty:
+                    continue
+
+                line_str = line.strip()
+                if not line_str:
+                    continue
+
+                # 4. Parse progress metrics
+                pct_match = percent_re.search(line_str)
+                if pct_match:
+                    try:
+                        val = float(pct_match.group(1)) / 100.0
+                        if progress_callback:
+                            progress_callback(val)
+                    except Exception:
+                        pass
+                else:
+                    match_long = ts_long.search(line_str)
+                    if match_long:
+                        try:
+                            h, m, s, ms = match_long.groups()[4:8]
+                            current_sec = (
+                                int(h) * 3600
+                                + int(m) * 60
+                                + int(s)
+                                + int(ms) / (10 ** len(ms))
+                            )
+                            val = min(1.0, max(0.0, current_sec / total_duration))
+                            if progress_callback:
+                                progress_callback(val)
+                        except Exception:
+                            pass
+                    else:
+                        match_short = ts_short.search(line_str)
+                        if match_short:
+                            try:
+                                m, s, ms = match_short.groups()[3:6]
+                                current_sec = (
+                                    int(m) * 60
+                                    + int(s)
+                                    + int(ms) / (10 ** len(ms))
+                                )
+                                val = min(1.0, max(0.0, current_sec / total_duration))
+                                if progress_callback:
+                                    progress_callback(val)
+                            except Exception:
+                                pass
+
+                # Clean the line by stripping out timestamp parts
+                clean_line = line_str
+                if "[" in clean_line and "]" in clean_line:
+                    clean_line = re.sub(r"\[.*?\]", "", clean_line).strip()
+
+                if clean_line:
+                    transcription_lines.append(clean_line)
+
+            process.wait()
+            if process.returncode != 0:
+                logging.error(f"Whisper process failed with return code {process.returncode}")
+                return f"[STATUS:ERROR: Whisper failed with code {process.returncode}]"
+
+        except Exception as e:
+            logging.error(f"Error during Whisper transcription execution: {e}")
+            return f"[STATUS:ERROR: {str(e)}]"
+
+        return " ".join(transcription_lines)
+
+
 class ExtractorRegistry:
     """Registry for managing and resolving document extractors by file extension."""
 
@@ -232,3 +430,6 @@ registry.register(".pdf", PdfExtractor())
 registry.register(".png", ImageExtractor())
 registry.register(".jpg", ImageExtractor())
 registry.register(".jpeg", ImageExtractor())
+registry.register(".mp3", AudioExtractor())
+registry.register(".wav", AudioExtractor())
+registry.register(".m4a", AudioExtractor())

@@ -72,6 +72,19 @@ class AutoSorterApp:
                 .classes("w-full max-w-md min-w-[320px] mt-4")
                 .props('aria-label="Progress Bar"')
             )
+            self.file_progress_bar = (
+                ui.linear_progress(value=0)
+                .classes("w-full max-w-md min-w-[320px] mt-2")
+                .props('aria-label="File Progress Bar"')
+            )
+            self.file_progress_bar.set_visibility(False)
+
+            self.file_progress_label = (
+                ui.label("")
+                .classes("text-gray-400 text-sm mt-1")
+                .props('aria-label="File Progress Label"')
+            )
+            self.file_progress_label.set_visibility(False)
 
             self.cancel_btn = (
                 ui.button("Cancel Analysis", on_click=self.cancel_analysis)
@@ -673,6 +686,23 @@ class AutoSorterApp:
             bypassed_set = set(bypassed_files)
             items_to_sort = [f for f in files if f not in bypassed_set]
 
+            def file_progress_cb(pct):
+                def update_ui():
+                    if hasattr(self, "file_progress_bar"):
+                        self.file_progress_bar.set_visibility(True)
+                        self.file_progress_bar.set_value(pct)
+                    if hasattr(self, "file_progress_label"):
+                        self.file_progress_label.set_visibility(True)
+                        self.file_progress_label.set_text(f"Active file progress: {pct * 100:.1f}%")
+                if self.loop:
+                    self.loop.call_soon_threadsafe(update_ui)
+
+            import inspect
+            sig = inspect.signature(self.app_session.process_items_async)
+            process_kwargs = {}
+            if "progress_callback" in sig.parameters:
+                process_kwargs["progress_callback"] = file_progress_cb
+
             async for (
                 item,
                 text,
@@ -681,8 +711,9 @@ class AutoSorterApp:
             ) in self.app_session.process_items_async(
                 items_to_sort,
                 lambda: getattr(self, "_cancel_analysis_flag", False),
+                **process_kwargs
             ):
-                if self._cancel_analysis_flag:
+                if self._cancel_analysis_flag or text == "[STATUS:CANCELLED]":
                     break
 
                 if not was_skipped:
@@ -692,6 +723,14 @@ class AutoSorterApp:
                 self.completed_files += 1
                 if self.total_files > 0:
                     self.progress_bar.set_value(self.completed_files / self.total_files)
+
+                # Reset/hide file progress elements after processing an item
+                if hasattr(self, "file_progress_bar"):
+                    self.file_progress_bar.set_value(0)
+                    self.file_progress_bar.set_visibility(False)
+                if hasattr(self, "file_progress_label"):
+                    self.file_progress_label.set_text("")
+                    self.file_progress_label.set_visibility(False)
 
                 if was_skipped:
                     msg = f"Processed {self.completed_files}/{self.total_files} files (skipped unchanged: {item})"
@@ -703,6 +742,12 @@ class AutoSorterApp:
                     logger.info(msg)
 
                 await asyncio.sleep(0.01)
+
+            # Hide file progress elements when done
+            if hasattr(self, "file_progress_bar"):
+                self.file_progress_bar.set_visibility(False)
+            if hasattr(self, "file_progress_label"):
+                self.file_progress_label.set_visibility(False)
 
             if not self._cancel_analysis_flag:
                 self.plan = await asyncio.to_thread(
