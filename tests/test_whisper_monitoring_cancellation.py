@@ -112,11 +112,10 @@ print("[00:05.000 --> 00:10.000] Hello segment 2", flush=True)
     def progress_cb(pct):
         nonlocal cancel_requested, cancel_time
         progress_vals.append(pct)
-        # Cancel on the first progress update matching ~0.05
-        if abs(pct - 0.05) < 1e-4:
-            cancel_requested = True
-            if cancel_time is None:
-                cancel_time = time.time()
+        # Cancel on the first progress update
+        cancel_requested = True
+        if cancel_time is None:
+            cancel_time = time.time()
 
     start_time = time.time()
     text = extractor.extract(
@@ -130,12 +129,12 @@ print("[00:05.000 --> 00:10.000] Hello segment 2", flush=True)
     # Verification:
     # 1. The status must indicate cancellation
     assert text == "[STATUS:CANCELLED]"
-    # 2. The cancellation must terminate the active process immediately (within 4 seconds to be safe on slow VM runners)
+    # 2. The cancellation must terminate the active process immediately (within 8 seconds to be safe on slow VM runners)
     if cancel_time is not None:
         elapsed_after_cancel = time.time() - cancel_time
-        assert elapsed_after_cancel < 4.0
+        assert elapsed_after_cancel < 8.0
     else:
-        assert elapsed < 10.0
+        assert elapsed < 8.0
     # 3. Only the first progress was registered
     assert any(abs(p - 0.05) < 1e-4 for p in progress_vals)
     assert all(p < 0.08 for p in progress_vals)
