@@ -1,7 +1,5 @@
-import io
 import os
 import sys
-import zipfile
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -70,23 +68,28 @@ def test_verify_sqlcipher_encryption_failure():
         assert verify_sqlcipher_encryption() is False
 
 
-def test_inject_bootstrap_paths():
+def test_inject_bootstrap_paths(tmp_path):
     """Verify search paths are properly added to sys.path and OS PATH env variables."""
-    bin_dir = get_bootstrap_bin_dir()
+    bin_dir = tmp_path / "binaries"
     sqlcipher3_path = bin_dir / "sqlcipher3"
+    sqlcipher3_path.mkdir(parents=True, exist_ok=True)
 
     with (
-        patch("pathlib.Path.exists", return_value=True),
+        patch(
+            "app.core.user_space_bootstrap.get_bootstrap_bin_dir",
+            return_value=bin_dir,
+        ),
         patch.object(sys, "path", sys.path.copy()) as mock_sys_path,
         patch("os.add_dll_directory", create=True) as mock_add_dll,
         patch.dict("os.environ", {"PATH": "existing_path"}),
     ):
         inject_bootstrap_paths()
-        assert str(bin_dir) in mock_sys_path
+        assert os.path.abspath(str(bin_dir)) in mock_sys_path
         if sys.platform == "win32":
-            mock_add_dll.assert_any_call(str(bin_dir))
-            mock_add_dll.assert_any_call(str(sqlcipher3_path))
-            assert str(bin_dir) in os.environ["PATH"]
+            mock_add_dll.assert_any_call(os.path.abspath(str(bin_dir)))
+            mock_add_dll.assert_any_call(os.path.abspath(str(sqlcipher3_path)))
+            assert os.path.abspath(str(bin_dir)) in os.environ["PATH"]
+            assert os.path.abspath(str(sqlcipher3_path)) in os.environ["PATH"]
 
 
 def test_bootstrap_binaries_bypass_if_cached(tmp_path):
@@ -115,19 +118,20 @@ def test_bootstrap_binaries_bypass_if_cached(tmp_path):
 
 
 def test_bootstrap_binaries_download_flow(tmp_path):
-    """Verify that when binaries are missing and internet is available, we download and extract successfully."""
+    """Verify that when binaries are missing, we bypass download and resolve locally instead."""
     mock_bin_dir = tmp_path / "binaries"
     mock_bin_dir.mkdir()
 
-    # Create dummy zip with a file or sqlcipher3 folder
-    zip_buffer = io.BytesIO()
-    with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
-        zip_file.writestr("sqlcipher3/dummy.txt", "dummy file content")
-    zip_data = zip_buffer.getvalue()
+    mock_local_sqlcipher_dir = tmp_path / "local_sqlcipher"
+    mock_local_sqlcipher_dir.mkdir()
+    ext = ".pyd" if sys.platform == "win32" else ".so"
+    native_filename = f"native_module{ext}"
+    (mock_local_sqlcipher_dir / native_filename).write_text("compiled code")
 
-    mock_response = MagicMock()
-    mock_response.__enter__.return_value = mock_response
-    mock_response.read.return_value = zip_data
+    mock_spec = MagicMock()
+    mock_spec.submodule_search_locations = [str(mock_local_sqlcipher_dir)]
+
+    mock_urlopen = MagicMock()
 
     with (
         patch(
@@ -135,9 +139,11 @@ def test_bootstrap_binaries_download_flow(tmp_path):
             return_value=mock_bin_dir,
         ),
         patch(
-            "app.core.user_space_bootstrap.check_internet_connection", return_value=True
+            "app.core.user_space_bootstrap.check_internet_connection",
+            return_value=True,
         ),
-        patch("urllib.request.urlopen", return_value=mock_response),
+        patch("urllib.request.urlopen", mock_urlopen),
+        patch("importlib.util.find_spec", return_value=mock_spec),
         patch(
             "app.core.user_space_bootstrap.verify_sqlcipher_encryption",
             return_value=True,
@@ -146,8 +152,9 @@ def test_bootstrap_binaries_download_flow(tmp_path):
     ):
         res = bootstrap_binaries(force_download=True)
         assert res is True
+        mock_urlopen.assert_not_called()
         assert (mock_bin_dir / "sqlcipher3").exists()
-        assert (mock_bin_dir / "sqlcipher3" / "dummy.txt").exists()
+        assert (mock_bin_dir / "sqlcipher3" / native_filename).exists()
 
 
 def test_bootstrap_binaries_download_failed_fallback(tmp_path):
@@ -157,7 +164,9 @@ def test_bootstrap_binaries_download_failed_fallback(tmp_path):
 
     mock_local_sqlcipher_dir = tmp_path / "local_sqlcipher"
     mock_local_sqlcipher_dir.mkdir()
-    (mock_local_sqlcipher_dir / "native_module.so").write_text("compiled code")
+    ext = ".pyd" if sys.platform == "win32" else ".so"
+    native_filename = f"native_module{ext}"
+    (mock_local_sqlcipher_dir / native_filename).write_text("compiled code")
 
     mock_spec = MagicMock()
     mock_spec.submodule_search_locations = [str(mock_local_sqlcipher_dir)]
@@ -182,7 +191,7 @@ def test_bootstrap_binaries_download_failed_fallback(tmp_path):
         res = bootstrap_binaries()
         assert res is True
         assert (mock_bin_dir / "sqlcipher3").exists()
-        assert (mock_bin_dir / "sqlcipher3" / "native_module.so").exists()
+        assert (mock_bin_dir / "sqlcipher3" / native_filename).exists()
 
 
 def test_bootstrap_binaries_failed_verification(tmp_path):
@@ -192,6 +201,9 @@ def test_bootstrap_binaries_failed_verification(tmp_path):
 
     mock_local_sqlcipher_dir = tmp_path / "local_sqlcipher"
     mock_local_sqlcipher_dir.mkdir()
+    ext = ".pyd" if sys.platform == "win32" else ".so"
+    native_filename = f"native_module{ext}"
+    (mock_local_sqlcipher_dir / native_filename).write_text("compiled code")
 
     mock_spec = MagicMock()
     mock_spec.submodule_search_locations = [str(mock_local_sqlcipher_dir)]
@@ -213,4 +225,86 @@ def test_bootstrap_binaries_failed_verification(tmp_path):
         patch("app.core.user_space_bootstrap.inject_bootstrap_paths"),
     ):
         with pytest.raises(RuntimeError, match="Startup verification failed"):
+            bootstrap_binaries()
+
+
+def test_bootstrap_binaries_missing_wheels(tmp_path):
+    """Verify that if local SQLCipher wheels are missing, we raise a descriptive RuntimeError."""
+    mock_bin_dir = tmp_path / "binaries"
+    mock_bin_dir.mkdir()
+
+    with (
+        patch(
+            "app.core.user_space_bootstrap.get_bootstrap_bin_dir",
+            return_value=mock_bin_dir,
+        ),
+        patch("importlib.util.find_spec", return_value=None),
+        patch(
+            "app.core.user_space_bootstrap.verify_sqlcipher_encryption",
+            return_value=False,
+        ),
+    ):
+        with pytest.raises(
+            RuntimeError, match="SQLCipher local native library/wheels are missing"
+        ):
+            bootstrap_binaries()
+
+
+def test_bootstrap_binaries_incompatible_architecture(tmp_path):
+    """Verify that if local SQLCipher binaries exist but are incompatible, we raise a descriptive RuntimeError."""
+    mock_bin_dir = tmp_path / "binaries"
+    mock_bin_dir.mkdir()
+
+    mock_local_sqlcipher_dir = tmp_path / "local_sqlcipher"
+    mock_local_sqlcipher_dir.mkdir()
+
+    mock_spec = MagicMock()
+    mock_spec.submodule_search_locations = [str(mock_local_sqlcipher_dir)]
+
+    with (
+        patch(
+            "app.core.user_space_bootstrap.get_bootstrap_bin_dir",
+            return_value=mock_bin_dir,
+        ),
+        patch("importlib.util.find_spec", return_value=mock_spec),
+        patch(
+            "app.core.user_space_bootstrap.verify_sqlcipher_encryption",
+            return_value=False,
+        ),
+    ):
+        with pytest.raises(
+            RuntimeError, match="incompatible with current platform/architecture"
+        ):
+            bootstrap_binaries()
+
+
+def test_bootstrap_binaries_frozen_success(tmp_path):
+    """Verify that in frozen PyInstaller mode, bootstrapping successfully verifies encryption directly."""
+    with (
+        patch("sys.frozen", True, create=True),
+        patch("sys._MEIPASS", str(tmp_path), create=True),
+        patch("os.add_dll_directory", create=True) as mock_add_dll,
+        patch(
+            "app.core.user_space_bootstrap.verify_sqlcipher_encryption",
+            return_value=True,
+        ),
+    ):
+        res = bootstrap_binaries()
+        assert res is True
+
+
+def test_bootstrap_binaries_frozen_failure(tmp_path):
+    """Verify that in frozen PyInstaller mode, if verification fails, we raise RuntimeError."""
+    with (
+        patch("sys.frozen", True, create=True),
+        patch("sys._MEIPASS", str(tmp_path), create=True),
+        patch("os.add_dll_directory", create=True) as mock_add_dll,
+        patch(
+            "app.core.user_space_bootstrap.verify_sqlcipher_encryption",
+            return_value=False,
+        ),
+    ):
+        with pytest.raises(
+            RuntimeError, match="SQLCipher database encryption failed to verify"
+        ):
             bootstrap_binaries()

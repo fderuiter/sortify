@@ -1,12 +1,12 @@
 import asyncio
 import os
-import sqlite3
 from contextlib import closing
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from app.config import AppSettings
+from app.core.db_conn import sqlite3
 from app.core.session import scan_abandoned_sessions_async
 from app.ui.app import AutoSorterApp
 

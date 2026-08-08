@@ -2,7 +2,6 @@
 
 import hashlib
 import os
-import sqlite3
 from pathlib import Path
 
 import keyring
@@ -93,6 +92,8 @@ class SessionCrypto:
             if self.db_path.exists():
                 try:
                     from contextlib import closing
+
+                    from app.core.db_conn import sqlite3
 
                     has_docs = False
                     with closing(sqlite3.connect(str(self.db_path))) as conn:
