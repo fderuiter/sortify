@@ -24,10 +24,10 @@ def parse_and_validate_prompt(filepath: Path) -> tuple[dict, str]:
     except Exception as e:
         raise ValueError(f"Error reading file {filepath.name}: {e}")
 
-    content = content_bytes.decode("utf-8")
+    content = content_bytes.decode("utf-8-sig")
 
     # Normalize line endings to LF
-    content_lf = content.replace("\r\n", "\n")
+    content_lf = content.replace("\r\n", "\n").replace("\r", "\n")
 
     lines = content_lf.splitlines(keepends=True)
     if not lines or not lines[0].strip() == "---":
@@ -101,7 +101,7 @@ def compute_sha256(filepath):
     _, body_text = parse_and_validate_prompt(filepath)
     sha256_hash = hashlib.sha256()
     # Ensure line endings are normalized to LF
-    normalized_body = body_text.replace("\r\n", "\n")
+    normalized_body = body_text.replace("\r\n", "\n").replace("\r", "\n")
     sha256_hash.update(normalized_body.encode("utf-8"))
     return sha256_hash.hexdigest()
 
@@ -143,7 +143,7 @@ def verify():
         sys.exit(1)
 
     try:
-        manifest_hashes = json.loads(manifest_bytes.decode("utf-8"))
+        manifest_hashes = json.loads(manifest_bytes.decode("utf-8-sig"))
     except json.JSONDecodeError:
         print("Error: Manifest file is not valid JSON.", file=sys.stderr)
         sys.exit(1)
