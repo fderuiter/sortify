@@ -783,24 +783,20 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                                 ".xls",
                                 ".pdf",
                             }
+                            target_dimension = embedding_manager.dimensions
                             for filepath, user_verified_target, vector_str in rows:
                                 dot_idx = filepath.rfind(".")
                                 ext = (
                                     filepath[dot_idx:].lower() if dot_idx != -1 else ""
                                 )
                                 # Exclude non-textual attachments and image files from semantic similarity
-                                if (
-                                    ext in {".png", ".jpg", ".jpeg"}
-                                    or ext not in supported_exts_set
-                                ):
+                                if ext not in supported_exts_set:
                                     continue
 
                                 if vector_str:
                                     try:
                                         v = json.loads(vector_str)
-                                        if embedding_manager.validate_vector_dimension(
-                                            v
-                                        ):
+                                        if len(v) == target_dimension:
                                             hist_vectors.append(v)
                                             hist_meta.append(
                                                 {
