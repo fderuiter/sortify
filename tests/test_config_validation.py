@@ -1,5 +1,7 @@
 import json
 import logging
+import os
+from unittest.mock import patch
 
 import pytest
 from pydantic import ValidationError
@@ -164,10 +166,6 @@ def test_protected_paths_validation():
 
 
 # --- New Tests for Overlapping Policies, Parameter Boundaries, & Fallback Mechanics ---
-
-from unittest.mock import patch
-import os
-import sys
 
 
 def test_validate_protected_paths_non_string_direct():
