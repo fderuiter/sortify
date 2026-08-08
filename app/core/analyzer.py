@@ -362,7 +362,9 @@ class IncrementalAnalyzer:
                                     # Re-verify model to perform purge of outdated vectors
                                     self.embedding_manager.verify_active_model()
                                     # Trigger background reconstruction
-                                    self.embedding_manager.trigger_reconstruction(base_dir)
+                                    self.embedding_manager.trigger_reconstruction(
+                                        base_dir
+                                    )
                                     break
                                 hist_vectors.append(vector)
 
