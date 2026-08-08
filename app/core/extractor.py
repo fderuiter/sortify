@@ -105,14 +105,28 @@ def get_file_hash(file_path: str) -> str:
     return hasher.hexdigest()
 
 
-def extract_file_text(file_path: str, settings=None) -> str:
+def extract_file_text(
+    file_path: str, settings=None, progress_callback=None, cancel_check=None
+) -> str:
     """Extract text content from a given file."""
+    import inspect
+
     ext = os.path.splitext(file_path)[1].lower()
     text = ""
     try:
         extractor = registry.get_extractor(ext)
         if extractor:
-            text = extractor.extract(file_path, settings=settings)
+            # Check the signature of extractor.extract to safely pass new args
+            sig = inspect.signature(extractor.extract)
+            kwargs = {}
+            if "settings" in sig.parameters:
+                kwargs["settings"] = settings
+            if "progress_callback" in sig.parameters:
+                kwargs["progress_callback"] = progress_callback
+            if "cancel_check" in sig.parameters:
+                kwargs["cancel_check"] = cancel_check
+
+            text = extractor.extract(file_path, **kwargs)
             if not text.strip():
                 if os.path.getsize(file_path) > 0:
                     text = "[STATUS:EMPTY]"
@@ -166,6 +180,7 @@ async def build_corpus_generator_async(
     db,
     cancel_check: Callable | None = None,
     settings=None,
+    progress_callback: Callable | None = None,
 ):
     """Asynchronously map every item to its text payload sequentially and yield file-by-file.
 
@@ -181,6 +196,8 @@ async def build_corpus_generator_async(
         A callback to check if the process should be cancelled.
     settings : Any | None
         Optional settings object.
+    progress_callback : Callable | None
+        Optional callback for intra-file progress updates.
 
     Yields
     ------
@@ -215,7 +232,13 @@ async def build_corpus_generator_async(
             continue
 
         # 3. Process/extract file content in background thread
-        text = await asyncio.to_thread(extract_file_text, item_path, settings=settings)
+        text = await asyncio.to_thread(
+            extract_file_text,
+            item_path,
+            settings=settings,
+            progress_callback=progress_callback,
+            cancel_check=cancel_check,
+        )
 
         yield item, text, file_hash, False
 

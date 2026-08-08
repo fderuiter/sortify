@@ -857,22 +857,16 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                 try:
                     import os
 
-                    from app.core.extractor_strategies import registry
-
                     all_docs = db.get_all_documents(base_dir)
                     for doc in all_docs:
                         # doc is (filepath, decrypted_text, file_hash, user_verified_target_path)
                         if len(doc) > 3 and doc[1] and doc[3]:
                             filepath = doc[0]
-                            decrypted_text = doc[1]
-                            ext = os.path.splitext(filepath)[1].lower()
-                            # Exclude non-textual attachments, image files, and skipped/unsupported files
-                            if ext in {
-                                ".png",
-                                ".jpg",
-                                ".jpeg",
-                            } or not registry.is_supported(ext):
+                            if not filepath.lower().endswith(
+                                (".txt", ".docx", ".csv", ".xlsx", ".xls", ".pdf")
+                            ):
                                 continue
+                            decrypted_text = doc[1]
                             if decrypted_text.startswith("[STATUS:"):
                                 continue
 

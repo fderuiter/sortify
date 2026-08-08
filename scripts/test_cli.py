@@ -11,6 +11,14 @@ def run_command(command, expected_args):
     try:
         env = os.environ.copy()
         env["COLUMNS"] = "80"
+        
+        # Add repository root to PYTHONPATH
+        repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+        if "PYTHONPATH" in env:
+            env["PYTHONPATH"] = repo_root + os.pathsep + env["PYTHONPATH"]
+        else:
+            env["PYTHONPATH"] = repo_root
+
         result = subprocess.run(
             command,
             capture_output=True,
@@ -35,6 +43,7 @@ def run_command(command, expected_args):
 
     except subprocess.CalledProcessError as e:
         print(f"Error running {command}: exit code {e.returncode}")
+        print(f"Stdout: {e.stdout}")
         print(f"Stderr: {e.stderr}")
         return False
 
@@ -42,6 +51,43 @@ def run_command(command, expected_args):
 def main():
     """Run all CLI smoke tests."""
     success = True
+
+    # Debugging info
+    print(f"DEBUG: sys.executable = {sys.executable}")
+    print(f"DEBUG: VIRTUAL_ENV = {os.environ.get('VIRTUAL_ENV')}")
+
+    # Determine Python executable to run smoke tests with.
+    # Prefer virtual environment python to prevent ModuleNotFoundError on GHA runners.
+    python_bin = sys.executable
+    venv_dir = os.environ.get("VIRTUAL_ENV")
+    if venv_dir:
+        candidate = os.path.join(venv_dir, "bin", "python")
+        if sys.platform == "win32":
+            candidate = os.path.join(venv_dir, "Scripts", "python.exe")
+        if os.path.exists(candidate):
+            python_bin = candidate
+            print(f"DEBUG: Selected virtualenv python_bin = {python_bin}")
+        else:
+            print(f"DEBUG: Virtualenv candidate {candidate} does NOT exist.")
+    else:
+        print("DEBUG: VIRTUAL_ENV env var not set.")
+
+    # Check if 'uv' is available on the system
+    use_uv = False
+    try:
+        subprocess.run(["uv", "--version"], capture_output=True, check=True)
+        use_uv = True
+        print("DEBUG: 'uv' is available, will run subprocesses via 'uv run python'")
+    except Exception as e:
+        print(f"DEBUG: 'uv' is not available or failed: {e}")
+
+    # Build the execution commands
+    if use_uv:
+        sandbox_cmd = ["uv", "run", "python", "sandbox_cli.py", "--help"]
+        main_cmd = ["uv", "run", "python", "app/main.py", "--help"]
+    else:
+        sandbox_cmd = [python_bin, "sandbox_cli.py", "--help"]
+        main_cmd = [python_bin, "app/main.py", "--help"]
 
     # sandbox_cli.py arguments documented in admin_guide.md
     sandbox_expected = [
@@ -52,7 +98,7 @@ def main():
         "Extract text from a specific sandbox file",
         "Run the analysis pipeline",
     ]
-    if not run_command([sys.executable, "sandbox_cli.py", "--help"], sandbox_expected):
+    if not run_command(sandbox_cmd, sandbox_expected):
         success = False
 
     # app/main.py demo flag mentioned in contributor.md
@@ -62,7 +108,7 @@ def main():
         "--update-snapshots",
         "Regenerate reference baseline snapshots",
     ]
-    if not run_command([sys.executable, "app/main.py", "--help"], main_expected):
+    if not run_command(main_cmd, main_expected):
         success = False
 
     if not success:

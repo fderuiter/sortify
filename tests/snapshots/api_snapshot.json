@@ -202,6 +202,11 @@
           "annotation": null,
           "default": "None",
           "name": "settings"
+        },
+        {
+          "annotation": "Callable | None",
+          "default": "None",
+          "name": "progress_callback"
         }
       ],
       "returns": null
@@ -326,6 +331,16 @@
           "annotation": null,
           "default": "None",
           "name": "settings"
+        },
+        {
+          "annotation": null,
+          "default": "None",
+          "name": "progress_callback"
+        },
+        {
+          "annotation": null,
+          "default": "None",
+          "name": "cancel_check"
         }
       ],
       "returns": "str"
@@ -363,6 +378,18 @@
         }
       ],
       "returns": "tuple[str, int, str]"
+    },
+    "get_audio_duration": {
+      "file_path": "app/core/extractor_strategies.py",
+      "name": "get_audio_duration",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "file_path"
+        }
+      ],
+      "returns": "float"
     },
     "get_base_path": {
       "file_path": "app/core/path_utils.py",
@@ -854,6 +881,11 @@
               "annotation": null,
               "default": null,
               "name": "cancel_check"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "progress_callback"
             }
           ],
           "returns": null
@@ -878,6 +910,43 @@
             }
           ],
           "returns": null
+        }
+      ]
+    },
+    "AudioExtractor": {
+      "class_name": "AudioExtractor",
+      "file_path": "app/core/extractor_strategies.py",
+      "methods": [
+        {
+          "name": "extract",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "file_path"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "settings"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "progress_callback"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "cancel_check"
+            }
+          ],
+          "returns": "str"
         }
       ]
     },

@@ -160,7 +160,9 @@ class AppSession:
             model_path=model_path,
         )
 
-    async def process_items_async(self, items_to_sort, cancel_check):
+    async def process_items_async(
+        self, items_to_sort, cancel_check, progress_callback=None
+    ):
         """Build corpus asynchronous generator for files, yielded file-by-file sequentially."""
         if not self.base_dir:
             return
@@ -172,6 +174,7 @@ class AppSession:
             db=self.db,
             cancel_check=cancel_check,
             settings=self.settings,
+            progress_callback=progress_callback,
         ):
             yield item, text, file_hash, was_skipped
 
