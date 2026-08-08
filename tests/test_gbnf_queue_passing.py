@@ -1,8 +1,6 @@
-import pytest
-import os
 import queue
-import logging
 from unittest.mock import MagicMock, patch
+
 from app.core.analyzer_strategies import GenerativeNamingStrategy, gguf_worker_main
 
 
@@ -18,12 +16,12 @@ def test_gguf_worker_main_grammar_compilation():
     task_valid = {
         "prompt": "Test Prompt",
         "max_tokens": 5,
-        "grammar": 'root ::= "YES" | "NO"'
+        "grammar": 'root ::= "YES" | "NO"',
     }
     task_invalid = {
         "prompt": "Test Prompt",
         "max_tokens": 5,
-        "grammar": 'invalid grammar structure syntax error'
+        "grammar": "invalid grammar structure syntax error",
     }
 
     mock_llm = MagicMock()
@@ -32,12 +30,12 @@ def test_gguf_worker_main_grammar_compilation():
     with patch("llama_cpp.Llama", return_value=mock_llm) as mock_llama_class:
         with patch("llama_cpp.LlamaGrammar.from_string") as mock_from_string:
             mock_compiled_grammar = MagicMock()
-            
+
             def from_string_side_effect(grammar_str):
                 if "invalid" in grammar_str:
                     raise Exception("Compile error")
                 return mock_compiled_grammar
-            
+
             mock_from_string.side_effect = from_string_side_effect
 
             # Let's run a single loop cycle of gguf_worker_main by pushing tasks to input_queue
@@ -57,11 +55,15 @@ def test_gguf_worker_main_grammar_compilation():
             res_valid = output_queue.get()
             assert res_valid == {"text": "YES"}
             mock_from_string.assert_any_call('root ::= "YES" | "NO"')
-            mock_llm.assert_any_call("Test Prompt", max_tokens=5, echo=False, grammar=mock_compiled_grammar)
+            mock_llm.assert_any_call(
+                "Test Prompt", max_tokens=5, echo=False, grammar=mock_compiled_grammar
+            )
 
             # Second task processing (invalid grammar raises exception in compilation)
             res_invalid = output_queue.get()
-            assert res_invalid == {"text": "YES"}  # Fell back to unconstrained generation
+            assert res_invalid == {
+                "text": "YES"
+            }  # Fell back to unconstrained generation
             mock_llm.assert_any_call("Test Prompt", max_tokens=5, echo=False)
 
 
@@ -103,11 +105,14 @@ def test_generative_naming_strategy_passes_correct_grammars():
     # We will trigger filter_plan inside generate_plan
     filenames = ["file1.txt"]
     documents = ["doc content 1"]
-    
+
     # We patch super().generate_plan to return a plan structure
-    with patch("app.core.analyzer_strategies.RecursiveKMeansStrategy.generate_plan", return_value=({"file1.txt": None}, 0.0)):
+    with patch(
+        "app.core.analyzer_strategies.RecursiveKMeansStrategy.generate_plan",
+        return_value=({"file1.txt": None}, 0.0),
+    ):
         new_plan, error = strategy.generate_plan(filenames, documents, 2, set())
-        
+
         # Verify that validation grammar was passed
         assert len(captured_calls) == 1
         prompt, max_tokens, grammar = captured_calls[0]
