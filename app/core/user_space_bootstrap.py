@@ -98,6 +98,11 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
             logger.info(
                 "Host environment has fully functional SQLCipher active. Skipping bootstrapping."
             )
+            try:
+                from sqlcipher3 import dbapi2 as sqlite3
+                sys.modules["sqlite3"] = sqlite3
+            except Exception:
+                pass
             return True
 
     # 1. Locate the packaged binaries directory (installation path)
@@ -195,6 +200,11 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
     # 7. Execute pre-flight verification
     if verify_sqlcipher_encryption():
         logger.info("Startup pre-flight database encryption verification successful!")
+        try:
+            from sqlcipher3 import dbapi2 as sqlite3
+            sys.modules["sqlite3"] = sqlite3
+        except Exception:
+            pass
         return True
     else:
         raise RuntimeError(
