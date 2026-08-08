@@ -102,7 +102,12 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
 
     # 1. Locate the packaged binaries directory (installation path)
     if hasattr(sys, "_MEIPASS"):
-        local_binaries_root = Path(sys._MEIPASS) / "app" / "binaries"
+        # Support PyInstaller 6+ where data files are bundled in the _internal subdirectory
+        internal_bin_root = Path(sys._MEIPASS) / "_internal" / "app" / "binaries"
+        if internal_bin_root.exists():
+            local_binaries_root = internal_bin_root
+        else:
+            local_binaries_root = Path(sys._MEIPASS) / "app" / "binaries"
     else:
         local_binaries_root = Path(__file__).resolve().parent.parent / "binaries"
 

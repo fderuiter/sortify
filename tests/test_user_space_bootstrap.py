@@ -314,3 +314,46 @@ def test_bootstrap_binaries_newline_and_bom_insensitivity(tmp_path):
         res = bootstrap_binaries(force_download=True)
         assert res is True
         mock_inject.assert_called_once_with(mock_binaries_root / "linux")
+
+
+def test_bootstrap_binaries_pyinstaller_internal_fallback(tmp_path):
+    """Verify that if sys._MEIPASS is defined, we correctly resolve files inside _internal if present."""
+    import hashlib
+    import json
+
+    mock_meipass = tmp_path / "meipass"
+    mock_meipass.mkdir()
+
+    mock_binaries_root = mock_meipass / "_internal" / "app" / "binaries"
+    mock_binaries_root.mkdir(parents=True)
+
+    content = b"pyd content"
+    expected_hash = hashlib.sha256(content).hexdigest()
+
+    manifest = {"linux": {"sqlcipher3/_sqlite3.so": expected_hash}}
+    with open(mock_binaries_root / "manifest.json", "w") as f:
+        json.dump(manifest, f)
+
+    linux_dir = mock_binaries_root / "linux" / "sqlcipher3"
+    linux_dir.mkdir(parents=True)
+    with open(linux_dir / "_sqlite3.so", "wb") as f:
+        f.write(content)
+
+    with (
+        patch("sys.platform", "linux"),
+        patch("sys.frozen", True, create=True),
+        patch("sys._MEIPASS", str(mock_meipass), create=True),
+        patch(
+            "app.core.user_space_bootstrap.__file__",
+            str(tmp_path / "core" / "user_space_bootstrap.py"),
+        ),
+        patch(
+            "app.core.user_space_bootstrap.verify_sqlcipher_encryption",
+            return_value=True,
+        ),
+        patch("app.core.user_space_bootstrap.inject_bootstrap_paths") as mock_inject,
+    ):
+        res = bootstrap_binaries(force_download=True)
+        assert res is True
+        mock_inject.assert_called_once_with(mock_binaries_root / "linux")
+
