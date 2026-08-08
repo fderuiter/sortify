@@ -105,9 +105,12 @@ def get_file_hash(file_path: str) -> str:
     return hasher.hexdigest()
 
 
-def extract_file_text(file_path: str, settings=None, progress_callback=None, cancel_check=None) -> str:
+def extract_file_text(
+    file_path: str, settings=None, progress_callback=None, cancel_check=None
+) -> str:
     """Extract text content from a given file."""
     import inspect
+
     ext = os.path.splitext(file_path)[1].lower()
     text = ""
     try:

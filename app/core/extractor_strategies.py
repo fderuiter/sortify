@@ -205,6 +205,7 @@ class ImageExtractor:
 def get_audio_duration(file_path: str) -> float:
     """Determine duration of WAV/MP3/M4A files or return estimated fallback."""
     import os
+
     ext = os.path.splitext(file_path)[1].lower()
     try:
         if os.path.getsize(file_path) == 0:
@@ -215,6 +216,7 @@ def get_audio_duration(file_path: str) -> float:
     if ext == ".wav":
         try:
             import wave
+
             with wave.open(file_path, "rb") as f:
                 frames = f.getnframes()
                 rate = f.getframerate()
@@ -241,16 +243,19 @@ def get_audio_duration(file_path: str) -> float:
 class AudioExtractor:
     """Extractor for transcribing audio files using a local Whisper subprocess."""
 
-    def extract(self, file_path: str, settings=None, progress_callback=None, cancel_check=None) -> str:
+    def extract(
+        self, file_path: str, settings=None, progress_callback=None, cancel_check=None
+    ) -> str:
         """Transcribe an audio file using local Whisper.
 
         Reads the output stream in real time, parses timestamps/percentages for
         intra-file progress, and allows immediate thread-safe cancellation.
         """
-        import re
         import queue
-        import threading
+        import re
         import subprocess
+        import threading
+
         from app.core.env_helper import spawn_background_process
 
         total_duration = get_audio_duration(file_path) or 100.0
@@ -262,7 +267,13 @@ class AudioExtractor:
             whisper_cmd = settings.WHISPER_CMD
 
         if isinstance(whisper_cmd, list):
-            cmd = list(whisper_cmd) + [file_path, "--output_format", "txt", "--device", "cpu"]
+            cmd = list(whisper_cmd) + [
+                file_path,
+                "--output_format",
+                "txt",
+                "--device",
+                "cpu",
+            ]
         else:
             cmd = [whisper_cmd, file_path, "--output_format", "txt", "--device", "cpu"]
 
@@ -320,13 +331,15 @@ class AudioExtractor:
                     try:
                         process.wait(timeout=1.5)
                     except subprocess.TimeoutExpired:
-                        logging.warning("Whisper process did not terminate, forcing kill.")
+                        logging.warning(
+                            "Whisper process did not terminate, forcing kill."
+                        )
                         process.kill()
                         process.wait()
                     return "[STATUS:CANCELLED]"
 
-                # 2. Check if subprocess terminated and no more logs to read
-                if process.poll() is not None and q.empty():
+                # 2. Check if reader thread has finished and queue is empty
+                if not t.is_alive() and q.empty():
                     break
 
                 # 3. Non-blocking queue read with short timeout
@@ -370,9 +383,7 @@ class AudioExtractor:
                             try:
                                 m, s, ms = match_short.groups()[3:6]
                                 current_sec = (
-                                    int(m) * 60
-                                    + int(s)
-                                    + int(ms) / (10 ** len(ms))
+                                    int(m) * 60 + int(s) + int(ms) / (10 ** len(ms))
                                 )
                                 val = min(1.0, max(0.0, current_sec / total_duration))
                                 if progress_callback:
@@ -390,7 +401,9 @@ class AudioExtractor:
 
             process.wait()
             if process.returncode != 0:
-                logging.error(f"Whisper process failed with return code {process.returncode}")
+                logging.error(
+                    f"Whisper process failed with return code {process.returncode}"
+                )
                 return f"[STATUS:ERROR: Whisper failed with code {process.returncode}]"
 
         except Exception as e:
