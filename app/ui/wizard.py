@@ -33,15 +33,8 @@ def show_wizard(parent_app, settings):
         )
 
         async def accept():
-            status.set_text("Downloading...")
-            progress.set_value(0.5)
-            await asyncio.sleep(0.5)  # Simulate async download
-
             settings.AI_CONSENT_GRANTED = True
-            progress.set_value(1.0)
-            status.set_text("Done.")
-
-            ui.notify("Setup Complete. Model downloaded.", type="positive")
+            ui.notify("Setup Complete.", type="positive")
             dialog.close()
 
         def decline():
