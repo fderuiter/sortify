@@ -1,26 +1,26 @@
 {
-    "windows": {
-        "sqlcipher3/py.typed": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-        "sqlcipher3/dbapi2.pyi": "c8bffac5e6ce6bee1fc4e1e1ab773fff37cf3cb70586f377df6d93bf73d6f0e5",
+    "linux": {
+        "sqlcipher3/__init__.py": "3e9fb2097abc3d7802d06a03faba070eeef8274412fed70293aa3b421bbb6a8e",
         "sqlcipher3/__init__.pyi": "78320af9aca0c407384e0090a90b54b1208815d83314b45bc70160962655c668",
+        "sqlcipher3/_sqlite3.cpython-312-x86_64-linux-gnu.so": "26b7f664fe9a12bd7f9927d8b38dc72712a659df3405a9e13d61ebb983b28bd0",
         "sqlcipher3/dbapi2.py": "8fa5c6ae7b32600a601c164c75e2a14bed13ea9d9240e4791c4dcca508262394",
-        "sqlcipher3/_sqlite3.pyd": "57f3eb8089bda2622ef9423fbc48fd65f903f93b8474e6b58c8d59f85ec51660",
-        "sqlcipher3/__init__.py": "3e9fb2097abc3d7802d06a03faba070eeef8274412fed70293aa3b421bbb6a8e"
+        "sqlcipher3/dbapi2.pyi": "c8bffac5e6ce6bee1fc4e1e1ab773fff37cf3cb70586f377df6d93bf73d6f0e5",
+        "sqlcipher3/py.typed": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     "macos": {
-        "sqlcipher3/py.typed": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-        "sqlcipher3/dbapi2.pyi": "c8bffac5e6ce6bee1fc4e1e1ab773fff37cf3cb70586f377df6d93bf73d6f0e5",
+        "sqlcipher3/__init__.py": "3e9fb2097abc3d7802d06a03faba070eeef8274412fed70293aa3b421bbb6a8e",
         "sqlcipher3/__init__.pyi": "78320af9aca0c407384e0090a90b54b1208815d83314b45bc70160962655c668",
-        "sqlcipher3/dbapi2.py": "8fa5c6ae7b32600a601c164c75e2a14bed13ea9d9240e4791c4dcca508262394",
         "sqlcipher3/_sqlite3.so": "c0bdace1d277a568664546cacc3eeafa5c0d3007392a65e878748098f57c5f63",
-        "sqlcipher3/__init__.py": "3e9fb2097abc3d7802d06a03faba070eeef8274412fed70293aa3b421bbb6a8e"
-    },
-    "linux": {
-        "sqlcipher3/_sqlite3.cpython-312-x86_64-linux-gnu.so": "26b7f664fe9a12bd7f9927d8b38dc72712a659df3405a9e13d61ebb983b28bd0",
-        "sqlcipher3/py.typed": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-        "sqlcipher3/dbapi2.pyi": "c8bffac5e6ce6bee1fc4e1e1ab773fff37cf3cb70586f377df6d93bf73d6f0e5",
-        "sqlcipher3/__init__.pyi": "78320af9aca0c407384e0090a90b54b1208815d83314b45bc70160962655c668",
         "sqlcipher3/dbapi2.py": "8fa5c6ae7b32600a601c164c75e2a14bed13ea9d9240e4791c4dcca508262394",
-        "sqlcipher3/__init__.py": "3e9fb2097abc3d7802d06a03faba070eeef8274412fed70293aa3b421bbb6a8e"
+        "sqlcipher3/dbapi2.pyi": "c8bffac5e6ce6bee1fc4e1e1ab773fff37cf3cb70586f377df6d93bf73d6f0e5",
+        "sqlcipher3/py.typed": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "windows": {
+        "sqlcipher3/__init__.py": "3e9fb2097abc3d7802d06a03faba070eeef8274412fed70293aa3b421bbb6a8e",
+        "sqlcipher3/__init__.pyi": "78320af9aca0c407384e0090a90b54b1208815d83314b45bc70160962655c668",
+        "sqlcipher3/_sqlite3.pyd": "57f3eb8089bda2622ef9423fbc48fd65f903f93b8474e6b58c8d59f85ec51660",
+        "sqlcipher3/dbapi2.py": "8fa5c6ae7b32600a601c164c75e2a14bed13ea9d9240e4791c4dcca508262394",
+        "sqlcipher3/dbapi2.pyi": "c8bffac5e6ce6bee1fc4e1e1ab773fff37cf3cb70586f377df6d93bf73d6f0e5",
+        "sqlcipher3/py.typed": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     }
 }

@@ -4,6 +4,87 @@ import os
 import sys
 
 
+def update_binaries_and_manifest():
+    """Copy real compiled sqlcipher3 binaries from the active environment to app/binaries/<platform>/sqlcipher3 and update manifest.json."""
+    import hashlib
+    import importlib.util
+    import json
+    import shutil
+    from pathlib import Path
+
+    if "pytest" in sys.modules:
+        print("Running in tests. Skipping binaries and manifest update.")
+        return
+
+    spec = importlib.util.find_spec("sqlcipher3")
+    if not spec or not spec.submodule_search_locations:
+        print("Warning: sqlcipher3 not found in active environment. Cannot update binaries.")
+        return
+
+    sqlcipher_dir = Path(spec.submodule_search_locations[0])
+    if not sqlcipher_dir.exists():
+        print(f"Warning: sqlcipher3 directory {sqlcipher_dir} does not exist. Skipping update.")
+        return
+
+    system_platform = sys.platform
+    if system_platform == "win32":
+        platform_key = "windows"
+    elif system_platform == "darwin":
+        platform_key = "macos"
+    else:
+        platform_key = "linux"
+
+    target_dir = Path("app") / "binaries" / platform_key / "sqlcipher3"
+
+    if target_dir.exists():
+        shutil.rmtree(target_dir)
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    copied_files = []
+    for path in sqlcipher_dir.glob("**/*"):
+        if path.is_file():
+            if "__pycache__" in path.parts:
+                continue
+            rel_path = path.relative_to(sqlcipher_dir)
+            dest_path = target_dir / rel_path
+            dest_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(path, dest_path)
+            copied_files.append(rel_path.as_posix())
+
+    manifest_path = Path("app") / "binaries" / "manifest.json"
+    if manifest_path.exists():
+        with open(manifest_path, "r", encoding="utf-8") as f:
+            manifest = json.load(f)
+    else:
+        manifest = {}
+
+    platform_hashes = {}
+    for rel_path_str in copied_files:
+        file_path = target_dir / rel_path_str
+        hasher = hashlib.sha256()
+
+        is_text_file = file_path.suffix in (".py", ".pyi", ".typed")
+        if is_text_file:
+            with open(file_path, "r", encoding="utf-8-sig", newline=None) as fh:
+                content = fh.read()
+            normalized_bytes = content.replace("\r\n", "\n").encode("utf-8")
+            hasher.update(normalized_bytes)
+        else:
+            with open(file_path, "rb") as fh:
+                while chunk := fh.read(8192):
+                    hasher.update(chunk)
+
+        actual_hash = hasher.hexdigest()
+        platform_hashes[f"sqlcipher3/{rel_path_str}"] = actual_hash
+
+    manifest[platform_key] = platform_hashes
+
+    with open(manifest_path, "w", encoding="utf-8") as f:
+        json.dump(manifest, f, indent=4, sort_keys=True)
+
+    print(f"Successfully copied real compiled binaries and updated manifest for platform: {platform_key}")
+
+
 def main():
     """Build the standalone executable."""
     import importlib.util
@@ -46,6 +127,8 @@ def main():
             "Error: sqlcipher3 not found in active environment. Please ensure dependencies are installed."
         )
         sys.exit(1)
+
+    update_binaries_and_manifest()
 
     cmd = ["smart-autosorter.spec", "--noconfirm", "--clean"]
 
