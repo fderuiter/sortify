@@ -12,19 +12,44 @@ import json
 import os
 import sys
 
+
+def clean_realpath(path):
+    """Resolve symlinks and return a clean absolute path without Windows long-path prefix (\\\\?\\)."""
+    p = os.path.realpath(path)
+    if p.startswith("\\\\?\\"):
+        p = p[4:]
+    return p
+
+
+def get_relative_path(path, start):
+    """Compute relative path between two absolute paths deterministically across platforms."""
+    path = clean_realpath(path)
+    start = clean_realpath(start)
+
+    # Normalize drive letter casing on Windows to prevent relpath errors or mismatch
+    if len(path) >= 2 and path[1] == ":":
+        path = path[0].lower() + path[1:]
+    if len(start) >= 2 and start[1] == ":":
+        start = start[0].lower() + start[1:]
+
+    return os.path.relpath(path, start).replace("\\", "/")
+
+
 # Compute project base directory (/app) based on script location
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SNAPSHOT_PATH = os.path.join(BASE_DIR, "tests", "snapshots", "api_snapshot.json")
+BASE_DIR = os.path.dirname(os.path.dirname(clean_realpath(__file__)))
+SNAPSHOT_PATH = clean_realpath(
+    os.path.join(BASE_DIR, "tests", "snapshots", "api_snapshot.json")
+)
 
 # Source files to parse
-ANALYZER_STRATEGIES_PATH = os.path.join(
-    BASE_DIR, "app", "core", "analyzer_strategies.py"
+ANALYZER_STRATEGIES_PATH = clean_realpath(
+    os.path.join(BASE_DIR, "app", "core", "analyzer_strategies.py")
 )
-EXTRACTOR_STRATEGIES_PATH = os.path.join(
-    BASE_DIR, "app", "core", "extractor_strategies.py"
+EXTRACTOR_STRATEGIES_PATH = clean_realpath(
+    os.path.join(BASE_DIR, "app", "core", "extractor_strategies.py")
 )
-MAIN_CLI_PATH = os.path.join(BASE_DIR, "app", "main.py")
-SANDBOX_CLI_PATH = os.path.join(BASE_DIR, "sandbox_cli.py")
+MAIN_CLI_PATH = clean_realpath(os.path.join(BASE_DIR, "app", "main.py"))
+SANDBOX_CLI_PATH = clean_realpath(os.path.join(BASE_DIR, "sandbox_cli.py"))
 
 
 def get_ast_value(node):
@@ -204,11 +229,158 @@ def extract_cli(file_path):
     return cli_calls
 
 
+def extract_function_signature(func_node):
+    """Extract standard properties of a function/method signature."""
+    all_args = func_node.args.posonlyargs + func_node.args.args
+    defaults = func_node.args.defaults
+    default_map = {}
+    for i, default_node in enumerate(defaults):
+        arg_idx = len(all_args) - len(defaults) + i
+        default_map[id(all_args[arg_idx])] = ast.unparse(default_node)
+
+    params = []
+    for arg_node in all_args:
+        annotation_str = (
+            ast.unparse(arg_node.annotation) if arg_node.annotation else None
+        )
+        default_str = default_map.get(id(arg_node), None)
+        params.append(
+            {
+                "name": arg_node.arg,
+                "annotation": annotation_str,
+                "default": default_str,
+            }
+        )
+
+    if func_node.args.vararg:
+        arg_node = func_node.args.vararg
+        annotation_str = (
+            ast.unparse(arg_node.annotation) if arg_node.annotation else None
+        )
+        params.append(
+            {
+                "name": f"*{arg_node.arg}",
+                "annotation": annotation_str,
+                "default": None,
+            }
+        )
+
+    for kwarg, default_node in zip(
+        func_node.args.kwonlyargs, func_node.args.kw_defaults
+    ):
+        annotation_str = ast.unparse(kwarg.annotation) if kwarg.annotation else None
+        default_str = ast.unparse(default_node) if default_node is not None else None
+        params.append(
+            {
+                "name": kwarg.arg,
+                "annotation": annotation_str,
+                "default": default_str,
+            }
+        )
+
+    if func_node.args.kwarg:
+        arg_node = func_node.args.kwarg
+        annotation_str = (
+            ast.unparse(arg_node.annotation) if arg_node.annotation else None
+        )
+        params.append(
+            {
+                "name": f"**{arg_node.arg}",
+                "annotation": annotation_str,
+                "default": None,
+            }
+        )
+
+    return_annotation = ast.unparse(func_node.returns) if func_node.returns else None
+
+    return {
+        "name": func_node.name,
+        "parameters": params,
+        "returns": return_annotation,
+    }
+
+
+def extract_file_entities(file_path, rel_path):
+    """Parse a python file statically and extract public classes and public standalone functions."""
+    if not os.path.exists(file_path):
+        return {}, {}
+
+    with open(file_path, "r", encoding="utf-8") as f:
+        source = f.read()
+
+    try:
+        tree = ast.parse(source, filename=file_path)
+    except Exception as e:
+        print(f"Warning: Failed to parse {file_path}: {e}", file=sys.stderr)
+        return {}, {}
+
+    classes = {}
+    functions = {}
+
+    for node in tree.body:
+        # Public Classes
+        if isinstance(node, ast.ClassDef):
+            if not node.name.startswith("_"):
+                class_name = node.name
+                methods = []
+                for body_node in node.body:
+                    if isinstance(body_node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                        if not body_node.name.startswith("_"):
+                            sig = extract_function_signature(body_node)
+                            methods.append(sig)
+
+                classes[class_name] = {
+                    "class_name": class_name,
+                    "file_path": rel_path,
+                    "methods": sorted(methods, key=lambda m: m["name"]),
+                }
+
+        # Public Standalone Functions
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if not node.name.startswith("_"):
+                func_name = node.name
+                sig = extract_function_signature(node)
+                sig["file_path"] = rel_path
+                functions[func_name] = sig
+
+    return classes, functions
+
+
+def scan_core_modules():
+    """Recursively scan app/core/ to locate all public classes, public class methods, and standalone public functions."""
+    core_dir = clean_realpath(os.path.join(BASE_DIR, "app", "core"))
+    if not os.path.exists(core_dir):
+        return {}, {}
+
+    classes_data = {}
+    functions_data = {}
+
+    for root, dirs, files in os.walk(core_dir):
+        dirs.sort()
+        for file in sorted(files):
+            if file.endswith(".py"):
+                file_path = clean_realpath(os.path.join(root, file))
+                rel_path = get_relative_path(file_path, BASE_DIR)
+
+                # Normalize relative path prefix to guarantee lowercase "app/core/" cross-platform
+                if rel_path.lower().startswith("app/core/"):
+                    rel_path = "app/core/" + rel_path[len("app/core/") :]
+
+                file_classes, file_functions = extract_file_entities(
+                    file_path, rel_path
+                )
+
+                for class_name, class_info in file_classes.items():
+                    classes_data[class_name] = class_info
+                for func_name, func_info in file_functions.items():
+                    functions_data[func_name] = func_info
+
+    return classes_data, functions_data
+
+
 def collect_current_definitions():
     """Parse codebase files and return the complete current definitions structure."""
-    protocols_data = {}
-    protocols_data.update(extract_protocols(ANALYZER_STRATEGIES_PATH))
-    protocols_data.update(extract_protocols(EXTRACTOR_STRATEGIES_PATH))
+    classes_data, functions_data = scan_core_modules()
 
     cli_data = {
         "app/main.py": extract_cli(MAIN_CLI_PATH),
@@ -216,7 +388,8 @@ def collect_current_definitions():
     }
 
     return {
-        "protocols": protocols_data,
+        "protocols": classes_data,
+        "functions": functions_data,
         "cli": cli_data,
     }
 
@@ -283,7 +456,7 @@ def main():
             difflib.unified_diff(
                 snapshot_json.splitlines(keepends=True),
                 current_json.splitlines(keepends=True),
-                fromfile=f"Snapshot ({os.path.relpath(SNAPSHOT_PATH, BASE_DIR)})",
+                fromfile=f"Snapshot ({get_relative_path(SNAPSHOT_PATH, BASE_DIR)})",
                 tofile="Current Codebase",
             )
         )
@@ -297,7 +470,7 @@ def main():
             file=sys.stderr,
         )
         print(
-            f"  python3 {os.path.relpath(__file__, BASE_DIR)} --regenerate",
+            f"  python3 {get_relative_path(__file__, BASE_DIR)} --regenerate",
             file=sys.stderr,
         )
         sys.exit(1)

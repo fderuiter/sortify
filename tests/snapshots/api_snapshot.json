@@ -91,9 +91,933 @@
       }
     ]
   },
+  "functions": {
+    "apply_global_socket_sandbox": {
+      "file_path": "app/core/shared_registry.py",
+      "name": "apply_global_socket_sandbox",
+      "parameters": [],
+      "returns": null
+    },
+    "block_external_network": {
+      "file_path": "app/core/shared_registry.py",
+      "name": "block_external_network",
+      "parameters": [
+        {
+          "annotation": null,
+          "default": "'worker execution'",
+          "name": "reason"
+        }
+      ],
+      "returns": null
+    },
+    "bootstrap_binaries": {
+      "file_path": "app/core/user_space_bootstrap.py",
+      "name": "bootstrap_binaries",
+      "parameters": [
+        {
+          "annotation": "bool",
+          "default": "False",
+          "name": "force_download"
+        }
+      ],
+      "returns": "bool"
+    },
+    "build_corpus_generator": {
+      "file_path": "app/core/extractor.py",
+      "name": "build_corpus_generator",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "base_dir"
+        },
+        {
+          "annotation": "list",
+          "default": null,
+          "name": "items_to_sort"
+        },
+        {
+          "annotation": "Callable",
+          "default": null,
+          "name": "progress_callback"
+        },
+        {
+          "annotation": "int",
+          "default": null,
+          "name": "max_workers"
+        },
+        {
+          "annotation": null,
+          "default": null,
+          "name": "db"
+        },
+        {
+          "annotation": "int",
+          "default": "50",
+          "name": "chunk_size"
+        },
+        {
+          "annotation": "bool",
+          "default": "False",
+          "name": "sequential"
+        },
+        {
+          "annotation": "Callable | None",
+          "default": "None",
+          "name": "cancel_check"
+        },
+        {
+          "annotation": null,
+          "default": "None",
+          "name": "settings"
+        }
+      ],
+      "returns": null
+    },
+    "build_corpus_generator_async": {
+      "file_path": "app/core/extractor.py",
+      "name": "build_corpus_generator_async",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "base_dir"
+        },
+        {
+          "annotation": "list",
+          "default": null,
+          "name": "items_to_sort"
+        },
+        {
+          "annotation": null,
+          "default": null,
+          "name": "db"
+        },
+        {
+          "annotation": "Callable | None",
+          "default": "None",
+          "name": "cancel_check"
+        },
+        {
+          "annotation": null,
+          "default": "None",
+          "name": "settings"
+        },
+        {
+          "annotation": "Callable | None",
+          "default": "None",
+          "name": "progress_callback"
+        }
+      ],
+      "returns": null
+    },
+    "check_ai_status": {
+      "file_path": "app/core/verifier.py",
+      "name": "check_ai_status",
+      "parameters": [
+        {
+          "annotation": null,
+          "default": null,
+          "name": "settings"
+        }
+      ],
+      "returns": "tuple[bool, str | None]"
+    },
+    "check_internet_connection": {
+      "file_path": "app/core/user_space_bootstrap.py",
+      "name": "check_internet_connection",
+      "parameters": [
+        {
+          "annotation": "float",
+          "default": "2.0",
+          "name": "timeout"
+        }
+      ],
+      "returns": "bool"
+    },
+    "clear_connection_cache": {
+      "file_path": "app/core/db_conn.py",
+      "name": "clear_connection_cache",
+      "parameters": [],
+      "returns": null
+    },
+    "clear_dead_thread_connections": {
+      "file_path": "app/core/db_conn.py",
+      "name": "clear_dead_thread_connections",
+      "parameters": [],
+      "returns": null
+    },
+    "cooperative_join": {
+      "file_path": "app/core/analyzer_strategies.py",
+      "name": "cooperative_join",
+      "parameters": [
+        {
+          "annotation": null,
+          "default": null,
+          "name": "target"
+        },
+        {
+          "annotation": null,
+          "default": "1.0",
+          "name": "timeout"
+        }
+      ],
+      "returns": null
+    },
+    "cooperative_queue_get": {
+      "file_path": "app/core/analyzer_strategies.py",
+      "name": "cooperative_queue_get",
+      "parameters": [
+        {
+          "annotation": null,
+          "default": null,
+          "name": "q"
+        },
+        {
+          "annotation": null,
+          "default": "8.0",
+          "name": "timeout"
+        }
+      ],
+      "returns": null
+    },
+    "execute_moves": {
+      "file_path": "app/core/mover.py",
+      "name": "execute_moves",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "base_dir"
+        },
+        {
+          "annotation": "dict",
+          "default": null,
+          "name": "plan"
+        },
+        {
+          "annotation": null,
+          "default": null,
+          "name": "db"
+        },
+        {
+          "annotation": null,
+          "default": null,
+          "name": "history_manager"
+        },
+        {
+          "annotation": null,
+          "default": "None",
+          "name": "runtime_settings"
+        },
+        {
+          "annotation": "bool",
+          "default": "False",
+          "name": "resume"
+        }
+      ],
+      "returns": "dict"
+    },
+    "extract_file_text": {
+      "file_path": "app/core/extractor.py",
+      "name": "extract_file_text",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "file_path"
+        },
+        {
+          "annotation": null,
+          "default": "None",
+          "name": "settings"
+        },
+        {
+          "annotation": null,
+          "default": "None",
+          "name": "progress_callback"
+        },
+        {
+          "annotation": null,
+          "default": "None",
+          "name": "cancel_check"
+        }
+      ],
+      "returns": "str"
+    },
+    "extract_text_from_image": {
+      "file_path": "app/core/extractor_strategies.py",
+      "name": "extract_text_from_image",
+      "parameters": [
+        {
+          "annotation": null,
+          "default": null,
+          "name": "image"
+        },
+        {
+          "annotation": null,
+          "default": "None",
+          "name": "settings"
+        },
+        {
+          "annotation": null,
+          "default": "None",
+          "name": "file_path"
+        }
+      ],
+      "returns": "str"
+    },
+    "get_active_model_properties": {
+      "file_path": "app/core/semantic_embeddings.py",
+      "name": "get_active_model_properties",
+      "parameters": [
+        {
+          "annotation": "str | None",
+          "default": null,
+          "name": "model_path"
+        }
+      ],
+      "returns": "tuple[str, int, str]"
+    },
+    "get_audio_duration": {
+      "file_path": "app/core/extractor_strategies.py",
+      "name": "get_audio_duration",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "file_path"
+        }
+      ],
+      "returns": "float"
+    },
+    "get_base_path": {
+      "file_path": "app/core/path_utils.py",
+      "name": "get_base_path",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": "None",
+          "name": "caller_file_path"
+        }
+      ],
+      "returns": "str"
+    },
+    "get_bootstrap_bin_dir": {
+      "file_path": "app/core/user_space_bootstrap.py",
+      "name": "get_bootstrap_bin_dir",
+      "parameters": [],
+      "returns": "Path"
+    },
+    "get_cleaned_env": {
+      "file_path": "app/core/env_helper.py",
+      "name": "get_cleaned_env",
+      "parameters": [
+        {
+          "annotation": "dict",
+          "default": "None",
+          "name": "env"
+        }
+      ],
+      "returns": "dict"
+    },
+    "get_db_connection": {
+      "file_path": "app/core/db_conn.py",
+      "name": "get_db_connection",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "db_path"
+        }
+      ],
+      "returns": null
+    },
+    "get_file_hash": {
+      "file_path": "app/core/extractor.py",
+      "name": "get_file_hash",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "file_path"
+        }
+      ],
+      "returns": "str"
+    },
+    "get_files_recursively": {
+      "file_path": "app/core/scanner.py",
+      "name": "get_files_recursively",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "base"
+        },
+        {
+          "annotation": "str",
+          "default": "''",
+          "name": "rel_path"
+        },
+        {
+          "annotation": "bool",
+          "default": "False",
+          "name": "include_hidden"
+        }
+      ],
+      "returns": "list"
+    },
+    "get_ocr_reader": {
+      "file_path": "app/core/extractor_strategies.py",
+      "name": "get_ocr_reader",
+      "parameters": [],
+      "returns": null
+    },
+    "get_safe_path": {
+      "file_path": "app/core/mover.py",
+      "name": "get_safe_path",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "dest_dir"
+        },
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "filename"
+        },
+        {
+          "annotation": "str",
+          "default": "None",
+          "name": "source_path"
+        }
+      ],
+      "returns": "str"
+    },
+    "get_session_base_dir": {
+      "file_path": "app/core/path_utils.py",
+      "name": "get_session_base_dir",
+      "parameters": [],
+      "returns": "Path"
+    },
+    "get_subprocess_startupinfo": {
+      "file_path": "app/core/env_helper.py",
+      "name": "get_subprocess_startupinfo",
+      "parameters": [],
+      "returns": null
+    },
+    "gguf_worker_main": {
+      "file_path": "app/core/analyzer_strategies.py",
+      "name": "gguf_worker_main",
+      "parameters": [
+        {
+          "annotation": null,
+          "default": null,
+          "name": "model_path"
+        },
+        {
+          "annotation": null,
+          "default": null,
+          "name": "input_queue"
+        },
+        {
+          "annotation": null,
+          "default": null,
+          "name": "output_queue"
+        },
+        {
+          "annotation": null,
+          "default": "None",
+          "name": "n_threads"
+        }
+      ],
+      "returns": null
+    },
+    "inject_bootstrap_paths": {
+      "file_path": "app/core/user_space_bootstrap.py",
+      "name": "inject_bootstrap_paths",
+      "parameters": [],
+      "returns": null
+    },
+    "is_admin": {
+      "file_path": "app/core/integration.py",
+      "name": "is_admin",
+      "parameters": [],
+      "returns": null
+    },
+    "is_gguf_model_dir": {
+      "file_path": "app/core/analyzer_strategies.py",
+      "name": "is_gguf_model_dir",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "model_path"
+        }
+      ],
+      "returns": "bool"
+    },
+    "is_ml_available": {
+      "file_path": "app/core/verifier.py",
+      "name": "is_ml_available",
+      "parameters": [],
+      "returns": "bool"
+    },
+    "is_packaged": {
+      "file_path": "app/core/path_utils.py",
+      "name": "is_packaged",
+      "parameters": [],
+      "returns": "bool"
+    },
+    "is_path_too_long": {
+      "file_path": "app/core/path_utils.py",
+      "name": "is_path_too_long",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "path"
+        },
+        {
+          "annotation": "int",
+          "default": "260",
+          "name": "limit"
+        }
+      ],
+      "returns": "bool"
+    },
+    "is_subpath_or_equal": {
+      "file_path": "app/core/mover.py",
+      "name": "is_subpath_or_equal",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "child"
+        },
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "parent"
+        }
+      ],
+      "returns": "bool"
+    },
+    "is_valid_name": {
+      "file_path": "app/core/path_utils.py",
+      "name": "is_valid_name",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "name"
+        }
+      ],
+      "returns": "bool"
+    },
+    "process_item_worker": {
+      "file_path": "app/core/extractor.py",
+      "name": "process_item_worker",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "base_dir"
+        },
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "item"
+        },
+        {
+          "annotation": "Callable",
+          "default": null,
+          "name": "progress_callback"
+        },
+        {
+          "annotation": null,
+          "default": null,
+          "name": "db"
+        },
+        {
+          "annotation": null,
+          "default": "None",
+          "name": "settings"
+        }
+      ],
+      "returns": "Tuple[str, str, str]"
+    },
+    "register_context_menu": {
+      "file_path": "app/core/integration.py",
+      "name": "register_context_menu",
+      "parameters": [
+        {
+          "annotation": "bool",
+          "default": null,
+          "name": "enable"
+        }
+      ],
+      "returns": null
+    },
+    "resolve_db_crypto": {
+      "file_path": "app/core/path_utils.py",
+      "name": "resolve_db_crypto",
+      "parameters": [
+        {
+          "annotation": "Path | str",
+          "default": null,
+          "name": "db_path"
+        }
+      ],
+      "returns": null
+    },
+    "run_background_process": {
+      "file_path": "app/core/env_helper.py",
+      "name": "run_background_process",
+      "parameters": [
+        {
+          "annotation": null,
+          "default": null,
+          "name": "cmd"
+        },
+        {
+          "annotation": null,
+          "default": null,
+          "name": "**kwargs"
+        }
+      ],
+      "returns": null
+    },
+    "safe_connect": {
+      "file_path": "app/core/shared_registry.py",
+      "name": "safe_connect",
+      "parameters": [
+        {
+          "annotation": null,
+          "default": null,
+          "name": "self"
+        },
+        {
+          "annotation": null,
+          "default": null,
+          "name": "address"
+        }
+      ],
+      "returns": null
+    },
+    "safe_connect_ex": {
+      "file_path": "app/core/shared_registry.py",
+      "name": "safe_connect_ex",
+      "parameters": [
+        {
+          "annotation": null,
+          "default": null,
+          "name": "self"
+        },
+        {
+          "annotation": null,
+          "default": null,
+          "name": "address"
+        }
+      ],
+      "returns": null
+    },
+    "sanitize_name": {
+      "file_path": "app/core/path_utils.py",
+      "name": "sanitize_name",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "name"
+        }
+      ],
+      "returns": "str"
+    },
+    "scan_abandoned_sessions_async": {
+      "file_path": "app/core/session.py",
+      "name": "scan_abandoned_sessions_async",
+      "parameters": [],
+      "returns": null
+    },
+    "set_low_priority": {
+      "file_path": "app/core/semantic_embeddings.py",
+      "name": "set_low_priority",
+      "parameters": [],
+      "returns": null
+    },
+    "setup_session_directory": {
+      "file_path": "app/core/path_utils.py",
+      "name": "setup_session_directory",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": "None",
+          "name": "session_id"
+        }
+      ],
+      "returns": "tuple[str, Path]"
+    },
+    "spawn_background_process": {
+      "file_path": "app/core/env_helper.py",
+      "name": "spawn_background_process",
+      "parameters": [
+        {
+          "annotation": null,
+          "default": null,
+          "name": "cmd"
+        },
+        {
+          "annotation": null,
+          "default": null,
+          "name": "**kwargs"
+        }
+      ],
+      "returns": null
+    },
+    "validate_target_path": {
+      "file_path": "app/core/path_utils.py",
+      "name": "validate_target_path",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "target_path"
+        },
+        {
+          "annotation": "str",
+          "default": "None",
+          "name": "keyword"
+        }
+      ],
+      "returns": "None"
+    },
+    "verify_sqlcipher_encryption": {
+      "file_path": "app/core/user_space_bootstrap.py",
+      "name": "verify_sqlcipher_encryption",
+      "parameters": [],
+      "returns": "bool"
+    }
+  },
   "protocols": {
+    "AppSession": {
+      "class_name": "AppSession",
+      "file_path": "app/core/session.py",
+      "methods": [
+        {
+          "name": "close",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "name": "execute_moves",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "plan"
+            },
+            {
+              "annotation": null,
+              "default": "False",
+              "name": "resume"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "name": "generate_sorting_plan",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "name": "partial_fit",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "chunk"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "name": "process_items_async",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "items_to_sort"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cancel_check"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "progress_callback"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "name": "rollback",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "session_id"
+            },
+            {
+              "annotation": null,
+              "default": "False",
+              "name": "ignore_missing"
+            }
+          ],
+          "returns": null
+        }
+      ]
+    },
+    "AudioExtractor": {
+      "class_name": "AudioExtractor",
+      "file_path": "app/core/extractor_strategies.py",
+      "methods": [
+        {
+          "name": "extract",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "file_path"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "settings"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "progress_callback"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "cancel_check"
+            }
+          ],
+          "returns": "str"
+        }
+      ]
+    },
+    "CacheManager": {
+      "class_name": "CacheManager",
+      "file_path": "app/core/cache.py",
+      "methods": [
+        {
+          "name": "load_cache",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "source_directory"
+            }
+          ],
+          "returns": null
+        }
+      ]
+    },
+    "ClusteringRegistry": {
+      "class_name": "ClusteringRegistry",
+      "file_path": "app/core/analyzer_strategies.py",
+      "methods": [
+        {
+          "name": "get_strategy",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "name"
+            }
+          ],
+          "returns": "ClusteringStrategy"
+        },
+        {
+          "name": "register",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "name"
+            },
+            {
+              "annotation": "ClusteringStrategy",
+              "default": null,
+              "name": "strategy"
+            }
+          ],
+          "returns": null
+        }
+      ]
+    },
     "ClusteringStrategy": {
       "class_name": "ClusteringStrategy",
+      "file_path": "app/core/analyzer_strategies.py",
       "methods": [
         {
           "name": "generate_plan",
@@ -143,8 +1067,9 @@
         }
       ]
     },
-    "DocumentExtractor": {
-      "class_name": "DocumentExtractor",
+    "CsvExtractor": {
+      "class_name": "CsvExtractor",
+      "file_path": "app/core/extractor_strategies.py",
       "methods": [
         {
           "name": "extract",
@@ -158,6 +1083,1689 @@
               "annotation": "str",
               "default": null,
               "name": "file_path"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "settings"
+            }
+          ],
+          "returns": "str"
+        }
+      ]
+    },
+    "DBWorker": {
+      "class_name": "DBWorker",
+      "file_path": "app/core/db_worker.py",
+      "methods": [
+        {
+          "name": "execute_write",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "func"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "*args"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "**kwargs"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "name": "execute_write_async",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "func"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "*args"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "**kwargs"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "name": "stop",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "name": "submit_write",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "func"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "*args"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "**kwargs"
+            }
+          ],
+          "returns": null
+        }
+      ]
+    },
+    "Database": {
+      "class_name": "Database",
+      "file_path": "app/core/db.py",
+      "methods": [
+        {
+          "name": "clear",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "base_dir"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "name": "clear_all_document_vectors",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "name": "execute_batch_updates",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "updates"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "name": "get_all_documents",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "base_dir"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "name": "get_document",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "filepath"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "name": "get_document_vector",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "filepath"
+            }
+          ],
+          "returns": "list[float] | None"
+        },
+        {
+          "name": "get_documents_missing_vectors",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": "int",
+              "default": "50",
+              "name": "limit"
+            },
+            {
+              "annotation": "int",
+              "default": "0",
+              "name": "offset"
+            }
+          ],
+          "returns": "list[tuple[str, str]]"
+        },
+        {
+          "name": "get_model_metadata",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "key"
+            }
+          ],
+          "returns": "str | None"
+        },
+        {
+          "name": "init_db",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "name": "invalidate_cache",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "name": "remove_document",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "filepath"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "name": "set_model_metadata",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "key"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "value"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "name": "set_user_verified_target",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "file_hash"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "target_path"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "name": "update_document_path",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "old_filepath"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "new_filepath"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "name": "upsert_document",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "filepath"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "file_hash"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "extracted_text"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "name": "upsert_document_vectors",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": "list[tuple[str, list[float]]]",
+              "default": null,
+              "name": "vectors_data"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "name": "upsert_documents",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "documents"
+            }
+          ],
+          "returns": null
+        }
+      ]
+    },
+    "DimensionMismatchError": {
+      "class_name": "DimensionMismatchError",
+      "file_path": "app/core/semantic_embeddings.py",
+      "methods": []
+    },
+    "DocumentExtractor": {
+      "class_name": "DocumentExtractor",
+      "file_path": "app/core/extractor_strategies.py",
+      "methods": [
+        {
+          "name": "extract",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "file_path"
+            }
+          ],
+          "returns": "str"
+        }
+      ]
+    },
+    "DocxExtractor": {
+      "class_name": "DocxExtractor",
+      "file_path": "app/core/extractor_strategies.py",
+      "methods": [
+        {
+          "name": "extract",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "file_path"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "settings"
+            }
+          ],
+          "returns": "str"
+        }
+      ]
+    },
+    "ExtractorRegistry": {
+      "class_name": "ExtractorRegistry",
+      "file_path": "app/core/extractor_strategies.py",
+      "methods": [
+        {
+          "name": "get_extractor",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "extension"
+            }
+          ],
+          "returns": "DocumentExtractor"
+        },
+        {
+          "name": "is_supported",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "extension"
+            }
+          ],
+          "returns": "bool"
+        },
+        {
+          "name": "register",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "extension"
+            },
+            {
+              "annotation": "DocumentExtractor",
+              "default": null,
+              "name": "extractor"
+            }
+          ],
+          "returns": null
+        }
+      ]
+    },
+    "GenerativeNamingStrategy": {
+      "class_name": "GenerativeNamingStrategy",
+      "file_path": "app/core/analyzer_strategies.py",
+      "methods": [
+        {
+          "name": "generate_plan",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "List[str]",
+              "default": null,
+              "name": "filenames"
+            },
+            {
+              "annotation": "List[str]",
+              "default": null,
+              "name": "documents"
+            },
+            {
+              "annotation": "int",
+              "default": null,
+              "name": "max_folders"
+            },
+            {
+              "annotation": "set",
+              "default": null,
+              "name": "stop_words"
+            },
+            {
+              "annotation": "int",
+              "default": "5",
+              "name": "max_depth"
+            },
+            {
+              "annotation": "int",
+              "default": "3",
+              "name": "max_features"
+            },
+            {
+              "annotation": "List[list] | None",
+              "default": "None",
+              "name": "pre_fetched_vectors"
+            }
+          ],
+          "returns": "tuple[dict, float]"
+        },
+        {
+          "name": "set_db_context",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "db"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "base_dir"
+            }
+          ],
+          "returns": null
+        }
+      ]
+    },
+    "HistoryManager": {
+      "class_name": "HistoryManager",
+      "file_path": "app/core/history.py",
+      "methods": [
+        {
+          "name": "check_missing_files",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "session_id"
+            }
+          ],
+          "returns": "List[str]"
+        },
+        {
+          "name": "create_snapshot",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            }
+          ],
+          "returns": "str"
+        },
+        {
+          "name": "get_sessions",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "List[Dict[str, Any]]"
+        },
+        {
+          "name": "resume_rollback",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "session_id"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "name": "revert_rollback",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "safety_session_id"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "name": "rollback",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "session_id"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "ignore_missing"
+            }
+          ],
+          "returns": null
+        }
+      ]
+    },
+    "ImageExtractor": {
+      "class_name": "ImageExtractor",
+      "file_path": "app/core/extractor_strategies.py",
+      "methods": [
+        {
+          "name": "extract",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "file_path"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "settings"
+            }
+          ],
+          "returns": "str"
+        }
+      ]
+    },
+    "IncrementalAnalyzer": {
+      "class_name": "IncrementalAnalyzer",
+      "file_path": "app/core/analyzer.py",
+      "methods": [
+        {
+          "name": "close",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "name": "generate_sorting_plan",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "runtime_settings"
+            },
+            {
+              "annotation": "dict",
+              "default": "None",
+              "name": "locked_files"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "cancel_check"
+            }
+          ],
+          "returns": "dict"
+        },
+        {
+          "name": "partial_fit",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": "dict",
+              "default": null,
+              "name": "new_corpus"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "runtime_settings"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "name": "reload_stop_words",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "set",
+              "default": null,
+              "name": "new_stop_words"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "name": "terminate",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": null
+        }
+      ]
+    },
+    "LinkManager": {
+      "class_name": "LinkManager",
+      "file_path": "app/core/link_manager.py",
+      "methods": [
+        {
+          "name": "clear",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cls"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "name": "get_link_info",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cls"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "full_path"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "name": "register_link",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cls"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "rel_path"
+            }
+          ],
+          "returns": null
+        }
+      ]
+    },
+    "MetadataPass": {
+      "class_name": "MetadataPass",
+      "file_path": "app/core/metadata.py",
+      "methods": [
+        {
+          "name": "run",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": "list",
+              "default": null,
+              "name": "items_to_sort"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "settings"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "db"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "callback"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cancel_check"
+            }
+          ],
+          "returns": "list"
+        }
+      ]
+    },
+    "ModelProperties": {
+      "class_name": "ModelProperties",
+      "file_path": "app/core/semantic_embeddings.py",
+      "methods": []
+    },
+    "NegativeLogitBiasProcessor": {
+      "class_name": "NegativeLogitBiasProcessor",
+      "file_path": "app/core/analyzer_strategies.py",
+      "methods": []
+    },
+    "PdfExtractor": {
+      "class_name": "PdfExtractor",
+      "file_path": "app/core/extractor_strategies.py",
+      "methods": [
+        {
+          "name": "extract",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "file_path"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "settings"
+            }
+          ],
+          "returns": "str"
+        }
+      ]
+    },
+    "RecursiveKMeansStrategy": {
+      "class_name": "RecursiveKMeansStrategy",
+      "file_path": "app/core/analyzer_strategies.py",
+      "methods": [
+        {
+          "name": "generate_plan",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "List[str]",
+              "default": null,
+              "name": "filenames"
+            },
+            {
+              "annotation": "List[str]",
+              "default": null,
+              "name": "documents"
+            },
+            {
+              "annotation": "int",
+              "default": null,
+              "name": "max_folders"
+            },
+            {
+              "annotation": "set",
+              "default": null,
+              "name": "stop_words"
+            },
+            {
+              "annotation": "int",
+              "default": "5",
+              "name": "max_depth"
+            },
+            {
+              "annotation": "int",
+              "default": "3",
+              "name": "max_features"
+            },
+            {
+              "annotation": "List[list] | None",
+              "default": "None",
+              "name": "pre_fetched_vectors"
+            }
+          ],
+          "returns": "tuple[dict, float]"
+        }
+      ]
+    },
+    "SemanticEmbeddingManager": {
+      "class_name": "SemanticEmbeddingManager",
+      "file_path": "app/core/semantic_embeddings.py",
+      "methods": [
+        {
+          "name": "generate_embedding",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str | None",
+              "default": null,
+              "name": "text"
+            }
+          ],
+          "returns": "list[float]"
+        },
+        {
+          "name": "get_embedding",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str | None",
+              "default": null,
+              "name": "text"
+            }
+          ],
+          "returns": "list[float]"
+        },
+        {
+          "name": "get_vector",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "filepath"
+            }
+          ],
+          "returns": "list[float] | None"
+        },
+        {
+          "name": "is_mock",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "bool"
+        },
+        {
+          "name": "is_reconstruction_active",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "bool"
+        },
+        {
+          "name": "stop",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "name": "stop_all",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cls"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "name": "trigger_reconstruction",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "name": "validate_vector_dimension",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "list[float] | None",
+              "default": null,
+              "name": "vector"
+            }
+          ],
+          "returns": "bool"
+        },
+        {
+          "name": "verify_active_model",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": null
+        }
+      ]
+    },
+    "SessionCrypto": {
+      "class_name": "SessionCrypto",
+      "file_path": "app/core/crypto.py",
+      "methods": [
+        {
+          "name": "decrypt_text",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "bytes",
+              "default": null,
+              "name": "cipher_bytes"
+            }
+          ],
+          "returns": "str"
+        },
+        {
+          "name": "encrypt_text",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "text"
+            }
+          ],
+          "returns": "bytes"
+        },
+        {
+          "name": "get_cipher",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "name": "get_raw_key",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "str"
+        }
+      ]
+    },
+    "SharedModelRegistry": {
+      "class_name": "SharedModelRegistry",
+      "file_path": "app/core/shared_registry.py",
+      "methods": [
+        {
+          "name": "apply_onnx_thread_limits",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "name": "get_generative_model",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "model_path"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "name": "get_instance",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cls"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "name": "get_ocr_reader",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "name": "get_onnx_session",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "model_path"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "sess_options"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "name": "get_thread_limit",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "int"
+        },
+        {
+          "name": "register_expected_hashes",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "model_id"
+            },
+            {
+              "annotation": "dict[str, str]",
+              "default": null,
+              "name": "hashes"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "name": "verify_integrity",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "model_id"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "model_path"
+            }
+          ],
+          "returns": "bool"
+        }
+      ]
+    },
+    "SharedWorkerPool": {
+      "class_name": "SharedWorkerPool",
+      "file_path": "app/core/shared_registry.py",
+      "methods": [
+        {
+          "name": "get_instance",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cls"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "max_workers"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "name": "shutdown",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": "True",
+              "name": "wait"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "name": "submit",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "fn"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "*args"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "**kwargs"
+            }
+          ],
+          "returns": null
+        }
+      ]
+    },
+    "TxtExtractor": {
+      "class_name": "TxtExtractor",
+      "file_path": "app/core/extractor_strategies.py",
+      "methods": [
+        {
+          "name": "extract",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "file_path"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "settings"
+            }
+          ],
+          "returns": "str"
+        }
+      ]
+    },
+    "VerificationEngine": {
+      "class_name": "VerificationEngine",
+      "file_path": "app/core/verifier.py",
+      "methods": [
+        {
+          "name": "get_moves",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": "dict",
+              "default": null,
+              "name": "plan"
+            },
+            {
+              "annotation": "str",
+              "default": "''",
+              "name": "current_dest"
+            },
+            {
+              "annotation": "str",
+              "default": "''",
+              "name": "active_parent_path"
+            },
+            {
+              "annotation": "int",
+              "default": "0",
+              "name": "depth"
+            }
+          ],
+          "returns": "list"
+        },
+        {
+          "name": "verify_plan_integrity",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": "dict",
+              "default": null,
+              "name": "plan"
+            }
+          ],
+          "returns": "dict"
+        }
+      ]
+    },
+    "VirtualFilesystemTracker": {
+      "class_name": "VirtualFilesystemTracker",
+      "file_path": "app/core/verifier.py",
+      "methods": [
+        {
+          "name": "check_broken_links",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "list",
+              "default": null,
+              "name": "moves_list"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": "dict",
+              "default": null,
+              "name": "final_nodes"
+            }
+          ],
+          "returns": "list"
+        },
+        {
+          "name": "check_circular_renames",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "list",
+              "default": null,
+              "name": "moves_list"
+            }
+          ],
+          "returns": "list"
+        },
+        {
+          "name": "check_collisions",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "list",
+              "default": null,
+              "name": "moves_list"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            }
+          ],
+          "returns": "list"
+        },
+        {
+          "name": "populate_from_disk",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "name": "populate_from_moves",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "list",
+              "default": null,
+              "name": "moves_list"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "name": "simulate_final_state",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "list",
+              "default": null,
+              "name": "moves_list"
+            }
+          ],
+          "returns": "dict"
+        },
+        {
+          "name": "verify_integrity",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": "dict",
+              "default": null,
+              "name": "plan"
+            }
+          ],
+          "returns": "dict"
+        }
+      ]
+    },
+    "VirtualNode": {
+      "class_name": "VirtualNode",
+      "file_path": "app/core/verifier.py",
+      "methods": []
+    },
+    "XlsxExtractor": {
+      "class_name": "XlsxExtractor",
+      "file_path": "app/core/extractor_strategies.py",
+      "methods": [
+        {
+          "name": "extract",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "file_path"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "settings"
             }
           ],
           "returns": "str"
