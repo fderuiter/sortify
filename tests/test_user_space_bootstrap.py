@@ -273,3 +273,44 @@ def test_bootstrap_binaries_failed_verification(tmp_path):
     ):
         with pytest.raises(RuntimeError, match="Startup verification failed"):
             bootstrap_binaries(force_download=True)
+
+
+def test_bootstrap_binaries_newline_and_bom_insensitivity(tmp_path):
+    """Verify that text files with CRLF and/or BOM are correctly matched against LF-only/no-BOM hashes."""
+    import hashlib
+    import json
+
+    mock_binaries_root = tmp_path / "binaries"
+    mock_binaries_root.mkdir()
+
+    # The original text with LF endings and no BOM
+    original_text = "print('hello world')\n"
+    expected_hash = hashlib.sha256(original_text.encode("utf-8")).hexdigest()
+
+    manifest = {"linux": {"sqlcipher3/__init__.py": expected_hash}}
+    with open(mock_binaries_root / "manifest.json", "w") as f:
+        json.dump(manifest, f)
+
+    linux_dir = mock_binaries_root / "linux" / "sqlcipher3"
+    linux_dir.mkdir(parents=True)
+
+    # Write on-disk file with BOM and CRLF line endings
+    crlf_text_with_bom = "\ufeffprint('hello world')\r\n"
+    with open(linux_dir / "__init__.py", "w", encoding="utf-8") as f:
+        f.write(crlf_text_with_bom)
+
+    with (
+        patch("sys.platform", "linux"),
+        patch(
+            "app.core.user_space_bootstrap.__file__",
+            str(tmp_path / "core" / "user_space_bootstrap.py"),
+        ),
+        patch(
+            "app.core.user_space_bootstrap.verify_sqlcipher_encryption",
+            return_value=True,
+        ),
+        patch("app.core.user_space_bootstrap.inject_bootstrap_paths") as mock_inject,
+    ):
+        res = bootstrap_binaries(force_download=True)
+        assert res is True
+        mock_inject.assert_called_once_with(mock_binaries_root / "linux")
