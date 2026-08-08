@@ -3,7 +3,6 @@
 import json
 import os
 import shutil
-import sqlite3
 
 from app.config import get_app_dir
 from app.core.analyzer import IncrementalAnalyzer
@@ -54,6 +53,7 @@ async def scan_abandoned_sessions_async():
 
             try:
                 from contextlib import closing
+                from app.core.db_conn import sqlite3
 
                 with closing(sqlite3.connect(history_db, timeout=30.0)) as conn:
                     with closing(conn.cursor()) as cursor:
