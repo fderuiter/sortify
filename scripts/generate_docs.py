@@ -23,12 +23,16 @@ def generate_api_docs():
         f.write("# API Reference\n\n")
         f.write("This document is automatically generated. Do not edit manually.\n\n")
 
-        # Find all python files except ui
+        # Find all python files except ui and binaries
         py_files = glob.glob(os.path.join(app_dir, "**", "*.py"), recursive=True)
         py_files = [
             p
             for p in py_files
-            if not p.endswith("__init__.py") and "/ui/" not in p and "\\ui\\" not in p
+            if not p.endswith("__init__.py")
+            and "/ui/" not in p
+            and "\\ui\\" not in p
+            and "/binaries/" not in p
+            and "\\binaries\\" not in p
         ]
         py_files.sort(key=lambda p: Path(p).parts)
 

@@ -5,10 +5,8 @@ a writable folder in the user's home directory, dynamically registers search
 paths, and verifies database encryption.
 """
 
-import importlib.util
 import logging
 import os
-import shutil
 import sys
 from pathlib import Path
 
@@ -66,19 +64,21 @@ def verify_sqlcipher_encryption() -> bool:
         return False
 
 
-def inject_bootstrap_paths():
-    """Dynamically modify search paths to include the user-space binaries folder."""
-    bin_dir = get_bootstrap_bin_dir()
-    sqlcipher3_path = bin_dir / "sqlcipher3"
+def inject_bootstrap_paths(platform_binaries_dir: Path = None):
+    """Dynamically modify search paths to include the local binaries folder."""
+    if platform_binaries_dir is None:
+        platform_binaries_dir = get_bootstrap_bin_dir()
 
-    if bin_dir.exists():
-        bin_dir_str = str(bin_dir)
-        if bin_dir_str not in sys.path:
-            sys.path.insert(0, bin_dir_str)
+    sqlcipher3_path = platform_binaries_dir / "sqlcipher3"
+
+    if platform_binaries_dir.exists():
+        platform_binaries_dir_str = str(platform_binaries_dir)
+        if platform_binaries_dir_str not in sys.path:
+            sys.path.insert(0, platform_binaries_dir_str)
 
         if sys.platform == "win32":
             try:
-                os.add_dll_directory(str(bin_dir))
+                os.add_dll_directory(platform_binaries_dir_str)
             except Exception:
                 pass
             try:
@@ -86,130 +86,125 @@ def inject_bootstrap_paths():
             except Exception:
                 pass
 
-            paths = [str(bin_dir), str(sqlcipher3_path)]
+            paths = [platform_binaries_dir_str, str(sqlcipher3_path)]
             os.environ["PATH"] = ";".join(paths) + ";" + os.environ.get("PATH", "")
 
 
 def bootstrap_binaries(force_download: bool = False) -> bool:
-    """Identify host platform, download or copy binaries, and register paths."""
-    bin_dir = get_bootstrap_bin_dir()
-    sqlcipher3_path = bin_dir / "sqlcipher3"
-
+    """Identify host platform, verify and load local precompiled SQLCipher libraries directly from the installation path."""
     # 0. Check if sqlcipher3 is already fully functional in the host environment without bootstrapping
     if not force_download:
         if verify_sqlcipher_encryption():
             logger.info(
                 "Host environment has fully functional SQLCipher active. Skipping bootstrapping."
             )
+            try:
+                from sqlcipher3 import dbapi2 as sqlite3
+                sys.modules["sqlite3"] = sqlite3
+            except Exception:
+                pass
             return True
 
-    # 1. Check if native binaries are already present (Subsequent launches bypass)
-    if sqlcipher3_path.exists() and not force_download:
-        inject_bootstrap_paths()
-        if verify_sqlcipher_encryption():
-            logger.info(
-                "Subsequent launch: cached native binaries found and verified. Bypassing download phase."
-            )
-            return True
+    # 1. Locate the packaged binaries directory (installation path)
+    if hasattr(sys, "_MEIPASS"):
+        # Support PyInstaller 6+ where data files are bundled in the _internal subdirectory
+        internal_bin_root = Path(sys._MEIPASS) / "_internal" / "app" / "binaries"
+        if internal_bin_root.exists():
+            local_binaries_root = internal_bin_root
         else:
-            logger.warning(
-                "Cached native binaries failed verification. Re-bootstrapping..."
-            )
+            local_binaries_root = Path(sys._MEIPASS) / "app" / "binaries"
+    else:
+        local_binaries_root = Path(__file__).resolve().parent.parent / "binaries"
 
-    # Ensure parent directories exist (always in user-space, avoiding read-only app folders)
-    bin_dir.mkdir(parents=True, exist_ok=True)
-
+    # 2. Determine current platform
     system_platform = sys.platform
-    logger.info(f"Identifying host platform: {system_platform}")
+    if system_platform == "win32":
+        platform_key = "windows"
+    elif system_platform == "darwin":
+        platform_key = "macos"
+    else:
+        platform_key = "linux"
 
-    # 2. Attempt to download matching precompiled native binaries
-    download_success = False
-    if check_internet_connection():
-        platform_name = (
-            "windows"
-            if system_platform == "win32"
-            else ("macos" if system_platform == "darwin" else "linux")
+    # 3. Read and verify manifest
+    manifest_path = local_binaries_root / "manifest.json"
+    if not manifest_path.exists():
+        raise RuntimeError(
+            "Startup validation failed: local binaries manifest is missing."
         )
-        url = f"https://assets.autosorter.com/binaries/{platform_name}/sqlcipher3.zip"
 
-        logger.info(
-            f"Downloading precompiled binaries for {platform_name} from {url}..."
+    try:
+        import json
+
+        with open(manifest_path, "r", encoding="utf-8") as f:
+            manifest = json.load(f)
+    except Exception as e:
+        raise RuntimeError(
+            f"Startup validation failed: manifest could not be read. Error: {e}"
         )
-        try:
-            import io
-            import urllib.request
-            import zipfile
 
-            req = urllib.request.Request(
-                url,
-                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"},
-            )
-            with urllib.request.urlopen(req, timeout=10.0) as response:
-                zip_data = response.read()
+    # 4. Verify all files for this platform are present and unmodified
+    platform_binaries_dir = local_binaries_root / platform_key
+    if not platform_binaries_dir.exists():
+        raise RuntimeError(
+            f"Startup validation failed: local precompiled libraries for {platform_key} are missing."
+        )
 
-            temp_extract_dir = bin_dir / "temp_extract"
-            if temp_extract_dir.exists():
-                shutil.rmtree(temp_extract_dir)
-            temp_extract_dir.mkdir(parents=True, exist_ok=True)
+    expected_files = manifest.get(platform_key, {})
+    if not expected_files:
+        raise RuntimeError(
+            f"Startup validation failed: manifest has no entries for platform {platform_key}."
+        )
 
-            with zipfile.ZipFile(io.BytesIO(zip_data)) as zip_ref:
-                zip_ref.extractall(temp_extract_dir)
-
-            extracted_sqlcipher_dir = temp_extract_dir / "sqlcipher3"
-            if extracted_sqlcipher_dir.exists() and extracted_sqlcipher_dir.is_dir():
-                if sqlcipher3_path.exists():
-                    shutil.rmtree(sqlcipher3_path)
-                shutil.move(str(extracted_sqlcipher_dir), str(sqlcipher3_path))
-            else:
-                if sqlcipher3_path.exists():
-                    shutil.rmtree(sqlcipher3_path)
-                shutil.move(str(temp_extract_dir), str(sqlcipher3_path))
-
-            if temp_extract_dir.exists():
-                shutil.rmtree(temp_extract_dir, ignore_errors=True)
-
-            download_success = True
-            logger.info("Precompiled binaries successfully downloaded.")
-        except Exception as e:
-            logger.warning(
-                f"Download of precompiled binaries failed: {e}. Falling back to cached local libraries."
-            )
-            download_success = False
-
-    # 3. Fallback to cached local native libraries if offline or download failed
-    if not download_success:
-        logger.info("Falling back to cached local native libraries...")
-        spec = importlib.util.find_spec("sqlcipher3")
-        if spec and spec.submodule_search_locations:
-            local_sqlcipher3_dir = Path(spec.submodule_search_locations[0])
-
-            if sqlcipher3_path.exists():
-                if sqlcipher3_path.is_dir():
-                    shutil.rmtree(sqlcipher3_path)
-                else:
-                    sqlcipher3_path.unlink()
-
-            shutil.copytree(local_sqlcipher3_dir, sqlcipher3_path)
-            logger.info(
-                f"Successfully copied cached local native libraries from {local_sqlcipher3_dir} to {sqlcipher3_path}"
-            )
-        else:
+    for rel_path_str, expected_hash in expected_files.items():
+        file_path = platform_binaries_dir / rel_path_str
+        if not file_path.exists():
             raise RuntimeError(
-                "SQLCipher local native library is missing and internet connection is unavailable."
+                f"Startup validation failed: local packaged binary file {rel_path_str} is missing."
             )
 
-    # 4. Dynamically inject the paths
-    inject_bootstrap_paths()
+        # Calculate SHA256 of the file
+        import hashlib
 
-    # Clear sys.modules of sqlcipher3 to force reload from the newly injected paths
-    if "sqlcipher3" in sys.modules:
-        for k in list(sys.modules.keys()):
-            if k == "sqlcipher3" or k.startswith("sqlcipher3."):
-                sys.modules.pop(k, None)
+        hasher = hashlib.sha256()
+        try:
+            is_text_file = file_path.suffix in (".py", ".pyi", ".typed")
+            if is_text_file:
+                with open(file_path, "r", encoding="utf-8-sig", newline=None) as fh:
+                    content = fh.read()
+                # Normalize all line endings to LF (\n)
+                normalized_bytes = content.replace("\r\n", "\n").encode("utf-8")
+                hasher.update(normalized_bytes)
+            else:
+                with open(file_path, "rb") as fh:
+                    while chunk := fh.read(8192):
+                        hasher.update(chunk)
+            actual_hash = hasher.hexdigest()
+        except Exception as e:
+            raise RuntimeError(
+                f"Startup validation failed: could not verify integrity of {rel_path_str}. Error: {e}"
+            )
 
-    # 5. Execute pre-flight verification
+        if actual_hash != expected_hash:
+            raise RuntimeError(
+                f"Startup validation failed: local packaged binary file {rel_path_str} has been modified."
+            )
+
+    # 5. Inject paths directly from the installation directory
+    inject_bootstrap_paths(platform_binaries_dir)
+
+    # 6. Clear sys.modules of sqlcipher3, _sqlite3, and sqlite3 to force reload from the newly injected paths
+    for k in list(sys.modules.keys()):
+        if k in ("sqlcipher3", "_sqlite3", "sqlite3") or k.startswith("sqlcipher3.") or k.startswith("sqlite3."):
+            sys.modules.pop(k, None)
+
+    # 7. Execute pre-flight verification
     if verify_sqlcipher_encryption():
         logger.info("Startup pre-flight database encryption verification successful!")
+        try:
+            from sqlcipher3 import dbapi2 as sqlite3
+            sys.modules["sqlite3"] = sqlite3
+        except Exception:
+            pass
         return True
     else:
         raise RuntimeError(

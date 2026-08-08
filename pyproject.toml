@@ -37,6 +37,9 @@ packages = ["app"]
 
 [tool.ruff]
 line-length = 88
+exclude = [
+    "app/binaries",
+]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "D", "D417"]

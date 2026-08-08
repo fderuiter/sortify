@@ -62,28 +62,47 @@ if sqlcipher_spec and sqlcipher_spec.submodule_search_locations:
 else:
     print("Warning: sqlcipher3 not found in active environment.")
 
+# Explicitly bundle local precompiled platform libraries for offline usage
+app_binaries_src = os.path.join('app', 'binaries')
+if os.path.exists(app_binaries_src):
+    for root, dirs, files in os.walk(app_binaries_src):
+        for file in files:
+            abs_file_path = os.path.abspath(os.path.join(root, file))
+            # Determine destination subdirectory in the package (under app/binaries)
+            rel_sub = os.path.relpath(root, app_binaries_src)
+            if rel_sub == '.':
+                dest_dir = os.path.join('app', 'binaries')
+            else:
+                dest_dir = os.path.join('app', 'binaries', rel_sub)
+            datas.append((abs_file_path, dest_dir))
+
 # On Windows, find and bundle any dependent OpenSSL/SQLCipher DLLs from the active Python or virtualenv environments
 if platform.system().lower() == "windows" or sys.platform == "win32":
-    search_dirs = [
-        sys.prefix,
-        sys.base_prefix,
-        os.path.dirname(sys.executable),
-    ]
-    # Add Library/bin, DLLs and Scripts subdirectories of sys.prefix / sys.base_prefix if they exist
-    for sd in list(search_dirs):
-        if sd:
-            lib_bin = os.path.join(sd, "Library", "bin")
-            if os.path.isdir(lib_bin):
-                search_dirs.append(lib_bin)
-            dlls_dir = os.path.join(sd, "DLLs")
-            if os.path.isdir(dlls_dir):
-                search_dirs.append(dlls_dir)
-            scripts_dir = os.path.join(sd, "Scripts")
-            if os.path.isdir(scripts_dir):
-                search_dirs.append(scripts_dir)
+    search_dirs = []
+    # Prioritize active virtual environment (sys.prefix) and its subdirectories
+    if sys.prefix:
+        search_dirs.append(sys.prefix)
+        for sub in ["Library/bin", "DLLs", "Scripts"]:
+            p = os.path.join(sys.prefix, sub.replace("/", os.sep))
+            if os.path.isdir(p):
+                search_dirs.append(p)
                 
+    # Fallback to base python prefix (sys.base_prefix) and its subdirectories only if different
+    if sys.base_prefix and sys.base_prefix != sys.prefix:
+        search_dirs.append(sys.base_prefix)
+        for sub in ["Library/bin", "DLLs", "Scripts"]:
+            p = os.path.join(sys.base_prefix, sub.replace("/", os.sep))
+            if os.path.isdir(p):
+                search_dirs.append(p)
+                
+    # Finally, check executable directory
+    exe_dir = os.path.dirname(sys.executable)
+    if exe_dir and exe_dir not in search_dirs:
+        search_dirs.append(exe_dir)
+                
+    found_dll_names = set()
     found_dlls = set()
-    dll_patterns = ["libcrypto", "libssl", "sqlcipher", "libsqlcipher"]
+    dll_patterns = ["libcrypto", "libssl", "sqlcipher", "libsqlcipher", "sqlite3"]
     
     # 1. Check recursively inside the installed sqlcipher3 package directory itself for any DLLs
     if sqlcipher_spec and sqlcipher_spec.submodule_search_locations:
@@ -93,7 +112,8 @@ if platform.system().lower() == "windows" or sys.platform == "win32":
                 file_lower = file.lower()
                 if file_lower.endswith(".dll"):
                     dll_path = os.path.abspath(os.path.join(root, file))
-                    if dll_path not in found_dlls:
+                    if file_lower not in found_dll_names:
+                        found_dll_names.add(file_lower)
                         found_dlls.add(dll_path)
                         print(f"Bundling required Windows dependency DLL from sqlcipher3 package: {dll_path}")
                         binaries.append((dll_path, '.'))
@@ -112,7 +132,8 @@ if platform.system().lower() == "windows" or sys.platform == "win32":
             file_lower = file.lower()
             if file_lower.endswith(".dll") and any(pat in file_lower for pat in dll_patterns):
                 dll_path = os.path.abspath(os.path.join(s_dir, file))
-                if dll_path not in found_dlls:
+                if file_lower not in found_dll_names:
+                    found_dll_names.add(file_lower)
                     found_dlls.add(dll_path)
                     print(f"Bundling required Windows dependency DLL: {dll_path}")
                     # Place in root and sqlcipher3 to be absolutely certain it's resolved
@@ -120,7 +141,7 @@ if platform.system().lower() == "windows" or sys.platform == "win32":
                     binaries.append((dll_path, 'sqlcipher3'))
 
 is_lite = os.environ.get("LITE_BUILD") == "1"
-excludes = ['tkinter', 'tcl', 'tk', '_tkinter']
+excludes = ['tkinter', 'tcl', 'tk', '_tkinter', 'sqlite3', '_sqlite3']
 if is_lite:
     excludes.extend([
         'torch', 'torchvision', 'triton', 'nvidia', 'easyocr', 'scipy',
@@ -188,7 +209,87 @@ def is_prunable_asset(name):
         
     return False
 
-a.binaries = [x for x in a.binaries if not is_tcl_tk_asset(x[0]) and not is_prunable_asset(x[0])]
+
+# Prevent any standard non-cryptographic sqlite binaries from being bundled
+def is_standard_sqlite_binary(dest_name, src_path):
+    dest_lower = dest_name.lower().replace('\\', '/')
+    src_lower = src_path.lower().replace('\\', '/')
+    
+    # Identify any standard sqlite3 binary files
+    if any(term in dest_lower for term in ('sqlite3', '_sqlite3')):
+        # Allow it only if it originates from sqlcipher3 or app/binaries
+        if 'sqlcipher3' in src_lower or 'app/binaries' in src_lower or 'app_binaries' in src_lower:
+            return False
+        if sys.prefix:
+            prefix_lower = sys.prefix.lower().replace('\\', '/')
+            # Make sure it's in the virtual environment prefix and NOT in the base python prefix
+            if prefix_lower in src_lower:
+                if sys.base_prefix:
+                    base_lower = sys.base_prefix.lower().replace('\\', '/')
+                    if base_lower in src_lower and base_lower != prefix_lower:
+                        # It's actually from the base python prefix, so it is standard
+                        return True
+                return False
+        return True
+    return False
+
+
+# Find and preserve the custom sqlite3.dll path if available to redirect standard dependencies
+custom_sqlite3_dll = None
+if sqlcipher_spec and sqlcipher_spec.submodule_search_locations:
+    sqlcipher_dir = sqlcipher_spec.submodule_search_locations[0]
+    for root, dirs, files in os.walk(sqlcipher_dir):
+        for file in files:
+            if file.lower() == "sqlite3.dll":
+                custom_sqlite3_dll = os.path.abspath(os.path.join(root, file))
+                break
+        if custom_sqlite3_dll:
+            break
+
+if not custom_sqlite3_dll and sys.prefix:
+    # Walk the active virtual environment to find the custom sqlite3.dll
+    prefix_lower = sys.prefix.lower().replace('\\', '/')
+    base_lower = sys.base_prefix.lower().replace('\\', '/') if sys.base_prefix else None
+    
+    for root, dirs, files in os.walk(sys.prefix):
+        # Skip some common heavy directories to make it faster
+        if any(p in root.lower() for p in ('site-packages/torch', 'site-packages/easyocr', 'site-packages/scipy')):
+            continue
+        for file in files:
+            if file.lower() == "sqlite3.dll":
+                candidate_path = os.path.abspath(os.path.join(root, file))
+                cand_lower = candidate_path.lower().replace('\\', '/')
+                # Make sure it's not from base_prefix
+                if base_lower and base_lower in cand_lower and base_lower != prefix_lower:
+                    continue
+                custom_sqlite3_dll = candidate_path
+                break
+        if custom_sqlite3_dll:
+            break
+
+new_binaries = []
+for x in a.binaries:
+    dest_name, src_path = x[0], x[1]
+    dest_lower = dest_name.lower().replace('\\', '/')
+    src_lower = src_path.lower().replace('\\', '/')
+    
+    if is_tcl_tk_asset(dest_name) or is_prunable_asset(dest_name):
+        continue
+        
+    # Redirect standard sqlite3.dll to our custom one instead of discarding it to satisfy pefile/dependency requirements
+    if dest_lower == "sqlite3.dll" and custom_sqlite3_dll:
+        if not ('sqlcipher3' in src_lower or 'app/binaries' in src_lower or 'app_binaries' in src_lower):
+            print(f"Redirecting standard sqlite3.dll dependency {src_path} -> custom {custom_sqlite3_dll}")
+            new_binaries.append((dest_name, custom_sqlite3_dll, x[2]))
+            continue
+
+    if is_standard_sqlite_binary(dest_name, src_path):
+        print(f"Filtering out standard sqlite binary: {dest_name} from {src_path}")
+        continue
+        
+    new_binaries.append(x)
+
+a.binaries = new_binaries
 a.datas = [x for x in a.datas if not is_tcl_tk_asset(x[0]) and not is_prunable_asset(x[0])]
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)

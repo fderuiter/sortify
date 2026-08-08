@@ -204,12 +204,11 @@ def run_smoke_test():
     import shutil
     import tempfile
 
-    from app.core.db_conn import clear_connection_cache
-
     # Create a temporary directory for testing to avoid side effects
     temp_dir = tempfile.mkdtemp()
     conn = None
     try:
+        from app.core.db_conn import clear_connection_cache
         # Pre-flight check: try importing sqlcipher3 directly to log any specific DLL load failures
         try:
             from sqlcipher3 import dbapi2 as sqlite3_direct  # noqa: F401
@@ -283,6 +282,7 @@ def run_smoke_test():
                 pass
             conn = None
         try:
+            from app.core.db_conn import clear_connection_cache
             clear_connection_cache()
         except Exception:
             pass

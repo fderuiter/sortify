@@ -1,7 +1,5 @@
-import io
 import os
 import sys
-import zipfile
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -114,98 +112,159 @@ def test_bootstrap_binaries_bypass_if_cached(tmp_path):
         mock_find.assert_not_called()
 
 
-def test_bootstrap_binaries_download_flow(tmp_path):
-    """Verify that when binaries are missing and internet is available, we download and extract successfully."""
-    mock_bin_dir = tmp_path / "binaries"
-    mock_bin_dir.mkdir()
-
-    # Create dummy zip with a file or sqlcipher3 folder
-    zip_buffer = io.BytesIO()
-    with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
-        zip_file.writestr("sqlcipher3/dummy.txt", "dummy file content")
-    zip_data = zip_buffer.getvalue()
-
-    mock_response = MagicMock()
-    mock_response.__enter__.return_value = mock_response
-    mock_response.read.return_value = zip_data
+def test_bootstrap_binaries_manifest_missing(tmp_path):
+    """Verify that if the binaries manifest is missing, startup is rejected."""
+    mock_binaries_root = tmp_path / "binaries"
+    mock_binaries_root.mkdir()
 
     with (
         patch(
-            "app.core.user_space_bootstrap.get_bootstrap_bin_dir",
-            return_value=mock_bin_dir,
+            "app.core.user_space_bootstrap.__file__",
+            str(tmp_path / "core" / "user_space_bootstrap.py"),
         ),
         patch(
-            "app.core.user_space_bootstrap.check_internet_connection", return_value=True
+            "app.core.user_space_bootstrap.verify_sqlcipher_encryption",
+            return_value=False,
         ),
-        patch("urllib.request.urlopen", return_value=mock_response),
+    ):
+        with pytest.raises(
+            RuntimeError,
+            match="Startup validation failed: local binaries manifest is missing",
+        ):
+            bootstrap_binaries(force_download=True)
+
+
+def test_bootstrap_binaries_file_missing(tmp_path):
+    """Verify that if any of the platform files are missing, startup is rejected."""
+    import json
+
+    mock_binaries_root = tmp_path / "binaries"
+    mock_binaries_root.mkdir()
+
+    # Create manifest
+    manifest = {"linux": {"sqlcipher3/_sqlite3.so": "somehash"}}
+    with open(mock_binaries_root / "manifest.json", "w") as f:
+        json.dump(manifest, f)
+
+    # Note that platform_binaries_dir ("linux") is created, but the required file is missing
+    (mock_binaries_root / "linux").mkdir()
+
+    with (
+        patch("sys.platform", "linux"),
+        patch(
+            "app.core.user_space_bootstrap.__file__",
+            str(tmp_path / "core" / "user_space_bootstrap.py"),
+        ),
+        patch(
+            "app.core.user_space_bootstrap.verify_sqlcipher_encryption",
+            return_value=False,
+        ),
+    ):
+        with pytest.raises(
+            RuntimeError,
+            match="Startup validation failed: local packaged binary file .* is missing",
+        ):
+            bootstrap_binaries(force_download=True)
+
+
+def test_bootstrap_binaries_file_modified(tmp_path):
+    """Verify that if a packaged file is modified, startup is rejected."""
+    import json
+
+    mock_binaries_root = tmp_path / "binaries"
+    mock_binaries_root.mkdir()
+
+    # Create manifest with incorrect hash
+    manifest = {"linux": {"sqlcipher3/_sqlite3.so": "incorrect_hash_value"}}
+    with open(mock_binaries_root / "manifest.json", "w") as f:
+        json.dump(manifest, f)
+
+    linux_dir = mock_binaries_root / "linux" / "sqlcipher3"
+    linux_dir.mkdir(parents=True)
+    with open(linux_dir / "_sqlite3.so", "w") as f:
+        f.write("unmodified file content")
+
+    with (
+        patch("sys.platform", "linux"),
+        patch(
+            "app.core.user_space_bootstrap.__file__",
+            str(tmp_path / "core" / "user_space_bootstrap.py"),
+        ),
+        patch(
+            "app.core.user_space_bootstrap.verify_sqlcipher_encryption",
+            return_value=False,
+        ),
+    ):
+        with pytest.raises(
+            RuntimeError,
+            match="Startup validation failed: local packaged binary file .* has been modified",
+        ):
+            bootstrap_binaries(force_download=True)
+
+
+def test_bootstrap_binaries_successful_offline_flow(tmp_path):
+    """Verify the complete offline bootstrap validation and path injection flow on success."""
+    import hashlib
+    import json
+
+    mock_binaries_root = tmp_path / "binaries"
+    mock_binaries_root.mkdir()
+
+    content = b"valid precompiled dynamic library content"
+    expected_hash = hashlib.sha256(content).hexdigest()
+
+    manifest = {"linux": {"sqlcipher3/_sqlite3.so": expected_hash}}
+    with open(mock_binaries_root / "manifest.json", "w") as f:
+        json.dump(manifest, f)
+
+    linux_dir = mock_binaries_root / "linux" / "sqlcipher3"
+    linux_dir.mkdir(parents=True)
+    with open(linux_dir / "_sqlite3.so", "wb") as f:
+        f.write(content)
+
+    with (
+        patch("sys.platform", "linux"),
+        patch(
+            "app.core.user_space_bootstrap.__file__",
+            str(tmp_path / "core" / "user_space_bootstrap.py"),
+        ),
         patch(
             "app.core.user_space_bootstrap.verify_sqlcipher_encryption",
             return_value=True,
         ),
-        patch("app.core.user_space_bootstrap.inject_bootstrap_paths"),
+        patch("app.core.user_space_bootstrap.inject_bootstrap_paths") as mock_inject,
     ):
         res = bootstrap_binaries(force_download=True)
         assert res is True
-        assert (mock_bin_dir / "sqlcipher3").exists()
-        assert (mock_bin_dir / "sqlcipher3" / "dummy.txt").exists()
-
-
-def test_bootstrap_binaries_download_failed_fallback(tmp_path):
-    """Verify that when download fails, we fall back to copy cached local native libraries."""
-    mock_bin_dir = tmp_path / "binaries"
-    mock_bin_dir.mkdir()
-
-    mock_local_sqlcipher_dir = tmp_path / "local_sqlcipher"
-    mock_local_sqlcipher_dir.mkdir()
-    (mock_local_sqlcipher_dir / "native_module.so").write_text("compiled code")
-
-    mock_spec = MagicMock()
-    mock_spec.submodule_search_locations = [str(mock_local_sqlcipher_dir)]
-
-    with (
-        patch(
-            "app.core.user_space_bootstrap.get_bootstrap_bin_dir",
-            return_value=mock_bin_dir,
-        ),
-        patch(
-            "app.core.user_space_bootstrap.check_internet_connection", return_value=True
-        ),
-        # force urlopen to fail
-        patch("urllib.request.urlopen", side_effect=Exception("Download error")),
-        patch("importlib.util.find_spec", return_value=mock_spec),
-        patch(
-            "app.core.user_space_bootstrap.verify_sqlcipher_encryption",
-            side_effect=[False, True],
-        ),
-        patch("app.core.user_space_bootstrap.inject_bootstrap_paths"),
-    ):
-        res = bootstrap_binaries()
-        assert res is True
-        assert (mock_bin_dir / "sqlcipher3").exists()
-        assert (mock_bin_dir / "sqlcipher3" / "native_module.so").exists()
+        mock_inject.assert_called_once_with(mock_binaries_root / "linux")
 
 
 def test_bootstrap_binaries_failed_verification(tmp_path):
     """Verify that if encryption verification fails after bootstrapping, we raise a RuntimeError."""
-    mock_bin_dir = tmp_path / "binaries"
-    mock_bin_dir.mkdir()
+    import hashlib
+    import json
 
-    mock_local_sqlcipher_dir = tmp_path / "local_sqlcipher"
-    mock_local_sqlcipher_dir.mkdir()
+    mock_binaries_root = tmp_path / "binaries"
+    mock_binaries_root.mkdir()
 
-    mock_spec = MagicMock()
-    mock_spec.submodule_search_locations = [str(mock_local_sqlcipher_dir)]
+    content = b"valid content"
+    expected_hash = hashlib.sha256(content).hexdigest()
+
+    manifest = {"linux": {"sqlcipher3/_sqlite3.so": expected_hash}}
+    with open(mock_binaries_root / "manifest.json", "w") as f:
+        json.dump(manifest, f)
+
+    linux_dir = mock_binaries_root / "linux" / "sqlcipher3"
+    linux_dir.mkdir(parents=True)
+    with open(linux_dir / "_sqlite3.so", "wb") as f:
+        f.write(content)
 
     with (
+        patch("sys.platform", "linux"),
         patch(
-            "app.core.user_space_bootstrap.get_bootstrap_bin_dir",
-            return_value=mock_bin_dir,
+            "app.core.user_space_bootstrap.__file__",
+            str(tmp_path / "core" / "user_space_bootstrap.py"),
         ),
-        patch(
-            "app.core.user_space_bootstrap.check_internet_connection",
-            return_value=False,
-        ),
-        patch("importlib.util.find_spec", return_value=mock_spec),
         patch(
             "app.core.user_space_bootstrap.verify_sqlcipher_encryption",
             return_value=False,
@@ -213,4 +272,138 @@ def test_bootstrap_binaries_failed_verification(tmp_path):
         patch("app.core.user_space_bootstrap.inject_bootstrap_paths"),
     ):
         with pytest.raises(RuntimeError, match="Startup verification failed"):
-            bootstrap_binaries()
+            bootstrap_binaries(force_download=True)
+
+
+def test_bootstrap_binaries_newline_and_bom_insensitivity(tmp_path):
+    """Verify that text files with CRLF and/or BOM are correctly matched against LF-only/no-BOM hashes."""
+    import hashlib
+    import json
+
+    mock_binaries_root = tmp_path / "binaries"
+    mock_binaries_root.mkdir()
+
+    # The original text with LF endings and no BOM
+    original_text = "print('hello world')\n"
+    expected_hash = hashlib.sha256(original_text.encode("utf-8")).hexdigest()
+
+    manifest = {"linux": {"sqlcipher3/__init__.py": expected_hash}}
+    with open(mock_binaries_root / "manifest.json", "w") as f:
+        json.dump(manifest, f)
+
+    linux_dir = mock_binaries_root / "linux" / "sqlcipher3"
+    linux_dir.mkdir(parents=True)
+
+    # Write on-disk file with BOM and CRLF line endings
+    crlf_text_with_bom = "\ufeffprint('hello world')\r\n"
+    with open(linux_dir / "__init__.py", "w", encoding="utf-8") as f:
+        f.write(crlf_text_with_bom)
+
+    with (
+        patch("sys.platform", "linux"),
+        patch(
+            "app.core.user_space_bootstrap.__file__",
+            str(tmp_path / "core" / "user_space_bootstrap.py"),
+        ),
+        patch(
+            "app.core.user_space_bootstrap.verify_sqlcipher_encryption",
+            return_value=True,
+        ),
+        patch("app.core.user_space_bootstrap.inject_bootstrap_paths") as mock_inject,
+    ):
+        res = bootstrap_binaries(force_download=True)
+        assert res is True
+        mock_inject.assert_called_once_with(mock_binaries_root / "linux")
+
+
+def test_bootstrap_binaries_pyinstaller_internal_fallback(tmp_path):
+    """Verify that if sys._MEIPASS is defined, we correctly resolve files inside _internal if present."""
+    import hashlib
+    import json
+
+    mock_meipass = tmp_path / "meipass"
+    mock_meipass.mkdir()
+
+    mock_binaries_root = mock_meipass / "_internal" / "app" / "binaries"
+    mock_binaries_root.mkdir(parents=True)
+
+    content = b"pyd content"
+    expected_hash = hashlib.sha256(content).hexdigest()
+
+    manifest = {"linux": {"sqlcipher3/_sqlite3.so": expected_hash}}
+    with open(mock_binaries_root / "manifest.json", "w") as f:
+        json.dump(manifest, f)
+
+    linux_dir = mock_binaries_root / "linux" / "sqlcipher3"
+    linux_dir.mkdir(parents=True)
+    with open(linux_dir / "_sqlite3.so", "wb") as f:
+        f.write(content)
+
+    with (
+        patch("sys.platform", "linux"),
+        patch("sys.frozen", True, create=True),
+        patch("sys._MEIPASS", str(mock_meipass), create=True),
+        patch(
+            "app.core.user_space_bootstrap.__file__",
+            str(tmp_path / "core" / "user_space_bootstrap.py"),
+        ),
+        patch(
+            "app.core.user_space_bootstrap.verify_sqlcipher_encryption",
+            return_value=True,
+        ),
+        patch("app.core.user_space_bootstrap.inject_bootstrap_paths") as mock_inject,
+    ):
+        res = bootstrap_binaries(force_download=True)
+        assert res is True
+        mock_inject.assert_called_once_with(mock_binaries_root / "linux")
+
+
+def test_sqlite3_mock_fallback_on_import_error():
+    """Verify that when standard sqlite3 and sqlcipher3 both raise ImportError, a functional dummy module is registered."""
+    import importlib
+    import sys
+    from unittest.mock import patch
+
+    import app.core.db_conn
+
+    # Remove standard modules from sys.modules temporarily to simulate clean import environment
+    original_sqlite3 = sys.modules.get("sqlite3")
+    original_sqlcipher3 = sys.modules.get("sqlcipher3")
+
+    sys.modules.pop("sqlite3", None)
+    sys.modules.pop("sqlcipher3", None)
+
+    real_import = __import__
+    def mock_import(name, *args, **kwargs):
+        if name in ("sqlite3", "sqlcipher3") or name.startswith("sqlite3.") or name.startswith("sqlcipher3."):
+            raise ImportError("Simulated import failure")
+        return real_import(name, *args, **kwargs)
+
+    try:
+        with patch("builtins.__import__", side_effect=mock_import):
+            # Reload db_conn which triggers the sqlite3 mapping logic
+            # Since it raises ImportError, it should execute the custom fallback mapping
+            importlib.reload(app.core.db_conn)
+
+        import sqlite3
+        assert sqlite3 is not None
+        assert hasattr(sqlite3, "connect")
+        assert hasattr(sqlite3, "Error")
+
+        with pytest.raises(RuntimeError, match="SQLCipher library is missing"):
+            sqlite3.connect(":memory:")
+    finally:
+        # Restore original modules to prevent test pollution
+        if original_sqlite3:
+            sys.modules["sqlite3"] = original_sqlite3
+        else:
+            sys.modules.pop("sqlite3", None)
+        if original_sqlcipher3:
+            sys.modules["sqlcipher3"] = original_sqlcipher3
+        else:
+            sys.modules.pop("sqlcipher3", None)
+
+        # Re-reload db_conn to restore its state for other tests!
+        importlib.reload(app.core.db_conn)
+
+

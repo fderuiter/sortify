@@ -3,7 +3,14 @@
 import json
 import os
 import shutil
-import sqlite3
+
+try:
+    import sqlite3
+except Exception:
+    try:
+        from sqlcipher3 import dbapi2 as sqlite3
+    except Exception:
+        sqlite3 = None
 
 from app.config import get_app_dir
 from app.core.analyzer import IncrementalAnalyzer
