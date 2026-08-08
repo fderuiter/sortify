@@ -677,77 +677,164 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         if self.generator is None and not (self._gguf_active and not self._gguf_failed):
             return super()._get_cluster_keywords(documents)
 
-        # Retrieve historical corrected outcomes from SQLite and query using TF-IDF + cosine similarity
         db = getattr(self, "db", None)
         base_dir = getattr(self, "base_dir", None)
-        historical_examples = []
+
+        use_semantic = False
+        top_examples = []
+        few_shot_context = ""
+
         if db and base_dir:
             try:
-                all_docs = db.get_all_documents(base_dir)
-                for doc in all_docs:
-                    # doc is (filepath, decrypted_text, file_hash, user_verified_target_path)
-                    if len(doc) > 3 and doc[1] and doc[3]:
-                        historical_examples.append(
-                            {"text": doc[1], "target_path": doc[3]}
-                        )
+                from app.core.semantic_embeddings import SemanticEmbeddingManager
+                embedding_manager = SemanticEmbeddingManager(db, model_path=getattr(self, "model_path", None))
+                if not embedding_manager.is_mock and not embedding_manager.is_reconstruction_active():
+                    use_semantic = True
             except Exception as e:
-                logging.error(f"Error reading historical documents from DB: {e}")
+                logging.error(f"Failed to initialize SemanticEmbeddingManager for strategy: {e}")
+                use_semantic = False
 
-        few_shot_context = ""
-        if historical_examples:
-            try:
-                from sklearn.feature_extraction.text import TfidfVectorizer
-                from sklearn.metrics.pairwise import cosine_similarity
+            if use_semantic:
+                try:
+                    # 1. Compute Cluster Query Vector
+                    target_text = " ".join(documents)[:1000]
+                    target_vector = embedding_manager.get_embedding(target_text)
+                    if target_vector and embedding_manager.validate_vector_dimension(target_vector):
+                        # 2. Query Pre-computed Historical Vectors directly from DB
+                        from app.core.db_conn import get_db_connection
+                        conn = get_db_connection(db.db_path)
+                        with conn:
+                            cursor = conn.execute("""
+                                SELECT d.filepath, d.user_verified_target_path, v.vector
+                                FROM documents d
+                                JOIN document_vectors v ON d.base_dir = v.base_dir AND d.filepath = v.filepath
+                                WHERE d.base_dir = ? AND d.user_verified_target_path IS NOT NULL AND d.user_verified_target_path != ''
+                            """, (base_dir,))
+                            rows = cursor.fetchall()
 
-                # Limit vocabulary features to 1,000 to keep CPU search speeds fast and minimize latency
-                stop_words_list = (
-                    list(self.stop_words)
-                    if getattr(self, "stop_words", None)
-                    else "english"
-                )
-                vectorizer = TfidfVectorizer(
-                    stop_words=stop_words_list, max_features=1000
-                )
+                        if rows:
+                            import json
+                            import numpy as np
+                            from sklearn.metrics.pairwise import cosine_similarity
 
-                hist_texts = [ex["text"] for ex in historical_examples]
-                target_text = " ".join(documents)[:1000]
+                            hist_vectors = []
+                            hist_meta = []
+                            for filepath, user_verified_target, vector_str in rows:
+                                if vector_str:
+                                    try:
+                                        v = json.loads(vector_str)
+                                        if embedding_manager.validate_vector_dimension(v):
+                                            hist_vectors.append(v)
+                                            hist_meta.append({
+                                                "filepath": filepath,
+                                                "user_verified_target_path": user_verified_target
+                                            })
+                                    except Exception:
+                                        continue
 
-                # Fit on all texts to get accurate representation
-                all_texts = hist_texts + [target_text]
-                X = vectorizer.fit_transform(all_texts)
+                            if hist_vectors:
+                                # 3. Cosine Similarity Calculation
+                                target_vector_arr = np.array([target_vector])
+                                hist_vectors_arr = np.array(hist_vectors)
+                                similarities = cosine_similarity(target_vector_arr, hist_vectors_arr).flatten()
 
-                hist_vectors = X[:-1]
-                target_vector = X[-1:]
+                                sorted_indices = similarities.argsort()[::-1]
 
-                similarities = cosine_similarity(target_vector, hist_vectors).flatten()
+                                for idx in sorted_indices:
+                                    if similarities[idx] >= 0.1:
+                                        top_examples.append(
+                                            (hist_meta[idx], similarities[idx])
+                                        )
+                                        if len(top_examples) >= 3:
+                                            break
 
-                # Get indices sorted by similarity descending
-                sorted_indices = similarities.argsort()[::-1]
+                                if top_examples:
+                                    few_shot_lines = []
+                                    few_shot_lines.append(
+                                        "Here are some historical examples of documents and their corresponding user-corrected folder names:"
+                                    )
+                                    for ex_idx, (ex, sim) in enumerate(top_examples):
+                                        import os
+                                        snippet = os.path.basename(ex["filepath"])
+                                        folder_name = ex["user_verified_target_path"]
+                                        few_shot_lines.append(
+                                            f"Example {ex_idx + 1}:\nDocument: {snippet}\nFolder Name: {folder_name}"
+                                        )
+                                    few_shot_context = "\n\n".join(few_shot_lines) + "\n\n"
+                except Exception as e:
+                    logging.error(f"Semantic historical matching failed: {e}")
+                    top_examples = []
+                    few_shot_context = ""
 
-                # Retrieve top matching examples (up to 3) with similarity >= 0.1
-                top_examples = []
-                for idx in sorted_indices:
-                    if similarities[idx] >= 0.1:
-                        top_examples.append(
-                            (historical_examples[idx], similarities[idx])
-                        )
-                        if len(top_examples) >= 3:
-                            break
+        if not use_semantic or not top_examples:
+            # Fallback path (Keyword-Based Matching)
+            historical_examples = []
+            if db and base_dir:
+                try:
+                    all_docs = db.get_all_documents(base_dir)
+                    for doc in all_docs:
+                        # doc is (filepath, decrypted_text, file_hash, user_verified_target_path)
+                        if len(doc) > 3 and doc[1] and doc[3]:
+                            historical_examples.append(
+                                {"text": doc[1], "target_path": doc[3]}
+                            )
+                except Exception as e:
+                    logging.error(f"Error reading historical documents from DB for fallback: {e}")
 
-                if top_examples:
-                    few_shot_lines = []
-                    few_shot_lines.append(
-                        "Here are some historical examples of documents and their corresponding user-corrected folder names:"
+            if historical_examples:
+                try:
+                    from sklearn.feature_extraction.text import TfidfVectorizer
+                    from sklearn.metrics.pairwise import cosine_similarity
+
+                    # Limit vocabulary features to 1,000 to keep CPU search speeds fast and minimize latency
+                    stop_words_list = (
+                        list(self.stop_words)
+                        if getattr(self, "stop_words", None)
+                        else "english"
                     )
-                    for ex_idx, (ex, sim) in enumerate(top_examples):
-                        snippet = ex["text"][:500].replace("\n", " ").strip()
-                        folder_name = ex["target_path"]
+                    vectorizer = TfidfVectorizer(
+                        stop_words=stop_words_list, max_features=1000
+                    )
+
+                    hist_texts = [ex["text"] for ex in historical_examples]
+                    target_text = " ".join(documents)[:1000]
+
+                    # Fit on all texts to get accurate representation
+                    all_texts = hist_texts + [target_text]
+                    X = vectorizer.fit_transform(all_texts)
+
+                    hist_vectors = X[:-1]
+                    target_vector = X[-1:]
+
+                    similarities = cosine_similarity(target_vector, hist_vectors).flatten()
+
+                    # Get indices sorted by similarity descending
+                    sorted_indices = similarities.argsort()[::-1]
+
+                    # Retrieve top matching examples (up to 3) with similarity >= 0.1
+                    fallback_top_examples = []
+                    for idx in sorted_indices:
+                        if similarities[idx] >= 0.1:
+                            fallback_top_examples.append(
+                                (historical_examples[idx], similarities[idx])
+                            )
+                            if len(fallback_top_examples) >= 3:
+                                break
+
+                    if fallback_top_examples:
+                        few_shot_lines = []
                         few_shot_lines.append(
-                            f"Example {ex_idx + 1}:\nDocument: {snippet}\nFolder Name: {folder_name}"
+                            "Here are some historical examples of documents and their corresponding user-corrected folder names:"
                         )
-                    few_shot_context = "\n\n".join(few_shot_lines) + "\n\n"
-            except Exception as e:
-                logging.error(f"Error querying TF-IDF historical examples: {e}")
+                        for ex_idx, (ex, sim) in enumerate(fallback_top_examples):
+                            snippet = ex["text"][:500].replace("\n", " ").strip()
+                            folder_name = ex["target_path"]
+                            few_shot_lines.append(
+                                f"Example {ex_idx + 1}:\nDocument: {snippet}\nFolder Name: {folder_name}"
+                            )
+                        few_shot_context = "\n\n".join(few_shot_lines) + "\n\n"
+                except Exception as e:
+                    logging.error(f"Error querying TF-IDF historical examples in fallback: {e}")
 
         try:
             doc_text = " ".join(documents)[:1000]

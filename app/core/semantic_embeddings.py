@@ -284,6 +284,10 @@ class SemanticEmbeddingManager:
             except Exception:
                 pass
 
+    def get_embedding(self, text: str | None) -> list[float]:
+        """Generate vector embedding of active model dimensions (alias for generate_embedding)."""
+        return self.generate_embedding(text)
+
     def generate_embedding(self, text: str | None) -> list[float]:
         """Generate vector embedding of active model dimensions."""
         # Clean the text or default to empty
