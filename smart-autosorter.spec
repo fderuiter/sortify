@@ -55,26 +55,31 @@ except Exception as e:
 # On Windows, find and bundle any dependent OpenSSL/SQLCipher DLLs from the active Python or virtualenv environments
 if platform.system().lower() == "windows" or sys.platform == "win32":
     sqlcipher_spec = importlib.util.find_spec("sqlcipher3")
-    search_dirs = [
-        sys.prefix,
-        sys.base_prefix,
-        os.path.dirname(sys.executable),
-    ]
-    # Add Library/bin, DLLs and Scripts subdirectories of sys.prefix / sys.base_prefix if they exist
-    for sd in list(search_dirs):
-        if sd:
-            lib_bin = os.path.join(sd, "Library", "bin")
-            if os.path.isdir(lib_bin):
-                search_dirs.append(lib_bin)
-            dlls_dir = os.path.join(sd, "DLLs")
-            if os.path.isdir(dlls_dir):
-                search_dirs.append(dlls_dir)
-            scripts_dir = os.path.join(sd, "Scripts")
-            if os.path.isdir(scripts_dir):
-                search_dirs.append(scripts_dir)
+    search_dirs = []
+    # Prioritize active virtual environment (sys.prefix) and its subdirectories
+    if sys.prefix:
+        search_dirs.append(sys.prefix)
+        for sub in ["Library/bin", "DLLs", "Scripts"]:
+            p = os.path.join(sys.prefix, sub.replace("/", os.sep))
+            if os.path.isdir(p):
+                search_dirs.append(p)
                 
+    # Fallback to base python prefix (sys.base_prefix) and its subdirectories only if different
+    if sys.base_prefix and sys.base_prefix != sys.prefix:
+        search_dirs.append(sys.base_prefix)
+        for sub in ["Library/bin", "DLLs", "Scripts"]:
+            p = os.path.join(sys.base_prefix, sub.replace("/", os.sep))
+            if os.path.isdir(p):
+                search_dirs.append(p)
+                
+    # Finally, check executable directory
+    exe_dir = os.path.dirname(sys.executable)
+    if exe_dir and exe_dir not in search_dirs:
+        search_dirs.append(exe_dir)
+                
+    found_dll_names = set()
     found_dlls = set()
-    dll_patterns = ["libcrypto", "libssl", "sqlcipher", "libsqlcipher"]
+    dll_patterns = ["libcrypto", "libssl", "sqlcipher", "libsqlcipher", "sqlite3"]
     
     # 1. Check recursively inside the installed sqlcipher3 package directory itself for any DLLs
     if sqlcipher_spec and sqlcipher_spec.submodule_search_locations:
@@ -84,7 +89,8 @@ if platform.system().lower() == "windows" or sys.platform == "win32":
                 file_lower = file.lower()
                 if file_lower.endswith(".dll"):
                     dll_path = os.path.abspath(os.path.join(root, file))
-                    if dll_path not in found_dlls:
+                    if file_lower not in found_dll_names:
+                        found_dll_names.add(file_lower)
                         found_dlls.add(dll_path)
                         print(f"Bundling required Windows dependency DLL from sqlcipher3 package: {dll_path}")
                         binaries.append((dll_path, '.'))
@@ -103,7 +109,8 @@ if platform.system().lower() == "windows" or sys.platform == "win32":
             file_lower = file.lower()
             if file_lower.endswith(".dll") and any(pat in file_lower for pat in dll_patterns):
                 dll_path = os.path.abspath(os.path.join(s_dir, file))
-                if dll_path not in found_dlls:
+                if file_lower not in found_dll_names:
+                    found_dll_names.add(file_lower)
                     found_dlls.add(dll_path)
                     print(f"Bundling required Windows dependency DLL: {dll_path}")
                     # Place in root and sqlcipher3 to be absolutely certain it's resolved

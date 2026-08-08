@@ -313,22 +313,37 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
 
         # On Windows, also find and copy dependent OpenSSL/SQLCipher DLLs from active environment to user-space
         if sys.platform == "win32":
-            search_dirs = [
-                sys.prefix,
-                sys.base_prefix,
-                os.path.dirname(sys.executable),
-            ]
-            for sd in list(search_dirs):
-                if sd:
-                    for sub in ["Library/bin", "DLLs", "Scripts"]:
-                        sub_dir = os.path.join(sd, sub.replace("/", os.sep))
-                        if os.path.isdir(sub_dir) and sub_dir not in search_dirs:
-                            search_dirs.append(sub_dir)
-            for p in sys.path:
-                if p and os.path.isdir(p) and p not in search_dirs:
-                    search_dirs.append(p)
+            search_dirs = []
+            # Prioritize active virtual environment (sys.prefix) and its subdirectories
+            if sys.prefix:
+                search_dirs.append(sys.prefix)
+                for sub in ["Library/bin", "DLLs", "Scripts"]:
+                    sub_dir = os.path.join(sys.prefix, sub.replace("/", os.sep))
+                    if os.path.isdir(sub_dir):
+                        search_dirs.append(sub_dir)
 
-            dll_patterns = ["libcrypto", "libssl", "sqlcipher", "libsqlcipher"]
+            # Fallback to base python prefix (sys.base_prefix) and its subdirectories only if different
+            if sys.base_prefix and sys.base_prefix != sys.prefix:
+                search_dirs.append(sys.base_prefix)
+                for sub in ["Library/bin", "DLLs", "Scripts"]:
+                    sub_dir = os.path.join(sys.base_prefix, sub.replace("/", os.sep))
+                    if os.path.isdir(sub_dir):
+                        search_dirs.append(sub_dir)
+
+            # Executable directory
+            exe_dir = os.path.dirname(sys.executable) if sys.executable else ""
+            if exe_dir and exe_dir not in search_dirs:
+                search_dirs.append(exe_dir)
+
+            # sys.path search directories
+            for p in sys.path:
+                if p:
+                    p_abs = os.path.abspath(p)
+                    if os.path.isdir(p_abs) and p_abs not in search_dirs:
+                        search_dirs.append(p_abs)
+
+            dll_patterns = ["libcrypto", "libssl", "sqlcipher", "libsqlcipher", "sqlite3"]
+            found_dll_names = set()
             found_dlls = set()
             for s_dir in search_dirs:
                 if not s_dir or not os.path.isdir(s_dir):
@@ -339,7 +354,8 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
                             name_lower = entry.name.lower()
                             if any(pat in name_lower for pat in dll_patterns):
                                 dll_path = os.path.abspath(entry.path)
-                                if dll_path not in found_dlls:
+                                if name_lower not in found_dll_names:
+                                    found_dll_names.add(name_lower)
                                     found_dlls.add(dll_path)
                                     logger.info(f"Copying Windows dependency DLL: {dll_path}")
                                     try:
