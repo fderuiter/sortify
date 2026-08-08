@@ -102,9 +102,6 @@ def validate_local_binaries(local_dir: Path) -> bool:
             continue
 
         # Check architecture/python version tags if present in name
-        py_ver_tag = f"cp{sys.version_info.major}{sys.version_info.minor}"
-        cpython_tag = f"cpython-{sys.version_info.major}{sys.version_info.minor}"
-
         has_other_py_ver = False
         for major in [3]:
             for minor in range(5, 15):
@@ -144,7 +141,6 @@ def validate_local_binaries(local_dir: Path) -> bool:
 def inject_bootstrap_paths():
     """Dynamically modify search paths to include the user-space binaries folder."""
     bin_dir = get_bootstrap_bin_dir()
-    sqlcipher3_path = bin_dir / "sqlcipher3"
 
     if bin_dir.exists():
         bin_dir_str = str(bin_dir)

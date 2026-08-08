@@ -1,7 +1,5 @@
-import io
 import os
 import sys
-import zipfile
 from unittest.mock import MagicMock, patch
 
 import pytest
