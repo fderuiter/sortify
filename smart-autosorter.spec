@@ -161,8 +161,35 @@ def is_tcl_tk_asset(name):
             return True
     return False
 
-a.binaries = [x for x in a.binaries if not is_tcl_tk_asset(x[0])]
-a.datas = [x for x in a.datas if not is_tcl_tk_asset(x[0])]
+# Exclude non-essential heavy development or test folders, keeping core weights/models/binaries
+def is_prunable_asset(name):
+    name_lower = name.lower().replace('\\', '/')
+    parts = name_lower.split('/')
+    
+    # Safety Rule: Core weights, model files, and crucial bin targets must NEVER be pruned.
+    safety_keywords = ("weight", "bin", "model", "checkpoint")
+    if any(sk in name_lower for sk in safety_keywords):
+        return False
+        
+    # Non-essential development/test folder names
+    prune_folders = {
+        'tests', 'test', 'include', 'cmake', 'headers', 'examples', 
+        'benchmarks', 'docs', 'documentation', 'test_data', 'testing'
+    }
+    
+    # If any parent directory matches a prune folder
+    if any(p in prune_folders for p in parts):
+        return True
+        
+    # Exclude files with non-essential extensions (development header files, markdown docs, text files)
+    # as long as they don't contain safety keywords
+    if name_lower.endswith(('.h', '.hpp', '.c', '.cpp', '.cmake', '.rst', '.md')):
+        return True
+        
+    return False
+
+a.binaries = [x for x in a.binaries if not is_tcl_tk_asset(x[0]) and not is_prunable_asset(x[0])]
+a.datas = [x for x in a.datas if not is_tcl_tk_asset(x[0]) and not is_prunable_asset(x[0])]
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 

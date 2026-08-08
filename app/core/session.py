@@ -33,15 +33,17 @@ async def scan_abandoned_sessions_async():
                 try:
                     with open(journal_path, "r") as f:
                         jdata = json.load(f)
-                    abandoned.append({
-                        "session_id": jdata.get("session_id"),
-                        "safety_session_id": jdata.get("safety_session_id"),
-                        "base_dir": jdata.get("base_dir"),
-                        "session_dir": str(session_dir),
-                        "journal_path": str(journal_path),
-                        "is_rollback_recovery": True,
-                        "status": "interrupted_rollback"
-                    })
+                    abandoned.append(
+                        {
+                            "session_id": jdata.get("session_id"),
+                            "safety_session_id": jdata.get("safety_session_id"),
+                            "base_dir": jdata.get("base_dir"),
+                            "session_dir": str(session_dir),
+                            "journal_path": str(journal_path),
+                            "is_rollback_recovery": True,
+                            "status": "interrupted_rollback",
+                        }
+                    )
                     continue
                 except Exception:
                     pass

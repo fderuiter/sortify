@@ -1,25 +1,34 @@
 import os
-import sys
-import time
+import shutil
 import socket
 import subprocess
-import shutil
+import sys
 import tempfile
+import time
+
 import pytest
-from playwright.sync_api import sync_playwright
 from PIL import Image, ImageChops, ImageDraw
+
+try:
+    from playwright.sync_api import sync_playwright
+
+    PLAYWRIGHT_AVAILABLE = True
+except ImportError:
+    PLAYWRIGHT_AVAILABLE = False
 
 SNAPSHOT_DIR = os.path.join(os.path.dirname(__file__), "snapshots")
 
+
 def find_free_port():
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(('127.0.0.1', 0))
+        s.bind(("127.0.0.1", 0))
         return s.getsockname()[1]
+
 
 @pytest.fixture(scope="module")
 def nicegui_server():
     port = find_free_port()
-    
+
     # Create a temporary script file to run as a real file
     # This prevents NiceGUI's interactive script detection from failing
     # We also mock ui.notify to be a no-op to prevent non-deterministic notification overlays
@@ -38,34 +47,36 @@ s.AI_CONSENT_GRANTED = None
 run_app(s, port={port}, show=False)
 """
     # Create in tests directory to ensure relative paths resolve cleanly if needed
-    launcher_file = tempfile.NamedTemporaryFile(suffix=".py", mode="w", delete=False, dir="/app/tests")
+    launcher_file = tempfile.NamedTemporaryFile(
+        suffix=".py", mode="w", delete=False, dir="/app/tests"
+    )
     launcher_file.write(launcher_content)
     launcher_file.close()
-    
+
     cmd = [sys.executable, launcher_file.name]
-    
+
     env = os.environ.copy()
     env["NICEGUI_SHOW_WELCOME"] = "False"
     env["PYTHONPATH"] = "/app"
     # Remove PYTEST_CURRENT_TEST so NiceGUI doesn't think it is running within pytest in the subprocess
     if "PYTEST_CURRENT_TEST" in env:
         del env["PYTEST_CURRENT_TEST"]
-    
+
     log_file = tempfile.NamedTemporaryFile(suffix=".log", delete=False)
     proc = subprocess.Popen(cmd, env=env, stdout=log_file, stderr=subprocess.STDOUT)
-    
+
     # Wait for the port to open
     start_time = time.time()
     opened = False
     while time.time() - start_time < 15:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             try:
-                s.connect(('127.0.0.1', port))
+                s.connect(("127.0.0.1", port))
                 opened = True
                 break
             except Exception:
                 time.sleep(0.1)
-                
+
     if not opened:
         proc.terminate()
         # Read and display logs for troubleshooting
@@ -75,10 +86,12 @@ run_app(s, port={port}, show=False)
         os.remove(log_file.name)
         if os.path.exists(launcher_file.name):
             os.remove(launcher_file.name)
-        pytest.fail(f"Failed to start NiceGUI server within 15 seconds. Subprocess logs:\n{logs}")
-        
+        pytest.fail(
+            f"Failed to start NiceGUI server within 15 seconds. Subprocess logs:\n{logs}"
+        )
+
     yield f"http://127.0.0.1:{port}"
-    
+
     proc.terminate()
     try:
         proc.wait(timeout=2)
@@ -93,6 +106,7 @@ run_app(s, port={port}, show=False)
             os.remove(log_file.name)
         if os.path.exists(launcher_file.name):
             os.remove(launcher_file.name)
+
 
 def assert_visual_snapshot(snapshot_name, actual_image_path):
     os.makedirs(SNAPSHOT_DIR, exist_ok=True)
@@ -155,20 +169,22 @@ def assert_visual_snapshot(snapshot_name, actual_image_path):
         if os.path.exists(diff_path):
             os.remove(diff_path)
 
+
+@pytest.mark.skipif(not PLAYWRIGHT_AVAILABLE, reason="playwright is not installed")
 def test_visual_snapshots(nicegui_server):
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         # Set standard screen size as 1280x800
         page = browser.new_page(viewport={"width": 1280, "height": 800})
-        
+
         # Navigate to NiceGUI local server
         page.goto(nicegui_server)
-        
+
         # 1. Wizard View Snapshot
         # Wait for wizard dialog elements to appear on startup
         page.wait_for_selector('[aria-label="Setup Wizard Title"]', timeout=8000)
         page.wait_for_timeout(1500)  # wait for animations to settle
-        
+
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
             temp_path = f.name
         try:
@@ -177,13 +193,13 @@ def test_visual_snapshots(nicegui_server):
         finally:
             if os.path.exists(temp_path):
                 os.remove(temp_path)
-                
+
         # 2. Main View Snapshot
         # Click decline button in wizard to get to main view
         page.locator('[aria-label="Decline Button"]').click()
         page.wait_for_selector('[aria-label="Application Title"]', timeout=5000)
         page.wait_for_timeout(1500)  # wait for animations to settle
-        
+
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
             temp_path = f.name
         try:
@@ -192,13 +208,13 @@ def test_visual_snapshots(nicegui_server):
         finally:
             if os.path.exists(temp_path):
                 os.remove(temp_path)
-                
+
         # 3. Settings View Snapshot
         # Click settings button in header to open settings view
         page.locator('[aria-label="Settings Button"]').click()
         page.wait_for_selector('[aria-label="Settings Dialog Title"]', timeout=5000)
         page.wait_for_timeout(1500)  # wait for animations to settle
-        
+
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
             temp_path = f.name
         try:
@@ -207,5 +223,5 @@ def test_visual_snapshots(nicegui_server):
         finally:
             if os.path.exists(temp_path):
                 os.remove(temp_path)
-                
+
         browser.close()

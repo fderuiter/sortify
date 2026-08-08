@@ -7,7 +7,9 @@ import os
 import sys
 
 # Dynamic Windows DLL Path Injection
-if sys.platform == "win32" and getattr(sys, "frozen", False):
+from app.core.path_utils import is_packaged
+
+if sys.platform == "win32" and is_packaged():
     # Safeguard standard streams to prevent crash on print when sys.stdout/err are None
     class NullWriter:
         """A helper class that discards any written output to mimic a stream."""
@@ -129,7 +131,7 @@ def write_smoke_test_error(message, include_traceback=False):
     # Define primary locations
     primary_paths = []
     primary_paths.append(("current working directory", Path("smoke_test_error.txt")))
-    if getattr(sys, "frozen", False):
+    if is_packaged():
         exe_dir = os.path.dirname(sys.executable)
         if exe_dir:
             primary_paths.append(
@@ -318,8 +320,10 @@ def main():
 
     if getattr(args, "update_snapshots", False) is True:
         import os
-        import pytest
         import sys
+
+        import pytest
+
         print("Regenerating baseline snapshots across all covered views...")
         os.environ["UPDATE_SNAPSHOTS"] = "1"
         exit_code = pytest.main(["tests/test_visual_snapshots.py"])

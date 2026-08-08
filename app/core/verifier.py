@@ -99,6 +99,7 @@ class VerificationEngine:
                 "collisions": [],
                 "circular_renames": [],
                 "broken_links": [],
+                "long_paths": [],
                 "warnings": [str(e)],
             }
 
@@ -555,6 +556,20 @@ class VirtualFilesystemTracker:
         # Validate links in final VFS state
         broken_links = self.check_broken_links(moves_list, base_dir, final_nodes)
 
+        # Check path lengths
+        from app.core.path_utils import is_path_too_long
+
+        long_paths = []
+        for rel_path, src, dst in moves_list:
+            if is_path_too_long(dst):
+                long_paths.append(
+                    {
+                        "path": os.path.abspath(dst),
+                        "source": os.path.abspath(src),
+                        "message": f"Destination path '{os.path.abspath(dst)}' exceeds the standard Windows character limit of 260 characters.",
+                    }
+                )
+
         # Consolidate all warnings
         warnings = []
         for c in collisions:
@@ -563,6 +578,8 @@ class VirtualFilesystemTracker:
             warnings.append(r["message"])
         for link in broken_links:
             warnings.append(link["message"])
+        for lp in long_paths:
+            warnings.append(lp["message"])
 
         # Eliminate duplicate messages in warnings
         unique_warnings = list(dict.fromkeys(warnings))
@@ -571,6 +588,7 @@ class VirtualFilesystemTracker:
             len(collisions) == 0
             and len(circular_renames) == 0
             and len(broken_links) == 0
+            and len(long_paths) == 0
         )
 
         return {
@@ -578,5 +596,6 @@ class VirtualFilesystemTracker:
             "collisions": collisions,
             "circular_renames": circular_renames,
             "broken_links": broken_links,
+            "long_paths": long_paths,
             "warnings": unique_warnings,
         }

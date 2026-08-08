@@ -208,11 +208,15 @@ class AutoSorterApp:
             ui.card().classes(get_dialog_card_classes("md")),
         ):
             dialog.props("persistent")
-            ui.label("Interrupted Rollback Recovery").classes("text-h6 text-red-600").props('aria-label="Rollback Recovery Title"')
+            ui.label("Interrupted Rollback Recovery").classes(
+                "text-h6 text-red-600"
+            ).props('aria-label="Rollback Recovery Title"')
             ui.label(
                 "An unexpected crash interrupted a previous rollback operation. The system has detected an active journal file."
             ).classes("text-sm text-gray-700")
-            ui.label(f"Directory: {session_info['base_dir']}").classes("text-xs text-gray-500 font-mono")
+            ui.label(f"Directory: {session_info['base_dir']}").classes(
+                "text-xs text-gray-500 font-mono"
+            )
 
             with ui.row().classes("w-full justify-end mt-4 gap-2 flex-wrap"):
 
@@ -245,7 +249,7 @@ class AutoSorterApp:
             try:
                 await asyncio.to_thread(
                     self.app_session.history_manager.resume_rollback,
-                    session_info["session_id"]
+                    session_info["session_id"],
                 )
                 ui.notify("Rollback resumed and completed successfully.")
                 self.status_label.set_text("Rollback resume complete.")
@@ -276,7 +280,7 @@ class AutoSorterApp:
             try:
                 await asyncio.to_thread(
                     self.app_session.history_manager.revert_rollback,
-                    session_info["safety_session_id"]
+                    session_info["safety_session_id"],
                 )
                 ui.notify("Rollback reverted successfully.")
                 self.status_label.set_text("Rollback reversion complete.")
@@ -1011,6 +1015,18 @@ class AutoSorterApp:
                     )
                     self.plan_errors[rel_path] = item["message"]
                     self.plan_errors[os.path.basename(path_abs)] = item["message"]
+
+            for item in integrity_result.get("long_paths", []):
+                src_abs = item.get("source")
+                if src_abs:
+                    rel_src = os.path.relpath(src_abs, self.base_dir).replace("\\", "/")
+                    self.plan_errors[rel_src] = item["message"]
+                    self.plan_errors[os.path.basename(src_abs)] = item["message"]
+                dst_abs = item.get("path")
+                if dst_abs:
+                    rel_dst = os.path.relpath(dst_abs, self.base_dir).replace("\\", "/")
+                    self.plan_errors[rel_dst] = item["message"]
+                    self.plan_errors[os.path.basename(dst_abs)] = item["message"]
 
             warnings_text = "\n".join(integrity_result["warnings"])
             if hasattr(self, "warnings_label"):
