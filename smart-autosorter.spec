@@ -224,7 +224,41 @@ def is_standard_sqlite_binary(dest_name, src_path):
     return False
 
 
-a.binaries = [x for x in a.binaries if not is_tcl_tk_asset(x[0]) and not is_prunable_asset(x[0]) and not is_standard_sqlite_binary(x[0], x[1])]
+# Find and preserve the custom sqlite3.dll path if available to redirect standard dependencies
+custom_sqlite3_dll = None
+if sqlcipher_spec and sqlcipher_spec.submodule_search_locations:
+    sqlcipher_dir = sqlcipher_spec.submodule_search_locations[0]
+    for root, dirs, files in os.walk(sqlcipher_dir):
+        for file in files:
+            if file.lower() == "sqlite3.dll":
+                custom_sqlite3_dll = os.path.abspath(os.path.join(root, file))
+                break
+        if custom_sqlite3_dll:
+            break
+
+new_binaries = []
+for x in a.binaries:
+    dest_name, src_path = x[0], x[1]
+    dest_lower = dest_name.lower().replace('\\', '/')
+    src_lower = src_path.lower().replace('\\', '/')
+    
+    if is_tcl_tk_asset(dest_name) or is_prunable_asset(dest_name):
+        continue
+        
+    # Redirect standard sqlite3.dll to our custom one instead of discarding it to satisfy pefile/dependency requirements
+    if dest_lower == "sqlite3.dll" and custom_sqlite3_dll:
+        if not ('sqlcipher3' in src_lower or 'app/binaries' in src_lower or 'app_binaries' in src_lower):
+            print(f"Redirecting standard sqlite3.dll dependency {src_path} -> custom {custom_sqlite3_dll}")
+            new_binaries.append((dest_name, custom_sqlite3_dll, x[2]))
+            continue
+
+    if is_standard_sqlite_binary(dest_name, src_path):
+        print(f"Filtering out standard sqlite binary: {dest_name} from {src_path}")
+        continue
+        
+    new_binaries.append(x)
+
+a.binaries = new_binaries
 a.datas = [x for x in a.datas if not is_tcl_tk_asset(x[0]) and not is_prunable_asset(x[0])]
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
