@@ -267,6 +267,18 @@ if not custom_sqlite3_dll and sys.prefix:
         if custom_sqlite3_dll:
             break
 
+if not custom_sqlite3_dll:
+    # Walk the app/binaries directory to find the custom sqlite3.dll as a reliable fallback
+    app_bin_dir = os.path.join('app', 'binaries')
+    if os.path.exists(app_bin_dir):
+        for root, dirs, files in os.walk(app_bin_dir):
+            for file in files:
+                if file.lower() == "sqlite3.dll":
+                    custom_sqlite3_dll = os.path.abspath(os.path.join(root, file))
+                    break
+            if custom_sqlite3_dll:
+                break
+
 new_binaries = []
 for x in a.binaries:
     dest_name, src_path = x[0], x[1]
