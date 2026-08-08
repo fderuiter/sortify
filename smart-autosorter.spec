@@ -83,7 +83,7 @@ if platform.system().lower() == "windows" or sys.platform == "win32":
                 search_dirs.append(scripts_dir)
                 
     found_dlls = set()
-    dll_patterns = ["libcrypto", "libssl", "sqlcipher", "libsqlcipher"]
+    dll_patterns = ["libcrypto", "libssl", "sqlcipher", "libsqlcipher", "sqlite3"]
     
     # 1. Check recursively inside the installed sqlcipher3 package directory itself for any DLLs
     if sqlcipher_spec and sqlcipher_spec.submodule_search_locations:

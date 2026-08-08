@@ -302,7 +302,7 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
                 if p and os.path.isdir(p) and p not in search_dirs:
                     search_dirs.append(p)
 
-            dll_patterns = ["libcrypto", "libssl", "sqlcipher", "libsqlcipher"]
+            dll_patterns = ["libcrypto", "libssl", "sqlcipher", "libsqlcipher", "sqlite3"]
             found_dlls = set()
             for s_dir in search_dirs:
                 if not s_dir or not os.path.isdir(s_dir):
