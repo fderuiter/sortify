@@ -1,6 +1,5 @@
 import os
 import shutil
-import sqlite3
 from contextlib import closing
 from unittest.mock import MagicMock
 
@@ -9,6 +8,7 @@ import pytest
 from cryptography.fernet import Fernet
 
 from app.core.crypto import SessionCrypto
+from app.core.db_conn import sqlite3
 
 
 def test_key_generation_keyring(tmp_path):

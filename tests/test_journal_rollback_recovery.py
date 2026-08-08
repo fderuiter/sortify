@@ -2,7 +2,6 @@ import asyncio
 import json
 import os
 import shutil
-import sqlite3
 from contextlib import closing
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -256,6 +255,7 @@ async def test_ui_rollback_recovery_dialog_trigger(mock_session_base, tmp_path):
 
     # Create dummy history.db inside the session folder to keep scanner happy
     history_db = session_dir / "history.db"
+    import sqlite3
     with closing(sqlite3.connect(history_db, timeout=30.0)) as conn:
         with closing(conn.cursor()) as cursor:
             cursor.execute(
