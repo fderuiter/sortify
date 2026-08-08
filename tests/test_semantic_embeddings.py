@@ -247,6 +247,7 @@ def test_real_onnx_inference_pipeline_math(db, temp_dir):
     retrieves ONNX sessions with thread limits, performs correct mean pooling with attention mask,
     and returns a mathematically correct L2-normalized vector.
     """
+    import sys
     from unittest.mock import MagicMock, patch
 
     import numpy as np
@@ -258,6 +259,9 @@ def test_real_onnx_inference_pipeline_math(db, temp_dir):
         "attention_mask": np.array([[1, 1, 0]], dtype=np.int64),
     }
     mock_tokenizer.return_value = mock_inputs
+
+    mock_transformers = MagicMock()
+    mock_transformers.AutoTokenizer.from_pretrained.return_value = mock_tokenizer
 
     # Set up a mock ONNX session
     mock_session = MagicMock()
@@ -281,11 +285,9 @@ def test_real_onnx_inference_pipeline_math(db, temp_dir):
     onnx_file = model_dir / "model.onnx"
     onnx_file.write_text("dummy onnx content")
 
-    # Patch AutoTokenizer and get_onnx_session
+    # Patch AutoTokenizer via sys.modules and get_onnx_session
     with (
-        patch(
-            "transformers.AutoTokenizer.from_pretrained", return_value=mock_tokenizer
-        ) as mock_from_pretrained,
+        patch.dict(sys.modules, {"transformers": mock_transformers}),
         patch(
             "app.core.shared_registry.SharedModelRegistry.get_onnx_session",
             return_value=mock_session,
@@ -304,7 +306,7 @@ def test_real_onnx_inference_pipeline_math(db, temp_dir):
         embedding = manager.generate_embedding("Test document text")
 
         # Verify AutoTokenizer was loaded with local_files_only=True
-        mock_from_pretrained.assert_called_once_with(
+        mock_transformers.AutoTokenizer.from_pretrained.assert_called_once_with(
             str(model_dir), local_files_only=True
         )
 
@@ -326,6 +328,7 @@ def test_real_onnx_pipeline_unrelated_and_similar_matching(db, temp_dir):
     """Verify that similar documents receive high similarity scores and unrelated receive low scores
     using actual simulated high-fidelity model vectors.
     """
+    import sys
     from unittest.mock import MagicMock, patch
 
     import numpy as np
@@ -353,6 +356,9 @@ def test_real_onnx_pipeline_unrelated_and_similar_matching(db, temp_dir):
 
     mock_tokenizer.side_effect = mock_tokenize_side_effect
 
+    mock_transformers = MagicMock()
+    mock_transformers.AutoTokenizer.from_pretrained.return_value = mock_tokenizer
+
     # Define high-fidelity outputs depending on input texts
     # We will use patch to observe what text was passed or simulate based on simple state
     text_embeddings_db = {
@@ -373,9 +379,7 @@ def test_real_onnx_pipeline_unrelated_and_similar_matching(db, temp_dir):
     original_generate = SemanticEmbeddingManager.generate_embedding
 
     with (
-        patch(
-            "transformers.AutoTokenizer.from_pretrained", return_value=mock_tokenizer
-        ),
+        patch.dict(sys.modules, {"transformers": mock_transformers}),
         patch(
             "app.core.shared_registry.SharedModelRegistry.get_onnx_session",
             return_value=mock_session,
@@ -414,6 +418,7 @@ def test_real_onnx_pipeline_graceful_fallback(db, temp_dir):
     """Verify that when any part of the real ONNX initialization or inference fails,
     the manager gracefully falls back to the deterministic dummy vector generator.
     """
+    import sys
     from unittest.mock import patch
 
     # Set up model path but make tokenizer fail
@@ -423,10 +428,7 @@ def test_real_onnx_pipeline_graceful_fallback(db, temp_dir):
     onnx_file.write_text("dummy onnx content")
 
     with (
-        patch(
-            "transformers.AutoTokenizer.from_pretrained",
-            side_effect=ImportError("Transformers library not installed."),
-        ),
+        patch.dict(sys.modules, {"transformers": None}),
         patch("app.core.semantic_embeddings.get_active_model_properties") as mock_props,
     ):
         mock_props.return_value = ("faulty_sig_hash", 384, "1.0.0")

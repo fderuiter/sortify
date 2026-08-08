@@ -76,16 +76,21 @@ def test_semantic_clustering_lazy_generation_and_caching(temp_env):
         assert db.get_document_vector(base_dir, item[1]) is None
 
     # Initialize analyzer with our mock model_path and mock get_active_model_properties
+    import sys
+    from unittest.mock import MagicMock
+
     from app.core.semantic_embeddings import ModelProperties
 
+    mock_transformers = MagicMock()
+    mock_transformers.AutoTokenizer.from_pretrained.side_effect = OSError(
+        "Mock tokenizer missing for lazy caching test"
+    )
+
     with (
+        patch.dict(sys.modules, {"transformers": mock_transformers}),
         patch(
             "app.core.semantic_embeddings.get_active_model_properties",
             return_value=ModelProperties("valid_sig", 384, "1.0.0", is_valid=True),
-        ),
-        patch(
-            "transformers.AutoTokenizer.from_pretrained",
-            side_effect=OSError("Mock tokenizer missing for lazy caching test"),
         ),
     ):
         analyzer = IncrementalAnalyzer(
