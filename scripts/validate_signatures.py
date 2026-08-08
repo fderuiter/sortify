@@ -12,6 +12,7 @@ import json
 import os
 import sys
 
+
 def clean_realpath(path):
     """Resolve symlinks and return a clean absolute path without Windows long-path prefix (\\\\?\\)."""
     p = os.path.realpath(path)
@@ -36,15 +37,17 @@ def get_relative_path(path, start):
 
 # Compute project base directory (/app) based on script location
 BASE_DIR = os.path.dirname(os.path.dirname(clean_realpath(__file__)))
-SNAPSHOT_PATH = clean_realpath(os.path.join(BASE_DIR, "tests", "snapshots", "api_snapshot.json"))
+SNAPSHOT_PATH = clean_realpath(
+    os.path.join(BASE_DIR, "tests", "snapshots", "api_snapshot.json")
+)
 
 # Source files to parse
-ANALYZER_STRATEGIES_PATH = clean_realpath(os.path.join(
-    BASE_DIR, "app", "core", "analyzer_strategies.py"
-))
-EXTRACTOR_STRATEGIES_PATH = clean_realpath(os.path.join(
-    BASE_DIR, "app", "core", "extractor_strategies.py"
-))
+ANALYZER_STRATEGIES_PATH = clean_realpath(
+    os.path.join(BASE_DIR, "app", "core", "analyzer_strategies.py")
+)
+EXTRACTOR_STRATEGIES_PATH = clean_realpath(
+    os.path.join(BASE_DIR, "app", "core", "extractor_strategies.py")
+)
 MAIN_CLI_PATH = clean_realpath(os.path.join(BASE_DIR, "app", "main.py"))
 SANDBOX_CLI_PATH = clean_realpath(os.path.join(BASE_DIR, "sandbox_cli.py"))
 
@@ -238,9 +241,7 @@ def extract_function_signature(func_node):
     params = []
     for arg_node in all_args:
         annotation_str = (
-            ast.unparse(arg_node.annotation)
-            if arg_node.annotation
-            else None
+            ast.unparse(arg_node.annotation) if arg_node.annotation else None
         )
         default_str = default_map.get(id(arg_node), None)
         params.append(
@@ -254,9 +255,7 @@ def extract_function_signature(func_node):
     if func_node.args.vararg:
         arg_node = func_node.args.vararg
         annotation_str = (
-            ast.unparse(arg_node.annotation)
-            if arg_node.annotation
-            else None
+            ast.unparse(arg_node.annotation) if arg_node.annotation else None
         )
         params.append(
             {
@@ -269,16 +268,8 @@ def extract_function_signature(func_node):
     for kwarg, default_node in zip(
         func_node.args.kwonlyargs, func_node.args.kw_defaults
     ):
-        annotation_str = (
-            ast.unparse(kwarg.annotation)
-            if kwarg.annotation
-            else None
-        )
-        default_str = (
-            ast.unparse(default_node)
-            if default_node is not None
-            else None
-        )
+        annotation_str = ast.unparse(kwarg.annotation) if kwarg.annotation else None
+        default_str = ast.unparse(default_node) if default_node is not None else None
         params.append(
             {
                 "name": kwarg.arg,
@@ -290,9 +281,7 @@ def extract_function_signature(func_node):
     if func_node.args.kwarg:
         arg_node = func_node.args.kwarg
         annotation_str = (
-            ast.unparse(arg_node.annotation)
-            if arg_node.annotation
-            else None
+            ast.unparse(arg_node.annotation) if arg_node.annotation else None
         )
         params.append(
             {
@@ -302,11 +291,7 @@ def extract_function_signature(func_node):
             }
         )
 
-    return_annotation = (
-        ast.unparse(func_node.returns)
-        if func_node.returns
-        else None
-    )
+    return_annotation = ast.unparse(func_node.returns) if func_node.returns else None
 
     return {
         "name": func_node.name,
@@ -376,13 +361,15 @@ def scan_core_modules():
             if file.endswith(".py"):
                 file_path = clean_realpath(os.path.join(root, file))
                 rel_path = get_relative_path(file_path, BASE_DIR)
-                
+
                 # Normalize relative path prefix to guarantee lowercase "app/core/" cross-platform
                 if rel_path.lower().startswith("app/core/"):
-                    rel_path = "app/core/" + rel_path[len("app/core/"):]
-                
-                file_classes, file_functions = extract_file_entities(file_path, rel_path)
-                
+                    rel_path = "app/core/" + rel_path[len("app/core/") :]
+
+                file_classes, file_functions = extract_file_entities(
+                    file_path, rel_path
+                )
+
                 for class_name, class_info in file_classes.items():
                     classes_data[class_name] = class_info
                 for func_name, func_info in file_functions.items():

@@ -1,8 +1,8 @@
 from scripts.validate_signatures import (
+    clean_realpath,
     collect_current_definitions,
     extract_cli,
     extract_protocols,
-    clean_realpath,
     get_relative_path,
 )
 
@@ -95,7 +95,7 @@ def test_collect_current_definitions():
 
 def test_clean_realpath_and_get_relative_path(monkeypatch):
     # Test clean_realpath strips Windows long path prefix \\?\
-    monkeypatch.setattr("os.path.realpath", lambda path: f"\\\\?\\C:\\foo\\bar")
+    monkeypatch.setattr("os.path.realpath", lambda path: "\\\\?\\C:\\foo\\bar")
     assert clean_realpath("some_path") == "C:\\foo\\bar"
 
     # Test clean_realpath passes through normal path
@@ -110,23 +110,28 @@ def test_clean_realpath_and_get_relative_path(monkeypatch):
 
     monkeypatch.setattr("os.path.realpath", mock_realpath)
     recorded_args = []
+
     def mock_relpath(path, start):
         recorded_args.append((path, start))
         return "app\\core\\helper.py"
+
     monkeypatch.setattr("os.path.relpath", mock_relpath)
 
     rel = get_relative_path("file", "start")
     assert rel == "app/core/helper.py"
     # Verify that get_relative_path successfully normalized both paths to lowercase drive letter 'd:'
-    assert recorded_args == [("d:\\a\\sortify\\sortify\\app\\core\\helper.py", "d:\\a\\sortify\\sortify")]
+    assert recorded_args == [
+        ("d:\\a\\sortify\\sortify\\app\\core\\helper.py", "d:\\a\\sortify\\sortify")
+    ]
 
     # Undo monkeypatching to test real filesystem behaviors
     monkeypatch.undo()
 
     # Since we can't easily mock complex os.path.relpath interactions under different OS environments,
     # let's test with the actual OS path functions by providing real filesystem paths.
-    import tempfile
     import os
+    import tempfile
+
     with tempfile.TemporaryDirectory() as tmpdir:
         # Create a directory and file
         base_dir = os.path.realpath(tmpdir)
@@ -137,7 +142,11 @@ def test_clean_realpath_and_get_relative_path(monkeypatch):
             f.write("")
 
         # Let's verify clean_realpath and get_relative_path behavior on the actual paths
-        assert clean_realpath(base_dir) == os.path.realpath(base_dir).replace("\\\\?\\", "")
+        assert clean_realpath(base_dir) == os.path.realpath(base_dir).replace(
+            "\\\\?\\", ""
+        )
         rel = get_relative_path(file_path, base_dir)
-        assert rel in ("app/core/helper.py", "app\\core\\helper.py") or rel.replace("\\", "/") == "app/core/helper.py"
-
+        assert (
+            rel in ("app/core/helper.py", "app\\core\\helper.py")
+            or rel.replace("\\", "/") == "app/core/helper.py"
+        )

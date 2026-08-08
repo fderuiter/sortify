@@ -1,6 +1,5 @@
 """Setup wizard module using NiceGUI."""
 
-
 from nicegui import ui
 
 from app.ui.dialog_helper import get_dialog_card_classes

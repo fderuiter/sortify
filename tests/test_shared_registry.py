@@ -415,4 +415,3 @@ def test_no_dns_during_import():
         import app.core.shared_registry
 
         importlib.reload(app.core.shared_registry)
-
