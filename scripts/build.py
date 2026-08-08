@@ -51,6 +51,31 @@ def update_binaries_and_manifest():
             shutil.copy2(path, dest_path)
             copied_files.append(rel_path.as_posix())
 
+    if system_platform == "win32":
+        # Ensure sqlite3.dll is copied to the binaries directory if not already copied
+        has_sqlite3_dll = any(f.lower() == "sqlite3.dll" for f in copied_files)
+        if not has_sqlite3_dll:
+            dll_src = None
+            if sys.prefix:
+                candidate = Path(sys.prefix) / "Library" / "bin" / "sqlite3.dll"
+                if candidate.exists():
+                    dll_src = candidate
+                else:
+                    for root, dirs, files in os.walk(sys.prefix):
+                        if any(p in root.lower() for p in ('site-packages/torch', 'site-packages/easyocr', 'site-packages/scipy')):
+                            continue
+                        for file in files:
+                            if file.lower() == "sqlite3.dll":
+                                dll_src = Path(root) / file
+                                break
+                        if dll_src:
+                            break
+            if dll_src and dll_src.exists():
+                dest_path = target_dir / "sqlite3.dll"
+                shutil.copy2(dll_src, dest_path)
+                copied_files.append("sqlite3.dll")
+                print(f"Manually copied required Windows dependency sqlite3.dll from {dll_src} to {dest_path}")
+
     manifest_path = Path("app") / "binaries" / "manifest.json"
     if manifest_path.exists():
         with open(manifest_path, "r", encoding="utf-8") as f:
