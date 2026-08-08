@@ -163,6 +163,30 @@ def inject_bootstrap_paths():
                     except Exception:
                         pass
 
+            # Also add standard active Python/virtualenv DLL paths to guarantee resolution in development/CI
+            search_dirs = [
+                sys.prefix,
+                sys.base_prefix,
+                os.path.dirname(sys.executable),
+            ]
+            for sd in list(search_dirs):
+                if sd:
+                    for sub in ["Library/bin", "DLLs", "Scripts"]:
+                        sub_dir = os.path.join(sd, sub.replace("/", os.sep))
+                        if os.path.isdir(sub_dir) and sub_dir not in search_dirs:
+                            search_dirs.append(sub_dir)
+            for p in sys.path:
+                if p and os.path.isdir(p) and p not in search_dirs:
+                    search_dirs.append(p)
+
+            for s_dir in search_dirs:
+                if s_dir and os.path.isdir(s_dir):
+                    paths_to_add.append(s_dir)
+                    try:
+                        os.add_dll_directory(s_dir)
+                    except Exception:
+                        pass
+
             unique_paths = []
             for p in paths_to_add:
                 if p not in unique_paths and os.path.isdir(p):
@@ -177,7 +201,13 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
         if sys.platform == "win32":
             meipass = getattr(sys, "_MEIPASS", None)
             if meipass:
-                for p in [meipass, os.path.join(meipass, "sqlcipher3")]:
+                dirs_to_add = [
+                    meipass,
+                    os.path.join(meipass, "sqlcipher3"),
+                    os.path.join(meipass, "_internal"),
+                    os.path.join(meipass, "_internal", "sqlcipher3"),
+                ]
+                for p in dirs_to_add:
                     if os.path.isdir(p):
                         try:
                             os.add_dll_directory(p)
@@ -251,6 +281,45 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
             raise RuntimeError(
                 f"Failed to copy local database encryption binaries: {copy_err}"
             ) from copy_err
+
+        # On Windows, also find and copy dependent OpenSSL/SQLCipher DLLs from active environment to user-space
+        if sys.platform == "win32":
+            search_dirs = [
+                sys.prefix,
+                sys.base_prefix,
+                os.path.dirname(sys.executable),
+            ]
+            for sd in list(search_dirs):
+                if sd:
+                    for sub in ["Library/bin", "DLLs", "Scripts"]:
+                        sub_dir = os.path.join(sd, sub.replace("/", os.sep))
+                        if os.path.isdir(sub_dir) and sub_dir not in search_dirs:
+                            search_dirs.append(sub_dir)
+            for p in sys.path:
+                if p and os.path.isdir(p) and p not in search_dirs:
+                    search_dirs.append(p)
+
+            dll_patterns = ["libcrypto", "libssl", "sqlcipher", "libsqlcipher"]
+            found_dlls = set()
+            for s_dir in search_dirs:
+                if not s_dir or not os.path.isdir(s_dir):
+                    continue
+                try:
+                    for entry in os.scandir(s_dir):
+                        if entry.is_file() and entry.name.lower().endswith(".dll"):
+                            name_lower = entry.name.lower()
+                            if any(pat in name_lower for pat in dll_patterns):
+                                dll_path = os.path.abspath(entry.path)
+                                if dll_path not in found_dlls:
+                                    found_dlls.add(dll_path)
+                                    logger.info(f"Copying Windows dependency DLL: {dll_path}")
+                                    try:
+                                        shutil.copy2(dll_path, bin_dir)
+                                        shutil.copy2(dll_path, sqlcipher3_path)
+                                    except Exception as copy_dll_err:
+                                        logger.warning(f"Failed to copy DLL {dll_path}: {copy_dll_err}")
+                except Exception as scan_err:
+                    logger.debug(f"Could not scan directory {s_dir} for DLLs: {scan_err}")
     else:
         raise RuntimeError(
             "SQLCipher local native library/wheels are missing. Please install offline packages manually."
@@ -259,10 +328,10 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
     # 3. Dynamically inject the paths
     inject_bootstrap_paths()
 
-    # Clear sys.modules of sqlcipher3 to force reload from the newly injected paths
-    if "sqlcipher3" in sys.modules:
+    # Clear sys.modules of sqlcipher3 and _sqlite3 to force reload from the newly injected paths
+    if "sqlcipher3" in sys.modules or "_sqlite3" in sys.modules:
         for k in list(sys.modules.keys()):
-            if k == "sqlcipher3" or k.startswith("sqlcipher3."):
+            if k in ("sqlcipher3", "_sqlite3") or k.startswith("sqlcipher3."):
                 sys.modules.pop(k, None)
 
     # 4. Execute pre-flight verification
