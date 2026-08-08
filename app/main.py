@@ -114,27 +114,67 @@ from app.log_filter import LogScrubbingFilter
 def write_smoke_test_error(message, include_traceback=False):
     """Write smoke test diagnostic error message and traceback to file."""
     import traceback
+    import logging
+    import tempfile
+    from pathlib import Path
+    from app.config import get_app_dir
 
-    try:
-        err_str = message
-        if include_traceback:
-            err_str += "\n" + traceback.format_exc()
-        # 1. Write to current working directory
-        with open("smoke_test_error.txt", "w", encoding="utf-8") as f:
-            f.write(err_str)
-    except Exception:
-        pass
-    try:
-        # 2. Write next to executable if frozen
-        if getattr(sys, "frozen", False):
-            exe_dir = os.path.dirname(sys.executable)
-            if exe_dir:
-                with open(
-                    os.path.join(exe_dir, "smoke_test_error.txt"), "w", encoding="utf-8"
-                ) as f:
+    logger = logging.getLogger("app.main")
+
+    err_str = message
+    if include_traceback:
+        err_str += "\n" + traceback.format_exc()
+
+    # Define primary locations
+    primary_paths = []
+    primary_paths.append(("current working directory", Path("smoke_test_error.txt")))
+    if getattr(sys, "frozen", False):
+        exe_dir = os.path.dirname(sys.executable)
+        if exe_dir:
+            primary_paths.append(("executable directory", Path(exe_dir) / "smoke_test_error.txt"))
+
+    # Try writing to primary paths
+    primary_success = False
+    for desc, path in primary_paths:
+        try:
+            abs_path = path.resolve()
+            with open(abs_path, "w", encoding="utf-8") as f:
+                f.write(err_str)
+            primary_success = True
+            logger.info(f"Successfully wrote diagnostic report to primary location ({desc}): {abs_path}")
+        except Exception as e:
+            logger.warning(f"Failed to write diagnostic report to primary location ({desc}) at {path}: {e}")
+
+    # Fallback writing sequence
+    if not primary_success:
+        fallback_paths = []
+        try:
+            app_dir = get_app_dir()
+            fallback_paths.append(("user home configuration directory", app_dir / "smoke_test_error.txt"))
+        except Exception as e:
+            logger.warning(f"Could not resolve user home configuration directory for fallback: {e}")
+
+        try:
+            sys_temp_dir = Path(tempfile.gettempdir())
+            fallback_paths.append(("system temporary directory", sys_temp_dir / "smoke_test_error.txt"))
+        except Exception as e:
+            logger.warning(f"Could not resolve system temporary directory for fallback: {e}")
+
+        fallback_success = False
+        for desc, path in fallback_paths:
+            try:
+                abs_path = path.resolve()
+                with open(abs_path, "w", encoding="utf-8") as f:
                     f.write(err_str)
-    except Exception:
-        pass
+                fallback_success = True
+                # Log the fallback diagnostic log location to the system logger
+                logger.warning(f"Diagnostic log fallback write succeeded. Saved to: {abs_path}")
+                break
+            except Exception as e:
+                logger.warning(f"Failed to write fallback diagnostic report to {desc} at {path}: {e}")
+
+        if not fallback_success:
+            logger.error("All diagnostic log write options failed.")
 
 
 def run_smoke_test():
@@ -142,9 +182,11 @@ def run_smoke_test():
     print("Starting automated database connection and encryption smoke test...")
     import shutil
     import tempfile
+    from app.core.db_conn import clear_connection_cache
 
     # Create a temporary directory for testing to avoid side effects
     temp_dir = tempfile.mkdtemp()
+    conn = None
     try:
         # Pre-flight check: try importing sqlcipher3 directly to log any specific DLL load failures
         try:
@@ -212,6 +254,16 @@ def run_smoke_test():
         write_smoke_test_error(err_msg, include_traceback=True)
         sys.exit(1)
     finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+            conn = None
+        try:
+            clear_connection_cache()
+        except Exception:
+            pass
         try:
             shutil.rmtree(temp_dir)
         except Exception:
