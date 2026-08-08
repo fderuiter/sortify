@@ -48,10 +48,7 @@ def test_verify_sqlcipher_encryption_success():
     mock_sqlcipher = MagicMock()
     mock_sqlcipher.dbapi2 = mock_dbapi2
 
-    with (
-        patch.dict("sys.modules", {"sqlcipher3": mock_sqlcipher}),
-        patch("importlib.reload"),
-    ):
+    with patch.dict("sys.modules", {"sqlcipher3": mock_sqlcipher}):
         assert verify_sqlcipher_encryption() is True
 
 
@@ -69,10 +66,7 @@ def test_verify_sqlcipher_encryption_failure():
     mock_sqlcipher = MagicMock()
     mock_sqlcipher.dbapi2 = mock_dbapi2
 
-    with (
-        patch.dict("sys.modules", {"sqlcipher3": mock_sqlcipher}),
-        patch("importlib.reload"),
-    ):
+    with patch.dict("sys.modules", {"sqlcipher3": mock_sqlcipher}):
         assert verify_sqlcipher_encryption() is False
 
 

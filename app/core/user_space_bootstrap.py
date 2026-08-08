@@ -38,15 +38,6 @@ def check_internet_connection(timeout: float = 2.0) -> bool:
 def verify_sqlcipher_encryption() -> bool:
     """Run automated verification check to confirm database encryption is active and error-free."""
     try:
-        # Dynamically import sqlcipher3 from the modified search paths
-        if "sqlcipher3" in sys.modules:
-            import importlib
-
-            try:
-                importlib.reload(sys.modules["sqlcipher3"])
-            except Exception:
-                pass
-
         from sqlcipher3 import dbapi2 as sqlite3
 
         # Test connection with an in-memory encrypted database
