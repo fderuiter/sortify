@@ -315,7 +315,13 @@ class AutoSorterApp:
         """Display the interactive recovery wizard for a failed rollback session with trapped files."""
         import os
         import shutil
-        import sqlite3
+        try:
+            import sqlite3
+        except ImportError:
+            try:
+                from sqlcipher3 import dbapi2 as sqlite3
+            except ImportError:
+                sqlite3 = None
 
         from app.core.mover import get_safe_path
         from app.ui.dialog_helper import ask_directory_async

@@ -357,3 +357,53 @@ def test_bootstrap_binaries_pyinstaller_internal_fallback(tmp_path):
         assert res is True
         mock_inject.assert_called_once_with(mock_binaries_root / "linux")
 
+
+def test_sqlite3_mock_fallback_on_import_error():
+    """Verify that when standard sqlite3 and sqlcipher3 both raise ImportError, a functional dummy module is registered."""
+    import importlib
+    import sys
+    from unittest.mock import patch
+
+    import app.core.db_conn
+
+    # Remove standard modules from sys.modules temporarily to simulate clean import environment
+    original_sqlite3 = sys.modules.get("sqlite3")
+    original_sqlcipher3 = sys.modules.get("sqlcipher3")
+
+    sys.modules.pop("sqlite3", None)
+    sys.modules.pop("sqlcipher3", None)
+
+    real_import = __import__
+    def mock_import(name, *args, **kwargs):
+        if name in ("sqlite3", "sqlcipher3") or name.startswith("sqlite3.") or name.startswith("sqlcipher3."):
+            raise ImportError("Simulated import failure")
+        return real_import(name, *args, **kwargs)
+
+    try:
+        with patch("builtins.__import__", side_effect=mock_import):
+            # Reload db_conn which triggers the sqlite3 mapping logic
+            # Since it raises ImportError, it should execute the custom fallback mapping
+            importlib.reload(app.core.db_conn)
+
+        import sqlite3
+        assert sqlite3 is not None
+        assert hasattr(sqlite3, "connect")
+        assert hasattr(sqlite3, "Error")
+
+        with pytest.raises(RuntimeError, match="SQLCipher library is missing"):
+            sqlite3.connect(":memory:")
+    finally:
+        # Restore original modules to prevent test pollution
+        if original_sqlite3:
+            sys.modules["sqlite3"] = original_sqlite3
+        else:
+            sys.modules.pop("sqlite3", None)
+        if original_sqlcipher3:
+            sys.modules["sqlcipher3"] = original_sqlcipher3
+        else:
+            sys.modules.pop("sqlcipher3", None)
+
+        # Re-reload db_conn to restore its state for other tests!
+        importlib.reload(app.core.db_conn)
+
+

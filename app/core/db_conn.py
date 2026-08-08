@@ -22,9 +22,35 @@ try:
     import sys
     sys.modules["sqlite3"] = sqlite3
 except ImportError:
-    import sqlite3
-
     HAS_SQLCIPHER = False
+    try:
+        import sqlite3
+    except ImportError:
+        import types
+        sqlite3_mock = types.ModuleType("sqlite3")
+        sqlite3_mock.Error = Exception
+        sqlite3_mock.DatabaseError = Exception
+        sqlite3_mock.OperationalError = Exception
+        sqlite3_mock.IntegrityError = Exception
+        sqlite3_mock.InternalError = Exception
+        sqlite3_mock.ProgrammingError = Exception
+        sqlite3_mock.NotSupportedError = Exception
+
+        class DummyConnection:
+            """A dummy connection class to simulate sqlite3 when SQLCipher is missing."""
+
+            def __init__(self, *args, **kwargs):
+                raise RuntimeError("SQLCipher library is missing.")
+            def close(self):
+                """Close the dummy connection (no-op)."""
+                pass
+
+        sqlite3_mock.connect = DummyConnection
+        sqlite3_mock.Connection = DummyConnection
+
+        import sys
+        sys.modules["sqlite3"] = sqlite3_mock
+        sqlite3 = sqlite3_mock
 
 # Global connection cache and lock
 _connection_cache = {}
