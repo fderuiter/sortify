@@ -47,7 +47,9 @@ def test_shared_model_registry_integrity_check(tmp_path):
     mock_torch.quantization.quantize_dynamic.return_value = mock_quantize
 
     with (
-        patch.dict(sys.modules, {"transformers": mock_transformers, "torch": mock_torch}),
+        patch.dict(
+            sys.modules, {"transformers": mock_transformers, "torch": mock_torch}
+        ),
     ):
         SharedModelRegistry._instance = None
         registry = SharedModelRegistry.get_instance()
@@ -62,7 +64,9 @@ def test_shared_model_registry_integrity_check(tmp_path):
         config_hash = hashlib.sha256(config_content).hexdigest()
 
         # Case 1: Register expected hash, matches actual -> should load successfully
-        registry.register_expected_hashes("generative_naming", {"config.json": config_hash})
+        registry.register_expected_hashes(
+            "generative_naming", {"config.json": config_hash}
+        )
 
         gen, task, tok = registry.get_generative_model(str(model_dir))
         assert gen is not None

@@ -193,7 +193,10 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {{
                                     type="warning",
                                 )
 
-                            with ui.dialog() as dialog, ui.card().classes(get_dialog_card_classes("md")):
+                            with (
+                                ui.dialog() as dialog,
+                                ui.card().classes(get_dialog_card_classes("md")),
+                            ):
                                 ui.label(title).classes("text-lg font-bold mb-4")
                                 ui.label(
                                     "Please enter the directory path manually:"
@@ -229,7 +232,9 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {{
                                     if callback:
                                         callback("")
 
-                                with ui.row().classes("w-full justify-end gap-2 flex-wrap"):
+                                with ui.row().classes(
+                                    "w-full justify-end gap-2 flex-wrap"
+                                ):
                                     ui.button("Cancel", on_click=on_cancel).classes(
                                         "bg-gray-200 text-black"
                                     )

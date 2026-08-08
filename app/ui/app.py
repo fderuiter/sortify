@@ -166,7 +166,10 @@ class AutoSorterApp:
                 self.show_recovery_wizard(session_info)
                 return
 
-            with ui.dialog() as dialog, ui.card().classes(get_dialog_card_classes("md")):
+            with (
+                ui.dialog() as dialog,
+                ui.card().classes(get_dialog_card_classes("md")),
+            ):
                 dialog.props("persistent")
                 ui.label("Interrupted Session Detected").classes("text-h6 text-red-500")
                 ui.label(
@@ -771,7 +774,10 @@ class AutoSorterApp:
                 ui.notify(f"Error: {e}", type="negative")
                 self.status_label.set_text("Sorting failed.")
 
-                with ui.dialog() as error_dialog, ui.card().classes(get_dialog_card_classes("md")):
+                with (
+                    ui.dialog() as error_dialog,
+                    ui.card().classes(get_dialog_card_classes("md")),
+                ):
                     ui.label("Move Transaction Error").classes("text-h6 text-red-500")
                     ui.label(f"The organization process failed: {e}").classes(
                         "text-body1"

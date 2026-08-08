@@ -234,17 +234,22 @@ def gguf_worker_main(model_path, input_queue, output_queue, n_threads=None):
             if grammar_str:
                 try:
                     from llama_cpp import LlamaGrammar
+
                     grammar = LlamaGrammar.from_string(grammar_str)
                 except Exception as e:
                     import logging
+
                     logging.error(f"Failed to compile grammar constraint: {e}")
                     grammar = None
 
             if grammar:
                 try:
-                    res = llm(prompt, max_tokens=max_tokens, echo=False, grammar=grammar)
+                    res = llm(
+                        prompt, max_tokens=max_tokens, echo=False, grammar=grammar
+                    )
                 except Exception as e:
                     import logging
+
                     logging.error(f"Generation with grammar failed: {e}")
                     res = llm(prompt, max_tokens=max_tokens, echo=False)
             else:
@@ -359,7 +364,11 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                     prompt = f"Does this document about '{doc_text}' belong in a folder for '{path_name}'? Reply YES or NO."
                     validation_grammar = 'root ::= "YES" | "NO"'
                     try:
-                        answer = self._run_prompt(prompt, 5, grammar=validation_grammar).strip().upper()
+                        answer = (
+                            self._run_prompt(prompt, 5, grammar=validation_grammar)
+                            .strip()
+                            .upper()
+                        )
 
                         if "NO" in answer:
                             low_confidence_files[k] = None

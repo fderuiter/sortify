@@ -29,7 +29,9 @@ def show_settings(parent_app, settings):
             ui.notify(f"Failed to update Explorer integration: {ex}", type="negative")
 
     with ui.dialog() as dialog, ui.card().classes(get_dialog_card_classes("xl")):
-        with ui.row().classes("w-full justify-between items-center mb-6 flex-wrap gap-2"):
+        with ui.row().classes(
+            "w-full justify-between items-center mb-6 flex-wrap gap-2"
+        ):
             ui.label("Application Settings").classes("text-2xl font-bold").props(
                 'aria-label="Settings Dialog Title"'
             )
@@ -219,7 +221,9 @@ def show_settings(parent_app, settings):
                     with ui.card().classes(
                         "bg-amber-50 border-amber-200 border p-4 mb-4 w-full"
                     ):
-                        with ui.row().classes("items-center gap-2 text-amber-800 flex-wrap"):
+                        with ui.row().classes(
+                            "items-center gap-2 text-amber-800 flex-wrap"
+                        ):
                             ui.icon("warning", size="sm")
                             ui.label("AI System Warning").classes("font-bold")
                         ui.label(
@@ -231,7 +235,9 @@ def show_settings(parent_app, settings):
                     with ui.card().classes(
                         "bg-green-50 border-green-200 border p-4 mb-4 w-full"
                     ):
-                        with ui.row().classes("items-center gap-2 text-green-800 flex-wrap"):
+                        with ui.row().classes(
+                            "items-center gap-2 text-green-800 flex-wrap"
+                        ):
                             ui.icon("check_circle", size="sm")
                             ui.label("AI System Status").classes("font-bold")
                         ui.label(
