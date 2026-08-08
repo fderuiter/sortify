@@ -220,9 +220,20 @@ def is_standard_sqlite_binary(dest_name, src_path):
         # Allow it only if it originates from sqlcipher3 or app/binaries
         if 'sqlcipher3' in src_lower or 'app/binaries' in src_lower or 'app_binaries' in src_lower:
             return False
-        if sys.prefix:
-            prefix_lower = sys.prefix.lower().replace('\\', '/')
-            # Make sure it's in the virtual environment prefix and NOT in the base python prefix
+            
+        # Build list of virtualenv directories to check
+        venv_dirs = []
+        v_env = os.environ.get("VIRTUAL_ENV")
+        if v_env:
+            venv_dirs.append(os.path.abspath(v_env))
+        local_venv = os.path.abspath(os.path.join(os.path.dirname(__file__) if '__file__' in locals() else '.', ".venv"))
+        if os.path.exists(local_venv) and local_venv not in venv_dirs:
+            venv_dirs.append(local_venv)
+        if sys.prefix and os.path.abspath(sys.prefix) not in venv_dirs:
+            venv_dirs.append(os.path.abspath(sys.prefix))
+            
+        for vd in venv_dirs:
+            prefix_lower = vd.lower().replace('\\', '/')
             if prefix_lower in src_lower:
                 if sys.base_prefix:
                     base_lower = sys.base_prefix.lower().replace('\\', '/')
@@ -246,23 +257,47 @@ if sqlcipher_spec and sqlcipher_spec.submodule_search_locations:
         if custom_sqlite3_dll:
             break
 
-if not custom_sqlite3_dll and sys.prefix:
-    # Walk the active virtual environment to find the custom sqlite3.dll
-    prefix_lower = sys.prefix.lower().replace('\\', '/')
-    base_lower = sys.base_prefix.lower().replace('\\', '/') if sys.base_prefix else None
-    
-    for root, dirs, files in os.walk(sys.prefix):
-        # Skip some common heavy directories to make it faster
-        if any(p in root.lower() for p in ('site-packages/torch', 'site-packages/easyocr', 'site-packages/scipy')):
-            continue
-        for file in files:
-            if file.lower() == "sqlite3.dll":
-                candidate_path = os.path.abspath(os.path.join(root, file))
-                cand_lower = candidate_path.lower().replace('\\', '/')
-                # Make sure it's not from base_prefix
-                if base_lower and base_lower in cand_lower and base_lower != prefix_lower:
-                    continue
-                custom_sqlite3_dll = candidate_path
+if not custom_sqlite3_dll:
+    # Build list of virtualenv directories to search
+    venv_dirs = []
+    v_env = os.environ.get("VIRTUAL_ENV")
+    if v_env:
+        venv_dirs.append(os.path.abspath(v_env))
+    local_venv = os.path.abspath(os.path.join(os.path.dirname(__file__) if '__file__' in locals() else '.', ".venv"))
+    if os.path.exists(local_venv) and local_venv not in venv_dirs:
+        venv_dirs.append(local_venv)
+    if sys.prefix and os.path.abspath(sys.prefix) not in venv_dirs:
+        venv_dirs.append(os.path.abspath(sys.prefix))
+        
+    for vd in venv_dirs:
+        prefix_lower = vd.lower().replace('\\', '/')
+        base_lower = sys.base_prefix.lower().replace('\\', '/') if sys.base_prefix else None
+        
+        # Check standard candidate paths inside virtualenv first
+        for sub in ["Library/bin", "Scripts", "Lib/site-packages/sqlcipher3"]:
+            candidate_dir = os.path.join(vd, sub.replace("/", os.sep))
+            if os.path.isdir(candidate_dir):
+                candidate_path = os.path.abspath(os.path.join(candidate_dir, "sqlite3.dll"))
+                if os.path.exists(candidate_path):
+                    custom_sqlite3_dll = candidate_path
+                    break
+        if custom_sqlite3_dll:
+            break
+            
+        for root, dirs, files in os.walk(vd):
+            # Skip some common heavy directories to make it faster
+            if any(p in root.lower().replace('\\', '/') for p in ('site-packages/torch', 'site-packages/easyocr', 'site-packages/scipy')):
+                continue
+            for file in files:
+                if file.lower() == "sqlite3.dll":
+                    candidate_path = os.path.abspath(os.path.join(root, file))
+                    cand_lower = candidate_path.lower().replace('\\', '/')
+                    # Make sure it's not from base_prefix
+                    if base_lower and base_lower in cand_lower and base_lower != prefix_lower:
+                        continue
+                    custom_sqlite3_dll = candidate_path
+                    break
+            if custom_sqlite3_dll:
                 break
         if custom_sqlite3_dll:
             break

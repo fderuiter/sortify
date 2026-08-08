@@ -18,12 +18,16 @@ def update_binaries_and_manifest():
 
     spec = importlib.util.find_spec("sqlcipher3")
     if not spec or not spec.submodule_search_locations:
-        print("Warning: sqlcipher3 not found in active environment. Cannot update binaries.")
+        print(
+            "Warning: sqlcipher3 not found in active environment. Cannot update binaries."
+        )
         return
 
     sqlcipher_dir = Path(spec.submodule_search_locations[0])
     if not sqlcipher_dir.exists():
-        print(f"Warning: sqlcipher3 directory {sqlcipher_dir} does not exist. Skipping update.")
+        print(
+            f"Warning: sqlcipher3 directory {sqlcipher_dir} does not exist. Skipping update."
+        )
         return
 
     system_platform = sys.platform
@@ -56,29 +60,73 @@ def update_binaries_and_manifest():
         has_sqlite3_dll = any(f.lower() == "sqlite3.dll" for f in copied_files)
         if not has_sqlite3_dll:
             dll_src = None
-            # 1. Search sys.prefix (virtualenv)
-            if sys.prefix:
-                candidate = Path(sys.prefix) / "Library" / "bin" / "sqlite3.dll"
-                if candidate.exists():
-                    dll_src = candidate
-                else:
-                    for root, dirs, files in os.walk(sys.prefix):
-                        if any(p in root.lower() for p in ('site-packages/torch', 'site-packages/easyocr', 'site-packages/scipy')):
-                            continue
-                        for file in files:
-                            if file.lower() == "sqlite3.dll":
-                                dll_src = Path(root) / file
-                                break
-                        if dll_src:
+
+            # List of high-priority virtualenv directories to search
+            venv_dirs = []
+
+            # 1. VIRTUAL_ENV environment variable
+            v_env = os.environ.get("VIRTUAL_ENV")
+            if v_env:
+                venv_dirs.append(Path(v_env))
+
+            # 2. Local .venv folder in repository root
+            local_venv = Path(__file__).resolve().parent.parent / ".venv"
+            if local_venv.exists() and local_venv not in venv_dirs:
+                venv_dirs.append(local_venv)
+
+            # 3. sys.prefix (if active virtualenv)
+            if sys.prefix and Path(sys.prefix) not in venv_dirs:
+                venv_dirs.append(Path(sys.prefix))
+
+            # Check candidate locations in prioritized venv directories
+            for vd in venv_dirs:
+                for sub in [
+                    Path("Library") / "bin",
+                    Path("Scripts"),
+                    Path("Lib") / "site-packages" / "sqlcipher3",
+                ]:
+                    candidate = vd / sub / "sqlite3.dll"
+                    if candidate.exists():
+                        dll_src = candidate
+                        break
+                if dll_src:
+                    break
+
+                # If not found in candidate paths, walk the venv directory recursively
+                for root, dirs, files in os.walk(vd):
+                    if any(
+                        p in root.lower()
+                        for p in (
+                            "site-packages/torch",
+                            "site-packages/easyocr",
+                            "site-packages/scipy",
+                        )
+                    ):
+                        continue
+                    for file in files:
+                        if file.lower() == "sqlite3.dll":
+                            dll_src = Path(root) / file
                             break
-            # 2. Search sys.base_prefix as a fallback if different
+                    if dll_src:
+                        break
+                if dll_src:
+                    break
+
+            # 4. Search sys.base_prefix as a fallback if different
             if not dll_src and sys.base_prefix and sys.base_prefix != sys.prefix:
                 candidate = Path(sys.base_prefix) / "Library" / "bin" / "sqlite3.dll"
                 if candidate.exists():
                     dll_src = candidate
                 else:
                     for root, dirs, files in os.walk(sys.base_prefix):
-                        if any(p in root.lower() for p in ('site-packages/torch', 'site-packages/easyocr', 'site-packages/scipy')):
+                        if any(
+                            p in root.lower()
+                            for p in (
+                                "site-packages/torch",
+                                "site-packages/easyocr",
+                                "site-packages/scipy",
+                            )
+                        ):
                             continue
                         for file in files:
                             if file.lower() == "sqlite3.dll":
@@ -86,7 +134,8 @@ def update_binaries_and_manifest():
                                 break
                         if dll_src:
                             break
-            # 3. Search directory of python executable
+
+            # 5. Search directory of python executable
             if not dll_src and sys.executable:
                 exe_dir = os.path.dirname(sys.executable)
                 if exe_dir:
@@ -97,11 +146,25 @@ def update_binaries_and_manifest():
                         candidate2 = Path(exe_dir) / "sqlite3.dll"
                         if candidate2.exists():
                             dll_src = candidate2
+
+            # 6. Search system PATH as a fallback (excluding System32 and Windows)
+            if not dll_src:
+                for path_dir in os.environ.get("PATH", "").split(os.pathsep):
+                    if path_dir and os.path.isdir(path_dir):
+                        dir_lower = path_dir.lower()
+                        if "system32" in dir_lower or "windows" in dir_lower:
+                            continue
+                        candidate = Path(path_dir) / "sqlite3.dll"
+                        if candidate.exists():
+                            dll_src = candidate
+                            break
             if dll_src and dll_src.exists():
                 dest_path = target_dir / "sqlite3.dll"
                 shutil.copy2(dll_src, dest_path)
                 copied_files.append("sqlite3.dll")
-                print(f"Manually copied required Windows dependency sqlite3.dll from {dll_src} to {dest_path}")
+                print(
+                    f"Manually copied required Windows dependency sqlite3.dll from {dll_src} to {dest_path}"
+                )
 
     manifest_path = Path("app") / "binaries" / "manifest.json"
     if manifest_path.exists():
@@ -134,7 +197,9 @@ def update_binaries_and_manifest():
     with open(manifest_path, "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=4, sort_keys=True)
 
-    print(f"Successfully copied real compiled binaries and updated manifest for platform: {platform_key}")
+    print(
+        f"Successfully copied real compiled binaries and updated manifest for platform: {platform_key}"
+    )
 
 
 def main():
