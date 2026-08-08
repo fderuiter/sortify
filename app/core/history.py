@@ -963,6 +963,23 @@ class HistoryManager:
                     conn.commit()
                     raise e
 
+                # Clean up any leftover/orphaned files that were copied during the failed transfer
+                # but are not in the snapshot files.
+                from app.core.scanner import get_files_recursively
+                try:
+                    current_files_after_restore = get_files_recursively(base_dir, include_hidden=True)
+                    snapshot_rel_paths = {r[0] for r in snapshot_files}
+                    for rel_path in current_files_after_restore:
+                        if rel_path not in snapshot_rel_paths:
+                            abs_path = os.path.join(base_dir, rel_path)
+                            if os.path.lexists(abs_path) and not os.path.isdir(abs_path):
+                                try:
+                                    os.remove(abs_path)
+                                except OSError:
+                                    pass
+                except Exception:
+                    pass
+
                 # Clean empty directories
                 from app.config import AppSettings
                 from app.core.mover import _remove_empty_dirs
