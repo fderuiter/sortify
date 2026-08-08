@@ -8,6 +8,7 @@ import sys
 
 # Dynamic Windows DLL Path Injection
 from app.core.path_utils import is_packaged
+
 if sys.platform == "win32" and is_packaged():
     # Safeguard standard streams to prevent crash on print when sys.stdout/err are None
     class NullWriter:

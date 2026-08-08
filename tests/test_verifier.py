@@ -78,4 +78,6 @@ def test_path_length_validation_and_simulation():
     assert result["success"] is False
     assert len(result["long_paths"]) > 0
     assert result["long_paths"][0]["path"].endswith(long_filename)
-    assert any("exceeds the standard Windows character limit" in w for w in result["warnings"])
+    assert any(
+        "exceeds the standard Windows character limit" in w for w in result["warnings"]
+    )

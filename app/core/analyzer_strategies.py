@@ -719,11 +719,19 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         if db and base_dir:
             try:
                 from app.core.semantic_embeddings import SemanticEmbeddingManager
-                embedding_manager = SemanticEmbeddingManager(db, model_path=getattr(self, "model_path", None))
-                if not embedding_manager.is_mock and not embedding_manager.is_reconstruction_active():
+
+                embedding_manager = SemanticEmbeddingManager(
+                    db, model_path=getattr(self, "model_path", None)
+                )
+                if (
+                    not embedding_manager.is_mock
+                    and not embedding_manager.is_reconstruction_active()
+                ):
                     use_semantic = True
             except Exception as e:
-                logging.error(f"Failed to initialize SemanticEmbeddingManager for strategy: {e}")
+                logging.error(
+                    f"Failed to initialize SemanticEmbeddingManager for strategy: {e}"
+                )
                 use_semantic = False
 
             if use_semantic:
@@ -731,21 +739,28 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                     # 1. Compute Cluster Query Vector
                     target_text = " ".join(documents)[:1000]
                     target_vector = embedding_manager.get_embedding(target_text)
-                    if target_vector and embedding_manager.validate_vector_dimension(target_vector):
+                    if target_vector and embedding_manager.validate_vector_dimension(
+                        target_vector
+                    ):
                         # 2. Query Pre-computed Historical Vectors directly from DB
                         from app.core.db_conn import get_db_connection
+
                         conn = get_db_connection(db.db_path)
                         with conn:
-                            cursor = conn.execute("""
+                            cursor = conn.execute(
+                                """
                                 SELECT d.filepath, d.user_verified_target_path, v.vector
                                 FROM documents d
                                 JOIN document_vectors v ON d.base_dir = v.base_dir AND d.filepath = v.filepath
                                 WHERE d.base_dir = ? AND d.user_verified_target_path IS NOT NULL AND d.user_verified_target_path != ''
-                            """, (base_dir,))
+                            """,
+                                (base_dir,),
+                            )
                             rows = cursor.fetchall()
 
                         if rows:
                             import json
+
                             import numpy as np
                             from sklearn.metrics.pairwise import cosine_similarity
 
@@ -755,12 +770,16 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                                 if vector_str:
                                     try:
                                         v = json.loads(vector_str)
-                                        if embedding_manager.validate_vector_dimension(v):
+                                        if embedding_manager.validate_vector_dimension(
+                                            v
+                                        ):
                                             hist_vectors.append(v)
-                                            hist_meta.append({
-                                                "filepath": filepath,
-                                                "user_verified_target_path": user_verified_target
-                                            })
+                                            hist_meta.append(
+                                                {
+                                                    "filepath": filepath,
+                                                    "user_verified_target_path": user_verified_target,
+                                                }
+                                            )
                                     except Exception:
                                         continue
 
@@ -768,7 +787,9 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                                 # 3. Cosine Similarity Calculation
                                 target_vector_arr = np.array([target_vector])
                                 hist_vectors_arr = np.array(hist_vectors)
-                                similarities = cosine_similarity(target_vector_arr, hist_vectors_arr).flatten()
+                                similarities = cosine_similarity(
+                                    target_vector_arr, hist_vectors_arr
+                                ).flatten()
 
                                 sorted_indices = similarities.argsort()[::-1]
 
@@ -787,12 +808,15 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                                     )
                                     for ex_idx, (ex, sim) in enumerate(top_examples):
                                         import os
+
                                         snippet = os.path.basename(ex["filepath"])
                                         folder_name = ex["user_verified_target_path"]
                                         few_shot_lines.append(
                                             f"Example {ex_idx + 1}:\nDocument: {snippet}\nFolder Name: {folder_name}"
                                         )
-                                    few_shot_context = "\n\n".join(few_shot_lines) + "\n\n"
+                                    few_shot_context = (
+                                        "\n\n".join(few_shot_lines) + "\n\n"
+                                    )
                 except Exception as e:
                     logging.error(f"Semantic historical matching failed: {e}")
                     top_examples = []
@@ -811,7 +835,9 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                                 {"text": doc[1], "target_path": doc[3]}
                             )
                 except Exception as e:
-                    logging.error(f"Error reading historical documents from DB for fallback: {e}")
+                    logging.error(
+                        f"Error reading historical documents from DB for fallback: {e}"
+                    )
 
             if historical_examples:
                 try:
@@ -838,7 +864,9 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                     hist_vectors = X[:-1]
                     target_vector = X[-1:]
 
-                    similarities = cosine_similarity(target_vector, hist_vectors).flatten()
+                    similarities = cosine_similarity(
+                        target_vector, hist_vectors
+                    ).flatten()
 
                     # Get indices sorted by similarity descending
                     sorted_indices = similarities.argsort()[::-1]
@@ -866,7 +894,9 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                             )
                         few_shot_context = "\n\n".join(few_shot_lines) + "\n\n"
                 except Exception as e:
-                    logging.error(f"Error querying TF-IDF historical examples in fallback: {e}")
+                    logging.error(
+                        f"Error querying TF-IDF historical examples in fallback: {e}"
+                    )
 
         try:
             doc_text = " ".join(documents)[:1000]
