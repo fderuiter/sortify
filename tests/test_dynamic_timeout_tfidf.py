@@ -134,8 +134,8 @@ def test_sqlite_tfidf_few_shot_retrieval_and_injection(tmp_path):
         # Mock prompt execution to inspect the prompt generated
         captured_prompts = []
 
-        def mock_run_prompt(prompt, max_tokens):
-            captured_prompts.append(prompt)
+        def mock_run_prompt(prompt, max_tokens, grammar=None):
+            captured_prompts.append((prompt, grammar))
             return "Mocked Folder Name"
 
         strategy._model_initialized = True
@@ -151,7 +151,11 @@ def test_sqlite_tfidf_few_shot_retrieval_and_injection(tmp_path):
         assert name == "Mocked Folder Name"
         assert len(captured_prompts) == 1
 
-        prompt = captured_prompts[0]
+        prompt, grammar = captured_prompts[0]
+        # Verify grammar is naming_grammar
+        assert grammar is not None
+        assert "word" in grammar
+        assert "[a-zA-Z0-9]+" in grammar
         # Verify few-shot context is present
         assert (
             "historical examples of documents and their corresponding user-corrected folder names"
@@ -174,7 +178,7 @@ def test_sqlite_tfidf_few_shot_retrieval_and_injection(tmp_path):
         assert name_fin == "Mocked Folder Name"
         assert len(captured_prompts) == 1
 
-        prompt_fin = captured_prompts[0]
+        prompt_fin, grammar_fin = captured_prompts[0]
         assert "Finance and Earnings" in prompt_fin
         assert "Cooking Recipes" not in prompt_fin
 

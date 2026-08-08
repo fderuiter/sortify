@@ -228,8 +228,28 @@ def gguf_worker_main(model_path, input_queue, output_queue, n_threads=None):
 
             prompt = task.get("prompt", "")
             max_tokens = task.get("max_tokens", 15)
+            grammar_str = task.get("grammar")
 
-            res = llm(prompt, max_tokens=max_tokens, echo=False)
+            grammar = None
+            if grammar_str:
+                try:
+                    from llama_cpp import LlamaGrammar
+                    grammar = LlamaGrammar.from_string(grammar_str)
+                except Exception as e:
+                    import logging
+                    logging.error(f"Failed to compile grammar constraint: {e}")
+                    grammar = None
+
+            if grammar:
+                try:
+                    res = llm(prompt, max_tokens=max_tokens, echo=False, grammar=grammar)
+                except Exception as e:
+                    import logging
+                    logging.error(f"Generation with grammar failed: {e}")
+                    res = llm(prompt, max_tokens=max_tokens, echo=False)
+            else:
+                res = llm(prompt, max_tokens=max_tokens, echo=False)
+
             generated_text = res["choices"][0]["text"].strip()
             output_queue.put({"text": generated_text})
         except Exception as e:
@@ -337,8 +357,9 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                 if v is None:
                     doc_text = doc_map.get(k, "")[:1000]
                     prompt = f"Does this document about '{doc_text}' belong in a folder for '{path_name}'? Reply YES or NO."
+                    validation_grammar = 'root ::= "YES" | "NO"'
                     try:
-                        answer = self._run_prompt(prompt, 5).strip().upper()
+                        answer = self._run_prompt(prompt, 5, grammar=validation_grammar).strip().upper()
 
                         if "NO" in answer:
                             low_confidence_files[k] = None
@@ -497,7 +518,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
             logging.error(f"Failed to load generative model via shared registry: {e}")
             self.generator = None
 
-    def _run_prompt(self, prompt: str, max_tokens: int) -> str:
+    def _run_prompt(self, prompt: str, max_tokens: int, grammar: str = None) -> str:
         if self._gguf_active and not self._gguf_failed:
             if not self._gguf_process or not self._gguf_process.is_alive():
                 logging.error("GGUF process died unexpectedly")
@@ -505,7 +526,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
             else:
                 try:
                     self._gguf_input_queue.put(
-                        {"prompt": prompt, "max_tokens": max_tokens}
+                        {"prompt": prompt, "max_tokens": max_tokens, "grammar": grammar}
                     )
                     estimated_tokens = len(prompt) // 4
                     timeout = max(8.0, min(60.0, 8.0 + (estimated_tokens / 20.0)))
@@ -762,8 +783,9 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
             else:
                 prompt = f"Generate a short, descriptive natural language folder name (1 to 4 words) for a folder containing these documents. Do not use hyphens. Return only the name.\nDocuments: {doc_text}\nFolder Name:"
 
+            naming_grammar = 'root ::= word (" " word)? (" " word)? (" " word)?\nword ::= [a-zA-Z0-9]+'
             with block_external_network():
-                name = self._run_prompt(prompt, 15).strip()
+                name = self._run_prompt(prompt, 15, grammar=naming_grammar).strip()
 
                 # Cleanup the generated name
                 name = name.replace('"', "").replace("-", " ").strip()
