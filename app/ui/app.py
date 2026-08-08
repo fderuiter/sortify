@@ -947,7 +947,7 @@ class AutoSorterApp:
         asyncio.create_task(_run())
 
 
-def run_app(settings, directory=None) -> None:
+def run_app(settings, directory=None, port=8080, show=True) -> None:
     """Run the NiceGUI application."""
     app_instance = AutoSorterApp(settings)
     if directory:
@@ -957,7 +957,7 @@ def run_app(settings, directory=None) -> None:
     ui.run(
         host="127.0.0.1",
         title="Smart AutoSorter AI Pro",
-        port=8080,
+        port=port,
         reload=False,
-        show=True,
+        show=show,
     )
