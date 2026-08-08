@@ -353,7 +353,7 @@ def scan_core_modules():
         for file in sorted(files):
             if file.endswith(".py"):
                 file_path = os.path.join(root, file)
-                rel_path = os.path.relpath(file_path, BASE_DIR)
+                rel_path = os.path.relpath(file_path, BASE_DIR).replace("\\", "/")
                 
                 file_classes, file_functions = extract_file_entities(file_path, rel_path)
                 
