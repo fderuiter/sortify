@@ -2,7 +2,14 @@
 
 import hashlib
 import os
-import sqlite3
+
+try:
+    import sqlite3
+except ImportError:
+    try:
+        from sqlcipher3 import dbapi2 as sqlite3
+    except ImportError:
+        sqlite3 = None
 from pathlib import Path
 
 import keyring
