@@ -5,6 +5,7 @@ import hashlib
 import json
 import sys
 from pathlib import Path
+
 import yaml
 
 MANIFEST_PATH = Path(".github/AGENTS/manifest.json")
@@ -18,7 +19,7 @@ def parse_and_validate_prompt(filepath: Path) -> tuple[dict, str]:
     If no frontmatter is present, treats the entire file as body_text.
     """
     try:
-        with open(filepath, "r", encoding="utf-8", newline="") as f:
+        with open(filepath, "r", encoding="utf-8") as f:
             content = f.read()
     except Exception as e:
         raise ValueError(f"Error reading file {filepath.name}: {e}")
@@ -56,7 +57,9 @@ def parse_and_validate_prompt(filepath: Path) -> tuple[dict, str]:
         frontmatter = {}
 
     if not isinstance(frontmatter, dict):
-        raise TypeError(f"Frontmatter in {filepath.name} must be a dictionary/YAML mapping.")
+        raise TypeError(
+            f"Frontmatter in {filepath.name} must be a dictionary/YAML mapping."
+        )
 
     # Predefined Strict Schema
     valid_keys = {"model", "temperature"}
@@ -130,7 +133,7 @@ def verify():
         print(f"Error: Manifest file {MANIFEST_PATH} does not exist.", file=sys.stderr)
         sys.exit(1)
 
-    with open(MANIFEST_PATH, "r", encoding="utf-8", newline="") as f:
+    with open(MANIFEST_PATH, "r", encoding="utf-8") as f:
         try:
             manifest_hashes = json.load(f)
         except json.JSONDecodeError:
@@ -148,7 +151,9 @@ def verify():
     # Check for missing files or mismatched hashes
     for filename, current_hash in current_hashes.items():
         if filename not in manifest_hashes:
-            print(f"Error: File {filename} is missing from the manifest.", file=sys.stderr)
+            print(
+                f"Error: File {filename} is missing from the manifest.", file=sys.stderr
+            )
             mismatches = True
         elif manifest_hashes[filename] != current_hash:
             print(f"Error: Hash mismatch for {filename}.", file=sys.stderr)
@@ -157,14 +162,20 @@ def verify():
     # Check for deleted files
     for filename in manifest_hashes:
         if filename not in current_hashes:
-            print(f"Error: File {filename} is in the manifest but no longer exists.", file=sys.stderr)
+            print(
+                f"Error: File {filename} is in the manifest but no longer exists.",
+                file=sys.stderr,
+            )
             mismatches = True
 
     if mismatches:
-        print("Verification failed. Some agent prompt files do not match the manifest.", file=sys.stderr)
+        print(
+            "Verification failed. Some agent prompt files do not match the manifest.",
+            file=sys.stderr,
+        )
         print(
             "Please use 'uv run python scripts/prompt_manifest.py generate' to update the manifest.",
-            file=sys.stderr
+            file=sys.stderr,
         )
         sys.exit(1)
     else:
