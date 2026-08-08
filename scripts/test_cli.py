@@ -43,6 +43,17 @@ def main():
     """Run all CLI smoke tests."""
     success = True
 
+    # Determine Python executable to run smoke tests with.
+    # Prefer virtual environment python to prevent ModuleNotFoundError on GHA runners.
+    python_bin = sys.executable
+    venv_dir = os.environ.get("VIRTUAL_ENV")
+    if venv_dir:
+        candidate = os.path.join(venv_dir, "bin", "python")
+        if sys.platform == "win32":
+            candidate = os.path.join(venv_dir, "Scripts", "python.exe")
+        if os.path.exists(candidate):
+            python_bin = candidate
+
     # sandbox_cli.py arguments documented in admin_guide.md
     sandbox_expected = [
         "reset",
@@ -52,7 +63,7 @@ def main():
         "Extract text from a specific sandbox file",
         "Run the analysis pipeline",
     ]
-    if not run_command([sys.executable, "sandbox_cli.py", "--help"], sandbox_expected):
+    if not run_command([python_bin, "sandbox_cli.py", "--help"], sandbox_expected):
         success = False
 
     # app/main.py demo flag mentioned in contributor.md
@@ -62,7 +73,7 @@ def main():
         "--update-snapshots",
         "Regenerate reference baseline snapshots",
     ]
-    if not run_command([sys.executable, "app/main.py", "--help"], main_expected):
+    if not run_command([python_bin, "app/main.py", "--help"], main_expected):
         success = False
 
     if not success:
