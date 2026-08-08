@@ -915,6 +915,18 @@ class AutoSorterApp:
                     self.plan_errors[rel_path] = item["message"]
                     self.plan_errors[os.path.basename(path_abs)] = item["message"]
 
+            for item in integrity_result.get("long_paths", []):
+                src_abs = item.get("source")
+                if src_abs:
+                    rel_src = os.path.relpath(src_abs, self.base_dir).replace("\\", "/")
+                    self.plan_errors[rel_src] = item["message"]
+                    self.plan_errors[os.path.basename(src_abs)] = item["message"]
+                dst_abs = item.get("path")
+                if dst_abs:
+                    rel_dst = os.path.relpath(dst_abs, self.base_dir).replace("\\", "/")
+                    self.plan_errors[rel_dst] = item["message"]
+                    self.plan_errors[os.path.basename(dst_abs)] = item["message"]
+
             warnings_text = "\n".join(integrity_result["warnings"])
             if hasattr(self, "warnings_label"):
                 self.warnings_label.set_text(warnings_text)

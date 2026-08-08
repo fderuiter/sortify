@@ -158,3 +158,11 @@ def is_valid_name(name: str) -> bool:
         return False
 
     return True
+
+
+def is_path_too_long(path: str, limit: int = 260) -> bool:
+    """Check if the normalized/absolute target path equals or exceeds 260 characters."""
+    if not path:
+        return False
+    normalized_path = os.path.abspath(path)
+    return len(normalized_path) >= limit

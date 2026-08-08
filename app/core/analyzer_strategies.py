@@ -482,7 +482,9 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                 pass
             self._gguf_process = None
 
-        if getattr(sys, "frozen", False):
+        from app.core.path_utils import is_packaged
+
+        if is_packaged():
             base_path = os.path.dirname(sys.executable)
         else:
             base_path = os.path.dirname(

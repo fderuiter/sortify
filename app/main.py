@@ -7,7 +7,8 @@ import os
 import sys
 
 # Dynamic Windows DLL Path Injection
-if sys.platform == "win32" and getattr(sys, "frozen", False):
+from app.core.path_utils import is_packaged
+if sys.platform == "win32" and is_packaged():
     # Safeguard standard streams to prevent crash on print when sys.stdout/err are None
     class NullWriter:
         """A helper class that discards any written output to mimic a stream."""
@@ -126,7 +127,7 @@ def write_smoke_test_error(message, include_traceback=False):
         pass
     try:
         # 2. Write next to executable if frozen
-        if getattr(sys, "frozen", False):
+        if is_packaged():
             exe_dir = os.path.dirname(sys.executable)
             if exe_dir:
                 with open(

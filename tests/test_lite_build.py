@@ -164,6 +164,15 @@ def test_spec_file_partitioning():
     ):
         # Execute the spec file in our mock global context
         exec(spec_content, mock_globals)
+
+        # Test asset pruning logic
+        is_prunable = mock_globals["is_prunable_asset"]
+        assert is_prunable("/some/path/to/pytorch/tests/test_module.py") is True
+        assert is_prunable("/some/path/to/pytorch/include/ATen/ATen.h") is True
+        assert is_prunable("/some/path/to/pytorch/model/weights.bin") is False
+        assert is_prunable("/some/path/to/pytorch/checkpoint_step_100.pt") is False
+        assert is_prunable("/some/path/to/pytorch/some_other_file.py") is False
+
         # Now let's inspect the `datas` and `binaries` that were passed to `Analysis`
         # Analysis is called as Analysis(...)
         analysis_call = mock_globals["Analysis"].call_args
