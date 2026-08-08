@@ -134,7 +134,7 @@ if platform.system().lower() == "windows" or sys.platform == "win32":
                     binaries.append((dll_path, 'sqlcipher3'))
 
 is_lite = os.environ.get("LITE_BUILD") == "1"
-excludes = ['tkinter', 'tcl', 'tk', '_tkinter']
+excludes = ['tkinter', 'tcl', 'tk', '_tkinter', 'sqlite3', '_sqlite3']
 if is_lite:
     excludes.extend([
         'torch', 'torchvision', 'triton', 'nvidia', 'easyocr', 'scipy',
