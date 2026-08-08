@@ -155,7 +155,7 @@ if platform.system().lower() == "windows" or sys.platform == "win32":
                     binaries.append((dll_path, 'sqlcipher3'))
 
 is_lite = os.environ.get("LITE_BUILD") == "1"
-excludes = ['tkinter', 'tcl', 'tk', '_tkinter', 'sqlcipher3', 'sqlite3', '_sqlite3']
+excludes = ['tkinter', 'tcl', 'tk', '_tkinter']
 if is_lite:
     excludes.extend([
         'torch', 'torchvision', 'triton', 'nvidia', 'easyocr', 'scipy',
@@ -223,8 +223,36 @@ def is_prunable_asset(name):
         
     return False
 
-a.binaries = [x for x in a.binaries if not is_tcl_tk_asset(x[0]) and not is_prunable_asset(x[0])]
-a.datas = [x for x in a.datas if not is_tcl_tk_asset(x[0]) and not is_prunable_asset(x[0])]
+
+def is_standard_sqlite_asset(dest, src):
+    dest_lower = dest.lower().replace('\\', '/')
+    src_lower = src.lower().replace('\\', '/')
+    
+    # We want to keep SQLCipher's own sqlite3 / _sqlite3 assets
+    if "sqlcipher3" in dest_lower or "sqlcipher3" in src_lower:
+        return False
+        
+    filename_dest = os.path.basename(dest_lower)
+    filename_src = os.path.basename(src_lower)
+    
+    # Filter out standard SQLite binaries / DLLs
+    for pat in ("_sqlite3", "sqlite3", "libsqlite3"):
+        if pat in filename_dest or pat in filename_src:
+            return True
+        
+    # Filter out standard sqlite3 package folder in datas/binaries
+    dest_parts = dest_lower.split('/')
+    src_parts = src_lower.split('/')
+    if "sqlite3" in dest_parts or "_sqlite3" in dest_parts:
+        return True
+    if "sqlite3" in src_parts or "_sqlite3" in src_parts:
+        return True
+        
+    return False
+
+
+a.binaries = [x for x in a.binaries if not is_tcl_tk_asset(x[0]) and not is_prunable_asset(x[0]) and not is_standard_sqlite_asset(x[0], x[1])]
+a.datas = [x for x in a.datas if not is_tcl_tk_asset(x[0]) and not is_prunable_asset(x[0]) and not is_standard_sqlite_asset(x[0], x[1])]
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 

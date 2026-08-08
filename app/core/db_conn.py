@@ -147,7 +147,12 @@ def get_db_connection(db_path: str):
             except Exception:
                 pass
 
-        import sqlite3 as std_sqlite3
+        try:
+            import sqlite3 as std_sqlite3
+
+            std_error_class = std_sqlite3.Error
+        except ImportError:
+            std_error_class = sqlite3.Error
 
         # Safe extraction of module and class names to prevent AttributeError when __module__ is None
         module_name = getattr(type(e), "__module__", "") or ""
@@ -157,7 +162,7 @@ def get_db_connection(db_path: str):
 
         # Broad detection of SQLite/SQLCipher database and connection errors
         is_sqlite_or_db_err = (
-            isinstance(e, (sqlite3.Error, std_sqlite3.Error))
+            isinstance(e, (sqlite3.Error, std_error_class))
             or "sqlite" in module_name
             or "sqlcipher" in module_name
             or class_name == "Error"
