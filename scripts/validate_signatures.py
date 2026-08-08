@@ -13,18 +13,18 @@ import os
 import sys
 
 # Compute project base directory (/app) based on script location
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SNAPSHOT_PATH = os.path.join(BASE_DIR, "tests", "snapshots", "api_snapshot.json")
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+SNAPSHOT_PATH = os.path.realpath(os.path.join(BASE_DIR, "tests", "snapshots", "api_snapshot.json"))
 
 # Source files to parse
-ANALYZER_STRATEGIES_PATH = os.path.join(
+ANALYZER_STRATEGIES_PATH = os.path.realpath(os.path.join(
     BASE_DIR, "app", "core", "analyzer_strategies.py"
-)
-EXTRACTOR_STRATEGIES_PATH = os.path.join(
+))
+EXTRACTOR_STRATEGIES_PATH = os.path.realpath(os.path.join(
     BASE_DIR, "app", "core", "extractor_strategies.py"
-)
-MAIN_CLI_PATH = os.path.join(BASE_DIR, "app", "main.py")
-SANDBOX_CLI_PATH = os.path.join(BASE_DIR, "sandbox_cli.py")
+))
+MAIN_CLI_PATH = os.path.realpath(os.path.join(BASE_DIR, "app", "main.py"))
+SANDBOX_CLI_PATH = os.path.realpath(os.path.join(BASE_DIR, "sandbox_cli.py"))
 
 
 def get_ast_value(node):
@@ -341,7 +341,7 @@ def extract_file_entities(file_path, rel_path):
 
 def scan_core_modules():
     """Recursively scan app/core/ to locate all public classes, public class methods, and standalone public functions."""
-    core_dir = os.path.join(BASE_DIR, "app", "core")
+    core_dir = os.path.realpath(os.path.join(BASE_DIR, "app", "core"))
     if not os.path.exists(core_dir):
         return {}, {}
 
@@ -352,8 +352,12 @@ def scan_core_modules():
         dirs.sort()
         for file in sorted(files):
             if file.endswith(".py"):
-                file_path = os.path.join(root, file)
-                rel_path = os.path.relpath(file_path, BASE_DIR).replace("\\", "/")
+                file_path = os.path.realpath(os.path.join(root, file))
+                rel_path = os.path.relpath(file_path, os.path.realpath(BASE_DIR)).replace("\\", "/")
+                
+                # Normalize relative path prefix to guarantee lowercase "app/core/" cross-platform
+                if rel_path.lower().startswith("app/core/"):
+                    rel_path = "app/core/" + rel_path[len("app/core/"):]
                 
                 file_classes, file_functions = extract_file_entities(file_path, rel_path)
                 
