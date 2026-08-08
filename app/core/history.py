@@ -683,6 +683,25 @@ class HistoryManager:
                 snapshot_docs = cur.fetchall()
                 snapshot_docs_dict = {r[0]: r for r in snapshot_docs}
 
+                # Write rollback journal before any modifications or relocations
+                try:
+                    from pathlib import Path
+                    import json
+                    journal_path = Path(self.db_path).parent / "rollback_journal.json"
+                    journal_data = {
+                        "session_id": session_id,
+                        "safety_session_id": safety_session_id,
+                        "base_dir": base_dir,
+                        "moves": moves,
+                        "symlinks": symlinks_to_restore,
+                        "shortcuts": shortcuts_to_restore
+                    }
+                    with open(journal_path, "w") as f:
+                        json.dump(journal_data, f, indent=2)
+                except Exception as ex:
+                    import logging
+                    logging.warning(f"Failed to write rollback journal: {ex}")
+
                 # 1. Pre-Move Synchronization
                 db_conn = get_db_connection(self.db.db_path)
                 with db_conn:
@@ -993,4 +1012,22 @@ class HistoryManager:
                 )
                 self.db.invalidate_cache()
 
+                # Clean delete of rollback journal file
+                try:
+                    from pathlib import Path
+                    journal_path = Path(self.db_path).parent / "rollback_journal.json"
+                    if journal_path.exists():
+                        journal_path.unlink()
+                except Exception as ex:
+                    import logging
+                    logging.warning(f"Failed to delete rollback journal: {ex}")
+
         return self.db.worker.execute_write(_write)
+
+    def resume_rollback(self, session_id: str):
+        """Resume and complete an interrupted rollback session."""
+        self.rollback(session_id, ignore_missing=True)
+
+    def revert_rollback(self, safety_session_id: str):
+        """Revert an interrupted rollback session back to its original state using the safety snapshot."""
+        self.rollback(safety_session_id, ignore_missing=True)
