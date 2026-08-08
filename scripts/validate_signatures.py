@@ -12,19 +12,41 @@ import json
 import os
 import sys
 
+def clean_realpath(path):
+    """Resolve symlinks and return a clean absolute path without Windows long-path prefix (\\\\?\\)."""
+    p = os.path.realpath(path)
+    if p.startswith("\\\\?\\"):
+        p = p[4:]
+    return p
+
+
+def get_relative_path(path, start):
+    """Compute relative path between two absolute paths deterministically across platforms."""
+    path = clean_realpath(path)
+    start = clean_realpath(start)
+
+    # Normalize drive letter casing on Windows to prevent relpath errors or mismatch
+    if len(path) >= 2 and path[1] == ":":
+        path = path[0].lower() + path[1:]
+    if len(start) >= 2 and start[1] == ":":
+        start = start[0].lower() + start[1:]
+
+    return os.path.relpath(path, start).replace("\\", "/")
+
+
 # Compute project base directory (/app) based on script location
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
-SNAPSHOT_PATH = os.path.realpath(os.path.join(BASE_DIR, "tests", "snapshots", "api_snapshot.json"))
+BASE_DIR = os.path.dirname(os.path.dirname(clean_realpath(__file__)))
+SNAPSHOT_PATH = clean_realpath(os.path.join(BASE_DIR, "tests", "snapshots", "api_snapshot.json"))
 
 # Source files to parse
-ANALYZER_STRATEGIES_PATH = os.path.realpath(os.path.join(
+ANALYZER_STRATEGIES_PATH = clean_realpath(os.path.join(
     BASE_DIR, "app", "core", "analyzer_strategies.py"
 ))
-EXTRACTOR_STRATEGIES_PATH = os.path.realpath(os.path.join(
+EXTRACTOR_STRATEGIES_PATH = clean_realpath(os.path.join(
     BASE_DIR, "app", "core", "extractor_strategies.py"
 ))
-MAIN_CLI_PATH = os.path.realpath(os.path.join(BASE_DIR, "app", "main.py"))
-SANDBOX_CLI_PATH = os.path.realpath(os.path.join(BASE_DIR, "sandbox_cli.py"))
+MAIN_CLI_PATH = clean_realpath(os.path.join(BASE_DIR, "app", "main.py"))
+SANDBOX_CLI_PATH = clean_realpath(os.path.join(BASE_DIR, "sandbox_cli.py"))
 
 
 def get_ast_value(node):
@@ -341,7 +363,7 @@ def extract_file_entities(file_path, rel_path):
 
 def scan_core_modules():
     """Recursively scan app/core/ to locate all public classes, public class methods, and standalone public functions."""
-    core_dir = os.path.realpath(os.path.join(BASE_DIR, "app", "core"))
+    core_dir = clean_realpath(os.path.join(BASE_DIR, "app", "core"))
     if not os.path.exists(core_dir):
         return {}, {}
 
@@ -352,8 +374,8 @@ def scan_core_modules():
         dirs.sort()
         for file in sorted(files):
             if file.endswith(".py"):
-                file_path = os.path.realpath(os.path.join(root, file))
-                rel_path = os.path.relpath(file_path, os.path.realpath(BASE_DIR)).replace("\\", "/")
+                file_path = clean_realpath(os.path.join(root, file))
+                rel_path = get_relative_path(file_path, BASE_DIR)
                 
                 # Normalize relative path prefix to guarantee lowercase "app/core/" cross-platform
                 if rel_path.lower().startswith("app/core/"):
@@ -447,7 +469,7 @@ def main():
             difflib.unified_diff(
                 snapshot_json.splitlines(keepends=True),
                 current_json.splitlines(keepends=True),
-                fromfile=f"Snapshot ({os.path.relpath(SNAPSHOT_PATH, BASE_DIR)})",
+                fromfile=f"Snapshot ({get_relative_path(SNAPSHOT_PATH, BASE_DIR)})",
                 tofile="Current Codebase",
             )
         )
@@ -461,7 +483,7 @@ def main():
             file=sys.stderr,
         )
         print(
-            f"  python3 {os.path.relpath(__file__, BASE_DIR)} --regenerate",
+            f"  python3 {get_relative_path(__file__, BASE_DIR)} --regenerate",
             file=sys.stderr,
         )
         sys.exit(1)
