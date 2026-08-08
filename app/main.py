@@ -234,10 +234,24 @@ def main():
         help="Run automated database smoke test and exit",
     )
     parser.add_argument(
+        "--update-snapshots",
+        action="store_true",
+        help="Regenerate reference baseline snapshots across all covered views",
+    )
+    parser.add_argument(
         "directory", nargs="?", default=None, help="Directory to analyze automatically"
     )
 
     args = parser.parse_args()
+
+    if getattr(args, "update_snapshots", False) is True:
+        import os
+        import pytest
+        import sys
+        print("Regenerating baseline snapshots across all covered views...")
+        os.environ["UPDATE_SNAPSHOTS"] = "1"
+        exit_code = pytest.main(["tests/test_visual_snapshots.py"])
+        sys.exit(exit_code)
 
     if getattr(args, "smoke_test", False) is True:
         run_smoke_test()
