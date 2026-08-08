@@ -84,12 +84,12 @@ def test_inject_bootstrap_paths(tmp_path):
         patch.dict("os.environ", {"PATH": "existing_path"}),
     ):
         inject_bootstrap_paths()
-        assert str(bin_dir) in mock_sys_path
+        assert os.path.abspath(str(bin_dir)) in mock_sys_path
         if sys.platform == "win32":
-            mock_add_dll.assert_any_call(str(bin_dir))
-            mock_add_dll.assert_any_call(str(sqlcipher3_path))
-            assert str(bin_dir) in os.environ["PATH"]
-            assert str(sqlcipher3_path) in os.environ["PATH"]
+            mock_add_dll.assert_any_call(os.path.abspath(str(bin_dir)))
+            mock_add_dll.assert_any_call(os.path.abspath(str(sqlcipher3_path)))
+            assert os.path.abspath(str(bin_dir)) in os.environ["PATH"]
+            assert os.path.abspath(str(sqlcipher3_path)) in os.environ["PATH"]
 
 
 def test_bootstrap_binaries_bypass_if_cached(tmp_path):

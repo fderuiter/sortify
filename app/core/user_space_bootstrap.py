@@ -143,18 +143,18 @@ def inject_bootstrap_paths():
     bin_dir = get_bootstrap_bin_dir()
 
     if bin_dir.exists():
-        bin_dir_str = str(bin_dir)
+        bin_dir_str = os.path.abspath(str(bin_dir))
         if bin_dir_str not in sys.path:
             sys.path.insert(0, bin_dir_str)
 
         if sys.platform == "win32":
             try:
-                os.add_dll_directory(str(bin_dir))
+                os.add_dll_directory(bin_dir_str)
             except Exception:
                 pass
 
-            paths_to_add = [str(bin_dir)]
-            for root, dirs, _ in os.walk(str(bin_dir)):
+            paths_to_add = [bin_dir_str]
+            for root, dirs, _ in os.walk(bin_dir_str):
                 for d in dirs:
                     subdir_path = os.path.abspath(os.path.join(root, d))
                     paths_to_add.append(subdir_path)
@@ -165,19 +165,22 @@ def inject_bootstrap_paths():
 
             # Also add standard active Python/virtualenv DLL paths to guarantee resolution in development/CI
             search_dirs = [
-                sys.prefix,
-                sys.base_prefix,
-                os.path.dirname(sys.executable),
+                os.path.abspath(sys.prefix) if sys.prefix else "",
+                os.path.abspath(sys.base_prefix) if sys.base_prefix else "",
+                os.path.abspath(os.path.dirname(sys.executable)) if sys.executable else "",
             ]
+            search_dirs = [sd for sd in search_dirs if sd]
             for sd in list(search_dirs):
                 if sd:
                     for sub in ["Library/bin", "DLLs", "Scripts"]:
-                        sub_dir = os.path.join(sd, sub.replace("/", os.sep))
+                        sub_dir = os.path.abspath(os.path.join(sd, sub.replace("/", os.sep)))
                         if os.path.isdir(sub_dir) and sub_dir not in search_dirs:
                             search_dirs.append(sub_dir)
             for p in sys.path:
-                if p and os.path.isdir(p) and p not in search_dirs:
-                    search_dirs.append(p)
+                if p:
+                    p_abs = os.path.abspath(p)
+                    if os.path.isdir(p_abs) and p_abs not in search_dirs:
+                        search_dirs.append(p_abs)
 
             for s_dir in search_dirs:
                 if s_dir and os.path.isdir(s_dir):
