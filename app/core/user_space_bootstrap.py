@@ -187,13 +187,10 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
     # 5. Inject paths directly from the installation directory
     inject_bootstrap_paths(platform_binaries_dir)
 
-    # 6. Clear sys.modules of sqlcipher3 to force reload from the newly injected paths
-    if "sqlcipher3" in sys.modules or any(
-        k.startswith("sqlcipher3.") for k in sys.modules
-    ):
-        for k in list(sys.modules.keys()):
-            if k == "sqlcipher3" or k.startswith("sqlcipher3."):
-                sys.modules.pop(k, None)
+    # 6. Clear sys.modules of sqlcipher3, _sqlite3, and sqlite3 to force reload from the newly injected paths
+    for k in list(sys.modules.keys()):
+        if k in ("sqlcipher3", "_sqlite3", "sqlite3") or k.startswith("sqlcipher3.") or k.startswith("sqlite3."):
+            sys.modules.pop(k, None)
 
     # 7. Execute pre-flight verification
     if verify_sqlcipher_encryption():
