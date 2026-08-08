@@ -81,50 +81,51 @@ def test_statistical_fallback_on_mock(db, temp_dir):
         model_path=None,
     )
 
-    # Prepare some documents
-    base_dir = str(temp_dir)
-    db.clear(base_dir)
+    try:
+        # Prepare some documents
+        base_dir = str(temp_dir)
+        db.clear(base_dir)
 
-    # Verified document with structured text
-    hist_text = "space rockets Mars landing astronauts and cosmic deep space exploration mission"
-    db.upsert_document(base_dir, "historical_space.txt", "hash_h", hist_text)
-    db.set_user_verified_target(base_dir, "hash_h", "Space")
+        # Verified document with structured text
+        hist_text = "space rockets Mars landing astronauts and cosmic deep space exploration mission"
+        db.upsert_document(base_dir, "historical_space.txt", "hash_h", hist_text)
+        db.set_user_verified_target(base_dir, "hash_h", "Space")
 
-    # New unverified document - almost identical to guarantee high statistical similarity
-    new_text = (
-        "space rockets Mars landing astronauts and cosmic deep space exploration flight"
-    )
-    corpus = {"new_space.txt": new_text}
-    analyzer.partial_fit(base_dir, corpus)
+        # New unverified document - almost identical to guarantee high statistical similarity
+        new_text = "space rockets Mars landing astronauts and cosmic deep space exploration flight"
+        corpus = {"new_space.txt": new_text}
+        analyzer.partial_fit(base_dir, corpus)
 
-    # Let's verify analyzer is running on mock
-    assert analyzer.embedding_manager.is_mock is True
+        # Let's verify analyzer is running on mock
+        assert analyzer.embedding_manager.is_mock is True
 
-    # Spy on generate_embedding and trigger_reconstruction to ensure they aren't called
-    with (
-        patch.object(
-            analyzer.embedding_manager,
-            "generate_embedding",
-            wraps=analyzer.embedding_manager.generate_embedding,
-        ) as mock_gen,
-        patch.object(
-            analyzer.embedding_manager,
-            "trigger_reconstruction",
-            wraps=analyzer.embedding_manager.trigger_reconstruction,
-        ) as mock_reconstruct,
-    ):
-        plan = analyzer.generate_sorting_plan(base_dir)
+        # Spy on generate_embedding and trigger_reconstruction to ensure they aren't called
+        with (
+            patch.object(
+                analyzer.embedding_manager,
+                "generate_embedding",
+                wraps=analyzer.embedding_manager.generate_embedding,
+            ) as mock_gen,
+            patch.object(
+                analyzer.embedding_manager,
+                "trigger_reconstruction",
+                wraps=analyzer.embedding_manager.trigger_reconstruction,
+            ) as mock_reconstruct,
+        ):
+            plan = analyzer.generate_sorting_plan(base_dir)
 
-        # 1. Similarity matching should have run using statistical TF-IDF similarity.
-        # Since new_text and hist_text are extremely similar, it should match to "Space" (similarity >= 0.8)
-        assert "Space" in plan
-        assert "new_space.txt" in plan["Space"]
-        assert plan["Space"]["new_space.txt"]["routed_by"] == "similarity"
+            # 1. Similarity matching should have run using statistical TF-IDF similarity.
+            # Since new_text and hist_text are extremely similar, it should match to "Space" (similarity >= 0.8)
+            assert "Space" in plan
+            assert "new_space.txt" in plan["Space"]
+            assert plan["Space"]["new_space.txt"]["routed_by"] == "similarity"
 
-        # 2. Embedding generation & background vector reconstruction loops must NOT be triggered
-        mock_gen.assert_not_called()
-        mock_reconstruct.assert_not_called()
-        assert analyzer.embedding_manager.is_reconstruction_active() is False
+            # 2. Embedding generation & background vector reconstruction loops must NOT be triggered
+            mock_gen.assert_not_called()
+            mock_reconstruct.assert_not_called()
+            assert analyzer.embedding_manager.is_reconstruction_active() is False
+    finally:
+        analyzer.close()
 
 
 def test_dynamic_transition_to_semantic(db, temp_dir):
@@ -142,68 +143,71 @@ def test_dynamic_transition_to_semantic(db, temp_dir):
         model_path=str(model_dir),
     )
 
-    assert analyzer.embedding_manager.is_mock is True
+    try:
+        assert analyzer.embedding_manager.is_mock is True
 
-    # Set up some documents
-    base_dir = str(temp_dir)
-    db.clear(base_dir)
+        # Set up some documents
+        base_dir = str(temp_dir)
+        db.clear(base_dir)
 
-    hist_text = "space rockets Mars landing astronauts and cosmic deep space exploration mission"
-    db.upsert_document(base_dir, "historical_space.txt", "hash_h", hist_text)
-    db.set_user_verified_target(base_dir, "hash_h", "Space")
+        hist_text = "space rockets Mars landing astronauts and cosmic deep space exploration mission"
+        db.upsert_document(base_dir, "historical_space.txt", "hash_h", hist_text)
+        db.set_user_verified_target(base_dir, "hash_h", "Space")
 
-    # Under semantic matching we will also use highly similar documents to be robust
-    new_text = (
-        "space rockets Mars landing astronauts and cosmic deep space exploration flight"
-    )
-    corpus = {"new_space.txt": new_text}
-    analyzer.partial_fit(base_dir, corpus)
+        # Under semantic matching we will also use highly similar documents to be robust
+        new_text = "space rockets Mars landing astronauts and cosmic deep space exploration flight"
+        corpus = {"new_space.txt": new_text}
+        analyzer.partial_fit(base_dir, corpus)
 
-    # Mock the transition: simulate a local model file successfully loading
-    # We patch `get_active_model_properties` to return a valid profile representing a loaded model
-    valid_properties = ModelProperties(
-        signature="valid_mock_signature_abc123",
-        dimensions=384,
-        version="2.0.0",
-        is_valid=True,
-    )
-
-    # We also mock `generate_embedding` to return a non-random, controllable vector
-    # so we can verify semantic similarity executes
-    dummy_vector_hist = [1.0] + [0.0] * 383
-    dummy_vector_new = [1.0] + [0.0] * 383  # perfectly aligned, cosine_similarity = 1.0
-
-    def mock_gen_embedding(text):
-        return dummy_vector_hist
-
-    with (
-        patch(
-            "app.core.semantic_embeddings.get_active_model_properties",
-            return_value=valid_properties,
-        ),
-        patch.object(
-            analyzer.embedding_manager,
-            "generate_embedding",
-            side_effect=mock_gen_embedding,
-        ) as mock_gen,
-    ):
-        # Calling `is_mock` dynamically refreshes and detects that the engine is no longer in mock state
-        assert analyzer.embedding_manager.is_mock is False
-        assert analyzer.embedding_manager.is_model_valid is True
-        assert analyzer.embedding_manager.signature == "valid_mock_signature_abc123"
-
-        # We insert the hist vector in the DB *after* `is_mock` property checks so it doesn't get cleared by the purge
-        db.upsert_document_vectors(
-            base_dir, [("historical_space.txt", dummy_vector_hist)]
+        # Mock the transition: simulate a local model file successfully loading
+        # We patch `get_active_model_properties` to return a valid profile representing a loaded model
+        valid_properties = ModelProperties(
+            signature="valid_mock_signature_abc123",
+            dimensions=384,
+            version="2.0.0",
+            is_valid=True,
         )
 
-        # Now, call generate_sorting_plan. Since use_semantic is True, it should generate embeddings
-        plan = analyzer.generate_sorting_plan(base_dir)
+        # We also mock `generate_embedding` to return a non-random, controllable vector
+        # so we can verify semantic similarity executes
+        dummy_vector_hist = [1.0] + [0.0] * 383
+        dummy_vector_new = [1.0] + [
+            0.0
+        ] * 383  # perfectly aligned, cosine_similarity = 1.0
 
-        # 1. generate_embedding should have been called for new_space.txt to perform the matching
-        mock_gen.assert_called()
+        def mock_gen_embedding(text):
+            return dummy_vector_hist
 
-        # 2. It successfully resolves standard matching task via semantic vectors
-        assert "Space" in plan
-        assert "new_space.txt" in plan["Space"]
-        assert plan["Space"]["new_space.txt"]["routed_by"] == "similarity"
+        with (
+            patch(
+                "app.core.semantic_embeddings.get_active_model_properties",
+                return_value=valid_properties,
+            ),
+            patch.object(
+                analyzer.embedding_manager,
+                "generate_embedding",
+                side_effect=mock_gen_embedding,
+            ) as mock_gen,
+        ):
+            # Calling `is_mock` dynamically refreshes and detects that the engine is no longer in mock state
+            assert analyzer.embedding_manager.is_mock is False
+            assert analyzer.embedding_manager.is_model_valid is True
+            assert analyzer.embedding_manager.signature == "valid_mock_signature_abc123"
+
+            # We insert the hist vector in the DB *after* `is_mock` property checks so it doesn't get cleared by the purge
+            db.upsert_document_vectors(
+                base_dir, [("historical_space.txt", dummy_vector_hist)]
+            )
+
+            # Now, call generate_sorting_plan. Since use_semantic is True, it should generate embeddings
+            plan = analyzer.generate_sorting_plan(base_dir)
+
+            # 1. generate_embedding should have been called for new_space.txt to perform the matching
+            mock_gen.assert_called()
+
+            # 2. It successfully resolves standard matching task via semantic vectors
+            assert "Space" in plan
+            assert "new_space.txt" in plan["Space"]
+            assert plan["Space"]["new_space.txt"]["routed_by"] == "similarity"
+    finally:
+        analyzer.close()
