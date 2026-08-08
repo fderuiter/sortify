@@ -1,19 +1,15 @@
 import shutil
 import tempfile
 import time
-import json
-import traceback
 from pathlib import Path
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, PropertyMock, patch
 
 import pytest
-import numpy as np
 
-from app.core.analyzer import IncrementalAnalyzer
 from app.core.analyzer_strategies import GenerativeNamingStrategy
 from app.core.db import Database
 from app.core.db_worker import DBWorker
-from app.core.semantic_embeddings import SemanticEmbeddingManager, ModelProperties
+from app.core.semantic_embeddings import ModelProperties, SemanticEmbeddingManager
 
 
 @pytest.fixture
@@ -21,6 +17,7 @@ def temp_dir():
     dir_path = tempfile.mkdtemp()
     yield Path(dir_path)
     from app.core.db_conn import clear_connection_cache
+
     clear_connection_cache()
     shutil.rmtree(dir_path, ignore_errors=True)
 
@@ -37,6 +34,7 @@ def db(temp_dir, db_worker):
     database = Database(temp_dir / "test.db", db_worker)
     yield database
     from app.core.db_conn import clear_connection_cache
+
     clear_connection_cache()
 
 
@@ -56,25 +54,38 @@ def test_generative_naming_uses_precomputed_vectors_and_zero_decryption(db, temp
     db.set_model_metadata("active_model_version", "1.0.0")
 
     # Insert historical documents
-    db.upsert_document(base_dir, "hist1.txt", "hash_h1", "space flight Mars rocket astronauts NASA space agency")
+    db.upsert_document(
+        base_dir,
+        "hist1.txt",
+        "hash_h1",
+        "space flight Mars rocket astronauts NASA space agency",
+    )
     db.set_user_verified_target(base_dir, "hash_h1", "Space")
-    db.upsert_document(base_dir, "hist2.txt", "hash_h2", "gourmet cooking recipe pasta chef cuisine kitchen")
+    db.upsert_document(
+        base_dir,
+        "hist2.txt",
+        "hash_h2",
+        "gourmet cooking recipe pasta chef cuisine kitchen",
+    )
     db.set_user_verified_target(base_dir, "hash_h2", "Cooking")
 
     # Insert corresponding vectors (384 dimensions)
     vector_space = [1.0] + [0.0] * 383
     vector_cooking = [0.0] + [1.0] * 383
-    
-    db.upsert_document_vectors(base_dir, [
-        ("hist1.txt", vector_space),
-        ("hist2.txt", vector_cooking),
-    ])
+
+    db.upsert_document_vectors(
+        base_dir,
+        [
+            ("hist1.txt", vector_space),
+            ("hist2.txt", vector_cooking),
+        ],
+    )
 
     # Instantiate strategy
     strategy = GenerativeNamingStrategy()
     strategy.set_db_context(db, base_dir)
     strategy.stop_words = {"the", "and"}
-    
+
     # We must set model_path to a truthy existing path to ensure is_mock is False
     strategy.model_path = str(temp_dir)
 
@@ -94,15 +105,26 @@ def test_generative_naming_uses_precomputed_vectors_and_zero_decryption(db, temp
     strategy._model_initialized = True
 
     with (
-        patch("app.core.semantic_embeddings.get_active_model_properties", return_value=valid_properties),
-        patch.object(SemanticEmbeddingManager, "generate_embedding", return_value=target_vector),
-        patch.object(db.crypto, "decrypt_text", wraps=db.crypto.decrypt_text) as spy_decrypt,
-        patch.object(db, "get_all_documents", wraps=db.get_all_documents) as spy_get_all,
-        patch.object(strategy, "_run_prompt", return_value="Space Mission Group") as mock_run_prompt,
+        patch(
+            "app.core.semantic_embeddings.get_active_model_properties",
+            return_value=valid_properties,
+        ),
+        patch.object(
+            SemanticEmbeddingManager, "generate_embedding", return_value=target_vector
+        ),
+        patch.object(
+            db.crypto, "decrypt_text", wraps=db.crypto.decrypt_text
+        ) as spy_decrypt,
+        patch.object(
+            db, "get_all_documents", wraps=db.get_all_documents
+        ) as spy_get_all,
+        patch.object(
+            strategy, "_run_prompt", return_value="Space Mission Group"
+        ) as mock_run_prompt,
     ):
         # Current cluster text
         documents = ["rocket launcher launch NASA mission to outer space planets"]
-        
+
         # Invoke generative naming for the cluster
         name = strategy._get_cluster_keywords(documents)
 
@@ -131,7 +153,12 @@ def test_generative_naming_fallback_to_keyword_on_missing_embeddings(db, temp_di
     db.clear(base_dir)
 
     # Insert historical document, but DO NOT provide pre-computed vectors
-    db.upsert_document(base_dir, "hist1.txt", "hash_h1", "space flight Mars rocket astronauts NASA space agency")
+    db.upsert_document(
+        base_dir,
+        "hist1.txt",
+        "hash_h1",
+        "space flight Mars rocket astronauts NASA space agency",
+    )
     db.set_user_verified_target(base_dir, "hash_h1", "Space")
 
     strategy = GenerativeNamingStrategy()
@@ -143,15 +170,21 @@ def test_generative_naming_fallback_to_keyword_on_missing_embeddings(db, temp_di
     # 1. Test case: vectors are missing from db
     # Invalidate cache to force decryption in the fallback path
     db.invalidate_cache()
-    
+
     with (
-        patch.object(db.crypto, "decrypt_text", wraps=db.crypto.decrypt_text) as spy_decrypt,
-        patch.object(db, "get_all_documents", wraps=db.get_all_documents) as spy_get_all,
-        patch.object(strategy, "_run_prompt", return_value="Space Flight Exploration") as mock_run_prompt,
+        patch.object(
+            db.crypto, "decrypt_text", wraps=db.crypto.decrypt_text
+        ) as spy_decrypt,
+        patch.object(
+            db, "get_all_documents", wraps=db.get_all_documents
+        ) as spy_get_all,
+        patch.object(
+            strategy, "_run_prompt", return_value="Space Flight Exploration"
+        ) as mock_run_prompt,
     ):
         documents = ["rocket launcher launch NASA mission to outer space planets"]
         name = strategy._get_cluster_keywords(documents)
-        
+
         # Verify it fallback and found the match
         assert name == "Space Flight Exploration"
         assert spy_decrypt.called
@@ -168,14 +201,23 @@ def test_generative_naming_fallback_to_keyword_on_missing_embeddings(db, temp_di
     db.set_model_metadata("active_model_version", "1.0.0")
 
     db.upsert_document_vectors(base_dir, [("hist1.txt", [1.0] * 384)])
-    
+
     # Invalidate cache to force decryption in the fallback path
     db.invalidate_cache()
 
     with (
-        patch.object(SemanticEmbeddingManager, "is_mock", new_callable=PropertyMock, return_value=True),
-        patch.object(db.crypto, "decrypt_text", wraps=db.crypto.decrypt_text) as spy_decrypt,
-        patch.object(strategy, "_run_prompt", return_value="Space Fallback") as mock_run_prompt,
+        patch.object(
+            SemanticEmbeddingManager,
+            "is_mock",
+            new_callable=PropertyMock,
+            return_value=True,
+        ),
+        patch.object(
+            db.crypto, "decrypt_text", wraps=db.crypto.decrypt_text
+        ) as spy_decrypt,
+        patch.object(
+            strategy, "_run_prompt", return_value="Space Fallback"
+        ) as mock_run_prompt,
     ):
         documents = ["rocket launcher launch NASA mission"]
         name = strategy._get_cluster_keywords(documents)
@@ -199,18 +241,29 @@ def test_generative_naming_latency_performance_1000_docs(db, temp_dir):
     # Insert 1000 historical documents and vectors
     documents_batch = []
     vectors_batch = []
-    
+
     for i in range(1000):
         filepath = f"doc_{i}.txt"
         file_hash = f"hash_{i}"
         target = "Space" if i % 2 == 0 else "Cooking"
-        documents_batch.append((base_dir, filepath, file_hash, "some dummy text content here"))
-        vectors_batch.append((filepath, [1.0 if i % 2 == 0 else 0.0] + [0.0 if i % 2 == 0 else 1.0] + [0.0] * 382))
+        documents_batch.append(
+            (base_dir, filepath, file_hash, "some dummy text content here")
+        )
+        vectors_batch.append(
+            (
+                filepath,
+                [1.0 if i % 2 == 0 else 0.0]
+                + [0.0 if i % 2 == 0 else 1.0]
+                + [0.0] * 382,
+            )
+        )
 
     # Fast insertion
     db.upsert_documents(documents_batch)
     for i in range(1000):
-        db.set_user_verified_target(base_dir, f"hash_{i}", "Space" if i % 2 == 0 else "Cooking")
+        db.set_user_verified_target(
+            base_dir, f"hash_{i}", "Space" if i % 2 == 0 else "Cooking"
+        )
     db.upsert_document_vectors(base_dir, vectors_batch)
 
     # Setup GenerativeNamingStrategy
@@ -219,7 +272,7 @@ def test_generative_naming_latency_performance_1000_docs(db, temp_dir):
     strategy.stop_words = {"the", "and"}
     strategy.generator = MagicMock()
     strategy._model_initialized = True
-    
+
     # Set model_path to non-empty string directory path
     strategy.model_path = str(temp_dir)
 
@@ -233,19 +286,32 @@ def test_generative_naming_latency_performance_1000_docs(db, temp_dir):
     target_vector = [1.0] + [0.0] * 383
 
     with (
-        patch("app.core.semantic_embeddings.get_active_model_properties", return_value=valid_properties),
-        patch.object(SemanticEmbeddingManager, "generate_embedding", return_value=target_vector),
-        patch.object(strategy, "_run_prompt", return_value="Fast Semantic Cluster") as mock_run_prompt,
+        patch(
+            "app.core.semantic_embeddings.get_active_model_properties",
+            return_value=valid_properties,
+        ),
+        patch.object(
+            SemanticEmbeddingManager, "generate_embedding", return_value=target_vector
+        ),
+        patch.object(
+            strategy, "_run_prompt", return_value="Fast Semantic Cluster"
+        ) as mock_run_prompt,
     ):
         # Measure duration of matching and prompt preparation
         start_time = time.perf_counter()
-        name = strategy._get_cluster_keywords(["space flight launch astronauts NASA rocket"])
+        name = strategy._get_cluster_keywords(
+            ["space flight launch astronauts NASA rocket"]
+        )
         end_time = time.perf_counter()
-        
+
         duration_ms = (end_time - start_time) * 1000.0
-        
+
         # Verify correct folder name returned
         assert name == "Fast Semantic Cluster"
         # Must be strictly under 200ms
-        assert duration_ms < 200.0, f"Generative naming matched too slow: {duration_ms} ms"
-        print(f"\n1000 documents generative naming matching duration: {duration_ms:.2f} ms")
+        assert duration_ms < 200.0, (
+            f"Generative naming matched too slow: {duration_ms} ms"
+        )
+        print(
+            f"\n1000 documents generative naming matching duration: {duration_ms:.2f} ms"
+        )
