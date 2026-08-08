@@ -286,6 +286,8 @@ class AudioExtractor:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 bufsize=1,
             )
         except FileNotFoundError:
@@ -316,7 +318,10 @@ class AudioExtractor:
             except Exception:
                 pass
             finally:
-                stream.close()
+                try:
+                    stream.close()
+                except Exception:
+                    pass
 
         t = threading.Thread(target=reader_thread_func, args=(process.stdout, q))
         t.daemon = True
@@ -327,15 +332,26 @@ class AudioExtractor:
                 # 1. Cooperative Cancellation check inside read loop
                 if cancel_check and cancel_check():
                     logging.info("Cancellation requested, terminating Whisper process.")
-                    process.terminate()
                     try:
-                        process.wait(timeout=1.5)
+                        process.terminate()
+                    except Exception as e:
+                        logging.warning(f"Failed to terminate process: {e}")
+                    try:
+                        process.wait(timeout=0.5)
                     except subprocess.TimeoutExpired:
                         logging.warning(
                             "Whisper process did not terminate, forcing kill."
                         )
-                        process.kill()
-                        process.wait()
+                        try:
+                            process.kill()
+                        except Exception as e:
+                            logging.warning(f"Failed to kill process: {e}")
+                        try:
+                            process.wait()
+                        except Exception:
+                            pass
+                    except Exception:
+                        pass
                     return "[STATUS:CANCELLED]"
 
                 # 2. Check if reader thread has finished and queue is empty
