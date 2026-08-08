@@ -52,6 +52,28 @@ try:
 except Exception as e:
     print(f"Warning: Could not collect sqlcipher3 package via collect_all: {e}")
 
+# Explicitly collect any platform-specific binary extensions from the sqlcipher3 package directory
+# to ensure they are never missed by collect_all (e.g. _sqlite3.pyd on Windows)
+sqlcipher_spec = importlib.util.find_spec("sqlcipher3")
+if sqlcipher_spec and sqlcipher_spec.submodule_search_locations:
+    sqlcipher_dir = sqlcipher_spec.submodule_search_locations[0]
+    for root, dirs, files in os.walk(sqlcipher_dir):
+        for file in files:
+            abs_file_path = os.path.abspath(os.path.join(root, file))
+            rel_path = os.path.relpath(abs_file_path, sqlcipher_dir)
+            dest_dir = os.path.join('sqlcipher3', os.path.dirname(rel_path))
+            file_lower = file.lower()
+            if file_lower.endswith(('.dll', '.dylib', '.so', '.pyd')) or '.so.' in file_lower:
+                # Prevent duplicates
+                dup = False
+                for b_src, b_dst in binaries:
+                    if os.path.abspath(b_src) == abs_file_path and b_dst == dest_dir:
+                        dup = True
+                        break
+                if not dup:
+                    print(f"Explicitly bundling sqlcipher3 binary extension: {abs_file_path} -> {dest_dir}")
+                    binaries.append((abs_file_path, dest_dir))
+
 # On Windows, find and bundle any dependent OpenSSL/SQLCipher DLLs from the active Python or virtualenv environments
 if platform.system().lower() == "windows" or sys.platform == "win32":
     sqlcipher_spec = importlib.util.find_spec("sqlcipher3")
