@@ -160,7 +160,9 @@ class AppSession:
             model_path=model_path,
         )
 
-    async def process_items_async(self, items_to_sort, cancel_check, progress_callback=None):
+    async def process_items_async(
+        self, items_to_sort, cancel_check, progress_callback=None
+    ):
         """Build corpus asynchronous generator for files, yielded file-by-file sequentially."""
         if not self.base_dir:
             return

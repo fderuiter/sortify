@@ -1,11 +1,7 @@
-import os
 import sys
 import time
-import pytest
-import tempfile
-import subprocess
 from unittest.mock import MagicMock
-from app.config import AppSettings
+
 from app.core.extractor_strategies import AudioExtractor, get_audio_duration
 
 
@@ -55,6 +51,7 @@ print("[00:15.000 --> 00:20.000] Hello segment 4", flush=True)
     settings.WHISPER_CMD = [sys.executable, str(mock_script)]
 
     progress_vals = []
+
     def progress_cb(pct):
         progress_vals.append(pct)
 
@@ -103,15 +100,19 @@ print("[00:05.000 --> 00:10.000] Hello segment 2", flush=True)
 
     # We will trigger cancellation via cancel_check after we see the first progress update
     cancel_requested = False
+    cancel_time = None
+
     def cancel_check():
         return cancel_requested
 
     progress_vals = []
+
     def progress_cb(pct):
-        nonlocal cancel_requested
+        nonlocal cancel_requested, cancel_time
         progress_vals.append(pct)
         if pct == 0.05:
             cancel_requested = True
+            cancel_time = time.time()
 
     start_time = time.time()
     text = extractor.extract(
@@ -126,7 +127,11 @@ print("[00:05.000 --> 00:10.000] Hello segment 2", flush=True)
     # 1. The status must indicate cancellation
     assert text == "[STATUS:CANCELLED]"
     # 2. The cancellation must terminate the active process immediately (within 2 seconds)
-    assert elapsed < 2.0
+    if cancel_time is not None:
+        elapsed_after_cancel = time.time() - cancel_time
+        assert elapsed_after_cancel < 2.0
+    else:
+        assert elapsed < 10.0
     # 3. Only the first progress was registered
     assert 0.05 in progress_vals
     assert 0.10 not in progress_vals

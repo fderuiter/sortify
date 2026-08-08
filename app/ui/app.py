@@ -693,11 +693,15 @@ class AutoSorterApp:
                         self.file_progress_bar.set_value(pct)
                     if hasattr(self, "file_progress_label"):
                         self.file_progress_label.set_visibility(True)
-                        self.file_progress_label.set_text(f"Active file progress: {pct * 100:.1f}%")
+                        self.file_progress_label.set_text(
+                            f"Active file progress: {pct * 100:.1f}%"
+                        )
+
                 if self.loop:
                     self.loop.call_soon_threadsafe(update_ui)
 
             import inspect
+
             sig = inspect.signature(self.app_session.process_items_async)
             process_kwargs = {}
             if "progress_callback" in sig.parameters:
@@ -711,7 +715,7 @@ class AutoSorterApp:
             ) in self.app_session.process_items_async(
                 items_to_sort,
                 lambda: getattr(self, "_cancel_analysis_flag", False),
-                **process_kwargs
+                **process_kwargs,
             ):
                 if self._cancel_analysis_flag or text == "[STATUS:CANCELLED]":
                     break
