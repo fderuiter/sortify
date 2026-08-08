@@ -90,23 +90,23 @@ def test_semantic_clustering_lazy_generation_and_caching(temp_env):
             model_path=model_path,
         )
 
-    try:
-        # 2. Run the sorting plan
-        plan = analyzer.generate_sorting_plan(base_dir)
+        try:
+            # 2. Run the sorting plan
+            plan = analyzer.generate_sorting_plan(base_dir)
 
-        # 3. Verify that new vector embeddings were generated on-the-fly and CACHED to the DB!
-        for item in documents_to_add:
-            filepath = item[1]
-            cached_vector = db.get_document_vector(base_dir, filepath)
-            assert cached_vector is not None
-            assert len(cached_vector) == analyzer.embedding_manager.dimensions
+            # 3. Verify that new vector embeddings were generated on-the-fly and CACHED to the DB!
+            for item in documents_to_add:
+                filepath = item[1]
+                cached_vector = db.get_document_vector(base_dir, filepath)
+                assert cached_vector is not None
+                assert len(cached_vector) == analyzer.embedding_manager.dimensions
 
-        # 4. Verify that the sorting plan grouped related documents semantically
-        # "pizza receipt" files should be clustered together, "consulting invoice" files together
-        assert isinstance(plan, dict)
-        assert len(plan) > 0
-    finally:
-        analyzer.close()
+            # 4. Verify that the sorting plan grouped related documents semantically
+            # "pizza receipt" files should be clustered together, "consulting invoice" files together
+            assert isinstance(plan, dict)
+            assert len(plan) > 0
+        finally:
+            analyzer.close()
 
 
 def test_fallback_to_tfidf_when_onnx_missing_or_corrupt(temp_env):
