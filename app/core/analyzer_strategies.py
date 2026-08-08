@@ -709,10 +709,13 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
 
         db = getattr(self, "db", None)
         base_dir = getattr(self, "base_dir", None)
-
         use_semantic = False
         top_examples = []
         few_shot_context = ""
+        # Filter out non-textual attachments and skipped/unsupported files from target documents
+        filtered_documents = [doc for doc in documents if doc and not doc.startswith("[STATUS:") and doc.strip()]
+        if not filtered_documents:
+            filtered_documents = documents
 
         if db and base_dir:
             try:
@@ -726,8 +729,8 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
 
             if use_semantic:
                 try:
-                    # 1. Compute Cluster Query Vector
-                    target_text = " ".join(documents)[:1000]
+                    # 1. Compute Cluster Query Vector using full text to avoid truncation artifacts
+                    target_text = " ".join(filtered_documents)
                     target_vector = embedding_manager.get_embedding(target_text)
                     if target_vector and embedding_manager.validate_vector_dimension(target_vector):
                         # 2. Query Pre-computed Historical Vectors directly from DB
@@ -749,7 +752,14 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
 
                             hist_vectors = []
                             hist_meta = []
+                            supported_exts_set = {".txt", ".docx", ".csv", ".xlsx", ".xls", ".pdf"}
                             for filepath, user_verified_target, vector_str in rows:
+                                dot_idx = filepath.rfind('.')
+                                ext = filepath[dot_idx:].lower() if dot_idx != -1 else ""
+                                # Exclude non-textual attachments and image files from semantic similarity
+                                if ext in {".png", ".jpg", ".jpeg"} or ext not in supported_exts_set:
+                                    continue
+
                                 if vector_str:
                                     try:
                                         v = json.loads(vector_str)
@@ -801,12 +811,23 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
             historical_examples = []
             if db and base_dir:
                 try:
+                    from app.core.extractor_strategies import registry
+                    import os
                     all_docs = db.get_all_documents(base_dir)
                     for doc in all_docs:
                         # doc is (filepath, decrypted_text, file_hash, user_verified_target_path)
                         if len(doc) > 3 and doc[1] and doc[3]:
+                            filepath = doc[0]
+                            decrypted_text = doc[1]
+                            ext = os.path.splitext(filepath)[1].lower()
+                            # Exclude non-textual attachments, image files, and skipped/unsupported files
+                            if ext in {".png", ".jpg", ".jpeg"} or not registry.is_supported(ext):
+                                continue
+                            if decrypted_text.startswith("[STATUS:"):
+                                continue
+
                             historical_examples.append(
-                                {"text": doc[1], "target_path": doc[3]}
+                                {"text": decrypted_text, "target_path": doc[3]}
                             )
                 except Exception as e:
                     logging.error(f"Error reading historical documents from DB for fallback: {e}")
@@ -822,19 +843,17 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                         if getattr(self, "stop_words", None)
                         else "english"
                     )
+                    # Apply sublinear (logarithmic) term-frequency scaling to dampen highly repetitive terms
                     vectorizer = TfidfVectorizer(
-                        stop_words=stop_words_list, max_features=1000
+                        stop_words=stop_words_list, max_features=1000, sublinear_tf=True
                     )
 
                     hist_texts = [ex["text"] for ex in historical_examples]
-                    target_text = " ".join(documents)[:1000]
+                    target_text = " ".join(filtered_documents)
 
-                    # Fit on all texts to get accurate representation
-                    all_texts = hist_texts + [target_text]
-                    X = vectorizer.fit_transform(all_texts)
-
-                    hist_vectors = X[:-1]
-                    target_vector = X[-1:]
+                    # Fit vocabulary and IDF weights exclusively using historical document data to prevent target-driven weight warping
+                    hist_vectors = vectorizer.fit_transform(hist_texts)
+                    target_vector = vectorizer.transform([target_text])
 
                     similarities = cosine_similarity(target_vector, hist_vectors).flatten()
 
@@ -857,6 +876,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                             "Here are some historical examples of documents and their corresponding user-corrected folder names:"
                         )
                         for ex_idx, (ex, sim) in enumerate(fallback_top_examples):
+                            # Language model prompt context safety: truncate to 500 characters
                             snippet = ex["text"][:500].replace("\n", " ").strip()
                             folder_name = ex["target_path"]
                             few_shot_lines.append(
@@ -867,7 +887,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                     logging.error(f"Error querying TF-IDF historical examples in fallback: {e}")
 
         try:
-            doc_text = " ".join(documents)[:1000]
+            doc_text = " ".join(filtered_documents)[:1000]
             if few_shot_context:
                 prompt = (
                     f"{few_shot_context}"
