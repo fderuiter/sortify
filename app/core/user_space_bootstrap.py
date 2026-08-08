@@ -177,6 +177,26 @@ def inject_bootstrap_paths():
 
 def bootstrap_binaries(force_download: bool = False) -> bool:
     """Identify host platform, resolve database encryption binaries locally, and register paths."""
+    if getattr(sys, "frozen", False):
+        if sys.platform == "win32":
+            meipass = getattr(sys, "_MEIPASS", None)
+            if meipass:
+                for p in [meipass, os.path.join(meipass, "sqlcipher3")]:
+                    if os.path.isdir(p):
+                        try:
+                            os.add_dll_directory(p)
+                        except Exception:
+                            pass
+                        if p not in os.environ.get("PATH", ""):
+                            os.environ["PATH"] = p + ";" + os.environ.get("PATH", "")
+        if verify_sqlcipher_encryption():
+            logger.info("SQLCipher verified active inside frozen PyInstaller environment.")
+            return True
+        else:
+            raise RuntimeError(
+                "SQLCipher database encryption failed to verify inside frozen package environment."
+            )
+
     bin_dir = get_bootstrap_bin_dir()
     sqlcipher3_path = bin_dir / "sqlcipher3"
 
