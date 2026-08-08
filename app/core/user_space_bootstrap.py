@@ -77,6 +77,22 @@ def inject_bootstrap_paths(platform_binaries_dir: Path = None):
             sys.path.insert(0, platform_binaries_dir_str)
 
         if sys.platform == "win32":
+            # Add PyInstaller temporary directories to DLL search path if running in a frozen bundle
+            if hasattr(sys, "_MEIPASS"):
+                try:
+                    os.add_dll_directory(sys._MEIPASS)
+                except Exception:
+                    pass
+                internal_dir = os.path.join(sys._MEIPASS, "_internal")
+                if os.path.isdir(internal_dir):
+                    try:
+                        os.add_dll_directory(internal_dir)
+                    except Exception:
+                        pass
+                    try:
+                        os.add_dll_directory(os.path.join(internal_dir, "sqlcipher3"))
+                    except Exception:
+                        pass
             try:
                 os.add_dll_directory(platform_binaries_dir_str)
             except Exception:
@@ -87,6 +103,12 @@ def inject_bootstrap_paths(platform_binaries_dir: Path = None):
                 pass
 
             paths = [platform_binaries_dir_str, str(sqlcipher3_path)]
+            if hasattr(sys, "_MEIPASS"):
+                paths.append(sys._MEIPASS)
+                internal_dir = os.path.join(sys._MEIPASS, "_internal")
+                if os.path.isdir(internal_dir):
+                    paths.append(internal_dir)
+                    paths.append(os.path.join(internal_dir, "sqlcipher3"))
             os.environ["PATH"] = ";".join(paths) + ";" + os.environ.get("PATH", "")
 
 

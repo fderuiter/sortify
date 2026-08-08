@@ -56,69 +56,49 @@ def update_binaries_and_manifest():
             copied_files.append(rel_path.as_posix())
 
     if system_platform == "win32":
-        # Ensure sqlite3.dll is copied to the binaries directory if not already copied
-        has_sqlite3_dll = any(f.lower() == "sqlite3.dll" for f in copied_files)
-        if not has_sqlite3_dll:
-            dll_src = None
-
-            # List of high-priority virtualenv directories to search
-            venv_dirs = []
-
-            # 1. VIRTUAL_ENV environment variable
-            v_env = os.environ.get("VIRTUAL_ENV")
-            if v_env:
-                venv_dirs.append(Path(v_env))
-
-            # 2. Local .venv folder in repository root
-            local_venv = Path(__file__).resolve().parent.parent / ".venv"
-            if local_venv.exists() and local_venv not in venv_dirs:
-                venv_dirs.append(local_venv)
-
-            # 3. sys.prefix (if active virtualenv)
-            if sys.prefix and Path(sys.prefix) not in venv_dirs:
-                venv_dirs.append(Path(sys.prefix))
-
-            # Check candidate locations in prioritized venv directories
-            for vd in venv_dirs:
-                for sub in [
-                    Path("Library") / "bin",
-                    Path("Scripts"),
-                    Path("Lib") / "site-packages" / "sqlcipher3",
-                ]:
-                    candidate = vd / sub / "sqlite3.dll"
-                    if candidate.exists():
-                        dll_src = candidate
+        # Ensure all required Windows DLLs (sqlite3, OpenSSL) are copied to the binaries directory if not already copied
+        dll_patterns = ["libcrypto", "libssl", "sqlcipher", "libsqlcipher", "sqlite3"]
+        
+        # We will build a list of missing patterns to search for
+        for pat in dll_patterns:
+            # Check if we already have a copied file containing this pattern (case-insensitive)
+            already_copied = any(pat in f.lower() for f in copied_files)
+            if not already_copied:
+                # We need to search for a DLL matching this pattern
+                # Let's find all matching DLLs in the prioritized search paths
+                dll_srcs = []
+                
+                # List of search paths
+                venv_dirs = []
+                v_env = os.environ.get("VIRTUAL_ENV")
+                if v_env:
+                    venv_dirs.append(Path(v_env))
+                local_venv = Path(__file__).resolve().parent.parent / ".venv"
+                if local_venv.exists() and local_venv not in venv_dirs:
+                    venv_dirs.append(local_venv)
+                if sys.prefix and Path(sys.prefix) not in venv_dirs:
+                    venv_dirs.append(Path(sys.prefix))
+                
+                found_for_pattern = False
+                
+                # Check candidate locations in prioritized venv directories
+                for vd in venv_dirs:
+                    for sub in [
+                        Path("Library") / "bin",
+                        Path("Scripts"),
+                        Path("Lib") / "site-packages" / "sqlcipher3",
+                    ]:
+                        candidate_dir = vd / sub
+                        if candidate_dir.exists():
+                            for f in os.listdir(candidate_dir):
+                                if f.lower().endswith(".dll") and pat in f.lower():
+                                    dll_srcs.append(candidate_dir / f)
+                                    found_for_pattern = True
+                    if found_for_pattern:
                         break
-                if dll_src:
-                    break
-
-                # If not found in candidate paths, walk the venv directory recursively
-                for root, dirs, files in os.walk(vd):
-                    if any(
-                        p in root.lower()
-                        for p in (
-                            "site-packages/torch",
-                            "site-packages/easyocr",
-                            "site-packages/scipy",
-                        )
-                    ):
-                        continue
-                    for file in files:
-                        if file.lower() == "sqlite3.dll":
-                            dll_src = Path(root) / file
-                            break
-                    if dll_src:
-                        break
-                if dll_src:
-                    break
-
-            # 4. Search sys.base_prefix as a fallback if different
-            if not dll_src and sys.base_prefix and sys.base_prefix != sys.prefix:
-                candidate = Path(sys.base_prefix) / "Library" / "bin" / "sqlite3.dll"
-                if candidate.exists():
-                    dll_src = candidate
-                else:
-                    for root, dirs, files in os.walk(sys.base_prefix):
+                        
+                    # If not found in candidate paths, walk the venv directory recursively
+                    for root, dirs, files in os.walk(vd):
                         if any(
                             p in root.lower()
                             for p in (
@@ -129,42 +109,83 @@ def update_binaries_and_manifest():
                         ):
                             continue
                         for file in files:
-                            if file.lower() == "sqlite3.dll":
-                                dll_src = Path(root) / file
+                            if file.lower().endswith(".dll") and pat in file.lower():
+                                dll_srcs.append(Path(root) / file)
+                                found_for_pattern = True
+                        if found_for_pattern:
+                            break
+                    if found_for_pattern:
+                        break
+                        
+                # Search sys.base_prefix as a fallback if different
+                if not found_for_pattern and sys.base_prefix and sys.base_prefix != sys.prefix:
+                    for sub in [Path("Library") / "bin", Path("DLLs"), Path("Scripts")]:
+                        candidate_dir = Path(sys.base_prefix) / sub
+                        if candidate_dir.exists():
+                            for f in os.listdir(candidate_dir):
+                                if f.lower().endswith(".dll") and pat in f.lower():
+                                    dll_srcs.append(candidate_dir / f)
+                                    found_for_pattern = True
+                    if not found_for_pattern:
+                        for root, dirs, files in os.walk(sys.base_prefix):
+                            if any(
+                                p in root.lower()
+                                for p in (
+                                    "site-packages/torch",
+                                    "site-packages/easyocr",
+                                    "site-packages/scipy",
+                                )
+                            ):
+                                continue
+                            for file in files:
+                                if file.lower().endswith(".dll") and pat in file.lower():
+                                    dll_srcs.append(Path(root) / file)
+                                    found_for_pattern = True
+                            if found_for_pattern:
                                 break
-                        if dll_src:
-                            break
-
-            # 5. Search directory of python executable
-            if not dll_src and sys.executable:
-                exe_dir = os.path.dirname(sys.executable)
-                if exe_dir:
-                    candidate = Path(exe_dir) / "Library" / "bin" / "sqlite3.dll"
-                    if candidate.exists():
-                        dll_src = candidate
-                    else:
-                        candidate2 = Path(exe_dir) / "sqlite3.dll"
-                        if candidate2.exists():
-                            dll_src = candidate2
-
-            # 6. Search system PATH as a fallback (excluding System32 and Windows)
-            if not dll_src:
-                for path_dir in os.environ.get("PATH", "").split(os.pathsep):
-                    if path_dir and os.path.isdir(path_dir):
-                        dir_lower = path_dir.lower()
-                        if "system32" in dir_lower or "windows" in dir_lower:
-                            continue
-                        candidate = Path(path_dir) / "sqlite3.dll"
-                        if candidate.exists():
-                            dll_src = candidate
-                            break
-            if dll_src and dll_src.exists():
-                dest_path = target_dir / "sqlite3.dll"
-                shutil.copy2(dll_src, dest_path)
-                copied_files.append("sqlite3.dll")
-                print(
-                    f"Manually copied required Windows dependency sqlite3.dll from {dll_src} to {dest_path}"
-                )
+                                
+                # Search directory of python executable
+                if not found_for_pattern and sys.executable:
+                    exe_dir = os.path.dirname(sys.executable)
+                    if exe_dir:
+                        for sub in [Path("Library") / "bin", Path("DLLs")]:
+                            candidate_dir = Path(exe_dir) / sub
+                            if candidate_dir.exists():
+                                for f in os.listdir(candidate_dir):
+                                    if f.lower().endswith(".dll") and pat in f.lower():
+                                        dll_srcs.append(candidate_dir / f)
+                                        found_for_pattern = True
+                        if not found_for_pattern:
+                            for f in os.listdir(exe_dir):
+                                if f.lower().endswith(".dll") and pat in f.lower():
+                                    dll_srcs.append(Path(exe_dir) / f)
+                                    found_for_pattern = True
+                                    
+                # Search system PATH as a fallback (excluding System32 and Windows)
+                if not found_for_pattern:
+                    for path_dir in os.environ.get("PATH", "").split(os.pathsep):
+                        if path_dir and os.path.isdir(path_dir):
+                            dir_lower = path_dir.lower()
+                            if "system32" in dir_lower or "windows" in dir_lower:
+                                continue
+                            try:
+                                for f in os.listdir(path_dir):
+                                    if f.lower().endswith(".dll") and pat in f.lower():
+                                        dll_srcs.append(Path(path_dir) / f)
+                                        found_for_pattern = True
+                            except Exception:
+                                continue
+                            if found_for_pattern:
+                                break
+                                
+                for src in dll_srcs:
+                    if src.exists():
+                        dest_path = target_dir / src.name
+                        shutil.copy2(src, dest_path)
+                        copied_files.append(src.name)
+                        print(
+                            f"Manually copied required Windows dependency {src.name} from {src} to {dest_path}"
+                        )
 
     manifest_path = Path("app") / "binaries" / "manifest.json"
     if manifest_path.exists():
