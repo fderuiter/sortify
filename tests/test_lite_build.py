@@ -244,3 +244,49 @@ def test_spec_file_partitioning():
             normalized_expected_datas.issubset(actual_datas)
             or normalized_expected_datas == actual_datas
         )
+
+
+def test_is_standard_sqlite_binary():
+    """Verify that is_standard_sqlite_binary correctly identifies and filters standard sqlite binaries while keeping the custom ones."""
+    spec_path = os.path.join(
+        os.path.dirname(os.path.dirname(__file__)), "smart-autosorter.spec"
+    )
+    with open(spec_path, "r", encoding="utf-8") as f:
+        spec_content = f.read()
+
+    mock_globals = {
+        "Analysis": MagicMock(),
+        "PYZ": MagicMock(),
+        "EXE": MagicMock(),
+        "COLLECT": MagicMock(),
+        "__file__": spec_path,
+    }
+
+    mock_hooks = MagicMock()
+    mock_hooks.collect_all.return_value = ([], [], [])
+
+    with patch.dict(
+        sys.modules,
+        {
+            "PyInstaller": MagicMock(),
+            "PyInstaller.utils": MagicMock(),
+            "PyInstaller.utils.hooks": mock_hooks,
+        },
+    ):
+        # Execute spec file to load its defined functions into mock_globals
+        exec(spec_content, mock_globals)
+        
+    is_standard_sqlite_binary = mock_globals["is_standard_sqlite_binary"]
+
+    # These should be identified as standard/non-cryptographic and return True
+    assert is_standard_sqlite_binary("sqlite3.dll", "C:\\Python312\\DLLs\\sqlite3.dll") is True
+    assert is_standard_sqlite_binary("_sqlite3.pyd", "C:\\Python312\\DLLs\\_sqlite3.pyd") is True
+    assert is_standard_sqlite_binary("sqlite3", "/usr/lib/libsqlite3.so") is True
+
+    # These should NOT be identified as standard (because they come from sqlcipher3 or app/binaries) and return False
+    assert is_standard_sqlite_binary("sqlite3.dll", "C:\\env\\.venv\\Lib\\site-packages\\sqlcipher3\\sqlite3.dll") is False
+    assert is_standard_sqlite_binary("_sqlite3.pyd", "C:\\env\\.venv\\Lib\\site-packages\\sqlcipher3\\_sqlite3.pyd") is False
+    assert is_standard_sqlite_binary("sqlite3.dll", "C:\\env\\app\\binaries\\windows\\sqlite3.dll") is False
+    assert is_standard_sqlite_binary("some_other_library.dll", "C:\\Python312\\DLLs\\some_other_library.dll") is False
+
+
