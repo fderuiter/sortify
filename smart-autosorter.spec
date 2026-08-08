@@ -324,7 +324,7 @@ for x in a.binaries:
         continue
         
     # Redirect standard sqlite3.dll to our custom one instead of discarding it to satisfy pefile/dependency requirements
-    if dest_lower == "sqlite3.dll" and custom_sqlite3_dll:
+    if dest_lower.endswith("sqlite3.dll") and custom_sqlite3_dll:
         if not ('sqlcipher3' in src_lower or 'app/binaries' in src_lower or 'app_binaries' in src_lower):
             print(f"Redirecting standard sqlite3.dll dependency {src_path} -> custom {custom_sqlite3_dll}")
             new_binaries.append((dest_name, custom_sqlite3_dll, x[2]))
