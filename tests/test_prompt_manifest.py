@@ -234,6 +234,17 @@ def test_hash_line_ending_normalization(tmp_path):
     assert compute_sha256(file_lf) == compute_sha256(file_crlf)
 
 
+def test_parse_utf8_bom(tmp_path):
+    """Test that files starting with a UTF-8 BOM are decoded correctly."""
+    content = "\ufeff---\nmodel: gpt-4\ntemperature: 0.7\n---\nThis is the prompt body."
+    file_path = tmp_path / "bom_agent.md"
+    file_path.write_text(content, encoding="utf-8", newline="\n")
+
+    frontmatter, body = parse_and_validate_prompt(file_path)
+    assert frontmatter == {"model": "gpt-4", "temperature": 0.7}
+    assert body == "This is the prompt body."
+
+
 def test_end_to_end_generate_and_verify(tmp_path, monkeypatch):
     """Test full generate and verify cycle under happy path and failure paths."""
     # Setup temporary agents dir and manifest path
