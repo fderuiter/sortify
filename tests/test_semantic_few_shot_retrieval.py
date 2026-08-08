@@ -1,19 +1,15 @@
 import shutil
 import tempfile
 import time
-import json
-import traceback
 from pathlib import Path
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, PropertyMock, patch
 
 import pytest
-import numpy as np
 
-from app.core.analyzer import IncrementalAnalyzer
 from app.core.analyzer_strategies import GenerativeNamingStrategy
 from app.core.db import Database
 from app.core.db_worker import DBWorker
-from app.core.semantic_embeddings import SemanticEmbeddingManager, ModelProperties
+from app.core.semantic_embeddings import ModelProperties, SemanticEmbeddingManager
 
 
 @pytest.fixture
