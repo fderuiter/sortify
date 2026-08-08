@@ -5,10 +5,8 @@ a writable folder in the user's home directory, dynamically registers search
 paths, and verifies database encryption.
 """
 
-import importlib.util
 import logging
 import os
-import shutil
 import sys
 from pathlib import Path
 
@@ -120,31 +118,43 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
     # 3. Read and verify manifest
     manifest_path = local_binaries_root / "manifest.json"
     if not manifest_path.exists():
-        raise RuntimeError("Startup validation failed: local binaries manifest is missing.")
+        raise RuntimeError(
+            "Startup validation failed: local binaries manifest is missing."
+        )
 
     try:
         import json
+
         with open(manifest_path, "r", encoding="utf-8") as f:
             manifest = json.load(f)
     except Exception as e:
-        raise RuntimeError(f"Startup validation failed: manifest could not be read. Error: {e}")
+        raise RuntimeError(
+            f"Startup validation failed: manifest could not be read. Error: {e}"
+        )
 
     # 4. Verify all files for this platform are present and unmodified
     platform_binaries_dir = local_binaries_root / platform_key
     if not platform_binaries_dir.exists():
-        raise RuntimeError(f"Startup validation failed: local precompiled libraries for {platform_key} are missing.")
+        raise RuntimeError(
+            f"Startup validation failed: local precompiled libraries for {platform_key} are missing."
+        )
 
     expected_files = manifest.get(platform_key, {})
     if not expected_files:
-        raise RuntimeError(f"Startup validation failed: manifest has no entries for platform {platform_key}.")
+        raise RuntimeError(
+            f"Startup validation failed: manifest has no entries for platform {platform_key}."
+        )
 
     for rel_path_str, expected_hash in expected_files.items():
         file_path = platform_binaries_dir / rel_path_str
         if not file_path.exists():
-            raise RuntimeError(f"Startup validation failed: local packaged binary file {rel_path_str} is missing.")
+            raise RuntimeError(
+                f"Startup validation failed: local packaged binary file {rel_path_str} is missing."
+            )
 
         # Calculate SHA256 of the file
         import hashlib
+
         hasher = hashlib.sha256()
         try:
             with open(file_path, "rb") as fh:
@@ -152,16 +162,22 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
                     hasher.update(chunk)
             actual_hash = hasher.hexdigest()
         except Exception as e:
-            raise RuntimeError(f"Startup validation failed: could not verify integrity of {rel_path_str}. Error: {e}")
+            raise RuntimeError(
+                f"Startup validation failed: could not verify integrity of {rel_path_str}. Error: {e}"
+            )
 
         if actual_hash != expected_hash:
-            raise RuntimeError(f"Startup validation failed: local packaged binary file {rel_path_str} has been modified.")
+            raise RuntimeError(
+                f"Startup validation failed: local packaged binary file {rel_path_str} has been modified."
+            )
 
     # 5. Inject paths directly from the installation directory
     inject_bootstrap_paths(platform_binaries_dir)
 
     # 6. Clear sys.modules of sqlcipher3 to force reload from the newly injected paths
-    if "sqlcipher3" in sys.modules or any(k.startswith("sqlcipher3.") for k in sys.modules):
+    if "sqlcipher3" in sys.modules or any(
+        k.startswith("sqlcipher3.") for k in sys.modules
+    ):
         for k in list(sys.modules.keys()):
             if k == "sqlcipher3" or k.startswith("sqlcipher3."):
                 sys.modules.pop(k, None)
