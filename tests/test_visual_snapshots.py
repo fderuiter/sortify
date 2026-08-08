@@ -8,7 +8,13 @@ import time
 
 import pytest
 from PIL import Image, ImageChops, ImageDraw
-from playwright.sync_api import sync_playwright
+
+try:
+    from playwright.sync_api import sync_playwright
+
+    PLAYWRIGHT_AVAILABLE = True
+except ImportError:
+    PLAYWRIGHT_AVAILABLE = False
 
 SNAPSHOT_DIR = os.path.join(os.path.dirname(__file__), "snapshots")
 
@@ -164,6 +170,7 @@ def assert_visual_snapshot(snapshot_name, actual_image_path):
             os.remove(diff_path)
 
 
+@pytest.mark.skipif(not PLAYWRIGHT_AVAILABLE, reason="playwright is not installed")
 def test_visual_snapshots(nicegui_server):
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
