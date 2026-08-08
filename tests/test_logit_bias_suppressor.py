@@ -187,7 +187,10 @@ def test_fallback_to_keywords():
 
 
 def test_cpu_thread_limits():
-    with patch("torch.set_num_threads") as mock_set_threads:
+    import sys
+
+    mock_torch = MagicMock()
+    with patch.dict(sys.modules, {"torch": mock_torch}):
         strategy = GenerativeNamingStrategy()
         strategy.generator = MagicMock()
         strategy.task = "text-generation"
@@ -196,4 +199,4 @@ def test_cpu_thread_limits():
 
         strategy._get_cluster_keywords(["doc.txt"])
         # Verify that we set torch threads to 2 during generation
-        mock_set_threads.assert_any_call(2)
+        mock_torch.set_num_threads.assert_any_call(2)
