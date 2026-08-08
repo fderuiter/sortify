@@ -24,7 +24,7 @@ This is the prompt body.
 With multiple lines.
 """
     file_path = tmp_path / "valid_agent.md"
-    file_path.write_text(content, encoding="utf-8")
+    file_path.write_text(content, encoding="utf-8", newline="")
 
     frontmatter, body = parse_and_validate_prompt(file_path)
 
@@ -36,21 +36,21 @@ def test_parse_valid_frontmatter_partial(tmp_path):
     """Test parsing a valid prompt with only model or only temperature."""
     # Only model
     file_path_1 = tmp_path / "model_only.md"
-    file_path_1.write_text("---\nmodel: gpt-3.5-turbo\n---\nBody text.", encoding="utf-8")
+    file_path_1.write_text("---\nmodel: gpt-3.5-turbo\n---\nBody text.", encoding="utf-8", newline="")
     fm1, body1 = parse_and_validate_prompt(file_path_1)
     assert fm1 == {"model": "gpt-3.5-turbo"}
     assert body1 == "Body text."
 
     # Only temperature (float)
     file_path_2 = tmp_path / "temp_float.md"
-    file_path_2.write_text("---\ntemperature: 1.5\n---\nBody text.", encoding="utf-8")
+    file_path_2.write_text("---\ntemperature: 1.5\n---\nBody text.", encoding="utf-8", newline="")
     fm2, body2 = parse_and_validate_prompt(file_path_2)
     assert fm2 == {"temperature": 1.5}
     assert body2 == "Body text."
 
     # Only temperature (int)
     file_path_3 = tmp_path / "temp_int.md"
-    file_path_3.write_text("---\ntemperature: 1\n---\nBody text.", encoding="utf-8")
+    file_path_3.write_text("---\ntemperature: 1\n---\nBody text.", encoding="utf-8", newline="")
     fm3, body3 = parse_and_validate_prompt(file_path_3)
     assert fm3 == {"temperature": 1}
     assert body3 == "Body text."
@@ -59,7 +59,7 @@ def test_parse_valid_frontmatter_partial(tmp_path):
 def test_parse_empty_frontmatter(tmp_path):
     """Test parsing a prompt with empty frontmatter block."""
     file_path = tmp_path / "empty_fm.md"
-    file_path.write_text("---\n---\nBody text.", encoding="utf-8")
+    file_path.write_text("---\n---\nBody text.", encoding="utf-8", newline="")
     fm, body = parse_and_validate_prompt(file_path)
     assert fm == {}
     assert body == "Body text."
@@ -75,7 +75,7 @@ invalid_key: true
 Body text.
 """
     file_path = tmp_path / "invalid_key.md"
-    file_path.write_text(content, encoding="utf-8")
+    file_path.write_text(content, encoding="utf-8", newline="")
 
     with pytest.raises(ValueError) as excinfo:
         parse_and_validate_prompt(file_path)
@@ -90,7 +90,7 @@ model: 12345
 Body text.
 """
     file_path = tmp_path / "invalid_model.md"
-    file_path.write_text(content, encoding="utf-8")
+    file_path.write_text(content, encoding="utf-8", newline="")
 
     with pytest.raises(TypeError) as excinfo:
         parse_and_validate_prompt(file_path)
@@ -101,14 +101,14 @@ def test_parse_invalid_temp_type(tmp_path):
     """Test that invalid type for temperature (e.g. string or boolean) raises a TypeError."""
     # String
     file_path_1 = tmp_path / "invalid_temp_str.md"
-    file_path_1.write_text("---\ntemperature: '0.7'\n---\nBody.", encoding="utf-8")
+    file_path_1.write_text("---\ntemperature: '0.7'\n---\nBody.", encoding="utf-8", newline="")
     with pytest.raises(TypeError) as excinfo:
         parse_and_validate_prompt(file_path_1)
     assert "Invalid type for key 'temperature'" in str(excinfo.value)
 
     # Boolean (since True is an instance of int in Python, check explicitly)
     file_path_2 = tmp_path / "invalid_temp_bool.md"
-    file_path_2.write_text("---\ntemperature: true\n---\nBody.", encoding="utf-8")
+    file_path_2.write_text("---\ntemperature: true\n---\nBody.", encoding="utf-8", newline="")
     with pytest.raises(TypeError) as excinfo:
         parse_and_validate_prompt(file_path_2)
     assert "Invalid type for key 'temperature'" in str(excinfo.value)
@@ -118,14 +118,14 @@ def test_parse_out_of_bounds_temperature(tmp_path):
     """Test that temperature values out of [0.0, 2.0] bounds raise a ValueError."""
     # Too low
     file_path_1 = tmp_path / "temp_too_low.md"
-    file_path_1.write_text("---\ntemperature: -0.1\n---\nBody.", encoding="utf-8")
+    file_path_1.write_text("---\ntemperature: -0.1\n---\nBody.", encoding="utf-8", newline="")
     with pytest.raises(ValueError) as excinfo:
         parse_and_validate_prompt(file_path_1)
     assert "out of bounds [0.0, 2.0]" in str(excinfo.value)
 
     # Too high
     file_path_2 = tmp_path / "temp_too_high.md"
-    file_path_2.write_text("---\ntemperature: 2.1\n---\nBody.", encoding="utf-8")
+    file_path_2.write_text("---\ntemperature: 2.1\n---\nBody.", encoding="utf-8", newline="")
     with pytest.raises(ValueError) as excinfo:
         parse_and_validate_prompt(file_path_2)
     assert "out of bounds [0.0, 2.0]" in str(excinfo.value)
@@ -138,7 +138,7 @@ This is standard markdown.
 No frontmatter at all.
 """
     file_path = tmp_path / "legacy.md"
-    file_path.write_text(content, encoding="utf-8")
+    file_path.write_text(content, encoding="utf-8", newline="")
 
     frontmatter, body = parse_and_validate_prompt(file_path)
     assert frontmatter == {}
@@ -154,7 +154,7 @@ temperature: 0.7
 This is standard markdown.
 """
     file_path = tmp_path / "unclosed.md"
-    file_path.write_text(content, encoding="utf-8")
+    file_path.write_text(content, encoding="utf-8", newline="")
 
     frontmatter, body = parse_and_validate_prompt(file_path)
     assert frontmatter == {}
@@ -172,7 +172,7 @@ temperature: 0.5
 Hello World
 """
     file_path = tmp_path / "agent.md"
-    file_path.write_text(content_v1, encoding="utf-8")
+    file_path.write_text(content_v1, encoding="utf-8", newline="")
     hash_v1 = compute_sha256(file_path)
 
     # Change only frontmatter parameters
@@ -182,7 +182,7 @@ temperature: 1.2
 ---
 Hello World
 """
-    file_path.write_text(content_v2, encoding="utf-8")
+    file_path.write_text(content_v2, encoding="utf-8", newline="")
     hash_v2 = compute_sha256(file_path)
 
     # Hashes must be identical
@@ -195,7 +195,7 @@ temperature: 1.2
 ---
 Hello World!
 """
-    file_path.write_text(content_v3, encoding="utf-8")
+    file_path.write_text(content_v3, encoding="utf-8", newline="")
     hash_v3 = compute_sha256(file_path)
 
     # Hash must be different
@@ -215,10 +215,10 @@ model: gpt-4
 Line 1\r\nLine 2\r\nLine 3\r\n"""
 
     file_lf = tmp_path / "lf.md"
-    file_lf.write_text(content_lf, encoding="utf-8")
+    file_lf.write_text(content_lf, encoding="utf-8", newline="")
 
     file_crlf = tmp_path / "crlf.md"
-    file_crlf.write_text(content_crlf, encoding="utf-8")
+    file_crlf.write_text(content_crlf, encoding="utf-8", newline="")
 
     assert compute_sha256(file_lf) == compute_sha256(file_crlf)
 
@@ -235,10 +235,10 @@ def test_end_to_end_generate_and_verify(tmp_path, monkeypatch):
 
     # Create two agent prompts
     agent1 = agents_dir / "agent1.md"
-    agent1.write_text("---\nmodel: gpt-4\ntemperature: 0.5\n---\nHello from Agent 1\n", encoding="utf-8")
+    agent1.write_text("---\nmodel: gpt-4\ntemperature: 0.5\n---\nHello from Agent 1\n", encoding="utf-8", newline="")
 
     agent2 = agents_dir / "agent2.md"
-    agent2.write_text("---\nmodel: gpt-3.5-turbo\ntemperature: 1.0\n---\nHello from Agent 2\n", encoding="utf-8")
+    agent2.write_text("---\nmodel: gpt-3.5-turbo\ntemperature: 1.0\n---\nHello from Agent 2\n", encoding="utf-8", newline="")
 
     # Generate manifest
     generate()
@@ -254,11 +254,11 @@ def test_end_to_end_generate_and_verify(tmp_path, monkeypatch):
     verify()  # Should complete without error/exit
 
     # Update only frontmatter, verification should still succeed!
-    agent1.write_text("---\nmodel: gpt-4-turbo\ntemperature: 1.5\n---\nHello from Agent 1\n", encoding="utf-8")
+    agent1.write_text("---\nmodel: gpt-4-turbo\ntemperature: 1.5\n---\nHello from Agent 1\n", encoding="utf-8", newline="")
     verify()  # Should succeed!
 
     # Update body of agent1, verification should fail
-    agent1.write_text("---\nmodel: gpt-4-turbo\ntemperature: 1.5\n---\nHello from Agent 1 - Modified!\n", encoding="utf-8")
+    agent1.write_text("---\nmodel: gpt-4-turbo\ntemperature: 1.5\n---\nHello from Agent 1 - Modified!\n", encoding="utf-8", newline="")
     with pytest.raises(SystemExit) as excinfo:
         verify()
     assert excinfo.value.code == 1
@@ -274,7 +274,7 @@ def test_verify_with_deleted_file(tmp_path, monkeypatch):
     monkeypatch.setattr("scripts.prompt_manifest.MANIFEST_PATH", manifest_path)
 
     agent1 = agents_dir / "agent1.md"
-    agent1.write_text("Hello 1", encoding="utf-8")
+    agent1.write_text("Hello 1", encoding="utf-8", newline="")
 
     generate()
     verify()  # Passes
@@ -297,13 +297,13 @@ def test_verify_with_missing_manifest_file(tmp_path, monkeypatch):
     monkeypatch.setattr("scripts.prompt_manifest.MANIFEST_PATH", manifest_path)
 
     agent1 = agents_dir / "agent1.md"
-    agent1.write_text("Hello 1", encoding="utf-8")
+    agent1.write_text("Hello 1", encoding="utf-8", newline="")
 
     generate()
 
     # Create agent2.md after generation
     agent2 = agents_dir / "agent2.md"
-    agent2.write_text("Hello 2", encoding="utf-8")
+    agent2.write_text("Hello 2", encoding="utf-8", newline="")
 
     with pytest.raises(SystemExit) as excinfo:
         verify()
@@ -322,7 +322,7 @@ def test_main_cli(tmp_path, monkeypatch):
     monkeypatch.setattr("scripts.prompt_manifest.MANIFEST_PATH", manifest_path)
 
     agent1 = agents_dir / "agent1.md"
-    agent1.write_text("Hello 1", encoding="utf-8")
+    agent1.write_text("Hello 1", encoding="utf-8", newline="")
 
     # Mock command line arguments for generate
     monkeypatch.setattr("sys.argv", ["prompt_manifest.py", "generate"])
