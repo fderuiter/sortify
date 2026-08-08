@@ -209,7 +209,22 @@ def is_prunable_asset(name):
         
     return False
 
-a.binaries = [x for x in a.binaries if not is_tcl_tk_asset(x[0]) and not is_prunable_asset(x[0])]
+
+# Prevent any standard non-cryptographic sqlite binaries from being bundled
+def is_standard_sqlite_binary(dest_name, src_path):
+    dest_lower = dest_name.lower().replace('\\', '/')
+    src_lower = src_path.lower().replace('\\', '/')
+    
+    # Identify any standard sqlite3 binary files
+    if any(term in dest_lower for term in ('sqlite3', '_sqlite3')):
+        # Allow it only if it originates from sqlcipher3 or app/binaries
+        if 'sqlcipher3' in src_lower or 'app/binaries' in src_lower or 'app_binaries' in src_lower:
+            return False
+        return True
+    return False
+
+
+a.binaries = [x for x in a.binaries if not is_tcl_tk_asset(x[0]) and not is_prunable_asset(x[0]) and not is_standard_sqlite_binary(x[0], x[1])]
 a.datas = [x for x in a.datas if not is_tcl_tk_asset(x[0]) and not is_prunable_asset(x[0])]
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
