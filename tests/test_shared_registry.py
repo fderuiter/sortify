@@ -28,47 +28,56 @@ def test_shared_model_registry_defer_loading():
     assert "easyocr" not in registry._models
 
 
-@patch("transformers.AutoTokenizer.from_pretrained")
-@patch("transformers.AutoModelForSeq2SeqLM.from_pretrained")
-@patch("transformers.pipelines.pipeline")
-@patch("torch.quantization.quantize_dynamic")
-def test_shared_model_registry_integrity_check(
-    mock_quantize, mock_pipeline, mock_model, mock_tokenizer, tmp_path
-):
+def test_shared_model_registry_integrity_check(tmp_path):
     """Test SHA-256 integrity checks on loaded models."""
-    SharedModelRegistry._instance = None
-    registry = SharedModelRegistry.get_instance()
+    import sys
+    from unittest.mock import MagicMock, patch
 
-    model_dir = tmp_path / "dummy_model"
-    model_dir.mkdir()
-    config_file = model_dir / "config.json"
-    config_content = b'{"model_type": "t5"}'
-    config_file.write_bytes(config_content)
+    mock_tokenizer = MagicMock()
+    mock_model = MagicMock()
+    mock_pipeline = MagicMock()
+    mock_quantize = MagicMock()
 
-    # Compute expected SHA-256
-    config_hash = hashlib.sha256(config_content).hexdigest()
+    mock_transformers = MagicMock()
+    mock_transformers.AutoTokenizer.from_pretrained.return_value = mock_tokenizer
+    mock_transformers.AutoModelForSeq2SeqLM.from_pretrained.return_value = mock_model
+    mock_transformers.pipeline.return_value = mock_pipeline
 
-    # Case 1: Register expected hash, matches actual -> should load successfully
-    registry.register_expected_hashes("generative_naming", {"config.json": config_hash})
+    mock_torch = MagicMock()
+    mock_torch.quantization.quantize_dynamic.return_value = mock_quantize
 
-    mock_tokenizer.return_value = MagicMock()
-    mock_model.return_value = MagicMock()
-    mock_pipeline.return_value = MagicMock()
+    with (
+        patch.dict(sys.modules, {"transformers": mock_transformers, "torch": mock_torch}),
+    ):
+        SharedModelRegistry._instance = None
+        registry = SharedModelRegistry.get_instance()
 
-    gen, task, tok = registry.get_generative_model(str(model_dir))
-    assert gen is not None
-    # Verify we cached the model in registry
-    assert "generative_naming" in registry._models
+        model_dir = tmp_path / "dummy_model"
+        model_dir.mkdir()
+        config_file = model_dir / "config.json"
+        config_content = b'{"model_type": "t5"}'
+        config_file.write_bytes(config_content)
 
-    # Case 2: Register expected hash, mismatch -> should raise ValueError and prevent execution
-    SharedModelRegistry._instance = None
-    registry = SharedModelRegistry.get_instance()
-    registry.register_expected_hashes(
-        "generative_naming", {"config.json": "wrong_hash"}
-    )
+        # Compute expected SHA-256
+        config_hash = hashlib.sha256(config_content).hexdigest()
 
-    with pytest.raises(ValueError, match="Integrity check failed"):
-        registry.get_generative_model(str(model_dir))
+        # Case 1: Register expected hash, matches actual -> should load successfully
+        registry.register_expected_hashes("generative_naming", {"config.json": config_hash})
+
+        gen, task, tok = registry.get_generative_model(str(model_dir))
+        assert gen is not None
+        # Verify we cached the model in registry
+        assert "generative_naming" in registry._models
+
+        # Case 2: Register expected hash, mismatch -> should raise ValueError and prevent execution
+        SharedModelRegistry._instance = None
+        registry = SharedModelRegistry.get_instance()
+        registry.register_expected_hashes(
+            "generative_naming", {"config.json": "wrong_hash"}
+        )
+
+        with pytest.raises(ValueError, match="Integrity check failed"):
+            registry.get_generative_model(str(model_dir))
 
 
 def test_shared_worker_pool_singleton():
