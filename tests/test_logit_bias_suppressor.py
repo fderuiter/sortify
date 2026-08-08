@@ -1,7 +1,5 @@
 from unittest.mock import MagicMock, patch
 
-import torch
-
 from app.core.analyzer_strategies import (
     GenerativeNamingStrategy,
     NegativeLogitBiasProcessor,
@@ -42,9 +40,18 @@ def test_negative_logit_bias_processor():
     processor = NegativeLogitBiasProcessor(token_biases)
 
     # 2D scores tensor (batch_size=2, vocab_size=20)
-    scores_2d = torch.zeros((2, 20))
-    scores_2d[0, 5] = 10.0
-    scores_2d[1, 15] = 10.0
+    try:
+        import torch
+
+        scores_2d = torch.zeros((2, 20))
+        scores_2d[0, 5] = 10.0
+        scores_2d[1, 15] = 10.0
+    except (ImportError, Exception):
+        import numpy as np
+
+        scores_2d = np.zeros((2, 20))
+        scores_2d[0, 5] = 10.0
+        scores_2d[1, 15] = 10.0
 
     processed_2d = processor(None, scores_2d)
     assert processed_2d[0, 5] == -90.0
@@ -53,8 +60,17 @@ def test_negative_logit_bias_processor():
     assert processed_2d[1, 0] == 0.0
 
     # 1D scores tensor
-    scores_1d = torch.zeros(20)
-    scores_1d[5] = 10.0
+    try:
+        import torch
+
+        scores_1d = torch.zeros(20)
+        scores_1d[5] = 10.0
+    except (ImportError, Exception):
+        import numpy as np
+
+        scores_1d = np.zeros(20)
+        scores_1d[5] = 10.0
+
     processed_1d = processor(None, scores_1d)
     assert processed_1d[5] == -90.0
     assert processed_1d[0] == 0.0
