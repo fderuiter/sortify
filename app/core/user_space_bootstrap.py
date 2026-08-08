@@ -68,6 +68,7 @@ def verify_sqlcipher_encryption() -> bool:
 def validate_local_binaries(local_dir: Path) -> bool:
     """Validate that local directory contains compatible binaries for the host platform and architecture."""
     import platform
+
     system = sys.platform
     machine = platform.machine().lower()
 
@@ -128,11 +129,15 @@ def validate_local_binaries(local_dir: Path) -> bool:
 
         if arch_compat:
             compat_found = True
-            logger.info(f"Validated compatible local binary: {path} for platform {system} ({machine})")
+            logger.info(
+                f"Validated compatible local binary: {path} for platform {system} ({machine})"
+            )
             break
 
     if not compat_found:
-        logger.error(f"None of the found native binaries in {local_dir} are compatible with the current platform {system} ({machine})")
+        logger.error(
+            f"None of the found native binaries in {local_dir} are compatible with the current platform {system} ({machine})"
+        )
         return False
 
     return True
@@ -167,13 +172,17 @@ def inject_bootstrap_paths():
             search_dirs = [
                 os.path.abspath(sys.prefix) if sys.prefix else "",
                 os.path.abspath(sys.base_prefix) if sys.base_prefix else "",
-                os.path.abspath(os.path.dirname(sys.executable)) if sys.executable else "",
+                os.path.abspath(os.path.dirname(sys.executable))
+                if sys.executable
+                else "",
             ]
             search_dirs = [sd for sd in search_dirs if sd]
             for sd in list(search_dirs):
                 if sd:
                     for sub in ["Library/bin", "DLLs", "Scripts"]:
-                        sub_dir = os.path.abspath(os.path.join(sd, sub.replace("/", os.sep)))
+                        sub_dir = os.path.abspath(
+                            os.path.join(sd, sub.replace("/", os.sep))
+                        )
                         if os.path.isdir(sub_dir) and sub_dir not in search_dirs:
                             search_dirs.append(sub_dir)
             for p in sys.path:
@@ -195,7 +204,9 @@ def inject_bootstrap_paths():
                 if p not in unique_paths and os.path.isdir(p):
                     unique_paths.append(p)
 
-            os.environ["PATH"] = ";".join(unique_paths) + ";" + os.environ.get("PATH", "")
+            os.environ["PATH"] = (
+                ";".join(unique_paths) + ";" + os.environ.get("PATH", "")
+            )
 
 
 def bootstrap_binaries(force_download: bool = False) -> bool:
@@ -226,7 +237,9 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
                     sys.modules.pop(k, None)
 
         if verify_sqlcipher_encryption():
-            logger.info("SQLCipher verified active inside frozen PyInstaller environment.")
+            logger.info(
+                "SQLCipher verified active inside frozen PyInstaller environment."
+            )
             return True
         else:
             raise RuntimeError(
@@ -265,7 +278,9 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
     logger.info(f"Identifying host platform: {system_platform}")
 
     # 2. Resolve required database encryption binary dependencies exclusively from local installation directories
-    logger.info("Resolving database encryption binary dependencies exclusively from local installation directories...")
+    logger.info(
+        "Resolving database encryption binary dependencies exclusively from local installation directories..."
+    )
     spec = importlib.util.find_spec("sqlcipher3")
     if spec and spec.submodule_search_locations:
         local_sqlcipher3_dir = Path(spec.submodule_search_locations[0])
@@ -289,6 +304,7 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
                 )
 
         try:
+
             def robust_copytree(src: Path, dst: Path):
                 dst.mkdir(parents=True, exist_ok=True)
                 for item in os.listdir(src):
@@ -300,7 +316,9 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
                         try:
                             shutil.copy2(s, d)
                         except Exception as copy_file_err:
-                            logger.warning(f"Could not copy/overwrite {s} to {d}: {copy_file_err}")
+                            logger.warning(
+                                f"Could not copy/overwrite {s} to {d}: {copy_file_err}"
+                            )
 
             robust_copytree(local_sqlcipher3_dir, sqlcipher3_path)
             logger.info(
@@ -342,7 +360,18 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
                     if os.path.isdir(p_abs) and p_abs not in search_dirs:
                         search_dirs.append(p_abs)
 
-            dll_patterns = ["libcrypto", "libssl", "sqlcipher", "libsqlcipher", "sqlite3"]
+            # Also add directories from system PATH to find system-installed OpenSSL DLLs on GHA Windows runner
+            for path_dir in os.environ.get("PATH", "").split(os.pathsep):
+                if path_dir and os.path.isdir(path_dir) and path_dir not in search_dirs:
+                    search_dirs.append(path_dir)
+
+            dll_patterns = [
+                "libcrypto",
+                "libssl",
+                "sqlcipher",
+                "libsqlcipher",
+                "sqlite3",
+            ]
             found_dll_names = set()
             found_dlls = set()
             for s_dir in search_dirs:
@@ -357,14 +386,20 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
                                 if name_lower not in found_dll_names:
                                     found_dll_names.add(name_lower)
                                     found_dlls.add(dll_path)
-                                    logger.info(f"Copying Windows dependency DLL: {dll_path}")
+                                    logger.info(
+                                        f"Copying Windows dependency DLL: {dll_path}"
+                                    )
                                     try:
                                         shutil.copy2(dll_path, bin_dir)
                                         shutil.copy2(dll_path, sqlcipher3_path)
                                     except Exception as copy_dll_err:
-                                        logger.warning(f"Failed to copy DLL {dll_path}: {copy_dll_err}")
+                                        logger.warning(
+                                            f"Failed to copy DLL {dll_path}: {copy_dll_err}"
+                                        )
                 except Exception as scan_err:
-                    logger.debug(f"Could not scan directory {s_dir} for DLLs: {scan_err}")
+                    logger.debug(
+                        f"Could not scan directory {s_dir} for DLLs: {scan_err}"
+                    )
     else:
         raise RuntimeError(
             "SQLCipher local native library/wheels are missing. Please install offline packages manually."

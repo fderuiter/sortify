@@ -244,7 +244,9 @@ def test_bootstrap_binaries_missing_wheels(tmp_path):
             return_value=False,
         ),
     ):
-        with pytest.raises(RuntimeError, match="SQLCipher local native library/wheels are missing"):
+        with pytest.raises(
+            RuntimeError, match="SQLCipher local native library/wheels are missing"
+        ):
             bootstrap_binaries()
 
 
@@ -270,7 +272,9 @@ def test_bootstrap_binaries_incompatible_architecture(tmp_path):
             return_value=False,
         ),
     ):
-        with pytest.raises(RuntimeError, match="incompatible with current platform/architecture"):
+        with pytest.raises(
+            RuntimeError, match="incompatible with current platform/architecture"
+        ):
             bootstrap_binaries()
 
 
@@ -300,5 +304,7 @@ def test_bootstrap_binaries_frozen_failure(tmp_path):
             return_value=False,
         ),
     ):
-        with pytest.raises(RuntimeError, match="SQLCipher database encryption failed to verify"):
+        with pytest.raises(
+            RuntimeError, match="SQLCipher database encryption failed to verify"
+        ):
             bootstrap_binaries()

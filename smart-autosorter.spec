@@ -98,6 +98,11 @@ if platform.system().lower() == "windows" or sys.platform == "win32":
     exe_dir = os.path.dirname(sys.executable)
     if exe_dir and exe_dir not in search_dirs:
         search_dirs.append(exe_dir)
+
+    # Also add directories from system PATH to find system-installed OpenSSL DLLs on GHA Windows runner
+    for path_dir in os.environ.get("PATH", "").split(os.pathsep):
+        if path_dir and os.path.isdir(path_dir) and path_dir not in search_dirs:
+            search_dirs.append(path_dir)
                 
     found_dll_names = set()
     found_dlls = set()
