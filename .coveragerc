@@ -2,7 +2,6 @@
 source = app
 omit =
     # Non-functional scripts and configurations
-    app/config.py
     app/build.py
     app/demo.py
     app/main.py

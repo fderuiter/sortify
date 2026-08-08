@@ -220,7 +220,15 @@ class Database:
 
     def set_user_verified_target(self, base_dir, file_hash, target_path):
         """Record the historical folder assignment for a specific document hash."""
-        self.invalidate_cache()
+        with self._cache_lock:
+            if self._cached_base_dir == base_dir and self._cached_documents is not None:
+                new_docs = []
+                for row in self._cached_documents:
+                    if row[2] == file_hash:
+                        new_docs.append((row[0], row[1], row[2], target_path))
+                    else:
+                        new_docs.append(row)
+                self._cached_documents = new_docs
 
         def _write():
             conn = get_db_connection(self.db_path)
@@ -229,9 +237,8 @@ class Database:
                     "UPDATE documents SET user_verified_target_path = ? WHERE base_dir = ? AND file_hash = ?",
                     (target_path, base_dir, file_hash),
                 )
-            self.invalidate_cache()
 
-        self.worker.execute_write(_write)
+        self.worker.execute_write_async(_write)
 
     def remove_document(self, base_dir, filepath):
         """Remove a document and its historical assignments when deleted."""
@@ -250,10 +257,19 @@ class Database:
 
     def update_document_path(self, base_dir, old_filepath, new_filepath):
         """Update a document's path and historical assignment when moved."""
-        self.invalidate_cache()
         import os
 
         new_dir = os.path.dirname(new_filepath).replace("\\", "/")
+
+        with self._cache_lock:
+            if self._cached_base_dir == base_dir and self._cached_documents is not None:
+                new_docs = []
+                for row in self._cached_documents:
+                    if row[0] == old_filepath:
+                        new_docs.append((new_filepath, row[1], row[2], new_dir))
+                    else:
+                        new_docs.append(row)
+                self._cached_documents = new_docs
 
         def _write():
             conn = get_db_connection(self.db_path)
@@ -262,9 +278,8 @@ class Database:
                     "UPDATE documents SET filepath = ?, user_verified_target_path = ? WHERE base_dir = ? AND filepath = ?",
                     (new_filepath, new_dir, base_dir, old_filepath),
                 )
-            self.invalidate_cache()
 
-        self.worker.execute_write(_write)
+        self.worker.execute_write_async(_write)
 
     def execute_batch_updates(self, updates):
         """Execute all collected database updates in a single unified database transaction."""

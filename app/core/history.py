@@ -683,6 +683,25 @@ class HistoryManager:
                 snapshot_docs = cur.fetchall()
                 snapshot_docs_dict = {r[0]: r for r in snapshot_docs}
 
+                # Write rollback journal before any modifications or relocations
+                try:
+                    from pathlib import Path
+                    import json
+                    journal_path = Path(self.db_path).parent / "rollback_journal.json"
+                    journal_data = {
+                        "session_id": session_id,
+                        "safety_session_id": safety_session_id,
+                        "base_dir": base_dir,
+                        "moves": moves,
+                        "symlinks": symlinks_to_restore,
+                        "shortcuts": shortcuts_to_restore
+                    }
+                    with open(journal_path, "w") as f:
+                        json.dump(journal_data, f, indent=2)
+                except Exception as ex:
+                    import logging
+                    logging.warning(f"Failed to write rollback journal: {ex}")
+
                 # 1. Pre-Move Synchronization
                 db_conn = get_db_connection(self.db.db_path)
                 with db_conn:
@@ -944,6 +963,23 @@ class HistoryManager:
                     conn.commit()
                     raise e
 
+                # Clean up any leftover/orphaned files that were copied during the failed transfer
+                # but are not in the snapshot files.
+                from app.core.scanner import get_files_recursively
+                try:
+                    current_files_after_restore = get_files_recursively(base_dir, include_hidden=True)
+                    snapshot_rel_paths = {r[0] for r in snapshot_files}
+                    for rel_path in current_files_after_restore:
+                        if rel_path not in snapshot_rel_paths:
+                            abs_path = os.path.join(base_dir, rel_path)
+                            if os.path.lexists(abs_path) and not os.path.isdir(abs_path):
+                                try:
+                                    os.remove(abs_path)
+                                except OSError:
+                                    pass
+                except Exception:
+                    pass
+
                 # Clean empty directories
                 from app.config import AppSettings
                 from app.core.mover import _remove_empty_dirs
@@ -993,4 +1029,22 @@ class HistoryManager:
                 )
                 self.db.invalidate_cache()
 
+                # Clean delete of rollback journal file
+                try:
+                    from pathlib import Path
+                    journal_path = Path(self.db_path).parent / "rollback_journal.json"
+                    if journal_path.exists():
+                        journal_path.unlink()
+                except Exception as ex:
+                    import logging
+                    logging.warning(f"Failed to delete rollback journal: {ex}")
+
         return self.db.worker.execute_write(_write)
+
+    def resume_rollback(self, session_id: str):
+        """Resume and complete an interrupted rollback session."""
+        self.rollback(session_id, ignore_missing=True)
+
+    def revert_rollback(self, safety_session_id: str):
+        """Revert an interrupted rollback session back to its original state using the safety snapshot."""
+        self.rollback(safety_session_id, ignore_missing=True)

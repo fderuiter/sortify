@@ -162,6 +162,10 @@ class AutoSorterApp:
 
             session_info = abandoned[0]
 
+            if session_info.get("is_rollback_recovery"):
+                self.show_rollback_recovery_dialog(session_info)
+                return
+
             if session_info.get("has_trapped_files"):
                 self.show_recovery_wizard(session_info)
                 return
@@ -194,6 +198,99 @@ class AutoSorterApp:
                         'color="positive" aria-label="Resume Button"'
                     )
             dialog.open()
+
+        asyncio.create_task(run())
+
+    def show_rollback_recovery_dialog(self, session_info):
+        """Display the dedicated rollback recovery dialog for an interrupted rollback session."""
+        with (
+            ui.dialog() as dialog,
+            ui.card().classes(get_dialog_card_classes("md")),
+        ):
+            dialog.props("persistent")
+            ui.label("Interrupted Rollback Recovery").classes("text-h6 text-red-600").props('aria-label="Rollback Recovery Title"')
+            ui.label(
+                "An unexpected crash interrupted a previous rollback operation. The system has detected an active journal file."
+            ).classes("text-sm text-gray-700")
+            ui.label(f"Directory: {session_info['base_dir']}").classes("text-xs text-gray-500 font-mono")
+
+            with ui.row().classes("w-full justify-end mt-4 gap-2 flex-wrap"):
+
+                def on_revert():
+                    dialog.close()
+                    self.revert_rollback_session(session_info)
+
+                def on_resume():
+                    dialog.close()
+                    self.resume_rollback_session(session_info)
+
+                ui.button("Revert", on_click=on_revert).props(
+                    'color="negative" aria-label="Revert Button"'
+                )
+                ui.button("Resume", on_click=on_resume).props(
+                    'color="positive" aria-label="Resume Button"'
+                )
+        dialog.open()
+
+    def resume_rollback_session(self, session_info):
+        """Resume and complete an interrupted rollback operation."""
+        self.base_dir = session_info["base_dir"]
+        self.app_session = AppSession(
+            self.settings, self.base_dir, session_id=session_info["session_id"]
+        )
+        self.status_label.set_text("Resuming rollback operation...")
+
+        async def run():
+            success = False
+            try:
+                await asyncio.to_thread(
+                    self.app_session.history_manager.resume_rollback,
+                    session_info["session_id"]
+                )
+                ui.notify("Rollback resumed and completed successfully.")
+                self.status_label.set_text("Rollback resume complete.")
+                success = True
+            except Exception as e:
+                logger.error(f"Error resuming rollback: {e}")
+                ui.notify(f"Error: {e}", type="negative")
+                self.status_label.set_text("Rollback resume failed.")
+            finally:
+                self.plan = {}
+                self.render_tree()
+                if success and self.app_session:
+                    self.app_session.close()
+                    self.app_session = None
+
+        asyncio.create_task(run())
+
+    def revert_rollback_session(self, session_info):
+        """Revert an interrupted rollback operation back to previous state."""
+        self.base_dir = session_info["base_dir"]
+        self.app_session = AppSession(
+            self.settings, self.base_dir, session_id=session_info["session_id"]
+        )
+        self.status_label.set_text("Reverting rollback operation...")
+
+        async def run():
+            success = False
+            try:
+                await asyncio.to_thread(
+                    self.app_session.history_manager.revert_rollback,
+                    session_info["safety_session_id"]
+                )
+                ui.notify("Rollback reverted successfully.")
+                self.status_label.set_text("Rollback reversion complete.")
+                success = True
+            except Exception as e:
+                logger.error(f"Error reverting rollback: {e}")
+                ui.notify(f"Error: {e}", type="negative")
+                self.status_label.set_text("Rollback reversion failed.")
+            finally:
+                self.plan = {}
+                self.render_tree()
+                if success and self.app_session:
+                    self.app_session.close()
+                    self.app_session = None
 
         asyncio.create_task(run())
 
@@ -959,7 +1056,7 @@ class AutoSorterApp:
         asyncio.create_task(_run())
 
 
-def run_app(settings, directory=None) -> None:
+def run_app(settings, directory=None, port=8080, show=True) -> None:
     """Run the NiceGUI application."""
     app_instance = AutoSorterApp(settings)
     if directory:
@@ -969,7 +1066,7 @@ def run_app(settings, directory=None) -> None:
     ui.run(
         host="127.0.0.1",
         title="Smart AutoSorter AI Pro",
-        port=8080,
+        port=port,
         reload=False,
-        show=True,
+        show=show,
     )
