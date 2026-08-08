@@ -6,7 +6,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from app.config import AppSettings
-from app.core.db_conn import sqlite3
 from app.core.session import scan_abandoned_sessions_async
 from app.ui.app import AutoSorterApp
 
@@ -29,6 +28,8 @@ def mock_session_base(tmp_path, monkeypatch):
 @pytest.mark.anyio
 async def test_scan_failed_session_with_trapped_files(mock_session_base, tmp_path):
     """Verify that scan_abandoned_sessions_async properly identifies failed sessions with unrecovered files."""
+    from app.core.db_conn import sqlite3
+
     session_id = "failed-session-123"
     session_dir = mock_session_base / session_id
     session_dir.mkdir()
@@ -68,6 +69,8 @@ async def test_scan_failed_session_with_trapped_files(mock_session_base, tmp_pat
 @pytest.mark.anyio
 async def test_scan_does_not_prompt_if_safety_folder_empty(mock_session_base, tmp_path):
     """Verify that the system does not identify failed sessions if the safety folder contains no files."""
+    from app.core.db_conn import sqlite3
+
     session_id = "empty-session-456"
     session_dir = mock_session_base / session_id
     session_dir.mkdir()
@@ -98,6 +101,8 @@ async def test_scan_does_not_prompt_if_safety_folder_empty(mock_session_base, tm
 @pytest.mark.anyio
 async def test_ui_recovery_wizard_trigger(mock_session_base, tmp_path):
     """Verify that AutoSorterApp triggers the show_recovery_wizard on startup when an eligible session is found."""
+    from app.core.db_conn import sqlite3
+
     settings = AppSettings()
     settings.AI_CONSENT_GRANTED = False
 
@@ -138,6 +143,8 @@ async def test_ui_recovery_wizard_trigger(mock_session_base, tmp_path):
 @pytest.mark.anyio
 async def test_wizard_file_recovery_original_location(mock_session_base, tmp_path):
     """Verify the file recovery logic (Restore to Original Folders) works correctly and resolves duplicate names."""
+    from app.core.db_conn import sqlite3
+
     settings = AppSettings()
     settings.AI_CONSENT_GRANTED = False
 
@@ -257,6 +264,8 @@ async def test_wizard_file_recovery_original_location(mock_session_base, tmp_pat
 @pytest.mark.anyio
 async def test_wizard_file_recovery_custom_location(mock_session_base, tmp_path):
     """Verify that exporting to a custom folder works correctly, preserving structure."""
+    from app.core.db_conn import sqlite3
+
     settings = AppSettings()
     settings.AI_CONSENT_GRANTED = False
 

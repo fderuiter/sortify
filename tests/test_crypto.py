@@ -8,7 +8,6 @@ import pytest
 from cryptography.fernet import Fernet
 
 from app.core.crypto import SessionCrypto
-from app.core.db_conn import sqlite3
 
 
 def test_key_generation_keyring(tmp_path):
@@ -83,6 +82,8 @@ def test_legacy_key_migration(tmp_path):
 
 
 def test_missing_key_with_existing_db(tmp_path):
+    from app.core.db_conn import sqlite3
+
     key_path = tmp_path / "secret.key"
     db_path = tmp_path / "autosorter.db"
 
@@ -101,6 +102,8 @@ def test_missing_key_with_existing_db(tmp_path):
 
 
 def test_missing_key_with_empty_db(tmp_path):
+    from app.core.db_conn import sqlite3
+
     key_path = tmp_path / "secret.key"
     db_path = tmp_path / "autosorter.db"
 
@@ -205,6 +208,8 @@ def test_legacy_key_migration_and_decrypt(tmp_path):
 
 
 def test_missing_key_existing_db_fails(tmp_path, monkeypatch):
+    from app.core.db_conn import sqlite3
+
     # Disable keyring
     def mock_get_password(*args, **kwargs):
         return None
@@ -383,6 +388,8 @@ def test_decryption_failure_safe_error_propagation(tmp_path, monkeypatch, caplog
     is_instance_db_err = False
 
     try:
+        from app.core.db_conn import sqlite3
+
         with caplog.at_level(logging.ERROR):
             db_conn.get_db_connection(str(db_path))
     except Exception as e:

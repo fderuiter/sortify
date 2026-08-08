@@ -7,8 +7,6 @@ import keyring
 import pytest
 from keyring.backend import KeyringBackend
 
-from app.core.db_conn import clear_connection_cache
-
 
 class MemoryKeyring(KeyringBackend):
     priority = 1
@@ -61,6 +59,8 @@ def cleanup_db_connections():
         SemanticEmbeddingManager.stop_all()
     except Exception:
         pass
+    from app.core.db_conn import clear_connection_cache
+
     clear_connection_cache()
 
 
