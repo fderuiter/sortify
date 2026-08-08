@@ -1,14 +1,10 @@
-import os
-import sys
-import shutil
 import logging
 from pathlib import Path
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from app.main import run_smoke_test, write_smoke_test_error
-from app.core.db_conn import clear_connection_cache
 
 
 def test_run_smoke_test_closes_and_clears_cache_on_success():
@@ -18,7 +14,7 @@ def test_run_smoke_test_closes_and_clears_cache_on_success():
     # Mock row return for selectivity and cipher_version
     mock_cursor.fetchone.side_effect = [
         ("SuperSecretData",),  # select row
-        ("4.5.1",),           # cipher_version
+        ("4.5.1",),  # cipher_version
     ]
     mock_conn.cursor.return_value = mock_cursor
 
@@ -33,7 +29,9 @@ def test_run_smoke_test_closes_and_clears_cache_on_success():
     # Patches
     with (
         patch("tempfile.mkdtemp", return_value="/mock/temp/dir") as mock_mkdtemp,
-        patch("app.core.db_conn.get_db_connection", return_value=mock_conn) as mock_get_conn,
+        patch(
+            "app.core.db_conn.get_db_connection", return_value=mock_conn
+        ) as mock_get_conn,
         patch("app.core.db_conn.clear_connection_cache") as mock_clear_cache,
         patch("shutil.rmtree") as mock_rmtree,
     ):
@@ -45,17 +43,17 @@ def test_run_smoke_test_closes_and_clears_cache_on_success():
             run_smoke_test()
 
         assert excinfo.value.code == 0
-        
+
         # Verify call ordering
         assert "conn_close" in call_order
         assert "clear_cache" in call_order
         assert "rmtree_/mock/temp/dir" in call_order
-        
+
         # Confirm clearing cache and closing connection happened before deletion
         idx_close = call_order.index("conn_close")
         idx_clear = call_order.index("clear_cache")
         idx_rmtree = call_order.index("rmtree_/mock/temp/dir")
-        
+
         assert idx_close < idx_rmtree
         assert idx_clear < idx_rmtree
 
@@ -67,7 +65,9 @@ def test_run_smoke_test_closes_and_clears_cache_on_failure():
 
     with (
         patch("tempfile.mkdtemp", return_value="/mock/temp/dir_failed"),
-        patch("app.core.db_conn.get_db_connection", side_effect=RuntimeError("DB Failed")),
+        patch(
+            "app.core.db_conn.get_db_connection", side_effect=RuntimeError("DB Failed")
+        ),
         patch("app.core.db_conn.clear_connection_cache") as mock_clear_cache,
         patch("shutil.rmtree") as mock_rmtree,
         patch("app.main.write_smoke_test_error") as mock_write_error,
@@ -82,7 +82,7 @@ def test_run_smoke_test_closes_and_clears_cache_on_failure():
         assert excinfo.value.code == 1
         assert "clear_cache" in call_order
         assert "rmtree_/mock/temp/dir_failed" in call_order
-        
+
         # Check order
         idx_clear = call_order.index("clear_cache")
         idx_rmtree = call_order.index("rmtree_/mock/temp/dir_failed")
@@ -117,12 +117,16 @@ def test_write_smoke_test_error_primary_blocked_falls_back_to_home():
 
         # Check that warning logged the fallback location being written successfully
         warning_calls = [c[0][0] for c in mock_warning.call_args_list]
-        assert any("Diagnostic log fallback write succeeded" in call_msg for call_msg in warning_calls)
+        assert any(
+            "Diagnostic log fallback write succeeded" in call_msg
+            for call_msg in warning_calls
+        )
         assert any(".autosorter" in call_msg for call_msg in warning_calls)
 
 
 def test_write_smoke_test_error_all_blocked_handles_gracefully():
     """Verify that if all paths are blocked, fallback logging does not raise unhandled errors or crash startup."""
+
     def restricted_open_all(file, mode="r", *args, **kwargs):
         raise PermissionError("All directories are write-restricted!")
 
@@ -136,7 +140,12 @@ def test_write_smoke_test_error_all_blocked_handles_gracefully():
         try:
             write_smoke_test_error("An error occurred", include_traceback=False)
         except PermissionError:
-            pytest.fail("write_smoke_test_error raised PermissionError instead of handling it gracefully")
+            pytest.fail(
+                "write_smoke_test_error raised PermissionError instead of handling it gracefully"
+            )
 
         error_calls = [c[0][0] for c in mock_error.call_args_list]
-        assert any("All diagnostic log write options failed" in call_msg for call_msg in error_calls)
+        assert any(
+            "All diagnostic log write options failed" in call_msg
+            for call_msg in error_calls
+        )
