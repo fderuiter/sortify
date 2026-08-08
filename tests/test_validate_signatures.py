@@ -68,10 +68,17 @@ def test_collect_current_definitions():
     defs = collect_current_definitions()
     assert "protocols" in defs
     assert "cli" in defs
+    assert "functions" in defs
 
     # Check that ClusteringStrategy is extracted
     assert "ClusteringStrategy" in defs["protocols"]
     assert "DocumentExtractor" in defs["protocols"]
+
+    # Check standard public class (non-protocol) is dynamically discovered
+    assert "RecursiveKMeansStrategy" in defs["protocols"]
+
+    # Check standalone public function is dynamically discovered
+    assert "block_external_network" in defs["functions"]
 
     # Check CLI keys
     assert "app/main.py" in defs["cli"]

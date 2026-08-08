@@ -204,11 +204,169 @@ def extract_cli(file_path):
     return cli_calls
 
 
+def extract_function_signature(func_node):
+    """Extract standard properties of a function/method signature."""
+    all_args = func_node.args.posonlyargs + func_node.args.args
+    defaults = func_node.args.defaults
+    default_map = {}
+    for i, default_node in enumerate(defaults):
+        arg_idx = len(all_args) - len(defaults) + i
+        default_map[id(all_args[arg_idx])] = ast.unparse(default_node)
+
+    params = []
+    for arg_node in all_args:
+        annotation_str = (
+            ast.unparse(arg_node.annotation)
+            if arg_node.annotation
+            else None
+        )
+        default_str = default_map.get(id(arg_node), None)
+        params.append(
+            {
+                "name": arg_node.arg,
+                "annotation": annotation_str,
+                "default": default_str,
+            }
+        )
+
+    if func_node.args.vararg:
+        arg_node = func_node.args.vararg
+        annotation_str = (
+            ast.unparse(arg_node.annotation)
+            if arg_node.annotation
+            else None
+        )
+        params.append(
+            {
+                "name": f"*{arg_node.arg}",
+                "annotation": annotation_str,
+                "default": None,
+            }
+        )
+
+    for kwarg, default_node in zip(
+        func_node.args.kwonlyargs, func_node.args.kw_defaults
+    ):
+        annotation_str = (
+            ast.unparse(kwarg.annotation)
+            if kwarg.annotation
+            else None
+        )
+        default_str = (
+            ast.unparse(default_node)
+            if default_node is not None
+            else None
+        )
+        params.append(
+            {
+                "name": kwarg.arg,
+                "annotation": annotation_str,
+                "default": default_str,
+            }
+        )
+
+    if func_node.args.kwarg:
+        arg_node = func_node.args.kwarg
+        annotation_str = (
+            ast.unparse(arg_node.annotation)
+            if arg_node.annotation
+            else None
+        )
+        params.append(
+            {
+                "name": f"**{arg_node.arg}",
+                "annotation": annotation_str,
+                "default": None,
+            }
+        )
+
+    return_annotation = (
+        ast.unparse(func_node.returns)
+        if func_node.returns
+        else None
+    )
+
+    return {
+        "name": func_node.name,
+        "parameters": params,
+        "returns": return_annotation,
+    }
+
+
+def extract_file_entities(file_path, rel_path):
+    """Parse a python file statically and extract public classes and public standalone functions."""
+    if not os.path.exists(file_path):
+        return {}, {}
+
+    with open(file_path, "r", encoding="utf-8") as f:
+        source = f.read()
+
+    try:
+        tree = ast.parse(source, filename=file_path)
+    except Exception as e:
+        print(f"Warning: Failed to parse {file_path}: {e}", file=sys.stderr)
+        return {}, {}
+
+    classes = {}
+    functions = {}
+
+    for node in tree.body:
+        # Public Classes
+        if isinstance(node, ast.ClassDef):
+            if not node.name.startswith("_"):
+                class_name = node.name
+                methods = []
+                for body_node in node.body:
+                    if isinstance(body_node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                        if not body_node.name.startswith("_"):
+                            sig = extract_function_signature(body_node)
+                            methods.append(sig)
+
+                classes[class_name] = {
+                    "class_name": class_name,
+                    "file_path": rel_path,
+                    "methods": sorted(methods, key=lambda m: m["name"]),
+                }
+
+        # Public Standalone Functions
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if not node.name.startswith("_"):
+                func_name = node.name
+                sig = extract_function_signature(node)
+                sig["file_path"] = rel_path
+                functions[func_name] = sig
+
+    return classes, functions
+
+
+def scan_core_modules():
+    """Recursively scan app/core/ to locate all public classes, public class methods, and standalone public functions."""
+    core_dir = os.path.join(BASE_DIR, "app", "core")
+    if not os.path.exists(core_dir):
+        return {}, {}
+
+    classes_data = {}
+    functions_data = {}
+
+    for root, _, files in os.walk(core_dir):
+        for file in files:
+            if file.endswith(".py"):
+                file_path = os.path.join(root, file)
+                rel_path = os.path.relpath(file_path, BASE_DIR)
+                
+                file_classes, file_functions = extract_file_entities(file_path, rel_path)
+                
+                for class_name, class_info in file_classes.items():
+                    classes_data[class_name] = class_info
+                for func_name, func_info in file_functions.items():
+                    functions_data[func_name] = func_info
+
+    return classes_data, functions_data
+
+
 def collect_current_definitions():
     """Parse codebase files and return the complete current definitions structure."""
-    protocols_data = {}
-    protocols_data.update(extract_protocols(ANALYZER_STRATEGIES_PATH))
-    protocols_data.update(extract_protocols(EXTRACTOR_STRATEGIES_PATH))
+    classes_data, functions_data = scan_core_modules()
 
     cli_data = {
         "app/main.py": extract_cli(MAIN_CLI_PATH),
@@ -216,7 +374,8 @@ def collect_current_definitions():
     }
 
     return {
-        "protocols": protocols_data,
+        "protocols": classes_data,
+        "functions": functions_data,
         "cli": cli_data,
     }
 
