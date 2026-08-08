@@ -277,13 +277,32 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
             )
 
         if sqlcipher3_path.exists():
-            if sqlcipher3_path.is_dir():
-                shutil.rmtree(sqlcipher3_path)
-            else:
-                sqlcipher3_path.unlink()
+            try:
+                if sqlcipher3_path.is_dir():
+                    shutil.rmtree(sqlcipher3_path)
+                else:
+                    sqlcipher3_path.unlink()
+            except Exception as del_err:
+                logger.warning(
+                    f"Could not remove existing sqlcipher3 path {sqlcipher3_path} during cleanup: {del_err}. "
+                    "Attempting to copy with overwrite..."
+                )
 
         try:
-            shutil.copytree(local_sqlcipher3_dir, sqlcipher3_path)
+            def robust_copytree(src: Path, dst: Path):
+                dst.mkdir(parents=True, exist_ok=True)
+                for item in os.listdir(src):
+                    s = src / item
+                    d = dst / item
+                    if s.is_dir():
+                        robust_copytree(s, d)
+                    else:
+                        try:
+                            shutil.copy2(s, d)
+                        except Exception as copy_file_err:
+                            logger.warning(f"Could not copy/overwrite {s} to {d}: {copy_file_err}")
+
+            robust_copytree(local_sqlcipher3_dir, sqlcipher3_path)
             logger.info(
                 f"Successfully copied cached local native libraries from {local_sqlcipher3_dir} to {sqlcipher3_path}"
             )
