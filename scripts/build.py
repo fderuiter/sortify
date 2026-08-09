@@ -188,20 +188,28 @@ def update_binaries_and_manifest(system_platform=None, bypass_pytest_check=False
 
                 # Search system PATH as a fallback (excluding System32 and Windows)
                 if not found_for_pattern:
-                    for path_dir in os.environ.get("PATH", "").split(os.pathsep):
-                        if path_dir and os.path.isdir(path_dir):
-                            dir_lower = path_dir.lower()
-                            if "system32" in dir_lower or "windows" in dir_lower:
-                                continue
+                    path_dirs = []
+                    for d in os.environ.get("PATH", "").split(os.pathsep):
+                        cleaned = d.strip().strip('"')
+                        if cleaned:
                             try:
-                                for f in os.listdir(path_dir):
-                                    if f.lower().endswith(".dll") and pat in f.lower():
-                                        dll_srcs.append(Path(path_dir) / f)
-                                        found_for_pattern = True
+                                if os.path.isdir(cleaned):
+                                    path_dirs.append(cleaned)
                             except Exception:
-                                continue
-                            if found_for_pattern:
-                                break
+                                pass
+                    for path_dir in path_dirs:
+                        dir_lower = path_dir.lower()
+                        if "system32" in dir_lower or "windows" in dir_lower:
+                            continue
+                        try:
+                            for f in os.listdir(path_dir):
+                                if f.lower().endswith(".dll") and pat in f.lower():
+                                    dll_srcs.append(Path(path_dir) / f)
+                                    found_for_pattern = True
+                        except Exception:
+                            continue
+                        if found_for_pattern:
+                            break
                                 
                 for src in dll_srcs:
                     if src.exists():

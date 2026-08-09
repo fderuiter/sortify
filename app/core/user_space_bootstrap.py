@@ -181,9 +181,12 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
                         "DLLs",
                         "Lib/site-packages/sqlcipher3",
                     ]:
-                        p = os.path.abspath(os.path.join(vd, sub))
-                        if os.path.isdir(p) and p not in dirs_to_add:
-                            dirs_to_add.append(p)
+                        try:
+                            p = os.path.abspath(os.path.join(vd, sub))
+                            if os.path.isdir(p) and p not in dirs_to_add:
+                                dirs_to_add.append(p)
+                        except Exception:
+                            pass
 
                 # Add common OpenSSL paths
                 common_openssl_dirs = [
@@ -196,17 +199,28 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
                     "C:\\Program Files\\Common Files\\SSL",
                 ]
                 for cod in common_openssl_dirs:
-                    if os.path.isdir(cod) and cod not in dirs_to_add:
-                        dirs_to_add.append(cod)
+                    try:
+                        if os.path.isdir(cod) and cod not in dirs_to_add:
+                            dirs_to_add.append(cod)
+                    except Exception:
+                        pass
 
                 # Add system PATH directories (excluding windows/system32)
-                for path_dir in os.environ.get("PATH", "").split(os.pathsep):
-                    if path_dir and os.path.isdir(path_dir):
-                        dir_lower = path_dir.lower()
-                        if "system32" in dir_lower or "windows" in dir_lower:
-                            continue
-                        if path_dir not in dirs_to_add:
-                            dirs_to_add.append(path_dir)
+                path_dirs = []
+                for d in os.environ.get("PATH", "").split(os.pathsep):
+                    cleaned = d.strip().strip('"')
+                    if cleaned:
+                        try:
+                            if os.path.isdir(cleaned):
+                                path_dirs.append(cleaned)
+                        except Exception:
+                            pass
+                for path_dir in path_dirs:
+                    dir_lower = path_dir.lower()
+                    if "system32" in dir_lower or "windows" in dir_lower:
+                        continue
+                    if path_dir not in dirs_to_add:
+                        dirs_to_add.append(path_dir)
 
                 # Register all these paths via os.add_dll_directory and prepending to PATH
                 for p in dirs_to_add:
