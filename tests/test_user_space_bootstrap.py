@@ -374,8 +374,13 @@ def test_sqlite3_mock_fallback_on_import_error():
     sys.modules.pop("sqlcipher3", None)
 
     real_import = __import__
+
     def mock_import(name, *args, **kwargs):
-        if name in ("sqlite3", "sqlcipher3") or name.startswith("sqlite3.") or name.startswith("sqlcipher3."):
+        if (
+            name in ("sqlite3", "sqlcipher3")
+            or name.startswith("sqlite3.")
+            or name.startswith("sqlcipher3.")
+        ):
             raise ImportError("Simulated import failure")
         return real_import(name, *args, **kwargs)
 
@@ -386,6 +391,7 @@ def test_sqlite3_mock_fallback_on_import_error():
             importlib.reload(app.core.db_conn)
 
         import sqlite3
+
         assert sqlite3 is not None
         assert hasattr(sqlite3, "connect")
         assert hasattr(sqlite3, "Error")
@@ -407,3 +413,26 @@ def test_sqlite3_mock_fallback_on_import_error():
         importlib.reload(app.core.db_conn)
 
 
+def test_bootstrap_binaries_windows_direct_import_fallback():
+    """Verify that on Windows, if not frozen, bootstrap_binaries discovers and injects DLL search paths before verification."""
+    mock_add_dll = MagicMock()
+    mock_spec = MagicMock()
+    mock_spec.submodule_search_locations = ["C:\\site-packages\\sqlcipher3"]
+
+    with (
+        patch("sys.platform", "win32"),
+        patch("sys.prefix", "C:\\venv"),
+        patch("os.add_dll_directory", mock_add_dll, create=True),
+        patch("os.path.isdir", return_value=True),
+        patch("importlib.util.find_spec", return_value=mock_spec),
+        patch(
+            "app.core.user_space_bootstrap.verify_sqlcipher_encryption",
+            return_value=True,
+        ),
+    ):
+        res = bootstrap_binaries(force_download=False)
+        assert res is True
+        # Check that os.add_dll_directory was called on the sqlcipher3 package directory and venv dirs
+        calls = [c[0][0] for c in mock_add_dll.call_args_list]
+        assert "C:\\site-packages\\sqlcipher3" in calls
+        assert os.path.abspath("C:\\venv") in calls
