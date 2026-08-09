@@ -258,12 +258,13 @@ def is_standard_sqlite_binary(dest_name, src_path):
         for vd in venv_dirs:
             prefix_lower = vd.lower().replace('\\', '/')
             if prefix_lower in src_lower:
-                if sys.base_prefix:
-                    base_lower = sys.base_prefix.lower().replace('\\', '/')
-                    if base_lower in src_lower and base_lower != prefix_lower:
-                        # It's actually from the base python prefix, so it is standard
-                        return True
                 return False
+                
+        if sys.base_prefix:
+            base_lower = sys.base_prefix.lower().replace('\\', '/')
+            if base_lower in src_lower:
+                return True
+                
         return True
     return False
 
