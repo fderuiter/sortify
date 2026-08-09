@@ -273,11 +273,9 @@ def test_copy_db_to_new_system_without_keyring(tmp_path, monkeypatch):
 
 def test_standard_sqlite_fallback_rejection(tmp_path, monkeypatch):
     """Verify that standard SQLite fallback connections are completely rejected during initialization."""
-    import sys
-    monkeypatch.setattr(sys, "platform", "linux")
-
     from app.core import db_conn
 
+    monkeypatch.setattr(db_conn, "_disable_pytest_win_fallback", True)
     monkeypatch.setattr(db_conn, "HAS_SQLCIPHER", False)
 
     db_path = tmp_path / "autosorter.db"
@@ -287,11 +285,9 @@ def test_standard_sqlite_fallback_rejection(tmp_path, monkeypatch):
 
 def test_missing_cipher_version_rejection(tmp_path, monkeypatch):
     """Verify that if the driver lacks cipher capability or returns empty version, we reject and close."""
-    import sys
-    monkeypatch.setattr(sys, "platform", "linux")
-
     from app.core import db_conn
 
+    monkeypatch.setattr(db_conn, "_disable_pytest_win_fallback", True)
     monkeypatch.setattr(db_conn, "HAS_SQLCIPHER", True)
 
     # Mock sqlite3.connect to return a mock connection whose cursor returns empty for cipher_version
@@ -300,7 +296,10 @@ def test_missing_cipher_version_rejection(tmp_path, monkeypatch):
     mock_cursor.fetchone.return_value = (None,)  # empty version
     mock_conn.cursor.return_value = mock_cursor
 
-    monkeypatch.setattr(db_conn.sqlite3, "connect", MagicMock(return_value=mock_conn))
+    mock_sqlite3 = MagicMock()
+    mock_sqlite3.connect.return_value = mock_conn
+    mock_sqlite3.Error = Exception
+    monkeypatch.setattr(db_conn, "sqlite3", mock_sqlite3)
 
     db_path = tmp_path / "autosorter.db"
     with pytest.raises(

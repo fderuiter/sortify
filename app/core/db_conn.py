@@ -55,6 +55,7 @@ except Exception:
 # Global connection cache and lock
 _connection_cache = {}
 _cache_lock = threading.Lock()
+_disable_pytest_win_fallback = False
 
 
 def clear_connection_cache():
@@ -113,7 +114,7 @@ def get_db_connection(db_path: str):
 
     is_pytest_win = sys.platform == "win32" and (
         "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST")
-    )
+    ) and not _disable_pytest_win_fallback
 
     if not HAS_SQLCIPHER:
         if is_pytest_win:
