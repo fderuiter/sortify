@@ -419,11 +419,18 @@ def test_bootstrap_binaries_windows_direct_import_fallback():
     mock_spec = MagicMock()
     mock_spec.submodule_search_locations = ["C:\\site-packages\\sqlcipher3"]
 
+    real_isdir = os.path.isdir
+    def mock_isdir(path):
+        p_str = str(path)
+        if "C:\\" in p_str or "C:/" in p_str or "OpenSSL" in p_str or "sqlcipher3" in p_str:
+            return True
+        return real_isdir(path)
+
     with (
         patch("sys.platform", "win32"),
         patch("sys.prefix", "C:\\venv"),
         patch("os.add_dll_directory", mock_add_dll, create=True),
-        patch("os.path.isdir", return_value=True),
+        patch("os.path.isdir", side_effect=mock_isdir),
         patch("importlib.util.find_spec", return_value=mock_spec),
         patch.dict("os.environ", os.environ.copy()),
         patch(
