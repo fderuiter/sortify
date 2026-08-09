@@ -326,6 +326,11 @@ def test_decryption_failure_safe_error_propagation(tmp_path, monkeypatch, caplog
     from app.core import db_conn
     from app.core.path_utils import resolve_db_crypto
 
+    if not db_conn.HAS_SQLCIPHER:
+        pytest.skip("SQLCipher library is missing or inactive in this environment.")
+
+    monkeypatch.setattr(db_conn, "_disable_pytest_win_fallback", True)
+
     db_path = tmp_path / "secure_autosorter.db"
 
     # 1. Create and populate a database normally using the standard helper.
