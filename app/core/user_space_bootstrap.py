@@ -34,7 +34,9 @@ def check_internet_connection(timeout: float = 2.0) -> bool:
         return False
 
 
-def verify_sqlcipher_encryption(strict: bool = False, raise_on_failure: bool = False) -> bool:
+def verify_sqlcipher_encryption(
+    strict: bool = False, raise_on_failure: bool = False
+) -> bool:
     """Run automated verification check to confirm database encryption is active and error-free."""
     try:
         from sqlcipher3 import dbapi2 as sqlite3
