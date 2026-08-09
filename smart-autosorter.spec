@@ -89,7 +89,12 @@ if os.path.exists(app_binaries_src):
 # On Windows, find and bundle any dependent OpenSSL/SQLCipher DLLs from the active Python or virtualenv environments
 if platform.system().lower() == "windows" or sys.platform == "win32":
     search_dirs = []
-    # Prioritize active virtual environment (sys.prefix) and its subdirectories
+    # 1. Prioritize local Windows binaries directory to find on-the-fly extracted secure DLLs first
+    app_bin_win = os.path.abspath(os.path.join("app", "binaries", "windows", "sqlcipher3"))
+    if os.path.isdir(app_bin_win):
+        search_dirs.append(app_bin_win)
+
+    # 2. Add active virtual environment (sys.prefix) and its subdirectories
     if sys.prefix:
         search_dirs.append(sys.prefix)
         for sub in ["Library/bin", "DLLs", "Scripts"]:
@@ -97,12 +102,7 @@ if platform.system().lower() == "windows" or sys.platform == "win32":
             if os.path.isdir(p):
                 search_dirs.append(p)
 
-    # Add local Windows binaries directory to search_dirs to find on-the-fly extracted DLLs
-    app_bin_win = os.path.abspath(os.path.join("app", "binaries", "windows", "sqlcipher3"))
-    if os.path.isdir(app_bin_win):
-        search_dirs.append(app_bin_win)
-
-    # Fallback to base python prefix (sys.base_prefix) and its subdirectories only if different
+    # 3. Fallback to base python prefix (sys.base_prefix) and its subdirectories only if different
     if sys.base_prefix and sys.base_prefix != sys.prefix:
         search_dirs.append(sys.base_prefix)
         for sub in ["Library/bin", "DLLs", "Scripts"]:
@@ -110,12 +110,12 @@ if platform.system().lower() == "windows" or sys.platform == "win32":
             if os.path.isdir(p):
                 search_dirs.append(p)
 
-    # Finally, check executable directory
+    # 4. Check executable directory
     exe_dir = os.path.dirname(sys.executable)
     if exe_dir and exe_dir not in search_dirs:
         search_dirs.append(exe_dir)
 
-    # Also add directories from system PATH to find system-installed OpenSSL DLLs on GHA Windows runner
+    # 5. Also add directories from system PATH to find system-installed OpenSSL DLLs on GHA Windows runner
     for path_dir in os.environ.get("PATH", "").split(os.pathsep):
         if path_dir and os.path.isdir(path_dir) and path_dir not in search_dirs:
             # Exclude standard system directories to prevent standard sqlite3.dll leakage
@@ -176,6 +176,11 @@ if platform.system().lower() == "windows" or sys.platform == "win32":
                 pat in file_lower for pat in dll_patterns
             ):
                 dll_path = os.path.abspath(os.path.join(s_dir, file))
+                # Skip standard/unencrypted sqlite3.dll files to prevent leakage
+                if file_lower == "sqlite3.dll":
+                    is_secure = "app/binaries" in s_dir.lower().replace("\\", "/") or "sqlcipher3" in s_dir.lower().replace("\\", "/")
+                    if not is_secure:
+                        continue
                 if file_lower not in found_dll_names:
                     found_dll_names.add(file_lower)
                     found_dlls.add(dll_path)
@@ -347,7 +352,19 @@ def is_standard_sqlite_binary(dest_name, src_path):
 
 # Find and preserve the custom sqlite3.dll path if available to redirect standard dependencies
 custom_sqlite3_dll = None
-if sqlcipher_spec and sqlcipher_spec.submodule_search_locations:
+
+# Walk the app/binaries directory first to find the custom sqlite3.dll as a highly reliable fallback
+app_bin_dir = os.path.join("app", "binaries")
+if os.path.exists(app_bin_dir):
+    for root, dirs, files in os.walk(app_bin_dir):
+        for file in files:
+            if file.lower() == "sqlite3.dll":
+                custom_sqlite3_dll = os.path.abspath(os.path.join(root, file))
+                break
+        if custom_sqlite3_dll:
+            break
+
+if not custom_sqlite3_dll and sqlcipher_spec and sqlcipher_spec.submodule_search_locations:
     sqlcipher_dir = sqlcipher_spec.submodule_search_locations[0]
     for root, dirs, files in os.walk(sqlcipher_dir):
         for file in files:
