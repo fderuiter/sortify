@@ -325,8 +325,9 @@ def test_decryption_failure_safe_error_propagation(tmp_path, monkeypatch, caplog
 
     from app.core import db_conn
     from app.core.path_utils import resolve_db_crypto
+    from app.core.user_space_bootstrap import verify_sqlcipher_encryption
 
-    if not db_conn.HAS_SQLCIPHER:
+    if not db_conn.HAS_SQLCIPHER or not verify_sqlcipher_encryption(strict=True):
         pytest.skip("SQLCipher library is missing or inactive in this environment.")
 
     monkeypatch.setattr(db_conn, "_disable_pytest_win_fallback", True)
