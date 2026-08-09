@@ -433,6 +433,8 @@ if not custom_sqlite3_dll:
             if custom_sqlite3_dll:
                 break
 
+print(f"=== [SPEC BUILD DIAGNOSTIC] custom_sqlite3_dll: {custom_sqlite3_dll} ===")
+
 new_binaries = []
 for x in a.binaries:
     dest_name, src_path = x[0], x[1]

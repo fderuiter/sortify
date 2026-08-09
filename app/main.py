@@ -114,7 +114,19 @@ if sys.platform == "win32" and is_packaged():
         os.environ["PATH"] = ";".join(unique_paths) + ";" + os.environ.get("PATH", "")
 
 # Early import of db_conn to run user-space bootstrapping and register SQLCipher/sqlite3 overrides immediately
-from app.core import db_conn  # noqa: F401
+try:
+    from app.core import db_conn  # noqa: F401
+except Exception as e:
+    import traceback
+
+    err_msg = f"CRITICAL MODULE-LEVEL IMPORT ERROR: {e}\n{traceback.format_exc()}"
+    print(err_msg, file=sys.stderr)
+    try:
+        with open("smoke_test_error.txt", "w", encoding="utf-8") as f:
+            f.write(err_msg)
+    except Exception:
+        pass
+    sys.exit(1)
 
 import argparse
 import logging
