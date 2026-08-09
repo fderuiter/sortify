@@ -116,12 +116,89 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
     """Identify host platform, verify and load local precompiled SQLCipher libraries directly from the installation path."""
     # 0. Check if sqlcipher3 is already fully functional in the host environment without bootstrapping
     if not force_download:
+        if sys.platform == "win32" and not hasattr(sys, "_MEIPASS"):
+            # We are on Windows in a non-frozen environment (e.g. pytest or CLI test)
+            # Let's try to add sqlcipher3 and virtualenv directory to DLL search path to allow direct import
+            import importlib.util
+
+            try:
+                # 1. Add sqlcipher3 package directory
+                spec = importlib.util.find_spec("sqlcipher3")
+                if spec and spec.submodule_search_locations:
+                    pkg_dir = spec.submodule_search_locations[0]
+                    if os.path.isdir(pkg_dir):
+                        try:
+                            os.add_dll_directory(pkg_dir)
+                        except Exception:
+                            pass
+
+                # 2. Collect other potential DLL directories
+                dirs_to_add = []
+
+                # Add virtualenv paths
+                venv_dirs = []
+                v_env = os.environ.get("VIRTUAL_ENV")
+                if v_env:
+                    venv_dirs.append(v_env)
+                if sys.prefix and sys.prefix not in venv_dirs:
+                    venv_dirs.append(sys.prefix)
+
+                for vd in venv_dirs:
+                    for sub in [
+                        ".",
+                        "Library/bin",
+                        "Scripts",
+                        "DLLs",
+                        "Lib/site-packages/sqlcipher3",
+                    ]:
+                        p = os.path.abspath(os.path.join(vd, sub))
+                        if os.path.isdir(p) and p not in dirs_to_add:
+                            dirs_to_add.append(p)
+
+                # Add common OpenSSL paths
+                common_openssl_dirs = [
+                    "C:\\Program Files\\OpenSSL-Win64\\bin",
+                    "C:\\Program Files\\OpenSSL\\bin",
+                    "C:\\Program Files\\OpenSSL-Win64",
+                    "C:\\Program Files\\OpenSSL",
+                    "C:\\OpenSSL-Win64\\bin",
+                    "C:\\OpenSSL-Win64",
+                    "C:\\Program Files\\Common Files\\SSL",
+                ]
+                for cod in common_openssl_dirs:
+                    if os.path.isdir(cod) and cod not in dirs_to_add:
+                        dirs_to_add.append(cod)
+
+                # Add system PATH directories (excluding windows/system32)
+                for path_dir in os.environ.get("PATH", "").split(os.pathsep):
+                    if path_dir and os.path.isdir(path_dir):
+                        dir_lower = path_dir.lower()
+                        if "system32" in dir_lower or "windows" in dir_lower:
+                            continue
+                        if path_dir not in dirs_to_add:
+                            dirs_to_add.append(path_dir)
+
+                # Register all these paths via os.add_dll_directory and prepending to PATH
+                for p in dirs_to_add:
+                    try:
+                        os.add_dll_directory(p)
+                    except Exception:
+                        pass
+
+                # Update PATH environment variable
+                os.environ["PATH"] = (
+                    ";".join(dirs_to_add) + ";" + os.environ.get("PATH", "")
+                )
+            except Exception:
+                pass
+
         if verify_sqlcipher_encryption():
             logger.info(
                 "Host environment has fully functional SQLCipher active. Skipping bootstrapping."
             )
             try:
                 from sqlcipher3 import dbapi2 as sqlite3
+
                 sys.modules["sqlite3"] = sqlite3
             except Exception:
                 pass
@@ -216,7 +293,11 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
 
     # 6. Clear sys.modules of sqlcipher3, _sqlite3, and sqlite3 to force reload from the newly injected paths
     for k in list(sys.modules.keys()):
-        if k in ("sqlcipher3", "_sqlite3", "sqlite3") or k.startswith("sqlcipher3.") or k.startswith("sqlite3."):
+        if (
+            k in ("sqlcipher3", "_sqlite3", "sqlite3")
+            or k.startswith("sqlcipher3.")
+            or k.startswith("sqlite3.")
+        ):
             sys.modules.pop(k, None)
 
     # 7. Execute pre-flight verification
@@ -224,6 +305,7 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
         logger.info("Startup pre-flight database encryption verification successful!")
         try:
             from sqlcipher3 import dbapi2 as sqlite3
+
             sys.modules["sqlite3"] = sqlite3
         except Exception:
             pass
