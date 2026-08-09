@@ -338,11 +338,6 @@ def test_update_binaries_and_manifest_win32_dll_detection():
     mock_rmtree = MagicMock()
     mock_mkdir = MagicMock()
 
-    # Mock sys.modules to bypass 'pytest' guard
-    fake_modules = dict(sys.modules)
-    if "pytest" in fake_modules:
-        del fake_modules["pytest"]
-
     # Mock open for manifest and other files with support for mode-aware reading
     def mock_open_mode(file, mode="r", *args, **kwargs):
         mock_fh = MagicMock()
@@ -365,8 +360,6 @@ def test_update_binaries_and_manifest_win32_dll_detection():
         return False
 
     with (
-        patch("sys.platform", "win32"),
-        patch("sys.modules", fake_modules),
         patch("importlib.util.find_spec", return_value=mock_spec),
         patch("os.walk", side_effect=mock_walk),
         patch("os.path.exists", side_effect=mock_exists),
@@ -378,7 +371,7 @@ def test_update_binaries_and_manifest_win32_dll_detection():
         patch("os.environ", {"VIRTUAL_ENV": "/fake/venv"}),
         patch("builtins.open", mock_open_mode),
     ):
-        build.update_binaries_and_manifest()
+        build.update_binaries_and_manifest(system_platform="win32", bypass_pytest_check=True)
 
         # Check that shutil.copy2 was called to copy sqlite3.dll
         # The source should end with sqlite3.dll, and the destination should be inside our binaries directory

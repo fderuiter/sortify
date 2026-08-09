@@ -4,7 +4,7 @@ import os
 import sys
 
 
-def update_binaries_and_manifest():
+def update_binaries_and_manifest(system_platform=None, bypass_pytest_check=False):
     """Copy real compiled sqlcipher3 binaries from the active environment to app/binaries/<platform>/sqlcipher3 and update manifest.json."""
     import hashlib
     import importlib.util
@@ -12,7 +12,7 @@ def update_binaries_and_manifest():
     import shutil
     from pathlib import Path
 
-    if "pytest" in sys.modules:
+    if "pytest" in sys.modules and not bypass_pytest_check:
         print("Running in tests. Skipping binaries and manifest update.")
         return
 
@@ -30,7 +30,8 @@ def update_binaries_and_manifest():
         )
         return
 
-    system_platform = sys.platform
+    if system_platform is None:
+        system_platform = sys.platform
     if system_platform == "win32":
         platform_key = "windows"
     elif system_platform == "darwin":
