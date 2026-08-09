@@ -61,8 +61,8 @@ def update_binaries_and_manifest():
         
         # We will build a list of missing patterns to search for
         for pat in dll_patterns:
-            # Check if we already have a copied file containing this pattern (case-insensitive)
-            already_copied = any(pat in f.lower() for f in copied_files)
+            # Check if we already have a copied DLL file containing this pattern (case-insensitive)
+            already_copied = any(f.lower().endswith(".dll") and pat in f.lower() for f in copied_files)
             if not already_copied:
                 # We need to search for a DLL matching this pattern
                 # Let's find all matching DLLs in the prioritized search paths
