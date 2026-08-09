@@ -18,7 +18,7 @@ def test_get_cleaned_env_defaults():
         "PYTHONPATH": "/tmp/frozen_app",
     }
 
-    with mock.patch.dict(os.environ, test_env, clear=True):
+    with mock.patch.dict(os.environ, test_env, clear=False):
         cleaned = get_cleaned_env()
 
         # Ensure _MEIPASS is removed
