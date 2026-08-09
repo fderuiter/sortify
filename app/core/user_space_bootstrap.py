@@ -34,7 +34,7 @@ def check_internet_connection(timeout: float = 2.0) -> bool:
         return False
 
 
-def verify_sqlcipher_encryption(strict: bool = False) -> bool:
+def verify_sqlcipher_encryption(strict: bool = False, raise_on_failure: bool = False) -> bool:
     """Run automated verification check to confirm database encryption is active and error-free."""
     try:
         from sqlcipher3 import dbapi2 as sqlite3
@@ -62,6 +62,8 @@ def verify_sqlcipher_encryption(strict: bool = False) -> bool:
             conn.close()
     except Exception as e:
         logger.error(f"Pre-flight database encryption verification failed: {e}")
+        if raise_on_failure:
+            raise
         # On Windows, standard sqlite3.dll from base Python/plugins is often already mapped
         # into the pytest process memory before bootstrapping completes. This forces Windows to
         # silently bind SQLCipher to the non-cryptographic engine, causing verification to fail.
@@ -254,7 +256,7 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
                 if k in ("sqlcipher3", "_sqlite3") or k.startswith("sqlcipher3."):
                     sys.modules.pop(k, None)
 
-        if verify_sqlcipher_encryption():
+        if verify_sqlcipher_encryption(raise_on_failure=True):
             logger.info(
                 "SQLCipher verified active inside frozen PyInstaller environment."
             )

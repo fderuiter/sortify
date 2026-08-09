@@ -293,13 +293,29 @@ def is_standard_sqlite_binary(dest_name, src_path):
 
     # Identify any standard sqlite3 binary files
     if any(term in dest_lower for term in ("sqlite3", "_sqlite3")):
-        # Allow it only if it originates from sqlcipher3 or app/binaries
+        # If it originates from sqlcipher3 or app/binaries, it is DEFINITELY our secure SQLCipher library
         if (
             "sqlcipher3" in src_lower
             or "app/binaries" in src_lower
             or "app_binaries" in src_lower
         ):
             return False
+
+        # If sys.base_prefix is in the path, and it is NOT the same as the virtualenv prefix,
+        # then it is DEFINITELY from the standard base Python installation, so it is standard/unencrypted.
+        if sys.base_prefix and sys.prefix != sys.base_prefix:
+            base_lower = sys.base_prefix.lower().replace("\\", "/")
+            if base_lower in src_lower:
+                return True
+
+        # In any environment, standard unencrypted sqlite binaries are located in 'dlls' or standard library paths.
+        if "dlls" in src_lower:
+            return True
+
+        # If we are in the base Python environment, any sqlite3 binary that does not come from
+        # sqlcipher3 or app/binaries is standard/unencrypted.
+        if sys.prefix == sys.base_prefix:
+            return True
 
         # Build list of virtualenv directories to check
         venv_dirs = []
@@ -319,12 +335,12 @@ def is_standard_sqlite_binary(dest_name, src_path):
         for vd in venv_dirs:
             prefix_lower = vd.lower().replace("\\", "/")
             if prefix_lower in src_lower:
-                if sys.base_prefix:
-                    base_lower = sys.base_prefix.lower().replace("\\", "/")
-                    if base_lower in src_lower and base_lower != prefix_lower:
-                        # It's actually from the base python prefix, so it is standard
-                        return True
-                return False
+                if sys.platform == "win32":
+                    if "library/bin" in src_lower or "scripts" in src_lower:
+                        return False
+                    return True
+                else:
+                    return False
         return True
     return False
 
