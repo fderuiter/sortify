@@ -301,3 +301,88 @@ def test_is_standard_sqlite_binary():
         assert is_standard_sqlite_binary("sqlite3.dll", base_path_win) is True
 
 
+def test_update_binaries_and_manifest_win32_dll_detection():
+    """Test that on win32, update_binaries_and_manifest correctly searches for and copies sqlite3.dll,
+    even when _sqlite3.pyd has already been copied, but skips it if sqlite3.dll was already copied."""
+    from scripts import build
+
+    # Create mocks for all required dependencies
+    mock_spec = MagicMock()
+    mock_spec.submodule_search_locations = ["/fake/sqlcipher3/dir"]
+
+    # Mock os.walk and os.listdir to simulate finding sqlite3.dll in venv
+    def mock_walk(top, *args, **kwargs):
+        if "/fake/sqlcipher3/dir" in str(top):
+            yield ("/fake/sqlcipher3/dir", [], ["__init__.py", "_sqlite3.pyd"])
+        elif "/fake/venv" in str(top):
+            yield ("/fake/venv/Library/bin", [], ["sqlite3.dll"])
+        else:
+            yield (str(top), [], [])
+
+    def mock_listdir(path):
+        if "Library" in str(path) or "bin" in str(path):
+            return ["sqlite3.dll"]
+        return []
+
+    def mock_exists(path):
+        p_str = str(path)
+        if "/fake/sqlcipher3/dir" in p_str:
+            return True
+        if "/fake/venv" in p_str:
+            return True
+        if "manifest.json" in p_str:
+            return True
+        return False
+
+    mock_copy = MagicMock()
+    mock_rmtree = MagicMock()
+    mock_mkdir = MagicMock()
+
+    # Mock sys.modules to bypass 'pytest' guard
+    fake_modules = dict(sys.modules)
+    if "pytest" in fake_modules:
+        del fake_modules["pytest"]
+
+    # Mock open for manifest and other files with support for mode-aware reading
+    def mock_open_mode(file, mode="r", *args, **kwargs):
+        mock_fh = MagicMock()
+        if "b" in mode:
+            mock_fh.read.side_effect = [b"{}", b""]
+        else:
+            mock_fh.read.side_effect = ["{}", ""]
+        mock_fh.__enter__.return_value = mock_fh
+        return mock_fh
+
+    # Mock pathlib.Path.exists
+    def mock_path_exists(self):
+        p_str = str(self).replace('\\', '/')
+        if "/fake/sqlcipher3/dir" in p_str:
+            return True
+        if "/fake/venv" in p_str:
+            return True
+        if "manifest.json" in p_str:
+            return True
+        return False
+
+    with (
+        patch("sys.platform", "win32"),
+        patch("sys.modules", fake_modules),
+        patch("importlib.util.find_spec", return_value=mock_spec),
+        patch("os.walk", side_effect=mock_walk),
+        patch("os.path.exists", side_effect=mock_exists),
+        patch("pathlib.Path.exists", mock_path_exists),
+        patch("os.listdir", side_effect=mock_listdir),
+        patch("shutil.copy2", mock_copy),
+        patch("shutil.rmtree", mock_rmtree),
+        patch("pathlib.Path.mkdir", mock_mkdir),
+        patch("os.environ", {"VIRTUAL_ENV": "/fake/venv"}),
+        patch("builtins.open", mock_open_mode),
+    ):
+        build.update_binaries_and_manifest()
+
+        # Check that shutil.copy2 was called to copy sqlite3.dll
+        # The source should end with sqlite3.dll, and the destination should be inside our binaries directory
+        copied_sources = [str(call[0][0]) for call in mock_copy.call_args_list]
+        assert any("sqlite3.dll" in src for src in copied_sources), "sqlite3.dll was not copied!"
+
+
