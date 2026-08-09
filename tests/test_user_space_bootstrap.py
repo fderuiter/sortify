@@ -419,18 +419,34 @@ def test_bootstrap_binaries_windows_direct_import_fallback():
     mock_spec = MagicMock()
     mock_spec.submodule_search_locations = ["C:\\site-packages\\sqlcipher3"]
 
+    expected_mock_dirs = {
+        os.path.abspath("C:\\site-packages\\sqlcipher3").lower(),
+        os.path.abspath("C:\\venv").lower(),
+        os.path.abspath("C:\\venv\\Library\\bin").lower(),
+        os.path.abspath("C:\\venv\\Scripts").lower(),
+        os.path.abspath("C:\\venv\\DLLs").lower(),
+        os.path.abspath("C:\\venv\\Lib\\site-packages\\sqlcipher3").lower(),
+        os.path.abspath("C:\\Program Files\\OpenSSL-Win64\\bin").lower(),
+        os.path.abspath("C:\\Program Files\\OpenSSL\\bin").lower(),
+        os.path.abspath("C:\\Program Files\\OpenSSL-Win64").lower(),
+        os.path.abspath("C:\\Program Files\\OpenSSL").lower(),
+        os.path.abspath("C:\\OpenSSL-Win64\\bin").lower(),
+        os.path.abspath("C:\\OpenSSL-Win64").lower(),
+        os.path.abspath("C:\\Program Files\\Common Files\\SSL").lower(),
+    }
+
     real_isdir = os.path.isdir
     def mock_isdir(path):
-        p_str = str(path)
-        p_lower = p_str.lower()
-        if (
-            "c:\\venv" in p_lower
-            or "c:/venv" in p_lower
-            or "openssl" in p_lower
-            or "sqlcipher3" in p_lower
-        ):
-            return True
+        try:
+            p_abs = os.path.abspath(str(path)).lower()
+            if p_abs in expected_mock_dirs:
+                return True
+        except Exception:
+            pass
         return real_isdir(path)
+
+    env_mock = os.environ.copy()
+    env_mock["VIRTUAL_ENV"] = "C:\\venv"
 
     with (
         patch("sys.platform", "win32"),
@@ -438,7 +454,7 @@ def test_bootstrap_binaries_windows_direct_import_fallback():
         patch("os.add_dll_directory", mock_add_dll, create=True),
         patch("os.path.isdir", side_effect=mock_isdir),
         patch("importlib.util.find_spec", return_value=mock_spec),
-        patch.dict("os.environ", os.environ.copy()),
+        patch.dict("os.environ", env_mock),
         patch(
             "app.core.user_space_bootstrap.verify_sqlcipher_encryption",
             return_value=True,
