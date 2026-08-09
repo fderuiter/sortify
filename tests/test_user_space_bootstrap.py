@@ -422,7 +422,13 @@ def test_bootstrap_binaries_windows_direct_import_fallback():
     real_isdir = os.path.isdir
     def mock_isdir(path):
         p_str = str(path)
-        if "C:\\" in p_str or "C:/" in p_str or "OpenSSL" in p_str or "sqlcipher3" in p_str:
+        p_lower = p_str.lower()
+        if (
+            "c:\\venv" in p_lower
+            or "c:/venv" in p_lower
+            or "openssl" in p_lower
+            or "sqlcipher3" in p_lower
+        ):
             return True
         return real_isdir(path)
 
