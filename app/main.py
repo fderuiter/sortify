@@ -114,12 +114,13 @@ if sys.platform == "win32" and is_packaged():
         os.environ["PATH"] = ";".join(unique_paths) + ";" + os.environ.get("PATH", "")
 
 # Early import of db_conn to run user-space bootstrapping and register SQLCipher/sqlite3 overrides immediately
+from app.core import db_conn  # noqa: F401
+
 import argparse
 import logging
 from pathlib import Path
 
 from app.config import AppSettings
-from app.core import db_conn  # noqa: F401
 from app.log_filter import LogScrubbingFilter
 
 

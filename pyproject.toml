@@ -49,6 +49,7 @@ ignore = ["E501"]
 convention = "numpy"
 
 [tool.ruff.lint.per-file-ignores]
+"app/main.py" = ["I", "E402"]
 "tests/*" = ["D", "F841", "E741"]
 "scripts/*" = ["D"]
 "app/core/analyzer_strategies.py" = ["D"]
