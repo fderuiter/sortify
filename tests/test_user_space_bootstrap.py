@@ -425,6 +425,7 @@ def test_bootstrap_binaries_windows_direct_import_fallback():
         patch("os.add_dll_directory", mock_add_dll, create=True),
         patch("os.path.isdir", return_value=True),
         patch("importlib.util.find_spec", return_value=mock_spec),
+        patch.dict("os.environ", os.environ.copy()),
         patch(
             "app.core.user_space_bootstrap.verify_sqlcipher_encryption",
             return_value=True,

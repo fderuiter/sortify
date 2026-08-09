@@ -109,7 +109,16 @@ def inject_bootstrap_paths(platform_binaries_dir: Path = None):
                 if os.path.isdir(internal_dir):
                     paths.append(internal_dir)
                     paths.append(os.path.join(internal_dir, "sqlcipher3"))
-            os.environ["PATH"] = ";".join(paths) + ";" + os.environ.get("PATH", "")
+
+            # Update PATH environment variable without duplicating entries
+            current_path_dirs = [d.strip() for d in os.environ.get("PATH", "").split(";") if d.strip()]
+            new_path_dirs = []
+            for p in paths:
+                abs_p = os.path.abspath(p)
+                if abs_p not in current_path_dirs and abs_p not in new_path_dirs:
+                    new_path_dirs.append(abs_p)
+            if new_path_dirs:
+                os.environ["PATH"] = ";".join(new_path_dirs) + ";" + os.environ.get("PATH", "")
 
 
 def bootstrap_binaries(force_download: bool = False) -> bool:
@@ -185,10 +194,17 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
                     except Exception:
                         pass
 
-                # Update PATH environment variable
-                os.environ["PATH"] = (
-                    ";".join(dirs_to_add) + ";" + os.environ.get("PATH", "")
-                )
+                # Update PATH environment variable without duplicating entries
+                current_path_dirs = [d.strip() for d in os.environ.get("PATH", "").split(";") if d.strip()]
+                new_path_dirs = []
+                for p in dirs_to_add:
+                    abs_p = os.path.abspath(p)
+                    if abs_p not in current_path_dirs and abs_p not in new_path_dirs:
+                        new_path_dirs.append(abs_p)
+                if new_path_dirs:
+                    os.environ["PATH"] = (
+                        ";".join(new_path_dirs) + ";" + os.environ.get("PATH", "")
+                    )
             except Exception:
                 pass
 
