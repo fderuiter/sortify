@@ -443,7 +443,10 @@ def test_bootstrap_binaries_windows_direct_import_fallback():
                 return True
         except Exception:
             pass
-        return real_isdir(path)
+        try:
+            return real_isdir(path)
+        except Exception:
+            return False
 
     env_mock = os.environ.copy()
     env_mock["VIRTUAL_ENV"] = "C:\\venv"
