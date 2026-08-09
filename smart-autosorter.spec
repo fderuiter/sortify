@@ -108,6 +108,20 @@ if platform.system().lower() == "windows" or sys.platform == "win32":
             if "system32" in dir_lower or "windows" in dir_lower:
                 continue
             search_dirs.append(path_dir)
+            
+    # Also add common/standard Windows OpenSSL installation directories
+    common_openssl_dirs = [
+        "C:\\Program Files\\OpenSSL-Win64\\bin",
+        "C:\\Program Files\\OpenSSL\\bin",
+        "C:\\Program Files\\OpenSSL-Win64",
+        "C:\\Program Files\\OpenSSL",
+        "C:\\OpenSSL-Win64\\bin",
+        "C:\\OpenSSL-Win64",
+        "C:\\Program Files\\Common Files\\SSL",
+    ]
+    for cod in common_openssl_dirs:
+        if os.path.isdir(cod) and cod not in search_dirs:
+            search_dirs.append(cod)
                 
     found_dll_names = set()
     found_dlls = set()
