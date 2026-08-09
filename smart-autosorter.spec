@@ -335,7 +335,7 @@ def is_standard_sqlite_binary(dest_name, src_path):
         for vd in venv_dirs:
             prefix_lower = vd.lower().replace("\\", "/")
             if prefix_lower in src_lower:
-                if sys.platform == "win32":
+                if any(ext in dest_lower or ext in src_lower for ext in (".dll", ".pyd")):
                     if "library/bin" in src_lower or "scripts" in src_lower:
                         return False
                     return True
