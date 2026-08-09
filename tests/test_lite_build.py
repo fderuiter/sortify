@@ -339,9 +339,10 @@ def test_update_binaries_and_manifest_win32_dll_detection():
 
     # Mock os.walk and os.listdir to simulate finding sqlite3.dll in venv
     def mock_walk(top, *args, **kwargs):
-        if "/fake/sqlcipher3/dir" in str(top):
+        p_str = str(top).replace("\\", "/")
+        if "/fake/sqlcipher3/dir" in p_str:
             yield ("/fake/sqlcipher3/dir", [], ["__init__.py", "_sqlite3.pyd"])
-        elif "/fake/venv" in str(top):
+        elif "/fake/venv" in p_str:
             yield ("/fake/venv/Library/bin", [], ["sqlite3.dll"])
         else:
             yield (str(top), [], [])
