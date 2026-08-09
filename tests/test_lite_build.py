@@ -353,7 +353,7 @@ def test_update_binaries_and_manifest_win32_dll_detection():
         return []
 
     def mock_exists(path):
-        p_str = str(path)
+        p_str = str(path).replace("\\", "/")
         if "/fake/sqlcipher3/dir" in p_str:
             return True
         if "/fake/venv" in p_str:
