@@ -273,6 +273,9 @@ def test_copy_db_to_new_system_without_keyring(tmp_path, monkeypatch):
 
 def test_standard_sqlite_fallback_rejection(tmp_path, monkeypatch):
     """Verify that standard SQLite fallback connections are completely rejected during initialization."""
+    import sys
+    monkeypatch.setattr(sys, "platform", "linux")
+
     from app.core import db_conn
 
     monkeypatch.setattr(db_conn, "HAS_SQLCIPHER", False)
@@ -284,6 +287,9 @@ def test_standard_sqlite_fallback_rejection(tmp_path, monkeypatch):
 
 def test_missing_cipher_version_rejection(tmp_path, monkeypatch):
     """Verify that if the driver lacks cipher capability or returns empty version, we reject and close."""
+    import sys
+    monkeypatch.setattr(sys, "platform", "linux")
+
     from app.core import db_conn
 
     monkeypatch.setattr(db_conn, "HAS_SQLCIPHER", True)
@@ -317,6 +323,9 @@ def test_decryption_failure_safe_error_propagation(tmp_path, monkeypatch, caplog
     from contextlib import closing
 
     from app.core import db_conn
+    if not db_conn.HAS_SQLCIPHER:
+        pytest.skip("SQLCipher is missing/inactive; skipping decryption failure test.")
+
     from app.core.path_utils import resolve_db_crypto
 
     db_path = tmp_path / "secure_autosorter.db"
