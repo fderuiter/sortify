@@ -403,7 +403,7 @@ def test_update_binaries_and_manifest_win32_dll_detection():
         patch("shutil.copy2", mock_copy),
         patch("shutil.rmtree", mock_rmtree),
         patch("pathlib.Path.mkdir", mock_mkdir),
-        patch("os.environ", {"VIRTUAL_ENV": "/fake/venv"}),
+        patch.dict("os.environ", {"VIRTUAL_ENV": "/fake/venv"}),
         patch("builtins.open", mock_open_mode),
     ):
         build.update_binaries_and_manifest()

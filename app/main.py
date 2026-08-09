@@ -126,6 +126,8 @@ except Exception as e:
             f.write(err_msg)
     except Exception:
         pass
+    if "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST"):
+        raise
     sys.exit(1)
 
 import argparse
