@@ -253,6 +253,42 @@ def is_standard_sqlite_asset(dest, src):
 a.binaries = [x for x in a.binaries if not is_tcl_tk_asset(x[0]) and not is_prunable_asset(x[0]) and not is_standard_sqlite_asset(x[0], x[1])]
 a.datas = [x for x in a.datas if not is_tcl_tk_asset(x[0]) and not is_prunable_asset(x[0]) and not is_standard_sqlite_asset(x[0], x[1])]
 
+
+def find_secure_sqlite3_dll():
+    import importlib.util
+    import os
+    import sys
+    spec = importlib.util.find_spec("sqlcipher3")
+    # 1. Search inside sqlcipher3 package directory
+    if spec and spec.submodule_search_locations:
+        sqlcipher_dir = spec.submodule_search_locations[0]
+        for root, dirs, files in os.walk(sqlcipher_dir):
+            for file in files:
+                if file.lower() == "sqlite3.dll":
+                    return os.path.abspath(os.path.join(root, file))
+    # 2. Search inside virtualenv Library/bin or Scripts
+    if sys.prefix:
+        for sub in ["Library/bin", "DLLs", "Scripts"]:
+            p = os.path.join(sys.prefix, sub.replace("/", os.sep))
+            if os.path.isdir(p):
+                target = os.path.join(p, "sqlite3.dll")
+                if os.path.exists(target):
+                    return os.path.abspath(target)
+    return None
+
+if platform.system().lower() == "windows" or sys.platform == "win32":
+    secure_dll = find_secure_sqlite3_dll()
+    if secure_dll:
+        print(f"Found secure SQLCipher sqlite3.dll at: {secure_dll}")
+        # Remove any existing sqlite3.dll and inject our secure one
+        a.binaries = [x for x in a.binaries if os.path.basename(x[0]).lower() != "sqlite3.dll"]
+        a.binaries.append(('sqlite3.dll', secure_dll, 'BINARY'))
+        a.binaries.append(('sqlcipher3/sqlite3.dll', secure_dll, 'BINARY'))
+        print("Successfully replaced standard sqlite3.dll in a.binaries with secure SQLCipher version.")
+    else:
+        print("Warning: Secure SQLCipher sqlite3.dll was NOT found!")
+
+
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
 exe = EXE(
