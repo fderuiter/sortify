@@ -35,9 +35,12 @@ if sys.platform == "win32":
                 "DLLs",
                 "Lib/site-packages/sqlcipher3",
             ]:
-                p = os.path.abspath(os.path.join(vd, sub))
-                if os.path.isdir(p) and p not in dirs_to_add:
-                    dirs_to_add.append(p)
+                try:
+                    p = os.path.abspath(os.path.join(vd, sub))
+                    if os.path.isdir(p) and p not in dirs_to_add:
+                        dirs_to_add.append(p)
+                except Exception:
+                    pass
 
         # Add common OpenSSL paths
         common_openssl_dirs = [
@@ -50,8 +53,11 @@ if sys.platform == "win32":
             "C:\\Program Files\\Common Files\\SSL",
         ]
         for cod in common_openssl_dirs:
-            if os.path.isdir(cod) and cod not in dirs_to_add:
-                dirs_to_add.append(cod)
+            try:
+                if os.path.isdir(cod) and cod not in dirs_to_add:
+                    dirs_to_add.append(cod)
+            except Exception:
+                pass
 
         # Register all these paths via os.add_dll_directory and prepending to PATH
         for p in dirs_to_add:

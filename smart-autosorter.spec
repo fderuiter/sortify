@@ -101,8 +101,17 @@ if platform.system().lower() == "windows" or sys.platform == "win32":
         search_dirs.append(exe_dir)
                 
     # Also add directories from system PATH to find system-installed OpenSSL DLLs on GHA Windows runner
-    for path_dir in os.environ.get("PATH", "").split(os.pathsep):
-        if path_dir and os.path.isdir(path_dir) and path_dir not in search_dirs:
+    path_dirs = []
+    for d in os.environ.get("PATH", "").split(os.pathsep):
+        cleaned = d.strip().strip('"')
+        if cleaned:
+            try:
+                if os.path.isdir(cleaned):
+                    path_dirs.append(cleaned)
+            except Exception:
+                pass
+    for path_dir in path_dirs:
+        if path_dir not in search_dirs:
             # Exclude standard system directories to prevent standard sqlite3.dll leakage
             dir_lower = path_dir.lower()
             if "system32" in dir_lower or "windows" in dir_lower:
