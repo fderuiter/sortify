@@ -420,25 +420,25 @@ def test_bootstrap_binaries_windows_direct_import_fallback():
     mock_spec.submodule_search_locations = ["C:\\site-packages\\sqlcipher3"]
 
     expected_mock_dirs = {
-        os.path.abspath("C:\\site-packages\\sqlcipher3").lower(),
-        os.path.abspath("C:\\venv").lower(),
-        os.path.abspath("C:\\venv\\Library\\bin").lower(),
-        os.path.abspath("C:\\venv\\Scripts").lower(),
-        os.path.abspath("C:\\venv\\DLLs").lower(),
-        os.path.abspath("C:\\venv\\Lib\\site-packages\\sqlcipher3").lower(),
-        os.path.abspath("C:\\Program Files\\OpenSSL-Win64\\bin").lower(),
-        os.path.abspath("C:\\Program Files\\OpenSSL\\bin").lower(),
-        os.path.abspath("C:\\Program Files\\OpenSSL-Win64").lower(),
-        os.path.abspath("C:\\Program Files\\OpenSSL").lower(),
-        os.path.abspath("C:\\OpenSSL-Win64\\bin").lower(),
-        os.path.abspath("C:\\OpenSSL-Win64").lower(),
-        os.path.abspath("C:\\Program Files\\Common Files\\SSL").lower(),
+        os.path.abspath("C:\\site-packages\\sqlcipher3").lower().replace("\\", "/"),
+        os.path.abspath("C:\\venv").lower().replace("\\", "/"),
+        os.path.abspath("C:\\venv\\Library\\bin").lower().replace("\\", "/"),
+        os.path.abspath("C:\\venv\\Scripts").lower().replace("\\", "/"),
+        os.path.abspath("C:\\venv\\DLLs").lower().replace("\\", "/"),
+        os.path.abspath("C:\\venv\\Lib\\site-packages\\sqlcipher3").lower().replace("\\", "/"),
+        os.path.abspath("C:\\Program Files\\OpenSSL-Win64\\bin").lower().replace("\\", "/"),
+        os.path.abspath("C:\\Program Files\\OpenSSL\\bin").lower().replace("\\", "/"),
+        os.path.abspath("C:\\Program Files\\OpenSSL-Win64").lower().replace("\\", "/"),
+        os.path.abspath("C:\\Program Files\\OpenSSL").lower().replace("\\", "/"),
+        os.path.abspath("C:\\OpenSSL-Win64\\bin").lower().replace("\\", "/"),
+        os.path.abspath("C:\\OpenSSL-Win64").lower().replace("\\", "/"),
+        os.path.abspath("C:\\Program Files\\Common Files\\SSL").lower().replace("\\", "/"),
     }
 
     real_isdir = os.path.isdir
     def mock_isdir(path):
         try:
-            p_abs = os.path.abspath(str(path)).lower()
+            p_abs = os.path.abspath(str(path)).lower().replace("\\", "/")
             if p_abs in expected_mock_dirs:
                 return True
         except Exception:
