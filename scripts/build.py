@@ -84,6 +84,7 @@ def update_binaries_and_manifest():
                 # Check candidate locations in prioritized venv directories
                 for vd in venv_dirs:
                     for sub in [
+                        Path("."),
                         Path("Library") / "bin",
                         Path("Scripts"),
                         Path("Lib") / "site-packages" / "sqlcipher3",
@@ -119,7 +120,7 @@ def update_binaries_and_manifest():
                         
                 # Search sys.base_prefix as a fallback if different
                 if not found_for_pattern and sys.base_prefix and sys.base_prefix != sys.prefix:
-                    for sub in [Path("Library") / "bin", Path("DLLs"), Path("Scripts")]:
+                    for sub in [Path("."), Path("Library") / "bin", Path("DLLs"), Path("Scripts")]:
                         candidate_dir = Path(sys.base_prefix) / sub
                         if candidate_dir.exists():
                             for f in os.listdir(candidate_dir):
@@ -135,7 +136,7 @@ def update_binaries_and_manifest():
                                     "site-packages/easyocr",
                                     "site-packages/scipy",
                                 )
-                            ):
+                              ):
                                 continue
                             for file in files:
                                 if file.lower().endswith(".dll") and pat in file.lower():
@@ -148,7 +149,7 @@ def update_binaries_and_manifest():
                 if not found_for_pattern and sys.executable:
                     exe_dir = os.path.dirname(sys.executable)
                     if exe_dir:
-                        for sub in [Path("Library") / "bin", Path("DLLs")]:
+                        for sub in [Path("."), Path("Library") / "bin", Path("DLLs")]:
                             candidate_dir = Path(exe_dir) / sub
                             if candidate_dir.exists():
                                 for f in os.listdir(candidate_dir):
@@ -161,6 +162,29 @@ def update_binaries_and_manifest():
                                     dll_srcs.append(Path(exe_dir) / f)
                                     found_for_pattern = True
                                     
+                # Search standard OpenSSL installation paths on Windows as fallback
+                if not found_for_pattern:
+                    common_openssl_dirs = [
+                        Path("C:/Program Files/OpenSSL-Win64/bin"),
+                        Path("C:/Program Files/OpenSSL/bin"),
+                        Path("C:/Program Files/OpenSSL-Win64"),
+                        Path("C:/Program Files/OpenSSL"),
+                        Path("C:/OpenSSL-Win64/bin"),
+                        Path("C:/OpenSSL-Win64"),
+                        Path("C:/Program Files/Common Files/SSL"),
+                    ]
+                    for cd in common_openssl_dirs:
+                        if cd.exists():
+                            try:
+                                for f in os.listdir(cd):
+                                    if f.lower().endswith(".dll") and pat in f.lower():
+                                        dll_srcs.append(cd / f)
+                                        found_for_pattern = True
+                            except Exception:
+                                continue
+                            if found_for_pattern:
+                                break
+
                 # Search system PATH as a fallback (excluding System32 and Windows)
                 if not found_for_pattern:
                     for path_dir in os.environ.get("PATH", "").split(os.pathsep):
