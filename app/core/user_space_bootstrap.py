@@ -232,6 +232,8 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
                     os.path.join(meipass, "sqlcipher3"),
                     os.path.join(meipass, "_internal"),
                     os.path.join(meipass, "_internal", "sqlcipher3"),
+                    os.path.join(meipass, "app", "binaries", "windows", "sqlcipher3"),
+                    os.path.join(meipass, "_internal", "app", "binaries", "windows", "sqlcipher3"),
                 ]
                 for p in dirs_to_add:
                     if os.path.isdir(p):

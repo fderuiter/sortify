@@ -26,3 +26,7 @@ offline_bundle/*
 !offline_bundle/requirements.txt
 offline_bundle.zip
 
+# Generated offline binaries and manifests
+app/binaries/
+
+

@@ -97,6 +97,11 @@ if platform.system().lower() == "windows" or sys.platform == "win32":
             if os.path.isdir(p):
                 search_dirs.append(p)
 
+    # Add local Windows binaries directory to search_dirs to find on-the-fly extracted DLLs
+    app_bin_win = os.path.abspath(os.path.join("app", "binaries", "windows", "sqlcipher3"))
+    if os.path.isdir(app_bin_win):
+        search_dirs.append(app_bin_win)
+
     # Fallback to base python prefix (sys.base_prefix) and its subdirectories only if different
     if sys.base_prefix and sys.base_prefix != sys.prefix:
         search_dirs.append(sys.base_prefix)
