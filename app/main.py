@@ -52,8 +52,14 @@ if sys.platform == "win32" and is_packaged():
         sqlcipher_dirs = [
             os.path.abspath(os.path.join(base_dir, "sqlcipher3")),
             os.path.abspath(os.path.join(base_dir, "_internal", "sqlcipher3")),
-            os.path.abspath(os.path.join(base_dir, "app", "binaries", "windows", "sqlcipher3")),
-            os.path.abspath(os.path.join(base_dir, "_internal", "app", "binaries", "windows", "sqlcipher3")),
+            os.path.abspath(
+                os.path.join(base_dir, "app", "binaries", "windows", "sqlcipher3")
+            ),
+            os.path.abspath(
+                os.path.join(
+                    base_dir, "_internal", "app", "binaries", "windows", "sqlcipher3"
+                )
+            ),
         ]
         for sqlcipher_dir in sqlcipher_dirs:
             if os.path.isdir(sqlcipher_dir):
