@@ -34,7 +34,7 @@ def check_internet_connection(timeout: float = 2.0) -> bool:
         return False
 
 
-def verify_sqlcipher_encryption() -> bool:
+def verify_sqlcipher_encryption(strict: bool = False) -> bool:
     """Run automated verification check to confirm database encryption is active and error-free."""
     try:
         from sqlcipher3 import dbapi2 as sqlite3
@@ -67,8 +67,10 @@ def verify_sqlcipher_encryption() -> bool:
         # silently bind SQLCipher to the non-cryptographic engine, causing verification to fail.
         # Since the local files are successfully resolved and registered, we tolerate this
         # verification failure exclusively within the Windows test suite environment.
-        if sys.platform == "win32" and (
-            "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST")
+        if (
+            not strict
+            and sys.platform == "win32"
+            and ("pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST"))
         ):
             logger.info(
                 "Tolerating pre-flight verification failure in Windows pytest environment."
@@ -268,7 +270,7 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
     # 0. Check if sqlcipher3 is already fully functional in the host environment without bootstrapping
     # Since we are offline-first, if force_download is True, we treat it as forcing re-copy of local files.
     if not force_download:
-        if verify_sqlcipher_encryption():
+        if verify_sqlcipher_encryption(strict=True):
             logger.info(
                 "Host environment has fully functional SQLCipher active. Skipping bootstrapping."
             )
