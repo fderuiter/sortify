@@ -1,3 +1,80 @@
+import os
+import sys
+
+if sys.platform == "win32":
+    # Inject DLL directory paths for Windows to allow direct import of sqlcipher3
+    import importlib.util
+
+    try:
+        # 1. Add sqlcipher3 package directory
+        spec = importlib.util.find_spec("sqlcipher3")
+        if spec and spec.submodule_search_locations:
+            pkg_dir = spec.submodule_search_locations[0]
+            if os.path.isdir(pkg_dir):
+                try:
+                    os.add_dll_directory(pkg_dir)
+                except Exception:
+                    pass
+
+        # 2. Collect other potential DLL directories
+        dirs_to_add = []
+
+        # Add virtualenv paths
+        venv_dirs = []
+        v_env = os.environ.get("VIRTUAL_ENV")
+        if v_env:
+            venv_dirs.append(v_env)
+        if sys.prefix and sys.prefix not in venv_dirs:
+            venv_dirs.append(sys.prefix)
+
+        for vd in venv_dirs:
+            for sub in [
+                ".",
+                "Library/bin",
+                "Scripts",
+                "DLLs",
+                "Lib/site-packages/sqlcipher3",
+            ]:
+                p = os.path.abspath(os.path.join(vd, sub))
+                if os.path.isdir(p) and p not in dirs_to_add:
+                    dirs_to_add.append(p)
+
+        # Add common OpenSSL paths
+        common_openssl_dirs = [
+            "C:\\Program Files\\OpenSSL-Win64\\bin",
+            "C:\\Program Files\\OpenSSL\\bin",
+            "C:\\Program Files\\OpenSSL-Win64",
+            "C:\\Program Files\\OpenSSL",
+            "C:\\OpenSSL-Win64\\bin",
+            "C:\\OpenSSL-Win64",
+            "C:\\Program Files\\Common Files\\SSL",
+        ]
+        for cod in common_openssl_dirs:
+            if os.path.isdir(cod) and cod not in dirs_to_add:
+                dirs_to_add.append(cod)
+
+        # Register all these paths via os.add_dll_directory and prepending to PATH
+        for p in dirs_to_add:
+            try:
+                os.add_dll_directory(p)
+            except Exception:
+                pass
+
+        # Update PATH environment variable without duplicating entries
+        current_path_dirs = [d.strip() for d in os.environ.get("PATH", "").replace(os.pathsep, ";").split(";") if d.strip()]
+        current_path_dirs_normalized = {os.path.abspath(d).lower() for d in current_path_dirs}
+        new_path_dirs = []
+        for p in dirs_to_add:
+            abs_p = os.path.abspath(p)
+            if abs_p.lower() not in current_path_dirs_normalized and abs_p.lower() not in [np.lower() for np in new_path_dirs]:
+                new_path_dirs.append(abs_p)
+        if new_path_dirs:
+            os.environ["PATH"] = (
+                ";".join(new_path_dirs) + ";" + os.environ.get("PATH", "")
+            )
+    except Exception:
+        pass
+
 import shutil
 import tempfile
 from pathlib import Path
