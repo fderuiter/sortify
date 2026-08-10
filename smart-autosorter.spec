@@ -77,7 +77,7 @@ if os.path.exists(app_binaries_src):
             datas.append((abs_file_path, dest_dir))
 
 # On Windows, find and bundle any dependent OpenSSL/SQLCipher DLLs from the active Python or virtualenv environments
-if platform.system().lower() == "windows" or sys.platform == "win32":
+if (platform.system().lower() == "windows" or sys.platform == "win32") and "pytest" not in sys.modules:
     search_dirs = []
     # Prioritize active virtual environment (sys.prefix) and its subdirectories
     if sys.prefix:
@@ -280,7 +280,7 @@ def is_standard_sqlite_binary(dest_name, src_path):
 
 # Find and preserve the custom sqlite3.dll path if available to redirect standard dependencies
 custom_sqlite3_dll = None
-if sqlcipher_spec and sqlcipher_spec.submodule_search_locations:
+if "pytest" not in sys.modules and sqlcipher_spec and sqlcipher_spec.submodule_search_locations:
     sqlcipher_dir = sqlcipher_spec.submodule_search_locations[0]
     for root, dirs, files in os.walk(sqlcipher_dir):
         for file in files:
