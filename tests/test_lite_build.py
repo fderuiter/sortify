@@ -348,6 +348,9 @@ def test_update_binaries_and_manifest_win32_dll_detection():
         mock_fh.__enter__.return_value = mock_fh
         return mock_fh
 
+    from pathlib import Path
+    original_path_exists = Path.exists
+
     # Mock pathlib.Path.exists
     def mock_path_exists(self):
         p_str = str(self).replace('\\', '/')
@@ -357,7 +360,7 @@ def test_update_binaries_and_manifest_win32_dll_detection():
             return True
         if "manifest.json" in p_str:
             return True
-        return False
+        return original_path_exists(self)
 
     with (
         patch("importlib.util.find_spec", return_value=mock_spec),

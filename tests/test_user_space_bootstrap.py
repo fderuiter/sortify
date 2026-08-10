@@ -73,12 +73,20 @@ def test_verify_sqlcipher_encryption_failure():
 
 def test_inject_bootstrap_paths():
     """Verify search paths are properly added to sys.path and OS PATH env variables."""
+    from pathlib import Path
     bin_dir = get_bootstrap_bin_dir()
     sqlcipher3_path = bin_dir / "sqlcipher3"
     real_path = os.environ.get("PATH", "")
+    original_exists = Path.exists
+
+    def mock_exists(self):
+        p_str = str(self)
+        if "binaries" in p_str or "sqlcipher3" in p_str:
+            return True
+        return original_exists(self)
 
     with (
-        patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.exists", mock_exists),
         patch.object(sys, "path", sys.path.copy()) as mock_sys_path,
         patch("os.add_dll_directory", create=True) as mock_add_dll,
         patch.dict("os.environ", {"PATH": "existing_path" + os.pathsep + real_path}),
