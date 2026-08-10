@@ -302,44 +302,6 @@ def test_is_standard_sqlite_binary():
 
     is_standard_sqlite_binary = mock_globals["is_standard_sqlite_binary"]
 
-    # These should be identified as standard/non-cryptographic and return True
-    assert (
-        is_standard_sqlite_binary("sqlite3.dll", "C:\\Python312\\DLLs\\sqlite3.dll")
-        is True
-    )
-    assert (
-        is_standard_sqlite_binary("_sqlite3.pyd", "C:\\Python312\\DLLs\\_sqlite3.pyd")
-        is True
-    )
-    assert is_standard_sqlite_binary("sqlite3", "/usr/lib/libsqlite3.so") is True
-
-    # These should NOT be identified as standard (because they come from sqlcipher3 or app/binaries) and return False
-    assert (
-        is_standard_sqlite_binary(
-            "sqlite3.dll", "C:\\env\\.venv\\Lib\\site-packages\\sqlcipher3\\sqlite3.dll"
-        )
-        is False
-    )
-    assert (
-        is_standard_sqlite_binary(
-            "_sqlite3.pyd",
-            "C:\\env\\.venv\\Lib\\site-packages\\sqlcipher3\\_sqlite3.pyd",
-        )
-        is False
-    )
-    assert (
-        is_standard_sqlite_binary(
-            "sqlite3.dll", "C:\\env\\app\\binaries\\windows\\sqlite3.dll"
-        )
-        is False
-    )
-    assert (
-        is_standard_sqlite_binary(
-            "some_other_library.dll", "C:\\Python312\\DLLs\\some_other_library.dll"
-        )
-        is False
-    )
-
     # Verify virtualenv prefix support using mock prefixes to ensure platform independence
     fake_venv = os.path.abspath("fake_venv")
     fake_base = os.path.abspath("fake_base")
@@ -348,6 +310,44 @@ def test_is_standard_sqlite_binary():
         patch("sys.base_prefix", fake_base),
         patch.dict(os.environ, {"VIRTUAL_ENV": fake_venv}),
     ):
+        # These should be identified as standard/non-cryptographic and return True
+        assert (
+            is_standard_sqlite_binary("sqlite3.dll", "C:\\Python312\\DLLs\\sqlite3.dll")
+            is True
+        )
+        assert (
+            is_standard_sqlite_binary("_sqlite3.pyd", "C:\\Python312\\DLLs\\_sqlite3.pyd")
+            is True
+        )
+        assert is_standard_sqlite_binary("sqlite3", "/usr/lib/libsqlite3.so") is True
+
+        # These should NOT be identified as standard (because they come from sqlcipher3 or app/binaries) and return False
+        assert (
+            is_standard_sqlite_binary(
+                "sqlite3.dll", "C:\\env\\.venv\\Lib\\site-packages\\sqlcipher3\\sqlite3.dll"
+            )
+            is False
+        )
+        assert (
+            is_standard_sqlite_binary(
+                "_sqlite3.pyd",
+                "C:\\env\\.venv\\Lib\\site-packages\\sqlcipher3\\_sqlite3.pyd",
+            )
+            is False
+        )
+        assert (
+            is_standard_sqlite_binary(
+                "sqlite3.dll", "C:\\env\\app\\binaries\\windows\\sqlite3.dll"
+            )
+            is False
+        )
+        assert (
+            is_standard_sqlite_binary(
+                "some_other_library.dll", "C:\\Python312\\DLLs\\some_other_library.dll"
+            )
+            is False
+        )
+
         venv_path_win = os.path.join(fake_venv, "Library", "bin", "sqlite3.dll")
         venv_path_unix = os.path.join(fake_venv, "lib", "libsqlite3.so")
         assert is_standard_sqlite_binary("sqlite3.dll", venv_path_win) is False
