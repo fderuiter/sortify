@@ -58,7 +58,8 @@ def test_single_file_cross_partition_move_failure(test_history_env):
     def mock_move(src, dst):
         if src == file1_src and dst == file1_dst:
             os.makedirs(os.path.dirname(dst), exist_ok=True)
-            shutil.copy2(src, dst)
+            with open(src, "rb") as sf, open(dst, "wb") as df:
+                df.write(sf.read())
             raise PermissionError("Simulated cross-partition source deletion failure.")
         return original_move(src, dst)
 
@@ -158,7 +159,8 @@ def test_batch_file_cross_partition_move_failure(test_history_env):
     def mock_move(src, dst):
         if src == fileB_src and dst == fileB_dst:
             os.makedirs(os.path.dirname(dst), exist_ok=True)
-            shutil.copy2(src, dst)
+            with open(src, "rb") as sf, open(dst, "wb") as df:
+                df.write(sf.read())
             raise PermissionError(
                 "Simulated batch element B cross-partition source deletion failure."
             )
