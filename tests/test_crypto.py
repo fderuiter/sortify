@@ -322,7 +322,19 @@ def test_decryption_failure_safe_error_propagation(tmp_path, monkeypatch, caplog
     from contextlib import closing
 
     from app.core import db_conn
-    if not db_conn.HAS_SQLCIPHER:
+    is_active = False
+    if db_conn.HAS_SQLCIPHER:
+        try:
+            with closing(db_conn.sqlite3.connect(":memory:")) as conn:
+                with closing(conn.cursor()) as cursor:
+                    cursor.execute("PRAGMA cipher_version;")
+                    row = cursor.fetchone()
+                    if row and row[0]:
+                        is_active = True
+        except Exception:
+            pass
+
+    if not is_active:
         pytest.skip("SQLCipher is missing/inactive; skipping decryption failure test.")
 
     from app.core.path_utils import resolve_db_crypto
