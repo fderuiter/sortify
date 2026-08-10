@@ -22,7 +22,7 @@ def test_single_file_cross_partition_move_failure(test_history_env):
 
     # 1. Create a single file
     file1_src = os.path.join(base_dir, "file1.txt")
-    with open(file1_src, "w") as f:
+    with open(file1_src, "w", newline="") as f:
         f.write("file1 content")
 
     # 2. Add document record to the database
@@ -76,8 +76,8 @@ def test_single_file_cross_partition_move_failure(test_history_env):
     time.sleep(0.1)
     # Source file must exist intact in original location
     assert os.path.exists(file1_src)
-    with open(file1_src, "r") as f:
-        assert f.read() == "file1 content"
+    with open(file1_src, "r", newline="") as f:
+        assert f.read().strip() == "file1 content"
 
     # Destination file and folders must be cleaned up
     assert not os.path.exists(file1_dst)
@@ -111,9 +111,9 @@ def test_batch_file_cross_partition_move_failure(test_history_env):
     # 1. Create two files
     fileA_src = os.path.join(base_dir, "fileA.txt")
     fileB_src = os.path.join(base_dir, "fileB.txt")
-    with open(fileA_src, "w") as f:
+    with open(fileA_src, "w", newline="") as f:
         f.write("fileA content")
-    with open(fileB_src, "w") as f:
+    with open(fileB_src, "w", newline="") as f:
         f.write("fileB content")
 
     # 2. Add records to the database
@@ -178,12 +178,12 @@ def test_batch_file_cross_partition_move_failure(test_history_env):
     time.sleep(0.1)
     # Both files must exist at their original source locations with correct contents
     assert os.path.exists(fileA_src)
-    with open(fileA_src, "r") as f:
-        assert f.read() == "fileA content"
+    with open(fileA_src, "r", newline="") as f:
+        assert f.read().strip() == "fileA content"
 
     assert os.path.exists(fileB_src)
-    with open(fileB_src, "r") as f:
-        assert f.read() == "fileB content"
+    with open(fileB_src, "r", newline="") as f:
+        assert f.read().strip() == "fileB content"
 
     # Target directory and its files must be completely gone
     assert not os.path.exists(fileA_dst)
