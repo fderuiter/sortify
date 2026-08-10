@@ -116,7 +116,7 @@ def test_batch_file_cross_partition_move_failure(test_history_env):
     with open(fileA_src, "w", newline="") as f:
         f.write("fileA content")
     with open(fileB_src, "w", newline="") as f:
-        f.write("fileB content")
+        f.write("fileB content with distinct size for resiliency")
 
     # 2. Add records to the database
     db.upsert_document(base_dir, "fileA.txt", "hashA", "textA")
@@ -187,7 +187,7 @@ def test_batch_file_cross_partition_move_failure(test_history_env):
 
     assert os.path.exists(fileB_src)
     with open(fileB_src, "r", newline="") as f:
-        assert f.read().strip() == "fileB content"
+        assert f.read().strip() == "fileB content with distinct size for resiliency"
 
     # Target directory and its files must be completely gone
     assert not os.path.exists(fileA_dst)
