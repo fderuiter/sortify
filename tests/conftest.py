@@ -295,9 +295,10 @@ def pytest_runtest_logreport(report):
     """Intercept pytest failures and output them as GitHub Actions error annotations to capture raw tracebacks."""
     if report.when == "call" and report.failed:
         import sys
+
         tb = str(report.longrepr)
         message = f"Test Failed: {report.nodeid}\n\n{tb}"
-        
+
         # Write to pytest_failures.txt
         try:
             with open("pytest_failures.txt", "a", encoding="utf-8") as f:
@@ -312,4 +313,3 @@ def pytest_runtest_logreport(report):
             sys.__stdout__.flush()
         except Exception:
             pass
-

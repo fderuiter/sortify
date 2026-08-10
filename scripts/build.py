@@ -108,9 +108,28 @@ def update_binaries_and_manifest(system_platform=None, bypass_pytest_check=False
                     # If not found in candidate paths, walk the venv directory recursively
                     for root, dirs, files in os.walk(vd):
                         # Filter out heavy directories in-place to prevent os.walk from recursing into them
-                        dirs[:] = [d for d in dirs if d.lower() not in ("torch", "easyocr", "scipy", "transformers", "numpy", "pandas", "sklearn", "matplotlib", "jinja2", "anyio", "aiohttp", "pydantic", "pydantic_core")]
-                        
-                        root_normalized = root.lower().replace('\\', '/')
+                        dirs[:] = [
+                            d
+                            for d in dirs
+                            if d.lower()
+                            not in (
+                                "torch",
+                                "easyocr",
+                                "scipy",
+                                "transformers",
+                                "numpy",
+                                "pandas",
+                                "sklearn",
+                                "matplotlib",
+                                "jinja2",
+                                "anyio",
+                                "aiohttp",
+                                "pydantic",
+                                "pydantic_core",
+                            )
+                        ]
+
+                        root_normalized = root.lower().replace("\\", "/")
                         if any(
                             p in root_normalized
                             for p in (
@@ -153,9 +172,28 @@ def update_binaries_and_manifest(system_platform=None, bypass_pytest_check=False
                     if not found_for_pattern:
                         for root, dirs, files in os.walk(sys.base_prefix):
                             # Filter out heavy directories in-place to prevent os.walk from recursing into them
-                            dirs[:] = [d for d in dirs if d.lower() not in ("torch", "easyocr", "scipy", "transformers", "numpy", "pandas", "sklearn", "matplotlib", "jinja2", "anyio", "aiohttp", "pydantic", "pydantic_core")]
-                            
-                            root_normalized = root.lower().replace('\\', '/')
+                            dirs[:] = [
+                                d
+                                for d in dirs
+                                if d.lower()
+                                not in (
+                                    "torch",
+                                    "easyocr",
+                                    "scipy",
+                                    "transformers",
+                                    "numpy",
+                                    "pandas",
+                                    "sklearn",
+                                    "matplotlib",
+                                    "jinja2",
+                                    "anyio",
+                                    "aiohttp",
+                                    "pydantic",
+                                    "pydantic_core",
+                                )
+                            ]
+
+                            root_normalized = root.lower().replace("\\", "/")
                             if any(
                                 p in root_normalized
                                 for p in (
@@ -184,7 +222,10 @@ def update_binaries_and_manifest(system_platform=None, bypass_pytest_check=False
                             if candidate_dir.exists():
                                 try:
                                     for f in os.listdir(candidate_dir):
-                                        if f.lower().endswith(".dll") and pat in f.lower():
+                                        if (
+                                            f.lower().endswith(".dll")
+                                            and pat in f.lower()
+                                        ):
                                             dll_srcs.append(candidate_dir / f)
                                             found_for_pattern = True
                                 except Exception:
@@ -239,14 +280,20 @@ def update_binaries_and_manifest(system_platform=None, bypass_pytest_check=False
                                     or "venv" in cleaned_lower
                                     or "site-packages" in cleaned_lower
                                 )
-                                p_abs = os.path.abspath(cleaned).lower().replace('\\', '/')
+                                p_abs = (
+                                    os.path.abspath(cleaned).lower().replace("\\", "/")
+                                )
                                 is_sys_dir = (
                                     "system32" in p_abs
                                     or "syswow64" in p_abs
                                     or p_abs == "c:/windows"
                                     or p_abs.startswith("c:/windows/")
                                 )
-                                if is_candidate_dir and not is_sys_dir and os.path.isdir(cleaned):
+                                if (
+                                    is_candidate_dir
+                                    and not is_sys_dir
+                                    and os.path.isdir(cleaned)
+                                ):
                                     path_dirs.append(cleaned)
                             except Exception:
                                 pass
