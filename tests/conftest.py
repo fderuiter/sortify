@@ -294,8 +294,11 @@ def socket_mock(monkeypatch):
 def pytest_runtest_logreport(report):
     """Intercept pytest failures and output them as GitHub Actions error annotations to capture raw tracebacks."""
     if report.when == "call" and report.failed:
+        import sys
         tb = str(report.longrepr)
         message = f"Test Failed: {report.nodeid}\n\n{tb}"
         message_escaped = message.replace("\r", "").replace("\n", "%0A")
-        print(f"::error:: {message_escaped}", flush=True)
+        sys.__stdout__.write(f"::error:: {message_escaped}\n")
+        sys.__stdout__.flush()
+
 
