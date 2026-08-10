@@ -21,9 +21,9 @@ def get_file_hash(file_path: str) -> str:
     For MP3 and M4A files, skips metadata headers and structural atoms
     to isolate the raw audio payload, ensuring stable hashes after tag edits.
     """
+    import gc
     import sys
     import time
-    import gc
 
     max_attempts = 15 if sys.platform == "win32" else 1
 
