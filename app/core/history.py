@@ -422,15 +422,36 @@ class HistoryManager:
                 active_files_by_sig[sig] = []
             active_files_by_sig[sig].append(abs_path)
 
-        def verify_hash(abs_path, expected_hash):
+        def verify_hash(abs_path, expected_hash, expected_size=0):
             if not expected_hash:
                 return True
-            try:
-                from app.core.extractor import get_file_hash
+            EMPTY_SHA256 = (
+                "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            )
+            for attempt in range(10):
+                try:
+                    from app.core.extractor import get_file_hash
 
-                return get_file_hash(abs_path) == expected_hash
-            except Exception:
-                return False
+                    h = get_file_hash(abs_path)
+                    if h == expected_hash:
+                        return True
+                    if (
+                        h == EMPTY_SHA256
+                        and expected_hash != EMPTY_SHA256
+                        and expected_size > 0
+                    ):
+                        import gc
+
+                        gc.collect()
+                        time.sleep(0.05)
+                        continue
+                    return False
+                except Exception:
+                    import gc
+
+                    gc.collect()
+                    time.sleep(0.05)
+            return False
 
         missing = []
         for (
@@ -459,7 +480,7 @@ class HistoryManager:
                 else:
                     if current_sig[2] == is_symlink:
                         if not is_symlink or current_sig[3] == symlink_target:
-                            if verify_hash(abs_path, file_hash):
+                            if verify_hash(abs_path, file_hash, size):
                                 del current_inodes[inode]
                                 found = True
 
@@ -472,7 +493,7 @@ class HistoryManager:
                 else:
                     if curr_sig == target_sig:
                         abs_path = os.path.join(base_dir, rel_path)
-                        if verify_hash(abs_path, file_hash):
+                        if verify_hash(abs_path, file_hash, size):
                             if (
                                 curr_sig in active_files_by_sig
                                 and abs_path in active_files_by_sig[curr_sig]
@@ -489,7 +510,7 @@ class HistoryManager:
                             for idx, cand_path in enumerate(
                                 active_files_by_sig[target_sig]
                             ):
-                                if verify_hash(cand_path, file_hash):
+                                if verify_hash(cand_path, file_hash, size):
                                     active_files_by_sig[target_sig].pop(idx)
                                     found = True
                                     break
@@ -616,15 +637,34 @@ class HistoryManager:
                 # First compute all intended moves
                 moves = []
 
-                def verify_hash(abs_path, expected_hash):
+                def verify_hash(abs_path, expected_hash, expected_size=0):
                     if not expected_hash:
                         return True
-                    try:
-                        from app.core.extractor import get_file_hash
+                    EMPTY_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                    for attempt in range(10):
+                        try:
+                            from app.core.extractor import get_file_hash
 
-                        return get_file_hash(abs_path) == expected_hash
-                    except Exception:
-                        return False
+                            h = get_file_hash(abs_path)
+                            if h == expected_hash:
+                                return True
+                            if (
+                                h == EMPTY_SHA256
+                                and expected_hash != EMPTY_SHA256
+                                and expected_size > 0
+                            ):
+                                import gc
+
+                                gc.collect()
+                                time.sleep(0.05)
+                                continue
+                            return False
+                        except Exception:
+                            import gc
+
+                            gc.collect()
+                            time.sleep(0.05)
+                    return False
 
                 symlinks_to_restore = []
                 shortcuts_to_restore = []
@@ -663,7 +703,7 @@ class HistoryManager:
                         else:
                             if current_sig[2] == is_symlink:
                                 if not is_symlink or current_sig[3] == symlink_target:
-                                    if verify_hash(abs_path, file_hash):
+                                    if verify_hash(abs_path, file_hash, size):
                                         current_abs = abs_path
                                         del current_inodes[inode]
 
@@ -675,7 +715,7 @@ class HistoryManager:
                         else:
                             if curr_sig == target_sig:
                                 candidate_abs = target_abs
-                                if verify_hash(candidate_abs, file_hash):
+                                if verify_hash(candidate_abs, file_hash, size):
                                     current_abs = candidate_abs
                                     if (
                                         curr_sig in active_files_by_sig
@@ -693,7 +733,7 @@ class HistoryManager:
                                     for idx, cand_path in enumerate(
                                         active_files_by_sig[target_sig]
                                     ):
-                                        if verify_hash(cand_path, file_hash):
+                                        if verify_hash(cand_path, file_hash, size):
                                             current_abs = active_files_by_sig[
                                                 target_sig
                                             ].pop(idx)
@@ -706,7 +746,7 @@ class HistoryManager:
                                         for idx, cand_path in enumerate(
                                             active_files_by_size[size]
                                         ):
-                                            if verify_hash(cand_path, file_hash):
+                                            if verify_hash(cand_path, file_hash, size):
                                                 current_abs = active_files_by_size[
                                                     size
                                                 ].pop(idx)
