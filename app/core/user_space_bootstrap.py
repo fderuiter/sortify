@@ -48,13 +48,13 @@ def verify_sqlcipher_encryption() -> bool:
             cursor.execute("SELECT val FROM test_encrypt")
             row = cursor.fetchone()
             if not row or row[0] != "secure_data":
-                return False
+                raise RuntimeError("Pre-flight database read/write validation failed.")
 
             # Check cipher version is active
             cursor.execute("PRAGMA cipher_version;")
             ver = cursor.fetchone()
             if not ver or not ver[0]:
-                return False
+                raise RuntimeError("PRAGMA cipher_version is empty.")
 
             return True
         finally:
