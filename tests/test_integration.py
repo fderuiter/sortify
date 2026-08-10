@@ -333,7 +333,7 @@ def test_run_app_directory_preload():
     with (
         patch("app.ui.app.ui"),
         patch("app.ui.app.AutoSorterApp") as mock_app_class,
-        patch("os.path.exists", return_value=True),
+        patch("app.ui.app.os.path.exists", return_value=True),
     ):
         settings = AppSettings()
         run_app(settings, "some_dir")
