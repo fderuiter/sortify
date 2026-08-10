@@ -72,6 +72,7 @@ def test_single_file_cross_partition_move_failure(test_history_env):
     # 6. Verify filesystem boundaries
     import gc
     import time
+
     gc.collect()
     time.sleep(0.1)
     # Source file must exist intact in original location
@@ -174,6 +175,7 @@ def test_batch_file_cross_partition_move_failure(test_history_env):
     # 6. Verify filesystem boundaries after rollback
     import gc
     import time
+
     gc.collect()
     time.sleep(0.1)
     # Both files must exist at their original source locations with correct contents

@@ -990,6 +990,7 @@ class HistoryManager:
                 try:
                     import gc
                     import time
+
                     gc.collect()
                     time.sleep(0.1)
                     current_files_after_restore = get_files_recursively(

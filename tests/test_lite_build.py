@@ -165,6 +165,7 @@ def test_spec_file_partitioning():
     mock_hooks.collect_all.return_value = ([], [], [])
 
     real_exists = os.path.exists
+
     def mock_exists(path):
         if "binaries" in str(path).lower():
             return True
@@ -316,7 +317,9 @@ def test_is_standard_sqlite_binary():
             is True
         )
         assert (
-            is_standard_sqlite_binary("_sqlite3.pyd", "C:\\Python312\\DLLs\\_sqlite3.pyd")
+            is_standard_sqlite_binary(
+                "_sqlite3.pyd", "C:\\Python312\\DLLs\\_sqlite3.pyd"
+            )
             is True
         )
         assert is_standard_sqlite_binary("sqlite3", "/usr/lib/libsqlite3.so") is True
@@ -324,7 +327,8 @@ def test_is_standard_sqlite_binary():
         # These should NOT be identified as standard (because they come from sqlcipher3 or app/binaries) and return False
         assert (
             is_standard_sqlite_binary(
-                "sqlite3.dll", "C:\\env\\.venv\\Lib\\site-packages\\sqlcipher3\\sqlite3.dll"
+                "sqlite3.dll",
+                "C:\\env\\.venv\\Lib\\site-packages\\sqlcipher3\\sqlite3.dll",
             )
             is False
         )
