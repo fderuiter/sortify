@@ -16,9 +16,8 @@ except ImportError:
 
 def _robust_move(src, dst):
     """Safely move a file, retrying on temporary Windows sharing violations and file locks."""
-    import sys
-    import shutil
     import os
+    import sys
 
     if sys.platform != "win32":
         shutil.move(src, dst)
@@ -31,6 +30,7 @@ def _robust_move(src, dst):
         if os.path.exists(dst) and os.path.exists(src):
             try:
                 from app.core.extractor import get_file_hash
+
                 if get_file_hash(src) == get_file_hash(dst):
                     try:
                         os.remove(src)
@@ -597,9 +597,21 @@ class HistoryManager:
 
                 print("DEBUG ROLLBACK: inodes_reliable =", inodes_reliable, flush=True)
                 print("DEBUG ROLLBACK: current_files =", current_files, flush=True)
-                print("DEBUG ROLLBACK: snapshot_files =", [(r[0], r[1], r[2], r[3], r[6]) for r in snapshot_files], flush=True)
-                print("DEBUG ROLLBACK: active_files_by_size =", active_files_by_size, flush=True)
-                print("DEBUG ROLLBACK: active_files_by_sig =", active_files_by_sig, flush=True)
+                print(
+                    "DEBUG ROLLBACK: snapshot_files =",
+                    [(r[0], r[1], r[2], r[3], r[6]) for r in snapshot_files],
+                    flush=True,
+                )
+                print(
+                    "DEBUG ROLLBACK: active_files_by_size =",
+                    active_files_by_size,
+                    flush=True,
+                )
+                print(
+                    "DEBUG ROLLBACK: active_files_by_sig =",
+                    active_files_by_sig,
+                    flush=True,
+                )
 
                 # First compute all intended moves
                 moves = []
@@ -700,7 +712,10 @@ class HistoryManager:
                                                 ].pop(idx)
                                                 break
 
-                    print(f"DEBUG ROLLBACK FILE {rel_path}: current_abs resolved to = {current_abs}", flush=True)
+                    print(
+                        f"DEBUG ROLLBACK FILE {rel_path}: current_abs resolved to = {current_abs}",
+                        flush=True,
+                    )
                     if not current_abs:
                         if not is_link_entity and not ignore_missing:
                             raise ValueError(
