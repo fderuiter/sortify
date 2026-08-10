@@ -524,7 +524,7 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,
-    console=False,  # windowed mode
+    console=os.environ.get("GITHUB_ACTIONS") == "true",  # console mode on GHA for diagnostics, windowed mode otherwise
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
