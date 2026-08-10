@@ -227,6 +227,17 @@ def update_binaries_and_manifest(system_platform=None, bypass_pytest_check=False
                         cleaned = d.strip().strip('"')
                         if cleaned:
                             try:
+                                cleaned_lower = cleaned.lower()
+                                is_candidate_dir = (
+                                    "openssl" in cleaned_lower
+                                    or "ssl" in cleaned_lower
+                                    or "sqlcipher" in cleaned_lower
+                                    or "sqlite" in cleaned_lower
+                                    or "git" in cleaned_lower
+                                    or "python" in cleaned_lower
+                                    or "venv" in cleaned_lower
+                                    or "site-packages" in cleaned_lower
+                                )
                                 p_abs = os.path.abspath(cleaned).lower().replace('\\', '/')
                                 is_sys_dir = (
                                     "system32" in p_abs
@@ -234,7 +245,7 @@ def update_binaries_and_manifest(system_platform=None, bypass_pytest_check=False
                                     or p_abs == "c:/windows"
                                     or p_abs.startswith("c:/windows/")
                                 )
-                                if not is_sys_dir and os.path.isdir(cleaned):
+                                if is_candidate_dir and not is_sys_dir and os.path.isdir(cleaned):
                                     path_dirs.append(cleaned)
                             except Exception:
                                 pass
