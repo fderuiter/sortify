@@ -72,12 +72,13 @@ def test_inject_bootstrap_paths():
     """Verify search paths are properly added to sys.path and OS PATH env variables."""
     bin_dir = get_bootstrap_bin_dir()
     sqlcipher3_path = bin_dir / "sqlcipher3"
+    real_path = os.environ.get("PATH", "")
 
     with (
         patch("pathlib.Path.exists", return_value=True),
         patch.object(sys, "path", sys.path.copy()) as mock_sys_path,
         patch("os.add_dll_directory", create=True) as mock_add_dll,
-        patch.dict("os.environ", {"PATH": "existing_path"}),
+        patch.dict("os.environ", {"PATH": "existing_path" + os.pathsep + real_path}),
     ):
         inject_bootstrap_paths()
         assert str(bin_dir) in mock_sys_path

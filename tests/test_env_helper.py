@@ -11,9 +11,10 @@ from app.core.env_helper import (
 
 
 def test_get_cleaned_env_defaults():
-    # Setup test environment with PyInstaller variables
+    # Setup test environment with PyInstaller variables while preserving system PATH
+    real_path = os.environ.get("PATH", "/usr/bin")
     test_env = {
-        "PATH": "/usr/bin",
+        "PATH": real_path,
         "_MEIPASS": "/tmp/_MEI12345",
         "PYTHONPATH": "/tmp/frozen_app",
     }
@@ -24,7 +25,7 @@ def test_get_cleaned_env_defaults():
         # Ensure _MEIPASS is removed
         assert "_MEIPASS" not in cleaned
         # Ensure the path contains other variables
-        assert cleaned["PATH"] == "/usr/bin"
+        assert cleaned["PATH"] == real_path
         # Ensure PYTHONPATH now points to the local cache directory
         expected_cache = str(get_app_dir() / "cache")
         assert cleaned["PYTHONPATH"] == expected_cache
