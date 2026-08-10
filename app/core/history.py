@@ -1071,11 +1071,17 @@ class HistoryManager:
                                 abs_path
                             ):
                                 try:
+                                    import stat
+
+                                    os.chmod(abs_path, stat.S_IWRITE)
                                     os.remove(abs_path)
                                 except OSError:
                                     try:
                                         gc.collect()
                                         time.sleep(0.1)
+                                        import stat
+
+                                        os.chmod(abs_path, stat.S_IWRITE)
                                         os.remove(abs_path)
                                     except OSError:
                                         pass
