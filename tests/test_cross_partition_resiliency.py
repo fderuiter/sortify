@@ -70,6 +70,10 @@ def test_single_file_cross_partition_move_failure(test_history_env):
             execute_moves(base_dir, plan, db, history_manager)
 
     # 6. Verify filesystem boundaries
+    import gc
+    import time
+    gc.collect()
+    time.sleep(0.1)
     # Source file must exist intact in original location
     assert os.path.exists(file1_src)
     with open(file1_src, "r") as f:
@@ -168,6 +172,10 @@ def test_batch_file_cross_partition_move_failure(test_history_env):
             execute_moves(base_dir, plan, db, history_manager)
 
     # 6. Verify filesystem boundaries after rollback
+    import gc
+    import time
+    gc.collect()
+    time.sleep(0.1)
     # Both files must exist at their original source locations with correct contents
     assert os.path.exists(fileA_src)
     with open(fileA_src, "r") as f:
