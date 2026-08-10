@@ -353,11 +353,15 @@ def test_update_binaries_and_manifest_win32_dll_detection(tmp_path):
     (fake_sqlcipher_dir / "__init__.py").write_text("print('mock')", encoding="utf-8")
     (fake_sqlcipher_dir / "_sqlite3.pyd").write_bytes(b"mock_pyd_content")
 
-    # Create dummy venv directory with Library/bin/sqlite3.dll
+    # Create dummy venv directory with Library/bin/sqlite3.dll and all other required DLL patterns to prevent Windows fallback system-wide searches
     fake_venv_dir = tmp_path / "fake_venv_dir"
     fake_venv_lib_bin = fake_venv_dir / "Library" / "bin"
     fake_venv_lib_bin.mkdir(parents=True, exist_ok=True)
     (fake_venv_lib_bin / "sqlite3.dll").write_bytes(b"mock_dll_content")
+    (fake_venv_lib_bin / "libcrypto.dll").write_bytes(b"mock_crypto_content")
+    (fake_venv_lib_bin / "libssl.dll").write_bytes(b"mock_ssl_content")
+    (fake_venv_lib_bin / "sqlcipher.dll").write_bytes(b"mock_sqlcipher_content")
+    (fake_venv_lib_bin / "libsqlcipher.dll").write_bytes(b"mock_libsqlcipher_content")
 
     # Create mock spec for find_spec
     mock_spec = MagicMock()
