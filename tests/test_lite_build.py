@@ -334,11 +334,15 @@ def test_is_standard_sqlite_binary():
 def test_update_binaries_and_manifest_win32_dll_detection():
     """Test that on win32, update_binaries_and_manifest correctly searches for and copies sqlite3.dll,
     even when _sqlite3.pyd has already been copied, but skips it if sqlite3.dll was already copied."""
+    import pathlib
+
     from scripts import build
 
     # Create mocks for all required dependencies
     mock_spec = MagicMock()
     mock_spec.submodule_search_locations = ["/fake/sqlcipher3/dir"]
+
+    orig_walk = os.walk
 
     # Mock os.walk and os.listdir to simulate finding sqlite3.dll in venv
     def mock_walk(top, *args, **kwargs):
@@ -348,12 +352,21 @@ def test_update_binaries_and_manifest_win32_dll_detection():
         elif "/fake/venv" in p_str:
             yield ("/fake/venv/Library/bin", [], ["sqlite3.dll"])
         else:
-            yield (str(top), [], [])
+            yield from orig_walk(top, *args, **kwargs)
+
+    orig_listdir = os.listdir
 
     def mock_listdir(path):
-        if "Library" in str(path) or "bin" in str(path):
-            return ["sqlite3.dll"]
-        return []
+        p_str = str(path).replace("\\", "/")
+        if "/fake/venv" in p_str:
+            if "Library" in p_str or "bin" in p_str:
+                return ["sqlite3.dll"]
+        try:
+            return orig_listdir(path)
+        except Exception:
+            return []
+
+    orig_exists = os.path.exists
 
     def mock_exists(path):
         p_str = str(path).replace("\\", "/")
@@ -363,7 +376,7 @@ def test_update_binaries_and_manifest_win32_dll_detection():
             return True
         if "manifest.json" in p_str:
             return True
-        return False
+        return orig_exists(path)
 
     mock_copy = MagicMock()
     mock_rmtree = MagicMock()
@@ -374,15 +387,26 @@ def test_update_binaries_and_manifest_win32_dll_detection():
     if "pytest" in fake_modules:
         del fake_modules["pytest"]
 
+    orig_open = open
+
     # Mock open for manifest and other files with support for mode-aware reading
     def mock_open_mode(file, mode="r", *args, **kwargs):
-        mock_fh = MagicMock()
-        if "b" in mode:
-            mock_fh.read.side_effect = [b"{}", b""]
-        else:
-            mock_fh.read.side_effect = ["{}", ""]
-        mock_fh.__enter__.return_value = mock_fh
-        return mock_fh
+        file_str = str(file).lower().replace("\\", "/")
+        if (
+            "manifest.json" in file_str
+            or "/fake/" in file_str
+            or "app/binaries" in file_str
+        ):
+            mock_fh = MagicMock()
+            if "b" in mode:
+                mock_fh.read.side_effect = [b"{}", b""]
+            else:
+                mock_fh.read.side_effect = ["{}", ""]
+            mock_fh.__enter__.return_value = mock_fh
+            return mock_fh
+        return orig_open(file, mode, *args, **kwargs)
+
+    orig_path_exists = pathlib.Path.exists
 
     # Mock pathlib.Path.exists
     def mock_path_exists(self):
@@ -393,7 +417,7 @@ def test_update_binaries_and_manifest_win32_dll_detection():
             return True
         if "manifest.json" in p_str:
             return True
-        return False
+        return orig_path_exists(self)
 
     with (
         patch("sys.platform", "win32"),
