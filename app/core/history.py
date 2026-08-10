@@ -241,7 +241,7 @@ class HistoryManager:
                     file_records.append(
                         (
                             session_id,
-                            rel_path,
+                            rel_path.replace("\\", "/"),
                             st.st_ino,
                             st.st_size,
                             st.st_mtime,
@@ -416,7 +416,7 @@ class HistoryManager:
 
             sig = (size, mtime, is_symlink, symlink_target)
             current_inodes[ino] = (abs_path, sig)
-            active_files_by_rel_path[rel_path] = sig
+            active_files_by_rel_path[rel_path.lower().replace("\\", "/")] = sig
 
             if sig not in active_files_by_sig:
                 active_files_by_sig[sig] = []
@@ -486,7 +486,7 @@ class HistoryManager:
 
             if not found:
                 # Fallback Step A
-                curr_sig = active_files_by_rel_path.get(rel_path)
+                curr_sig = active_files_by_rel_path.get(rel_path.lower().replace("\\", "/"))
                 if is_link_entity:
                     if curr_sig is not None:
                         found = True
@@ -606,7 +606,7 @@ class HistoryManager:
 
                     sig = (size, mtime, is_symlink, symlink_target)
                     current_inodes[ino] = (abs_path, sig)
-                    active_files_by_rel_path[rel_path] = sig
+                    active_files_by_rel_path[rel_path.lower().replace("\\", "/")] = sig
 
                     if sig not in active_files_by_sig:
                         active_files_by_sig[sig] = []
@@ -708,7 +708,7 @@ class HistoryManager:
                                         del current_inodes[inode]
 
                     if not current_abs:
-                        curr_sig = active_files_by_rel_path.get(rel_path)
+                        curr_sig = active_files_by_rel_path.get(rel_path.lower().replace("\\", "/"))
                         if is_link_entity:
                             if curr_sig is not None:
                                 current_abs = target_abs
@@ -799,7 +799,7 @@ class HistoryManager:
                                 if current_abs != target_abs:
                                     moves.append((current_abs, target_abs))
 
-                planned_target_rels = [os.path.relpath(m[1], base_dir) for m in moves]
+                planned_target_rels = {os.path.relpath(m[1], base_dir).lower().replace("\\", "/") for m in moves}
 
                 cur = conn.execute(
                     "SELECT filepath, file_hash, extracted_text FROM snapshot_documents WHERE session_id = ?",
@@ -834,7 +834,7 @@ class HistoryManager:
                 with db_conn:
                     docs_to_upsert = []
                     for fp, r in snapshot_docs_dict.items():
-                        if fp not in planned_target_rels:
+                        if fp.lower().replace("\\", "/") not in planned_target_rels:
                             docs_to_upsert.append((base_dir, r[0], r[1], r[2]))
                     if docs_to_upsert:
                         db_conn.executemany(
@@ -856,7 +856,7 @@ class HistoryManager:
                         db_conn = get_db_connection(self.db.db_path)
 
                         # Fix parent directory collisions
-                        parts = os.path.relpath(dst, base_dir).split(os.sep)
+                        parts = os.path.relpath(dst, base_dir).replace("\\", "/").split("/")
                         current = base_dir
                         for part in parts[:-1]:
                             current = os.path.join(current, part)
@@ -865,8 +865,8 @@ class HistoryManager:
                                     os.path.dirname(current), os.path.basename(current)
                                 )
                                 _robust_move(current, safe_current)
-                                rel_current = os.path.relpath(current, base_dir)
-                                rel_safe = os.path.relpath(safe_current, base_dir)
+                                rel_current = os.path.relpath(current, base_dir).replace("\\", "/")
+                                rel_safe = os.path.relpath(safe_current, base_dir).replace("\\", "/")
                                 with db_conn:
                                     db_conn.execute(
                                         "UPDATE documents SET filepath = ? WHERE base_dir = ? AND filepath = ?",
@@ -878,7 +878,7 @@ class HistoryManager:
                                             rel_safe,
                                             len(rel_current) + 1,
                                             base_dir,
-                                            rel_current + os.sep + "%",
+                                            rel_current + "/%",
                                         ),
                                     )
 
@@ -889,8 +889,8 @@ class HistoryManager:
                             except OSError:
                                 pass
 
-                        rel_src = os.path.relpath(src, base_dir)
-                        rel_dst = os.path.relpath(dst, base_dir)
+                        rel_src = os.path.relpath(src, base_dir).replace("\\", "/")
+                        rel_dst = os.path.relpath(dst, base_dir).replace("\\", "/")
 
                         if os.path.exists(dst) and not os.path.samefile(src, dst):
                             is_cyclic = False
@@ -903,7 +903,7 @@ class HistoryManager:
                                 # Cyclic rename conflict -> isolate to safe transient path
                                 branch_rel_temp = os.path.join(
                                     ".branches", safety_session_id, rel_dst
-                                )
+                                ).replace("\\", "/")
                                 temp_dst = os.path.join(base_dir, branch_rel_temp)
                                 os.makedirs(os.path.dirname(temp_dst), exist_ok=True)
                                 _robust_move(dst, temp_dst)
@@ -924,7 +924,7 @@ class HistoryManager:
                                 )
                                 _robust_move(dst, safe_dst)
 
-                                safe_rel = os.path.relpath(safe_dst, base_dir)
+                                safe_rel = os.path.relpath(safe_dst, base_dir).replace("\\", "/")
                                 with db_conn:
                                     db_conn.execute(
                                         "UPDATE documents SET filepath = ? WHERE base_dir = ? AND filepath = ?",
@@ -936,7 +936,7 @@ class HistoryManager:
                                             safe_rel,
                                             len(rel_dst) + 1,
                                             base_dir,
-                                            rel_dst + os.sep + "%",
+                                            rel_dst + "/%",
                                         ),
                                     )
 
@@ -985,8 +985,8 @@ class HistoryManager:
                                 )
                                 _robust_move(target_abs, safe_path)
 
-                                rel_target = os.path.relpath(target_abs, base_dir)
-                                rel_safe = os.path.relpath(safe_path, base_dir)
+                                rel_target = os.path.relpath(target_abs, base_dir).replace("\\", "/")
+                                rel_safe = os.path.relpath(safe_path, base_dir).replace("\\", "/")
                                 db_conn = get_db_connection(self.db.db_path)
                                 with db_conn:
                                     db_conn.execute(
@@ -999,7 +999,7 @@ class HistoryManager:
                                             rel_safe,
                                             len(rel_target) + 1,
                                             base_dir,
-                                            rel_target + os.sep + "%",
+                                            rel_target + "/%",
                                         ),
                                     )
                         try:
@@ -1040,8 +1040,8 @@ class HistoryManager:
                                 )
                                 _robust_move(target_abs, safe_path)
 
-                                rel_target = os.path.relpath(target_abs, base_dir)
-                                rel_safe = os.path.relpath(safe_path, base_dir)
+                                rel_target = os.path.relpath(target_abs, base_dir).replace("\\", "/")
+                                rel_safe = os.path.relpath(safe_path, base_dir).replace("\\", "/")
                                 db_conn = get_db_connection(self.db.db_path)
                                 with db_conn:
                                     db_conn.execute(
@@ -1054,7 +1054,7 @@ class HistoryManager:
                                             rel_safe,
                                             len(rel_target) + 1,
                                             base_dir,
-                                            rel_target + os.sep + "%",
+                                            rel_target + "/%",
                                         ),
                                     )
                         try:
@@ -1103,9 +1103,10 @@ class HistoryManager:
                     current_files_after_restore = get_files_recursively(
                         base_dir, include_hidden=True
                     )
-                    snapshot_rel_paths = {r[0] for r in snapshot_files}
+                    snapshot_rel_paths = {r[0].lower().replace("\\", "/") for r in snapshot_files}
                     for rel_path in current_files_after_restore:
-                        if rel_path not in snapshot_rel_paths:
+                        norm_rel_path = rel_path.lower().replace("\\", "/")
+                        if norm_rel_path not in snapshot_rel_paths:
                             abs_path = os.path.join(base_dir, rel_path)
                             if os.path.lexists(abs_path) and not os.path.isdir(
                                 abs_path
