@@ -20,7 +20,7 @@ def update_binaries_and_manifest():
             or "fake" in path_lower
             or "mock" in path_lower
         )
-        if not is_sec and sys.prefix != sys.base_prefix:
+        if not is_sec:
             venv_dirs = []
             v_env = os.environ.get("VIRTUAL_ENV")
             if v_env:
@@ -28,7 +28,11 @@ def update_binaries_and_manifest():
             local_venv = Path(__file__).resolve().parent.parent / ".venv"
             if local_venv.exists() and local_venv not in venv_dirs:
                 venv_dirs.append(local_venv)
-            if sys.prefix and Path(sys.prefix) not in venv_dirs:
+            if (
+                sys.prefix
+                and sys.prefix != sys.base_prefix
+                and Path(sys.prefix) not in venv_dirs
+            ):
                 venv_dirs.append(Path(sys.prefix))
 
             for vd in venv_dirs:

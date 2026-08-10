@@ -95,7 +95,7 @@ if platform.system().lower() == "windows" or sys.platform == "win32":
     local_venv_val = os.path.abspath(os.path.join(os.path.dirname(__file__) if "__file__" in locals() else ".", ".venv"))
     if os.path.exists(local_venv_val):
         spec_venv_dirs.append(local_venv_val)
-    if sys.prefix:
+    if sys.prefix and sys.prefix != sys.base_prefix:
         spec_venv_dirs.append(os.path.abspath(sys.prefix))
 
     def is_sqlite3_secure(path_dir):
@@ -106,7 +106,7 @@ if platform.system().lower() == "windows" or sys.platform == "win32":
             or "fake" in path_lower
             or "mock" in path_lower
         )
-        if not is_sec and sys.prefix != sys.base_prefix:
+        if not is_sec:
             for vd in spec_venv_dirs:
                 vd_str = str(vd).lower().replace("\\", "/")
                 if vd_str in path_lower:
@@ -332,6 +332,31 @@ def is_standard_sqlite_binary(dest_name, src_path):
         ):
             return False
 
+        # Build list of virtualenv directories to check
+        venv_dirs = []
+        v_env = os.environ.get("VIRTUAL_ENV")
+        if v_env:
+            venv_dirs.append(os.path.abspath(v_env))
+        local_venv = os.path.abspath(
+            os.path.join(
+                os.path.dirname(__file__) if "__file__" in locals() else ".", ".venv"
+            )
+        )
+        if os.path.exists(local_venv) and local_venv not in venv_dirs:
+            venv_dirs.append(local_venv)
+        if sys.prefix and sys.prefix != sys.base_prefix and os.path.abspath(sys.prefix) not in venv_dirs:
+            venv_dirs.append(os.path.abspath(sys.prefix))
+
+        for vd in venv_dirs:
+            prefix_lower = vd.lower().replace("\\", "/")
+            if prefix_lower in src_lower:
+                if any(ext in dest_lower or ext in src_lower for ext in (".dll", ".pyd")):
+                    if "library/bin" in src_lower or "scripts" in src_lower:
+                        return False
+                    return True
+                else:
+                    return False
+
         # If sys.base_prefix is in the path, and it is NOT the same as the virtualenv prefix,
         # then it is DEFINITELY from the standard base Python installation, so it is standard/unencrypted.
         if sys.base_prefix and sys.prefix != sys.base_prefix:
@@ -348,30 +373,6 @@ def is_standard_sqlite_binary(dest_name, src_path):
         if sys.prefix == sys.base_prefix:
             return True
 
-        # Build list of virtualenv directories to check
-        venv_dirs = []
-        v_env = os.environ.get("VIRTUAL_ENV")
-        if v_env:
-            venv_dirs.append(os.path.abspath(v_env))
-        local_venv = os.path.abspath(
-            os.path.join(
-                os.path.dirname(__file__) if "__file__" in locals() else ".", ".venv"
-            )
-        )
-        if os.path.exists(local_venv) and local_venv not in venv_dirs:
-            venv_dirs.append(local_venv)
-        if sys.prefix and os.path.abspath(sys.prefix) not in venv_dirs:
-            venv_dirs.append(os.path.abspath(sys.prefix))
-
-        for vd in venv_dirs:
-            prefix_lower = vd.lower().replace("\\", "/")
-            if prefix_lower in src_lower:
-                if any(ext in dest_lower or ext in src_lower for ext in (".dll", ".pyd")):
-                    if "library/bin" in src_lower or "scripts" in src_lower:
-                        return False
-                    return True
-                else:
-                    return False
         return True
     return False
 

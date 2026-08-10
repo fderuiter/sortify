@@ -394,6 +394,8 @@ def test_update_binaries_and_manifest_win32_dll_detection():
 
     with (
         patch("sys.platform", "win32"),
+        patch("sys.prefix", "/some/prefix"),
+        patch("sys.base_prefix", "/some/prefix"),
         patch("sys.modules", fake_modules),
         patch("importlib.util.find_spec", return_value=mock_spec),
         patch("os.walk", side_effect=mock_walk),
