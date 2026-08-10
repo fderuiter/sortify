@@ -326,17 +326,19 @@ def test_is_standard_sqlite_binary():
     )
 
     # Verify virtualenv prefix support using mock prefixes to ensure platform independence
+    fake_venv = os.path.abspath("fake_venv")
+    fake_base = os.path.abspath("fake_base")
     with (
-        patch("sys.prefix", "/fake/venv"),
-        patch("sys.base_prefix", "/fake/base"),
-        patch.dict(os.environ, {"VIRTUAL_ENV": "/fake/venv"}),
+        patch("sys.prefix", fake_venv),
+        patch("sys.base_prefix", fake_base),
+        patch.dict(os.environ, {"VIRTUAL_ENV": fake_venv}),
     ):
-        venv_path_win = os.path.join("/fake/venv", "Library", "bin", "sqlite3.dll")
-        venv_path_unix = os.path.join("/fake/venv", "lib", "libsqlite3.so")
+        venv_path_win = os.path.join(fake_venv, "Library", "bin", "sqlite3.dll")
+        venv_path_unix = os.path.join(fake_venv, "lib", "libsqlite3.so")
         assert is_standard_sqlite_binary("sqlite3.dll", venv_path_win) is False
         assert is_standard_sqlite_binary("sqlite3", venv_path_unix) is False
 
-        base_path_win = os.path.join("/fake/base", "DLLs", "sqlite3.dll")
+        base_path_win = os.path.join(fake_base, "DLLs", "sqlite3.dll")
         assert is_standard_sqlite_binary("sqlite3.dll", base_path_win) is True
 
 
