@@ -215,21 +215,6 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
                         pass
 
                 # Add system PATH directories that might contain OpenSSL/SSL/SQLCipher specifically
-                candidate_dll_names = [
-                    "libcrypto-3-x64.dll",
-                    "libcrypto-3.dll",
-                    "libcrypto-1_1-x64.dll",
-                    "libcrypto-1_1.dll",
-                    "libcrypto.dll",
-                    "libssl-3-x64.dll",
-                    "libssl-3.dll",
-                    "libssl-1_1-x64.dll",
-                    "libssl-1_1.dll",
-                    "libssl.dll",
-                    "sqlite3.dll",
-                    "sqlcipher.dll",
-                    "libsqlcipher.dll",
-                ]
                 for d in os.environ.get("PATH", "").split(os.pathsep):
                     cleaned = d.strip().strip('"')
                     if cleaned:
@@ -247,7 +232,7 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
                                 or "site-packages" in cleaned_lower
                             )
                             # Exclude standard Windows system directories (like C:/Windows/System32)
-                            p_abs = os.path.abspath(cleaned).lower().replace('\\', '/')
+                            p_abs = os.path.abspath(cleaned).lower().replace("\\", "/")
                             is_sys_dir = (
                                 "system32" in p_abs
                                 or "syswow64" in p_abs
