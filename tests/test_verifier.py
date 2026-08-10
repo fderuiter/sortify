@@ -57,16 +57,17 @@ def test_path_length_validation_and_simulation():
     from app.core.path_utils import is_path_too_long
     from app.core.verifier import VerificationEngine
 
-    # Test is_path_too_long helper
+    # Test is_path_too_long helper using a custom limit to ensure platform-independent length evaluation
     base_abs = os.path.abspath("/")
-    too_long_path = base_abs + "a" * (260 - len(base_abs))
-    safe_path = base_abs + "a" * (259 - len(base_abs))
-    assert is_path_too_long(too_long_path) is True
-    assert is_path_too_long(safe_path) is False
+    too_long_path = base_abs + "a" * 10
+    safe_path = base_abs + "a" * 9
+    custom_limit = len(base_abs) + 10
+    assert is_path_too_long(too_long_path, limit=custom_limit) is True
+    assert is_path_too_long(safe_path, limit=custom_limit) is False
     assert is_path_too_long("") is False
 
     # Test VirtualFilesystemTracker / VerificationEngine path length check simulation
-    base_dir = "/base/dir"
+    base_dir = os.path.abspath("/base/dir")
     # Construct a destination path that exceeds 260 characters
     long_filename = "x" * 250 + ".txt"
     plan = {
