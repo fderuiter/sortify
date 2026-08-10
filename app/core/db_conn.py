@@ -20,6 +20,7 @@ try:
 
     HAS_SQLCIPHER = True
     import sys
+
     sys.modules["sqlite3"] = sqlite3
 except Exception:
     HAS_SQLCIPHER = False
@@ -27,6 +28,7 @@ except Exception:
         import sqlite3
     except Exception:
         import types
+
         sqlite3_mock = types.ModuleType("sqlite3")
         sqlite3_mock.Error = Exception
         sqlite3_mock.DatabaseError = Exception
@@ -41,6 +43,7 @@ except Exception:
 
             def __init__(self, *args, **kwargs):
                 raise RuntimeError("SQLCipher library is missing.")
+
             def close(self):
                 """Close the dummy connection (no-op)."""
                 pass
@@ -49,6 +52,7 @@ except Exception:
         sqlite3_mock.Connection = DummyConnection
 
         import sys
+
         sys.modules["sqlite3"] = sqlite3_mock
         sqlite3 = sqlite3_mock
 
@@ -112,9 +116,11 @@ def get_db_connection(db_path: str):
     crypto = resolve_db_crypto(db_path)
     raw_key = crypto.get_raw_key()
 
-    is_pytest_win = sys.platform == "win32" and (
-        "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST")
-    ) and not _disable_pytest_win_fallback
+    is_pytest_win = (
+        sys.platform == "win32"
+        and ("pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST"))
+        and not _disable_pytest_win_fallback
+    )
 
     if not HAS_SQLCIPHER:
         if is_pytest_win:
