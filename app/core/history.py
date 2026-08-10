@@ -988,6 +988,10 @@ class HistoryManager:
                 from app.core.scanner import get_files_recursively
 
                 try:
+                    import gc
+                    import time
+                    gc.collect()
+                    time.sleep(0.1)
                     current_files_after_restore = get_files_recursively(
                         base_dir, include_hidden=True
                     )
@@ -1001,7 +1005,12 @@ class HistoryManager:
                                 try:
                                     os.remove(abs_path)
                                 except OSError:
-                                    pass
+                                    try:
+                                        gc.collect()
+                                        time.sleep(0.1)
+                                        os.remove(abs_path)
+                                    except OSError:
+                                        pass
                 except Exception:
                     pass
 
