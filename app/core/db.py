@@ -107,7 +107,7 @@ class Database:
                 decrypted_text = (
                     self.crypto.decrypt_text(row[1]) if row[1] is not None else None
                 )
-                return (row[0], decrypted_text, row[2], row[3])
+                return (row[0].replace("\\", "/"), decrypted_text, row[2], row[3])
 
             results = []
             if rows:
@@ -211,7 +211,7 @@ class Database:
                 decrypted_text = (
                     self.crypto.decrypt_text(row[1]) if row[1] is not None else None
                 )
-                return (row[0], decrypted_text, row[2], row[3])
+                return (row[0].replace("\\", "/"), decrypted_text, row[2], row[3])
 
             results = []
             if rows:
@@ -308,6 +308,8 @@ class Database:
                         new_filepath = new_filepath.replace("\\", "/")
                         import os
 
+                        old_filepath = old_filepath.replace("\\", "/")
+                        new_filepath = new_filepath.replace("\\", "/")
                         new_dir = os.path.dirname(new_filepath).replace("\\", "/")
                         conn.execute(
                             "UPDATE documents SET filepath = ?, user_verified_target_path = ? WHERE base_dir = ? AND filepath = ?",
