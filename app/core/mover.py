@@ -78,15 +78,17 @@ def _remove_empty_dirs(path: str, protected_paths: list[str] = None):
         try:
             os.rmdir(path)
         except OSError:
-            try:
-                import gc
-                import time
+            import gc
+            import time
 
-                gc.collect()
-                time.sleep(0.1)
-                os.rmdir(path)
-            except OSError:
-                pass
+            for _ in range(5):
+                try:
+                    gc.collect()
+                    time.sleep(0.05)
+                    os.rmdir(path)
+                    break
+                except OSError:
+                    pass
 
 
 def _execute_moves_recursive(

@@ -1076,15 +1076,17 @@ class HistoryManager:
                                     os.chmod(abs_path, stat.S_IWRITE)
                                     os.remove(abs_path)
                                 except OSError:
-                                    try:
-                                        gc.collect()
-                                        time.sleep(0.1)
-                                        import stat
+                                    for _ in range(10):
+                                        try:
+                                            gc.collect()
+                                            time.sleep(0.1)
+                                            import stat
 
-                                        os.chmod(abs_path, stat.S_IWRITE)
-                                        os.remove(abs_path)
-                                    except OSError:
-                                        pass
+                                            os.chmod(abs_path, stat.S_IWRITE)
+                                            os.remove(abs_path)
+                                            break
+                                        except OSError:
+                                            pass
                 except Exception:
                     pass
 
@@ -1102,7 +1104,10 @@ class HistoryManager:
                 for entry in os.listdir(base_dir):
                     entry_path = os.path.join(base_dir, entry)
                     if os.path.isdir(entry_path):
-                        _remove_empty_dirs(entry_path, protected_paths)
+                        try:
+                            _remove_empty_dirs(entry_path, protected_paths)
+                        except Exception:
+                            pass
 
                 # Restore Cache
                 cur = conn.execute(

@@ -82,6 +82,12 @@ def test_single_file_cross_partition_move_failure(test_history_env):
         assert f.read().strip() == "file1 content"
 
     # Destination file and folders must be cleaned up
+    for _ in range(15):
+        if not os.path.exists(file1_dst) and not os.path.exists(target_dir):
+            break
+        gc.collect()
+        time.sleep(0.1)
+
     assert not os.path.exists(file1_dst)
     assert not os.path.exists(target_dir)
 
@@ -190,6 +196,16 @@ def test_batch_file_cross_partition_move_failure(test_history_env):
         assert f.read().strip() == "fileB content with distinct size for resiliency"
 
     # Target directory and its files must be completely gone
+    for _ in range(15):
+        if (
+            not os.path.exists(fileA_dst)
+            and not os.path.exists(fileB_dst)
+            and not os.path.exists(target_dir)
+        ):
+            break
+        gc.collect()
+        time.sleep(0.1)
+
     assert not os.path.exists(fileA_dst)
     assert not os.path.exists(fileB_dst)
     assert not os.path.exists(target_dir)
