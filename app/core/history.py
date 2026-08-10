@@ -869,15 +869,16 @@ class HistoryManager:
                                 rel_safe = os.path.relpath(safe_current, base_dir).replace("\\", "/")
                                 with db_conn:
                                     db_conn.execute(
-                                        "UPDATE documents SET filepath = ? WHERE base_dir = ? AND filepath = ?",
-                                        (rel_safe, base_dir, rel_current),
+                                        "UPDATE documents SET filepath = ? WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
+                                        (rel_safe, base_dir, rel_current, rel_current),
                                     )
                                     db_conn.execute(
-                                        "UPDATE documents SET filepath = ? || SUBSTR(filepath, ?) WHERE base_dir = ? AND filepath LIKE ?",
+                                        "UPDATE documents SET filepath = ? || SUBSTR(filepath, ?) WHERE base_dir = ? AND (filepath LIKE ? OR REPLACE(filepath, '\\', '/') LIKE ?)",
                                         (
                                             rel_safe,
                                             len(rel_current) + 1,
                                             base_dir,
+                                            rel_current + "/%",
                                             rel_current + "/%",
                                         ),
                                     )
@@ -910,8 +911,8 @@ class HistoryManager:
 
                                 with db_conn:
                                     db_conn.execute(
-                                        "UPDATE documents SET filepath = ? WHERE base_dir = ? AND filepath = ?",
-                                        (branch_rel_temp, base_dir, rel_dst),
+                                        "UPDATE documents SET filepath = ? WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
+                                        (branch_rel_temp, base_dir, rel_dst, rel_dst),
                                     )
 
                                 for i, (m_src, m_dst) in enumerate(moves):
@@ -927,15 +928,16 @@ class HistoryManager:
                                 safe_rel = os.path.relpath(safe_dst, base_dir).replace("\\", "/")
                                 with db_conn:
                                     db_conn.execute(
-                                        "UPDATE documents SET filepath = ? WHERE base_dir = ? AND filepath = ?",
-                                        (safe_rel, base_dir, rel_dst),
+                                        "UPDATE documents SET filepath = ? WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
+                                        (safe_rel, base_dir, rel_dst, rel_dst),
                                     )
                                     db_conn.execute(
-                                        "UPDATE documents SET filepath = ? || SUBSTR(filepath, ?) WHERE base_dir = ? AND filepath LIKE ?",
+                                        "UPDATE documents SET filepath = ? || SUBSTR(filepath, ?) WHERE base_dir = ? AND (filepath LIKE ? OR REPLACE(filepath, '\\', '/') LIKE ?)",
                                         (
                                             safe_rel,
                                             len(rel_dst) + 1,
                                             base_dir,
+                                            rel_dst + "/%",
                                             rel_dst + "/%",
                                         ),
                                     )
@@ -947,8 +949,8 @@ class HistoryManager:
 
                         with db_conn:
                             db_conn.execute(
-                                "DELETE FROM documents WHERE base_dir = ? AND filepath = ?",
-                                (base_dir, rel_src),
+                                "DELETE FROM documents WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
+                                (base_dir, rel_src, rel_src),
                             )
                             snapshot_doc = snapshot_docs_dict.get(rel_dst)
                             if snapshot_doc:
@@ -990,15 +992,16 @@ class HistoryManager:
                                 db_conn = get_db_connection(self.db.db_path)
                                 with db_conn:
                                     db_conn.execute(
-                                        "UPDATE documents SET filepath = ? WHERE base_dir = ? AND filepath = ?",
-                                        (rel_safe, base_dir, rel_target),
+                                        "UPDATE documents SET filepath = ? WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
+                                        (rel_safe, base_dir, rel_target, rel_target),
                                     )
                                     db_conn.execute(
-                                        "UPDATE documents SET filepath = ? || SUBSTR(filepath, ?) WHERE base_dir = ? AND filepath LIKE ?",
+                                        "UPDATE documents SET filepath = ? || SUBSTR(filepath, ?) WHERE base_dir = ? AND (filepath LIKE ? OR REPLACE(filepath, '\\', '/') LIKE ?)",
                                         (
                                             rel_safe,
                                             len(rel_target) + 1,
                                             base_dir,
+                                            rel_target + "/%",
                                             rel_target + "/%",
                                         ),
                                     )
@@ -1045,15 +1048,16 @@ class HistoryManager:
                                 db_conn = get_db_connection(self.db.db_path)
                                 with db_conn:
                                     db_conn.execute(
-                                        "UPDATE documents SET filepath = ? WHERE base_dir = ? AND filepath = ?",
-                                        (rel_safe, base_dir, rel_target),
+                                        "UPDATE documents SET filepath = ? WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
+                                        (rel_safe, base_dir, rel_target, rel_target),
                                     )
                                     db_conn.execute(
-                                        "UPDATE documents SET filepath = ? || SUBSTR(filepath, ?) WHERE base_dir = ? AND filepath LIKE ?",
+                                        "UPDATE documents SET filepath = ? || SUBSTR(filepath, ?) WHERE base_dir = ? AND (filepath LIKE ? OR REPLACE(filepath, '\\', '/') LIKE ?)",
                                         (
                                             rel_safe,
                                             len(rel_target) + 1,
                                             base_dir,
+                                            rel_target + "/%",
                                             rel_target + "/%",
                                         ),
                                     )
