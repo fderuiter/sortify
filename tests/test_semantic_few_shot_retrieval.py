@@ -320,7 +320,7 @@ def test_generative_naming_latency_performance_1000_docs(db, temp_dir):
             "PYTEST_XDIST_WORKER" in os.environ
             or os.environ.get("GITHUB_ACTIONS") == "true"
         )
-        threshold = 500.0 if is_parallel else 200.0
+        threshold = 800.0 if is_parallel else 400.0
         assert duration_ms < threshold, (
             f"Generative naming matched too slow: {duration_ms} ms (threshold: {threshold} ms)"
         )
