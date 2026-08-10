@@ -297,8 +297,19 @@ def pytest_runtest_logreport(report):
         import sys
         tb = str(report.longrepr)
         message = f"Test Failed: {report.nodeid}\n\n{tb}"
-        message_escaped = message.replace("\r", "").replace("\n", "%0A")
-        sys.__stdout__.write(f"::error:: {message_escaped}\n")
-        sys.__stdout__.flush()
+        
+        # Write to pytest_failures.txt
+        try:
+            with open("pytest_failures.txt", "a", encoding="utf-8") as f:
+                f.write(f"=== {report.nodeid} ===\n{tb}\n\n")
+        except Exception:
+            pass
 
+        # Write to uncaptured stdout to bypass pytest buffering
+        try:
+            message_escaped = message.replace("\r", "").replace("\n", "%0A")
+            sys.__stdout__.write(f"\n::error:: {message_escaped}\n")
+            sys.__stdout__.flush()
+        except Exception:
+            pass
 

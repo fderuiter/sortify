@@ -272,9 +272,10 @@ def is_standard_sqlite_binary(dest_name, src_path):
         v_env = os.environ.get("VIRTUAL_ENV")
         if v_env:
             venv_dirs.append(os.path.abspath(v_env))
-        local_venv = os.path.abspath(os.path.join(os.path.dirname(__file__) if '__file__' in locals() else '.', ".venv"))
-        if os.path.exists(local_venv) and local_venv not in venv_dirs:
-            venv_dirs.append(local_venv)
+        if "pytest" not in sys.modules:
+            local_venv = os.path.abspath(os.path.join(os.path.dirname(__file__) if '__file__' in locals() else '.', ".venv"))
+            if os.path.exists(local_venv) and local_venv not in venv_dirs:
+                venv_dirs.append(local_venv)
         if sys.prefix and os.path.abspath(sys.prefix) not in venv_dirs:
             venv_dirs.append(os.path.abspath(sys.prefix))
             

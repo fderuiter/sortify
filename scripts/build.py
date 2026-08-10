@@ -76,9 +76,10 @@ def update_binaries_and_manifest(system_platform=None, bypass_pytest_check=False
                 v_env = os.environ.get("VIRTUAL_ENV")
                 if v_env:
                     venv_dirs.append(Path(v_env))
-                local_venv = Path(__file__).resolve().parent.parent / ".venv"
-                if local_venv.exists() and local_venv not in venv_dirs:
-                    venv_dirs.append(local_venv)
+                if "pytest" not in sys.modules:
+                    local_venv = Path(__file__).resolve().parent.parent / ".venv"
+                    if local_venv.exists() and local_venv not in venv_dirs:
+                        venv_dirs.append(local_venv)
                 if sys.prefix and Path(sys.prefix) not in venv_dirs:
                     venv_dirs.append(Path(sys.prefix))
 
