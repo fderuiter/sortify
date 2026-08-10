@@ -125,42 +125,43 @@ def test_bootstrap_binaries_bypass_if_cached(tmp_path):
 
 def test_bootstrap_binaries_download_flow(tmp_path):
     """Verify that when binaries are missing, we bypass download and resolve locally instead."""
-    mock_bin_dir = tmp_path / "binaries"
-    mock_bin_dir.mkdir()
+    with patch("sys.platform", "win32"):
+        mock_bin_dir = tmp_path / "binaries"
+        mock_bin_dir.mkdir()
 
-    mock_local_sqlcipher_dir = tmp_path / "local_sqlcipher"
-    mock_local_sqlcipher_dir.mkdir()
-    ext = ".pyd" if sys.platform == "win32" else ".so"
-    native_filename = f"native_module{ext}"
-    (mock_local_sqlcipher_dir / native_filename).write_text("compiled code")
+        mock_local_sqlcipher_dir = tmp_path / "local_sqlcipher"
+        mock_local_sqlcipher_dir.mkdir()
+        ext = ".pyd" if sys.platform == "win32" else ".so"
+        native_filename = f"native_module{ext}"
+        (mock_local_sqlcipher_dir / native_filename).write_text("compiled code")
 
-    mock_spec = MagicMock()
-    mock_spec.submodule_search_locations = [str(mock_local_sqlcipher_dir)]
+        mock_spec = MagicMock()
+        mock_spec.submodule_search_locations = [str(mock_local_sqlcipher_dir)]
 
-    mock_urlopen = MagicMock()
+        mock_urlopen = MagicMock()
 
-    with (
-        patch(
-            "app.core.user_space_bootstrap.get_bootstrap_bin_dir",
-            return_value=mock_bin_dir,
-        ),
-        patch(
-            "app.core.user_space_bootstrap.check_internet_connection",
-            return_value=True,
-        ),
-        patch("urllib.request.urlopen", mock_urlopen),
-        patch("importlib.util.find_spec", return_value=mock_spec),
-        patch(
-            "app.core.user_space_bootstrap.verify_sqlcipher_encryption",
-            return_value=True,
-        ),
-        patch("app.core.user_space_bootstrap.inject_bootstrap_paths"),
-    ):
-        res = bootstrap_binaries(force_download=True)
-        assert res is True
-        mock_urlopen.assert_not_called()
-        assert (mock_bin_dir / "sqlcipher3").exists()
-        assert (mock_bin_dir / "sqlcipher3" / native_filename).exists()
+        with (
+            patch(
+                "app.core.user_space_bootstrap.get_bootstrap_bin_dir",
+                return_value=mock_bin_dir,
+            ),
+            patch(
+                "app.core.user_space_bootstrap.check_internet_connection",
+                return_value=True,
+            ),
+            patch("urllib.request.urlopen", mock_urlopen),
+            patch("importlib.util.find_spec", return_value=mock_spec),
+            patch(
+                "app.core.user_space_bootstrap.verify_sqlcipher_encryption",
+                return_value=True,
+            ),
+            patch("app.core.user_space_bootstrap.inject_bootstrap_paths"),
+        ):
+            res = bootstrap_binaries(force_download=True)
+            assert res is True
+            mock_urlopen.assert_not_called()
+            assert (mock_bin_dir / "sqlcipher3").exists()
+            assert (mock_bin_dir / "sqlcipher3" / native_filename).exists()
 
 
 def test_bootstrap_binaries_download_failed_fallback(tmp_path):
