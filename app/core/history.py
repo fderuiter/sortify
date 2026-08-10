@@ -26,7 +26,7 @@ def _robust_move(src, dst):
     import gc
     import time
 
-    for i in range(15):
+    for i in range(20):
         if os.path.exists(dst) and os.path.exists(src):
             try:
                 from app.core.extractor import get_file_hash
@@ -43,18 +43,9 @@ def _robust_move(src, dst):
         try:
             shutil.move(src, dst)
             return
-        except OSError as e:
-            is_lock_err = False
-            if hasattr(e, "winerror") and e.winerror in (5, 32):
-                is_lock_err = True
-            elif isinstance(e, PermissionError):
-                is_lock_err = True
-
-            if is_lock_err:
-                gc.collect()
-                time.sleep(0.05)
-            else:
-                raise e
+        except OSError:
+            gc.collect()
+            time.sleep(0.05)
 
     shutil.move(src, dst)
 
@@ -428,13 +419,29 @@ class HistoryManager:
             EMPTY_SHA256 = (
                 "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
             )
-            for attempt in range(10):
+            import sys
+
+            # On Windows, we allow up to 30 attempts (with 0.1s sleep, up to 3 seconds total)
+            # to let NTFS flushes, sharing violations, and anti-virus locks settle.
+            max_attempts = 30 if sys.platform == "win32" else 10
+            sleep_time = 0.1 if sys.platform == "win32" else 0.05
+
+            for attempt in range(max_attempts):
                 try:
                     from app.core.extractor import get_file_hash
 
                     h = get_file_hash(abs_path)
                     if h == expected_hash:
                         return True
+
+                    # On Windows, always retry if the hash doesn't match yet
+                    if sys.platform == "win32":
+                        import gc
+
+                        gc.collect()
+                        time.sleep(sleep_time)
+                        continue
+
                     if (
                         h == EMPTY_SHA256
                         and expected_hash != EMPTY_SHA256
@@ -443,14 +450,14 @@ class HistoryManager:
                         import gc
 
                         gc.collect()
-                        time.sleep(0.05)
+                        time.sleep(sleep_time)
                         continue
                     return False
                 except Exception:
                     import gc
 
                     gc.collect()
-                    time.sleep(0.05)
+                    time.sleep(sleep_time)
             return False
 
         missing = []
@@ -643,13 +650,29 @@ class HistoryManager:
                     if not expected_hash:
                         return True
                     EMPTY_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-                    for attempt in range(10):
+                    import sys
+
+                    # On Windows, we allow up to 30 attempts (with 0.1s sleep, up to 3 seconds total)
+                    # to let NTFS flushes, sharing violations, and anti-virus locks settle.
+                    max_attempts = 30 if sys.platform == "win32" else 10
+                    sleep_time = 0.1 if sys.platform == "win32" else 0.05
+
+                    for attempt in range(max_attempts):
                         try:
                             from app.core.extractor import get_file_hash
 
                             h = get_file_hash(abs_path)
                             if h == expected_hash:
                                 return True
+
+                            # On Windows, always retry if the hash doesn't match yet
+                            if sys.platform == "win32":
+                                import gc
+
+                                gc.collect()
+                                time.sleep(sleep_time)
+                                continue
+
                             if (
                                 h == EMPTY_SHA256
                                 and expected_hash != EMPTY_SHA256
@@ -658,14 +681,14 @@ class HistoryManager:
                                 import gc
 
                                 gc.collect()
-                                time.sleep(0.05)
+                                time.sleep(sleep_time)
                                 continue
                             return False
                         except Exception:
                             import gc
 
                             gc.collect()
-                            time.sleep(0.05)
+                            time.sleep(sleep_time)
                     return False
 
                 symlinks_to_restore = []
