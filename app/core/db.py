@@ -119,6 +119,7 @@ class Database:
 
     def get_document(self, base_dir, filepath):
         """Retrieve a document by its base directory and filepath."""
+        filepath = filepath.replace("\\", "/")
         self._populate_cache_if_needed(base_dir)
         with self._cache_lock:
             if self._cached_base_dir == base_dir and self._cached_documents is not None:
@@ -164,6 +165,7 @@ class Database:
                 rows_to_insert = []
                 for doc in documents:
                     base_dir, filepath, file_hash, extracted_text = doc
+                    filepath = filepath.replace("\\", "/")
 
                     enc_text = (
                         self.crypto.encrypt_text(extracted_text)
@@ -242,6 +244,7 @@ class Database:
 
     def remove_document(self, base_dir, filepath):
         """Remove a document and its historical assignments when deleted."""
+        filepath = filepath.replace("\\", "/")
         self.invalidate_cache()
 
         def _write():
@@ -259,6 +262,8 @@ class Database:
         """Update a document's path and historical assignment when moved."""
         import os
 
+        old_filepath = old_filepath.replace("\\", "/")
+        new_filepath = new_filepath.replace("\\", "/")
         new_dir = os.path.dirname(new_filepath).replace("\\", "/")
 
         with self._cache_lock:
@@ -299,6 +304,8 @@ class Database:
                         )
                     elif item["type"] == "document_path":
                         base_dir, old_filepath, new_filepath = item["args"]
+                        old_filepath = old_filepath.replace("\\", "/")
+                        new_filepath = new_filepath.replace("\\", "/")
                         import os
 
                         new_dir = os.path.dirname(new_filepath).replace("\\", "/")
@@ -356,6 +363,7 @@ class Database:
 
     def get_document_vector(self, base_dir: str, filepath: str) -> list[float] | None:
         """Retrieve decoupled vector for a document."""
+        filepath = filepath.replace("\\", "/")
         conn = get_db_connection(self.db_path)
         with conn:
             cursor = conn.execute(
@@ -386,6 +394,7 @@ class Database:
             with conn:
                 rows_to_insert = []
                 for filepath, vector in vectors_data:
+                    filepath = filepath.replace("\\", "/")
                     rows_to_insert.append((base_dir, filepath, json.dumps(vector)))
                 conn.executemany(
                     """
