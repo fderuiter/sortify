@@ -337,14 +337,15 @@ def test_is_standard_sqlite_binary():
         assert is_standard_sqlite_binary("sqlite3.dll", base_path_win) is True
 
     # Verify content-level binary signature checks when files actually exist
-    mock_secure_file = "/fake/secure_sqlite3.dll"
-    mock_standard_file = "/fake/standard_sqlite3.dll"
+    mock_secure_file = os.path.abspath("/fake/secure_sqlite3.dll")
+    mock_standard_file = os.path.abspath("/fake/standard_sqlite3.dll")
 
     def mock_open_binary(file, mode="r", *args, **kwargs):
+        file_norm = os.path.abspath(file)
         fh = MagicMock()
-        if file == mock_secure_file:
+        if file_norm == mock_secure_file:
             fh.read.return_value = b"some prefix sqlite3_key some suffix"
-        elif file == mock_standard_file:
+        elif file_norm == mock_standard_file:
             fh.read.return_value = b"standard sqlite without key"
         fh.__enter__.return_value = fh
         return fh
