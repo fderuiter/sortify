@@ -21,6 +21,8 @@ def update_binaries_and_manifest():
                     content = f.read()
                     if b"sqlite3_key" in content or b"sqlite3_rekey" in content:
                         return True
+                    else:
+                        return False
             except Exception:
                 pass
 

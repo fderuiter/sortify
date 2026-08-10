@@ -330,6 +330,28 @@ def test_is_standard_sqlite_binary():
         base_path_win = os.path.join("/fake/base", "DLLs", "sqlite3.dll")
         assert is_standard_sqlite_binary("sqlite3.dll", base_path_win) is True
 
+    # Verify content-level binary signature checks when files actually exist
+    mock_secure_file = "/fake/secure_sqlite3.dll"
+    mock_standard_file = "/fake/standard_sqlite3.dll"
+
+    def mock_open_binary(file, mode="r", *args, **kwargs):
+        fh = MagicMock()
+        if file == mock_secure_file:
+            fh.read.return_value = b"some prefix sqlite3_key some suffix"
+        elif file == mock_standard_file:
+            fh.read.return_value = b"standard sqlite without key"
+        fh.__enter__.return_value = fh
+        return fh
+
+    with (
+        patch("os.path.isfile", return_value=True),
+        patch("builtins.open", mock_open_binary),
+    ):
+        # Secure file should be identified as not standard (returns False)
+        assert is_standard_sqlite_binary("sqlite3.dll", mock_secure_file) is False
+        # Standard file should be identified as standard (returns True)
+        assert is_standard_sqlite_binary("sqlite3.dll", mock_standard_file) is True
+
 
 def test_update_binaries_and_manifest_win32_dll_detection():
     """Test that on win32, update_binaries_and_manifest correctly searches for and copies sqlite3.dll,

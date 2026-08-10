@@ -431,10 +431,12 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
                                 dll_path = os.path.abspath(entry.path)
                                 if name_lower == "sqlite3.dll":
                                     is_secure = False
+                                    read_success = False
                                     if os.path.isfile(dll_path):
                                         try:
                                             with open(dll_path, "rb") as f:
                                                 content = f.read()
+                                                read_success = True
                                                 if (
                                                     b"sqlite3_key" in content
                                                     or b"sqlite3_rekey" in content
@@ -442,7 +444,7 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
                                                     is_secure = True
                                         except Exception:
                                             pass
-                                    if not is_secure:
+                                    if not is_secure and not read_success:
                                         is_secure = (
                                             "app/binaries"
                                             in dll_path.lower().replace("\\", "/")

@@ -107,6 +107,8 @@ if platform.system().lower() == "windows" or sys.platform == "win32":
                     content = f.read()
                     if b"sqlite3_key" in content or b"sqlite3_rekey" in content:
                         return True
+                    else:
+                        return False
             except Exception:
                 pass
 
@@ -342,6 +344,8 @@ def is_standard_sqlite_binary(dest_name, src_path):
                     content = f.read()
                     if b"sqlite3_key" in content or b"sqlite3_rekey" in content:
                         return False
+                    else:
+                        return True
             except Exception:
                 pass
 
