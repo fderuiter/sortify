@@ -71,7 +71,15 @@ jobs:
         if [[ "${{ matrix.os }}" == "ubuntu-latest" ]]; then
           uv run pytest --cov --cov-report=term tests/
         else
-          uv run pytest tests/
+          if ! uv run pytest tests/; then
+            if [ -f pytest_failures.txt ]; then
+              echo "=== PYTEST FAILURES ==="
+              cat pytest_failures.txt
+            else
+              echo "No pytest_failures.txt found."
+            fi
+            exit 1
+          fi
         fi
 
     - name: Build executable (Lite)
