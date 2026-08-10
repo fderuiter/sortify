@@ -16,36 +16,39 @@ except ImportError:
 
 def _robust_move(src, dst):
     """Safely move a file, retrying on temporary Windows sharing violations and file locks."""
+    import gc
     import os
     import sys
+    import time
 
     if sys.platform != "win32":
         shutil.move(src, dst)
         return
 
-    import gc
-    import time
-
     for i in range(20):
-        if os.path.exists(dst) and os.path.exists(src):
-            try:
-                from app.core.extractor import get_file_hash
-
-                if get_file_hash(src) == get_file_hash(dst):
-                    try:
-                        os.remove(src)
-                        return
-                    except OSError:
-                        pass
-            except Exception:
-                pass
-
         try:
-            shutil.move(src, dst)
+            os.replace(src, dst)
             return
-        except OSError:
-            gc.collect()
-            time.sleep(0.05)
+        except OSError as e:
+            is_lock_err = False
+            if hasattr(e, "winerror") and e.winerror in (5, 32):
+                is_lock_err = True
+            elif isinstance(e, PermissionError):
+                is_lock_err = True
+
+            if is_lock_err:
+                gc.collect()
+                time.sleep(0.05)
+            else:
+                try:
+                    shutil.move(src, dst)
+                    return
+                except OSError as e2:
+                    if hasattr(e2, "winerror") and e2.winerror in (5, 32):
+                        gc.collect()
+                        time.sleep(0.05)
+                    else:
+                        raise e2
 
     shutil.move(src, dst)
 
