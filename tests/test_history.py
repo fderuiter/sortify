@@ -71,8 +71,8 @@ def test_incremental_sync_and_stop_on_failure(test_history_env):
         filepaths = {r[0] for r in cur.fetchall()}
 
     assert "file1.txt" in filepaths
-    assert os.path.join("folder", "file2.txt") in filepaths
-    assert os.path.join("folder", "file1.txt") not in filepaths
+    assert "folder/file2.txt" in filepaths
+    assert "folder/file1.txt" not in filepaths
     assert "file2.txt" not in filepaths
 
     # 4. Session status should be 'failed'
