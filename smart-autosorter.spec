@@ -106,22 +106,30 @@ if (platform.system().lower() == "windows" or sys.platform == "win32") and "pyte
         cleaned = d.strip().strip('"')
         if cleaned:
             try:
-                if os.path.isdir(cleaned):
+                cleaned_lower = cleaned.lower()
+                is_candidate_dir = (
+                    "openssl" in cleaned_lower
+                    or "ssl" in cleaned_lower
+                    or "sqlcipher" in cleaned_lower
+                    or "sqlite" in cleaned_lower
+                    or "git" in cleaned_lower
+                    or "python" in cleaned_lower
+                    or "venv" in cleaned_lower
+                    or "site-packages" in cleaned_lower
+                )
+                p_abs = os.path.abspath(cleaned).lower().replace('\\', '/')
+                is_sys_dir = (
+                    "system32" in p_abs
+                    or "syswow64" in p_abs
+                    or p_abs == "c:/windows"
+                    or p_abs.startswith("c:/windows/")
+                )
+                if is_candidate_dir and not is_sys_dir and os.path.isdir(cleaned):
                     path_dirs.append(cleaned)
             except Exception:
                 pass
     for path_dir in path_dirs:
         if path_dir not in search_dirs:
-            # Exclude standard system directories to prevent standard sqlite3.dll leakage
-            p_abs = os.path.abspath(path_dir).lower().replace('\\', '/')
-            is_sys_dir = (
-                "system32" in p_abs
-                or "syswow64" in p_abs
-                or p_abs == "c:/windows"
-                or p_abs.startswith("c:/windows/")
-            )
-            if is_sys_dir:
-                continue
             search_dirs.append(path_dir)
             
     # Also add common/standard Windows OpenSSL installation directories
