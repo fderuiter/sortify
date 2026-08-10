@@ -14,6 +14,51 @@ except ImportError:
     pylnk3 = None
 
 
+def _robust_move(src, dst):
+    """Safely move a file, retrying on temporary Windows sharing violations and file locks."""
+    import sys
+    import shutil
+    import os
+
+    if sys.platform != "win32":
+        shutil.move(src, dst)
+        return
+
+    import gc
+    import time
+
+    for i in range(15):
+        if os.path.exists(dst) and os.path.exists(src):
+            try:
+                from app.core.extractor import get_file_hash
+                if get_file_hash(src) == get_file_hash(dst):
+                    try:
+                        os.remove(src)
+                        return
+                    except OSError:
+                        pass
+            except Exception:
+                pass
+
+        try:
+            shutil.move(src, dst)
+            return
+        except OSError as e:
+            is_lock_err = False
+            if hasattr(e, "winerror") and e.winerror in (5, 32):
+                is_lock_err = True
+            elif isinstance(e, PermissionError):
+                is_lock_err = True
+
+            if is_lock_err:
+                gc.collect()
+                time.sleep(0.05)
+            else:
+                raise e
+
+    shutil.move(src, dst)
+
+
 class HistoryManager:
     """Manages full directory snapshots and rollback functionality."""
 
@@ -757,7 +802,7 @@ class HistoryManager:
                                 safe_current = get_safe_path(
                                     os.path.dirname(current), os.path.basename(current)
                                 )
-                                shutil.move(current, safe_current)
+                                _robust_move(current, safe_current)
                                 rel_current = os.path.relpath(current, base_dir)
                                 rel_safe = os.path.relpath(safe_current, base_dir)
                                 with db_conn:
@@ -799,7 +844,7 @@ class HistoryManager:
                                 )
                                 temp_dst = os.path.join(base_dir, branch_rel_temp)
                                 os.makedirs(os.path.dirname(temp_dst), exist_ok=True)
-                                shutil.move(dst, temp_dst)
+                                _robust_move(dst, temp_dst)
 
                                 with db_conn:
                                     db_conn.execute(
@@ -815,7 +860,7 @@ class HistoryManager:
                                 safe_dst = get_safe_path(
                                     os.path.dirname(dst), os.path.basename(dst)
                                 )
-                                shutil.move(dst, safe_dst)
+                                _robust_move(dst, safe_dst)
 
                                 safe_rel = os.path.relpath(safe_dst, base_dir)
                                 with db_conn:
@@ -833,10 +878,10 @@ class HistoryManager:
                                         ),
                                     )
 
-                            shutil.move(src, dst)
+                            _robust_move(src, dst)
                         else:
                             if not os.path.exists(dst):
-                                shutil.move(src, dst)
+                                _robust_move(src, dst)
 
                         with db_conn:
                             db_conn.execute(
@@ -876,7 +921,7 @@ class HistoryManager:
                                     os.path.dirname(target_abs),
                                     os.path.basename(target_abs),
                                 )
-                                shutil.move(target_abs, safe_path)
+                                _robust_move(target_abs, safe_path)
 
                                 rel_target = os.path.relpath(target_abs, base_dir)
                                 rel_safe = os.path.relpath(safe_path, base_dir)
@@ -931,7 +976,7 @@ class HistoryManager:
                                     os.path.dirname(target_abs),
                                     os.path.basename(target_abs),
                                 )
-                                shutil.move(target_abs, safe_path)
+                                _robust_move(target_abs, safe_path)
 
                                 rel_target = os.path.relpath(target_abs, base_dir)
                                 rel_safe = os.path.relpath(safe_path, base_dir)
