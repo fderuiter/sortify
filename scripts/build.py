@@ -103,8 +103,12 @@ def update_binaries_and_manifest(system_platform=None, bypass_pytest_check=False
 
                     # If not found in candidate paths, walk the venv directory recursively
                     for root, dirs, files in os.walk(vd):
+                        # Filter out heavy directories in-place to prevent os.walk from recursing into them
+                        dirs[:] = [d for d in dirs if d.lower() not in ("torch", "easyocr", "scipy", "transformers", "numpy", "pandas", "sklearn", "matplotlib", "jinja2", "anyio", "aiohttp", "pydantic", "pydantic_core")]
+                        
+                        root_normalized = root.lower().replace('\\', '/')
                         if any(
-                            p in root.lower()
+                            p in root_normalized
                             for p in (
                                 "site-packages/torch",
                                 "site-packages/easyocr",
@@ -141,8 +145,12 @@ def update_binaries_and_manifest(system_platform=None, bypass_pytest_check=False
                                     found_for_pattern = True
                     if not found_for_pattern:
                         for root, dirs, files in os.walk(sys.base_prefix):
+                            # Filter out heavy directories in-place to prevent os.walk from recursing into them
+                            dirs[:] = [d for d in dirs if d.lower() not in ("torch", "easyocr", "scipy", "transformers", "numpy", "pandas", "sklearn", "matplotlib", "jinja2", "anyio", "aiohttp", "pydantic", "pydantic_core")]
+                            
+                            root_normalized = root.lower().replace('\\', '/')
                             if any(
-                                p in root.lower()
+                                p in root_normalized
                                 for p in (
                                     "site-packages/torch",
                                     "site-packages/easyocr",

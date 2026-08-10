@@ -319,6 +319,8 @@ if "pytest" not in sys.modules:
                 break
                 
             for root, dirs, files in os.walk(vd):
+                # Filter out heavy directories in-place to prevent os.walk from recursing into them
+                dirs[:] = [d for d in dirs if d.lower() not in ("torch", "easyocr", "scipy", "transformers", "numpy", "pandas", "sklearn", "matplotlib", "jinja2", "anyio", "aiohttp", "pydantic", "pydantic_core")]
                 # Skip some common heavy directories to make it faster
                 if any(p in root.lower().replace('\\', '/') for p in ('site-packages/torch', 'site-packages/easyocr', 'site-packages/scipy')):
                     continue
