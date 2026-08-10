@@ -94,10 +94,13 @@ def update_binaries_and_manifest(system_platform=None, bypass_pytest_check=False
                     ]:
                         candidate_dir = vd / sub
                         if candidate_dir.exists():
-                            for f in os.listdir(candidate_dir):
-                                if f.lower().endswith(".dll") and pat in f.lower():
-                                    dll_srcs.append(candidate_dir / f)
-                                    found_for_pattern = True
+                            try:
+                                for f in os.listdir(candidate_dir):
+                                    if f.lower().endswith(".dll") and pat in f.lower():
+                                        dll_srcs.append(candidate_dir / f)
+                                        found_for_pattern = True
+                            except Exception:
+                                pass
                     if found_for_pattern:
                         break
 
@@ -139,10 +142,13 @@ def update_binaries_and_manifest(system_platform=None, bypass_pytest_check=False
                     ]:
                         candidate_dir = Path(sys.base_prefix) / sub
                         if candidate_dir.exists():
-                            for f in os.listdir(candidate_dir):
-                                if f.lower().endswith(".dll") and pat in f.lower():
-                                    dll_srcs.append(candidate_dir / f)
-                                    found_for_pattern = True
+                            try:
+                                for f in os.listdir(candidate_dir):
+                                    if f.lower().endswith(".dll") and pat in f.lower():
+                                        dll_srcs.append(candidate_dir / f)
+                                        found_for_pattern = True
+                            except Exception:
+                                pass
                     if not found_for_pattern:
                         for root, dirs, files in os.walk(sys.base_prefix):
                             # Filter out heavy directories in-place to prevent os.walk from recursing into them
@@ -175,15 +181,21 @@ def update_binaries_and_manifest(system_platform=None, bypass_pytest_check=False
                         for sub in [Path("."), Path("Library") / "bin", Path("DLLs")]:
                             candidate_dir = Path(exe_dir) / sub
                             if candidate_dir.exists():
-                                for f in os.listdir(candidate_dir):
-                                    if f.lower().endswith(".dll") and pat in f.lower():
-                                        dll_srcs.append(candidate_dir / f)
-                                        found_for_pattern = True
+                                try:
+                                    for f in os.listdir(candidate_dir):
+                                        if f.lower().endswith(".dll") and pat in f.lower():
+                                            dll_srcs.append(candidate_dir / f)
+                                            found_for_pattern = True
+                                except Exception:
+                                    pass
                         if not found_for_pattern:
-                            for f in os.listdir(exe_dir):
-                                if f.lower().endswith(".dll") and pat in f.lower():
-                                    dll_srcs.append(Path(exe_dir) / f)
-                                    found_for_pattern = True
+                            try:
+                                for f in os.listdir(exe_dir):
+                                    if f.lower().endswith(".dll") and pat in f.lower():
+                                        dll_srcs.append(Path(exe_dir) / f)
+                                        found_for_pattern = True
+                            except Exception:
+                                pass
 
                 # Search standard OpenSSL installation paths on Windows as fallback
                 if not found_for_pattern:

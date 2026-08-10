@@ -214,22 +214,21 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
                     except Exception:
                         pass
 
-                # Add system PATH directories (excluding windows/system32)
-                path_dirs = []
+                # Add system PATH directories that might contain OpenSSL/SSL/SQLCipher specifically
                 for d in os.environ.get("PATH", "").split(os.pathsep):
                     cleaned = d.strip().strip('"')
                     if cleaned:
                         try:
-                            if os.path.isdir(cleaned):
-                                path_dirs.append(cleaned)
+                            cleaned_lower = cleaned.lower()
+                            if (
+                                "openssl" in cleaned_lower
+                                or "ssl" in cleaned_lower
+                                or "sqlcipher" in cleaned_lower
+                            ) and "system32" not in cleaned_lower and "windows" not in cleaned_lower:
+                                if os.path.isdir(cleaned) and cleaned not in dirs_to_add:
+                                    dirs_to_add.append(cleaned)
                         except Exception:
                             pass
-                for path_dir in path_dirs:
-                    dir_lower = path_dir.lower()
-                    if "system32" in dir_lower or "windows" in dir_lower:
-                        continue
-                    if path_dir not in dirs_to_add:
-                        dirs_to_add.append(path_dir)
 
                 # Register all these paths via os.add_dll_directory and prepending to PATH
                 for p in dirs_to_add:
