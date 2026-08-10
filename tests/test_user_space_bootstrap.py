@@ -306,7 +306,7 @@ def test_bootstrap_binaries_newline_and_bom_insensitivity(tmp_path):
 
     # Write on-disk file with BOM and CRLF line endings
     crlf_text_with_bom = "\ufeffprint('hello world')\r\n"
-    with open(linux_dir / "__init__.py", "w", encoding="utf-8") as f:
+    with open(linux_dir / "__init__.py", "w", encoding="utf-8", newline="") as f:
         f.write(crlf_text_with_bom)
 
     with (

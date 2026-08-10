@@ -90,6 +90,7 @@ def test_rollback_restores_windows_shortcuts_mocked(setup_history_env):
 
     with (
         patch("app.core.history.pylnk3", mock_pylnk3),
+        patch("app.core.link_manager.pylnk3", mock_pylnk3),
         patch.dict("sys.modules", {"pylnk3": mock_pylnk3}),
     ):
         # 1. Scanner registers and we create snapshot
