@@ -17,8 +17,13 @@ from contextlib import contextmanager
 _thread_local = threading.local()
 
 # Keep track of original functions permanently to avoid recursion/re-patching issues
-_original_connect = socket.socket.connect
-_original_connect_ex = socket.socket.connect_ex
+if not hasattr(socket, "_real_socket_connect"):
+    socket._real_socket_connect = socket.socket.connect
+if not hasattr(socket, "_real_socket_connect_ex"):
+    socket._real_socket_connect_ex = socket.socket.connect_ex
+
+_original_connect = socket._real_socket_connect
+_original_connect_ex = socket._real_socket_connect_ex
 
 # Resolve and cache local IP addresses once at import time
 _local_ips = {
