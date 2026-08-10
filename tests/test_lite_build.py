@@ -123,28 +123,43 @@ def test_spec_file_partitioning():
 
     # Let's mock importlib.util.find_spec to return a custom location for sqlcipher3
     # and mock os.walk to return a mix of .so, .dll, .dylib, and standard files (.py, .pyc, .txt).
-    mock_sqlcipher_dir = "/mock/sqlcipher3"
+    mock_sqlcipher_dir = os.path.abspath("/mock/sqlcipher3")
 
     mock_find_spec = MagicMock()
     mock_spec = MagicMock()
     mock_spec.submodule_search_locations = [mock_sqlcipher_dir]
     mock_find_spec.return_value = mock_spec
 
-    mock_walk_data = [
-        (
-            "/mock/sqlcipher3",
-            [],
-            [
-                "__init__.py",
-                "_sqlite3.so",
-                "_sqlite3.dll",
-                "_sqlite3.dylib",
-                "_sqlite3.pyd",
-                "dbapi2.py",
-            ],
-        ),
-        ("/mock/sqlcipher3/sub", [], ["extra.so", "doc.txt"]),
-    ]
+    def mock_walk_spec(top, *args, **kwargs):
+        top_abs = os.path.abspath(top)
+        top_str = top_abs.lower().replace("\\", "/")
+        if "sqlcipher3" in top_str:
+            return [
+                (
+                    os.path.abspath("/mock/sqlcipher3"),
+                    [],
+                    [
+                        "__init__.py",
+                        "_sqlite3.so",
+                        "_sqlite3.dll",
+                        "_sqlite3.dylib",
+                        "_sqlite3.pyd",
+                        "dbapi2.py",
+                    ],
+                ),
+                (os.path.abspath("/mock/sqlcipher3/sub"), [], ["extra.so", "doc.txt"]),
+            ]
+        elif "app/binaries" in top_str or "app_binaries" in top_str:
+            mock_sub = os.path.abspath(os.path.join(top, "windows", "sqlcipher3"))
+            return [
+                (
+                    mock_sub,
+                    [],
+                    ["sqlite3.dll"],
+                )
+            ]
+        else:
+            return []
 
     mock_hooks = MagicMock()
     mock_hooks.collect_all.return_value = ([], [], [])
@@ -163,7 +178,7 @@ def test_spec_file_partitioning():
 
     with (
         patch("importlib.util.find_spec", mock_find_spec),
-        patch("os.walk", return_value=mock_walk_data),
+        patch("os.walk", side_effect=mock_walk_spec),
         patch("os.path.exists", mock_exists_partition),
         patch.dict(
             sys.modules,
