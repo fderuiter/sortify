@@ -401,7 +401,7 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,
-    console=False,  # windowed mode
+    console=True if os.environ.get("LITE_BUILD") == "1" else False,  # enabled for debugging/smoke testing on GHA
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
