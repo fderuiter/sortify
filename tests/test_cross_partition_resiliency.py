@@ -74,22 +74,22 @@ def test_single_file_cross_partition_move_failure(test_history_env):
     import gc
     import time
 
-    gc.collect()
-    time.sleep(0.1)
-    # Source file must exist intact in original location
-    assert os.path.exists(file1_src)
-    with open(file1_src, "r", newline="") as f:
-        assert f.read().strip() == "file1 content"
-
-    # Destination file and folders must be cleaned up
-    for _ in range(15):
-        if not os.path.exists(file1_dst) and not os.path.exists(target_dir):
-            break
+    for i in range(20):
         gc.collect()
-        time.sleep(0.1)
+        try:
+            # Source file must exist intact in original location
+            assert os.path.exists(file1_src)
+            with open(file1_src, "r", newline="") as f:
+                assert f.read().strip() == "file1 content"
 
-    assert not os.path.exists(file1_dst)
-    assert not os.path.exists(target_dir)
+            # Destination file and folders must be cleaned up
+            assert not os.path.exists(file1_dst)
+            assert not os.path.exists(target_dir)
+            break
+        except AssertionError:
+            if i == 19:
+                raise
+            time.sleep(0.1)
 
     # 7. Verify database records are restored to exact pre-move state
     conn = get_db_connection(db.db_path)
@@ -184,31 +184,30 @@ def test_batch_file_cross_partition_move_failure(test_history_env):
     import gc
     import time
 
-    gc.collect()
-    time.sleep(0.1)
-    # Both files must exist at their original source locations with correct contents
-    assert os.path.exists(fileA_src)
-    with open(fileA_src, "r", newline="") as f:
-        assert f.read().strip() == "fileA content"
-
-    assert os.path.exists(fileB_src)
-    with open(fileB_src, "r", newline="") as f:
-        assert f.read().strip() == "fileB content with distinct size for resiliency"
-
-    # Target directory and its files must be completely gone
-    for _ in range(15):
-        if (
-            not os.path.exists(fileA_dst)
-            and not os.path.exists(fileB_dst)
-            and not os.path.exists(target_dir)
-        ):
-            break
+    for i in range(20):
         gc.collect()
-        time.sleep(0.1)
+        try:
+            # Both files must exist at their original source locations with correct contents
+            assert os.path.exists(fileA_src)
+            with open(fileA_src, "r", newline="") as f:
+                assert f.read().strip() == "fileA content"
 
-    assert not os.path.exists(fileA_dst)
-    assert not os.path.exists(fileB_dst)
-    assert not os.path.exists(target_dir)
+            assert os.path.exists(fileB_src)
+            with open(fileB_src, "r", newline="") as f:
+                assert (
+                    f.read().strip()
+                    == "fileB content with distinct size for resiliency"
+                )
+
+            # Target directory and its files must be completely gone
+            assert not os.path.exists(fileA_dst)
+            assert not os.path.exists(fileB_dst)
+            assert not os.path.exists(target_dir)
+            break
+        except AssertionError:
+            if i == 19:
+                raise
+            time.sleep(0.1)
 
     # 7. Verify database records are restored to exact pre-move state
     conn = get_db_connection(db.db_path)
