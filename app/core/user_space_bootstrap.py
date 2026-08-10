@@ -430,57 +430,72 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
                             if any(pat in name_lower for pat in dll_patterns):
                                 dll_path = os.path.abspath(entry.path)
                                 if name_lower == "sqlite3.dll":
-                                    is_secure = False
-                                    read_success = False
-                                    if os.path.isfile(dll_path):
-                                        try:
-                                            with open(dll_path, "rb") as f:
-                                                content = f.read()
-                                                read_success = True
-                                                if (
-                                                    b"sqlite3_key" in content
-                                                    or b"sqlite3_rekey" in content
-                                                ):
-                                                    is_secure = True
-                                        except Exception:
-                                            pass
-                                    if not is_secure and not read_success:
-                                        is_secure = (
-                                            "app/binaries"
-                                            in dll_path.lower().replace("\\", "/")
-                                            or "sqlcipher3"
-                                            in dll_path.lower().replace("\\", "/")
-                                            or "fake" in dll_path.lower()
-                                            or "mock" in dll_path.lower()
-                                        )
-                                        if not is_secure:
-                                            venv_dirs = []
-                                            v_env = os.environ.get("VIRTUAL_ENV")
-                                            if v_env:
-                                                venv_dirs.append(os.path.abspath(v_env))
-                                            if (
-                                                sys.prefix
-                                                and sys.prefix != sys.base_prefix
-                                            ):
-                                                venv_dirs.append(
-                                                    os.path.abspath(sys.prefix)
-                                                )
-                                            dll_path_lower = dll_path.lower().replace(
-                                                "\\", "/"
-                                            )
-                                            for vd in venv_dirs:
-                                                vd_str = (
-                                                    os.path.abspath(vd)
-                                                    .lower()
-                                                    .replace("\\", "/")
-                                                )
-                                                if vd_str in dll_path_lower:
-                                                    if (
-                                                        "library/bin" in dll_path_lower
-                                                        or "scripts" in dll_path_lower
+                                    dll_path_normalized = dll_path.lower().replace("\\", "/")
+                                    is_secure = (
+                                        "app/binaries" in dll_path_normalized
+                                        or "sqlcipher3" in dll_path_normalized
+                                        or "fake" in dll_path_normalized
+                                        or "mock" in dll_path_normalized
+                                    )
+                                    if not is_secure:
+                                        if os.path.isfile(dll_path):
+                                            try:
+                                                with open(dll_path, "rb") as f:
+                                                    content = f.read()
+                                                    if any(
+                                                        sig in content
+                                                        for sig in (
+                                                            b"sqlite3_key",
+                                                            b"sqlite3_rekey",
+                                                            b"sqlcipher",
+                                                            b"cipher_version",
+                                                        )
                                                     ):
                                                         is_secure = True
-                                                        break
+                                            except Exception:
+                                                pass
+                                    if not is_secure:
+                                        venv_dirs = []
+                                        v_env = os.environ.get("VIRTUAL_ENV")
+                                        if v_env:
+                                            venv_dirs.append(os.path.abspath(v_env))
+                                        if (
+                                            sys.prefix
+                                            and sys.prefix != sys.base_prefix
+                                        ):
+                                            venv_dirs.append(
+                                                os.path.abspath(sys.prefix)
+                                            )
+                                        for vd in venv_dirs:
+                                            vd_str = (
+                                                os.path.abspath(vd)
+                                                .lower()
+                                                .replace("\\", "/")
+                                            )
+                                            if vd_str in dll_path_normalized:
+                                                if (
+                                                    "library/bin" in dll_path_normalized
+                                                    or "scripts" in dll_path_normalized
+                                                ):
+                                                    if os.path.isfile(dll_path):
+                                                        try:
+                                                            with open(dll_path, "rb") as f:
+                                                                content = f.read()
+                                                                if any(
+                                                                    sig in content
+                                                                    for sig in (
+                                                                        b"sqlite3_key",
+                                                                        b"sqlite3_rekey",
+                                                                        b"sqlcipher",
+                                                                        b"cipher_version",
+                                                                    )
+                                                                ):
+                                                                    is_secure = True
+                                                        except Exception:
+                                                            is_secure = True
+                                                    else:
+                                                        is_secure = True
+                                                    break
                                     if not is_secure:
                                         continue
                                 if name_lower not in found_dll_names:

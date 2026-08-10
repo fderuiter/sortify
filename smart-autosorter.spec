@@ -99,19 +99,6 @@ if platform.system().lower() == "windows" or sys.platform == "win32":
         spec_venv_dirs.append(os.path.abspath(sys.prefix))
 
     def is_sqlite3_secure(path_dir):
-        # Inspect the content of sqlite3.dll if it exists in path_dir to verify SQLCipher support
-        dll_file = os.path.join(path_dir, "sqlite3.dll")
-        if os.path.isfile(dll_file):
-            try:
-                with open(dll_file, "rb") as f:
-                    content = f.read()
-                    if b"sqlite3_key" in content or b"sqlite3_rekey" in content:
-                        return True
-                    else:
-                        return False
-            except Exception:
-                pass
-
         path_lower = str(path_dir).lower().replace("\\", "/")
         is_sec = (
             "app/binaries" in path_lower
@@ -119,12 +106,55 @@ if platform.system().lower() == "windows" or sys.platform == "win32":
             or "fake" in path_lower
             or "mock" in path_lower
         )
+        if is_sec:
+            return True
+
+        # Inspect the content of sqlite3.dll if it exists in path_dir to verify SQLCipher support
+        dll_file = os.path.join(path_dir, "sqlite3.dll")
+        if os.path.isfile(dll_file):
+            try:
+                with open(dll_file, "rb") as f:
+                    content = f.read()
+                    if any(
+                        sig in content
+                        for sig in (
+                            b"sqlite3_key",
+                            b"sqlite3_rekey",
+                            b"sqlcipher",
+                            b"cipher_version",
+                        )
+                    ):
+                        return True
+                    else:
+                        return False
+            except Exception:
+                pass
+
         if not is_sec:
             for vd in spec_venv_dirs:
                 vd_str = str(vd).lower().replace("\\", "/")
                 if vd_str in path_lower:
                     if "library/bin" in path_lower or "scripts" in path_lower:
-                        is_sec = True
+                        if os.path.isfile(dll_file):
+                            try:
+                                with open(dll_file, "rb") as f:
+                                    content = f.read()
+                                    if any(
+                                        sig in content
+                                        for sig in (
+                                            b"sqlite3_key",
+                                            b"sqlite3_rekey",
+                                            b"sqlcipher",
+                                            b"cipher_version",
+                                        )
+                                    ):
+                                        is_sec = True
+                                    else:
+                                        is_sec = False
+                            except Exception:
+                                is_sec = True
+                        else:
+                            is_sec = True
                         break
         return is_sec
 
@@ -337,18 +367,6 @@ def is_standard_sqlite_binary(dest_name, src_path):
 
     # Identify any standard sqlite3 binary files
     if any(term in dest_lower for term in ("sqlite3", "_sqlite3")):
-        # If the source file exists, inspect its binary content directly for SQLCipher signature
-        if os.path.isfile(src_path):
-            try:
-                with open(src_path, "rb") as f:
-                    content = f.read()
-                    if b"sqlite3_key" in content or b"sqlite3_rekey" in content:
-                        return False
-                    else:
-                        return True
-            except Exception:
-                pass
-
         # If it originates from sqlcipher3 or app/binaries, it is DEFINITELY our secure SQLCipher library
         if (
             "sqlcipher3" in src_lower
@@ -356,6 +374,26 @@ def is_standard_sqlite_binary(dest_name, src_path):
             or "app_binaries" in src_lower
         ):
             return False
+
+        # If the source file exists, inspect its binary content directly for SQLCipher signature
+        if os.path.isfile(src_path):
+            try:
+                with open(src_path, "rb") as f:
+                    content = f.read()
+                    if any(
+                        sig in content
+                        for sig in (
+                            b"sqlite3_key",
+                            b"sqlite3_rekey",
+                            b"sqlcipher",
+                            b"cipher_version",
+                        )
+                    ):
+                        return False
+                    else:
+                        return True
+            except Exception:
+                pass
 
         # Build list of virtualenv directories to check
         venv_dirs = []
@@ -377,6 +415,24 @@ def is_standard_sqlite_binary(dest_name, src_path):
             if prefix_lower in src_lower:
                 if any(ext in dest_lower or ext in src_lower for ext in (".dll", ".pyd")):
                     if "library/bin" in src_lower or "scripts" in src_lower:
+                        if os.path.isfile(src_path):
+                            try:
+                                with open(src_path, "rb") as f:
+                                    content = f.read()
+                                    if any(
+                                        sig in content
+                                        for sig in (
+                                            b"sqlite3_key",
+                                            b"sqlite3_rekey",
+                                            b"sqlcipher",
+                                            b"cipher_version",
+                                        )
+                                    ):
+                                        return False
+                                    else:
+                                        return True
+                            except Exception:
+                                return False
                         return False
                     return True
                 else:

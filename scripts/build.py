@@ -13,19 +13,6 @@ def update_binaries_and_manifest():
     from pathlib import Path
 
     def is_sqlite3_secure(path_dir):
-        # Inspect the content of sqlite3.dll if it exists in path_dir to verify SQLCipher support
-        dll_file = Path(path_dir) / "sqlite3.dll"
-        if dll_file.is_file():
-            try:
-                with open(dll_file, "rb") as f:
-                    content = f.read()
-                    if b"sqlite3_key" in content or b"sqlite3_rekey" in content:
-                        return True
-                    else:
-                        return False
-            except Exception:
-                pass
-
         path_lower = str(path_dir).lower().replace("\\", "/")
         is_sec = (
             "app/binaries" in path_lower
@@ -33,28 +20,70 @@ def update_binaries_and_manifest():
             or "fake" in path_lower
             or "mock" in path_lower
         )
-        if not is_sec:
-            venv_dirs = []
-            v_env = os.environ.get("VIRTUAL_ENV")
-            if v_env:
-                venv_dirs.append(Path(v_env))
-            local_venv = Path(__file__).resolve().parent.parent / ".venv"
-            if local_venv.exists() and local_venv not in venv_dirs:
-                venv_dirs.append(local_venv)
-            if (
-                sys.prefix
-                and sys.prefix != sys.base_prefix
-                and Path(sys.prefix) not in venv_dirs
-            ):
-                venv_dirs.append(Path(sys.prefix))
+        if is_sec:
+            return True
 
-            for vd in venv_dirs:
-                vd_str = str(vd).lower().replace("\\", "/")
-                if vd_str in path_lower:
-                    if "library/bin" in path_lower or "scripts" in path_lower:
-                        is_sec = True
-                        break
-        return is_sec
+        # Inspect the content of sqlite3.dll if it exists in path_dir to verify SQLCipher support
+        dll_file = Path(path_dir) / "sqlite3.dll"
+        if dll_file.is_file():
+            try:
+                with open(dll_file, "rb") as f:
+                    content = f.read()
+                    if any(
+                        sig in content
+                        for sig in (
+                            b"sqlite3_key",
+                            b"sqlite3_rekey",
+                            b"sqlcipher",
+                            b"cipher_version",
+                        )
+                    ):
+                        return True
+                    else:
+                        return False
+            except Exception:
+                pass
+
+        # Fallback to standard virtualenv subfolders check only if content inspection was not possible or inconclusive
+        venv_dirs = []
+        v_env = os.environ.get("VIRTUAL_ENV")
+        if v_env:
+            venv_dirs.append(Path(v_env))
+        local_venv = Path(__file__).resolve().parent.parent / ".venv"
+        if local_venv.exists() and local_venv not in venv_dirs:
+            venv_dirs.append(local_venv)
+        if (
+            sys.prefix
+            and sys.prefix != sys.base_prefix
+            and Path(sys.prefix) not in venv_dirs
+        ):
+            venv_dirs.append(Path(sys.prefix))
+
+        for vd in venv_dirs:
+            vd_str = str(vd).lower().replace("\\", "/")
+            if vd_str in path_lower:
+                if "library/bin" in path_lower or "scripts" in path_lower:
+                    if dll_file.is_file():
+                        try:
+                            with open(dll_file, "rb") as f:
+                                content = f.read()
+                                if any(
+                                    sig in content
+                                    for sig in (
+                                        b"sqlite3_key",
+                                        b"sqlite3_rekey",
+                                        b"sqlcipher",
+                                        b"cipher_version",
+                                    )
+                                ):
+                                    return True
+                                else:
+                                    return False
+                        except Exception:
+                            return True
+                    else:
+                        return True
+        return False
 
     if "pytest" in sys.modules:
         print("Running in tests. Skipping binaries and manifest update.")
