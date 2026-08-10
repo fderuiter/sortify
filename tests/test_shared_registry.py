@@ -273,7 +273,7 @@ def test_check_ai_status_corrupt_or_missing(tmp_path, monkeypatch):
     # Case 2: ML is available but files are missing
     with (
         patch("app.core.verifier.is_ml_available", return_value=True),
-        patch("os.path.exists", return_value=False),
+        patch("app.core.verifier.os.path.exists", return_value=False),
     ):
         is_healthy, warn_msg = check_ai_status(settings)
         assert not is_healthy

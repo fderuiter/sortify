@@ -149,10 +149,19 @@ def test_spec_file_partitioning():
     mock_hooks = MagicMock()
     mock_hooks.collect_all.return_value = ([], [], [])
 
+    real_exists = os.path.exists
+    def mock_exists(path):
+        if "binaries" in str(path).lower():
+            return True
+        try:
+            return real_exists(path)
+        except Exception:
+            return False
+
     with (
         patch("importlib.util.find_spec", mock_find_spec),
         patch("os.walk", return_value=mock_walk_data),
-        patch("os.path.exists", return_value=True),
+        patch("os.path.exists", side_effect=mock_exists),
         patch.dict(
             sys.modules,
             {
