@@ -123,7 +123,11 @@ def inject_bootstrap_paths(platform_binaries_dir: Path = None):
                     paths.append(os.path.join(internal_dir, "sqlcipher3"))
 
             # Update PATH environment variable without duplicating entries
-            current_path_dirs = [d.strip().strip('"') for d in os.environ.get("PATH", "").replace(os.pathsep, ";").split(";") if d.strip()]
+            current_path_dirs = [
+                d.strip().strip('"')
+                for d in os.environ.get("PATH", "").replace(os.pathsep, ";").split(";")
+                if d.strip()
+            ]
             current_path_dirs_normalized = set()
             for d in current_path_dirs:
                 try:
@@ -134,12 +138,17 @@ def inject_bootstrap_paths(platform_binaries_dir: Path = None):
             for p in paths:
                 try:
                     abs_p = os.path.abspath(p)
-                    if abs_p.lower() not in current_path_dirs_normalized and abs_p.lower() not in [np.lower() for np in new_path_dirs]:
+                    if (
+                        abs_p.lower() not in current_path_dirs_normalized
+                        and abs_p.lower() not in [np.lower() for np in new_path_dirs]
+                    ):
                         new_path_dirs.append(abs_p)
                 except Exception:
                     pass
             if new_path_dirs:
-                os.environ["PATH"] = ";".join(new_path_dirs) + ";" + os.environ.get("PATH", "")
+                os.environ["PATH"] = (
+                    ";".join(new_path_dirs) + ";" + os.environ.get("PATH", "")
+                )
 
 
 def bootstrap_binaries(force_download: bool = False) -> bool:
@@ -230,7 +239,13 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
                         pass
 
                 # Update PATH environment variable without duplicating entries
-                current_path_dirs = [d.strip().strip('"') for d in os.environ.get("PATH", "").replace(os.pathsep, ";").split(";") if d.strip()]
+                current_path_dirs = [
+                    d.strip().strip('"')
+                    for d in os.environ.get("PATH", "")
+                    .replace(os.pathsep, ";")
+                    .split(";")
+                    if d.strip()
+                ]
                 current_path_dirs_normalized = set()
                 for d in current_path_dirs:
                     try:
@@ -241,7 +256,11 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
                 for p in dirs_to_add:
                     try:
                         abs_p = os.path.abspath(p)
-                        if abs_p.lower() not in current_path_dirs_normalized and abs_p.lower() not in [np.lower() for np in new_path_dirs]:
+                        if (
+                            abs_p.lower() not in current_path_dirs_normalized
+                            and abs_p.lower()
+                            not in [np.lower() for np in new_path_dirs]
+                        ):
                             new_path_dirs.append(abs_p)
                     except Exception:
                         pass

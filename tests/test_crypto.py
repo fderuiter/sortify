@@ -322,6 +322,7 @@ def test_decryption_failure_safe_error_propagation(tmp_path, monkeypatch, caplog
     from contextlib import closing
 
     from app.core import db_conn
+
     is_active = False
     if db_conn.HAS_SQLCIPHER:
         try:

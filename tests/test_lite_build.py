@@ -275,19 +275,46 @@ def test_is_standard_sqlite_binary():
     ):
         # Execute spec file to load its defined functions into mock_globals
         exec(spec_content, mock_globals)
-        
+
     is_standard_sqlite_binary = mock_globals["is_standard_sqlite_binary"]
 
     # These should be identified as standard/non-cryptographic and return True
-    assert is_standard_sqlite_binary("sqlite3.dll", "C:\\Python312\\DLLs\\sqlite3.dll") is True
-    assert is_standard_sqlite_binary("_sqlite3.pyd", "C:\\Python312\\DLLs\\_sqlite3.pyd") is True
+    assert (
+        is_standard_sqlite_binary("sqlite3.dll", "C:\\Python312\\DLLs\\sqlite3.dll")
+        is True
+    )
+    assert (
+        is_standard_sqlite_binary("_sqlite3.pyd", "C:\\Python312\\DLLs\\_sqlite3.pyd")
+        is True
+    )
     assert is_standard_sqlite_binary("sqlite3", "/usr/lib/libsqlite3.so") is True
 
     # These should NOT be identified as standard (because they come from sqlcipher3 or app/binaries) and return False
-    assert is_standard_sqlite_binary("sqlite3.dll", "C:\\env\\.venv\\Lib\\site-packages\\sqlcipher3\\sqlite3.dll") is False
-    assert is_standard_sqlite_binary("_sqlite3.pyd", "C:\\env\\.venv\\Lib\\site-packages\\sqlcipher3\\_sqlite3.pyd") is False
-    assert is_standard_sqlite_binary("sqlite3.dll", "C:\\env\\app\\binaries\\windows\\sqlite3.dll") is False
-    assert is_standard_sqlite_binary("some_other_library.dll", "C:\\Python312\\DLLs\\some_other_library.dll") is False
+    assert (
+        is_standard_sqlite_binary(
+            "sqlite3.dll", "C:\\env\\.venv\\Lib\\site-packages\\sqlcipher3\\sqlite3.dll"
+        )
+        is False
+    )
+    assert (
+        is_standard_sqlite_binary(
+            "_sqlite3.pyd",
+            "C:\\env\\.venv\\Lib\\site-packages\\sqlcipher3\\_sqlite3.pyd",
+        )
+        is False
+    )
+    assert (
+        is_standard_sqlite_binary(
+            "sqlite3.dll", "C:\\env\\app\\binaries\\windows\\sqlite3.dll"
+        )
+        is False
+    )
+    assert (
+        is_standard_sqlite_binary(
+            "some_other_library.dll", "C:\\Python312\\DLLs\\some_other_library.dll"
+        )
+        is False
+    )
 
     # Verify virtualenv prefix support
     if sys.prefix:
@@ -301,84 +328,59 @@ def test_is_standard_sqlite_binary():
         assert is_standard_sqlite_binary("sqlite3.dll", base_path_win) is True
 
 
-def test_update_binaries_and_manifest_win32_dll_detection():
+def test_update_binaries_and_manifest_win32_dll_detection(tmp_path):
     """Test that on win32, update_binaries_and_manifest correctly searches for and copies sqlite3.dll,
     even when _sqlite3.pyd has already been copied, but skips it if sqlite3.dll was already copied."""
+    import json
+    import os
+    from pathlib import Path
+    from unittest.mock import MagicMock, patch
+
     from scripts import build
 
-    # Create mocks for all required dependencies
+    # Create dummy sqlcipher3 directory
+    fake_sqlcipher_dir = tmp_path / "fake_sqlcipher_dir"
+    fake_sqlcipher_dir.mkdir(parents=True, exist_ok=True)
+    (fake_sqlcipher_dir / "__init__.py").write_text("print('mock')", encoding="utf-8")
+    (fake_sqlcipher_dir / "_sqlite3.pyd").write_bytes(b"mock_pyd_content")
+
+    # Create dummy venv directory with Library/bin/sqlite3.dll
+    fake_venv_dir = tmp_path / "fake_venv_dir"
+    fake_venv_lib_bin = fake_venv_dir / "Library" / "bin"
+    fake_venv_lib_bin.mkdir(parents=True, exist_ok=True)
+    (fake_venv_lib_bin / "sqlite3.dll").write_bytes(b"mock_dll_content")
+
+    # Create mock spec for find_spec
     mock_spec = MagicMock()
-    mock_spec.submodule_search_locations = ["/fake/sqlcipher3/dir"]
+    mock_spec.submodule_search_locations = [str(fake_sqlcipher_dir)]
 
-    # Mock os.walk and os.listdir to simulate finding sqlite3.dll in venv
-    def mock_walk(top, *args, **kwargs):
-        if "/fake/sqlcipher3/dir" in str(top):
-            yield ("/fake/sqlcipher3/dir", [], ["__init__.py", "_sqlite3.pyd"])
-        elif "/fake/venv" in str(top):
-            yield ("/fake/venv/Library/bin", [], ["sqlite3.dll"])
-        else:
-            yield (str(top), [], [])
+    # Change current working directory to tmp_path so hardcoded 'app/binaries' is relative to tmp_path
+    original_cwd = os.getcwd()
+    os.chdir(tmp_path)
 
-    def mock_listdir(path):
-        if "Library" in str(path) or "bin" in str(path):
-            return ["sqlite3.dll"]
-        return []
+    try:
+        with (
+            patch("importlib.util.find_spec", return_value=mock_spec),
+            patch.dict("os.environ", {"VIRTUAL_ENV": str(fake_venv_dir)}),
+        ):
+            build.update_binaries_and_manifest(
+                system_platform="win32", bypass_pytest_check=True
+            )
 
-    def mock_exists(path):
-        p_str = str(path)
-        if "/fake/sqlcipher3/dir" in p_str:
-            return True
-        if "/fake/venv" in p_str:
-            return True
-        if "manifest.json" in p_str:
-            return True
-        return False
+            # Check that files were copied to the target directory
+            target_dir = Path("app") / "binaries" / "windows" / "sqlcipher3"
+            assert (target_dir / "__init__.py").exists()
+            assert (target_dir / "_sqlite3.pyd").exists()
+            assert (target_dir / "sqlite3.dll").exists()
 
-    mock_copy = MagicMock()
-    mock_rmtree = MagicMock()
-    mock_mkdir = MagicMock()
-
-    # Mock open for manifest and other files with support for mode-aware reading
-    def mock_open_mode(file, mode="r", *args, **kwargs):
-        mock_fh = MagicMock()
-        if "b" in mode:
-            mock_fh.read.side_effect = [b"{}", b""]
-        else:
-            mock_fh.read.side_effect = ["{}", ""]
-        mock_fh.__enter__.return_value = mock_fh
-        return mock_fh
-
-    from pathlib import Path
-    original_path_exists = Path.exists
-
-    # Mock pathlib.Path.exists
-    def mock_path_exists(self):
-        p_str = str(self).replace('\\', '/')
-        if "/fake/sqlcipher3/dir" in p_str:
-            return True
-        if "/fake/venv" in p_str:
-            return True
-        if "manifest.json" in p_str:
-            return True
-        return original_path_exists(self)
-
-    with (
-        patch("importlib.util.find_spec", return_value=mock_spec),
-        patch("os.walk", side_effect=mock_walk),
-        patch("os.path.exists", side_effect=mock_exists),
-        patch("pathlib.Path.exists", mock_path_exists),
-        patch("os.listdir", side_effect=mock_listdir),
-        patch("shutil.copy2", mock_copy),
-        patch("shutil.rmtree", mock_rmtree),
-        patch("pathlib.Path.mkdir", mock_mkdir),
-        patch.dict("os.environ", {"VIRTUAL_ENV": "/fake/venv"}),
-        patch("builtins.open", mock_open_mode),
-    ):
-        build.update_binaries_and_manifest(system_platform="win32", bypass_pytest_check=True)
-
-        # Check that shutil.copy2 was called to copy sqlite3.dll
-        # The source should end with sqlite3.dll, and the destination should be inside our binaries directory
-        copied_sources = [str(call[0][0]) for call in mock_copy.call_args_list]
-        assert any("sqlite3.dll" in src for src in copied_sources), "sqlite3.dll was not copied!"
-
-
+            # Check that manifest.json was created and updated
+            manifest_path = Path("app") / "binaries" / "manifest.json"
+            assert manifest_path.exists()
+            with open(manifest_path, "r", encoding="utf-8") as f:
+                manifest = json.load(f)
+            assert "windows" in manifest
+            assert "sqlcipher3/__init__.py" in manifest["windows"]
+            assert "sqlcipher3/_sqlite3.pyd" in manifest["windows"]
+            assert "sqlcipher3/sqlite3.dll" in manifest["windows"]
+    finally:
+        os.chdir(original_cwd)

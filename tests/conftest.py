@@ -67,7 +67,11 @@ if sys.platform == "win32":
                 pass
 
         # Update PATH environment variable without duplicating entries
-        current_path_dirs = [d.strip().strip('"') for d in os.environ.get("PATH", "").replace(os.pathsep, ";").split(";") if d.strip()]
+        current_path_dirs = [
+            d.strip().strip('"')
+            for d in os.environ.get("PATH", "").replace(os.pathsep, ";").split(";")
+            if d.strip()
+        ]
         current_path_dirs_normalized = set()
         for d in current_path_dirs:
             try:
@@ -78,7 +82,10 @@ if sys.platform == "win32":
         for p in dirs_to_add:
             try:
                 abs_p = os.path.abspath(p)
-                if abs_p.lower() not in current_path_dirs_normalized and abs_p.lower() not in [np.lower() for np in new_path_dirs]:
+                if (
+                    abs_p.lower() not in current_path_dirs_normalized
+                    and abs_p.lower() not in [np.lower() for np in new_path_dirs]
+                ):
                     new_path_dirs.append(abs_p)
             except Exception:
                 pass

@@ -71,22 +71,19 @@ def test_verify_sqlcipher_encryption_failure():
         assert verify_sqlcipher_encryption() is False
 
 
-def test_inject_bootstrap_paths():
+def test_inject_bootstrap_paths(tmp_path):
     """Verify search paths are properly added to sys.path and OS PATH env variables."""
-    from pathlib import Path
-    bin_dir = get_bootstrap_bin_dir()
+    bin_dir = tmp_path / "binaries"
+    bin_dir.mkdir()
     sqlcipher3_path = bin_dir / "sqlcipher3"
-    real_path = os.environ.get("PATH", "")
-    original_exists = Path.exists
+    sqlcipher3_path.mkdir()
 
-    def mock_exists(self):
-        p_str = str(self)
-        if "binaries" in p_str or "sqlcipher3" in p_str:
-            return True
-        return original_exists(self)
+    real_path = os.environ.get("PATH", "")
 
     with (
-        patch("pathlib.Path.exists", mock_exists),
+        patch(
+            "app.core.user_space_bootstrap.get_bootstrap_bin_dir", return_value=bin_dir
+        ),
         patch.object(sys, "path", sys.path.copy()) as mock_sys_path,
         patch("os.add_dll_directory", create=True) as mock_add_dll,
         patch.dict("os.environ", {"PATH": "existing_path" + os.pathsep + real_path}),
@@ -437,17 +434,24 @@ def test_bootstrap_binaries_windows_direct_import_fallback():
         os.path.abspath("C:\\venv\\Library\\bin").lower().replace("\\", "/"),
         os.path.abspath("C:\\venv\\Scripts").lower().replace("\\", "/"),
         os.path.abspath("C:\\venv\\DLLs").lower().replace("\\", "/"),
-        os.path.abspath("C:\\venv\\Lib\\site-packages\\sqlcipher3").lower().replace("\\", "/"),
-        os.path.abspath("C:\\Program Files\\OpenSSL-Win64\\bin").lower().replace("\\", "/"),
+        os.path.abspath("C:\\venv\\Lib\\site-packages\\sqlcipher3")
+        .lower()
+        .replace("\\", "/"),
+        os.path.abspath("C:\\Program Files\\OpenSSL-Win64\\bin")
+        .lower()
+        .replace("\\", "/"),
         os.path.abspath("C:\\Program Files\\OpenSSL\\bin").lower().replace("\\", "/"),
         os.path.abspath("C:\\Program Files\\OpenSSL-Win64").lower().replace("\\", "/"),
         os.path.abspath("C:\\Program Files\\OpenSSL").lower().replace("\\", "/"),
         os.path.abspath("C:\\OpenSSL-Win64\\bin").lower().replace("\\", "/"),
         os.path.abspath("C:\\OpenSSL-Win64").lower().replace("\\", "/"),
-        os.path.abspath("C:\\Program Files\\Common Files\\SSL").lower().replace("\\", "/"),
+        os.path.abspath("C:\\Program Files\\Common Files\\SSL")
+        .lower()
+        .replace("\\", "/"),
     }
 
     real_isdir = os.path.isdir
+
     def mock_isdir(path):
         try:
             p_abs = os.path.abspath(str(path)).lower().replace("\\", "/")

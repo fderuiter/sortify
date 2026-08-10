@@ -59,16 +59,18 @@ def update_binaries_and_manifest(system_platform=None, bypass_pytest_check=False
     if system_platform == "win32":
         # Ensure all required Windows DLLs (sqlite3, OpenSSL) are copied to the binaries directory if not already copied
         dll_patterns = ["libcrypto", "libssl", "sqlcipher", "libsqlcipher", "sqlite3"]
-        
+
         # We will build a list of missing patterns to search for
         for pat in dll_patterns:
             # Check if we already have a copied DLL file containing this pattern (case-insensitive)
-            already_copied = any(f.lower().endswith(".dll") and pat in f.lower() for f in copied_files)
+            already_copied = any(
+                f.lower().endswith(".dll") and pat in f.lower() for f in copied_files
+            )
             if not already_copied:
                 # We need to search for a DLL matching this pattern
                 # Let's find all matching DLLs in the prioritized search paths
                 dll_srcs = []
-                
+
                 # List of search paths
                 venv_dirs = []
                 v_env = os.environ.get("VIRTUAL_ENV")
@@ -79,9 +81,9 @@ def update_binaries_and_manifest(system_platform=None, bypass_pytest_check=False
                     venv_dirs.append(local_venv)
                 if sys.prefix and Path(sys.prefix) not in venv_dirs:
                     venv_dirs.append(Path(sys.prefix))
-                
+
                 found_for_pattern = False
-                
+
                 # Check candidate locations in prioritized venv directories
                 for vd in venv_dirs:
                     for sub in [
@@ -98,7 +100,7 @@ def update_binaries_and_manifest(system_platform=None, bypass_pytest_check=False
                                     found_for_pattern = True
                     if found_for_pattern:
                         break
-                        
+
                     # If not found in candidate paths, walk the venv directory recursively
                     for root, dirs, files in os.walk(vd):
                         if any(
@@ -118,10 +120,19 @@ def update_binaries_and_manifest(system_platform=None, bypass_pytest_check=False
                             break
                     if found_for_pattern:
                         break
-                        
+
                 # Search sys.base_prefix as a fallback if different
-                if not found_for_pattern and sys.base_prefix and sys.base_prefix != sys.prefix:
-                    for sub in [Path("."), Path("Library") / "bin", Path("DLLs"), Path("Scripts")]:
+                if (
+                    not found_for_pattern
+                    and sys.base_prefix
+                    and sys.base_prefix != sys.prefix
+                ):
+                    for sub in [
+                        Path("."),
+                        Path("Library") / "bin",
+                        Path("DLLs"),
+                        Path("Scripts"),
+                    ]:
                         candidate_dir = Path(sys.base_prefix) / sub
                         if candidate_dir.exists():
                             for f in os.listdir(candidate_dir):
@@ -137,15 +148,18 @@ def update_binaries_and_manifest(system_platform=None, bypass_pytest_check=False
                                     "site-packages/easyocr",
                                     "site-packages/scipy",
                                 )
-                              ):
+                            ):
                                 continue
                             for file in files:
-                                if file.lower().endswith(".dll") and pat in file.lower():
+                                if (
+                                    file.lower().endswith(".dll")
+                                    and pat in file.lower()
+                                ):
                                     dll_srcs.append(Path(root) / file)
                                     found_for_pattern = True
                             if found_for_pattern:
                                 break
-                                
+
                 # Search directory of python executable
                 if not found_for_pattern and sys.executable:
                     exe_dir = os.path.dirname(sys.executable)
@@ -162,7 +176,7 @@ def update_binaries_and_manifest(system_platform=None, bypass_pytest_check=False
                                 if f.lower().endswith(".dll") and pat in f.lower():
                                     dll_srcs.append(Path(exe_dir) / f)
                                     found_for_pattern = True
-                                    
+
                 # Search standard OpenSSL installation paths on Windows as fallback
                 if not found_for_pattern:
                     common_openssl_dirs = [
@@ -210,7 +224,7 @@ def update_binaries_and_manifest(system_platform=None, bypass_pytest_check=False
                             continue
                         if found_for_pattern:
                             break
-                                
+
                 for src in dll_srcs:
                     if src.exists():
                         dest_path = target_dir / src.name
