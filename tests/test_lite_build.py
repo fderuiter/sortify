@@ -393,6 +393,8 @@ def test_update_binaries_and_manifest_win32_dll_detection(tmp_path):
 
     try:
         with (
+            patch("sys.prefix", str(fake_venv_dir)),
+            patch("sys.base_prefix", str(fake_venv_dir)),
             patch("importlib.util.find_spec", return_value=mock_spec),
             patch.dict("os.environ", {"VIRTUAL_ENV": str(fake_venv_dir)}),
         ):
