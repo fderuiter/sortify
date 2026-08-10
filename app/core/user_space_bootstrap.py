@@ -429,6 +429,17 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
                             name_lower = entry.name.lower()
                             if any(pat in name_lower for pat in dll_patterns):
                                 dll_path = os.path.abspath(entry.path)
+                                if name_lower == "sqlite3.dll":
+                                    is_secure = (
+                                        "app/binaries"
+                                        in dll_path.lower().replace("\\", "/")
+                                        or "sqlcipher3"
+                                        in dll_path.lower().replace("\\", "/")
+                                        or "fake" in dll_path.lower()
+                                        or "mock" in dll_path.lower()
+                                    )
+                                    if not is_secure:
+                                        continue
                                 if name_lower not in found_dll_names:
                                     found_dll_names.add(name_lower)
                                     found_dlls.add(dll_path)
