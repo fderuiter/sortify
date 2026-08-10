@@ -41,15 +41,17 @@ def test_incremental_sync_and_stop_on_failure(test_history_env):
     db.upsert_document(base_dir, os.path.join("folder", "file1.txt"), "hash1", "text1")
     db.upsert_document(base_dir, os.path.join("folder", "file2.txt"), "hash2", "text2")
 
-    # Mock shutil.move to fail on the second file
-    original_move = shutil.move
+    # Mock _robust_move to fail on the second file
+    from app.core.history import _robust_move
 
-    def mock_move(src, dst):
+    original_robust_move = _robust_move
+
+    def mock_robust_move(src, dst):
         if "file2.txt" in src or "file2.txt" in dst:
             raise OSError("Mocked permission error on file2")
-        return original_move(src, dst)
+        return original_robust_move(src, dst)
 
-    with patch("shutil.move", side_effect=mock_move):
+    with patch("app.core.history._robust_move", side_effect=mock_robust_move):
         with pytest.raises(OSError, match="Mocked permission error on file2"):
             history_manager.rollback(session_id)
 

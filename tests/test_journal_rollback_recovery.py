@@ -64,11 +64,13 @@ def test_normal_rollback_writes_and_deletes_journal(test_history_env):
     )
 
     # 4. Mock the internal move execution to verify journal file exists right before file relocation
-    original_move = shutil.move
+    from app.core.history import _robust_move
+
+    original_robust_move = _robust_move
     journal_found_during_move = False
     journal_path = Path(history_manager.db_path).parent / "rollback_journal.json"
 
-    def mock_move(src, dst):
+    def mock_robust_move(src, dst):
         nonlocal journal_found_during_move
         if journal_path.exists():
             journal_found_during_move = True
@@ -78,9 +80,9 @@ def test_normal_rollback_writes_and_deletes_journal(test_history_env):
                 assert jdata["session_id"] == session_id
                 assert "safety_session_id" in jdata
                 assert jdata["base_dir"] == base_dir
-        return original_move(src, dst)
+        return original_robust_move(src, dst)
 
-    with patch("shutil.move", side_effect=mock_move):
+    with patch("app.core.history._robust_move", side_effect=mock_robust_move):
         history_manager.rollback(session_id)
 
     # 5. Assertions
