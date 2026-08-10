@@ -363,6 +363,7 @@ def is_prunable_asset(name):
 # Prevent any standard non-cryptographic sqlite binaries from being bundled
 def is_standard_sqlite_binary(dest_name, src_path):
     dest_lower = dest_name.lower().replace("\\", "/")
+    src_path = os.path.abspath(src_path)
     src_lower = src_path.lower().replace("\\", "/")
 
     # Identify any standard sqlite3 binary files

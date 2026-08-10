@@ -430,7 +430,9 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
                             if any(pat in name_lower for pat in dll_patterns):
                                 dll_path = os.path.abspath(entry.path)
                                 if name_lower == "sqlite3.dll":
-                                    dll_path_normalized = dll_path.lower().replace("\\", "/")
+                                    dll_path_normalized = dll_path.lower().replace(
+                                        "\\", "/"
+                                    )
                                     is_secure = (
                                         "app/binaries" in dll_path_normalized
                                         or "sqlcipher3" in dll_path_normalized
@@ -459,10 +461,7 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
                                         v_env = os.environ.get("VIRTUAL_ENV")
                                         if v_env:
                                             venv_dirs.append(os.path.abspath(v_env))
-                                        if (
-                                            sys.prefix
-                                            and sys.prefix != sys.base_prefix
-                                        ):
+                                        if sys.prefix and sys.prefix != sys.base_prefix:
                                             venv_dirs.append(
                                                 os.path.abspath(sys.prefix)
                                             )
@@ -479,7 +478,9 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
                                                 ):
                                                     if os.path.isfile(dll_path):
                                                         try:
-                                                            with open(dll_path, "rb") as f:
+                                                            with open(
+                                                                dll_path, "rb"
+                                                            ) as f:
                                                                 content = f.read()
                                                                 if any(
                                                                     sig in content
