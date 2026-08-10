@@ -113,8 +113,14 @@ if (platform.system().lower() == "windows" or sys.platform == "win32") and "pyte
     for path_dir in path_dirs:
         if path_dir not in search_dirs:
             # Exclude standard system directories to prevent standard sqlite3.dll leakage
-            dir_lower = path_dir.lower()
-            if "system32" in dir_lower or "windows" in dir_lower:
+            p_abs = os.path.abspath(path_dir).lower().replace('\\', '/')
+            is_sys_dir = (
+                "system32" in p_abs
+                or "syswow64" in p_abs
+                or p_abs == "c:/windows"
+                or p_abs.startswith("c:/windows/")
+            )
+            if is_sys_dir:
                 continue
             search_dirs.append(path_dir)
             

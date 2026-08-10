@@ -220,21 +220,25 @@ def update_binaries_and_manifest(system_platform=None, bypass_pytest_check=False
                             if found_for_pattern:
                                 break
 
-                # Search system PATH as a fallback (excluding System32 and Windows)
+                # Search system PATH as a fallback (excluding standard system directories)
                 if not found_for_pattern:
                     path_dirs = []
                     for d in os.environ.get("PATH", "").split(os.pathsep):
                         cleaned = d.strip().strip('"')
                         if cleaned:
                             try:
-                                if os.path.isdir(cleaned):
+                                p_abs = os.path.abspath(cleaned).lower().replace('\\', '/')
+                                is_sys_dir = (
+                                    "system32" in p_abs
+                                    or "syswow64" in p_abs
+                                    or p_abs == "c:/windows"
+                                    or p_abs.startswith("c:/windows/")
+                                )
+                                if not is_sys_dir and os.path.isdir(cleaned):
                                     path_dirs.append(cleaned)
                             except Exception:
                                 pass
                     for path_dir in path_dirs:
-                        dir_lower = path_dir.lower()
-                        if "system32" in dir_lower or "windows" in dir_lower:
-                            continue
                         try:
                             for f in os.listdir(path_dir):
                                 if f.lower().endswith(".dll") and pat in f.lower():

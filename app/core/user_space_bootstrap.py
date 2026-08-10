@@ -215,18 +215,55 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
                         pass
 
                 # Add system PATH directories that might contain OpenSSL/SSL/SQLCipher specifically
+                candidate_dll_names = [
+                    "libcrypto-3-x64.dll",
+                    "libcrypto-3.dll",
+                    "libcrypto-1_1-x64.dll",
+                    "libcrypto-1_1.dll",
+                    "libcrypto.dll",
+                    "libssl-3-x64.dll",
+                    "libssl-3.dll",
+                    "libssl-1_1-x64.dll",
+                    "libssl-1_1.dll",
+                    "libssl.dll",
+                    "sqlite3.dll",
+                    "sqlcipher.dll",
+                    "libsqlcipher.dll",
+                ]
                 for d in os.environ.get("PATH", "").split(os.pathsep):
                     cleaned = d.strip().strip('"')
                     if cleaned:
                         try:
                             cleaned_lower = cleaned.lower()
-                            if (
+                            # Check if the directory path itself suggests it contains OpenSSL/SSL/SQLCipher or Git
+                            is_candidate_dir = (
                                 "openssl" in cleaned_lower
                                 or "ssl" in cleaned_lower
                                 or "sqlcipher" in cleaned_lower
-                            ) and "system32" not in cleaned_lower and "windows" not in cleaned_lower:
-                                if os.path.isdir(cleaned) and cleaned not in dirs_to_add:
-                                    dirs_to_add.append(cleaned)
+                                or "git" in cleaned_lower
+                            )
+                            # Exclude standard Windows system directories (like C:/Windows/System32)
+                            p_abs = os.path.abspath(cleaned).lower().replace('\\', '/')
+                            is_sys_dir = (
+                                "system32" in p_abs
+                                or "syswow64" in p_abs
+                                or p_abs == "c:/windows"
+                                or p_abs.startswith("c:/windows/")
+                            )
+                            if not is_sys_dir:
+                                if os.path.isdir(cleaned):
+                                    if is_candidate_dir:
+                                        if cleaned not in dirs_to_add:
+                                            dirs_to_add.append(cleaned)
+                                    else:
+                                        # Fallback to check if any required DLL exists in this directory
+                                        has_required_dll = False
+                                        for dll_name in candidate_dll_names:
+                                            if os.path.isfile(os.path.join(cleaned, dll_name)):
+                                                has_required_dll = True
+                                                break
+                                        if has_required_dll and cleaned not in dirs_to_add:
+                                            dirs_to_add.append(cleaned)
                         except Exception:
                             pass
 
