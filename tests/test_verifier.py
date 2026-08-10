@@ -58,8 +58,11 @@ def test_path_length_validation_and_simulation():
     from app.core.verifier import VerificationEngine
 
     # Test is_path_too_long helper
-    assert is_path_too_long("/" + "a" * 259) is True
-    assert is_path_too_long("/" + "a" * 258) is False
+    base_abs = os.path.abspath("/")
+    too_long_path = base_abs + "a" * (260 - len(base_abs))
+    safe_path = base_abs + "a" * (259 - len(base_abs))
+    assert is_path_too_long(too_long_path) is True
+    assert is_path_too_long(safe_path) is False
     assert is_path_too_long("") is False
 
     # Test VirtualFilesystemTracker / VerificationEngine path length check simulation
