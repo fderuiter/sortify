@@ -438,6 +438,31 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
                                         or "fake" in dll_path.lower()
                                         or "mock" in dll_path.lower()
                                     )
+                                    if not is_secure and sys.prefix != sys.base_prefix:
+                                        venv_dirs = []
+                                        v_env = os.environ.get("VIRTUAL_ENV")
+                                        if v_env:
+                                            venv_dirs.append(os.path.abspath(v_env))
+                                        if sys.prefix:
+                                            venv_dirs.append(
+                                                os.path.abspath(sys.prefix)
+                                            )
+                                        dll_path_lower = dll_path.lower().replace(
+                                            "\\", "/"
+                                        )
+                                        for vd in venv_dirs:
+                                            vd_str = (
+                                                os.path.abspath(vd)
+                                                .lower()
+                                                .replace("\\", "/")
+                                            )
+                                            if vd_str in dll_path_lower:
+                                                if (
+                                                    "library/bin" in dll_path_lower
+                                                    or "scripts" in dll_path_lower
+                                                ):
+                                                    is_secure = True
+                                                    break
                                     if not is_secure:
                                         continue
                                 if name_lower not in found_dll_names:

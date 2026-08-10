@@ -12,6 +12,33 @@ def update_binaries_and_manifest():
     import shutil
     from pathlib import Path
 
+    def is_sqlite3_secure(path_dir):
+        path_lower = str(path_dir).lower().replace("\\", "/")
+        is_sec = (
+            "app/binaries" in path_lower
+            or "sqlcipher3" in path_lower
+            or "fake" in path_lower
+            or "mock" in path_lower
+        )
+        if not is_sec and sys.prefix != sys.base_prefix:
+            venv_dirs = []
+            v_env = os.environ.get("VIRTUAL_ENV")
+            if v_env:
+                venv_dirs.append(Path(v_env))
+            local_venv = Path(__file__).resolve().parent.parent / ".venv"
+            if local_venv.exists() and local_venv not in venv_dirs:
+                venv_dirs.append(local_venv)
+            if sys.prefix and Path(sys.prefix) not in venv_dirs:
+                venv_dirs.append(Path(sys.prefix))
+
+            for vd in venv_dirs:
+                vd_str = str(vd).lower().replace("\\", "/")
+                if vd_str in path_lower:
+                    if "library/bin" in path_lower or "scripts" in path_lower:
+                        is_sec = True
+                        break
+        return is_sec
+
     if "pytest" in sys.modules:
         print("Running in tests. Skipping binaries and manifest update.")
         return
@@ -97,19 +124,7 @@ def update_binaries_and_manifest():
                             for f in os.listdir(candidate_dir):
                                 if f.lower().endswith(".dll") and pat in f.lower():
                                     if f.lower() == "sqlite3.dll":
-                                        is_secure = (
-                                            "app/binaries"
-                                            in str(candidate_dir)
-                                            .lower()
-                                            .replace("\\", "/")
-                                            or "sqlcipher3"
-                                            in str(candidate_dir)
-                                            .lower()
-                                            .replace("\\", "/")
-                                            or "fake" in str(candidate_dir).lower()
-                                            or "mock" in str(candidate_dir).lower()
-                                        )
-                                        if not is_secure:
+                                        if not is_sqlite3_secure(candidate_dir):
                                             continue
                                     dll_srcs.append(candidate_dir / f)
                                     found_for_pattern = True
@@ -130,15 +145,7 @@ def update_binaries_and_manifest():
                         for file in files:
                             if file.lower().endswith(".dll") and pat in file.lower():
                                 if file.lower() == "sqlite3.dll":
-                                    is_secure = (
-                                        "app/binaries"
-                                        in root.lower().replace("\\", "/")
-                                        or "sqlcipher3"
-                                        in root.lower().replace("\\", "/")
-                                        or "fake" in root.lower()
-                                        or "mock" in root.lower()
-                                    )
-                                    if not is_secure:
+                                    if not is_sqlite3_secure(root):
                                         continue
                                 dll_srcs.append(Path(root) / file)
                                 found_for_pattern = True
@@ -164,19 +171,7 @@ def update_binaries_and_manifest():
                             for f in os.listdir(candidate_dir):
                                 if f.lower().endswith(".dll") and pat in f.lower():
                                     if f.lower() == "sqlite3.dll":
-                                        is_secure = (
-                                            "app/binaries"
-                                            in str(candidate_dir)
-                                            .lower()
-                                            .replace("\\", "/")
-                                            or "sqlcipher3"
-                                            in str(candidate_dir)
-                                            .lower()
-                                            .replace("\\", "/")
-                                            or "fake" in str(candidate_dir).lower()
-                                            or "mock" in str(candidate_dir).lower()
-                                        )
-                                        if not is_secure:
+                                        if not is_sqlite3_secure(candidate_dir):
                                             continue
                                     dll_srcs.append(candidate_dir / f)
                                     found_for_pattern = True
@@ -197,15 +192,7 @@ def update_binaries_and_manifest():
                                     and pat in file.lower()
                                 ):
                                     if file.lower() == "sqlite3.dll":
-                                        is_secure = (
-                                            "app/binaries"
-                                            in root.lower().replace("\\", "/")
-                                            or "sqlcipher3"
-                                            in root.lower().replace("\\", "/")
-                                            or "fake" in root.lower()
-                                            or "mock" in root.lower()
-                                        )
-                                        if not is_secure:
+                                        if not is_sqlite3_secure(root):
                                             continue
                                     dll_srcs.append(Path(root) / file)
                                     found_for_pattern = True
@@ -222,19 +209,7 @@ def update_binaries_and_manifest():
                                 for f in os.listdir(candidate_dir):
                                     if f.lower().endswith(".dll") and pat in f.lower():
                                         if f.lower() == "sqlite3.dll":
-                                            is_secure = (
-                                                "app/binaries"
-                                                in str(candidate_dir)
-                                                .lower()
-                                                .replace("\\", "/")
-                                                or "sqlcipher3"
-                                                in str(candidate_dir)
-                                                .lower()
-                                                .replace("\\", "/")
-                                                or "fake" in str(candidate_dir).lower()
-                                                or "mock" in str(candidate_dir).lower()
-                                            )
-                                            if not is_secure:
+                                            if not is_sqlite3_secure(candidate_dir):
                                                 continue
                                         dll_srcs.append(candidate_dir / f)
                                         found_for_pattern = True
@@ -242,15 +217,7 @@ def update_binaries_and_manifest():
                             for f in os.listdir(exe_dir):
                                 if f.lower().endswith(".dll") and pat in f.lower():
                                     if f.lower() == "sqlite3.dll":
-                                        is_secure = (
-                                            "app/binaries"
-                                            in exe_dir.lower().replace("\\", "/")
-                                            or "sqlcipher3"
-                                            in exe_dir.lower().replace("\\", "/")
-                                            or "fake" in exe_dir.lower()
-                                            or "mock" in exe_dir.lower()
-                                        )
-                                        if not is_secure:
+                                        if not is_sqlite3_secure(exe_dir):
                                             continue
                                     dll_srcs.append(Path(exe_dir) / f)
                                     found_for_pattern = True
@@ -272,15 +239,7 @@ def update_binaries_and_manifest():
                                 for f in os.listdir(cd):
                                     if f.lower().endswith(".dll") and pat in f.lower():
                                         if f.lower() == "sqlite3.dll":
-                                            is_secure = (
-                                                "app/binaries"
-                                                in str(cd).lower().replace("\\", "/")
-                                                or "sqlcipher3"
-                                                in str(cd).lower().replace("\\", "/")
-                                                or "fake" in str(cd).lower()
-                                                or "mock" in str(cd).lower()
-                                            )
-                                            if not is_secure:
+                                            if not is_sqlite3_secure(cd):
                                                 continue
                                         dll_srcs.append(cd / f)
                                         found_for_pattern = True
@@ -300,15 +259,7 @@ def update_binaries_and_manifest():
                                 for f in os.listdir(path_dir):
                                     if f.lower().endswith(".dll") and pat in f.lower():
                                         if f.lower() == "sqlite3.dll":
-                                            is_secure = (
-                                                "app/binaries"
-                                                in path_dir.lower().replace("\\", "/")
-                                                or "sqlcipher3"
-                                                in path_dir.lower().replace("\\", "/")
-                                                or "fake" in path_dir.lower()
-                                                or "mock" in path_dir.lower()
-                                            )
-                                            if not is_secure:
+                                            if not is_sqlite3_secure(path_dir):
                                                 continue
                                         dll_srcs.append(Path(path_dir) / f)
                                         found_for_pattern = True

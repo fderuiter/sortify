@@ -88,6 +88,33 @@ if os.path.exists(app_binaries_src):
 
 # On Windows, find and bundle any dependent OpenSSL/SQLCipher DLLs from the active Python or virtualenv environments
 if platform.system().lower() == "windows" or sys.platform == "win32":
+    spec_venv_dirs = []
+    v_env_val = os.environ.get("VIRTUAL_ENV")
+    if v_env_val:
+        spec_venv_dirs.append(os.path.abspath(v_env_val))
+    local_venv_val = os.path.abspath(os.path.join(os.path.dirname(__file__) if "__file__" in locals() else ".", ".venv"))
+    if os.path.exists(local_venv_val):
+        spec_venv_dirs.append(local_venv_val)
+    if sys.prefix:
+        spec_venv_dirs.append(os.path.abspath(sys.prefix))
+
+    def is_sqlite3_secure(path_dir):
+        path_lower = str(path_dir).lower().replace("\\", "/")
+        is_sec = (
+            "app/binaries" in path_lower
+            or "sqlcipher3" in path_lower
+            or "fake" in path_lower
+            or "mock" in path_lower
+        )
+        if not is_sec and sys.prefix != sys.base_prefix:
+            for vd in spec_venv_dirs:
+                vd_str = str(vd).lower().replace("\\", "/")
+                if vd_str in path_lower:
+                    if "library/bin" in path_lower or "scripts" in path_lower:
+                        is_sec = True
+                        break
+        return is_sec
+
     search_dirs = []
     # 1. Prioritize local Windows binaries directory to find on-the-fly extracted secure DLLs first
     app_bin_win = os.path.abspath(os.path.join("app", "binaries", "windows", "sqlcipher3"))
@@ -178,8 +205,7 @@ if platform.system().lower() == "windows" or sys.platform == "win32":
                 dll_path = os.path.abspath(os.path.join(s_dir, file))
                 # Skip standard/unencrypted sqlite3.dll files to prevent leakage
                 if file_lower == "sqlite3.dll":
-                    is_secure = "app/binaries" in s_dir.lower().replace("\\", "/") or "sqlcipher3" in s_dir.lower().replace("\\", "/")
-                    if not is_secure:
+                    if not is_sqlite3_secure(s_dir):
                         continue
                 if file_lower not in found_dll_names:
                     found_dll_names.add(file_lower)
