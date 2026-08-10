@@ -149,10 +149,22 @@ def test_spec_file_partitioning():
     mock_hooks = MagicMock()
     mock_hooks.collect_all.return_value = ([], [], [])
 
+    orig_exists_partition = os.path.exists
+
+    def mock_exists_partition(path):
+        p_str = str(path).lower().replace("\\", "/")
+        if (
+            "app/binaries" in p_str
+            or "sqlcipher3" in p_str
+            or "smart-autosorter.spec" in p_str
+        ):
+            return True
+        return orig_exists_partition(path)
+
     with (
         patch("importlib.util.find_spec", mock_find_spec),
         patch("os.walk", return_value=mock_walk_data),
-        patch("os.path.exists", return_value=True),
+        patch("os.path.exists", mock_exists_partition),
         patch.dict(
             sys.modules,
             {
@@ -340,18 +352,29 @@ def test_is_standard_sqlite_binary():
     mock_secure_file = os.path.abspath("/fake/secure_sqlite3.dll")
     mock_standard_file = os.path.abspath("/fake/standard_sqlite3.dll")
 
+    orig_isfile = os.path.isfile
+    orig_open = open
+
+    def mock_isfile(path):
+        p_norm = os.path.abspath(path)
+        if p_norm in (mock_secure_file, mock_standard_file):
+            return True
+        return orig_isfile(path)
+
     def mock_open_binary(file, mode="r", *args, **kwargs):
         file_norm = os.path.abspath(file)
-        fh = MagicMock()
-        if file_norm == mock_secure_file:
-            fh.read.return_value = b"some prefix sqlite3_key some suffix"
-        elif file_norm == mock_standard_file:
-            fh.read.return_value = b"standard sqlite without key"
-        fh.__enter__.return_value = fh
-        return fh
+        if file_norm in (mock_secure_file, mock_standard_file):
+            fh = MagicMock()
+            if file_norm == mock_secure_file:
+                fh.read.return_value = b"some prefix sqlite3_key some suffix"
+            elif file_norm == mock_standard_file:
+                fh.read.return_value = b"standard sqlite without key"
+            fh.__enter__.return_value = fh
+            return fh
+        return orig_open(file, mode, *args, **kwargs)
 
     with (
-        patch("os.path.isfile", return_value=True),
+        patch("os.path.isfile", side_effect=mock_isfile),
         patch("builtins.open", mock_open_binary),
     ):
         # Secure file should be identified as not standard (returns False)
