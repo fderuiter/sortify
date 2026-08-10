@@ -518,6 +518,7 @@ class HistoryManager:
                 current_inodes = {}
                 active_files_by_rel_path = {}
                 active_files_by_sig = {}
+                active_files_by_size = {}
                 inodes_reliable = True
 
                 for rel_path in current_files:
@@ -544,6 +545,10 @@ class HistoryManager:
                     if sig not in active_files_by_sig:
                         active_files_by_sig[sig] = []
                     active_files_by_sig[sig].append(abs_path)
+
+                    if size not in active_files_by_size:
+                        active_files_by_size[size] = []
+                    active_files_by_size[size].append(abs_path)
 
                 # First compute all intended moves
                 moves = []
@@ -630,6 +635,19 @@ class HistoryManager:
                                                 target_sig
                                             ].pop(idx)
                                             break
+                                if not current_abs:
+                                    if (
+                                        size in active_files_by_size
+                                        and active_files_by_size[size]
+                                    ):
+                                        for idx, cand_path in enumerate(
+                                            active_files_by_size[size]
+                                        ):
+                                            if verify_hash(cand_path, file_hash):
+                                                current_abs = active_files_by_size[
+                                                    size
+                                                ].pop(idx)
+                                                break
 
                     if not current_abs:
                         if not is_link_entity and not ignore_missing:

@@ -104,6 +104,7 @@ def test_bootstrap_binaries_bypass_if_cached(tmp_path):
     mock_sqlcipher.mkdir(parents=True)
 
     with (
+        patch("sys.platform", "linux"),
         patch(
             "app.core.user_space_bootstrap.get_bootstrap_bin_dir",
             return_value=mock_app_dir / "binaries",
