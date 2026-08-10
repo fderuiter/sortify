@@ -482,6 +482,6 @@ def test_bootstrap_binaries_windows_direct_import_fallback():
         res = bootstrap_binaries(force_download=False)
         assert res is True
         # Check that os.add_dll_directory was called on the sqlcipher3 package directory and venv dirs
-        calls_lower = [str(c[0][0]).lower() for c in mock_add_dll.call_args_list]
-        assert "c:\\site-packages\\sqlcipher3" in calls_lower
-        assert os.path.abspath("C:\\venv").lower() in calls_lower
+        calls_lower = [str(c[0][0]).lower().replace("\\", "/") for c in mock_add_dll.call_args_list]
+        assert "c:/site-packages/sqlcipher3" in calls_lower
+        assert os.path.abspath("C:\\venv").lower().replace("\\", "/") in calls_lower
