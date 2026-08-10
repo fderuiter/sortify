@@ -99,6 +99,17 @@ if platform.system().lower() == "windows" or sys.platform == "win32":
         spec_venv_dirs.append(os.path.abspath(sys.prefix))
 
     def is_sqlite3_secure(path_dir):
+        # Inspect the content of sqlite3.dll if it exists in path_dir to verify SQLCipher support
+        dll_file = os.path.join(path_dir, "sqlite3.dll")
+        if os.path.isfile(dll_file):
+            try:
+                with open(dll_file, "rb") as f:
+                    content = f.read()
+                    if b"sqlite3_key" in content or b"sqlite3_rekey" in content:
+                        return True
+            except Exception:
+                pass
+
         path_lower = str(path_dir).lower().replace("\\", "/")
         is_sec = (
             "app/binaries" in path_lower
@@ -324,6 +335,16 @@ def is_standard_sqlite_binary(dest_name, src_path):
 
     # Identify any standard sqlite3 binary files
     if any(term in dest_lower for term in ("sqlite3", "_sqlite3")):
+        # If the source file exists, inspect its binary content directly for SQLCipher signature
+        if os.path.isfile(src_path):
+            try:
+                with open(src_path, "rb") as f:
+                    content = f.read()
+                    if b"sqlite3_key" in content or b"sqlite3_rekey" in content:
+                        return False
+            except Exception:
+                pass
+
         # If it originates from sqlcipher3 or app/binaries, it is DEFINITELY our secure SQLCipher library
         if (
             "sqlcipher3" in src_lower

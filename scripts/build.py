@@ -13,6 +13,17 @@ def update_binaries_and_manifest():
     from pathlib import Path
 
     def is_sqlite3_secure(path_dir):
+        # Inspect the content of sqlite3.dll if it exists in path_dir to verify SQLCipher support
+        dll_file = Path(path_dir) / "sqlite3.dll"
+        if dll_file.is_file():
+            try:
+                with open(dll_file, "rb") as f:
+                    content = f.read()
+                    if b"sqlite3_key" in content or b"sqlite3_rekey" in content:
+                        return True
+            except Exception:
+                pass
+
         path_lower = str(path_dir).lower().replace("\\", "/")
         is_sec = (
             "app/binaries" in path_lower
