@@ -255,6 +255,7 @@ class SharedModelRegistry:
         self.apply_onnx_thread_limits()
         try:
             from app.core.hashes_registry import HASHES
+
             for model_id, file_hashes in HASHES.items():
                 self.register_expected_hashes(model_id, file_hashes)
         except ImportError:
@@ -327,10 +328,13 @@ class SharedModelRegistry:
         """Verify model files against expected hashes if they are registered."""
         if model_id in self._expected_hashes:
             from app.core.path_utils import is_packaged
+
             expected = self._expected_hashes[model_id]
             if not model_path or not os.path.exists(model_path):
                 if not is_packaged():
-                    logging.warning(f"Model path {model_path} does not exist. Skipping integrity check in non-packaged mode.")
+                    logging.warning(
+                        f"Model path {model_path} does not exist. Skipping integrity check in non-packaged mode."
+                    )
                     return True
                 raise FileNotFoundError(
                     f"Model path {model_path} does not exist for integrity check."
@@ -341,7 +345,9 @@ class SharedModelRegistry:
                     file_path = os.path.join(model_path, filename)
                     if not os.path.exists(file_path):
                         if not is_packaged():
-                            logging.warning(f"Required model file {file_path} is missing. Skipping integrity check in non-packaged mode.")
+                            logging.warning(
+                                f"Required model file {file_path} is missing. Skipping integrity check in non-packaged mode."
+                            )
                             return True
                         raise FileNotFoundError(
                             f"Required model file {file_path} is missing."
@@ -378,6 +384,7 @@ class SharedModelRegistry:
         model_id = "easyocr"
         if model_id not in self._models:
             import sys
+
             # Resolve easyocr_dir
             if hasattr(sys, "_MEIPASS"):
                 easyocr_dir = os.path.join(sys._MEIPASS, "offline_bundle", "easyocr")
@@ -402,7 +409,7 @@ class SharedModelRegistry:
                     ["en"],
                     gpu=False,
                     model_storage_directory=easyocr_dir,
-                    download_enabled=False
+                    download_enabled=False,
                 )
             except Exception as e:
                 logging.error(f"Failed to load EasyOCR reader from registry: {e}")

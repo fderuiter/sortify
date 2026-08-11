@@ -373,7 +373,9 @@ class Database:
 
         self.worker.execute_write_async(_write)
 
-    def set_document_rating_by_hash(self, base_dir: str, file_hash: str, rating: str | None):
+    def set_document_rating_by_hash(
+        self, base_dir: str, file_hash: str, rating: str | None
+    ):
         """Record the quality feedback rating associated with a document hash."""
 
         def _write():

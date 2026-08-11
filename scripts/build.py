@@ -378,7 +378,9 @@ def download_and_prepare_weights():
             shutil.copyfileobj(response, out_file)
 
     # 1. Download/prepare sentence-transformers model
-    hf_base_url = "".join(["https://", "huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main"])
+    hf_base_url = "".join(
+        ["https://", "huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main"]
+    )
     files_to_download = {
         "model.onnx": f"{hf_base_url}/onnx/model.onnx",
         "config.json": f"{hf_base_url}/config.json",
@@ -442,10 +444,14 @@ def download_and_prepare_weights():
     hashes_registry_path = Path("app/core/hashes_registry.py")
     hashes_registry_path.parent.mkdir(parents=True, exist_ok=True)
     with open(hashes_registry_path, "w", encoding="utf-8") as f:
-        f.write('"""Registry containing expected hashes of the embedded model weights."""\n\n')
+        f.write(
+            '"""Registry containing expected hashes of the embedded model weights."""\n\n'
+        )
         f.write("# This file is generated during the build process.\n")
         f.write(f"HASHES = {repr(hashes)}\n")
-    print(f"Successfully prepared weights and wrote model hashes to {hashes_registry_path}")
+    print(
+        f"Successfully prepared weights and wrote model hashes to {hashes_registry_path}"
+    )
 
 
 def main():
@@ -463,11 +469,14 @@ def main():
         )
         # Ensure hashes_registry.py exists to prevent import errors in lite builds
         from pathlib import Path
+
         hashes_registry_path = Path("app") / "core" / "hashes_registry.py"
         if not hashes_registry_path.exists():
             hashes_registry_path.parent.mkdir(parents=True, exist_ok=True)
             with open(hashes_registry_path, "w", encoding="utf-8") as f:
-                f.write('"""Registry containing expected hashes of the embedded model weights."""\n\nHASHES = {}\n')
+                f.write(
+                    '"""Registry containing expected hashes of the embedded model weights."""\n\nHASHES = {}\n'
+                )
     else:
         print("Verifying machine learning packages in active environment...")
         ml_packages = [

@@ -32,23 +32,14 @@ def test_session_dual_path_resolution_local_priority(mock_app_session_env):
     settings = AppSettings()
     settings.AI_CONSENT_GRANTED = True
 
-    # Mock sys.frozen and __file__ to control base_path, and get_app_dir to control user app dir
+    # Mock get_base_path and get_app_dir to control path resolution
     with patch("app.core.session.get_app_dir", return_value=Path(app_temp)):
-        import sys
-
-        with patch.object(sys, "frozen", False, create=True):
-            with patch.object(
-                sys, "executable", os.path.join(base_temp, "app.exe"), create=True
-            ):
-                with patch(
-                    "app.core.session.__file__",
-                    os.path.join(base_temp, "app", "core", "session.py"),
-                ):
-                    session = AppSession(settings, base_dir=base_temp)
-                    assert (
-                        Path(session.analyzer.model_path).resolve()
-                        == Path(local_model).resolve()
-                    )
+        with patch("app.core.path_utils.get_base_path", return_value=base_temp):
+            session = AppSession(settings, base_dir=base_temp)
+            assert (
+                Path(session.analyzer.model_path).resolve()
+                == Path(local_model).resolve()
+            )
 
 
 def test_session_dual_path_resolution_user_fallback(mock_app_session_env):
@@ -62,18 +53,12 @@ def test_session_dual_path_resolution_user_fallback(mock_app_session_env):
     settings.AI_CONSENT_GRANTED = True
 
     with patch("app.core.session.get_app_dir", return_value=Path(app_temp)):
-        import sys
-
-        with patch.object(sys, "frozen", False, create=True):
-            with patch(
-                "app.core.session.__file__",
-                os.path.join(base_temp, "app", "core", "session.py"),
-            ):
-                session = AppSession(settings, base_dir=base_temp)
-                assert (
-                    Path(session.analyzer.model_path).resolve()
-                    == Path(user_model).resolve()
-                )
+        with patch("app.core.path_utils.get_base_path", return_value=base_temp):
+            session = AppSession(settings, base_dir=base_temp)
+            assert (
+                Path(session.analyzer.model_path).resolve()
+                == Path(user_model).resolve()
+            )
 
 
 def test_session_dual_path_resolution_no_model(mock_app_session_env):
@@ -83,15 +68,9 @@ def test_session_dual_path_resolution_no_model(mock_app_session_env):
     settings.AI_CONSENT_GRANTED = True
 
     with patch("app.core.session.get_app_dir", return_value=Path(app_temp)):
-        import sys
-
-        with patch.object(sys, "frozen", False, create=True):
-            with patch(
-                "app.core.session.__file__",
-                os.path.join(base_temp, "app", "core", "session.py"),
-            ):
-                session = AppSession(settings, base_dir=base_temp)
-                assert session.analyzer.model_path is None
+        with patch("app.core.path_utils.get_base_path", return_value=base_temp):
+            session = AppSession(settings, base_dir=base_temp)
+            assert session.analyzer.model_path is None
 
 
 def test_strategy_dual_path_resolution_local_priority(mock_app_session_env):
@@ -104,17 +83,9 @@ def test_strategy_dual_path_resolution_local_priority(mock_app_session_env):
     os.makedirs(user_model)
 
     with patch("app.config.get_app_dir", return_value=Path(app_temp)):
-        import sys
-
-        with patch.object(sys, "frozen", False, create=True):
-            with patch(
-                "app.core.analyzer_strategies.__file__",
-                os.path.join(base_temp, "app", "core", "analyzer_strategies.py"),
-            ):
-                strategy = GenerativeNamingStrategy()
-                assert (
-                    Path(strategy.model_path).resolve() == Path(local_model).resolve()
-                )
+        with patch("app.core.path_utils.get_base_path", return_value=base_temp):
+            strategy = GenerativeNamingStrategy()
+            assert Path(strategy.model_path).resolve() == Path(local_model).resolve()
 
 
 def test_strategy_dual_path_resolution_user_fallback(mock_app_session_env):
@@ -124,15 +95,9 @@ def test_strategy_dual_path_resolution_user_fallback(mock_app_session_env):
     os.makedirs(user_model)
 
     with patch("app.config.get_app_dir", return_value=Path(app_temp)):
-        import sys
-
-        with patch.object(sys, "frozen", False, create=True):
-            with patch(
-                "app.core.analyzer_strategies.__file__",
-                os.path.join(base_temp, "app", "core", "analyzer_strategies.py"),
-            ):
-                strategy = GenerativeNamingStrategy()
-                assert Path(strategy.model_path).resolve() == Path(user_model).resolve()
+        with patch("app.core.path_utils.get_base_path", return_value=base_temp):
+            strategy = GenerativeNamingStrategy()
+            assert Path(strategy.model_path).resolve() == Path(user_model).resolve()
 
 
 def test_setup_wizard_bypass_dual_path(mock_app_session_env):
@@ -151,12 +116,6 @@ def test_setup_wizard_bypass_dual_path(mock_app_session_env):
     app = AutoSorterApp(settings)
 
     with patch("app.config.get_app_dir", return_value=Path(app_temp)):
-        import sys
-
-        with patch.object(sys, "frozen", False, create=True):
-            with patch(
-                "app.ui.app.__file__",
-                os.path.join(base_temp, "app", "ui", "app.py"),
-            ):
-                app.check_setup_wizard()
-                assert settings.AI_CONSENT_GRANTED is True
+        with patch("app.core.path_utils.get_base_path", return_value=base_temp):
+            app.check_setup_wizard()
+            assert settings.AI_CONSENT_GRANTED is True

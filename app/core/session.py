@@ -148,6 +148,7 @@ class AppSession:
 
         active_model_path = None
         import sys
+
         if hasattr(sys, "_MEIPASS"):
             mei_bundle_path = os.path.join(sys._MEIPASS, "offline_bundle", "model")
             if os.path.exists(mei_bundle_path):

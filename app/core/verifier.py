@@ -26,6 +26,7 @@ def check_ai_status(settings) -> tuple[bool, str | None]:
     import sys
 
     from app.core.path_utils import is_packaged
+
     is_sandboxed = is_packaged() or getattr(settings, "SANDBOXED", False)
 
     if not is_ml_available():
@@ -113,6 +114,7 @@ def check_ai_status(settings) -> tuple[bool, str | None]:
 
     # Let's also verify easyocr integrity if expected hashes exist!
     from app.core.shared_registry import SharedModelRegistry
+
     registry = SharedModelRegistry.get_instance()
     if "easyocr" in registry._expected_hashes:
         try:

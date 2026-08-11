@@ -415,6 +415,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         self.model_path = model_path
         if not self.model_path:
             import sys
+
             if hasattr(sys, "_MEIPASS"):
                 mei_bundle_path = os.path.join(sys._MEIPASS, "offline_bundle", "model")
                 if os.path.exists(mei_bundle_path):
