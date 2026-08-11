@@ -188,6 +188,7 @@ def test_fallback_to_keywords():
 
 def test_cpu_thread_limits():
     import sys
+
     from app.core.shared_registry import SharedModelRegistry
 
     mock_torch = MagicMock()
