@@ -25,6 +25,9 @@ def test_environment():
         )
         yield tmp_dir, db, history_manager
         db_worker.stop()
+        from app.core.db_conn import clear_connection_cache
+
+        clear_connection_cache(only_current_and_inactive=False)
 
 
 def test_nested_three_levels_verifier_resolves_correct_source_path():
