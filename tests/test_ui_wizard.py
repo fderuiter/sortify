@@ -1,6 +1,4 @@
-import os
-import sys
-from unittest.mock import MagicMock, patch, ANY
+from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 
@@ -28,6 +26,9 @@ def mock_nicegui():
         patch("nicegui.ui.tab_panel") as mock_tab_panel,
         patch("nicegui.ui.icon") as mock_icon,
         patch("nicegui.ui.notify") as mock_notify,
+        patch("nicegui.ui.switch") as mock_switch,
+        patch("nicegui.ui.number") as mock_number,
+        patch("nicegui.ui.slider") as mock_slider,
     ):
         yield {
             "dialog": mock_dialog,
@@ -41,6 +42,9 @@ def mock_nicegui():
             "timer": mock_timer,
             "icon": mock_icon,
             "notify": mock_notify,
+            "switch": mock_switch,
+            "number": mock_number,
+            "slider": mock_slider,
         }
 
 
@@ -89,11 +93,8 @@ def test_settings_panel_contains_proxy_and_download(mock_nicegui):
 
         # The proxy input should have been instantiated with settings value
         mock_nicegui["input"].assert_any_call(
-            "Proxy Server (e.g. http://127.0.0.1:8080)",
-            value="http://test-proxy:8080"
+            "Proxy Server (e.g. http://127.0.0.1:8080)", value="http://test-proxy:8080"
         )
 
         # Let's verify the Download button exists
-        mock_nicegui["button"].assert_any_call(
-            "Download AI Model", on_click=ANY
-        )
+        mock_nicegui["button"].assert_any_call("Download AI Model", on_click=ANY)
