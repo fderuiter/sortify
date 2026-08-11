@@ -159,7 +159,7 @@ def cleanup_db_connections():
         SemanticEmbeddingManager.stop_all()
     except Exception:
         pass
-    clear_connection_cache()
+    clear_connection_cache(only_current_and_inactive=False)
 
 
 @pytest.fixture(autouse=True)

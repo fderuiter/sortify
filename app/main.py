@@ -285,7 +285,7 @@ def run_smoke_test():
         try:
             from app.core.db_conn import clear_connection_cache
 
-            clear_connection_cache()
+            clear_connection_cache(only_current_and_inactive=False)
         except Exception:
             pass
         try:
