@@ -866,89 +866,201 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
 
         if not use_semantic or not top_examples:
             # Fallback path (Keyword-Based Matching)
-            historical_examples = []
+            few_shot_context = ""
+            fallback_top_examples = []
+
             if db and base_dir:
                 try:
-                    import os
+                    import math
+                    import numpy as np
 
-                    all_docs = db.get_all_documents(base_dir)
-                    for doc in all_docs:
-                        # doc is (filepath, decrypted_text, file_hash, user_verified_target_path)
-                        if len(doc) > 3 and doc[1] and doc[3]:
-                            filepath = doc[0]
-                            if not filepath.lower().endswith(
-                                (".txt", ".docx", ".csv", ".xlsx", ".xls", ".pdf")
-                            ):
-                                continue
-                            decrypted_text = doc[1]
-                            if decrypted_text.startswith("[STATUS:"):
-                                continue
+                    # 1. Retrieve the incremental TF-IDF statistics from DB
+                    N, top_terms, doc_terms, doc_metadata = db.get_tfidf_stats(base_dir)
 
-                            historical_examples.append(
-                                {"text": decrypted_text, "target_path": doc[3]}
+                    if N > 0 and top_terms and doc_terms:
+                        # Build vocabulary mapping and IDF weights
+                        vocab = {term: idx for idx, (term, df) in enumerate(top_terms)}
+                        idf_weights = {term: math.log((1 + N) / (1 + df)) + 1 for term, df in top_terms}
+
+                        # Group doc_terms by filepath
+                        from collections import defaultdict
+                        doc_tfs = defaultdict(list)
+                        for filepath, term, tf in doc_terms:
+                            doc_tfs[filepath].append((term, tf))
+
+                        # Compute document vectors for documents that have metadata
+                        hist_vectors = []
+                        historical_examples_meta = []
+
+                        for filepath, target_path in doc_metadata.items():
+                            tfs = doc_tfs.get(filepath)
+                            if not tfs:
+                                continue
+                            vec = np.zeros(len(vocab))
+                            for term, tf in tfs:
+                                if term in vocab:
+                                    idx = vocab[term]
+                                    tf_weight = 1 + math.log(tf)
+                                    vec[idx] = tf_weight * idf_weights[term]
+                            norm = np.linalg.norm(vec)
+                            if norm > 0:
+                                vec = vec / norm
+                            hist_vectors.append(vec)
+                            historical_examples_meta.append({"filepath": filepath, "target_path": target_path})
+
+                        if hist_vectors:
+                            # Tokenize target text
+                            target_text = " ".join(filtered_documents)
+                            stop_words_list = (
+                                list(self.stop_words)
+                                if getattr(self, "stop_words", None)
+                                else "english"
                             )
+
+                            from collections import Counter
+                            from sklearn.feature_extraction.text import TfidfVectorizer
+
+                            try:
+                                vectorizer = TfidfVectorizer(stop_words=stop_words_list)
+                                analyzer = vectorizer.build_analyzer()
+                                target_tokens = analyzer(target_text)
+                            except Exception:
+                                import re
+                                target_tokens = re.findall(r'\b\w\w+\b', target_text.lower())
+                                from sklearn.feature_extraction import text as sklearn_text
+                                stops = set(sklearn_text.ENGLISH_STOP_WORDS)
+                                if isinstance(stop_words_list, str) and stop_words_list == "english":
+                                    target_tokens = [t for t in target_tokens if t not in stops]
+                                elif stop_words_list:
+                                    target_tokens = [t for t in target_tokens if t not in stop_words_list]
+
+                            target_tfs = Counter(target_tokens)
+
+                            # Build target vector
+                            target_vec = np.zeros(len(vocab))
+                            for term, tf in target_tfs.items():
+                                if term in vocab:
+                                    idx = vocab[term]
+                                    tf_weight = 1 + math.log(tf)
+                                    target_vec[idx] = tf_weight * idf_weights[term]
+                            target_norm = np.linalg.norm(target_vec)
+                            if target_norm > 0:
+                                target_vec = target_vec / target_norm
+
+                            # Calculate cosine similarity using NumPy
+                            hist_vectors_arr = np.array(hist_vectors)
+                            similarities = np.dot(hist_vectors_arr, target_vec)
+
+                            # Get indices sorted by similarity descending
+                            sorted_indices = similarities.argsort()[::-1]
+
+                            # Retrieve top matching examples (up to 3) with similarity >= 0.1
+                            for idx in sorted_indices:
+                                if similarities[idx] >= 0.1:
+                                    filepath = historical_examples_meta[idx]["filepath"]
+                                    target_path = historical_examples_meta[idx]["target_path"]
+
+                                    # Fetch decrypted text of only this matching document!
+                                    doc_info = db.get_document(base_dir, filepath)
+                                    if doc_info and doc_info.get("extracted_text"):
+                                        text = doc_info["extracted_text"]
+                                        fallback_top_examples.append(
+                                            ({"text": text, "target_path": target_path}, similarities[idx])
+                                        )
+                                    if len(fallback_top_examples) >= 3:
+                                        break
                 except Exception as e:
                     logging.error(
-                        f"Error reading historical documents from DB for fallback: {e}"
+                        f"Incremental TF-IDF similarity calculation failed: {e}. Falling back to standard."
                     )
 
-            if historical_examples:
-                try:
-                    from sklearn.feature_extraction.text import TfidfVectorizer
-                    from sklearn.metrics.pairwise import cosine_similarity
+            # Traditional fallback if incremental didn't return any top examples
+            if not fallback_top_examples:
+                historical_examples = []
+                if db and base_dir:
+                    try:
+                        import os
 
-                    # Limit vocabulary features to 1,000 to keep CPU search speeds fast and minimize latency
-                    stop_words_list = (
-                        list(self.stop_words)
-                        if getattr(self, "stop_words", None)
-                        else "english"
-                    )
-                    # Apply sublinear (logarithmic) term-frequency scaling to dampen highly repetitive terms
-                    vectorizer = TfidfVectorizer(
-                        stop_words=stop_words_list, max_features=1000, sublinear_tf=True
-                    )
+                        all_docs = db.get_all_documents(base_dir)
+                        for doc in all_docs:
+                            # doc is (filepath, decrypted_text, file_hash, user_verified_target_path)
+                            if len(doc) > 3 and doc[1] and doc[3]:
+                                filepath = doc[0]
+                                if not filepath.lower().endswith(
+                                    (".txt", ".docx", ".csv", ".xlsx", ".xls", ".pdf")
+                                ):
+                                    continue
+                                decrypted_text = doc[1]
+                                if decrypted_text.startswith("[STATUS:"):
+                                    continue
 
-                    hist_texts = [ex["text"] for ex in historical_examples]
-                    target_text = " ".join(filtered_documents)
-
-                    # Fit vocabulary and IDF weights exclusively using historical document data to prevent target-driven weight warping
-                    hist_vectors = vectorizer.fit_transform(hist_texts)
-                    target_vector = vectorizer.transform([target_text])
-
-                    similarities = cosine_similarity(
-                        target_vector, hist_vectors
-                    ).flatten()
-
-                    # Get indices sorted by similarity descending
-                    sorted_indices = similarities.argsort()[::-1]
-
-                    # Retrieve top matching examples (up to 3) with similarity >= 0.1
-                    fallback_top_examples = []
-                    for idx in sorted_indices:
-                        if similarities[idx] >= 0.1:
-                            fallback_top_examples.append(
-                                (historical_examples[idx], similarities[idx])
-                            )
-                            if len(fallback_top_examples) >= 3:
-                                break
-
-                    if fallback_top_examples:
-                        few_shot_lines = []
-                        few_shot_lines.append(
-                            "Here are some historical examples of documents and their corresponding user-corrected folder names:"
+                                historical_examples.append(
+                                    {"text": decrypted_text, "target_path": doc[3]}
+                                )
+                    except Exception as e:
+                        logging.error(
+                            f"Error reading historical documents from DB for fallback: {e}"
                         )
-                        for ex_idx, (ex, sim) in enumerate(fallback_top_examples):
-                            # Language model prompt context safety: truncate to 500 characters
-                            snippet = ex["text"][:500].replace("\n", " ").strip()
-                            folder_name = ex["target_path"]
-                            few_shot_lines.append(
-                                f"Example {ex_idx + 1}:\nDocument: {snippet}\nFolder Name: {folder_name}"
-                            )
-                        few_shot_context = "\n\n".join(few_shot_lines) + "\n\n"
-                except Exception as e:
-                    logging.error(
-                        f"Error querying TF-IDF historical examples in fallback: {e}"
+
+                if historical_examples:
+                    try:
+                        from sklearn.feature_extraction.text import TfidfVectorizer
+                        from sklearn.metrics.pairwise import cosine_similarity
+
+                        # Limit vocabulary features to 1,000 to keep CPU search speeds fast and minimize latency
+                        stop_words_list = (
+                            list(self.stop_words)
+                            if getattr(self, "stop_words", None)
+                            else "english"
+                        )
+                        # Apply sublinear (logarithmic) term-frequency scaling to dampen highly repetitive terms
+                        vectorizer = TfidfVectorizer(
+                            stop_words=stop_words_list, max_features=1000, sublinear_tf=True
+                        )
+
+                        hist_texts = [ex["text"] for ex in historical_examples]
+                        target_text = " ".join(filtered_documents)
+
+                        # Fit vocabulary and IDF weights exclusively using historical document data to prevent target-driven weight warping
+                        hist_vectors = vectorizer.fit_transform(hist_texts)
+                        target_vector = vectorizer.transform([target_text])
+
+                        similarities = cosine_similarity(
+                            target_vector, hist_vectors
+                        ).flatten()
+
+                        # Get indices sorted by similarity descending
+                        sorted_indices = similarities.argsort()[::-1]
+
+                        # Retrieve top matching examples (up to 3) with similarity >= 0.1
+                        for idx in sorted_indices:
+                            if similarities[idx] >= 0.1:
+                                fallback_top_examples.append(
+                                    (historical_examples[idx], similarities[idx])
+                                )
+                                if len(fallback_top_examples) >= 3:
+                                    break
+                    except Exception as e:
+                        logging.error(
+                            f"Error querying TF-IDF historical examples in fallback: {e}"
+                        )
+
+            if fallback_top_examples:
+                try:
+                    few_shot_lines = []
+                    few_shot_lines.append(
+                        "Here are some historical examples of documents and their corresponding user-corrected folder names:"
                     )
+                    for ex_idx, (ex, sim) in enumerate(fallback_top_examples):
+                        # Language model prompt context safety: truncate to 500 characters
+                        snippet = ex["text"][:500].replace("\n", " ").strip()
+                        folder_name = ex["target_path"]
+                        few_shot_lines.append(
+                            f"Example {ex_idx + 1}:\nDocument: {snippet}\nFolder Name: {folder_name}"
+                        )
+                    few_shot_context = "\n\n".join(few_shot_lines) + "\n\n"
+                except Exception as e:
+                    logging.error(f"Error formatting few_shot_context: {e}")
 
         try:
             doc_text = " ".join(filtered_documents)[:1000]

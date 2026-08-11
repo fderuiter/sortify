@@ -9,7 +9,7 @@ from app.core.db_worker import DBWorker
 class Database:
     """SQLite database abstraction for persistent storage of document state."""
 
-    CURRENT_VERSION = 4
+    CURRENT_VERSION = 5
 
     def __init__(self, db_path: Path, worker: DBWorker):
         self.db_path = str(db_path)
@@ -63,6 +63,28 @@ class Database:
                 conn.execute("ALTER TABLE documents ADD COLUMN rating TEXT")
             except Exception:
                 pass
+
+            # Initialize TF-IDF tables
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS tfidf_vocab (
+                    base_dir TEXT,
+                    term TEXT,
+                    df INTEGER,
+                    PRIMARY KEY (base_dir, term)
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS tfidf_doc_terms (
+                    base_dir TEXT,
+                    filepath TEXT,
+                    term TEXT,
+                    tf INTEGER,
+                    PRIMARY KEY (base_dir, filepath, term)
+                )
+            """)
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_tfidf_doc_terms_path ON tfidf_doc_terms (base_dir, filepath)"
+            )
 
             # Initialize decoupled vector and metadata tables unconditionally
             conn.execute("""
@@ -235,6 +257,26 @@ class Database:
                 """,
                     rows_to_insert,
                 )
+
+                for doc in documents:
+                    base_dir, filepath, file_hash, extracted_text = doc
+                    filepath = filepath.replace("\\", "/")
+                    cursor = conn.execute(
+                        "SELECT user_verified_target_path FROM documents WHERE base_dir = ? AND filepath = ?",
+                        (base_dir, filepath),
+                    )
+                    row = cursor.fetchone()
+                    target_path = row[0] if row else None
+                    if target_path:
+                        if self._is_tfidf_eligible(filepath, extracted_text):
+                            self._update_tfidf_for_document_conn(conn, base_dir, filepath, extracted_text, True)
+                        else:
+                            cursor = conn.execute(
+                                "SELECT 1 FROM tfidf_doc_terms WHERE base_dir = ? AND filepath = ? LIMIT 1",
+                                (base_dir, filepath),
+                            )
+                            if cursor.fetchone() is not None:
+                                self._update_tfidf_for_document_conn(conn, base_dir, filepath, None, False)
             self.invalidate_cache()
 
         self.worker.execute_write(_write)
@@ -285,10 +327,18 @@ class Database:
         def _write():
             conn = get_db_connection(self.db_path)
             with conn:
+                cursor = conn.execute(
+                    "SELECT filepath FROM documents WHERE base_dir = ? AND file_hash = ?",
+                    (base_dir, file_hash),
+                )
+                filepaths = [row[0] for row in cursor.fetchall()]
+
                 conn.execute(
                     "UPDATE documents SET user_verified_target_path = ? WHERE base_dir = ? AND file_hash = ?",
                     (target_path, base_dir, file_hash),
                 )
+                for fp in filepaths:
+                    self._update_tfidf_on_verified_target_change(conn, base_dir, fp, target_path)
 
         self.worker.execute_write_async(_write)
 
@@ -300,6 +350,13 @@ class Database:
         def _write():
             conn = get_db_connection(self.db_path)
             with conn:
+                cursor = conn.execute(
+                    "SELECT 1 FROM tfidf_doc_terms WHERE base_dir = ? AND filepath = ? LIMIT 1",
+                    (base_dir, filepath),
+                )
+                was_in = cursor.fetchone() is not None
+                if was_in:
+                    self._update_tfidf_for_document_conn(conn, base_dir, filepath, None, False)
                 conn.execute(
                     "DELETE FROM documents WHERE base_dir = ? AND filepath = ?",
                     (base_dir, filepath),
@@ -333,6 +390,30 @@ class Database:
                     "UPDATE documents SET filepath = ?, user_verified_target_path = ? WHERE base_dir = ? AND filepath = ?",
                     (new_filepath, new_dir, base_dir, old_filepath),
                 )
+                cursor = conn.execute(
+                    "SELECT 1 FROM tfidf_doc_terms WHERE base_dir = ? AND filepath = ? LIMIT 1",
+                    (base_dir, old_filepath),
+                )
+                was_in = cursor.fetchone() is not None
+                if was_in:
+                    conn.execute(
+                        "UPDATE tfidf_doc_terms SET filepath = ? WHERE base_dir = ? AND filepath = ?",
+                        (new_filepath, base_dir, old_filepath),
+                    )
+                else:
+                    if new_dir:
+                        cursor = conn.execute(
+                            "SELECT extracted_text FROM documents WHERE base_dir = ? AND filepath = ?",
+                            (base_dir, new_filepath),
+                        )
+                        row = cursor.fetchone()
+                        if row and row[0]:
+                            try:
+                                decrypted_text = self.crypto.decrypt_text(row[0])
+                            except Exception:
+                                decrypted_text = None
+                            if decrypted_text and self._is_tfidf_eligible(new_filepath, decrypted_text):
+                                self._update_tfidf_for_document_conn(conn, base_dir, new_filepath, decrypted_text, True)
 
         self.worker.execute_write_async(_write)
 
@@ -356,8 +437,152 @@ class Database:
                     "UPDATE documents SET user_verified_target_path = ? WHERE base_dir = ? AND filepath = ?",
                     (target_path, base_dir, filepath),
                 )
+                self._update_tfidf_on_verified_target_change(conn, base_dir, filepath, target_path)
 
         self.worker.execute_write_async(_write)
+
+    def _is_tfidf_eligible(self, filepath: str, extracted_text: str | None) -> bool:
+        if not filepath or not extracted_text:
+            return False
+        if not filepath.lower().endswith(
+            (".txt", ".docx", ".csv", ".xlsx", ".xls", ".pdf")
+        ):
+            return False
+        if extracted_text.startswith("[STATUS:"):
+            return False
+        return True
+
+    def _update_tfidf_on_verified_target_change(self, conn, base_dir, filepath, target_path):
+        filepath = filepath.replace("\\", "/")
+        if target_path:
+            cursor = conn.execute(
+                "SELECT 1 FROM tfidf_doc_terms WHERE base_dir = ? AND filepath = ? LIMIT 1",
+                (base_dir, filepath),
+            )
+            already_in = cursor.fetchone() is not None
+            if not already_in:
+                cursor = conn.execute(
+                    "SELECT extracted_text FROM documents WHERE base_dir = ? AND filepath = ?",
+                    (base_dir, filepath),
+                )
+                row = cursor.fetchone()
+                if row and row[0]:
+                    try:
+                        decrypted_text = self.crypto.decrypt_text(row[0])
+                    except Exception:
+                        decrypted_text = None
+                    if decrypted_text and self._is_tfidf_eligible(filepath, decrypted_text):
+                        self._update_tfidf_for_document_conn(conn, base_dir, filepath, decrypted_text, True)
+        else:
+            cursor = conn.execute(
+                "SELECT 1 FROM tfidf_doc_terms WHERE base_dir = ? AND filepath = ? LIMIT 1",
+                (base_dir, filepath),
+            )
+            was_in = cursor.fetchone() is not None
+            if was_in:
+                self._update_tfidf_for_document_conn(conn, base_dir, filepath, None, False)
+
+    def _update_tfidf_for_document_conn(self, conn, base_dir, filepath, text, is_added_or_updated: bool, stop_words_list=None):
+        filepath = filepath.replace("\\", "/")
+        cursor = conn.execute(
+            "SELECT term, tf FROM tfidf_doc_terms WHERE base_dir = ? AND filepath = ?",
+            (base_dir, filepath),
+        )
+        existing_terms = {row[0]: row[1] for row in cursor.fetchall()}
+
+        if is_added_or_updated:
+            from collections import Counter
+            from sklearn.feature_extraction.text import TfidfVectorizer
+
+            if stop_words_list is None:
+                stop_words_list = "english"
+
+            try:
+                vectorizer = TfidfVectorizer(stop_words=stop_words_list)
+                analyzer = vectorizer.build_analyzer()
+                tokens = analyzer(text)
+            except Exception:
+                import re
+                tokens = re.findall(r'\b\w\w+\b', text.lower())
+                from sklearn.feature_extraction import text as sklearn_text
+                stops = set(sklearn_text.ENGLISH_STOP_WORDS)
+                if isinstance(stop_words_list, str) and stop_words_list == "english":
+                    tokens = [t for t in tokens if t not in stops]
+                elif stop_words_list:
+                    tokens = [t for t in tokens if t not in stop_words_list]
+
+            new_terms = Counter(tokens)
+
+            terms_to_delete = []
+            terms_to_insert = []
+            terms_to_update = []
+
+            for term, existing_tf in existing_terms.items():
+                if term not in new_terms:
+                    terms_to_delete.append(term)
+
+            for term, new_tf in new_terms.items():
+                if term in existing_terms:
+                    if existing_tf != new_tf:
+                        terms_to_update.append((new_tf, base_dir, filepath, term))
+                else:
+                    terms_to_insert.append((base_dir, filepath, term, new_tf))
+
+            if terms_to_delete:
+                conn.executemany(
+                    "DELETE FROM tfidf_doc_terms WHERE base_dir = ? AND filepath = ? AND term = ?",
+                    [(base_dir, filepath, t) for t in terms_to_delete],
+                )
+                for t in terms_to_delete:
+                    conn.execute(
+                        "UPDATE tfidf_vocab SET df = df - 1 WHERE base_dir = ? AND term = ?",
+                        (base_dir, t),
+                    )
+
+            if terms_to_insert:
+                conn.executemany(
+                    "INSERT INTO tfidf_doc_terms (base_dir, filepath, term, tf) VALUES (?, ?, ?, ?)",
+                    terms_to_insert,
+                )
+                for doc_row in terms_to_insert:
+                    t = doc_row[2]
+                    conn.execute(
+                        """
+                        INSERT INTO tfidf_vocab (base_dir, term, df)
+                        VALUES (?, ?, 1)
+                        ON CONFLICT(base_dir, term) DO UPDATE SET df = df + 1
+                        """,
+                        (base_dir, t),
+                    )
+
+            if terms_to_update:
+                conn.executemany(
+                    "UPDATE tfidf_doc_terms SET tf = ? WHERE base_dir = ? AND filepath = ? AND term = ?",
+                    terms_to_update,
+                )
+
+            all_modified_terms = terms_to_delete
+            if all_modified_terms:
+                conn.executemany(
+                    "DELETE FROM tfidf_vocab WHERE base_dir = ? AND term = ? AND df <= 0",
+                    [(base_dir, t) for t in all_modified_terms],
+                )
+
+        else:
+            if existing_terms:
+                conn.execute(
+                    "DELETE FROM tfidf_doc_terms WHERE base_dir = ? AND filepath = ?",
+                    (base_dir, filepath),
+                )
+                for t in existing_terms:
+                    conn.execute(
+                        "UPDATE tfidf_vocab SET df = df - 1 WHERE base_dir = ? AND term = ?",
+                        (base_dir, t),
+                    )
+                conn.executemany(
+                    "DELETE FROM tfidf_vocab WHERE base_dir = ? AND term = ? AND df <= 0",
+                    [(base_dir, t) for t in existing_terms],
+                )
 
     def set_document_rating(self, base_dir: str, filepath: str, rating: str | None):
         """Record the quality feedback rating associated with a document path."""
@@ -420,23 +645,53 @@ class Database:
                 for item in updates:
                     if item["type"] == "verified_target":
                         base_dir, file_hash, target_path = item["args"]
+                        cursor = conn.execute(
+                            "SELECT filepath FROM documents WHERE base_dir = ? AND file_hash = ?",
+                            (base_dir, file_hash),
+                        )
+                        filepaths = [row[0] for row in cursor.fetchall()]
+
                         conn.execute(
                             "UPDATE documents SET user_verified_target_path = ? WHERE base_dir = ? AND file_hash = ?",
                             (target_path, base_dir, file_hash),
                         )
+                        for fp in filepaths:
+                            self._update_tfidf_on_verified_target_change(conn, base_dir, fp, target_path)
                     elif item["type"] == "document_path":
                         base_dir, old_filepath, new_filepath = item["args"]
                         old_filepath = old_filepath.replace("\\", "/")
                         new_filepath = new_filepath.replace("\\", "/")
                         import os
 
-                        old_filepath = old_filepath.replace("\\", "/")
-                        new_filepath = new_filepath.replace("\\", "/")
                         new_dir = os.path.dirname(new_filepath).replace("\\", "/")
                         conn.execute(
                             "UPDATE documents SET filepath = ?, user_verified_target_path = ? WHERE base_dir = ? AND filepath = ?",
                             (new_filepath, new_dir, base_dir, old_filepath),
                         )
+                        cursor = conn.execute(
+                            "SELECT 1 FROM tfidf_doc_terms WHERE base_dir = ? AND filepath = ? LIMIT 1",
+                            (base_dir, old_filepath),
+                        )
+                        was_in = cursor.fetchone() is not None
+                        if was_in:
+                            conn.execute(
+                                "UPDATE tfidf_doc_terms SET filepath = ? WHERE base_dir = ? AND filepath = ?",
+                                (new_filepath, base_dir, old_filepath),
+                            )
+                        else:
+                            if new_dir:
+                                cursor = conn.execute(
+                                    "SELECT extracted_text FROM documents WHERE base_dir = ? AND filepath = ?",
+                                    (base_dir, new_filepath),
+                                )
+                                row = cursor.fetchone()
+                                if row and row[0]:
+                                    try:
+                                        decrypted_text = self.crypto.decrypt_text(row[0])
+                                    except Exception:
+                                        decrypted_text = None
+                                    if decrypted_text and self._is_tfidf_eligible(new_filepath, decrypted_text):
+                                        self._update_tfidf_for_document_conn(conn, base_dir, new_filepath, decrypted_text, True)
             self.invalidate_cache()
 
         self.worker.execute_write(_write)
@@ -452,11 +707,56 @@ class Database:
                     conn.execute(
                         "DELETE FROM documents WHERE base_dir = ?", (base_dir,)
                     )
+                    conn.execute(
+                        "DELETE FROM tfidf_vocab WHERE base_dir = ?", (base_dir,)
+                    )
+                    conn.execute(
+                        "DELETE FROM tfidf_doc_terms WHERE base_dir = ?", (base_dir,)
+                    )
                 else:
                     conn.execute("DELETE FROM documents")
+                    conn.execute("DELETE FROM tfidf_vocab")
+                    conn.execute("DELETE FROM tfidf_doc_terms")
             self.invalidate_cache()
 
         self.worker.execute_write(_write)
+
+    def get_tfidf_stats(self, base_dir: str):
+        """Retrieve total document count, vocabulary and document-term frequencies for TF-IDF calculations."""
+        conn = get_db_connection(self.db_path)
+        with conn:
+            cursor = conn.execute(
+                "SELECT COUNT(DISTINCT filepath) FROM tfidf_doc_terms WHERE base_dir = ?",
+                (base_dir,),
+            )
+            N = cursor.fetchone()[0] or 0
+
+            if N == 0:
+                return 0, [], [], {}
+
+            cursor = conn.execute(
+                """
+                SELECT t.term, v.df FROM (
+                    SELECT term, SUM(tf) as total_tf FROM tfidf_doc_terms WHERE base_dir = ? GROUP BY term
+                ) t INNER JOIN tfidf_vocab v ON t.term = v.term WHERE v.base_dir = ? ORDER BY t.total_tf DESC LIMIT 1000
+                """,
+                (base_dir, base_dir),
+            )
+            top_terms = cursor.fetchall()
+
+            cursor = conn.execute(
+                "SELECT filepath, term, tf FROM tfidf_doc_terms WHERE base_dir = ?",
+                (base_dir,),
+            )
+            doc_terms = cursor.fetchall()
+
+            cursor = conn.execute(
+                "SELECT filepath, user_verified_target_path FROM documents WHERE base_dir = ? AND user_verified_target_path IS NOT NULL AND user_verified_target_path != ''",
+                (base_dir,),
+            )
+            doc_metadata = {row[0].replace("\\", "/"): row[1] for row in cursor.fetchall()}
+
+            return N, top_terms, doc_terms, doc_metadata
 
     def get_model_metadata(self, key: str) -> str | None:
         """Get model metadata value for a given key."""
