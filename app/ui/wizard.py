@@ -1,6 +1,7 @@
 """Setup wizard module using NiceGUI."""
 
 import logging
+
 from nicegui import ui
 
 from app.ui.dialog_helper import get_dialog_card_classes
@@ -40,6 +41,7 @@ def show_wizard(parent_app, settings):
             progress_bar.set_value(0)
 
             from nicegui import run
+
             from app.core.downloader import download_ai_models
 
             def on_progress(bytes_dl, total_bytes, file_idx, total_files, filename):

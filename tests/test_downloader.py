@@ -1,16 +1,13 @@
 import hashlib
-import os
 import urllib.request
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
 from app.core.downloader import (
-    download_file,
-    DownloadError,
     DownloadValidationError,
     download_ai_models,
+    download_file,
 )
 
 
@@ -59,7 +56,7 @@ def test_standard_chunked_download(tmp_path):
 
     with patch("urllib.request.urlopen", return_value=mock_resp) as mock_urlopen:
         result_path = download_file(
-            url="https://example.com/file.txt",
+            url="http://127.0.0.1:12345/file.txt",
             dest_path=dest_path,
             expected_sha256=expected_hash,
             chunk_size=8,
@@ -73,7 +70,7 @@ def test_standard_chunked_download(tmp_path):
 
         mock_urlopen.assert_called_once()
         req = mock_urlopen.call_args[0][0]
-        assert req.full_url == "https://example.com/file.txt"
+        assert req.full_url == "http://127.0.0.1:12345/file.txt"
         assert req.get_header("User-agent") is not None
 
         # Verify chunked progress callback was invoked sequentially
@@ -98,7 +95,7 @@ def test_resumable_download_with_range(tmp_path):
         remaining_data,
         status=206,
         headers={
-            "Content-Range": f"bytes 6-11/12",
+            "Content-Range": "bytes 6-11/12",
             "Content-Length": str(len(remaining_data)),
         },
     )
@@ -110,7 +107,7 @@ def test_resumable_download_with_range(tmp_path):
 
     with patch("urllib.request.urlopen", return_value=mock_resp) as mock_urlopen:
         result_path = download_file(
-            url="https://example.com/resume.bin",
+            url="http://127.0.0.1:12345/resume.bin",
             dest_path=dest_path,
             expected_sha256=expected_hash,
             chunk_size=4,
@@ -146,7 +143,7 @@ def test_graceful_fallback_when_range_unsupported(tmp_path):
 
     with patch("urllib.request.urlopen", return_value=mock_resp) as mock_urlopen:
         result_path = download_file(
-            url="https://example.com/fallback.bin",
+            url="http://127.0.0.1:12345/fallback.bin",
             dest_path=dest_path,
             expected_sha256=expected_hash,
         )
@@ -185,7 +182,7 @@ def test_graceful_fallback_when_range_raises_error(tmp_path):
 
     with patch("urllib.request.urlopen", side_effect=mock_urlopen_handler):
         result_path = download_file(
-            url="https://example.com/error_fallback.bin",
+            url="http://127.0.0.1:12345/error_fallback.bin",
             dest_path=dest_path,
             expected_sha256=expected_hash,
         )
@@ -207,7 +204,7 @@ def test_invalid_checksum_raises_error(tmp_path):
     with patch("urllib.request.urlopen", return_value=mock_resp):
         with pytest.raises(DownloadValidationError, match="Integrity check failed"):
             download_file(
-                url="https://example.com/bad_file.txt",
+                url="http://127.0.0.1:12345/bad_file.txt",
                 dest_path=dest_path,
                 expected_sha256="incorrect_sha256_hash_here_for_sure",
             )

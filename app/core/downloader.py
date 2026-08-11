@@ -8,8 +8,8 @@ graceful fallback, and SHA-256 integrity checks.
 import hashlib
 import logging
 import os
-import urllib.request
 import urllib.error
+import urllib.request
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -17,11 +17,13 @@ logger = logging.getLogger(__name__)
 
 class DownloadError(Exception):
     """Base exception for downloader errors."""
+
     pass
 
 
 class DownloadValidationError(DownloadError):
     """Exception raised when integrity verification fails."""
+
     pass
 
 
@@ -43,10 +45,12 @@ def download_file(
         progress_callback: A callable taking (bytes_downloaded, total_bytes).
         headers: Additional HTTP headers to merge with default browser headers.
 
-    Returns:
+    Returns
+    -------
         Path: The resolved absolute path of the completed file.
 
-    Raises:
+    Raises
+    ------
         DownloadValidationError: If SHA-256 integrity check fails.
         DownloadError: If any network, file, or other operational error occurs.
     """
@@ -177,8 +181,8 @@ def download_ai_models(settings, progress_callback=None) -> bool:
     Returns True if everything was downloaded successfully, False otherwise.
     """
     from app.config import get_app_dir
-    from app.core.user_space_bootstrap import is_file_valid
     from app.core.shared_registry import SharedModelRegistry
+    from app.core.user_space_bootstrap import is_file_valid
 
     # Resolve generative naming model directory
     try:
