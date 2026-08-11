@@ -1285,9 +1285,9 @@ class AutoSorterApp:
 
 
 def find_and_remove_file(node, file_key):
-    """Recursively find a file with key file_key in the plan node dictionary,
+    """Recursively find and remove a file with key file_key in the plan node dictionary.
 
-    remove it, and return its value (the file info dict).
+    Returns its value (the file info dict) or None if not found.
     """
     if not isinstance(node, dict):
         return None
@@ -1315,9 +1315,9 @@ def insert_file_into_plan(plan, target_folder, file_key, file_info):
 
 
 def run_incremental_training_in_background(app_session, base_dir):
-    """Background worker function that finds reassigned documents,
+    """Background worker function that finds reassigned documents.
 
-    generates their vector embeddings, and updates the document_vectors
+    Generates their vector embeddings and updates the document_vectors
     database table.
     """
     import logging
