@@ -219,3 +219,22 @@ class SessionCrypto:
             return cipher.decrypt(cipher_bytes).decode("utf-8")
         except Exception as e:
             raise RuntimeError("Failed to decrypt text") from e
+
+    def encrypt_vector(self, text: str) -> bytes:
+        """Encrypt a vector string and return bytes."""
+        if text is None:
+            return None
+        cipher = self.get_cipher()
+        return cipher.encrypt(text.encode("utf-8"))
+
+    def decrypt_vector(self, cipher_bytes: bytes) -> str:
+        """Decrypt vector bytes and return the original string."""
+        if cipher_bytes is None:
+            return None
+        cipher = self.get_cipher()
+        try:
+            if isinstance(cipher_bytes, str):
+                cipher_bytes = cipher_bytes.encode("utf-8")
+            return cipher.decrypt(cipher_bytes).decode("utf-8")
+        except Exception as e:
+            raise RuntimeError("Failed to decrypt vector") from e

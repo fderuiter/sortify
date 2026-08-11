@@ -417,7 +417,7 @@ class Database:
                 import json
 
                 try:
-                    decrypted = self.crypto.decrypt_text(row[0])
+                    decrypted = self.crypto.decrypt_vector(row[0])
                     return json.loads(decrypted)
                 except Exception:
                     return None
@@ -439,7 +439,7 @@ class Database:
                 for filepath, vector in vectors_data:
                     filepath = filepath.replace("\\", "/")
                     vector_str = json.dumps(vector)
-                    enc_vector = self.crypto.encrypt_text(vector_str).decode("utf-8")
+                    enc_vector = self.crypto.encrypt_vector(vector_str).decode("utf-8")
                     rows_to_insert.append((base_dir, filepath, enc_vector))
                 conn.executemany(
                     """
