@@ -442,3 +442,67 @@ def test_real_onnx_pipeline_graceful_fallback(db, temp_dir):
         assert len(embedding1) == 384
         assert embedding1 == embedding2  # deterministic
         assert embedding1 != embedding3  # content-dependent
+
+
+def test_vector_field_level_encryption_raw_db(db, temp_dir):
+    """Verify that vector data is stored as encrypted string in SQLite, but decrypted by get_document_vector."""
+    # Write a vector using the API
+    db.upsert_document_vectors("/base", [("doc_test.txt", [0.1, 0.2, 0.3, 0.4])])
+
+    # Direct DB select to verify it is NOT plain text (not parseable as plain JSON)
+    from app.core.db_conn import get_db_connection
+    conn = get_db_connection(db.db_path)
+    with conn:
+        cursor = conn.execute("SELECT vector FROM document_vectors WHERE filepath = 'doc_test.txt'")
+        row = cursor.fetchone()
+        assert row is not None
+        raw_val = row[0]
+        # It must be a string and not parseable as a plain JSON list directly
+        assert isinstance(raw_val, str)
+        import json
+        with pytest.raises((ValueError, TypeError, json.JSONDecodeError)):
+            json.loads(raw_val)
+
+        # Decrypt it using db's crypto to verify it is encrypted with session key
+        decrypted_raw = db.crypto.decrypt_text(raw_val)
+        decrypted_list = json.loads(decrypted_raw)
+        assert decrypted_list == [0.1, 0.2, 0.3, 0.4]
+
+    # Retrieval using get_document_vector should automatically decrypt and parse it
+    retrieved_vector = db.get_document_vector("/base", "doc_test.txt")
+    assert retrieved_vector == [0.1, 0.2, 0.3, 0.4]
+
+
+def test_vector_unencrypted_purge_on_startup(temp_dir, db_worker):
+    """Verify that on startup, the database automatically purges any unencrypted vectors."""
+    db_file = temp_dir / "migration_test.db"
+
+    # Create a properly encrypted SQLCipher database first
+    database = Database(db_file, db_worker)
+    
+    # Write an unencrypted vector directly into the SQLCipher database
+    from app.core.db_conn import get_db_connection, clear_connection_cache
+    import json
+    conn = get_db_connection(str(db_file))
+    with conn:
+        plain_vector = json.dumps([0.5, 0.6, 0.7])
+        conn.execute(
+            "INSERT INTO document_vectors (base_dir, filepath, vector) VALUES (?, ?, ?)",
+            ("/base", "doc_insecure.txt", plain_vector)
+        )
+    clear_connection_cache()
+
+    # Now load the database again using Database class, which triggers init_db() and the purge
+    database_new = Database(db_file, db_worker)
+
+    # Verify that the unencrypted vector has been purged from the table
+    retrieved = database_new.get_document_vector("/base", "doc_insecure.txt")
+    assert retrieved is None
+
+    # Connect to verify the row was indeed deleted
+    conn2 = get_db_connection(str(db_file))
+    with conn2:
+        cursor = conn2.execute("SELECT count(*) FROM document_vectors")
+        assert cursor.fetchone()[0] == 0
+    clear_connection_cache()
+
