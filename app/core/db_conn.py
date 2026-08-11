@@ -83,10 +83,6 @@ def clear_connection_cache(only_current_and_inactive: bool = True):
                 conn = _connection_cache.pop(key, None)
                 if conn:
                     try:
-                        try:
-                            conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-                        except Exception:
-                            pass
                         conn.close()
                     except Exception:
                         pass
