@@ -73,6 +73,7 @@ def secure_delete_dir(dir_path: Path):
         dir_path.rmdir()
     except Exception:
         import shutil
+
         shutil.rmtree(dir_path, ignore_errors=True)
 
 
@@ -87,14 +88,18 @@ class SessionCrypto:
         self.keyring_service = "AutoSorter"
         db_hash = hashlib.md5(str(self.db_path).encode("utf-8")).hexdigest()
         self.keyring_account = f"DatabaseDecryptionKey_{db_hash}"
-        
+
         # Centralized key store location under user's home directory / APPDATA
         self.isolated_dir = get_fallback_keys_dir()
-        self.isolated_key_path = self.isolated_dir / f"{self.db_path.name}_{db_hash}.key"
-        
+        self.isolated_key_path = (
+            self.isolated_dir / f"{self.db_path.name}_{db_hash}.key"
+        )
+
         # Legacy key paths for migration
         self.legacy_isolated_dir = self.db_path.parent / ".keys"
-        self.legacy_isolated_key_path = self.legacy_isolated_dir / f"{self.db_path.name}.key"
+        self.legacy_isolated_key_path = (
+            self.legacy_isolated_dir / f"{self.db_path.name}.key"
+        )
 
     def get_cipher(self):
         """Get or initialize the Fernet cipher instance."""
@@ -128,7 +133,11 @@ class SessionCrypto:
             except Exception:
                 pass
 
-        if legacy_key is None and self.legacy_isolated_dir.exists() and self.legacy_isolated_dir.is_dir():
+        if (
+            legacy_key is None
+            and self.legacy_isolated_dir.exists()
+            and self.legacy_isolated_dir.is_dir()
+        ):
             try:
                 for p in self.legacy_isolated_dir.iterdir():
                     if p.is_file() and p.suffix == ".key":

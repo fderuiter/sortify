@@ -50,6 +50,10 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.core.extractor_strategies
 
+## `app.core.hashes_registry`
+
+::: app.core.hashes_registry
+
 ## `app.core.history`
 
 ::: app.core.history

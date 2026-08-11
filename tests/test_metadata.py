@@ -216,3 +216,127 @@ def test_metadata_pass_invalid_db_records(tmp_path):
         res = MetadataPass.run(str(tmp_path), ["file1.txt"], settings, db, None, None)
         # Should not be bypassed because none of the invalid records should map hash123
         assert res == []
+
+
+def test_metadata_pass_policy_override_match(tmp_path):
+    settings = MagicMock()
+    settings.KEYWORD_RULES = {}
+    settings.LEARNED_RULES = {}
+    settings.POLICIES = [
+        {
+            "type": "override",
+            "expression": "SpecialPath",
+            "target_path": "/dest/override_special",
+            "priority": 10,
+        }
+    ]
+    db = MagicMock()
+    db.get_all_documents.return_value = []
+
+    sub_dir = tmp_path / "SpecialPath"
+    sub_dir.mkdir()
+    file1 = sub_dir / "unrelated_name.txt"
+    file1.touch()
+
+    with patch("app.core.metadata.get_file_hash", return_value="hash_ovr"):
+        res = MetadataPass.run(
+            str(sub_dir), ["unrelated_name.txt"], settings, db, None, None
+        )
+        assert res == ["unrelated_name.txt"]
+        db.set_user_verified_target_path.assert_called_once_with(
+            str(sub_dir), "unrelated_name.txt", "/dest/override_special"
+        )
+
+
+def test_metadata_pass_policy_pattern_match(tmp_path):
+    settings = MagicMock()
+    settings.KEYWORD_RULES = {}
+    settings.LEARNED_RULES = {}
+    settings.POLICIES = [
+        {
+            "type": "pattern",
+            "expression": "invoice",
+            "target_path": "/dest/pattern_invoice",
+            "priority": 5,
+        }
+    ]
+    db = MagicMock()
+    db.get_all_documents.return_value = []
+
+    file1 = tmp_path / "my_invoice_abc.pdf"
+    file1.touch()
+
+    with patch("app.core.metadata.get_file_hash", return_value="hash_pat"):
+        res = MetadataPass.run(
+            str(tmp_path), ["my_invoice_abc.pdf"], settings, db, None, None
+        )
+        assert res == ["my_invoice_abc.pdf"]
+        db.set_user_verified_target_path.assert_called_once_with(
+            str(tmp_path), "my_invoice_abc.pdf", "/dest/pattern_invoice"
+        )
+
+
+def test_metadata_pass_policy_priority_ordering(tmp_path):
+    settings = MagicMock()
+    settings.KEYWORD_RULES = {}
+    settings.LEARNED_RULES = {}
+    settings.POLICIES = [
+        {
+            "type": "pattern",
+            "expression": "test",
+            "target_path": "/dest/low_priority",
+            "priority": 1,
+        },
+        {
+            "type": "pattern",
+            "expression": "test",
+            "target_path": "/dest/high_priority",
+            "priority": 100,
+        },
+    ]
+    db = MagicMock()
+    db.get_all_documents.return_value = []
+
+    file1 = tmp_path / "test_file.txt"
+    file1.touch()
+
+    with patch("app.core.metadata.get_file_hash", return_value="hash_prio"):
+        res = MetadataPass.run(
+            str(tmp_path), ["test_file.txt"], settings, db, None, None
+        )
+        assert res == ["test_file.txt"]
+        db.set_user_verified_target_path.assert_called_once_with(
+            str(tmp_path), "test_file.txt", "/dest/high_priority"
+        )
+
+
+def test_metadata_pass_policy_keyword_halts_lower_rules(tmp_path):
+    settings = MagicMock()
+    settings.KEYWORD_RULES = {"unrelated": "/dest/standard_rules"}
+    settings.LEARNED_RULES = {"unrelated": "/dest/learned_rules"}
+    settings.POLICIES = [
+        {
+            "type": "keyword",
+            "expression": "confidential",
+            "target_path": "/dest/confidential_docs",
+            "priority": 10,
+        },
+        {
+            "type": "pattern",
+            "expression": "unrelated",
+            "target_path": "/dest/lower_priority_policy",
+            "priority": 5,
+        },
+    ]
+    db = MagicMock()
+    db.get_all_documents.return_value = []
+
+    file1 = tmp_path / "unrelated.txt"
+    file1.touch()
+
+    with patch("app.core.metadata.get_file_hash", return_value="hash_halt"):
+        res = MetadataPass.run(
+            str(tmp_path), ["unrelated.txt"], settings, db, None, None
+        )
+        assert res == []
+        db.set_user_verified_target_path.assert_not_called()

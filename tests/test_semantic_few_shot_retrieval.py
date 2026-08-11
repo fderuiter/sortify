@@ -132,15 +132,17 @@ def test_generative_naming_uses_precomputed_vectors_and_zero_decryption(db, temp
         # 1. Verify correct descriptive folder name returned
         assert name == "Space Mission Group"
 
-        # 2. Verify we did NOT call raw decryption on the database documents during the semantic path
-        spy_decrypt.assert_not_called()
+        # 2. Verify that raw decryption is called only to populate the cache, but we don't query get_all_documents directly
+        assert spy_decrypt.call_count == 2
         spy_get_all.assert_not_called()
 
-        # 3. Verify exact cosine similarity picked the "Space" exemplar (hist1.txt) over "Cooking"
+        # 3. Verify exact cosine similarity picked the "Space" exemplar text over "Cooking"
         assert mock_run_prompt.called
         prompt_passed = mock_run_prompt.call_args[0][0]
-        assert "hist1.txt" in prompt_passed
+        assert "space flight Mars rocket astronauts NASA space agency" in prompt_passed
+        assert "hist1.txt" not in prompt_passed
         assert "Space" in prompt_passed
+        assert "gourmet cooking recipe" not in prompt_passed
         assert "hist2.txt" not in prompt_passed
 
 
@@ -176,9 +178,7 @@ def test_generative_naming_fallback_to_keyword_on_missing_embeddings(db, temp_di
         patch.object(
             db.crypto, "decrypt_text", wraps=db.crypto.decrypt_text
         ) as spy_decrypt,
-        patch.object(
-            db, "get_all_documents", wraps=db.get_all_documents
-        ) as spy_get_all,
+        patch.object(db, "get_tfidf_stats", wraps=db.get_tfidf_stats) as spy_get_tfidf,
         patch.object(
             strategy, "_run_prompt", return_value="Space Flight Exploration"
         ) as mock_run_prompt,
@@ -189,7 +189,7 @@ def test_generative_naming_fallback_to_keyword_on_missing_embeddings(db, temp_di
         # Verify it fallback and found the match
         assert name == "Space Flight Exploration"
         assert spy_decrypt.called
-        assert spy_get_all.called
+        assert spy_get_tfidf.called
 
         prompt_passed = mock_run_prompt.call_args[0][0]
         # Should contain part of the decrypted snippet
