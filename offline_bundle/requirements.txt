@@ -32,7 +32,7 @@ cffi==2.1.0
     # via cryptography
 click==8.4.2
     # via uvicorn
-cryptography==49.0.0
+cryptography==50.0.0
     # via
     #   smart-autosorter (pyproject.toml)
     #   secretstorage
@@ -176,7 +176,7 @@ pygments==2.20.0
     # via nicegui
 pylnk3==0.4.3
     # via smart-autosorter (pyproject.toml)
-pypdf==6.14.2
+pypdf==6.15.0
     # via smart-autosorter (pyproject.toml)
 python-bidi==0.6.11
     # via easyocr
@@ -217,7 +217,7 @@ scipy==1.18.0
     #   scikit-learn
 secretstorage==3.5.0
     # via keyring
-setuptools==83.0.0
+setuptools==84.0.0
     # via torch
 shapely==2.1.2
     # via easyocr
