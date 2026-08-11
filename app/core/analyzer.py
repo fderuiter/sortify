@@ -378,21 +378,37 @@ class IncrementalAnalyzer:
                                 hist_vectors.append(vector)
 
                     if use_semantic:
-                        # Generate on-the-fly embeddings for AI files
+                        # Query local database for existing vector embeddings first, generating and bulk-saving only missing ones
                         ai_vectors = []
+                        newly_generated = []
                         try:
-                            for doc_text in ai_documents:
-                                v = self.embedding_manager.generate_embedding(doc_text)
-                                if not self.embedding_manager.validate_vector_dimension(
-                                    v
-                                ):
-                                    raise ValueError(
-                                        "Generated vector dimensions do not match the active model dimensions."
+                            for f_name, doc_text in zip(ai_filenames, ai_documents):
+                                v = self.embedding_manager.get_vector(base_dir, f_name)
+                                if (
+                                    v is not None
+                                    and self.embedding_manager.validate_vector_dimension(
+                                        v
                                     )
-                                ai_vectors.append(v)
+                                ):
+                                    ai_vectors.append(v)
+                                else:
+                                    generated_v = self.embedding_manager.generate_embedding(doc_text)
+                                    if not self.embedding_manager.validate_vector_dimension(
+                                        generated_v
+                                    ):
+                                        raise ValueError(
+                                            "Generated vector dimensions do not match the active model dimensions."
+                                        )
+                                    ai_vectors.append(generated_v)
+                                    newly_generated.append((f_name, generated_v))
+
+                            if newly_generated:
+                                self.db.upsert_document_vectors(
+                                    base_dir, newly_generated
+                                )
                         except Exception as e:
                             logging.error(
-                                f"Error generating active model vectors: {e}. Falling back to standard text similarity."
+                                f"Error generating or retrieving active model vectors: {e}. Falling back to standard text similarity."
                             )
                             use_semantic = False
 
