@@ -24,7 +24,7 @@ class MockHTTPResponse:
         if self.position >= len(self.data):
             return b""
         if amt < 0:
-            chunk = self.data[self.position:]
+            chunk = self.data[self.position :]
             self.position = len(self.data)
             return chunk
         else:

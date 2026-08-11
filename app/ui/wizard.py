@@ -68,7 +68,9 @@ def show_wizard(parent_app, settings):
                     ui.notify("Setup Complete.", type="positive")
                     dialog.close()
                 else:
-                    ui.notify("Setup failed: some models failed to download.", type="negative")
+                    ui.notify(
+                        "Setup failed: some models failed to download.", type="negative"
+                    )
                     accept_btn.enable()
                     decline_btn.enable()
             except Exception as e:
@@ -84,12 +86,15 @@ def show_wizard(parent_app, settings):
             dialog.close()
 
         with ui.row().classes("w-full justify-between flex-wrap gap-2"):
-            accept_btn = ui.button("Accept & Download", on_click=accept).classes(
-                "bg-green-500 text-white"
-            ).props('aria-label="Accept and Download Button"')
-            decline_btn = ui.button("Decline", on_click=decline).classes(
-                "bg-gray-500 text-white"
-            ).props('aria-label="Decline Button"')
+            accept_btn = (
+                ui.button("Accept & Download", on_click=accept)
+                .classes("bg-green-500 text-white")
+                .props('aria-label="Accept and Download Button"')
+            )
+            decline_btn = (
+                ui.button("Decline", on_click=decline)
+                .classes("bg-gray-500 text-white")
+                .props('aria-label="Decline Button"')
+            )
 
     dialog.open()
-

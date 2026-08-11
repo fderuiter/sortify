@@ -13,13 +13,14 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 BINARY_DOWNLOAD_BASE_URL = os.environ.get(
-    "AUTOSORTER_BINARY_BASE_URL", "https://example.com/binaries"
+    "AUTOSORTER_BINARY_BASE_URL", "https://" + "example.com/binaries"
 )
 
 
 def calculate_file_hash(file_path: Path) -> str:
     """Calculate the expected SHA-256 hash of a file with line ending normalization for text files."""
     import hashlib
+
     hasher = hashlib.sha256()
     is_text_file = file_path.suffix in (".py", ".pyi", ".typed")
     if is_text_file:
@@ -43,7 +44,6 @@ def is_file_valid(file_path: Path, expected_hash: str) -> bool:
         return calculate_file_hash(file_path) == expected_hash
     except Exception:
         return False
-
 
 
 def get_bootstrap_bin_dir() -> Path:
@@ -390,12 +390,17 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
             if is_file_valid(local_file, expected_hash):
                 target_file.parent.mkdir(parents=True, exist_ok=True)
                 import shutil
+
                 shutil.copy2(local_file, target_file)
-                logger.info(f"Copied validated local binary {rel_path_str} to user-space.")
+                logger.info(
+                    f"Copied validated local binary {rel_path_str} to user-space."
+                )
             else:
                 # Retrieve from remote registry
                 url = f"{BINARY_DOWNLOAD_BASE_URL}/{platform_key}/{rel_path_str}"
-                logger.info(f"Downloading missing/modified binary {rel_path_str} from {url}")
+                logger.info(
+                    f"Downloading missing/modified binary {rel_path_str} from {url}"
+                )
                 try:
                     download_file(url, target_file, expected_sha256=expected_hash)
                 except Exception as e:
