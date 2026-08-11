@@ -55,16 +55,14 @@ def test_rating_persistence_and_migration():
     db.set_document_rating("base", "file1.txt", "positive")
     
     # Retrieve documents and check rating is set
-    docs = db.get_all_documents("base")
-    assert len(docs) == 1
-    # row is (filepath, decrypted_text, file_hash, user_verified_target_path, rating)
-    assert docs[0][0] == "file1.txt"
-    assert docs[0][4] == "positive"
+    ratings = db.get_all_document_ratings("base")
+    assert len(ratings) == 1
+    assert ratings["file1.txt"] == "positive"
 
     # Set document rating by hash
     db.set_document_rating_by_hash("base", "hash1", "negative")
-    docs = db.get_all_documents("base")
-    assert docs[0][4] == "negative"
+    ratings = db.get_all_document_ratings("base")
+    assert ratings["file1.txt"] == "negative"
 
     # Set user verified target path by filepath
     db.set_user_verified_target_path("base", "file1.txt", "Finance")
