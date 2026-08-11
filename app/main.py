@@ -336,6 +336,18 @@ def main():
 
     settings = AppSettings()
 
+    # Verify embedded model integrity upfront if packaged / sandboxed
+    if is_packaged():
+        print("Verifying integrity of embedded model weights...")
+        try:
+            from app.core.verifier import check_ai_status
+            check_ai_status(settings)
+            print("Model weights integrity verified successfully.")
+        except Exception as e:
+            print(f"Startup verification failed: {e}", file=sys.stderr)
+            write_smoke_test_error(f"Startup verification failed: {e}", include_traceback=True)
+            sys.exit(1)
+
     # Configure Centralized Logger
     logging.basicConfig(
         filename=settings.LOG_FILE,

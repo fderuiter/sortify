@@ -147,10 +147,17 @@ class AppSession:
         user_model_path = str(get_app_dir() / "model")
 
         active_model_path = None
-        if os.path.exists(local_model_path):
-            active_model_path = local_model_path
-        elif os.path.exists(user_model_path):
-            active_model_path = user_model_path
+        import sys
+        if hasattr(sys, "_MEIPASS"):
+            mei_bundle_path = os.path.join(sys._MEIPASS, "offline_bundle", "model")
+            if os.path.exists(mei_bundle_path):
+                active_model_path = mei_bundle_path
+
+        if not active_model_path:
+            if os.path.exists(local_model_path):
+                active_model_path = local_model_path
+            elif os.path.exists(user_model_path):
+                active_model_path = user_model_path
 
         model_path = active_model_path if self.settings.AI_CONSENT_GRANTED else None
         strategy_name = (
