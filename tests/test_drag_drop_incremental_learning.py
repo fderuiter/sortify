@@ -1,6 +1,7 @@
 import tempfile
 from pathlib import Path
 from types import SimpleNamespace
+
 import pytest
 
 from app.core.analyzer import IncrementalAnalyzer
@@ -8,7 +9,11 @@ from app.core.cache import CacheManager
 from app.core.db import Database
 from app.core.db_worker import DBWorker
 from app.core.history import HistoryManager
-from app.ui.app import find_and_remove_file, insert_file_into_plan, run_incremental_training_in_background
+from app.ui.app import (
+    find_and_remove_file,
+    insert_file_into_plan,
+    run_incremental_training_in_background,
+)
 
 _test_dir = None
 db_worker = None
