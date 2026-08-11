@@ -102,7 +102,7 @@ class Database:
             conn = get_db_connection(self.db_path)
             with conn:
                 cursor = conn.execute(
-                    "SELECT filepath, extracted_text, file_hash, user_verified_target_path, rating FROM documents WHERE base_dir = ?",
+                    "SELECT filepath, extracted_text, file_hash, user_verified_target_path FROM documents WHERE base_dir = ?",
                     (base_dir,),
                 )
                 rows = cursor.fetchall()
@@ -113,8 +113,7 @@ class Database:
                 decrypted_text = (
                     self.crypto.decrypt_text(row[1]) if row[1] is not None else None
                 )
-                rating_val = row[4] if len(row) > 4 else None
-                return (row[0].replace("\\", "/"), decrypted_text, row[2], row[3], rating_val)
+                return (row[0].replace("\\", "/"), decrypted_text, row[2], row[3])
 
             results = []
             if rows:
@@ -207,7 +206,7 @@ class Database:
         conn = get_db_connection(self.db_path)
         with conn:
             cursor = conn.execute(
-                "SELECT filepath, extracted_text, file_hash, user_verified_target_path, rating FROM documents WHERE base_dir = ?",
+                "SELECT filepath, extracted_text, file_hash, user_verified_target_path FROM documents WHERE base_dir = ?",
                 (base_dir,),
             )
             rows = cursor.fetchall()
@@ -218,8 +217,7 @@ class Database:
                 decrypted_text = (
                     self.crypto.decrypt_text(row[1]) if row[1] is not None else None
                 )
-                rating_val = row[4] if len(row) > 4 else None
-                return (row[0].replace("\\", "/"), decrypted_text, row[2], row[3], rating_val)
+                return (row[0].replace("\\", "/"), decrypted_text, row[2], row[3])
 
             results = []
             if rows:
@@ -235,8 +233,7 @@ class Database:
                 new_docs = []
                 for row in self._cached_documents:
                     if row[2] == file_hash:
-                        rating_val = row[4] if len(row) > 4 else None
-                        new_docs.append((row[0], row[1], row[2], target_path, rating_val))
+                        new_docs.append((row[0], row[1], row[2], target_path))
                     else:
                         new_docs.append(row)
                 self._cached_documents = new_docs
@@ -280,8 +277,7 @@ class Database:
                 new_docs = []
                 for row in self._cached_documents:
                     if row[0] == old_filepath:
-                        rating_val = row[4] if len(row) > 4 else None
-                        new_docs.append((new_filepath, row[1], row[2], new_dir, rating_val))
+                        new_docs.append((new_filepath, row[1], row[2], new_dir))
                     else:
                         new_docs.append(row)
                 self._cached_documents = new_docs
@@ -304,8 +300,7 @@ class Database:
                 new_docs = []
                 for row in self._cached_documents:
                     if row[0] == filepath:
-                        rating_val = row[4] if len(row) > 4 else None
-                        new_docs.append((row[0], row[1], row[2], target_path, rating_val))
+                        new_docs.append((row[0], row[1], row[2], target_path))
                     else:
                         new_docs.append(row)
                 self._cached_documents = new_docs
@@ -323,15 +318,6 @@ class Database:
     def set_document_rating(self, base_dir: str, filepath: str, rating: str | None):
         """Record the quality feedback rating associated with a document path."""
         filepath = filepath.replace("\\", "/")
-        with self._cache_lock:
-            if self._cached_base_dir == base_dir and self._cached_documents is not None:
-                new_docs = []
-                for row in self._cached_documents:
-                    if row[0] == filepath:
-                        new_docs.append((row[0], row[1], row[2], row[3], rating))
-                    else:
-                        new_docs.append(row)
-                self._cached_documents = new_docs
 
         def _write():
             conn = get_db_connection(self.db_path)
@@ -345,15 +331,6 @@ class Database:
 
     def set_document_rating_by_hash(self, base_dir: str, file_hash: str, rating: str | None):
         """Record the quality feedback rating associated with a document hash."""
-        with self._cache_lock:
-            if self._cached_base_dir == base_dir and self._cached_documents is not None:
-                new_docs = []
-                for row in self._cached_documents:
-                    if row[2] == file_hash:
-                        new_docs.append((row[0], row[1], row[2], row[3], rating))
-                    else:
-                        new_docs.append(row)
-                self._cached_documents = new_docs
 
         def _write():
             conn = get_db_connection(self.db_path)
@@ -364,6 +341,28 @@ class Database:
                 )
 
         self.worker.execute_write_async(_write)
+
+    def get_all_document_ratings(self, base_dir: str) -> dict[str, str]:
+        """Retrieve all document ratings for a given base directory."""
+        conn = get_db_connection(self.db_path)
+        with conn:
+            cursor = conn.execute(
+                "SELECT filepath, rating FROM documents WHERE base_dir = ? AND rating IS NOT NULL",
+                (base_dir,),
+            )
+            return {row[0].replace("\\", "/"): row[1] for row in cursor.fetchall()}
+
+    def get_document_rating(self, base_dir: str, filepath: str) -> str | None:
+        """Retrieve feedback rating for a specific document path."""
+        filepath = filepath.replace("\\", "/")
+        conn = get_db_connection(self.db_path)
+        with conn:
+            cursor = conn.execute(
+                "SELECT rating FROM documents WHERE base_dir = ? AND filepath = ?",
+                (base_dir, filepath),
+            )
+            row = cursor.fetchone()
+            return row[0] if row else None
 
     def execute_batch_updates(self, updates):
         """Execute all collected database updates in a single unified database transaction."""

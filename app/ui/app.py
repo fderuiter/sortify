@@ -1012,10 +1012,7 @@ class AutoSorterApp:
         self._ratings_cache = {}
         if self.app_session and self.base_dir:
             try:
-                docs = self.app_session.db.get_all_documents(self.base_dir)
-                for d in docs:
-                    if len(d) > 4 and d[4]:
-                        self._ratings_cache[d[0]] = d[4]
+                self._ratings_cache = self.app_session.db.get_all_document_ratings(self.base_dir)
             except Exception as e:
                 logger.error(f"Error loading ratings cache: {e}")
 
