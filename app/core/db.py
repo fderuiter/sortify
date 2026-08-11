@@ -78,7 +78,9 @@ class Database:
             # Purge existing unencrypted vector cache on startup to prevent reading insecure data
             cursor = conn.cursor()
             try:
-                cursor.execute("SELECT base_dir, filepath, vector FROM document_vectors")
+                cursor.execute(
+                    "SELECT base_dir, filepath, vector FROM document_vectors"
+                )
                 rows = cursor.fetchall()
                 unencrypted_keys = []
                 for b_dir, f_path, vector in rows:
@@ -86,31 +88,33 @@ class Database:
                         is_unencrypted = False
                         if isinstance(vector, str):
                             stripped = vector.strip()
-                            if stripped.startswith('[') and stripped.endswith(']'):
+                            if stripped.startswith("[") and stripped.endswith("]"):
                                 try:
                                     import json
+
                                     _ = json.loads(stripped)
                                     is_unencrypted = True
                                 except Exception:
                                     pass
                         elif isinstance(vector, bytes):
                             try:
-                                decoded = vector.decode('utf-8').strip()
-                                if decoded.startswith('[') and decoded.endswith(']'):
+                                decoded = vector.decode("utf-8").strip()
+                                if decoded.startswith("[") and decoded.endswith("]"):
                                     import json
+
                                     _ = json.loads(decoded)
                                     is_unencrypted = True
                             except Exception:
                                 pass
-                        
+
                         if is_unencrypted:
                             unencrypted_keys.append((b_dir, f_path))
-                
+
                 if unencrypted_keys:
                     for b_dir, f_path in unencrypted_keys:
                         conn.execute(
                             "DELETE FROM document_vectors WHERE base_dir = ? AND filepath = ?",
-                            (b_dir, f_path)
+                            (b_dir, f_path),
                         )
             except Exception:
                 pass

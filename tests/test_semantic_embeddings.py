@@ -451,15 +451,19 @@ def test_vector_field_level_encryption_raw_db(db, temp_dir):
 
     # Direct DB select to verify it is NOT plain text (not parseable as plain JSON)
     from app.core.db_conn import get_db_connection
+
     conn = get_db_connection(db.db_path)
     with conn:
-        cursor = conn.execute("SELECT vector FROM document_vectors WHERE filepath = 'doc_test.txt'")
+        cursor = conn.execute(
+            "SELECT vector FROM document_vectors WHERE filepath = 'doc_test.txt'"
+        )
         row = cursor.fetchone()
         assert row is not None
         raw_val = row[0]
         # It must be a string and not parseable as a plain JSON list directly
         assert isinstance(raw_val, str)
         import json
+
         with pytest.raises((ValueError, TypeError, json.JSONDecodeError)):
             json.loads(raw_val)
 
@@ -479,16 +483,18 @@ def test_vector_unencrypted_purge_on_startup(temp_dir, db_worker):
 
     # Create a properly encrypted SQLCipher database first
     database = Database(db_file, db_worker)
-    
+
     # Write an unencrypted vector directly into the SQLCipher database
-    from app.core.db_conn import get_db_connection, clear_connection_cache
     import json
+
+    from app.core.db_conn import clear_connection_cache, get_db_connection
+
     conn = get_db_connection(str(db_file))
     with conn:
         plain_vector = json.dumps([0.5, 0.6, 0.7])
         conn.execute(
             "INSERT INTO document_vectors (base_dir, filepath, vector) VALUES (?, ?, ?)",
-            ("/base", "doc_insecure.txt", plain_vector)
+            ("/base", "doc_insecure.txt", plain_vector),
         )
     clear_connection_cache()
 
@@ -505,4 +511,3 @@ def test_vector_unencrypted_purge_on_startup(temp_dir, db_worker):
         cursor = conn2.execute("SELECT count(*) FROM document_vectors")
         assert cursor.fetchone()[0] == 0
     clear_connection_cache()
-
