@@ -1,12 +1,8 @@
 import os
-import shutil
-import tempfile
 import wave
-import sys
 from unittest.mock import MagicMock, patch
-import pytest
 
-from app.core.extractor_strategies import AudioExtractor, get_audio_duration
+from app.core.extractor_strategies import AudioExtractor
 
 
 def create_compliant_wav(path):
@@ -36,9 +32,12 @@ def test_compliant_wav_bypasses_transcoding(tmp_path):
     mock_process.stdout.readline.side_effect = ["Hello segment 1\n", ""]
     mock_process.returncode = 0
 
-    with patch("app.core.env_helper.spawn_background_process", return_value=mock_process) as mock_spawn, \
-         patch("shutil.which") as mock_which:
-        
+    with (
+        patch(
+            "app.core.env_helper.spawn_background_process", return_value=mock_process
+        ) as mock_spawn,
+        patch("shutil.which") as mock_which,
+    ):
         text = extractor.extract(str(compliant_wav))
 
         # Verification:
@@ -77,7 +76,7 @@ def test_non_compliant_mp3_transcoded_and_cleaned_up(tmp_path):
         assert cmd[5] == "pcm_s16le"
         assert cmd[6] == "-ar"
         assert cmd[7] == "16000"
-        
+
         out_path = cmd[8]
         ffmpeg_output_path.append(out_path)
         # Create a compliant WAV at the output path so get_audio_duration and wave reading succeeds
@@ -87,10 +86,16 @@ def test_non_compliant_mp3_transcoded_and_cleaned_up(tmp_path):
         res.returncode = 0
         return res
 
-    with patch("shutil.which", return_value="/usr/bin/ffmpeg"), \
-         patch("app.core.env_helper.run_background_process", side_effect=mock_run_background_process) as mock_run, \
-         patch("app.core.env_helper.spawn_background_process", return_value=mock_whisper) as mock_spawn:
-
+    with (
+        patch("shutil.which", return_value="/usr/bin/ffmpeg"),
+        patch(
+            "app.core.env_helper.run_background_process",
+            side_effect=mock_run_background_process,
+        ) as mock_run,
+        patch(
+            "app.core.env_helper.spawn_background_process", return_value=mock_whisper
+        ) as mock_spawn,
+    ):
         text = extractor.extract(str(mp3_file))
 
         # Verification:
@@ -132,10 +137,16 @@ def test_non_compliant_wav_transcoded_and_cleaned_up(tmp_path):
         res.returncode = 0
         return res
 
-    with patch("shutil.which", return_value="/usr/bin/ffmpeg"), \
-         patch("app.core.env_helper.run_background_process", side_effect=mock_run_background_process) as mock_run, \
-         patch("app.core.env_helper.spawn_background_process", return_value=mock_whisper) as mock_spawn:
-
+    with (
+        patch("shutil.which", return_value="/usr/bin/ffmpeg"),
+        patch(
+            "app.core.env_helper.run_background_process",
+            side_effect=mock_run_background_process,
+        ) as mock_run,
+        patch(
+            "app.core.env_helper.spawn_background_process", return_value=mock_whisper
+        ) as mock_spawn,
+    ):
         text = extractor.extract(str(non_compliant_wav))
 
         # Transcoding should have occurred
@@ -161,9 +172,10 @@ def test_ffmpeg_missing_returns_error(tmp_path):
 
     extractor = AudioExtractor()
 
-    with patch("shutil.which", return_value=None) as mock_which, \
-         patch("app.core.env_helper.run_background_process") as mock_run:
-
+    with (
+        patch("shutil.which", return_value=None) as mock_which,
+        patch("app.core.env_helper.run_background_process") as mock_run,
+    ):
         text = extractor.extract(str(mp3_file))
 
         mock_which.assert_called_once_with("ffmpeg")
@@ -183,10 +195,11 @@ def test_transcoding_failure_returns_error(tmp_path):
     mock_result.returncode = 1
     mock_result.stderr = "Error decoding audio stream"
 
-    with patch("shutil.which", return_value="/usr/bin/ffmpeg"), \
-         patch("app.core.env_helper.run_background_process", return_value=mock_result), \
-         patch("app.core.env_helper.spawn_background_process") as mock_spawn:
-
+    with (
+        patch("shutil.which", return_value="/usr/bin/ffmpeg"),
+        patch("app.core.env_helper.run_background_process", return_value=mock_result),
+        patch("app.core.env_helper.spawn_background_process") as mock_spawn,
+    ):
         text = extractor.extract(str(mp3_file))
 
         # Transcription should not be run
