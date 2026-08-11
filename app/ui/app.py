@@ -145,7 +145,9 @@ class AutoSorterApp:
                 .props('default-expand-all aria-label="Sorting Plan Tree"')
             )
             # Use NiceGUI's add_slot to define the Vue scoped slot template for drag and drop & hover ratings
-            self.tree_view.add_slot('default-header', '''
+            self.tree_view.add_slot(
+                "default-header",
+                """
                 <div class="row items-center justify-between w-full group tree-node-row"
                      :draggable="prop.node.is_file"
                      @dragstart="(e) => { 
@@ -184,9 +186,10 @@ class AutoSorterApp:
                                @click.stop="$parent.$emit('node-rate', { file_id: prop.node.filepath, rating: 'negative' })" />
                     </div>
                 </div>
-            ''')
-            self.tree_view.on('node-drop', self.handle_node_drop)
-            self.tree_view.on('node-rate', self.handle_node_rate)
+            """,
+            )
+            self.tree_view.on("node-drop", self.handle_node_drop)
+            self.tree_view.on("node-rate", self.handle_node_rate)
 
         with ui.row().classes("w-full justify-center mt-4 flex-wrap gap-2"):
             self.execute_btn = (
@@ -655,8 +658,17 @@ class AutoSorterApp:
         local_model_dir = os.path.join(base_path, "offline_bundle", "model")
         user_model_dir = get_app_dir() / "model"
 
+        import sys
+
+        has_mei_model = False
+        if hasattr(sys, "_MEIPASS"):
+            mei_model_dir = os.path.join(sys._MEIPASS, "offline_bundle", "model")
+            if os.path.exists(os.path.join(mei_model_dir, "config.json")):
+                has_mei_model = True
+
         if (
-            os.path.exists(os.path.join(local_model_dir, "config.json"))
+            has_mei_model
+            or os.path.exists(os.path.join(local_model_dir, "config.json"))
             or (user_model_dir / "config.json").exists()
         ):
             if self.settings.AI_CONSENT_GRANTED is None:
@@ -954,17 +966,20 @@ class AutoSorterApp:
             if file_info is not None:
                 file_info["is_locked"] = True
                 file_info["status"] = "Locked"
-                
+
                 insert_file_into_plan(self.plan, target_folder, source_file, file_info)
                 self.locked_files[source_file] = target_folder
-                
+
                 if self.app_session:
                     self.app_session.db.set_user_verified_target_path(
                         self.base_dir, source_file, target_folder
                     )
-                
+
                 self.render_tree()
-                ui.notify(f"Moved {os.path.basename(source_file)} to {target_folder}", type="positive")
+                ui.notify(
+                    f"Moved {os.path.basename(source_file)} to {target_folder}",
+                    type="positive",
+                )
             else:
                 logger.warning(f"Could not find file {source_file} in current plan.")
         except Exception as ex:
@@ -976,7 +991,7 @@ class AutoSorterApp:
         try:
             file_filepath = e.args.get("file_id")
             rating = e.args.get("rating")
-            
+
             if not file_filepath or not rating:
                 return
 
@@ -993,12 +1008,17 @@ class AutoSorterApp:
                     self._ratings_cache.pop(file_filepath, None)
 
             if self.app_session:
-                self.app_session.db.set_document_rating(self.base_dir, file_filepath, rating_to_set)
+                self.app_session.db.set_document_rating(
+                    self.base_dir, file_filepath, rating_to_set
+                )
 
             self.render_tree()
 
             if rating_to_set:
-                ui.notify(f"Recorded {rating_to_set} rating for {os.path.basename(file_filepath)}", type="positive")
+                ui.notify(
+                    f"Recorded {rating_to_set} rating for {os.path.basename(file_filepath)}",
+                    type="positive",
+                )
             else:
                 ui.notify(f"Cleared rating for {os.path.basename(file_filepath)}")
 
@@ -1012,7 +1032,9 @@ class AutoSorterApp:
         self._ratings_cache = {}
         if self.app_session and self.base_dir:
             try:
-                self._ratings_cache = self.app_session.db.get_all_document_ratings(self.base_dir)
+                self._ratings_cache = self.app_session.db.get_all_document_ratings(
+                    self.base_dir
+                )
             except Exception as e:
                 logger.error(f"Error loading ratings cache: {e}")
 
@@ -1039,20 +1061,24 @@ class AutoSorterApp:
             else:
                 text = k
                 icon = "insert_drive_file"
-                is_locked = k in self.locked_files or (isinstance(v, dict) and v.get("is_locked"))
+                is_locked = k in self.locked_files or (
+                    isinstance(v, dict) and v.get("is_locked")
+                )
                 if is_locked:
                     icon = "lock"
                 if isinstance(v, dict):
                     status = v.get("status", "")
                     if status:
                         text += f" [{status}]"
-                    if not is_locked and ("error" in status.lower() or "locked" in status.lower()):
+                    if not is_locked and (
+                        "error" in status.lower() or "locked" in status.lower()
+                    ):
                         icon = "error"
                 if k in self.plan_errors or node_id in self.plan_errors:
                     err_msg = self.plan_errors.get(node_id) or self.plan_errors.get(k)
                     text += f" (Error: {err_msg})"
                     icon = "error"
-                
+
                 rating = self._ratings_cache.get(k)
                 nodes_list.append(
                     {
@@ -1112,11 +1138,13 @@ class AutoSorterApp:
                 self.start_watcher()
                 if success and self.app_session:
                     try:
-                        self.status_label.set_text("Running background classifier updates...")
+                        self.status_label.set_text(
+                            "Running background classifier updates..."
+                        )
                         await asyncio.to_thread(
                             run_incremental_training_in_background,
                             self.app_session,
-                            self.base_dir
+                            self.base_dir,
                         )
                     except Exception as train_err:
                         logger.error(f"Error during incremental training: {train_err}")
@@ -1291,7 +1319,11 @@ def find_and_remove_file(node, file_key):
     """
     if not isinstance(node, dict):
         return None
-    if file_key in node and isinstance(node[file_key], dict) and node[file_key].get("__type__") == "file":
+    if (
+        file_key in node
+        and isinstance(node[file_key], dict)
+        and node[file_key].get("__type__") == "file"
+    ):
         return node.pop(file_key)
     for k, v in list(node.items()):
         if isinstance(v, dict) and v.get("__type__") != "file":
@@ -1321,11 +1353,14 @@ def run_incremental_training_in_background(app_session, base_dir):
     database table.
     """
     import logging
+
     try:
-        logging.info("Starting background incremental training for reassigned documents.")
+        logging.info(
+            "Starting background incremental training for reassigned documents."
+        )
         db = app_session.db
         analyzer = app_session.analyzer
-        
+
         # 1. Fetch all documents for this base directory
         docs = db.get_all_documents(base_dir)
         if not docs:
@@ -1338,10 +1373,10 @@ def run_incremental_training_in_background(app_session, base_dir):
             filepath = d[0]
             text = d[1]
             user_verified_target = d[3] if len(d) > 3 else None
-            
+
             if user_verified_target and text:
                 reassigned_docs.append((filepath, text))
-                
+
         if not reassigned_docs:
             logging.info("No reassigned documents with text found to train on.")
             return
@@ -1351,7 +1386,9 @@ def run_incremental_training_in_background(app_session, base_dir):
         for filepath, text in reassigned_docs:
             try:
                 vector = analyzer.embedding_manager.generate_embedding(text)
-                if vector and analyzer.embedding_manager.validate_vector_dimension(vector):
+                if vector and analyzer.embedding_manager.validate_vector_dimension(
+                    vector
+                ):
                     vectors_to_upsert.append((filepath, vector))
             except Exception as e:
                 logging.error(f"Error generating embedding for {filepath}: {e}")
@@ -1359,12 +1396,16 @@ def run_incremental_training_in_background(app_session, base_dir):
         # 4. Upsert vectors into DB
         if vectors_to_upsert:
             db.upsert_document_vectors(base_dir, vectors_to_upsert)
-            logging.info(f"Successfully updated vectors for {len(vectors_to_upsert)} reassigned documents in the background.")
+            logging.info(
+                f"Successfully updated vectors for {len(vectors_to_upsert)} reassigned documents in the background."
+            )
         else:
             logging.info("No new vectors generated for reassigned documents.")
-            
+
     except Exception as e:
-        logging.error(f"Error during background incremental training: {e}", exc_info=True)
+        logging.error(
+            f"Error during background incremental training: {e}", exc_info=True
+        )
 
 
 def run_app(settings, directory=None, port=8080, show=True) -> None:

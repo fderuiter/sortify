@@ -55,10 +55,10 @@ def clean_db():
 def test_rating_persistence_and_migration():
     # Verify migration executed and rating column exists and holds text
     db.upsert_document("base", "file1.txt", "hash1", "Some document content")
-    
+
     # Set document rating
     db.set_document_rating("base", "file1.txt", "positive")
-    
+
     # Retrieve documents and check rating is set
     ratings = db.get_all_document_ratings("base")
     assert len(ratings) == 1
@@ -78,9 +78,7 @@ def test_rating_persistence_and_migration():
 def test_find_and_remove_and_insert_helpers():
     plan = {
         "Finance": {
-            "Invoices": {
-                "invoice.pdf": {"__type__": "file", "status": "Proposed"}
-            }
+            "Invoices": {"invoice.pdf": {"__type__": "file", "status": "Proposed"}}
         }
     }
 
@@ -91,14 +89,17 @@ def test_find_and_remove_and_insert_helpers():
 
     # Insert file back
     insert_file_into_plan(plan, "Accounting/SubFolder", "invoice.pdf", file_info)
-    assert plan["Accounting"]["SubFolder"]["invoice.pdf"] == {"__type__": "file", "status": "Proposed"}
+    assert plan["Accounting"]["SubFolder"]["invoice.pdf"] == {
+        "__type__": "file",
+        "status": "Proposed",
+    }
 
 
 def test_analyzer_locked_files_override():
     analyzer = IncrementalAnalyzer(
         max_folders=3, stop_words={"the", "and"}, db=db, model_path=None
     )
-    
+
     corpus = {
         "file1.txt": "Semantic content here.",
         "file2.txt": "Semantic content there.",
@@ -114,9 +115,14 @@ def test_analyzer_locked_files_override():
 
     # Case 2: locked_files override forces a different target folder, bypassing rules
     locked_files = {"file1.txt": "ManualOverrideFolder"}
-    plan_with_override = analyzer.generate_sorting_plan("dummy_base", settings, locked_files=locked_files)
-    
-    assert "KeywordFolder" not in plan_with_override or "file1.txt" not in plan_with_override.get("KeywordFolder", {})
+    plan_with_override = analyzer.generate_sorting_plan(
+        "dummy_base", settings, locked_files=locked_files
+    )
+
+    assert (
+        "KeywordFolder" not in plan_with_override
+        or "file1.txt" not in plan_with_override.get("KeywordFolder", {})
+    )
     assert "ManualOverrideFolder" in plan_with_override
     assert "file1.txt" in plan_with_override["ManualOverrideFolder"]
 
@@ -125,9 +131,11 @@ def test_incremental_background_training():
     analyzer = IncrementalAnalyzer(
         max_folders=3, stop_words={"the", "and"}, db=db, model_path=None
     )
-    
+
     # 1. Upsert some documents and specify verified target path
-    db.upsert_document("dummy_train_base", "invoice.txt", "hash_inv", "Invoice content details")
+    db.upsert_document(
+        "dummy_train_base", "invoice.txt", "hash_inv", "Invoice content details"
+    )
     db.set_user_verified_target_path("dummy_train_base", "invoice.txt", "Accounting")
 
     # Set up mock session
