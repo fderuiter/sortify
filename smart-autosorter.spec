@@ -76,6 +76,19 @@ if os.path.exists(app_binaries_src):
                 dest_dir = os.path.join('app', 'binaries', rel_sub)
             datas.append((abs_file_path, dest_dir))
 
+# Explicitly bundle offline_bundle models and EasyOCR weights
+offline_bundle_src = 'offline_bundle'
+if os.path.exists(offline_bundle_src):
+    for root, dirs, files in os.walk(offline_bundle_src):
+        for file in files:
+            abs_file_path = os.path.abspath(os.path.join(root, file))
+            rel_sub = os.path.relpath(root, offline_bundle_src)
+            if rel_sub == '.':
+                dest_dir = 'offline_bundle'
+            else:
+                dest_dir = os.path.join('offline_bundle', rel_sub)
+            datas.append((abs_file_path, dest_dir))
+
 # On Windows, find and bundle any dependent OpenSSL/SQLCipher DLLs from the active Python or virtualenv environments
 if (platform.system().lower() == "windows" or sys.platform == "win32") and "pytest" not in sys.modules:
     search_dirs = []
@@ -234,7 +247,7 @@ def is_prunable_asset(name):
     parts = name_lower.split('/')
     
     # Safety Rule: Core weights, model files, and crucial bin targets must NEVER be pruned.
-    safety_keywords = ("weight", "bin", "model", "checkpoint")
+    safety_keywords = ("weight", "bin", "model", "checkpoint", "offline_bundle", "easyocr")
     if any(sk in name_lower for sk in safety_keywords):
         return False
         

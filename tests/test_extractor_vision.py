@@ -117,7 +117,20 @@ def test_get_ocr_reader(mocker):
 
     assert reader1 == "reader_instance"
     assert reader2 == "reader_instance"
-    mock_easyocr_reader.assert_called_once_with(["en"], gpu=False)
+    import os
+
+    easyocr_path = os.environ.get("EASYOCR_MODULE_PATH")
+    if easyocr_path:
+        expected_dir = os.path.join(easyocr_path, "model")
+    else:
+        expected_dir = os.path.expanduser("~/.EasyOCR/model")
+
+    mock_easyocr_reader.assert_called_once_with(
+        ["en"],
+        gpu=False,
+        model_storage_directory=expected_dir,
+        download_enabled=False,
+    )
     mock_torch.set_num_threads.assert_called_once_with(2)
 
 

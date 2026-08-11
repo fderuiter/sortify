@@ -9,6 +9,8 @@ import os
 
 from app.core.analyzer_strategies import clustering_registry
 
+_UNSPECIFIED = object()
+
 
 class IncrementalAnalyzer:
     """Stateful ML analyzer using incremental topic modeling."""
@@ -19,7 +21,7 @@ class IncrementalAnalyzer:
         stop_words: set,
         db,
         strategy_name: str = "generative",
-        model_path: str | None = None,
+        model_path: str | None = _UNSPECIFIED,
     ) -> None:
         self.db = db
         self.max_folders = max_folders
@@ -30,24 +32,35 @@ class IncrementalAnalyzer:
         self.corpus = {}
         self._last_reconstruction_error = 0.0
 
-        if not self.model_path:
-            from app.config import get_app_dir
-            from app.core.path_utils import get_base_path
+        if self.model_path is _UNSPECIFIED:
+            self.model_path = None
+            import sys
 
-            try:
-                base_path = get_base_path(__file__)
-            except Exception:
-                base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            local_bundle_path = os.path.join(base_path, "offline_bundle", "model")
-            try:
-                user_bundle_path = str(get_app_dir() / "model")
-            except Exception:
-                user_bundle_path = os.path.expanduser("~/.smart-autosorter/model")
+            if hasattr(sys, "_MEIPASS"):
+                mei_bundle_path = os.path.join(sys._MEIPASS, "offline_bundle", "model")
+                if os.path.exists(mei_bundle_path):
+                    self.model_path = mei_bundle_path
 
-            if os.path.exists(local_bundle_path):
-                self.model_path = local_bundle_path
-            elif os.path.exists(user_bundle_path):
-                self.model_path = user_bundle_path
+            if not self.model_path:
+                from app.config import get_app_dir
+                from app.core.path_utils import get_base_path
+
+                try:
+                    base_path = get_base_path(__file__)
+                except Exception:
+                    base_path = os.path.dirname(
+                        os.path.dirname(os.path.abspath(__file__))
+                    )
+                local_bundle_path = os.path.join(base_path, "offline_bundle", "model")
+                try:
+                    user_bundle_path = str(get_app_dir() / "model")
+                except Exception:
+                    user_bundle_path = os.path.expanduser("~/.smart-autosorter/model")
+
+                if os.path.exists(local_bundle_path):
+                    self.model_path = local_bundle_path
+                elif os.path.exists(user_bundle_path):
+                    self.model_path = user_bundle_path
 
         from app.core.semantic_embeddings import SemanticEmbeddingManager
 
