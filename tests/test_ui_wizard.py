@@ -26,6 +26,8 @@ def mock_nicegui():
         patch("nicegui.ui.tab") as mock_tab,
         patch("nicegui.ui.tab_panels") as mock_tab_panels,
         patch("nicegui.ui.tab_panel") as mock_tab_panel,
+        patch("nicegui.ui.icon") as mock_icon,
+        patch("nicegui.ui.notify") as mock_notify,
     ):
         yield {
             "dialog": mock_dialog,
@@ -37,6 +39,8 @@ def mock_nicegui():
             "input": mock_input,
             "linear_progress": mock_progress,
             "timer": mock_timer,
+            "icon": mock_icon,
+            "notify": mock_notify,
         }
 
 

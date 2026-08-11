@@ -50,41 +50,45 @@ def test_verify_downloaded_model(temp_model_dir):
 def test_downloader_sandboxing_bypass(temp_model_dir):
     # Set thread local sandboxed to True globally to simulate sandbox mode
     from app.core.shared_registry import _thread_local
+    was_sandboxed = getattr(_thread_local, "sandboxed", False)
     _thread_local.sandboxed = True
 
-    success_called = threading.Event()
-    failure_called = threading.Event()
-    captured_error = []
+    try:
+        success_called = threading.Event()
+        failure_called = threading.Event()
+        captured_error = []
 
-    def on_success():
-        success_called.set()
+        def on_success():
+            success_called.set()
 
-    def on_failure(err):
-        captured_error.append(err)
-        failure_called.set()
+        def on_failure(err):
+            captured_error.append(err)
+            failure_called.set()
 
-    # We mock urllib.request.build_opener and open to return a mock response
-    mock_response = MagicMock()
-    mock_response.info.return_value.get.return_value = "100"
-    mock_response.read.side_effect = [b"chunk1", b"chunk2", b""]
+        # We mock urllib.request.build_opener and open to return a mock response
+        mock_response = MagicMock()
+        mock_response.info.return_value.get.return_value = "100"
+        mock_response.read.side_effect = [b"chunk1", b"chunk2", b""]
 
-    mock_opener = MagicMock()
-    mock_opener.open.return_value.__enter__.return_value = mock_response
+        mock_opener = MagicMock()
+        mock_opener.open.return_value.__enter__.return_value = mock_response
 
-    with (
-        patch("urllib.request.build_opener", return_value=mock_opener),
-        patch("shutil.disk_usage", return_value=(10000, 5000, 5000)),
-    ):
-        run_background_download(
-            "http://example.com/model.onnx",
-            temp_model_dir,
-            progress_callback=None,
-            on_success=on_success,
-            on_failure=on_failure,
-        )
+        with (
+            patch("urllib.request.build_opener", return_value=mock_opener),
+            patch("shutil.disk_usage", return_value=(10000, 5000, 5000)),
+        ):
+            run_background_download(
+                "http://example.com/model.onnx",
+                temp_model_dir,
+                progress_callback=None,
+                on_success=on_success,
+                on_failure=on_failure,
+            )
 
-        assert success_called.wait(timeout=5)
-        assert verify_downloaded_model(temp_model_dir)
+            assert success_called.wait(timeout=5)
+            assert verify_downloaded_model(temp_model_dir)
+    finally:
+        _thread_local.sandboxed = was_sandboxed
 
 
 def test_downloader_cancellation(temp_model_dir):
