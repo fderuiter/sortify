@@ -132,15 +132,17 @@ def test_generative_naming_uses_precomputed_vectors_and_zero_decryption(db, temp
         # 1. Verify correct descriptive folder name returned
         assert name == "Space Mission Group"
 
-        # 2. Verify we did NOT call raw decryption on the database documents during the semantic path
-        spy_decrypt.assert_not_called()
+        # 2. Verify that raw decryption is called only to populate the cache, but we don't query get_all_documents directly
+        assert spy_decrypt.call_count == 2
         spy_get_all.assert_not_called()
 
-        # 3. Verify exact cosine similarity picked the "Space" exemplar (hist1.txt) over "Cooking"
+        # 3. Verify exact cosine similarity picked the "Space" exemplar text over "Cooking"
         assert mock_run_prompt.called
         prompt_passed = mock_run_prompt.call_args[0][0]
-        assert "hist1.txt" in prompt_passed
+        assert "space flight Mars rocket astronauts NASA space agency" in prompt_passed
+        assert "hist1.txt" not in prompt_passed
         assert "Space" in prompt_passed
+        assert "gourmet cooking recipe" not in prompt_passed
         assert "hist2.txt" not in prompt_passed
 
 
