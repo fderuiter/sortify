@@ -1,13 +1,12 @@
 """Model downloader module with sandbox bypass, proxy support, and real-time tracking."""
 
-import os
 import json
-import shutil
-import hashlib
-import urllib.request
-import urllib.error
-import threading
 import logging
+import os
+import shutil
+import threading
+import urllib.error
+import urllib.request
 
 logger = logging.getLogger(__name__)
 
@@ -16,27 +15,31 @@ DEFAULT_MODEL_URL = "https://huggingface.co/sentence-transformers/all-MiniLM-L6-
 
 class DownloadError(Exception):
     """Base class for download exceptions."""
+
     pass
 
 
 class NetworkError(DownloadError):
     """Raised when a network/connection error occurs."""
+
     pass
 
 
 class DiskSpaceError(DownloadError):
     """Raised when there is insufficient disk space."""
+
     pass
 
 
 class DownloadCancelledError(DownloadError):
     """Raised when the download is cancelled by the user."""
+
     pass
 
 
 def verify_downloaded_model(model_dir: str) -> bool:
     """Verify integrity of the completed download.
-    
+
     Checks if model.onnx and config.json exist, are non-empty, and valid.
     """
     onnx_file = os.path.join(model_dir, "model.onnx")
@@ -70,6 +73,7 @@ def run_background_download(
         # Requirement 5: Bypass application sandboxing on this dedicated thread
         try:
             from app.core.shared_registry import _thread_local
+
             _thread_local.sandboxed = False
             _thread_local.reason = "model download execution"
         except Exception as e:
@@ -84,7 +88,9 @@ def run_background_download(
             handlers = []
             if proxy and proxy.strip():
                 p_str = proxy.strip()
-                handlers.append(urllib.request.ProxyHandler({"http": p_str, "https": p_str}))
+                handlers.append(
+                    urllib.request.ProxyHandler({"http": p_str, "https": p_str})
+                )
             opener = urllib.request.build_opener(*handlers)
 
             req = urllib.request.Request(
@@ -93,7 +99,7 @@ def run_background_download(
 
             with opener.open(req, timeout=15) as response:
                 total_size = int(response.info().get("Content-Length", 0))
-                
+
                 # Proactive disk space check
                 if total_size > 0:
                     try:
@@ -113,7 +119,9 @@ def run_background_download(
                 with open(temp_path, "wb") as f:
                     while True:
                         if cancel_event.is_set():
-                            raise DownloadCancelledError("Download was cancelled by the user.")
+                            raise DownloadCancelledError(
+                                "Download was cancelled by the user."
+                            )
 
                         try:
                             chunk = response.read(chunk_size)
@@ -127,7 +135,9 @@ def run_background_download(
                             f.write(chunk)
                         except OSError as e:
                             if e.errno == 28 or "No space" in str(e):
-                                raise DiskSpaceError("Insufficient disk space on the target drive.") from e
+                                raise DiskSpaceError(
+                                    "Insufficient disk space on the target drive."
+                                ) from e
                             raise DiskSpaceError(f"Local file write error: {e}") from e
 
                         bytes_downloaded += len(chunk)
@@ -150,7 +160,9 @@ def run_background_download(
 
                 # Requirement 6: Run integrity verification on completed download
                 if not verify_downloaded_model(model_dir):
-                    raise DownloadError("Integrity verification failed for the downloaded model.")
+                    raise DownloadError(
+                        "Integrity verification failed for the downloaded model."
+                    )
 
                 if on_success:
                     on_success()
