@@ -6,16 +6,18 @@ These tests verify that:
 3. Pipeline execution logs show zero calls to the embedding model for documents that already have cached vectors.
 """
 
-import tempfile
 import shutil
-import pytest
+import tempfile
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 from app.core.analyzer import IncrementalAnalyzer
 from app.core.db import Database
 from app.core.db_worker import DBWorker
 from app.core.semantic_embeddings import ModelProperties
+
 
 @pytest.fixture
 def temp_env():
