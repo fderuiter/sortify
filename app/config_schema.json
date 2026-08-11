@@ -190,6 +190,11 @@
       "title": "Stop Words",
       "type": "array",
       "uniqueItems": true
+    },
+    "PROXY": {
+      "default": "",
+      "title": "Proxy",
+      "type": "string"
     }
   },
   "title": "Settings",
