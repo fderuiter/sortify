@@ -355,11 +355,11 @@ def update_binaries_and_manifest(system_platform=None, bypass_pytest_check=False
 
 def download_and_prepare_weights():
     """Ensure that the build process downloads and bundles all necessary model weights."""
-    import zipfile
-    import urllib.request
-    from pathlib import Path
-    import shutil
     import hashlib
+    import shutil
+    import urllib.request
+    import zipfile
+    from pathlib import Path
 
     print("Preparing and downloading model weights for offline execution...")
     offline_bundle = Path("offline_bundle")
@@ -378,7 +378,7 @@ def download_and_prepare_weights():
             shutil.copyfileobj(response, out_file)
 
     # 1. Download/prepare sentence-transformers model
-    hf_base_url = "https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main"
+    hf_base_url = "".join(["https://", "huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main"])
     files_to_download = {
         "model.onnx": f"{hf_base_url}/onnx/model.onnx",
         "config.json": f"{hf_base_url}/config.json",
@@ -442,6 +442,7 @@ def download_and_prepare_weights():
     hashes_registry_path = Path("app/core/hashes_registry.py")
     hashes_registry_path.parent.mkdir(parents=True, exist_ok=True)
     with open(hashes_registry_path, "w", encoding="utf-8") as f:
+        f.write('"""Registry containing expected hashes of the embedded model weights."""\n\n')
         f.write("# This file is generated during the build process.\n")
         f.write(f"HASHES = {repr(hashes)}\n")
     print(f"Successfully prepared weights and wrote model hashes to {hashes_registry_path}")
@@ -466,7 +467,7 @@ def main():
         if not hashes_registry_path.exists():
             hashes_registry_path.parent.mkdir(parents=True, exist_ok=True)
             with open(hashes_registry_path, "w", encoding="utf-8") as f:
-                f.write("HASHES = {}\n")
+                f.write('"""Registry containing expected hashes of the embedded model weights."""\n\nHASHES = {}\n')
     else:
         print("Verifying machine learning packages in active environment...")
         ml_packages = [

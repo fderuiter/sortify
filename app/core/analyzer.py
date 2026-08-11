@@ -9,7 +9,6 @@ import os
 
 from app.core.analyzer_strategies import clustering_registry
 
-
 _UNSPECIFIED = object()
 
 

@@ -24,6 +24,7 @@ def is_ml_available() -> bool:
 def check_ai_status(settings) -> tuple[bool, str | None]:
     """Check AI models status, returning (is_healthy, warning_message)."""
     import sys
+
     from app.core.path_utils import is_packaged
     is_sandboxed = is_packaged() or getattr(settings, "SANDBOXED", False)
 
