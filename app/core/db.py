@@ -40,6 +40,7 @@ class Database:
                         file_hash TEXT,
                         extracted_text TEXT,
                         user_verified_target_path TEXT,
+                        rating TEXT,
                         PRIMARY KEY (base_dir, filepath)
                     )
                 """)
@@ -57,6 +58,11 @@ class Database:
                         "CREATE INDEX IF NOT EXISTS idx_documents_file_hash ON documents (base_dir, file_hash)"
                     )
                 conn.execute(f"PRAGMA user_version = {self.CURRENT_VERSION}")
+
+            try:
+                conn.execute("ALTER TABLE documents ADD COLUMN rating TEXT")
+            except Exception:
+                pass
 
             # Initialize decoupled vector and metadata tables unconditionally
             conn.execute("""
@@ -140,7 +146,7 @@ class Database:
             conn = get_db_connection(self.db_path)
             with conn:
                 cursor = conn.execute(
-                    "SELECT filepath, extracted_text, file_hash, user_verified_target_path FROM documents WHERE base_dir = ?",
+                    "SELECT filepath, extracted_text, file_hash, user_verified_target_path, rating FROM documents WHERE base_dir = ?",
                     (base_dir,),
                 )
                 rows = cursor.fetchall()
@@ -151,7 +157,8 @@ class Database:
                 decrypted_text = (
                     self.crypto.decrypt_text(row[1]) if row[1] is not None else None
                 )
-                return (row[0].replace("\\", "/"), decrypted_text, row[2], row[3])
+                rating_val = row[4] if len(row) > 4 else None
+                return (row[0].replace("\\", "/"), decrypted_text, row[2], row[3], rating_val)
 
             results = []
             if rows:
@@ -244,7 +251,7 @@ class Database:
         conn = get_db_connection(self.db_path)
         with conn:
             cursor = conn.execute(
-                "SELECT filepath, extracted_text, file_hash, user_verified_target_path FROM documents WHERE base_dir = ?",
+                "SELECT filepath, extracted_text, file_hash, user_verified_target_path, rating FROM documents WHERE base_dir = ?",
                 (base_dir,),
             )
             rows = cursor.fetchall()
@@ -255,7 +262,8 @@ class Database:
                 decrypted_text = (
                     self.crypto.decrypt_text(row[1]) if row[1] is not None else None
                 )
-                return (row[0].replace("\\", "/"), decrypted_text, row[2], row[3])
+                rating_val = row[4] if len(row) > 4 else None
+                return (row[0].replace("\\", "/"), decrypted_text, row[2], row[3], rating_val)
 
             results = []
             if rows:
@@ -271,7 +279,8 @@ class Database:
                 new_docs = []
                 for row in self._cached_documents:
                     if row[2] == file_hash:
-                        new_docs.append((row[0], row[1], row[2], target_path))
+                        rating_val = row[4] if len(row) > 4 else None
+                        new_docs.append((row[0], row[1], row[2], target_path, rating_val))
                     else:
                         new_docs.append(row)
                 self._cached_documents = new_docs
@@ -315,7 +324,8 @@ class Database:
                 new_docs = []
                 for row in self._cached_documents:
                     if row[0] == old_filepath:
-                        new_docs.append((new_filepath, row[1], row[2], new_dir))
+                        rating_val = row[4] if len(row) > 4 else None
+                        new_docs.append((new_filepath, row[1], row[2], new_dir, rating_val))
                     else:
                         new_docs.append(row)
                 self._cached_documents = new_docs
@@ -326,6 +336,75 @@ class Database:
                 conn.execute(
                     "UPDATE documents SET filepath = ?, user_verified_target_path = ? WHERE base_dir = ? AND filepath = ?",
                     (new_filepath, new_dir, base_dir, old_filepath),
+                )
+
+        self.worker.execute_write_async(_write)
+
+    def set_user_verified_target_path(self, base_dir, filepath, target_path):
+        """Record the historical folder assignment for a specific document path."""
+        filepath = filepath.replace("\\", "/")
+        with self._cache_lock:
+            if self._cached_base_dir == base_dir and self._cached_documents is not None:
+                new_docs = []
+                for row in self._cached_documents:
+                    if row[0] == filepath:
+                        rating_val = row[4] if len(row) > 4 else None
+                        new_docs.append((row[0], row[1], row[2], target_path, rating_val))
+                    else:
+                        new_docs.append(row)
+                self._cached_documents = new_docs
+
+        def _write():
+            conn = get_db_connection(self.db_path)
+            with conn:
+                conn.execute(
+                    "UPDATE documents SET user_verified_target_path = ? WHERE base_dir = ? AND filepath = ?",
+                    (target_path, base_dir, filepath),
+                )
+
+        self.worker.execute_write_async(_write)
+
+    def set_document_rating(self, base_dir: str, filepath: str, rating: str | None):
+        """Record the quality feedback rating associated with a document path."""
+        filepath = filepath.replace("\\", "/")
+        with self._cache_lock:
+            if self._cached_base_dir == base_dir and self._cached_documents is not None:
+                new_docs = []
+                for row in self._cached_documents:
+                    if row[0] == filepath:
+                        new_docs.append((row[0], row[1], row[2], row[3], rating))
+                    else:
+                        new_docs.append(row)
+                self._cached_documents = new_docs
+
+        def _write():
+            conn = get_db_connection(self.db_path)
+            with conn:
+                conn.execute(
+                    "UPDATE documents SET rating = ? WHERE base_dir = ? AND filepath = ?",
+                    (rating, base_dir, filepath),
+                )
+
+        self.worker.execute_write_async(_write)
+
+    def set_document_rating_by_hash(self, base_dir: str, file_hash: str, rating: str | None):
+        """Record the quality feedback rating associated with a document hash."""
+        with self._cache_lock:
+            if self._cached_base_dir == base_dir and self._cached_documents is not None:
+                new_docs = []
+                for row in self._cached_documents:
+                    if row[2] == file_hash:
+                        new_docs.append((row[0], row[1], row[2], row[3], rating))
+                    else:
+                        new_docs.append(row)
+                self._cached_documents = new_docs
+
+        def _write():
+            conn = get_db_connection(self.db_path)
+            with conn:
+                conn.execute(
+                    "UPDATE documents SET rating = ? WHERE base_dir = ? AND file_hash = ?",
+                    (rating, base_dir, file_hash),
                 )
 
         self.worker.execute_write_async(_write)
