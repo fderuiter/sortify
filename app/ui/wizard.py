@@ -1,12 +1,16 @@
 """Setup wizard module using NiceGUI."""
 
-import os
 import threading
+
 from nicegui import ui
 
-from app.ui.dialog_helper import get_dialog_card_classes
 from app.config import get_app_dir
-from app.core.downloader import run_background_download, verify_downloaded_model, DEFAULT_MODEL_URL, DiskSpaceError, NetworkError
+from app.core.downloader import (
+    DEFAULT_MODEL_URL,
+    DiskSpaceError,
+    run_background_download,
+)
+from app.ui.dialog_helper import get_dialog_card_classes
 
 
 def show_wizard(parent_app, settings):
@@ -49,13 +53,21 @@ def show_wizard(parent_app, settings):
                 with ui.row().classes("items-center gap-2 text-red-800"):
                     ui.icon("error", size="sm")
                     ui.label("Network and System Diagnostics").classes("font-bold")
-                error_diagnostic_label = ui.label("").classes("text-red-900 text-sm mt-1")
-            
-            ui.label("Configure Proxy settings if behind a corporate firewall/VPN:").classes("text-xs text-gray-500 mb-1")
-            proxy_input = ui.input(
-                "Proxy Server (e.g. http://127.0.0.1:8080)",
-                value=getattr(settings, "PROXY", "")
-            ).classes("w-full mb-4").props('aria-label="Wizard Proxy Input"')
+                error_diagnostic_label = ui.label("").classes(
+                    "text-red-900 text-sm mt-1"
+                )
+
+            ui.label(
+                "Configure Proxy settings if behind a corporate firewall/VPN:"
+            ).classes("text-xs text-gray-500 mb-1")
+            proxy_input = (
+                ui.input(
+                    "Proxy Server (e.g. http://127.0.0.1:8080)",
+                    value=getattr(settings, "PROXY", ""),
+                )
+                .classes("w-full mb-4")
+                .props('aria-label="Wizard Proxy Input"')
+            )
 
         # State Variables
         cancel_event = threading.Event()
@@ -75,18 +87,22 @@ def show_wizard(parent_app, settings):
             if state["error"]:
                 if timer_ref[0]:
                     timer_ref[0].cancel()
-                
+
                 download_container.set_visibility(False)
                 welcome_container.set_visibility(False)
                 error_container.set_visibility(True)
-                
+
                 # Construct diagnostic messaging based on error type
                 err = state["error"]
                 if isinstance(err, DiskSpaceError):
                     error_diagnostic_label.set_text(
                         f"Diagnostic: Insufficient disk space on the target drive. Please clear some space and try again.\n(Details: {str(err)})"
                     )
-                elif "PermissionError" in str(err) or "denied" in str(err).lower() or "blocked" in str(err).lower():
+                elif (
+                    "PermissionError" in str(err)
+                    or "denied" in str(err).lower()
+                    or "blocked" in str(err).lower()
+                ):
                     error_diagnostic_label.set_text(
                         f"Diagnostic: External network connection was blocked. If a sandbox mode is active, please verify that downloaders can bypass sandbox restrictions.\n(Details: {str(err)})"
                     )
@@ -94,7 +110,7 @@ def show_wizard(parent_app, settings):
                     error_diagnostic_label.set_text(
                         f"Diagnostic: Network download timed out or connection failed. This usually indicates VPN/firewall restrictions or an incorrect proxy setup.\n(Details: {str(err)})"
                     )
-                
+
                 action_row_welcome.set_visibility(False)
                 action_row_download.set_visibility(False)
                 action_row_error.set_visibility(True)
@@ -127,10 +143,14 @@ def show_wizard(parent_app, settings):
                 if total > 0:
                     pct = (downloaded / total) * 100
                     state["progress"] = downloaded / total
-                    state["status_text"] = f"Downloaded {downloaded / (1024*1024):.2f}MB of {total / (1024*1024):.2f}MB ({pct:.1f}%)"
+                    state["status_text"] = (
+                        f"Downloaded {downloaded / (1024 * 1024):.2f}MB of {total / (1024 * 1024):.2f}MB ({pct:.1f}%)"
+                    )
                 else:
                     state["progress"] = 0.0
-                    state["status_text"] = f"Downloaded {downloaded / (1024*1024):.2f}MB..."
+                    state["status_text"] = (
+                        f"Downloaded {downloaded / (1024 * 1024):.2f}MB..."
+                    )
 
             def on_success():
                 state["success"] = True

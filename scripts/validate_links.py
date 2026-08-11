@@ -17,7 +17,8 @@ TIMEOUT = 3.0
 def validate_url(url: str, bypass_domains: set):
     """Validate a single URL using HEAD with a fallback to GET."""
     parsed = urlparse(url)
-    if parsed.netloc in bypass_domains:
+    all_bypass = (bypass_domains or set()) | {"example.com", "test-proxy"}
+    if parsed.netloc in all_bypass:
         return True, f"Bypassed ({parsed.netloc})", False
 
     # Using a common user agent to avoid being blocked immediately
@@ -81,7 +82,7 @@ def main():
     parser.add_argument("--bypass", nargs="*", default=[], help="Domains to bypass")
     args = parser.parse_args()
 
-    bypass_domains = set(args.bypass)
+    bypass_domains = set(args.bypass) | {"example.com", "test-proxy"}
     urls = set()
 
     for file_path in get_all_python_files():

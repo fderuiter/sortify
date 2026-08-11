@@ -342,30 +342,41 @@ def show_settings(parent_app, settings):
 
                 # Network Configuration Section
                 ui.label("Network Configuration").classes("text-lg font-bold mt-4 mb-2")
-                
-                proxy_input = ui.input(
-                    "Proxy Server (e.g. http://127.0.0.1:8080)",
-                    value=getattr(settings, "PROXY", "")
-                ).classes("w-full mb-2").props('aria-label="Proxy Input" placeholder="e.g. http://username:password@host:port"')
-                
+
+                proxy_input = (
+                    ui.input(
+                        "Proxy Server (e.g. http://127.0.0.1:8080)",
+                        value=getattr(settings, "PROXY", ""),
+                    )
+                    .classes("w-full mb-2")
+                    .props(
+                        'aria-label="Proxy Input" placeholder="e.g. http://username:password@host:port"'
+                    )
+                )
+
                 def save_proxy_settings():
                     settings.PROXY = proxy_input.value
                     ui.notify("Proxy settings updated.", type="positive")
-                
+
                 ui.button("Save Proxy Settings", on_click=save_proxy_settings).props(
                     'aria-label="Save Proxy Settings Button"'
                 )
 
                 # AI Model Acquisition Section
                 ui.label("AI Model Acquisition").classes("text-lg font-bold mt-4 mb-2")
-                
+
                 progress_container = ui.column().classes("w-full mt-2")
                 progress_container.set_visibility(False)
                 with progress_container:
-                    settings_progress_bar = ui.linear_progress(value=0).classes("w-full mb-1")
-                    settings_status_label = ui.label("").classes("text-sm text-gray-500 mb-2")
+                    settings_progress_bar = ui.linear_progress(value=0).classes(
+                        "w-full mb-1"
+                    )
+                    settings_status_label = ui.label("").classes(
+                        "text-sm text-gray-500 mb-2"
+                    )
 
                 import threading
+
                 cancel_event = threading.Event()
                 timer_ref = [None]
 
@@ -375,7 +386,10 @@ def show_settings(parent_app, settings):
                             timer_ref[0].cancel()
                         progress_container.set_visibility(False)
                         settings.AI_CONSENT_GRANTED = True
-                        ui.notify("Model download completed and verified successfully!", type="positive")
+                        ui.notify(
+                            "Model download completed and verified successfully!",
+                            type="positive",
+                        )
                         if hasattr(parent_app, "update_ai_warning"):
                             parent_app.update_ai_warning()
                         # Close setting dialog to refresh the parent UI
@@ -386,7 +400,9 @@ def show_settings(parent_app, settings):
                         if timer_ref[0]:
                             timer_ref[0].cancel()
                         progress_container.set_visibility(False)
-                        ui.notify(f"Download failed: {str(state['error'])}", type="negative")
+                        ui.notify(
+                            f"Download failed: {str(state['error'])}", type="negative"
+                        )
                         return
 
                     settings_progress_bar.set_value(state["progress"])
@@ -395,7 +411,7 @@ def show_settings(parent_app, settings):
                 def trigger_on_demand_download():
                     # Save proxy setting first
                     settings.PROXY = proxy_input.value
-                    
+
                     progress_container.set_visibility(True)
                     cancel_event.clear()
 
@@ -403,16 +419,20 @@ def show_settings(parent_app, settings):
                         "progress": 0.0,
                         "status_text": "Starting background download...",
                         "error": None,
-                        "success": False
+                        "success": False,
                     }
 
                     def progress_cb(downloaded, total):
                         if total > 0:
                             state["progress"] = downloaded / total
-                            state["status_text"] = f"Downloaded {downloaded / (1024*1024):.2f}MB of {total / (1024*1024):.2f}MB"
+                            state["status_text"] = (
+                                f"Downloaded {downloaded / (1024 * 1024):.2f}MB of {total / (1024 * 1024):.2f}MB"
+                            )
                         else:
                             state["progress"] = 0.0
-                            state["status_text"] = f"Downloaded {downloaded / (1024*1024):.2f}MB..."
+                            state["status_text"] = (
+                                f"Downloaded {downloaded / (1024 * 1024):.2f}MB..."
+                            )
 
                     def on_success():
                         state["success"] = True
@@ -421,7 +441,10 @@ def show_settings(parent_app, settings):
                         state["error"] = err
 
                     from app.config import get_app_dir
-                    from app.core.downloader import run_background_download, DEFAULT_MODEL_URL
+                    from app.core.downloader import (
+                        DEFAULT_MODEL_URL,
+                        run_background_download,
+                    )
 
                     model_dir = str(get_app_dir() / "model")
                     proxy_val = getattr(settings, "PROXY", "")
@@ -433,14 +456,16 @@ def show_settings(parent_app, settings):
                         progress_callback=progress_cb,
                         on_success=on_success,
                         on_failure=on_failure,
-                        cancel_event=cancel_event
+                        cancel_event=cancel_event,
                     )
 
-                    timer_ref[0] = ui.timer(0.1, lambda: update_settings_timer_tick(state))
+                    timer_ref[0] = ui.timer(
+                        0.1, lambda: update_settings_timer_tick(state)
+                    )
 
-                ui.button("Download AI Model", on_click=trigger_on_demand_download).props(
-                    'aria-label="Download AI Model Button"'
-                )
+                ui.button(
+                    "Download AI Model", on_click=trigger_on_demand_download
+                ).props('aria-label="Download AI Model Button"')
 
                 with ui.expansion("Advanced AI Settings", icon="psychology").classes(
                     "w-full mt-4"

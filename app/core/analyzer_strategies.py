@@ -859,11 +859,21 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                                         snippet = None
                                         if db and base_dir:
                                             try:
-                                                ex_doc = db.get_document(base_dir, ex["filepath"])
-                                                if ex_doc and ex_doc.get("extracted_text"):
-                                                    snippet = ex_doc["extracted_text"][:500].replace("\n", " ").strip()
+                                                ex_doc = db.get_document(
+                                                    base_dir, ex["filepath"]
+                                                )
+                                                if ex_doc and ex_doc.get(
+                                                    "extracted_text"
+                                                ):
+                                                    snippet = (
+                                                        ex_doc["extracted_text"][:500]
+                                                        .replace("\n", " ")
+                                                        .strip()
+                                                    )
                                             except Exception as e:
-                                                logging.error(f"Failed to fetch decrypted document snippet for semantic exemplar: {e}")
+                                                logging.error(
+                                                    f"Failed to fetch decrypted document snippet for semantic exemplar: {e}"
+                                                )
 
                                         if not snippet:
                                             snippet = os.path.basename(ex["filepath"])

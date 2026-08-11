@@ -2,7 +2,6 @@ import os
 import shutil
 import tempfile
 import threading
-import time
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -10,7 +9,6 @@ import pytest
 from app.core.downloader import (
     DiskSpaceError,
     DownloadCancelledError,
-    NetworkError,
     run_background_download,
     verify_downloaded_model,
 )
@@ -50,6 +48,7 @@ def test_verify_downloaded_model(temp_model_dir):
 def test_downloader_sandboxing_bypass(temp_model_dir):
     # Set thread local sandboxed to True globally to simulate sandbox mode
     from app.core.shared_registry import _thread_local
+
     was_sandboxed = getattr(_thread_local, "sandboxed", False)
     _thread_local.sandboxed = True
 
