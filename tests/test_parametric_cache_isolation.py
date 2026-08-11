@@ -36,7 +36,7 @@ def test_parametric_cache_isolation_selective_vs_global(tmp_path):
         # Keep the thread alive until told to stop
         active_thread_stop.wait()
 
-    t_active = threading.Thread(target=run_active_thread)
+    t_active = threading.Thread(target=run_active_thread, daemon=True)
     t_active.start()
     active_thread_ready.wait()
 
@@ -89,7 +89,7 @@ def test_parametric_cache_isolation_selective_vs_global(tmp_path):
         except Exception:
             query_failed.set()
 
-    t_query = threading.Thread(target=run_query_on_active_thread)
+    t_query = threading.Thread(target=run_query_on_active_thread, daemon=True)
     t_query.start()
     t_query.join()
     assert query_success.is_set()
@@ -158,7 +158,7 @@ def test_global_clear_connection_cache_closes_all_connections(tmp_path):
         ready.set()
         stop_event.wait()
 
-    t = threading.Thread(target=thread_run)
+    t = threading.Thread(target=thread_run, daemon=True)
     t.start()
     ready.wait()
 
