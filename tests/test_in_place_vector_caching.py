@@ -40,6 +40,7 @@ def temp_env():
     finally:
         db_worker.stop()
         from app.core.db_conn import clear_connection_cache
+
         clear_connection_cache()
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
@@ -56,18 +57,35 @@ def test_in_place_vector_caching_during_similarity(temp_env):
     # 1. Populating historical documents (with user_verified_target_path)
     # This ensures similarity matching is active
     historical_docs = [
-        (base_dir, "historical_doc1.txt", "hash_hist1", "consulting python web app development invoice"),
-        (base_dir, "historical_doc2.txt", "hash_hist2", "receipt from restaurant dinner pizza wings"),
+        (
+            base_dir,
+            "historical_doc1.txt",
+            "hash_hist1",
+            "consulting python web app development invoice",
+        ),
+        (
+            base_dir,
+            "historical_doc2.txt",
+            "hash_hist2",
+            "receipt from restaurant dinner pizza wings",
+        ),
     ]
     db.upsert_documents(historical_docs)
-    db.execute_batch_updates([
-        {"type": "verified_target", "args": (base_dir, "hash_hist1", "Consulting")},
-        {"type": "verified_target", "args": (base_dir, "hash_hist2", "Pizza")},
-    ])
+    db.execute_batch_updates(
+        [
+            {"type": "verified_target", "args": (base_dir, "hash_hist1", "Consulting")},
+            {"type": "verified_target", "args": (base_dir, "hash_hist2", "Pizza")},
+        ]
+    )
 
     # 2. Populating active documents (with NO target folder)
     active_docs = [
-        (base_dir, "active_doc1.txt", "hash_active1", "python consulting services invoice"),
+        (
+            base_dir,
+            "active_doc1.txt",
+            "hash_active1",
+            "python consulting services invoice",
+        ),
         (base_dir, "active_doc2.txt", "hash_active2", "restaurant pizza wings order"),
     ]
     db.upsert_documents(active_docs)
@@ -86,6 +104,7 @@ def test_in_place_vector_caching_during_similarity(temp_env):
 
     # Set up mocks for transformers and get_active_model_properties
     import sys
+
     mock_transformers = MagicMock()
     mock_transformers.AutoTokenizer.from_pretrained.side_effect = OSError(
         "Mock tokenizer missing for lazy caching test"

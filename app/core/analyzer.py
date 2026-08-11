@@ -398,7 +398,11 @@ class IncrementalAnalyzer:
                                 ):
                                     ai_vectors.append(v)
                                 else:
-                                    generated_v = self.embedding_manager.generate_embedding(doc_text)
+                                    generated_v = (
+                                        self.embedding_manager.generate_embedding(
+                                            doc_text
+                                        )
+                                    )
                                     if not self.embedding_manager.validate_vector_dimension(
                                         generated_v
                                     ):

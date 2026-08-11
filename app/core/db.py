@@ -269,14 +269,18 @@ class Database:
                     target_path = row[0] if row else None
                     if target_path:
                         if self._is_tfidf_eligible(filepath, extracted_text):
-                            self._update_tfidf_for_document_conn(conn, base_dir, filepath, extracted_text, True)
+                            self._update_tfidf_for_document_conn(
+                                conn, base_dir, filepath, extracted_text, True
+                            )
                         else:
                             cursor = conn.execute(
                                 "SELECT 1 FROM tfidf_doc_terms WHERE base_dir = ? AND filepath = ? LIMIT 1",
                                 (base_dir, filepath),
                             )
                             if cursor.fetchone() is not None:
-                                self._update_tfidf_for_document_conn(conn, base_dir, filepath, None, False)
+                                self._update_tfidf_for_document_conn(
+                                    conn, base_dir, filepath, None, False
+                                )
             self.invalidate_cache()
 
         self.worker.execute_write(_write)
@@ -338,7 +342,9 @@ class Database:
                     (target_path, base_dir, file_hash),
                 )
                 for fp in filepaths:
-                    self._update_tfidf_on_verified_target_change(conn, base_dir, fp, target_path)
+                    self._update_tfidf_on_verified_target_change(
+                        conn, base_dir, fp, target_path
+                    )
 
         self.worker.execute_write_async(_write)
 
@@ -356,7 +362,9 @@ class Database:
                 )
                 was_in = cursor.fetchone() is not None
                 if was_in:
-                    self._update_tfidf_for_document_conn(conn, base_dir, filepath, None, False)
+                    self._update_tfidf_for_document_conn(
+                        conn, base_dir, filepath, None, False
+                    )
                 conn.execute(
                     "DELETE FROM documents WHERE base_dir = ? AND filepath = ?",
                     (base_dir, filepath),
@@ -412,8 +420,12 @@ class Database:
                                 decrypted_text = self.crypto.decrypt_text(row[0])
                             except Exception:
                                 decrypted_text = None
-                            if decrypted_text and self._is_tfidf_eligible(new_filepath, decrypted_text):
-                                self._update_tfidf_for_document_conn(conn, base_dir, new_filepath, decrypted_text, True)
+                            if decrypted_text and self._is_tfidf_eligible(
+                                new_filepath, decrypted_text
+                            ):
+                                self._update_tfidf_for_document_conn(
+                                    conn, base_dir, new_filepath, decrypted_text, True
+                                )
 
         self.worker.execute_write_async(_write)
 
@@ -437,7 +449,9 @@ class Database:
                     "UPDATE documents SET user_verified_target_path = ? WHERE base_dir = ? AND filepath = ?",
                     (target_path, base_dir, filepath),
                 )
-                self._update_tfidf_on_verified_target_change(conn, base_dir, filepath, target_path)
+                self._update_tfidf_on_verified_target_change(
+                    conn, base_dir, filepath, target_path
+                )
 
         self.worker.execute_write_async(_write)
 
@@ -452,7 +466,9 @@ class Database:
             return False
         return True
 
-    def _update_tfidf_on_verified_target_change(self, conn, base_dir, filepath, target_path):
+    def _update_tfidf_on_verified_target_change(
+        self, conn, base_dir, filepath, target_path
+    ):
         filepath = filepath.replace("\\", "/")
         if target_path:
             cursor = conn.execute(
@@ -471,8 +487,12 @@ class Database:
                         decrypted_text = self.crypto.decrypt_text(row[0])
                     except Exception:
                         decrypted_text = None
-                    if decrypted_text and self._is_tfidf_eligible(filepath, decrypted_text):
-                        self._update_tfidf_for_document_conn(conn, base_dir, filepath, decrypted_text, True)
+                    if decrypted_text and self._is_tfidf_eligible(
+                        filepath, decrypted_text
+                    ):
+                        self._update_tfidf_for_document_conn(
+                            conn, base_dir, filepath, decrypted_text, True
+                        )
         else:
             cursor = conn.execute(
                 "SELECT 1 FROM tfidf_doc_terms WHERE base_dir = ? AND filepath = ? LIMIT 1",
@@ -480,9 +500,19 @@ class Database:
             )
             was_in = cursor.fetchone() is not None
             if was_in:
-                self._update_tfidf_for_document_conn(conn, base_dir, filepath, None, False)
+                self._update_tfidf_for_document_conn(
+                    conn, base_dir, filepath, None, False
+                )
 
-    def _update_tfidf_for_document_conn(self, conn, base_dir, filepath, text, is_added_or_updated: bool, stop_words_list=None):
+    def _update_tfidf_for_document_conn(
+        self,
+        conn,
+        base_dir,
+        filepath,
+        text,
+        is_added_or_updated: bool,
+        stop_words_list=None,
+    ):
         filepath = filepath.replace("\\", "/")
         cursor = conn.execute(
             "SELECT term, tf FROM tfidf_doc_terms WHERE base_dir = ? AND filepath = ?",
@@ -492,6 +522,7 @@ class Database:
 
         if is_added_or_updated:
             from collections import Counter
+
             from sklearn.feature_extraction.text import TfidfVectorizer
 
             if stop_words_list is None:
@@ -503,8 +534,10 @@ class Database:
                 tokens = analyzer(text)
             except Exception:
                 import re
-                tokens = re.findall(r'\b\w\w+\b', text.lower())
+
+                tokens = re.findall(r"\b\w\w+\b", text.lower())
                 from sklearn.feature_extraction import text as sklearn_text
+
                 stops = set(sklearn_text.ENGLISH_STOP_WORDS)
                 if isinstance(stop_words_list, str) and stop_words_list == "english":
                     tokens = [t for t in tokens if t not in stops]
@@ -598,7 +631,9 @@ class Database:
 
         self.worker.execute_write_async(_write)
 
-    def set_document_rating_by_hash(self, base_dir: str, file_hash: str, rating: str | None):
+    def set_document_rating_by_hash(
+        self, base_dir: str, file_hash: str, rating: str | None
+    ):
         """Record the quality feedback rating associated with a document hash."""
 
         def _write():
@@ -656,7 +691,9 @@ class Database:
                             (target_path, base_dir, file_hash),
                         )
                         for fp in filepaths:
-                            self._update_tfidf_on_verified_target_change(conn, base_dir, fp, target_path)
+                            self._update_tfidf_on_verified_target_change(
+                                conn, base_dir, fp, target_path
+                            )
                     elif item["type"] == "document_path":
                         base_dir, old_filepath, new_filepath = item["args"]
                         old_filepath = old_filepath.replace("\\", "/")
@@ -687,11 +724,21 @@ class Database:
                                 row = cursor.fetchone()
                                 if row and row[0]:
                                     try:
-                                        decrypted_text = self.crypto.decrypt_text(row[0])
+                                        decrypted_text = self.crypto.decrypt_text(
+                                            row[0]
+                                        )
                                     except Exception:
                                         decrypted_text = None
-                                    if decrypted_text and self._is_tfidf_eligible(new_filepath, decrypted_text):
-                                        self._update_tfidf_for_document_conn(conn, base_dir, new_filepath, decrypted_text, True)
+                                    if decrypted_text and self._is_tfidf_eligible(
+                                        new_filepath, decrypted_text
+                                    ):
+                                        self._update_tfidf_for_document_conn(
+                                            conn,
+                                            base_dir,
+                                            new_filepath,
+                                            decrypted_text,
+                                            True,
+                                        )
             self.invalidate_cache()
 
         self.worker.execute_write(_write)
@@ -754,7 +801,9 @@ class Database:
                 "SELECT filepath, user_verified_target_path FROM documents WHERE base_dir = ? AND user_verified_target_path IS NOT NULL AND user_verified_target_path != ''",
                 (base_dir,),
             )
-            doc_metadata = {row[0].replace("\\", "/"): row[1] for row in cursor.fetchall()}
+            doc_metadata = {
+                row[0].replace("\\", "/"): row[1] for row in cursor.fetchall()
+            }
 
             return N, top_terms, doc_terms, doc_metadata
 
