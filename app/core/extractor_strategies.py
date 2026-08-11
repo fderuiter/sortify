@@ -251,17 +251,17 @@ class AudioExtractor:
         Reads the output stream in real time, parses timestamps/percentages for
         intra-file progress, and allows immediate thread-safe cancellation.
         """
+        import logging
+        import os
         import queue
         import re
-        import subprocess
-        import threading
-        import os
         import shutil
+        import subprocess
         import tempfile
+        import threading
         import wave
-        import logging
 
-        from app.core.env_helper import spawn_background_process, run_background_process
+        from app.core.env_helper import run_background_process, spawn_background_process
 
         def is_compliant_wav(path: str) -> bool:
             if not path.lower().endswith(".wav"):
@@ -306,7 +306,9 @@ class AudioExtractor:
                     transcoded_path,
                 ]
 
-                logging.info(f"Invoking background FFmpeg command to transcode audio: {' '.join(ffmpeg_cmd)}")
+                logging.info(
+                    f"Invoking background FFmpeg command to transcode audio: {' '.join(ffmpeg_cmd)}"
+                )
                 try:
                     res = run_background_process(
                         ffmpeg_cmd,
@@ -315,7 +317,9 @@ class AudioExtractor:
                         text=True,
                     )
                     if res.returncode != 0:
-                        logging.error(f"FFmpeg transcoding failed (code {res.returncode}): {res.stderr}")
+                        logging.error(
+                            f"FFmpeg transcoding failed (code {res.returncode}): {res.stderr}"
+                        )
                         return f"[STATUS:ERROR: FFmpeg transcoding failed: {res.stderr.strip()}]"
                 except Exception as e:
                     logging.error(f"FFmpeg process execution failed: {e}")
@@ -340,7 +344,14 @@ class AudioExtractor:
                     "cpu",
                 ]
             else:
-                cmd = [whisper_cmd, target_file_path, "--output_format", "txt", "--device", "cpu"]
+                cmd = [
+                    whisper_cmd,
+                    target_file_path,
+                    "--output_format",
+                    "txt",
+                    "--device",
+                    "cpu",
+                ]
 
             cmd = [str(arg) for arg in cmd]
             logging.info(f"Launching Whisper subprocess: {' '.join(cmd)}")
@@ -356,7 +367,9 @@ class AudioExtractor:
                     bufsize=1,
                 )
             except FileNotFoundError:
-                logging.error(f"Whisper executable '{whisper_cmd}' not found on system.")
+                logging.error(
+                    f"Whisper executable '{whisper_cmd}' not found on system."
+                )
                 return f"[STATUS:ERROR: Whisper model offline or '{whisper_cmd}' not found]"
             except Exception as e:
                 logging.error(f"Failed to spawn Whisper process: {e}")
@@ -396,7 +409,9 @@ class AudioExtractor:
                 while True:
                     # 1. Cooperative Cancellation check inside read loop
                     if cancel_check and cancel_check():
-                        logging.info("Cancellation requested, terminating Whisper process.")
+                        logging.info(
+                            "Cancellation requested, terminating Whisper process."
+                        )
                         try:
                             process.terminate()
                         except Exception as e:
@@ -406,7 +421,7 @@ class AudioExtractor:
                         except subprocess.TimeoutExpired:
                             logging.warning(
                                 "Whisper process did not terminate, forcing kill."
-                              )
+                            )
                             try:
                                 process.kill()
                             except Exception as e:
@@ -466,7 +481,9 @@ class AudioExtractor:
                                     current_sec = (
                                         int(m) * 60 + int(s) + int(ms) / (10 ** len(ms))
                                     )
-                                    val = min(1.0, max(0.0, current_sec / total_duration))
+                                    val = min(
+                                        1.0, max(0.0, current_sec / total_duration)
+                                    )
                                     if progress_callback:
                                         progress_callback(val)
                                 except Exception:
@@ -485,7 +502,9 @@ class AudioExtractor:
                     logging.error(
                         f"Whisper process failed with return code {process.returncode}"
                     )
-                    return f"[STATUS:ERROR: Whisper failed with code {process.returncode}]"
+                    return (
+                        f"[STATUS:ERROR: Whisper failed with code {process.returncode}]"
+                    )
 
             except Exception as e:
                 logging.error(f"Error during Whisper transcription execution: {e}")
@@ -497,9 +516,13 @@ class AudioExtractor:
             if transcoded_path and os.path.exists(transcoded_path):
                 try:
                     os.remove(transcoded_path)
-                    logging.info(f"Successfully cleaned up temporary transcoded file: {transcoded_path}")
+                    logging.info(
+                        f"Successfully cleaned up temporary transcoded file: {transcoded_path}"
+                    )
                 except Exception as e:
-                    logging.warning(f"Failed to remove temporary transcoded file {transcoded_path}: {e}")
+                    logging.warning(
+                        f"Failed to remove temporary transcoded file {transcoded_path}: {e}"
+                    )
 
 
 class ExtractorRegistry:
