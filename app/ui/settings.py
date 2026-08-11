@@ -207,6 +207,79 @@ def show_settings(parent_app, settings):
                     on_change=on_max_folders_change,
                 ).props('aria-label="Max folders input"')
 
+                with ui.expansion("Advanced Settings", icon="settings").classes(
+                    "w-full mt-4"
+                ):
+                    ui.label("Ingestion Performance & Timeouts").classes(
+                        "text-md font-bold mb-2"
+                    )
+
+                    def on_worker_change(e):
+                        val = (
+                            int(e.value)
+                            if e.value is not None
+                            else settings.MAX_WORKERS
+                        )
+                        if val == settings.MAX_WORKERS:
+                            return
+                        try:
+                            settings.MAX_WORKERS = val
+                        except Exception as ex:
+                            e.sender.value = settings.MAX_WORKERS
+                            ui.notify(f"Invalid workers: {ex}", type="negative")
+
+                    ui.label("Worker Concurrency Limit").classes(
+                        "text-sm text-gray-700 mt-2"
+                    )
+                    with ui.row().classes("w-full items-center gap-4"):
+                        worker_slider = (
+                            ui.slider(
+                                min=1,
+                                max=64,
+                                value=settings.MAX_WORKERS,
+                                step=1,
+                                on_change=on_worker_change,
+                            )
+                            .props('aria-label="Worker Concurrency Limit" label')
+                            .classes("flex-grow")
+                        )
+                        ui.label().bind_text_from(
+                            worker_slider, "value", backward=lambda v: f"{int(v)}"
+                        )
+
+                    def on_timeout_change(e):
+                        val = (
+                            int(e.value)
+                            if e.value is not None
+                            else settings.VISUAL_TIMEOUT
+                        )
+                        if val == settings.VISUAL_TIMEOUT:
+                            return
+                        try:
+                            settings.VISUAL_TIMEOUT = val
+                        except Exception as ex:
+                            e.sender.value = settings.VISUAL_TIMEOUT
+                            ui.notify(f"Invalid timeout: {ex}", type="negative")
+
+                    ui.label("Visual Layout Timeout (seconds)").classes(
+                        "text-sm text-gray-700 mt-4"
+                    )
+                    with ui.row().classes("w-full items-center gap-4"):
+                        timeout_slider = (
+                            ui.slider(
+                                min=1,
+                                max=300,
+                                value=settings.VISUAL_TIMEOUT,
+                                step=1,
+                                on_change=on_timeout_change,
+                            )
+                            .props('aria-label="Visual Layout Timeout" label')
+                            .classes("flex-grow")
+                        )
+                        ui.label().bind_text_from(
+                            timeout_slider, "value", backward=lambda v: f"{int(v)}"
+                        )
+
             with ui.tab_panel("AI"):
                 ui.label("Privacy Options").classes("text-lg font-bold mb-2")
                 ui.label("AI processing is fully offline.").classes(
@@ -266,6 +339,112 @@ def show_settings(parent_app, settings):
                 ui.button("Reset Model Cache", on_click=reset_model_cache).props(
                     'aria-label="Reset Model Cache Button"'
                 )
+
+                with ui.expansion("Advanced AI Settings", icon="psychology").classes(
+                    "w-full mt-4"
+                ):
+                    ui.label("Resource & Ingestion Thresholds").classes(
+                        "text-md font-bold mb-2"
+                    )
+
+                    def on_threads_change(e):
+                        val = (
+                            int(e.value)
+                            if e.value is not None
+                            else settings.MODEL_THREADS
+                        )
+                        if val == settings.MODEL_THREADS:
+                            return
+                        try:
+                            settings.MODEL_THREADS = val
+                        except Exception as ex:
+                            e.sender.value = settings.MODEL_THREADS
+                            ui.notify(f"Invalid threads: {ex}", type="negative")
+
+                    ui.label("ML Thread Count").classes("text-sm text-gray-700 mt-2")
+                    with ui.row().classes("w-full items-center gap-4"):
+                        threads_slider = (
+                            ui.slider(
+                                min=1,
+                                max=32,
+                                value=settings.MODEL_THREADS,
+                                step=1,
+                                on_change=on_threads_change,
+                            )
+                            .props('aria-label="ML Thread Count" label')
+                            .classes("flex-grow")
+                        )
+                        ui.label().bind_text_from(
+                            threads_slider, "value", backward=lambda v: f"{int(v)}"
+                        )
+
+                    def on_img_dim_change(e):
+                        val = (
+                            int(e.value)
+                            if e.value is not None
+                            else settings.IMAGE_MAX_DIMENSION
+                        )
+                        if val == settings.IMAGE_MAX_DIMENSION:
+                            return
+                        try:
+                            settings.IMAGE_MAX_DIMENSION = val
+                        except Exception as ex:
+                            e.sender.value = settings.IMAGE_MAX_DIMENSION
+                            ui.notify(f"Invalid image dimension: {ex}", type="negative")
+
+                    ui.label("Image Max Dimension (pixels)").classes(
+                        "text-sm text-gray-700 mt-4"
+                    )
+                    with ui.row().classes("w-full items-center gap-4"):
+                        img_dim_slider = (
+                            ui.slider(
+                                min=1,
+                                max=5000,
+                                value=settings.IMAGE_MAX_DIMENSION,
+                                step=1,
+                                on_change=on_img_dim_change,
+                            )
+                            .props('aria-label="Image Max Dimension" label')
+                            .classes("flex-grow")
+                        )
+                        ui.label().bind_text_from(
+                            img_dim_slider, "value", backward=lambda v: f"{int(v)}"
+                        )
+
+                    def on_img_skip_change(e):
+                        val = (
+                            int(e.value)
+                            if e.value is not None
+                            else settings.IMAGE_SKIP_THRESHOLD
+                        )
+                        if val == settings.IMAGE_SKIP_THRESHOLD:
+                            return
+                        try:
+                            settings.IMAGE_SKIP_THRESHOLD = val
+                        except Exception as ex:
+                            e.sender.value = settings.IMAGE_SKIP_THRESHOLD
+                            ui.notify(
+                                f"Invalid image skip threshold: {ex}", type="negative"
+                            )
+
+                    ui.label("Image Skip Threshold").classes(
+                        "text-sm text-gray-700 mt-4"
+                    )
+                    with ui.row().classes("w-full items-center gap-4"):
+                        img_skip_slider = (
+                            ui.slider(
+                                min=1,
+                                max=10000,
+                                value=settings.IMAGE_SKIP_THRESHOLD,
+                                step=1,
+                                on_change=on_img_skip_change,
+                            )
+                            .props('aria-label="Image Skip Threshold" label')
+                            .classes("flex-grow")
+                        )
+                        ui.label().bind_text_from(
+                            img_skip_slider, "value", backward=lambda v: f"{int(v)}"
+                        )
 
             with ui.tab_panel("Rules"):
                 ui.label("Keyword Routing").classes("text-lg font-bold mb-2")
