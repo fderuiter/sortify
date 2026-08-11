@@ -16,6 +16,66 @@ import keyring
 from cryptography.fernet import Fernet
 
 
+def get_fallback_keys_dir() -> Path:
+    """Get the centralized fallback key store directory based on OS.
+
+    Windows: %APPDATA%/Sortify/keys
+    POSIX: ~/.sortify/keys
+    """
+    if os.name == "nt":
+        appdata = os.environ.get("APPDATA")
+        if appdata:
+            return Path(appdata) / "Sortify" / "keys"
+
+    # Non-Windows or APPDATA not defined on Windows
+    home = os.environ.get("HOME") or os.environ.get("USERPROFILE")
+    if not home:
+        try:
+            home = str(Path.home())
+        except Exception:
+            home = os.path.expanduser("~")
+    return Path(home) / ".sortify" / "keys"
+
+
+def secure_delete_file(file_path: Path):
+    """Overwrite a file with zeros and delete it securely."""
+    if not file_path.exists():
+        return
+    try:
+        if file_path.is_file():
+            size = file_path.stat().st_size
+            if size > 0:
+                with open(file_path, "wb") as f:
+                    f.write(b"\x00" * size)
+                    f.flush()
+                    try:
+                        os.fsync(f.fileno())
+                    except Exception:
+                        pass
+            file_path.unlink()
+    except Exception:
+        try:
+            file_path.unlink()
+        except Exception:
+            pass
+
+
+def secure_delete_dir(dir_path: Path):
+    """Recursively secure delete files in a directory and then delete the directory."""
+    if not dir_path.exists():
+        return
+    try:
+        for item in list(dir_path.iterdir()):
+            if item.is_file():
+                secure_delete_file(item)
+            elif item.is_dir():
+                secure_delete_dir(item)
+        dir_path.rmdir()
+    except Exception:
+        import shutil
+        shutil.rmtree(dir_path, ignore_errors=True)
+
+
 class SessionCrypto:
     """Manages encryption and decryption of data per session."""
 
@@ -27,8 +87,14 @@ class SessionCrypto:
         self.keyring_service = "AutoSorter"
         db_hash = hashlib.md5(str(self.db_path).encode("utf-8")).hexdigest()
         self.keyring_account = f"DatabaseDecryptionKey_{db_hash}"
-        self.isolated_dir = self.db_path.parent / ".keys"
-        self.isolated_key_path = self.isolated_dir / f"{self.db_path.name}.key"
+        
+        # Centralized key store location under user's home directory / APPDATA
+        self.isolated_dir = get_fallback_keys_dir()
+        self.isolated_key_path = self.isolated_dir / f"{self.db_path.name}_{db_hash}.key"
+        
+        # Legacy key paths for migration
+        self.legacy_isolated_dir = self.db_path.parent / ".keys"
+        self.legacy_isolated_key_path = self.legacy_isolated_dir / f"{self.db_path.name}.key"
 
     def get_cipher(self):
         """Get or initialize the Fernet cipher instance."""
@@ -45,7 +111,7 @@ class SessionCrypto:
         except Exception:
             pass
 
-        # 2. Isolated Fallback Key Lookup
+        # 2. Centralized Fallback Key Lookup
         if key is None and self.isolated_key_path.exists():
             try:
                 with open(self.isolated_key_path, "rb") as f:
@@ -53,45 +119,78 @@ class SessionCrypto:
             except Exception:
                 pass
 
-        # 3. Legacy Fallback Migration
-        if key is None and self.key_path.exists():
+        # 3. Legacy Fallback Migration and Cleanup
+        legacy_key = None
+        if self.legacy_isolated_key_path.exists():
+            try:
+                with open(self.legacy_isolated_key_path, "rb") as f:
+                    legacy_key = f.read().strip()
+            except Exception:
+                pass
+
+        if legacy_key is None and self.legacy_isolated_dir.exists() and self.legacy_isolated_dir.is_dir():
+            try:
+                for p in self.legacy_isolated_dir.iterdir():
+                    if p.is_file() and p.suffix == ".key":
+                        try:
+                            with open(p, "rb") as f:
+                                legacy_key = f.read().strip()
+                                if legacy_key:
+                                    break
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+
+        if legacy_key is None and self.key_path.exists():
             try:
                 with open(self.key_path, "rb") as f:
                     legacy_key = f.read().strip()
-                if legacy_key:
-                    # Write/copy to isolated fallback key path
-                    self.isolated_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
-                    try:
-                        os.chmod(self.isolated_dir, 0o700)
-                    except Exception:
-                        pass
+            except Exception:
+                pass
 
-                    try:
-                        fd = os.open(
-                            str(self.isolated_key_path),
-                            os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
-                            0o600,
-                        )
-                        with os.fdopen(fd, "wb") as f:
-                            f.write(legacy_key)
-                    except Exception:
-                        with open(self.isolated_key_path, "wb") as f:
-                            f.write(legacy_key)
-                        try:
-                            os.chmod(self.isolated_key_path, 0o600)
-                        except Exception:
-                            pass
-                    key = legacy_key
+        if legacy_key:
+            # If we didn't find a key in the keyring or centralized store, use the legacy key.
+            if key is None:
+                key = legacy_key
 
-                    # Try to migrate to keyring
-                    try:
-                        keyring.set_password(
-                            self.keyring_service,
-                            self.keyring_account,
-                            key.decode("utf-8"),
-                        )
-                    except Exception:
-                        pass
+            # Write/copy to the centralized fallback key path
+            self.isolated_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+            try:
+                os.chmod(self.isolated_dir, 0o700)
+            except Exception:
+                pass
+
+            try:
+                fd = os.open(
+                    str(self.isolated_key_path),
+                    os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+                    0o600,
+                )
+                with os.fdopen(fd, "wb") as f:
+                    f.write(legacy_key)
+            except Exception:
+                with open(self.isolated_key_path, "wb") as f:
+                    f.write(legacy_key)
+                try:
+                    os.chmod(self.isolated_key_path, 0o600)
+                except Exception:
+                    pass
+
+            # Try to migrate to keyring
+            try:
+                keyring.set_password(
+                    self.keyring_service,
+                    self.keyring_account,
+                    legacy_key.decode("utf-8"),
+                )
+            except Exception:
+                pass
+
+        # Always clean up legacy fallback keys if they exist (even if they weren't used to load the key)
+        if self.legacy_isolated_dir.exists():
+            try:
+                secure_delete_dir(self.legacy_isolated_dir)
             except Exception:
                 pass
 
