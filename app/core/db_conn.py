@@ -62,22 +62,45 @@ _cache_lock = threading.Lock()
 _disable_pytest_win_fallback = False
 
 
-def clear_connection_cache():
-    """Clear all cached database connections."""
+def clear_connection_cache(only_current_and_inactive: bool = True):
+    """Clear cached database connections, selectively or globally."""
     global _connection_cache
     import gc
 
     with _cache_lock:
-        for k, conn in _connection_cache.items():
-            try:
+        if only_current_and_inactive:
+            calling_thread_id = threading.get_ident()
+            active_thread_ids = {t.ident for t in threading.enumerate()}
+            
+            # Identify which keys to remove
+            keys_to_remove = []
+            for key in list(_connection_cache.keys()):
+                _, thread_id = key
+                if thread_id == calling_thread_id or thread_id not in active_thread_ids:
+                    keys_to_remove.append(key)
+            
+            for key in keys_to_remove:
+                conn = _connection_cache.pop(key, None)
+                if conn:
+                    try:
+                        try:
+                            conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                        except Exception:
+                            pass
+                        conn.close()
+                    except Exception:
+                        pass
+        else:
+            for k, conn in _connection_cache.items():
                 try:
-                    conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                    try:
+                        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                    except Exception:
+                        pass
+                    conn.close()
                 except Exception:
                     pass
-                conn.close()
-            except Exception:
-                pass
-        _connection_cache.clear()
+            _connection_cache.clear()
     gc.collect()
 
 
