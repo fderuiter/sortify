@@ -840,7 +840,18 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                                     for ex_idx, (ex, sim) in enumerate(top_examples):
                                         import os
 
-                                        snippet = os.path.basename(ex["filepath"])
+                                        snippet = None
+                                        if db and base_dir:
+                                            try:
+                                                ex_doc = db.get_document(base_dir, ex["filepath"])
+                                                if ex_doc and ex_doc.get("extracted_text"):
+                                                    snippet = ex_doc["extracted_text"][:500].replace("\n", " ").strip()
+                                            except Exception as e:
+                                                logging.error(f"Failed to fetch decrypted document snippet for semantic exemplar: {e}")
+
+                                        if not snippet:
+                                            snippet = os.path.basename(ex["filepath"])
+
                                         folder_name = ex["user_verified_target_path"]
                                         few_shot_lines.append(
                                             f"Example {ex_idx + 1}:\nDocument: {snippet}\nFolder Name: {folder_name}"
