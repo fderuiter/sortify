@@ -12,13 +12,15 @@ from urllib.parse import urlparse
 
 URL_REGEX = re.compile(r'https?://[^\s\'"<>]+')
 TIMEOUT = 3.0
+DEFAULT_BYPASS_DOMAINS = {"example.com", "test-proxy"}
 
 
-def validate_url(url: str, bypass_domains: set):
+def validate_url(url: str, bypass_domains: set = None):
     """Validate a single URL using HEAD with a fallback to GET."""
     parsed = urlparse(url)
-    all_bypass = (bypass_domains or set()) | {"example.com", "test-proxy"}
-    if parsed.netloc in all_bypass:
+    bypass_set = bypass_domains or set()
+    hostname = parsed.hostname or parsed.netloc
+    if parsed.netloc in bypass_set or hostname in bypass_set:
         return True, f"Bypassed ({parsed.netloc})", False
 
     # Using a common user agent to avoid being blocked immediately
@@ -82,7 +84,7 @@ def main():
     parser.add_argument("--bypass", nargs="*", default=[], help="Domains to bypass")
     args = parser.parse_args()
 
-    bypass_domains = set(args.bypass) | {"example.com", "test-proxy"}
+    bypass_domains = set(args.bypass) | DEFAULT_BYPASS_DOMAINS
     urls = set()
 
     for file_path in get_all_python_files():
