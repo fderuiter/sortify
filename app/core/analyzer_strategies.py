@@ -797,7 +797,8 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
 
                                 if vector_str:
                                     try:
-                                        v = json.loads(vector_str)
+                                        decrypted_vector_str = db.crypto.decrypt_text(vector_str)
+                                        v = json.loads(decrypted_vector_str)
                                         if embedding_manager.validate_vector_dimension(
                                             v
                                         ):

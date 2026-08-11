@@ -238,32 +238,35 @@ class SemanticEmbeddingManager:
         )
 
         try:
-            while True:
-                with self._lock:
-                    if self._stop_requested:
-                        break
-                # Memory Footprint Throttling: load no more than 50 records at once
-                docs = self.db.get_documents_missing_vectors(
-                    base_dir, limit=50, offset=0
-                )
-                if not docs:
-                    break
+            from app.core.shared_registry import block_external_network
 
-                batch = []
-                for filepath, text in docs:
+            with block_external_network(reason="background vector reconstruction"):
+                while True:
                     with self._lock:
                         if self._stop_requested:
                             break
-                    vector = self.generate_embedding(text)
-                    batch.append((filepath, vector))
-
-                with self._lock:
-                    if self._stop_requested:
+                    # Memory Footprint Throttling: load no more than 50 records at once
+                    docs = self.db.get_documents_missing_vectors(
+                        base_dir, limit=50, offset=0
+                    )
+                    if not docs:
                         break
-                self.db.upsert_document_vectors(base_dir, batch)
 
-                # Cooperative pause to ensure UI thread remains highly responsive
-                time.sleep(0.02)
+                    batch = []
+                    for filepath, text in docs:
+                        with self._lock:
+                            if self._stop_requested:
+                                break
+                        vector = self.generate_embedding(text)
+                        batch.append((filepath, vector))
+
+                    with self._lock:
+                        if self._stop_requested:
+                            break
+                    self.db.upsert_document_vectors(base_dir, batch)
+
+                    # Cooperative pause to ensure UI thread remains highly responsive
+                    time.sleep(0.02)
         except Exception as e:
             logging.error(f"Error during background vector reconstruction: {e}")
         finally:
