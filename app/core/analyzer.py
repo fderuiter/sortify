@@ -35,6 +35,7 @@ class IncrementalAnalyzer:
         if self.model_path is _UNSPECIFIED:
             self.model_path = None
             import sys
+
             if hasattr(sys, "_MEIPASS"):
                 mei_bundle_path = os.path.join(sys._MEIPASS, "offline_bundle", "model")
                 if os.path.exists(mei_bundle_path):
@@ -47,7 +48,9 @@ class IncrementalAnalyzer:
                 try:
                     base_path = get_base_path(__file__)
                 except Exception:
-                    base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                    base_path = os.path.dirname(
+                        os.path.dirname(os.path.abspath(__file__))
+                    )
                 local_bundle_path = os.path.join(base_path, "offline_bundle", "model")
                 try:
                     user_bundle_path = str(get_app_dir() / "model")

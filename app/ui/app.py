@@ -659,6 +659,7 @@ class AutoSorterApp:
         user_model_dir = get_app_dir() / "model"
 
         import sys
+
         has_mei_model = False
         if hasattr(sys, "_MEIPASS"):
             mei_model_dir = os.path.join(sys._MEIPASS, "offline_bundle", "model")

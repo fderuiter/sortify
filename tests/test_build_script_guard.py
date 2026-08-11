@@ -45,6 +45,7 @@ def test_build_script_standard_all_present():
         with (
             patch("importlib.util.find_spec") as mock_find_spec,
             patch("sys.exit", side_effect=SystemExit) as mock_exit,
+            patch("scripts.build.download_and_prepare_weights") as mock_download,
         ):
             # All find_spec calls return a valid spec
             mock_spec = MagicMock()
@@ -60,6 +61,7 @@ def test_build_script_standard_all_present():
             assert "llama_cpp" in checked_modules
 
             mock_exit.assert_not_called()
+            mock_download.assert_called_once()
             mock_pyinstaller_main.run.assert_called_once_with(
                 ["smart-autosorter.spec", "--noconfirm", "--clean"]
             )
