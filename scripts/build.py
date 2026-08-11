@@ -353,6 +353,100 @@ def update_binaries_and_manifest(system_platform=None, bypass_pytest_check=False
     )
 
 
+def download_and_prepare_weights():
+    """Ensure that the build process downloads and bundles all necessary model weights."""
+    import zipfile
+    import urllib.request
+    from pathlib import Path
+    import shutil
+    import hashlib
+
+    print("Preparing and downloading model weights for offline execution...")
+    offline_bundle = Path("offline_bundle")
+    model_dir = offline_bundle / "model"
+    easyocr_dir = offline_bundle / "easyocr"
+
+    model_dir.mkdir(parents=True, exist_ok=True)
+    easyocr_dir.mkdir(parents=True, exist_ok=True)
+
+    # Helper function to download file safely with User-Agent header
+    def download_file(url, dest_path):
+        print(f"Downloading {url} to {dest_path}...")
+        dest_path.parent.mkdir(parents=True, exist_ok=True)
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req) as response, open(dest_path, "wb") as out_file:
+            shutil.copyfileobj(response, out_file)
+
+    # 1. Download/prepare sentence-transformers model
+    hf_base_url = "https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main"
+    files_to_download = {
+        "model.onnx": f"{hf_base_url}/onnx/model.onnx",
+        "config.json": f"{hf_base_url}/config.json",
+        "tokenizer.json": f"{hf_base_url}/tokenizer.json",
+        "tokenizer_config.json": f"{hf_base_url}/tokenizer_config.json",
+        "special_tokens_map.json": f"{hf_base_url}/special_tokens_map.json",
+        "vocab.txt": f"{hf_base_url}/vocab.txt",
+    }
+
+    for name, url in files_to_download.items():
+        dest = model_dir / name
+        if not dest.exists():
+            download_file(url, dest)
+
+    version_txt = model_dir / "version.txt"
+    if not version_txt.exists():
+        version_txt.write_text("1.0.0", encoding="utf-8")
+
+    # 2. Download/prepare EasyOCR weights
+    easyocr_sources = {
+        "craft_mlt_25k.pth": "https://github.com/JaidedAI/EasyOCR/releases/download/pre-v1.1.6/craft_mlt_25k.zip",
+        "english_g2.pth": "https://github.com/JaidedAI/EasyOCR/releases/download/v1.3/english_g2.zip",
+    }
+
+    home_easyocr_dir = Path.home() / ".EasyOCR" / "model"
+    for name, url in easyocr_sources.items():
+        dest = easyocr_dir / name
+        if dest.exists():
+            continue
+        # Try local cache copy first
+        cache_src = home_easyocr_dir / name
+        if cache_src.exists():
+            print(f"Copying cached easyocr model {name} from {cache_src}...")
+            shutil.copy2(cache_src, dest)
+        else:
+            zip_dest = easyocr_dir / f"{name}.zip"
+            download_file(url, zip_dest)
+            print(f"Extracting {zip_dest}...")
+            with zipfile.ZipFile(zip_dest, "r") as zip_ref:
+                zip_ref.extractall(easyocr_dir)
+            zip_dest.unlink()
+
+    # 3. Compute SHA-256 hashes and write to app/core/hashes_registry.py
+    hashes = {"generative_naming": {}, "easyocr": {}}
+    for item in model_dir.glob("*"):
+        if item.is_file():
+            hasher = hashlib.sha256()
+            with open(item, "rb") as f:
+                for chunk in iter(lambda: f.read(65536), b""):
+                    hasher.update(chunk)
+            hashes["generative_naming"][item.name] = hasher.hexdigest()
+
+    for item in easyocr_dir.glob("*"):
+        if item.is_file():
+            hasher = hashlib.sha256()
+            with open(item, "rb") as f:
+                for chunk in iter(lambda: f.read(65536), b""):
+                    hasher.update(chunk)
+            hashes["easyocr"][item.name] = hasher.hexdigest()
+
+    hashes_registry_path = Path("app/core/hashes_registry.py")
+    hashes_registry_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(hashes_registry_path, "w", encoding="utf-8") as f:
+        f.write("# This file is generated during the build process.\n")
+        f.write(f"HASHES = {repr(hashes)}\n")
+    print(f"Successfully prepared weights and wrote model hashes to {hashes_registry_path}")
+
+
 def main():
     """Build the standalone executable."""
     import importlib.util
@@ -366,6 +460,13 @@ def main():
         print(
             "Lite profile enabled. Heavy ML packages will be excluded from the build."
         )
+        # Ensure hashes_registry.py exists to prevent import errors in lite builds
+        from pathlib import Path
+        hashes_registry_path = Path("app") / "core" / "hashes_registry.py"
+        if not hashes_registry_path.exists():
+            hashes_registry_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(hashes_registry_path, "w", encoding="utf-8") as f:
+                f.write("HASHES = {}\n")
     else:
         print("Verifying machine learning packages in active environment...")
         ml_packages = [
@@ -387,6 +488,8 @@ def main():
             except (ImportError, ValueError, AttributeError, TypeError):
                 print(f"Error: Missing machine learning package: {name}")
                 sys.exit(1)
+
+        download_and_prepare_weights()
 
     print("Verifying SQLCipher in active environment...")
     spec = importlib.util.find_spec("sqlcipher3")

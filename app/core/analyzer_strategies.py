@@ -414,12 +414,19 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
 
         self.model_path = model_path
         if not self.model_path:
-            if os.path.exists(local_bundle_path):
-                self.model_path = local_bundle_path
-            elif os.path.exists(user_bundle_path):
-                self.model_path = user_bundle_path
-            else:
-                self.model_path = None
+            import sys
+            if hasattr(sys, "_MEIPASS"):
+                mei_bundle_path = os.path.join(sys._MEIPASS, "offline_bundle", "model")
+                if os.path.exists(mei_bundle_path):
+                    self.model_path = mei_bundle_path
+
+            if not self.model_path:
+                if os.path.exists(local_bundle_path):
+                    self.model_path = local_bundle_path
+                elif os.path.exists(user_bundle_path):
+                    self.model_path = user_bundle_path
+                else:
+                    self.model_path = None
 
         self._model_initialized = False
         self._gguf_active = False
@@ -501,12 +508,20 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         if not self.model_path or not os.path.exists(
             os.path.join(self.model_path, "config.json")
         ):
-            if os.path.exists(local_bundle_path):
-                self.model_path = local_bundle_path
-            elif os.path.exists(user_bundle_path):
-                self.model_path = user_bundle_path
-            else:
-                self.model_path = None
+            if hasattr(sys, "_MEIPASS"):
+                mei_bundle_path = os.path.join(sys._MEIPASS, "offline_bundle", "model")
+                if os.path.exists(mei_bundle_path):
+                    self.model_path = mei_bundle_path
+
+            if not self.model_path or not os.path.exists(
+                os.path.join(self.model_path, "config.json")
+            ):
+                if os.path.exists(local_bundle_path):
+                    self.model_path = local_bundle_path
+                elif os.path.exists(user_bundle_path):
+                    self.model_path = user_bundle_path
+                else:
+                    self.model_path = None
 
         self._init_pytorch_model()
 

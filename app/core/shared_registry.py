@@ -253,6 +253,12 @@ class SharedModelRegistry:
         self._expected_hashes = {}
         self._cached_settings = None
         self.apply_onnx_thread_limits()
+        try:
+            from app.core.hashes_registry import HASHES
+            for model_id, file_hashes in HASHES.items():
+                self.register_expected_hashes(model_id, file_hashes)
+        except ImportError:
+            pass
 
     def get_thread_limit(self) -> int:
         """Get the current thread limit from configuration, falling back to 2."""
@@ -320,8 +326,12 @@ class SharedModelRegistry:
     def verify_integrity(self, model_id: str, model_path: str) -> bool:
         """Verify model files against expected hashes if they are registered."""
         if model_id in self._expected_hashes:
+            from app.core.path_utils import is_packaged
             expected = self._expected_hashes[model_id]
             if not model_path or not os.path.exists(model_path):
+                if not is_packaged():
+                    logging.warning(f"Model path {model_path} does not exist. Skipping integrity check in non-packaged mode.")
+                    return True
                 raise FileNotFoundError(
                     f"Model path {model_path} does not exist for integrity check."
                 )
@@ -330,6 +340,9 @@ class SharedModelRegistry:
                 for filename, expected_hash in expected.items():
                     file_path = os.path.join(model_path, filename)
                     if not os.path.exists(file_path):
+                        if not is_packaged():
+                            logging.warning(f"Required model file {file_path} is missing. Skipping integrity check in non-packaged mode.")
+                            return True
                         raise FileNotFoundError(
                             f"Required model file {file_path} is missing."
                         )
@@ -364,20 +377,33 @@ class SharedModelRegistry:
         """Lazily load and return the EasyOCR Reader from registry."""
         model_id = "easyocr"
         if model_id not in self._models:
+            import sys
+            # Resolve easyocr_dir
+            if hasattr(sys, "_MEIPASS"):
+                easyocr_dir = os.path.join(sys._MEIPASS, "offline_bundle", "easyocr")
+            else:
+                easyocr_path = os.environ.get("EASYOCR_MODULE_PATH")
+                if easyocr_path:
+                    easyocr_dir = os.path.join(easyocr_path, "model")
+                else:
+                    easyocr_dir = os.path.expanduser("~/.EasyOCR/model")
+
             # Check integrity if expected hashes are registered
             if model_id in self._expected_hashes:
-                # Since easyocr loads from a default system path or cache directory,
-                # we can use the expected hashes to verify the downloaded files.
-                # If there's a custom path or we're mocking, we look it up.
-                pass
+                self.verify_integrity(model_id, easyocr_dir)
 
             try:
                 import easyocr
                 import torch
 
                 torch.set_num_threads(self.get_thread_limit())
-                # Create reader on CPU
-                self._models[model_id] = easyocr.Reader(["en"], gpu=False)
+                # Create reader on CPU using resolved directory
+                self._models[model_id] = easyocr.Reader(
+                    ["en"],
+                    gpu=False,
+                    model_storage_directory=easyocr_dir,
+                    download_enabled=False
+                )
             except Exception as e:
                 logging.error(f"Failed to load EasyOCR reader from registry: {e}")
                 self._models[model_id] = None

@@ -655,8 +655,16 @@ class AutoSorterApp:
         local_model_dir = os.path.join(base_path, "offline_bundle", "model")
         user_model_dir = get_app_dir() / "model"
 
+        import sys
+        has_mei_model = False
+        if hasattr(sys, "_MEIPASS"):
+            mei_model_dir = os.path.join(sys._MEIPASS, "offline_bundle", "model")
+            if os.path.exists(os.path.join(mei_model_dir, "config.json")):
+                has_mei_model = True
+
         if (
-            os.path.exists(os.path.join(local_model_dir, "config.json"))
+            has_mei_model
+            or os.path.exists(os.path.join(local_model_dir, "config.json"))
             or (user_model_dir / "config.json").exists()
         ):
             if self.settings.AI_CONSENT_GRANTED is None:
