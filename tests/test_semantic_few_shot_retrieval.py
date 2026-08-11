@@ -177,8 +177,8 @@ def test_generative_naming_fallback_to_keyword_on_missing_embeddings(db, temp_di
             db.crypto, "decrypt_text", wraps=db.crypto.decrypt_text
         ) as spy_decrypt,
         patch.object(
-            db, "get_all_documents", wraps=db.get_all_documents
-        ) as spy_get_all,
+            db, "get_tfidf_stats", wraps=db.get_tfidf_stats
+        ) as spy_get_tfidf,
         patch.object(
             strategy, "_run_prompt", return_value="Space Flight Exploration"
         ) as mock_run_prompt,
@@ -189,7 +189,7 @@ def test_generative_naming_fallback_to_keyword_on_missing_embeddings(db, temp_di
         # Verify it fallback and found the match
         assert name == "Space Flight Exploration"
         assert spy_decrypt.called
-        assert spy_get_all.called
+        assert spy_get_tfidf.called
 
         prompt_passed = mock_run_prompt.call_args[0][0]
         # Should contain part of the decrypted snippet

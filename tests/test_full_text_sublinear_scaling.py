@@ -114,12 +114,14 @@ def test_sublinear_tf_scaling_and_full_text_use(tmp_path):
         strategy.generator = MagicMock()
 
         captured_target_text = []
-        original_transform = TfidfVectorizer.transform
+        original_build_analyzer = TfidfVectorizer.build_analyzer
 
-        def spy_transform(self_vec, raw_documents):
-            for doc in raw_documents:
+        def spy_build_analyzer(self_vec):
+            analyzer = original_build_analyzer(self_vec)
+            def wrapped_analyzer(doc):
                 captured_target_text.append(doc)
-            return original_transform(self_vec, raw_documents)
+                return analyzer(doc)
+            return wrapped_analyzer
 
         # Target doc is long (e.g. 1500 characters of distinct words to ensure no truncation)
         long_target_doc = (
@@ -128,7 +130,7 @@ def test_sublinear_tf_scaling_and_full_text_use(tmp_path):
         assert len(long_target_doc) > 1200
 
         with (
-            patch.object(TfidfVectorizer, "transform", spy_transform),
+            patch.object(TfidfVectorizer, "build_analyzer", spy_build_analyzer),
             patch.object(
                 strategy, "_run_prompt", return_value="Baking Fun"
             ) as mock_run_prompt,
@@ -205,14 +207,20 @@ def test_resource_protection_exclusions(tmp_path):
         strategy.generator = MagicMock()
 
         captured_historical_texts = []
-        original_fit_transform = TfidfVectorizer.fit_transform
+        original_get_tfidf_stats = db.get_tfidf_stats
 
-        def spy_fit_transform(self_vec, raw_documents, y=None):
-            captured_historical_texts.extend(raw_documents)
-            return original_fit_transform(self_vec, raw_documents, y)
+        def spy_get_tfidf_stats(base_dir_arg):
+            N, top_terms, doc_terms, doc_metadata = original_get_tfidf_stats(base_dir_arg)
+            eligible_filepaths = {row[0] for row in doc_terms}
+            for filepath in doc_metadata:
+                if filepath in eligible_filepaths:
+                    doc_info = db.get_document(base_dir_arg, filepath)
+                    if doc_info and doc_info.get("extracted_text"):
+                        captured_historical_texts.append(doc_info["extracted_text"])
+            return N, top_terms, doc_terms, doc_metadata
 
         with (
-            patch.object(TfidfVectorizer, "fit_transform", spy_fit_transform),
+            patch.object(db, "get_tfidf_stats", spy_get_tfidf_stats),
             patch.object(
                 strategy, "_run_prompt", return_value="Exclusion Folder"
             ) as mock_run_prompt,
