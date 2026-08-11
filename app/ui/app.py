@@ -44,7 +44,13 @@ class AutoSorterApp:
 
     def build_ui(self):
         """Build the main user interface."""
-        ui.add_head_html("<style> .q-tree__node-header { padding: 4px; } </style>")
+        ui.add_head_html("""
+<style>
+.q-tree__node-header { padding: 4px; }
+.tree-node-row .feedback-buttons { visibility: hidden; }
+.tree-node-row:hover .feedback-buttons { visibility: visible; }
+</style>
+""")
 
         with ui.header().classes("items-center justify-between"):
             ui.label("AI File Organizer Pro").classes("text-h6").props(
@@ -138,6 +144,49 @@ class AutoSorterApp:
                 .classes("w-full")
                 .props('default-expand-all aria-label="Sorting Plan Tree"')
             )
+            # Use NiceGUI's add_slot to define the Vue scoped slot template for drag and drop & hover ratings
+            self.tree_view.add_slot('default-header', '''
+                <div class="row items-center justify-between w-full group tree-node-row"
+                     :draggable="prop.node.is_file"
+                     @dragstart="(e) => { 
+                         if (prop.node.is_file) {
+                             e.dataTransfer.setData('text/plain', prop.node.filepath);
+                             e.dataTransfer.effectAllowed = 'move';
+                         }
+                     }"
+                     @dragover="(e) => { 
+                         if (!prop.node.is_file) {
+                             e.preventDefault(); 
+                         }
+                     }"
+                     @drop="(e) => { 
+                         if (!prop.node.is_file) {
+                             e.preventDefault();
+                             const sourceId = e.dataTransfer.getData('text/plain');
+                             $parent.$emit('node-drop', { source: sourceId, target: prop.node.id });
+                         }
+                     }">
+                    <div class="row items-center">
+                        <q-icon :name="prop.node.icon" class="q-mr-sm" />
+                        <span>{{ prop.node.text }}</span>
+                    </div>
+                    <!-- Feedback rating buttons (visible only on hover of .tree-node-row) -->
+                    <div v-if="prop.node.is_file" class="feedback-buttons row items-center q-gutter-xs">
+                        <q-btn flat round dense 
+                               :icon="prop.node.rating === 'positive' ? 'thumb_up' : 'thumb_up_off_alt'"
+                               size="sm" 
+                               :color="prop.node.rating === 'positive' ? 'green' : 'grey'" 
+                               @click.stop="$parent.$emit('node-rate', { file_id: prop.node.filepath, rating: 'positive' })" />
+                        <q-btn flat round dense 
+                               :icon="prop.node.rating === 'negative' ? 'thumb_down' : 'thumb_down_off_alt'"
+                               size="sm" 
+                               :color="prop.node.rating === 'negative' ? 'red' : 'grey'" 
+                               @click.stop="$parent.$emit('node-rate', { file_id: prop.node.filepath, rating: 'negative' })" />
+                    </div>
+                </div>
+            ''')
+            self.tree_view.on('node-drop', self.handle_node_drop)
+            self.tree_view.on('node-rate', self.handle_node_rate)
 
         with ui.row().classes("w-full justify-center mt-4 flex-wrap gap-2"):
             self.execute_btn = (
@@ -761,6 +810,7 @@ class AutoSorterApp:
                 self.file_progress_label.set_visibility(False)
 
             if not self._cancel_analysis_flag:
+                self.load_locked_files_from_db()
                 self.plan = await asyncio.to_thread(
                     self.app_session.generate_sorting_plan
                 )
@@ -875,9 +925,100 @@ class AutoSorterApp:
 
         self._debounce_task = asyncio.create_task(delayed_run())
 
+    def load_locked_files_from_db(self):
+        """Load user-verified target paths as locks from the database."""
+        if not self.app_session or not self.base_dir:
+            return
+        try:
+            docs = self.app_session.db.get_all_documents(self.base_dir)
+            for d in docs:
+                if len(d) > 3 and d[3]:
+                    self.locked_files[d[0]] = d[3]
+        except Exception as e:
+            logger.error(f"Error loading locked files: {e}")
+
+    def handle_node_drop(self, e):
+        """Handle drag-and-drop of a file node onto a folder node."""
+        try:
+            source_file = e.args.get("source")
+            target_folder = e.args.get("target")
+
+            if not source_file or not target_folder:
+                return
+
+            # Safe folder path cleaning
+            target_folder = target_folder.strip("/")
+
+            # Perform the in-memory move
+            file_info = find_and_remove_file(self.plan, source_file)
+            if file_info is not None:
+                file_info["is_locked"] = True
+                file_info["status"] = "Locked"
+                
+                insert_file_into_plan(self.plan, target_folder, source_file, file_info)
+                self.locked_files[source_file] = target_folder
+                
+                if self.app_session:
+                    self.app_session.db.set_user_verified_target_path(
+                        self.base_dir, source_file, target_folder
+                    )
+                
+                self.render_tree()
+                ui.notify(f"Moved {os.path.basename(source_file)} to {target_folder}", type="positive")
+            else:
+                logger.warning(f"Could not find file {source_file} in current plan.")
+        except Exception as ex:
+            logger.error(f"Error handling node drop: {ex}", exc_info=True)
+            ui.notify(f"Failed to move file: {ex}", type="negative")
+
+    def handle_node_rate(self, e):
+        """Handle quality rating of a file node."""
+        try:
+            file_filepath = e.args.get("file_id")
+            rating = e.args.get("rating")
+            
+            if not file_filepath or not rating:
+                return
+
+            current_rating = getattr(self, "_ratings_cache", {}).get(file_filepath)
+            if current_rating == rating:
+                rating_to_set = None
+            else:
+                rating_to_set = rating
+
+            if hasattr(self, "_ratings_cache"):
+                if rating_to_set:
+                    self._ratings_cache[file_filepath] = rating_to_set
+                else:
+                    self._ratings_cache.pop(file_filepath, None)
+
+            if self.app_session:
+                self.app_session.db.set_document_rating(self.base_dir, file_filepath, rating_to_set)
+
+            self.render_tree()
+
+            if rating_to_set:
+                ui.notify(f"Recorded {rating_to_set} rating for {os.path.basename(file_filepath)}", type="positive")
+            else:
+                ui.notify(f"Cleared rating for {os.path.basename(file_filepath)}")
+
+        except Exception as ex:
+            logger.error(f"Error handling node rate: {ex}", exc_info=True)
+            ui.notify(f"Failed to record rating: {ex}", type="negative")
+
     def render_tree(self):
         """Render the tree view of the sorting plan."""
         self.tree_nodes = []
+        self._ratings_cache = {}
+        if self.app_session and self.base_dir:
+            try:
+                docs = self.app_session.db.get_all_documents(self.base_dir)
+                for d in docs:
+                    if len(d) > 4 and d[4]:
+                        self._ratings_cache[d[0]] = d[4]
+            except Exception as e:
+                logger.error(f"Error loading ratings cache: {e}")
+
         self._flatten(self.plan, "", self.tree_nodes)
         if hasattr(self, "tree_view"):
             self.tree_view._props["nodes"] = self.tree_nodes
@@ -889,23 +1030,43 @@ class AutoSorterApp:
             if isinstance(v, dict) and "__type__" not in v:
                 children = []
                 nodes_list.append(
-                    {"id": node_id, "text": k, "children": children, "icon": "folder"}
+                    {
+                        "id": node_id,
+                        "text": k,
+                        "children": children,
+                        "icon": "folder",
+                        "is_file": False,
+                    }
                 )
                 self._flatten(v, node_id, children)
             else:
                 text = k
                 icon = "insert_drive_file"
+                is_locked = k in self.locked_files or (isinstance(v, dict) and v.get("is_locked"))
+                if is_locked:
+                    icon = "lock"
                 if isinstance(v, dict):
                     status = v.get("status", "")
                     if status:
                         text += f" [{status}]"
-                    if "error" in status.lower() or "locked" in status.lower():
+                    if not is_locked and ("error" in status.lower() or "locked" in status.lower()):
                         icon = "error"
                 if k in self.plan_errors or node_id in self.plan_errors:
                     err_msg = self.plan_errors.get(node_id) or self.plan_errors.get(k)
                     text += f" (Error: {err_msg})"
                     icon = "error"
-                nodes_list.append({"id": node_id, "text": text, "icon": icon})
+                
+                rating = self._ratings_cache.get(k)
+                nodes_list.append(
+                    {
+                        "id": node_id,
+                        "text": text,
+                        "icon": icon,
+                        "is_file": True,
+                        "filepath": k,
+                        "rating": rating,
+                    }
+                )
 
     def execute_sort(self):
         """Execute the sorting plan."""
@@ -953,8 +1114,18 @@ class AutoSorterApp:
                 self.execute_btn.enable()
                 self.start_watcher()
                 if success and self.app_session:
+                    try:
+                        self.status_label.set_text("Running background classifier updates...")
+                        await asyncio.to_thread(
+                            run_incremental_training_in_background,
+                            self.app_session,
+                            self.base_dir
+                        )
+                    except Exception as train_err:
+                        logger.error(f"Error during incremental training: {train_err}")
                     self.app_session.close()
                     self.app_session = None
+                    self.status_label.set_text("Sorting complete.")
 
         asyncio.create_task(run())
 
@@ -1114,6 +1285,89 @@ class AutoSorterApp:
                 self.ai_warnings_label.set_visibility(False)
 
         asyncio.create_task(_run())
+
+
+def find_and_remove_file(node, file_key):
+    """Recursively find a file with key file_key in the plan node dictionary,
+
+    remove it, and return its value (the file info dict).
+    """
+    if not isinstance(node, dict):
+        return None
+    if file_key in node and isinstance(node[file_key], dict) and node[file_key].get("__type__") == "file":
+        return node.pop(file_key)
+    for k, v in list(node.items()):
+        if isinstance(v, dict) and v.get("__type__") != "file":
+            res = find_and_remove_file(v, file_key)
+            if res is not None:
+                if not v:
+                    node.pop(k)
+                return res
+    return None
+
+
+def insert_file_into_plan(plan, target_folder, file_key, file_info):
+    """Insert a file into the plan under a target folder path."""
+    parts = target_folder.replace("\\", "/").split("/")
+    current = plan
+    for part in parts:
+        if part not in current or not isinstance(current[part], dict):
+            current[part] = {}
+        current = current[part]
+    current[file_key] = file_info
+
+
+def run_incremental_training_in_background(app_session, base_dir):
+    """Background worker function that finds reassigned documents,
+
+    generates their vector embeddings, and updates the document_vectors
+    database table.
+    """
+    import logging
+    try:
+        logging.info("Starting background incremental training for reassigned documents.")
+        db = app_session.db
+        analyzer = app_session.analyzer
+        
+        # 1. Fetch all documents for this base directory
+        docs = db.get_all_documents(base_dir)
+        if not docs:
+            logging.info("No documents found for background incremental training.")
+            return
+
+        # 2. Filter for reassigned/verified documents
+        reassigned_docs = []
+        for d in docs:
+            filepath = d[0]
+            text = d[1]
+            user_verified_target = d[3] if len(d) > 3 else None
+            
+            if user_verified_target and text:
+                reassigned_docs.append((filepath, text))
+                
+        if not reassigned_docs:
+            logging.info("No reassigned documents with text found to train on.")
+            return
+
+        # 3. Generate vectors for these documents
+        vectors_to_upsert = []
+        for filepath, text in reassigned_docs:
+            try:
+                vector = analyzer.embedding_manager.generate_embedding(text)
+                if vector and analyzer.embedding_manager.validate_vector_dimension(vector):
+                    vectors_to_upsert.append((filepath, vector))
+            except Exception as e:
+                logging.error(f"Error generating embedding for {filepath}: {e}")
+
+        # 4. Upsert vectors into DB
+        if vectors_to_upsert:
+            db.upsert_document_vectors(base_dir, vectors_to_upsert)
+            logging.info(f"Successfully updated vectors for {len(vectors_to_upsert)} reassigned documents in the background.")
+        else:
+            logging.info("No new vectors generated for reassigned documents.")
+            
+    except Exception as e:
+        logging.error(f"Error during background incremental training: {e}", exc_info=True)
 
 
 def run_app(settings, directory=None, port=8080, show=True) -> None:

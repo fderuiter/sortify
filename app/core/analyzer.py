@@ -248,6 +248,12 @@ class IncrementalAnalyzer:
                 if ext not in supported_exts and not status_match:
                     status_match = "UNSUPPORTED"
 
+                # Check if this file has a path lock / manual override first!
+                if locked_files and f in locked_files:
+                    target = locked_files[f]
+                    historical_overrides[f] = (target, status_match)
+                    continue
+
                 # Check against unified policies first!
                 matched_policy = None
                 if sorted_policies:
