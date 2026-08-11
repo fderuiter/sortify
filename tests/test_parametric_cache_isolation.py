@@ -1,12 +1,15 @@
-import threading
-import pytest
 import sqlite3
+import threading
+
+import pytest
+
 from app.core.db_conn import (
-    get_db_connection,
-    clear_connection_cache,
-    _connection_cache,
     _cache_lock,
+    _connection_cache,
+    clear_connection_cache,
+    get_db_connection,
 )
+
 
 def test_parametric_cache_isolation_selective_vs_global(tmp_path):
     # Create two temporary database files
@@ -18,7 +21,7 @@ def test_parametric_cache_isolation_selective_vs_global(tmp_path):
 
     # 1. Main thread connection
     main_conn = get_db_connection(db_path_1)
-    
+
     # 2. Simulate another active thread's connection
     # Let's start an active background thread that keeps running
     active_thread_conn_ref = []
@@ -101,8 +104,8 @@ def test_parametric_cache_isolation_selective_vs_global(tmp_path):
 
 
 def test_db_worker_termination_preserves_main_connections(tmp_path):
-    from app.core.db_worker import DBWorker
     from app.core.db_conn import get_db_connection
+    from app.core.db_worker import DBWorker
 
     db_path = str(tmp_path / "worker_test.db")
 
@@ -134,7 +137,7 @@ def test_db_worker_termination_preserves_main_connections(tmp_path):
 
 
 def test_global_clear_connection_cache_closes_all_connections(tmp_path):
-    from app.core.db_conn import get_db_connection, clear_connection_cache
+    from app.core.db_conn import clear_connection_cache, get_db_connection
 
     db_path = str(tmp_path / "global_test.db")
 

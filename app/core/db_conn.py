@@ -71,14 +71,14 @@ def clear_connection_cache(only_current_and_inactive: bool = True):
         if only_current_and_inactive:
             calling_thread_id = threading.get_ident()
             active_thread_ids = {t.ident for t in threading.enumerate()}
-            
+
             # Identify which keys to remove
             keys_to_remove = []
             for key in list(_connection_cache.keys()):
                 _, thread_id = key
                 if thread_id == calling_thread_id or thread_id not in active_thread_ids:
                     keys_to_remove.append(key)
-            
+
             for key in keys_to_remove:
                 conn = _connection_cache.pop(key, None)
                 if conn:
