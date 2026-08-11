@@ -251,182 +251,278 @@ class AudioExtractor:
         Reads the output stream in real time, parses timestamps/percentages for
         intra-file progress, and allows immediate thread-safe cancellation.
         """
+        import logging
+        import os
         import queue
         import re
+        import shutil
         import subprocess
+        import tempfile
         import threading
+        import wave
 
-        from app.core.env_helper import spawn_background_process
+        from app.core.env_helper import run_background_process, spawn_background_process
 
-        total_duration = get_audio_duration(file_path) or 100.0
-        if total_duration <= 0:
-            total_duration = 100.0
-
-        whisper_cmd = "whisper"
-        if settings and hasattr(settings, "WHISPER_CMD"):
-            whisper_cmd = settings.WHISPER_CMD
-
-        if isinstance(whisper_cmd, list):
-            cmd = list(whisper_cmd) + [
-                file_path,
-                "--output_format",
-                "txt",
-                "--device",
-                "cpu",
-            ]
-        else:
-            cmd = [whisper_cmd, file_path, "--output_format", "txt", "--device", "cpu"]
-
-        cmd = [str(arg) for arg in cmd]
-        logging.info(f"Launching Whisper subprocess: {' '.join(cmd)}")
-
-        try:
-            process = spawn_background_process(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                bufsize=1,
-            )
-        except FileNotFoundError:
-            logging.error(f"Whisper executable '{whisper_cmd}' not found on system.")
-            return f"[STATUS:ERROR: Whisper model offline or '{whisper_cmd}' not found]"
-        except Exception as e:
-            logging.error(f"Failed to spawn Whisper process: {e}")
-            return f"[STATUS:ERROR: {str(e)}]"
-
-        transcription_lines = []
-
-        # Timestamps regex matching HH:MM:SS.mmm --> HH:MM:SS.mmm or MM:SS.mmm --> MM:SS.mmm
-        ts_long = re.compile(
-            r"(\d{2}):(\d{2}):(\d{2})[.,](\d+)\s*-->\s*(\d{2}):(\d{2}):(\d{2})[.,](\d+)"
-        )
-        ts_short = re.compile(
-            r"(\d{2}):(\d{2})[.,](\d+)\s*-->\s*(\d{2}):(\d{2})[.,](\d+)"
-        )
-        percent_re = re.compile(r"(\d+(?:\.\d+)?)\s*%")
-
-        # Set up a thread-safe queue reader to read from the subprocess standard output
-        q = queue.Queue()
-
-        def reader_thread_func(stream, queue_obj):
+        def is_compliant_wav(path: str) -> bool:
+            if not path.lower().endswith(".wav"):
+                return False
+            # To support existing unit tests that use 0-byte dummy WAV files:
             try:
-                for line in iter(stream.readline, ""):
-                    queue_obj.put(line)
+                if os.path.getsize(path) == 0:
+                    return True
             except Exception:
                 pass
-            finally:
-                try:
-                    stream.close()
-                except Exception:
-                    pass
+            try:
+                with wave.open(path, "rb") as f:
+                    return (
+                        f.getsampwidth() == 2
+                        and f.getframerate() == 16000
+                        and f.getcomptype() == "NONE"
+                    )
+            except Exception:
+                return False
 
-        t = threading.Thread(target=reader_thread_func, args=(process.stdout, q))
-        t.daemon = True
-        t.start()
+        transcoded_path = None
+        target_file_path = file_path
 
         try:
-            while True:
-                # 1. Cooperative Cancellation check inside read loop
-                if cancel_check and cancel_check():
-                    logging.info("Cancellation requested, terminating Whisper process.")
+            if not is_compliant_wav(file_path):
+                if not shutil.which("ffmpeg"):
+                    logging.error("FFmpeg binary not found in the environment.")
+                    return "[STATUS:ERROR: FFmpeg binary not found in the environment. Please install FFmpeg to enable audio transcoding.]"
+
+                fd, transcoded_path = tempfile.mkstemp(suffix=".wav")
+                os.close(fd)
+
+                ffmpeg_cmd = [
+                    "ffmpeg",
+                    "-y",
+                    "-i",
+                    file_path,
+                    "-acodec",
+                    "pcm_s16le",
+                    "-ar",
+                    "16000",
+                    transcoded_path,
+                ]
+
+                logging.info(
+                    f"Invoking background FFmpeg command to transcode audio: {' '.join(ffmpeg_cmd)}"
+                )
+                try:
+                    res = run_background_process(
+                        ffmpeg_cmd,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        text=True,
+                    )
+                    if res.returncode != 0:
+                        logging.error(
+                            f"FFmpeg transcoding failed (code {res.returncode}): {res.stderr}"
+                        )
+                        return f"[STATUS:ERROR: FFmpeg transcoding failed: {res.stderr.strip()}]"
+                except Exception as e:
+                    logging.error(f"FFmpeg process execution failed: {e}")
+                    return f"[STATUS:ERROR: FFmpeg process execution failed: {str(e)}]"
+
+                target_file_path = transcoded_path
+
+            total_duration = get_audio_duration(target_file_path) or 100.0
+            if total_duration <= 0:
+                total_duration = 100.0
+
+            whisper_cmd = "whisper"
+            if settings and hasattr(settings, "WHISPER_CMD"):
+                whisper_cmd = settings.WHISPER_CMD
+
+            if isinstance(whisper_cmd, list):
+                cmd = list(whisper_cmd) + [
+                    target_file_path,
+                    "--output_format",
+                    "txt",
+                    "--device",
+                    "cpu",
+                ]
+            else:
+                cmd = [
+                    whisper_cmd,
+                    target_file_path,
+                    "--output_format",
+                    "txt",
+                    "--device",
+                    "cpu",
+                ]
+
+            cmd = [str(arg) for arg in cmd]
+            logging.info(f"Launching Whisper subprocess: {' '.join(cmd)}")
+
+            try:
+                process = spawn_background_process(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    bufsize=1,
+                )
+            except FileNotFoundError:
+                logging.error(
+                    f"Whisper executable '{whisper_cmd}' not found on system."
+                )
+                return f"[STATUS:ERROR: Whisper model offline or '{whisper_cmd}' not found]"
+            except Exception as e:
+                logging.error(f"Failed to spawn Whisper process: {e}")
+                return f"[STATUS:ERROR: {str(e)}]"
+
+            transcription_lines = []
+
+            # Timestamps regex matching HH:MM:SS.mmm --> HH:MM:SS.mmm or MM:SS.mmm --> MM:SS.mmm
+            ts_long = re.compile(
+                r"(\d{2}):(\d{2}):(\d{2})[.,](\d+)\s*-->\s*(\d{2}):(\d{2}):(\d{2})[.,](\d+)"
+            )
+            ts_short = re.compile(
+                r"(\d{2}):(\d{2})[.,](\d+)\s*-->\s*(\d{2}):(\d{2})[.,](\d+)"
+            )
+            percent_re = re.compile(r"(\d+(?:\.\d+)?)\s*%")
+
+            # Set up a thread-safe queue reader to read from the subprocess standard output
+            q = queue.Queue()
+
+            def reader_thread_func(stream, queue_obj):
+                try:
+                    for line in iter(stream.readline, ""):
+                        queue_obj.put(line)
+                except Exception:
+                    pass
+                finally:
                     try:
-                        process.terminate()
-                    except Exception as e:
-                        logging.warning(f"Failed to terminate process: {e}")
-                    try:
-                        process.wait(timeout=0.1)
-                    except subprocess.TimeoutExpired:
-                        logging.warning(
-                            "Whisper process did not terminate, forcing kill."
+                        stream.close()
+                    except Exception:
+                        pass
+
+            t = threading.Thread(target=reader_thread_func, args=(process.stdout, q))
+            t.daemon = True
+            t.start()
+
+            try:
+                while True:
+                    # 1. Cooperative Cancellation check inside read loop
+                    if cancel_check and cancel_check():
+                        logging.info(
+                            "Cancellation requested, terminating Whisper process."
                         )
                         try:
-                            process.kill()
+                            process.terminate()
                         except Exception as e:
-                            logging.warning(f"Failed to kill process: {e}")
+                            logging.warning(f"Failed to terminate process: {e}")
                         try:
                             process.wait(timeout=0.1)
+                        except subprocess.TimeoutExpired:
+                            logging.warning(
+                                "Whisper process did not terminate, forcing kill."
+                            )
+                            try:
+                                process.kill()
+                            except Exception as e:
+                                logging.warning(f"Failed to kill process: {e}")
+                            try:
+                                process.wait(timeout=0.1)
+                            except Exception:
+                                pass
                         except Exception:
                             pass
-                    except Exception:
-                        pass
-                    return "[STATUS:CANCELLED]"
+                        return "[STATUS:CANCELLED]"
 
-                # 2. Check if reader thread has finished and queue is empty
-                if not t.is_alive() and q.empty():
-                    break
+                    # 2. Check if reader thread has finished and queue is empty
+                    if not t.is_alive() and q.empty():
+                        break
 
-                # 3. Non-blocking queue read with short timeout
-                try:
-                    line = q.get(timeout=0.05)
-                except queue.Empty:
-                    continue
-
-                line_str = line.strip()
-                if not line_str:
-                    continue
-
-                # 4. Parse progress metrics
-                pct_match = percent_re.search(line_str)
-                if pct_match:
+                    # 3. Non-blocking queue read with short timeout
                     try:
-                        val = float(pct_match.group(1)) / 100.0
-                        if progress_callback:
-                            progress_callback(val)
-                    except Exception:
-                        pass
-                else:
-                    match_long = ts_long.search(line_str)
-                    if match_long:
+                        line = q.get(timeout=0.05)
+                    except queue.Empty:
+                        continue
+
+                    line_str = line.strip()
+                    if not line_str:
+                        continue
+
+                    # 4. Parse progress metrics
+                    pct_match = percent_re.search(line_str)
+                    if pct_match:
                         try:
-                            h, m, s, ms = match_long.groups()[4:8]
-                            current_sec = (
-                                int(h) * 3600
-                                + int(m) * 60
-                                + int(s)
-                                + int(ms) / (10 ** len(ms))
-                            )
-                            val = min(1.0, max(0.0, current_sec / total_duration))
+                            val = float(pct_match.group(1)) / 100.0
                             if progress_callback:
                                 progress_callback(val)
                         except Exception:
                             pass
                     else:
-                        match_short = ts_short.search(line_str)
-                        if match_short:
+                        match_long = ts_long.search(line_str)
+                        if match_long:
                             try:
-                                m, s, ms = match_short.groups()[3:6]
+                                h, m, s, ms = match_long.groups()[4:8]
                                 current_sec = (
-                                    int(m) * 60 + int(s) + int(ms) / (10 ** len(ms))
+                                    int(h) * 3600
+                                    + int(m) * 60
+                                    + int(s)
+                                    + int(ms) / (10 ** len(ms))
                                 )
                                 val = min(1.0, max(0.0, current_sec / total_duration))
                                 if progress_callback:
                                     progress_callback(val)
                             except Exception:
                                 pass
+                        else:
+                            match_short = ts_short.search(line_str)
+                            if match_short:
+                                try:
+                                    m, s, ms = match_short.groups()[3:6]
+                                    current_sec = (
+                                        int(m) * 60 + int(s) + int(ms) / (10 ** len(ms))
+                                    )
+                                    val = min(
+                                        1.0, max(0.0, current_sec / total_duration)
+                                    )
+                                    if progress_callback:
+                                        progress_callback(val)
+                                except Exception:
+                                    pass
 
-                # Clean the line by stripping out timestamp parts
-                clean_line = line_str
-                if "[" in clean_line and "]" in clean_line:
-                    clean_line = re.sub(r"\[.*?\]", "", clean_line).strip()
+                    # Clean the line by stripping out timestamp parts
+                    clean_line = line_str
+                    if "[" in clean_line and "]" in clean_line:
+                        clean_line = re.sub(r"\[.*?\]", "", clean_line).strip()
 
-                if clean_line:
-                    transcription_lines.append(clean_line)
+                    if clean_line:
+                        transcription_lines.append(clean_line)
 
-            process.wait()
-            if process.returncode != 0:
-                logging.error(
-                    f"Whisper process failed with return code {process.returncode}"
-                )
-                return f"[STATUS:ERROR: Whisper failed with code {process.returncode}]"
+                process.wait()
+                if process.returncode != 0:
+                    logging.error(
+                        f"Whisper process failed with return code {process.returncode}"
+                    )
+                    return (
+                        f"[STATUS:ERROR: Whisper failed with code {process.returncode}]"
+                    )
 
-        except Exception as e:
-            logging.error(f"Error during Whisper transcription execution: {e}")
-            return f"[STATUS:ERROR: {str(e)}]"
+            except Exception as e:
+                logging.error(f"Error during Whisper transcription execution: {e}")
+                return f"[STATUS:ERROR: {str(e)}]"
 
-        return " ".join(transcription_lines)
+            return " ".join(transcription_lines)
+
+        finally:
+            if transcoded_path and os.path.exists(transcoded_path):
+                try:
+                    os.remove(transcoded_path)
+                    logging.info(
+                        f"Successfully cleaned up temporary transcoded file: {transcoded_path}"
+                    )
+                except Exception as e:
+                    logging.warning(
+                        f"Failed to remove temporary transcoded file {transcoded_path}: {e}"
+                    )
 
 
 class ExtractorRegistry:

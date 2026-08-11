@@ -100,6 +100,10 @@ def test_extract_pdf_visual_fallback(mocker):
 
 
 def test_get_ocr_reader(mocker):
+    from app.core.shared_registry import SharedModelRegistry
+
+    mocker.patch.object(SharedModelRegistry, "get_thread_limit", return_value=2)
+
     mock_easyocr = MagicMock()
     mock_easyocr_reader = MagicMock(return_value="reader_instance")
     mock_easyocr.Reader = mock_easyocr_reader

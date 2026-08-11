@@ -189,14 +189,17 @@ def test_fallback_to_keywords():
 def test_cpu_thread_limits():
     import sys
 
+    from app.core.shared_registry import SharedModelRegistry
+
     mock_torch = MagicMock()
     with patch.dict(sys.modules, {"torch": mock_torch}):
-        strategy = GenerativeNamingStrategy()
-        strategy.generator = MagicMock()
-        strategy.task = "text-generation"
-        strategy._model_initialized = True
-        strategy.generator.return_value = [{"generated_text": "Valid Name"}]
+        with patch.object(SharedModelRegistry, "get_thread_limit", return_value=2):
+            strategy = GenerativeNamingStrategy()
+            strategy.generator = MagicMock()
+            strategy.task = "text-generation"
+            strategy._model_initialized = True
+            strategy.generator.return_value = [{"generated_text": "Valid Name"}]
 
-        strategy._get_cluster_keywords(["doc.txt"])
-        # Verify that we set torch threads to 2 during generation
-        mock_torch.set_num_threads.assert_any_call(2)
+            strategy._get_cluster_keywords(["doc.txt"])
+            # Verify that we set torch threads to 2 during generation
+            mock_torch.set_num_threads.assert_any_call(2)

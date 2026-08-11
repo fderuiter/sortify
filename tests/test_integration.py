@@ -432,3 +432,126 @@ def test_settings_protected_paths_ui():
         assert mock_ui.notify.call_count >= 1
         last_call_args, last_call_kwargs = mock_ui.notify.call_args
         assert last_call_kwargs.get("type") == "negative"
+
+
+def test_advanced_settings_sliders():
+    """Verify that advanced setting sliders exist and propagate change events with validation."""
+    parent_app = MagicMock()
+    settings = AppSettings()
+
+    # Set known values
+    settings.MAX_WORKERS = 4
+    settings.VISUAL_TIMEOUT = 30
+    settings.MODEL_THREADS = 2
+    settings.IMAGE_MAX_DIMENSION = 1000
+    settings.IMAGE_SKIP_THRESHOLD = 3000
+
+    with patch("app.ui.settings.ui") as mock_ui:
+        show_settings(parent_app, settings)
+
+        # We expect exactly 5 sliders
+        assert mock_ui.slider.call_count == 5
+
+        # Locate sliders based on min/max bounds
+        sliders_by_bounds = {}
+        for call_args in mock_ui.slider.call_args_list:
+            args, kwargs = call_args
+            bounds = (kwargs.get("min"), kwargs.get("max"))
+            sliders_by_bounds[bounds] = kwargs
+
+        # 1. MAX_WORKERS: 1 to 64
+        assert (1, 64) in sliders_by_bounds
+        worker_kwargs = sliders_by_bounds[(1, 64)]
+        assert worker_kwargs.get("value") == 4
+        on_worker_change = worker_kwargs.get("on_change")
+        assert on_worker_change is not None
+
+        # 2. MODEL_THREADS: 1 to 32
+        assert (1, 32) in sliders_by_bounds
+        threads_kwargs = sliders_by_bounds[(1, 32)]
+        assert threads_kwargs.get("value") == 2
+        on_threads_change = threads_kwargs.get("on_change")
+        assert on_threads_change is not None
+
+        # 3. VISUAL_TIMEOUT: 1 to 300
+        assert (1, 300) in sliders_by_bounds
+        timeout_kwargs = sliders_by_bounds[(1, 300)]
+        assert timeout_kwargs.get("value") == 30
+        on_timeout_change = timeout_kwargs.get("on_change")
+        assert on_timeout_change is not None
+
+        # 4. IMAGE_MAX_DIMENSION: 1 to 5000
+        assert (1, 5000) in sliders_by_bounds
+        dim_kwargs = sliders_by_bounds[(1, 5000)]
+        assert dim_kwargs.get("value") == 1000
+        on_dim_change = dim_kwargs.get("on_change")
+        assert on_dim_change is not None
+
+        # 5. IMAGE_SKIP_THRESHOLD: 1 to 10000
+        assert (1, 10000) in sliders_by_bounds
+        skip_kwargs = sliders_by_bounds[(1, 10000)]
+        assert skip_kwargs.get("value") == 3000
+        on_skip_change = skip_kwargs.get("on_change")
+        assert on_skip_change is not None
+
+        # Test valid changes
+        # Max Workers change
+        mock_event = MagicMock()
+        mock_event.value = 16
+        on_worker_change(mock_event)
+        assert settings.MAX_WORKERS == 16
+
+        # ML Threads change
+        mock_event.value = 8
+        on_threads_change(mock_event)
+        assert settings.MODEL_THREADS == 8
+
+        # Timeout change
+        mock_event.value = 45
+        on_timeout_change(mock_event)
+        assert settings.VISUAL_TIMEOUT == 45
+
+        # Image Dimension change
+        mock_event.value = 1200
+        on_dim_change(mock_event)
+        assert settings.IMAGE_MAX_DIMENSION == 1200
+
+        # Image Skip Threshold change
+        mock_event.value = 4000
+        on_skip_change(mock_event)
+        assert settings.IMAGE_SKIP_THRESHOLD == 4000
+
+        # Test invalid values trigger revert-and-notify
+        # Invalid Max Workers (e.g. 100 which is > 64)
+        mock_sender = MagicMock()
+        mock_event.sender = mock_sender
+        mock_event.value = 100
+        mock_ui.notify.reset_mock()
+        on_worker_change(mock_event)
+        # Should be reverted to 16
+        assert settings.MAX_WORKERS == 16
+        assert mock_sender.value == 16
+        assert mock_ui.notify.call_count >= 1
+        last_call_args, last_call_kwargs = mock_ui.notify.call_args
+        assert last_call_kwargs.get("type") == "negative"
+        assert (
+            "workers" in last_call_args[0].lower()
+            or "validation" in last_call_args[0].lower()
+        )
+
+        # Invalid ML Threads (e.g. 50 which is > 32)
+        mock_sender = MagicMock()
+        mock_event.sender = mock_sender
+        mock_event.value = 50
+        mock_ui.notify.reset_mock()
+        on_threads_change(mock_event)
+        # Should be reverted to 8
+        assert settings.MODEL_THREADS == 8
+        assert mock_sender.value == 8
+        assert mock_ui.notify.call_count >= 1
+        last_call_args, last_call_kwargs = mock_ui.notify.call_args
+        assert last_call_kwargs.get("type") == "negative"
+        assert (
+            "threads" in last_call_args[0].lower()
+            or "validation" in last_call_args[0].lower()
+        )
