@@ -246,7 +246,7 @@ def test_bootstrap_binaries_successful_offline_flow(tmp_path):
     ):
         res = bootstrap_binaries(force_download=True)
         assert res is True
-        mock_inject.assert_called_once_with(mock_binaries_root / "linux")
+        mock_inject.assert_called_once_with(get_bootstrap_bin_dir() / "linux")
 
 
 def test_bootstrap_binaries_failed_verification(tmp_path):
@@ -323,7 +323,7 @@ def test_bootstrap_binaries_newline_and_bom_insensitivity(tmp_path):
     ):
         res = bootstrap_binaries(force_download=True)
         assert res is True
-        mock_inject.assert_called_once_with(mock_binaries_root / "linux")
+        mock_inject.assert_called_once_with(get_bootstrap_bin_dir() / "linux")
 
 
 def test_bootstrap_binaries_pyinstaller_internal_fallback(tmp_path):
@@ -365,7 +365,7 @@ def test_bootstrap_binaries_pyinstaller_internal_fallback(tmp_path):
     ):
         res = bootstrap_binaries(force_download=True)
         assert res is True
-        mock_inject.assert_called_once_with(mock_binaries_root / "linux")
+        mock_inject.assert_called_once_with(get_bootstrap_bin_dir() / "linux")
 
 
 def test_sqlite3_mock_fallback_on_import_error():

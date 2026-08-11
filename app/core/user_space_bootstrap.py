@@ -12,6 +12,39 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+BINARY_DOWNLOAD_BASE_URL = os.environ.get(
+    "AUTOSORTER_BINARY_BASE_URL", "https://example.com/binaries"
+)
+
+
+def calculate_file_hash(file_path: Path) -> str:
+    """Calculate the expected SHA-256 hash of a file with line ending normalization for text files."""
+    import hashlib
+    hasher = hashlib.sha256()
+    is_text_file = file_path.suffix in (".py", ".pyi", ".typed")
+    if is_text_file:
+        with open(file_path, "r", encoding="utf-8-sig", newline=None) as fh:
+            content = fh.read()
+        # Normalize all line endings to LF (\n)
+        normalized_bytes = content.replace("\r\n", "\n").encode("utf-8")
+        hasher.update(normalized_bytes)
+    else:
+        with open(file_path, "rb") as fh:
+            while chunk := fh.read(8192):
+                hasher.update(chunk)
+    return hasher.hexdigest()
+
+
+def is_file_valid(file_path: Path, expected_hash: str) -> bool:
+    """Check if file exists and has correct SHA-256 hash."""
+    if not file_path.exists():
+        return False
+    try:
+        return calculate_file_hash(file_path) == expected_hash
+    except Exception:
+        return False
+
+
 
 def get_bootstrap_bin_dir() -> Path:
     """Get the writable user-space binaries directory."""
@@ -336,11 +369,8 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
         )
 
     # 4. Verify all files for this platform are present and unmodified
-    platform_binaries_dir = local_binaries_root / platform_key
-    if not platform_binaries_dir.exists():
-        raise RuntimeError(
-            f"Startup validation failed: local precompiled libraries for {platform_key} are missing."
-        )
+    platform_binaries_dir = get_bootstrap_bin_dir() / platform_key
+    local_platform_bin_dir = local_binaries_root / platform_key
 
     expected_files = manifest.get(platform_key, {})
     if not expected_files:
@@ -348,41 +378,38 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
             f"Startup validation failed: manifest has no entries for platform {platform_key}."
         )
 
+    from app.core.downloader import download_file
+
     for rel_path_str, expected_hash in expected_files.items():
-        file_path = platform_binaries_dir / rel_path_str
-        if not file_path.exists():
-            raise RuntimeError(
-                f"Startup validation failed: local packaged binary file {rel_path_str} is missing."
-            )
+        target_file = platform_binaries_dir / rel_path_str
+        local_file = local_platform_bin_dir / rel_path_str
 
-        # Calculate SHA256 of the file
-        import hashlib
-
-        hasher = hashlib.sha256()
-        try:
-            is_text_file = file_path.suffix in (".py", ".pyi", ".typed")
-            if is_text_file:
-                with open(file_path, "r", encoding="utf-8-sig", newline=None) as fh:
-                    content = fh.read()
-                # Normalize all line endings to LF (\n)
-                normalized_bytes = content.replace("\r\n", "\n").encode("utf-8")
-                hasher.update(normalized_bytes)
+        # If force_download or target_file is not valid
+        if force_download or not is_file_valid(target_file, expected_hash):
+            # Try copying from local installation directory if valid
+            if is_file_valid(local_file, expected_hash):
+                target_file.parent.mkdir(parents=True, exist_ok=True)
+                import shutil
+                shutil.copy2(local_file, target_file)
+                logger.info(f"Copied validated local binary {rel_path_str} to user-space.")
             else:
-                with open(file_path, "rb") as fh:
-                    while chunk := fh.read(8192):
-                        hasher.update(chunk)
-            actual_hash = hasher.hexdigest()
-        except Exception as e:
-            raise RuntimeError(
-                f"Startup validation failed: could not verify integrity of {rel_path_str}. Error: {e}"
-            )
+                # Retrieve from remote registry
+                url = f"{BINARY_DOWNLOAD_BASE_URL}/{platform_key}/{rel_path_str}"
+                logger.info(f"Downloading missing/modified binary {rel_path_str} from {url}")
+                try:
+                    download_file(url, target_file, expected_sha256=expected_hash)
+                except Exception as e:
+                    if not is_file_valid(target_file, expected_hash):
+                        if not target_file.exists() and not local_file.exists():
+                            raise RuntimeError(
+                                f"Startup validation failed: local packaged binary file {rel_path_str} is missing."
+                            ) from e
+                        else:
+                            raise RuntimeError(
+                                f"Startup validation failed: local packaged binary file {rel_path_str} has been modified."
+                            ) from e
 
-        if actual_hash != expected_hash:
-            raise RuntimeError(
-                f"Startup validation failed: local packaged binary file {rel_path_str} has been modified."
-            )
-
-    # 5. Inject paths directly from the installation directory
+    # 5. Inject paths directly from the user-space directory
     inject_bootstrap_paths(platform_binaries_dir)
 
     # 6. Clear sys.modules of sqlcipher3, _sqlite3, and sqlite3 to force reload from the newly injected paths

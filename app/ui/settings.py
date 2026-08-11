@@ -304,6 +304,48 @@ def show_settings(parent_app, settings):
                         ).classes("text-amber-900 text-sm mt-1").props(
                             'aria-label="AI Offline Warning Label"'
                         )
+
+                        settings_status_label = ui.label("").classes("text-xs text-gray-500 mt-1")
+                        settings_progress_bar = ui.linear_progress(value=0).classes("w-full mt-1").props('aria-label="Settings Download Progress Bar"')
+                        settings_progress_bar.set_visibility(False)
+
+                        async def repair_models():
+                            repair_btn.disable()
+                            settings_progress_bar.set_visibility(True)
+                            settings_status_label.set_text("Starting repair...")
+
+                            from nicegui import run
+                            from app.core.downloader import download_ai_models
+
+                            def on_progress(bytes_dl, total_bytes, file_idx, total_files, filename):
+                                file_fraction = 1.0 / total_files
+                                file_progress = (bytes_dl / total_bytes) if total_bytes else 0
+                                overall_percent = (file_idx + file_progress) * file_fraction
+                                settings_progress_bar.set_value(overall_percent)
+                                if total_bytes:
+                                    settings_status_label.set_text(
+                                        f"[{file_idx + 1}/{total_files}] Repairing {filename}: "
+                                        f"{file_progress:.1%} ({bytes_dl / 1024 / 1024:.1f}MB / {total_bytes / 1024 / 1024:.1f}MB)"
+                                    )
+                                else:
+                                    settings_status_label.set_text(
+                                        f"[{file_idx + 1}/{total_files}] Repairing {filename}: {bytes_dl / 1024 / 1024:.1f}MB"
+                                    )
+
+                            try:
+                                success = await run.io_bound(download_ai_models, settings, on_progress)
+                                if success:
+                                    ui.notify("Models repaired successfully!", type="positive")
+                                    settings_status_label.set_text("Repair Complete. Please reopen settings to see updated status.")
+                                else:
+                                    ui.notify("Failed to repair some models.", type="negative")
+                                    repair_btn.enable()
+                            except Exception as ex:
+                                ui.notify(f"Repair failed: {ex}", type="negative")
+                                settings_status_label.set_text(f"Error: {ex}")
+                                repair_btn.enable()
+
+                        repair_btn = ui.button("Download / Repair Models", on_click=repair_models).classes("bg-amber-500 text-white mt-2")
                 else:
                     with ui.card().classes(
                         "bg-green-50 border-green-200 border p-4 mb-4 w-full"
