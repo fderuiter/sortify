@@ -200,6 +200,13 @@ def isolate_test_environment(monkeypatch_session):
     shutil.rmtree(temp_dir, ignore_errors=True)
 
 
+@pytest.fixture(autouse=True)
+def isolate_user_home(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+
+
 @pytest.fixture(scope="session")
 def monkeypatch_session():
     from _pytest.monkeypatch import MonkeyPatch
