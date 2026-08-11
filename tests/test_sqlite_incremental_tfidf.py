@@ -1,15 +1,14 @@
-import os
-import tempfile
 import math
-import numpy as np
+import tempfile
 from pathlib import Path
+
+import numpy as np
 import pytest
-from collections import Counter
 from sklearn.feature_extraction.text import TfidfVectorizer
 
+from app.core.analyzer_strategies import GenerativeNamingStrategy
 from app.core.db import Database
 from app.core.db_worker import DBWorker
-from app.core.analyzer_strategies import GenerativeNamingStrategy
 
 
 def test_sqlite_incremental_tfidf_lifecycle():
@@ -113,12 +112,12 @@ def test_mathematical_equivalence():
             db = Database(db_path, db_worker)
 
             base_dir = "math_base"
-            
+
             # Simple 3-document corpus
             corpus = {
                 "file1.txt": "the baking recipe for sweet cookies",
                 "file2.txt": "corporate finance reports and balance sheets",
-                "file3.txt": "sweet corporate earnings showing quarterly sheets of baking finance"
+                "file3.txt": "sweet corporate earnings showing quarterly sheets of baking finance",
             }
 
             for filepath, content in corpus.items():
@@ -133,9 +132,12 @@ def test_mathematical_equivalence():
 
             # Compute TF-IDF manually using the DB-backed stats
             vocab = {term: idx for idx, (term, df) in enumerate(top_terms)}
-            idf_weights = {term: math.log((1 + N) / (1 + df)) + 1 for term, df in top_terms}
+            idf_weights = {
+                term: math.log((1 + N) / (1 + df)) + 1 for term, df in top_terms
+            }
 
             from collections import defaultdict
+
             doc_tfs = defaultdict(list)
             for filepath, term, tf in doc_terms:
                 doc_tfs[filepath].append((term, tf))
@@ -154,7 +156,9 @@ def test_mathematical_equivalence():
                 manual_vectors[filepath] = vec
 
             # Compute TF-IDF using scikit-learn's TfidfVectorizer
-            vectorizer = TfidfVectorizer(stop_words="english", max_features=1000, sublinear_tf=True)
+            vectorizer = TfidfVectorizer(
+                stop_words="english", max_features=1000, sublinear_tf=True
+            )
             hist_texts = list(corpus.values())
             sklearn_matrix = vectorizer.fit_transform(hist_texts).toarray()
             sklearn_vocab = vectorizer.vocabulary_
@@ -165,7 +169,10 @@ def test_mathematical_equivalence():
                 if term in sklearn_vocab:
                     sk_idx = sklearn_vocab[term]
                     # Check IDF weights are identical
-                    assert pytest.approx(idf_weights[term], rel=1e-5) == sklearn_idf[sk_idx]
+                    assert (
+                        pytest.approx(idf_weights[term], rel=1e-5)
+                        == sklearn_idf[sk_idx]
+                    )
 
             # Let's perform a query and check similarity rankings
             strategy = GenerativeNamingStrategy()
@@ -174,6 +181,7 @@ def test_mathematical_equivalence():
             target_docs = ["baking sweet cookies with corporate finance sheets"]
             # We will patch self._run_prompt to inspect the prompt generated
             captured_prompts = []
+
             def mock_run_prompt(prompt, max_tokens, grammar=None):
                 captured_prompts.append(prompt)
                 return "Mock Folder"

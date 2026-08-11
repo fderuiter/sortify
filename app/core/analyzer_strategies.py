@@ -872,6 +872,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
             if db and base_dir:
                 try:
                     import math
+
                     import numpy as np
 
                     # 1. Retrieve the incremental TF-IDF statistics from DB
@@ -880,10 +881,14 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                     if N > 0 and top_terms and doc_terms:
                         # Build vocabulary mapping and IDF weights
                         vocab = {term: idx for idx, (term, df) in enumerate(top_terms)}
-                        idf_weights = {term: math.log((1 + N) / (1 + df)) + 1 for term, df in top_terms}
+                        idf_weights = {
+                            term: math.log((1 + N) / (1 + df)) + 1
+                            for term, df in top_terms
+                        }
 
                         # Group doc_terms by filepath
                         from collections import defaultdict
+
                         doc_tfs = defaultdict(list)
                         for filepath, term, tf in doc_terms:
                             doc_tfs[filepath].append((term, tf))
@@ -906,7 +911,9 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                             if norm > 0:
                                 vec = vec / norm
                             hist_vectors.append(vec)
-                            historical_examples_meta.append({"filepath": filepath, "target_path": target_path})
+                            historical_examples_meta.append(
+                                {"filepath": filepath, "target_path": target_path}
+                            )
 
                         if hist_vectors:
                             # Tokenize target text
@@ -918,6 +925,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                             )
 
                             from collections import Counter
+
                             from sklearn.feature_extraction.text import TfidfVectorizer
 
                             try:
@@ -926,13 +934,28 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                                 target_tokens = analyzer(target_text)
                             except Exception:
                                 import re
-                                target_tokens = re.findall(r'\b\w\w+\b', target_text.lower())
-                                from sklearn.feature_extraction import text as sklearn_text
+
+                                target_tokens = re.findall(
+                                    r"\b\w\w+\b", target_text.lower()
+                                )
+                                from sklearn.feature_extraction import (
+                                    text as sklearn_text,
+                                )
+
                                 stops = set(sklearn_text.ENGLISH_STOP_WORDS)
-                                if isinstance(stop_words_list, str) and stop_words_list == "english":
-                                    target_tokens = [t for t in target_tokens if t not in stops]
+                                if (
+                                    isinstance(stop_words_list, str)
+                                    and stop_words_list == "english"
+                                ):
+                                    target_tokens = [
+                                        t for t in target_tokens if t not in stops
+                                    ]
                                 elif stop_words_list:
-                                    target_tokens = [t for t in target_tokens if t not in stop_words_list]
+                                    target_tokens = [
+                                        t
+                                        for t in target_tokens
+                                        if t not in stop_words_list
+                                    ]
 
                             target_tfs = Counter(target_tokens)
 
@@ -958,14 +981,22 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                             for idx in sorted_indices:
                                 if similarities[idx] >= 0.1:
                                     filepath = historical_examples_meta[idx]["filepath"]
-                                    target_path = historical_examples_meta[idx]["target_path"]
+                                    target_path = historical_examples_meta[idx][
+                                        "target_path"
+                                    ]
 
                                     # Fetch decrypted text of only this matching document!
                                     doc_info = db.get_document(base_dir, filepath)
                                     if doc_info and doc_info.get("extracted_text"):
                                         text = doc_info["extracted_text"]
                                         fallback_top_examples.append(
-                                            ({"text": text, "target_path": target_path}, similarities[idx])
+                                            (
+                                                {
+                                                    "text": text,
+                                                    "target_path": target_path,
+                                                },
+                                                similarities[idx],
+                                            )
                                         )
                                     if len(fallback_top_examples) >= 3:
                                         break
@@ -1015,7 +1046,9 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                         )
                         # Apply sublinear (logarithmic) term-frequency scaling to dampen highly repetitive terms
                         vectorizer = TfidfVectorizer(
-                            stop_words=stop_words_list, max_features=1000, sublinear_tf=True
+                            stop_words=stop_words_list,
+                            max_features=1000,
+                            sublinear_tf=True,
                         )
 
                         hist_texts = [ex["text"] for ex in historical_examples]

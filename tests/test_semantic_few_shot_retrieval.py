@@ -178,9 +178,7 @@ def test_generative_naming_fallback_to_keyword_on_missing_embeddings(db, temp_di
         patch.object(
             db.crypto, "decrypt_text", wraps=db.crypto.decrypt_text
         ) as spy_decrypt,
-        patch.object(
-            db, "get_tfidf_stats", wraps=db.get_tfidf_stats
-        ) as spy_get_tfidf,
+        patch.object(db, "get_tfidf_stats", wraps=db.get_tfidf_stats) as spy_get_tfidf,
         patch.object(
             strategy, "_run_prompt", return_value="Space Flight Exploration"
         ) as mock_run_prompt,

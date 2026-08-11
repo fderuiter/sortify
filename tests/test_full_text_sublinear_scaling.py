@@ -118,9 +118,11 @@ def test_sublinear_tf_scaling_and_full_text_use(tmp_path):
 
         def spy_build_analyzer(self_vec):
             analyzer = original_build_analyzer(self_vec)
+
             def wrapped_analyzer(doc):
                 captured_target_text.append(doc)
                 return analyzer(doc)
+
             return wrapped_analyzer
 
         # Target doc is long (e.g. 1500 characters of distinct words to ensure no truncation)
@@ -210,7 +212,9 @@ def test_resource_protection_exclusions(tmp_path):
         original_get_tfidf_stats = db.get_tfidf_stats
 
         def spy_get_tfidf_stats(base_dir_arg):
-            N, top_terms, doc_terms, doc_metadata = original_get_tfidf_stats(base_dir_arg)
+            N, top_terms, doc_terms, doc_metadata = original_get_tfidf_stats(
+                base_dir_arg
+            )
             eligible_filepaths = {row[0] for row in doc_terms}
             for filepath in doc_metadata:
                 if filepath in eligible_filepaths:
