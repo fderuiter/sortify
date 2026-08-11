@@ -154,7 +154,7 @@ def update_security_md():
     import re
     from urllib.parse import urlparse
 
-    from scripts.validate_links import URL_REGEX, validate_url
+    from scripts.validate_links import DEFAULT_BYPASS_DOMAINS, URL_REGEX, validate_url
 
     network_deps = []
     urls_to_validate = set()
@@ -261,7 +261,8 @@ def update_security_md():
         # Request timeouts of no more than 5 seconds per domain handled by validate_url?
         # Wait, validate_url in validate_links.py uses TIMEOUT = 3.0 which is <= 5s.
         future_to_url = {
-            executor.submit(validate_url, url, set()): url for url in urls_to_validate
+            executor.submit(validate_url, url, DEFAULT_BYPASS_DOMAINS): url
+            for url in urls_to_validate
         }
         for future in concurrent.futures.as_completed(future_to_url):
             url = future_to_url[future]
