@@ -8,6 +8,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 
 from app.core.analyzer_strategies import GenerativeNamingStrategy
 from app.core.db import Database
+from app.core.db_conn import clear_connection_cache
 from app.core.db_worker import DBWorker
 
 
@@ -101,6 +102,7 @@ def test_sqlite_incremental_tfidf_lifecycle():
 
         finally:
             db_worker.stop()
+            clear_connection_cache(only_current_and_inactive=False)
 
 
 def test_mathematical_equivalence():
@@ -202,3 +204,4 @@ def test_mathematical_equivalence():
 
         finally:
             db_worker.stop()
+            clear_connection_cache(only_current_and_inactive=False)
