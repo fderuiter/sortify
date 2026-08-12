@@ -304,3 +304,118 @@ def test_policy_override_bypasses_historical_and_ml():
         return None
 
     assert find_folder_for("corp_restricted.xlsx", plan) == "Strict Compliance"
+
+
+def test_policy_halting_and_cascading():
+    """Test that policy mismatches cascade by default, and halt if configured with halting=True."""
+    analyzer = IncrementalAnalyzer(
+        max_folders=3, stop_words={"the", "and"}, db=db, model_path=None
+    )
+
+    corpus = {
+        "tax_document_2026.pdf": "Yearly tax documents and files.",
+    }
+    analyzer.partial_fit("dummy", corpus)
+
+    # 1. Mismatch with halting disabled cascades to lower priority policy and global keyword rules.
+    class MockSettingsCascade:
+        MAX_DEPTH = 5
+        MAX_FEATURES = 3
+        PRESERVE_HIERARCHY = False
+        CONTEXTUAL_RENAMING = False
+        KEYWORD_RULES = {"2026": "Yearly Archive Folder"}
+        POLICIES = [
+            {
+                "type": "keyword",
+                "expression": "finance",
+                "target_path": "Finance Folder",
+                "priority": 100,
+                "halting": False,
+            },
+            {
+                "type": "keyword",
+                "expression": "tax",
+                "target_path": "Tax Folder",
+                "priority": 50,
+                "halting": False,
+            }
+        ]
+
+    plan_cascade = analyzer.generate_sorting_plan("dummy", runtime_settings=MockSettingsCascade())
+
+    def find_folder_for(filename, p, current_path=""):
+        if not isinstance(p, dict) or p.get("__type__") == "file":
+            return None
+        for k, v in p.items():
+            if v is None or (isinstance(v, dict) and v.get("__type__") == "file"):
+                if k == filename:
+                    return current_path
+            else:
+                res = find_folder_for(
+                    filename, v, current_path + "/" + k if current_path else k
+                )
+                if res:
+                    return res
+        return None
+
+    # Should cascade from high priority "finance" (mismatch) to lower-priority "tax" (match).
+    assert find_folder_for("tax_document_2026.pdf", plan_cascade) == "Tax Folder"
+
+    # Now let's test cascading all the way to global keyword rules (when all policies mismatch, none halting)
+    class MockSettingsCascadeToGlobal:
+        MAX_DEPTH = 5
+        MAX_FEATURES = 3
+        PRESERVE_HIERARCHY = False
+        CONTEXTUAL_RENAMING = False
+        KEYWORD_RULES = {"2026": "Yearly Archive Folder"}
+        POLICIES = [
+            {
+                "type": "keyword",
+                "expression": "finance",
+                "target_path": "Finance Folder",
+                "priority": 100,
+                "halting": False,
+            },
+            {
+                "type": "keyword",
+                "expression": "legal",
+                "target_path": "Legal Folder",
+                "priority": 50,
+                "halting": False,
+            }
+        ]
+
+    plan_global = analyzer.generate_sorting_plan("dummy", runtime_settings=MockSettingsCascadeToGlobal())
+    assert find_folder_for("tax_document_2026.pdf", plan_global) == "Yearly Archive Folder"
+
+    # 2. Mismatch with halting enabled immediately halts and prevents any subsequent matches (lower-priority policies or global keyword rules).
+    class MockSettingsHalting:
+        MAX_DEPTH = 5
+        MAX_FEATURES = 3
+        PRESERVE_HIERARCHY = False
+        CONTEXTUAL_RENAMING = False
+        KEYWORD_RULES = {"2026": "Yearly Archive Folder"}
+        POLICIES = [
+            {
+                "type": "keyword",
+                "expression": "finance",
+                "target_path": "Finance Folder",
+                "priority": 100,
+                "halting": True, # This fails and halts!
+            },
+            {
+                "type": "keyword",
+                "expression": "tax",
+                "target_path": "Tax Folder",
+                "priority": 50,
+                "halting": False,
+            }
+        ]
+
+    plan_halt = analyzer.generate_sorting_plan("dummy", runtime_settings=MockSettingsHalting())
+    # Evaluation halted! "tax" and "2026" rules are bypassed, so no rule folder should be found.
+    halted_folder = find_folder_for("tax_document_2026.pdf", plan_halt)
+    assert halted_folder != "Tax Folder"
+    assert halted_folder != "Yearly Archive Folder"
+
+

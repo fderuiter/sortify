@@ -640,4 +640,131 @@ def show_settings(parent_app, settings):
                         'aria-label="Add Rule Button"'
                     )
 
+                ui.label("Unified Policies").classes("text-lg font-bold mt-6 mb-2")
+
+                policies_container = ui.column().classes("w-full mb-4")
+
+                def render_policies():
+                    policies_container.clear()
+                    with policies_container:
+                        policies_list = list(getattr(settings, "POLICIES", []))
+                        if not policies_list:
+                            ui.label("No active policies configured.").classes(
+                                "text-sm text-gray-400 italic"
+                            )
+                        else:
+                            for idx, policy in enumerate(policies_list):
+                                with ui.row().classes(
+                                    "w-full items-center justify-between border-b pb-2 mb-2 flex-wrap gap-2"
+                                ):
+                                    ui.label(f"[{policy.get('type', '').upper()}]").classes("w-20 font-bold")
+                                    ui.label(policy.get("expression", "")).classes("w-32 font-mono truncate")
+                                    ui.label(policy.get("target_path", "")).classes("w-40 font-mono text-gray-500 truncate")
+                                    ui.label(f"Priority: {policy.get('priority', 0)}").classes("w-24 text-sm")
+
+                                    # Halting toggle checkbox!
+                                    halting_val = policy.get("halting", False)
+
+                                    def on_halt_toggle(e, index=idx):
+                                        current_policies = list(getattr(settings, "POLICIES", []))
+                                        if 0 <= index < len(current_policies):
+                                            current_policies[index]["halting"] = e.value
+                                            try:
+                                                settings.POLICIES = current_policies
+                                                ui.notify(
+                                                    f"Halting setting updated for policy {index}.",
+                                                    type="positive"
+                                                )
+                                            except Exception as ex:
+                                                ui.notify(f"Failed to update halting setting: {ex}", type="negative")
+                                                render_policies()
+
+                                    ui.checkbox(
+                                        "Halt on mismatch",
+                                        value=halting_val,
+                                        on_change=on_halt_toggle
+                                    ).props('aria-label="Halt toggle checkbox"')
+
+                                    def delete_policy(idx_to_del=idx):
+                                        current_policies = list(getattr(settings, "POLICIES", []))
+                                        if 0 <= idx_to_del < len(current_policies):
+                                            removed = current_policies.pop(idx_to_del)
+                                            try:
+                                                settings.POLICIES = current_policies
+                                                ui.notify(
+                                                    f"Policy deleted: '{removed.get('expression')}'",
+                                                    type="positive",
+                                                )
+                                                render_policies()
+                                            except Exception as ex:
+                                                ui.notify(f"Failed to delete policy: {ex}", type="negative")
+
+                                    ui.button(
+                                        "Delete", on_click=delete_policy, color="red"
+                                    ).props("size=sm")
+
+                render_policies()
+
+                ui.label("Add New Policy").classes("text-md font-bold mt-4 mb-2")
+                with ui.row().classes("w-full items-center gap-4 flex-wrap"):
+                    p_type_select = ui.select(
+                        label="Type",
+                        options=["keyword", "pattern", "override"],
+                        value="keyword"
+                    ).classes("w-32")
+                    p_expr_input = ui.input("Expression").props(
+                        'placeholder="e.g. invoice" aria-label="Policy Expression input"'
+                    ).classes("w-40")
+                    p_target_input = ui.input("Target Path").props(
+                        'placeholder="Folder name" aria-label="Policy Target Path input"'
+                    ).classes("w-40")
+                    p_priority_input = ui.number(
+                        label="Priority",
+                        value=10,
+                        step=1
+                    ).classes("w-20")
+                    p_halting_checkbox = ui.checkbox("Halt on mismatch", value=False)
+
+                    def add_policy():
+                        p_type = p_type_select.value
+                        p_expr = p_expr_input.value
+                        p_target = p_target_input.value
+                        p_priority = p_priority_input.value
+                        p_halting = p_halting_checkbox.value
+
+                        if not p_expr or not p_target:
+                            ui.notify(
+                                "Expression and target path are required.",
+                                type="warning",
+                            )
+                            return
+                        if p_priority is None:
+                            ui.notify("Priority is required.", type="warning")
+                            return
+
+                        new_p = {
+                            "type": p_type,
+                            "expression": p_expr,
+                            "target_path": p_target,
+                            "priority": int(p_priority),
+                            "halting": p_halting
+                        }
+
+                        current_policies = list(getattr(settings, "POLICIES", []))
+                        current_policies.append(new_p)
+                        try:
+                            settings.POLICIES = current_policies
+                            ui.notify(f"Policy for '{p_expr}' added.", type="positive")
+                            p_expr_input.value = ""
+                            p_target_input.value = ""
+                            p_priority_input.value = 10
+                            p_halting_checkbox.value = False
+                            render_policies()
+                        except Exception as ex:
+                            ui.notify(f"Invalid policy: {ex}", type="negative")
+
+                    ui.button("Add Policy", on_click=add_policy).props(
+                        'aria-label="Add Policy Button"'
+                    )
+
     dialog.open()
