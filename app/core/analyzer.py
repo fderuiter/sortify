@@ -176,6 +176,12 @@ class IncrementalAnalyzer:
         cancel_check=None,
     ) -> dict:
         """Generate a sorting plan based on the current model state."""
+        if locked_files:
+            from app.core.policy_engine import PolicyEngine
+            for f, lock_path in locked_files.items():
+                if lock_path:
+                    PolicyEngine.validate_lock_path(lock_path, file_path=f)
+
         try:
             docs = self.db.get_all_documents(base_dir)
             if not docs:
@@ -202,32 +208,13 @@ class IncrementalAnalyzer:
                 policies, key=lambda x: x.get("priority", 0), reverse=True
             )
 
-            def match_policy(rule, file_path, doc_text, st_match) -> bool:
-                rule_type = rule.get("type", "").lower()
-                expression = rule.get("expression", "").lower()
-
-                fn_only = os.path.basename(file_path).lower()
-                dl_lower = doc_text.lower() if doc_text else ""
-
-                if rule_type == "keyword":
-                    text_to_search = fn_only if st_match else (fn_only + " " + dl_lower)
-                    return expression in text_to_search
-                elif rule_type == "pattern":
-                    return expression in fn_only
-                elif rule_type == "override":
-                    return (
-                        expression == fn_only
-                        or expression in fn_only
-                        or expression in file_path.lower()
-                    )
-                return False
-
             ai_filenames = []
             ai_documents = []
             policy_plan_files = []
             keyword_plan_files = []
             unsupported_files = []
             historical_overrides = {}
+            matched_policies_map = {}
 
             # Map file hashes to their historical targets
             hash_to_target = {}
@@ -264,21 +251,13 @@ class IncrementalAnalyzer:
                 # Check if this file has a path lock / manual override first!
                 if locked_files and f in locked_files:
                     target = locked_files[f]
-                    historical_overrides[f] = (target, status_match)
-                    continue
 
                 # Check against unified policies first!
-                matched_policy = None
-                halt_evaluation = False
-                if sorted_policies:
-                    for rule in sorted_policies:
-                        if match_policy(rule, f, doc, status_match):
-                            matched_policy = rule
-                            break
-                        else:
-                            if rule.get("halting", False):
-                                halt_evaluation = True
-                                break
+                from app.core.policy_engine import PolicyEngine
+
+                matched_policy, halt_evaluation = PolicyEngine.evaluate_policies(
+                    f, doc, status_match, sorted_policies, return_halting=True
+                )
 
                 if matched_policy:
                     policy_plan_files.append(
@@ -290,6 +269,9 @@ class IncrementalAnalyzer:
                             status_match,
                         )
                     )
+                    matched_policies_map[f] = matched_policy
+                    if target is not None:
+                        historical_overrides[f] = (target, status_match)
                     continue
 
                 if halt_evaluation:
@@ -302,6 +284,8 @@ class IncrementalAnalyzer:
 
                 if target is not None:
                     historical_overrides[f] = (target, status_match)
+                    if locked_files and f in locked_files:
+                        continue
 
                 matched = False
                 if keyword_rules:
@@ -712,23 +696,32 @@ class IncrementalAnalyzer:
                 if cancel_check and cancel_check():
                     return {}
                 is_conflicted = False
+                is_overridden_lock = False
                 compliance_path = None
 
                 if f in compliance_targets and compliance_targets[f] != target_folder:
                     compliance_path = compliance_targets[f]
-
-                    if (
-                        locked_files
-                        and f in locked_files
-                        and locked_files[f]
-                        in (
-                            target_folder,
-                            compliance_path,
-                        )
-                    ):
-                        target_folder = locked_files[f]
-                    else:
+                    if f in matched_policies_map:
+                        # Compliance policy always takes absolute precedence!
                         is_conflicted = True
+                        is_overridden_lock = True
+                        original_lock_path = target_folder
+                        target_folder = compliance_path
+                    else:
+                        # Non-policy rule conflict (e.g. keyword rules vs historical target)
+                        # Original behavior: target_folder is NOT overridden, but we flag it as conflicted.
+                        if (
+                            locked_files
+                            and f in locked_files
+                            and locked_files[f]
+                            in (
+                                target_folder,
+                                compliance_path,
+                            )
+                        ):
+                            target_folder = locked_files[f]
+                        else:
+                            is_conflicted = True
 
                 # Remove from other locations if present
                 for t in plan.values():
@@ -740,12 +733,31 @@ class IncrementalAnalyzer:
 
                 info = {
                     "__type__": "file",
-                    "routed_by": "historical",
-                    "match": "user assignment",
                     "status": status,
                 }
 
-                if is_conflicted:
+                matched_pol = matched_policies_map.get(f)
+                if matched_pol:
+                    info["routed_by"] = matched_pol.get("type", "policy")
+                    info["match"] = matched_pol.get("expression")
+                else:
+                    info["routed_by"] = "historical"
+                    info["match"] = "user assignment"
+
+                if is_overridden_lock:
+                    info["is_corrected"] = True
+                    info["corrected"] = True
+                    info["is_overridden"] = True
+                    info["overridden"] = True
+                    info["original_lock_path"] = original_lock_path
+                    info["original_path"] = original_lock_path
+                    info["user_lock_path"] = original_lock_path
+                    info["historical_path"] = original_lock_path
+                    info["policy_path"] = compliance_path
+                    info["new_policy_path"] = compliance_path
+                    info["is_conflicted"] = True
+                    info["compliance_path"] = compliance_path
+                elif is_conflicted:
                     info["is_conflicted"] = True
                     info["compliance_path"] = compliance_path
                     info["historical_path"] = target_folder
