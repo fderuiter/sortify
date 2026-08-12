@@ -46,7 +46,7 @@ jobs:
       - name: Package as Archive (Windows)
         if: runner.os == 'Windows'
         run: |
-          Compress-Archive -Path dist\smart-autosorter -DestinationPath dist\${{ matrix.artifact_name }}
+          tar.exe -acf dist\${{ matrix.artifact_name }} -C dist smart-autosorter
 
       - name: Package as Archive (Unix)
         if: runner.os != 'Windows'
