@@ -1,3 +1,4 @@
+import contextlib
 from unittest.mock import ANY, MagicMock, patch
 
 import pytest
@@ -9,27 +10,29 @@ from app.ui.wizard import show_wizard
 
 @pytest.fixture
 def mock_nicegui():
-    with (
-        patch("nicegui.ui.dialog") as mock_dialog,
-        patch("nicegui.ui.card") as mock_card,
-        patch("nicegui.ui.label") as mock_label,
-        patch("nicegui.ui.column") as mock_column,
-        patch("nicegui.ui.row") as mock_row,
-        patch("nicegui.ui.button") as mock_button,
-        patch("nicegui.ui.input") as mock_input,
-        patch("nicegui.ui.linear_progress") as mock_progress,
-        patch("nicegui.ui.timer") as mock_timer,
-        patch("nicegui.ui.expansion") as mock_expansion,
-        patch("nicegui.ui.tabs") as mock_tabs,
-        patch("nicegui.ui.tab") as mock_tab,
-        patch("nicegui.ui.tab_panels") as mock_tab_panels,
-        patch("nicegui.ui.tab_panel") as mock_tab_panel,
-        patch("nicegui.ui.icon") as mock_icon,
-        patch("nicegui.ui.notify") as mock_notify,
-        patch("nicegui.ui.switch") as mock_switch,
-        patch("nicegui.ui.number") as mock_number,
-        patch("nicegui.ui.slider") as mock_slider,
-    ):
+    with contextlib.ExitStack() as stack:
+        mock_dialog = stack.enter_context(patch("nicegui.ui.dialog"))
+        mock_card = stack.enter_context(patch("nicegui.ui.card"))
+        mock_label = stack.enter_context(patch("nicegui.ui.label"))
+        mock_column = stack.enter_context(patch("nicegui.ui.column"))
+        mock_row = stack.enter_context(patch("nicegui.ui.row"))
+        mock_button = stack.enter_context(patch("nicegui.ui.button"))
+        mock_input = stack.enter_context(patch("nicegui.ui.input"))
+        mock_progress = stack.enter_context(patch("nicegui.ui.linear_progress"))
+        mock_timer = stack.enter_context(patch("nicegui.ui.timer"))
+        mock_expansion = stack.enter_context(patch("nicegui.ui.expansion"))
+        mock_tabs = stack.enter_context(patch("nicegui.ui.tabs"))
+        mock_tab = stack.enter_context(patch("nicegui.ui.tab"))
+        mock_tab_panels = stack.enter_context(patch("nicegui.ui.tab_panels"))
+        mock_tab_panel = stack.enter_context(patch("nicegui.ui.tab_panel"))
+        mock_icon = stack.enter_context(patch("nicegui.ui.icon"))
+        mock_notify = stack.enter_context(patch("nicegui.ui.notify"))
+        mock_switch = stack.enter_context(patch("nicegui.ui.switch"))
+        mock_number = stack.enter_context(patch("nicegui.ui.number"))
+        mock_slider = stack.enter_context(patch("nicegui.ui.slider"))
+        mock_select = stack.enter_context(patch("nicegui.ui.select"))
+        mock_checkbox = stack.enter_context(patch("nicegui.ui.checkbox"))
+
         yield {
             "dialog": mock_dialog,
             "card": mock_card,
@@ -45,6 +48,8 @@ def mock_nicegui():
             "switch": mock_switch,
             "number": mock_number,
             "slider": mock_slider,
+            "select": mock_select,
+            "checkbox": mock_checkbox,
         }
 
 
