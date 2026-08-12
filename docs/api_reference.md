@@ -78,6 +78,10 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.core.path_utils
 
+## `app.core.policy_engine`
+
+::: app.core.policy_engine
+
 ## `app.core.scanner`
 
 ::: app.core.scanner

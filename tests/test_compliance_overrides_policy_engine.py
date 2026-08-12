@@ -1,10 +1,8 @@
-import logging
 import tempfile
-import pytest
 from pathlib import Path
-from types import SimpleNamespace
 
-from app.config import Settings
+import pytest
+
 from app.core.analyzer import IncrementalAnalyzer
 from app.core.cache import CacheManager
 from app.core.db import Database
@@ -67,17 +65,23 @@ def test_policy_engine_standalone_evaluation():
     ]
 
     # Test keyword matching
-    rule = PolicyEngine.evaluate_policies("file.txt", "This is sensitive content", None, policies)
+    rule = PolicyEngine.evaluate_policies(
+        "file.txt", "This is sensitive content", None, policies
+    )
     assert rule is not None
     assert rule["target_path"] == "Secure_Folder"
 
     # Test pattern matching
-    rule = PolicyEngine.evaluate_policies("restricted_file.txt", "Some ordinary content", None, policies)
+    rule = PolicyEngine.evaluate_policies(
+        "restricted_file.txt", "Some ordinary content", None, policies
+    )
     assert rule is not None
     assert rule["target_path"] == "Strict_Compliance"
 
     # Test no match
-    rule = PolicyEngine.evaluate_policies("normal_file.txt", "No keywords here", None, policies)
+    rule = PolicyEngine.evaluate_policies(
+        "normal_file.txt", "No keywords here", None, policies
+    )
     assert rule is None
 
 
@@ -137,16 +141,19 @@ def test_compliance_overrides_manual_lock():
             },
         ]
 
-    locked_files = {
-        "confidential_finance.xlsx": "Public Shared Folder"
-    }
+    locked_files = {"confidential_finance.xlsx": "Public Shared Folder"}
 
     # Generate the sorting plan with locked_files
-    plan = analyzer.generate_sorting_plan("dummy", runtime_settings=MockSettings(), locked_files=locked_files)
+    plan = analyzer.generate_sorting_plan(
+        "dummy", runtime_settings=MockSettings(), locked_files=locked_files
+    )
 
     # The file should be routed to compliance-regulated folder ("Secure Finance") instead of "Public Shared Folder"
     assert "Secure Finance" in plan
-    assert "Public Shared Folder" not in plan or "confidential_finance.xlsx" not in plan.get("Public Shared Folder", {})
+    assert (
+        "Public Shared Folder" not in plan
+        or "confidential_finance.xlsx" not in plan.get("Public Shared Folder", {})
+    )
 
     file_info = plan["Secure Finance"]["confidential_finance.xlsx"]
     assert file_info["__type__"] == "file"
@@ -182,4 +189,6 @@ def test_invalid_lock_path_raises_during_plan_generation():
     locked_files = {"file.txt": "Some/../../Traversal"}
 
     with pytest.raises(ValueError):
-        analyzer.generate_sorting_plan("dummy", runtime_settings=MockSettings(), locked_files=locked_files)
+        analyzer.generate_sorting_plan(
+            "dummy", runtime_settings=MockSettings(), locked_files=locked_files
+        )
