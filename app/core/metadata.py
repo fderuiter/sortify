@@ -68,24 +68,26 @@ class MetadataPass:
                     target_path = policy.get("target_path")
                     expr_lower = expression.lower()
 
+                    is_match = False
                     if p_type == "override":
                         if (
                             expr_lower == filename_only
                             or expr_lower in filename_only
                             or expr_lower in file_path_lower
                         ):
-                            matched_target = target_path
-                            break
+                            is_match = True
                     elif p_type == "pattern":
                         if expr_lower in filename_only:
-                            matched_target = target_path
-                            break
+                            is_match = True
                     elif p_type == "keyword":
                         if expr_lower in filename_only:
-                            matched_target = target_path
-                            break
-                        else:
-                            # Halting / Extraction Safeguard
+                            is_match = True
+
+                    if is_match:
+                        matched_target = target_path
+                        break
+                    else:
+                        if policy.get("halting", False):
                             halt_evaluation = True
                             break
 

@@ -93,6 +93,9 @@ class Settings(BaseSettings):
             if "priority" not in rule or not isinstance(rule["priority"], int):
                 raise ValueError("Policy must have an integer priority.")
 
+            if "halting" in rule and not isinstance(rule["halting"], bool):
+                raise ValueError("Policy halting property must be a boolean.")
+
         # Overlap check
         def is_masked_by(higher_rule, lower_rule) -> bool:
             ha_type = higher_rule.get("type", "").lower()

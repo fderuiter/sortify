@@ -320,6 +320,7 @@ def test_metadata_pass_policy_keyword_halts_lower_rules(tmp_path):
             "expression": "confidential",
             "target_path": "/dest/confidential_docs",
             "priority": 10,
+            "halting": True,
         },
         {
             "type": "pattern",
@@ -340,3 +341,40 @@ def test_metadata_pass_policy_keyword_halts_lower_rules(tmp_path):
         )
         assert res == []
         db.set_user_verified_target_path.assert_not_called()
+
+
+def test_metadata_pass_policy_cascades_by_default(tmp_path):
+    settings = MagicMock()
+    settings.KEYWORD_RULES = {"unrelated": "/dest/standard_rules"}
+    settings.LEARNED_RULES = {"unrelated": "/dest/learned_rules"}
+    settings.POLICIES = [
+        {
+            "type": "keyword",
+            "expression": "confidential",
+            "target_path": "/dest/confidential_docs",
+            "priority": 10,
+            "halting": False,
+        },
+        {
+            "type": "pattern",
+            "expression": "unrelated",
+            "target_path": "/dest/lower_priority_policy",
+            "priority": 5,
+        },
+    ]
+    db = MagicMock()
+    db.get_all_documents.return_value = []
+
+    file1 = tmp_path / "unrelated.txt"
+    file1.touch()
+
+    with patch("app.core.metadata.get_file_hash", return_value="hash_cascade"):
+        res = MetadataPass.run(
+            str(tmp_path), ["unrelated.txt"], settings, db, None, None
+        )
+        # Should cascade and match on the lower priority policy
+        assert res == ["unrelated.txt"]
+        db.set_user_verified_target_path.assert_called_once_with(
+            str(tmp_path), "unrelated.txt", "/dest/lower_priority_policy"
+        )
+

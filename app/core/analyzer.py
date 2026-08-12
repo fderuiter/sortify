@@ -269,11 +269,16 @@ class IncrementalAnalyzer:
 
                 # Check against unified policies first!
                 matched_policy = None
+                halt_evaluation = False
                 if sorted_policies:
                     for rule in sorted_policies:
                         if match_policy(rule, f, doc, status_match):
                             matched_policy = rule
                             break
+                        else:
+                            if rule.get("halting", False):
+                                halt_evaluation = True
+                                break
 
                 if matched_policy:
                     policy_plan_files.append(
@@ -285,6 +290,14 @@ class IncrementalAnalyzer:
                             status_match,
                         )
                     )
+                    continue
+
+                if halt_evaluation:
+                    if status_match:
+                        unsupported_files.append((f, status_match))
+                    else:
+                        ai_filenames.append(f)
+                        ai_documents.append(doc)
                     continue
 
                 if target is not None:
