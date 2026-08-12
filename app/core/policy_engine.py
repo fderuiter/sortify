@@ -1,9 +1,17 @@
+"""Policy Engine module for evaluating compliance policies and validating lock paths."""
+
 import os
+
 from app.core.path_utils import validate_target_path
 
+
 class PolicyEngine:
+    """Standalone evaluation engine for enforcing compliance overrides on folder locks."""
+
     @staticmethod
-    def match_policy(rule: dict, file_path: str, doc_text: str, status_match: str) -> bool:
+    def match_policy(
+        rule: dict, file_path: str, doc_text: str, status_match: str
+    ) -> bool:
         """Evaluate a single compliance policy rule against a file."""
         rule_type = rule.get("type", "").lower()
         expression = rule.get("expression", "").lower()
@@ -62,4 +70,6 @@ class PolicyEngine:
         if not isinstance(lock_path, str):
             raise ValueError(f"Lock path must be a string. Got {type(lock_path)}")
         # Use established target path validator
-        validate_target_path(lock_path, keyword=os.path.basename(file_path) if file_path else None)
+        validate_target_path(
+            lock_path, keyword=os.path.basename(file_path) if file_path else None
+        )

@@ -178,6 +178,7 @@ class IncrementalAnalyzer:
         """Generate a sorting plan based on the current model state."""
         if locked_files:
             from app.core.policy_engine import PolicyEngine
+
             for f, lock_path in locked_files.items():
                 if lock_path:
                     PolicyEngine.validate_lock_path(lock_path, file_path=f)
