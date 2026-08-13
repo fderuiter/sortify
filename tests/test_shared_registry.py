@@ -545,3 +545,92 @@ def test_sandbox_address_resolution_supports_mocks():
         res_host = socket.getaddrinfo(mock_host, 80)
         assert res_host == "mocked-host-result"
         mock_orig_host.assert_called_once_with(mock_host, 80)
+
+
+def test_hardware_helpers():
+    """Test environment helper hardware check functions."""
+    from app.core.env_helper import is_cuda_available, is_mps_available
+
+    with patch("torch.cuda.is_available", return_value=True):
+        assert is_cuda_available() is True
+
+    with patch("torch.cuda.is_available", return_value=False):
+        assert is_cuda_available() is False
+
+    with patch("torch.backends.mps.is_available", return_value=True):
+        assert is_mps_available() is True
+
+    with patch("torch.backends.mps.is_available", return_value=False):
+        assert is_mps_available() is False
+
+
+def test_get_ocr_reader_dynamic_config(monkeypatch):
+    """Test that get_ocr_reader reloads and uses the custom language and GPU settings."""
+    import sys
+
+    mock_easyocr = MagicMock()
+    mock_torch = MagicMock()
+
+    monkeypatch.setitem(sys.modules, "easyocr", mock_easyocr)
+    monkeypatch.setitem(sys.modules, "torch", mock_torch)
+
+    SharedModelRegistry._instance = None
+    registry = SharedModelRegistry.get_instance()
+
+    # Dynamic settings test
+    with patch("app.config.AppSettings") as mock_settings_cls:
+        mock_settings = MagicMock()
+        mock_settings.OCR_LANGUAGES = "en,de"
+        mock_settings.OCR_GPU_ENABLED = True
+        mock_settings_cls.return_value = mock_settings
+
+        with (
+            patch("app.core.env_helper.is_cuda_available", return_value=True),
+            patch("app.core.env_helper.is_mps_available", return_value=False),
+        ):
+            registry.get_ocr_reader()
+
+            # Ensure Reader called with ["en", "de"] and gpu=True
+            from unittest.mock import ANY
+            mock_easyocr.Reader.assert_any_call(
+                ["en", "de"],
+                gpu=True,
+                model_storage_directory=ANY,
+                download_enabled=False,
+            )
+
+
+def test_get_ocr_reader_fallback(monkeypatch):
+    """Test that get_ocr_reader falls back to 'en' and cpu if initialization fails."""
+    import sys
+
+    mock_easyocr = MagicMock()
+    mock_torch = MagicMock()
+
+    # Make first initialization raise an exception (e.g. invalid language)
+    mock_easyocr.Reader.side_effect = [Exception("Init failed"), MagicMock()]
+
+    monkeypatch.setitem(sys.modules, "easyocr", mock_easyocr)
+    monkeypatch.setitem(sys.modules, "torch", mock_torch)
+
+    SharedModelRegistry._instance = None
+    registry = SharedModelRegistry.get_instance()
+
+    with patch("app.config.AppSettings") as mock_settings_cls:
+        mock_settings = MagicMock()
+        mock_settings.OCR_LANGUAGES = "unsupported_lang"
+        mock_settings.OCR_GPU_ENABLED = True
+        mock_settings_cls.return_value = mock_settings
+
+        registry.get_ocr_reader()
+
+        # It should try once with the configured unsupported language, fail,
+        # and then initialize with "en" and gpu=False
+        from unittest.mock import ANY
+        assert mock_easyocr.Reader.call_count == 2
+        mock_easyocr.Reader.assert_any_call(
+            ["en"],
+            gpu=False,
+            model_storage_directory=ANY,
+            download_enabled=False,
+        )

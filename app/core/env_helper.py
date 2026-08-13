@@ -69,3 +69,22 @@ def run_background_process(cmd, **kwargs):
         kwargs["startupinfo"] = get_subprocess_startupinfo()
 
     return subprocess.run(cmd, **kwargs)
+
+
+def is_cuda_available() -> bool:
+    """Check if PyTorch CUDA capability is available."""
+    try:
+        import torch
+        return torch.cuda.is_available()
+    except Exception:
+        return False
+
+
+def is_mps_available() -> bool:
+    """Check if PyTorch MPS capability is available."""
+    try:
+        import torch
+        return hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
+    except Exception:
+        return False
+

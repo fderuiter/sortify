@@ -334,45 +334,74 @@ class AudioExtractor:
             if settings and hasattr(settings, "WHISPER_CMD"):
                 whisper_cmd = settings.WHISPER_CMD
 
-            if isinstance(whisper_cmd, list):
-                cmd = list(whisper_cmd) + [
-                    target_file_path,
-                    "--output_format",
-                    "txt",
-                    "--device",
-                    "cpu",
-                ]
-            else:
-                cmd = [
-                    whisper_cmd,
-                    target_file_path,
-                    "--output_format",
-                    "txt",
-                    "--device",
-                    "cpu",
-                ]
+            from app.core.env_helper import is_cuda_available, is_mps_available
 
-            cmd = [str(arg) for arg in cmd]
-            logging.info(f"Launching Whisper subprocess: {' '.join(cmd)}")
+            audio_gpu = getattr(settings, "AUDIO_GPU_ENABLED", False) if settings else False
+            if not isinstance(audio_gpu, bool):
+                audio_gpu = False
 
-            try:
-                process = spawn_background_process(
-                    cmd,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
-                    bufsize=1,
-                )
-            except FileNotFoundError:
-                logging.error(
-                    f"Whisper executable '{whisper_cmd}' not found on system."
-                )
-                return f"[STATUS:ERROR: Whisper model offline or '{whisper_cmd}' not found]"
-            except Exception as e:
-                logging.error(f"Failed to spawn Whisper process: {e}")
-                return f"[STATUS:ERROR: {str(e)}]"
+            resolved_device = "cpu"
+            if audio_gpu:
+                if is_cuda_available():
+                    resolved_device = "cuda"
+                elif is_mps_available():
+                    resolved_device = "mps"
+
+            devices_to_try = [resolved_device]
+            if resolved_device != "cpu":
+                devices_to_try.append("cpu")
+
+            process = None
+            used_device = "cpu"
+
+            for dev in devices_to_try:
+                if isinstance(whisper_cmd, list):
+                    cmd = list(whisper_cmd) + [
+                        target_file_path,
+                        "--output_format",
+                        "txt",
+                        "--device",
+                        dev,
+                    ]
+                else:
+                    cmd = [
+                        whisper_cmd,
+                        target_file_path,
+                        "--output_format",
+                        "txt",
+                        "--device",
+                        dev,
+                    ]
+
+                cmd = [str(arg) for arg in cmd]
+                logging.info(f"Launching Whisper subprocess on {dev}: {' '.join(cmd)}")
+
+                try:
+                    process = spawn_background_process(
+                        cmd,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT,
+                        text=True,
+                        encoding="utf-8",
+                        errors="replace",
+                        bufsize=1,
+                    )
+                    used_device = dev
+                    break
+                except FileNotFoundError as e:
+                    if dev != "cpu":
+                        logging.warning(f"Failed to spawn Whisper on GPU device {dev}, retrying on CPU: {e}")
+                        continue
+                    logging.error(
+                        f"Whisper executable '{whisper_cmd}' not found on system."
+                    )
+                    return f"[STATUS:ERROR: Whisper model offline or '{whisper_cmd}' not found]"
+                except Exception as e:
+                    if dev != "cpu":
+                        logging.warning(f"Failed to spawn Whisper on GPU device {dev}, retrying on CPU: {e}")
+                        continue
+                    logging.error(f"Failed to spawn Whisper process: {e}")
+                    return f"[STATUS:ERROR: {str(e)}]"
 
             transcription_lines = []
 

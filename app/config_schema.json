@@ -195,6 +195,21 @@
       "default": "",
       "title": "Proxy",
       "type": "string"
+    },
+    "OCR_GPU_ENABLED": {
+      "default": false,
+      "title": "Ocr Gpu Enabled",
+      "type": "boolean"
+    },
+    "AUDIO_GPU_ENABLED": {
+      "default": false,
+      "title": "Audio Gpu Enabled",
+      "type": "boolean"
+    },
+    "OCR_LANGUAGES": {
+      "default": "en",
+      "title": "Ocr Languages",
+      "type": "string"
     }
   },
   "title": "Settings",

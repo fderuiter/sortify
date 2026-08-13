@@ -42,6 +42,27 @@ class Settings(BaseSettings):
     MODEL_THREADS: int = Field(default=2, ge=1, le=32)
     PROTECTED_PATHS: list[str] = Field(default_factory=list)
     PROXY: str = Field(default="")
+    OCR_GPU_ENABLED: bool = Field(default=False)
+    AUDIO_GPU_ENABLED: bool = Field(default=False)
+    OCR_LANGUAGES: str = Field(default="en")
+
+    @field_validator("OCR_LANGUAGES")
+    @classmethod
+    def validate_ocr_languages(cls, v: str) -> str:
+        """Validate that OCR_LANGUAGES is a valid comma-separated string of non-empty language codes."""
+        if not isinstance(v, str):
+            raise ValueError("OCR_LANGUAGES must be a string.")
+        parts = [p.strip() for p in v.split(",") if p.strip()]
+        if not parts:
+            raise ValueError("OCR_LANGUAGES must contain at least one language code.")
+        raw_parts = v.split(",")
+        for part in raw_parts:
+            part_stripped = part.strip()
+            if not part_stripped:
+                raise ValueError("OCR_LANGUAGES cannot contain empty language codes.")
+            if not all(c.isalnum() or c == '_' for c in part_stripped):
+                raise ValueError(f"Invalid language code: '{part_stripped}'. Only alphanumeric characters and underscores are allowed.")
+        return v
 
     @field_validator("PROTECTED_PATHS")
     @classmethod

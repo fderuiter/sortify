@@ -603,19 +603,41 @@ class SharedModelRegistry:
     def get_ocr_reader(self):
         """Lazily load and return the EasyOCR Reader from registry."""
         model_id = "easyocr"
-        if model_id not in self._models:
-            import sys
+        import sys
 
-            # Resolve easyocr_dir
-            if hasattr(sys, "_MEIPASS"):
-                easyocr_dir = os.path.join(sys._MEIPASS, "offline_bundle", "easyocr")
+        # Resolve easyocr_dir
+        if hasattr(sys, "_MEIPASS"):
+            easyocr_dir = os.path.join(sys._MEIPASS, "offline_bundle", "easyocr")
+        else:
+            easyocr_path = os.environ.get("EASYOCR_MODULE_PATH")
+            if easyocr_path:
+                easyocr_dir = os.path.join(easyocr_path, "model")
             else:
-                easyocr_path = os.environ.get("EASYOCR_MODULE_PATH")
-                if easyocr_path:
-                    easyocr_dir = os.path.join(easyocr_path, "model")
-                else:
-                    easyocr_dir = os.path.expanduser("~/.EasyOCR/model")
+                easyocr_dir = os.path.expanduser("~/.EasyOCR/model")
 
+        # Get settings
+        from app.config import AppSettings
+        settings = getattr(self, "_cached_settings", None) or AppSettings()
+
+        # Safely retrieve OCR_LANGUAGES and OCR_GPU_ENABLED, handling mocks/missing attributes
+        raw_langs = getattr(settings, "OCR_LANGUAGES", "en")
+        if not isinstance(raw_langs, str):
+            raw_langs = "en"
+
+        langs = [lang.strip() for lang in raw_langs.split(",") if lang.strip()]
+        if not langs:
+            langs = ["en"]
+
+        ocr_gpu_enabled = getattr(settings, "OCR_GPU_ENABLED", False)
+        if not isinstance(ocr_gpu_enabled, bool):
+            ocr_gpu_enabled = False
+
+        from app.core.env_helper import is_cuda_available, is_mps_available
+        gpu_available = is_cuda_available() or is_mps_available()
+        use_gpu = bool(ocr_gpu_enabled and gpu_available)
+
+        current_reader_info = self._models.get("easyocr_info")
+        if model_id not in self._models or current_reader_info != (langs, use_gpu):
             # Check integrity if expected hashes are registered
             if model_id in self._expected_hashes:
                 self.verify_integrity(model_id, easyocr_dir)
@@ -625,16 +647,33 @@ class SharedModelRegistry:
                 import torch
 
                 torch.set_num_threads(self.get_thread_limit())
-                # Create reader on CPU using resolved directory
+                logging.info(f"Initializing EasyOCR reader with languages {langs} and gpu={use_gpu}")
                 self._models[model_id] = easyocr.Reader(
-                    ["en"],
-                    gpu=False,
+                    langs,
+                    gpu=use_gpu,
                     model_storage_directory=easyocr_dir,
                     download_enabled=False,
                 )
+                self._models["easyocr_info"] = (langs, use_gpu)
             except Exception as e:
-                logging.error(f"Failed to load EasyOCR reader from registry: {e}")
-                self._models[model_id] = None
+                logging.error(f"Failed to load EasyOCR reader with languages {langs} and gpu={use_gpu}: {e}. Falling back to 'en' and cpu.")
+                try:
+                    import easyocr
+                    import torch
+
+                    torch.set_num_threads(self.get_thread_limit())
+                    self._models[model_id] = easyocr.Reader(
+                        ["en"],
+                        gpu=False,
+                        model_storage_directory=easyocr_dir,
+                        download_enabled=False,
+                    )
+                    self._models["easyocr_info"] = (["en"], False)
+                except Exception as ex:
+                    logging.critical(f"Critical: Fallback EasyOCR initialization failed: {ex}")
+                    self._models[model_id] = None
+                    self._models["easyocr_info"] = (None, None)
+
         return self._models[model_id]
 
     def get_generative_model(self, model_path: str):
