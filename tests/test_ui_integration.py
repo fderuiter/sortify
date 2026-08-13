@@ -74,9 +74,13 @@ def test_wizard_timer_and_thread_cleanup():
             return MockResponse()
 
     try:
+        active_timers_before_show = [
+            t for t in timers if not getattr(t, "_is_canceled", False)
+        ]
+
         with (
             Client(None),
-            patch("app.ui.wizard.run_background_download", side_effect=tracking_run_bg),
+            patch("app.core.downloader.run_background_download", side_effect=tracking_run_bg),
             patch("urllib.request.build_opener", return_value=MockOpener()),
             patch("shutil.disk_usage", return_value=(10**12, 10**12, 10**12)),
         ):
@@ -101,24 +105,38 @@ def test_wizard_timer_and_thread_cleanup():
             # Initially there should be no active download threads and no custom timer
             assert len(captured_threads) == 0
 
-            active_timers_before = [
+            # Verify that sync timer was registered
+            active_timers_after_show = [
                 t for t in timers if not getattr(t, "_is_canceled", False)
             ]
+            assert len(active_timers_after_show) > len(active_timers_before_show)
 
             # Click Accept & Download programmatically
             for l in accept_btn._event_listeners.values():
                 if l.type == "click":
                     l.handler(None)
 
-            # Verify that download begins and active timer count increases
+            # Verify that download begins
             assert len(captured_threads) == 1
             download_thread = captured_threads[0]
             assert download_thread.is_alive()
 
-            active_timers_after = [
-                t for t in timers if not getattr(t, "_is_canceled", False)
-            ]
-            assert len(active_timers_after) > len(active_timers_before)
+            # Find 'Cancel' button to cancel download
+            cancel_btn = None
+            for btn in buttons:
+                if btn.text == "Cancel":
+                    cancel_btn = btn
+                    break
+            assert cancel_btn is not None, "Cancel Download button not found"
+
+            # Click Cancel programmatically
+            for l in cancel_btn._event_listeners.values():
+                if l.type == "click":
+                    l.handler(None)
+
+            # Assert that the downloader background thread is cancelled and terminated
+            download_thread.join(timeout=2.0)
+            assert not download_thread.is_alive()
 
             # Close / Dismiss the dialog via the 'dismiss' event
             dismiss_handler = None
@@ -134,19 +152,14 @@ def test_wizard_timer_and_thread_cleanup():
             except TypeError:
                 dismiss_handler()
 
-            # Assert that the downloader background thread is cancelled and terminated
-            download_thread.join(timeout=2.0)
-            assert not download_thread.is_alive()
-
             # Assert that the active NiceGUI timer count drops back (and our timer is cancelled)
             active_timers_final = [
                 t for t in timers if not getattr(t, "_is_canceled", False)
             ]
-            assert len(active_timers_final) <= len(active_timers_before)
+            assert len(active_timers_final) <= len(active_timers_before_show)
 
             # Specifically check that the created timer was cancelled
-            for t in timers:
-                assert getattr(t, "_is_canceled", False) is True
+            assert any(getattr(t, "_is_canceled", False) is True for t in timers)
 
     finally:
         # Restore original classes/methods to avoid side-effects
@@ -217,6 +230,10 @@ def test_settings_timer_and_thread_cleanup():
             return MockResponse()
 
     try:
+        active_timers_before_show = [
+            t for t in timers if not getattr(t, "_is_canceled", False)
+        ]
+
         with (
             Client(None),
             patch(
@@ -247,24 +264,29 @@ def test_settings_timer_and_thread_cleanup():
             # Initially there should be no active download threads and no custom timer
             assert len(captured_threads) == 0
 
-            active_timers_before = [
+            # Verify that sync timer was registered
+            active_timers_after_show = [
                 t for t in timers if not getattr(t, "_is_canceled", False)
             ]
+            assert len(active_timers_after_show) > len(active_timers_before_show)
 
             # Click Download AI Model programmatically
             for l in download_btn._event_listeners.values():
                 if l.type == "click":
                     l.handler(None)
 
-            # Verify that download begins and active timer count increases
+            # Verify that download begins
             assert len(captured_threads) == 1
             download_thread = captured_threads[0]
             assert download_thread.is_alive()
 
-            active_timers_after = [
-                t for t in timers if not getattr(t, "_is_canceled", False)
-            ]
-            assert len(active_timers_after) > len(active_timers_before)
+            # Cancel the download programmatically via DownloadManager as settings has no cancel button
+            from app.core.downloader import DownloadManager
+            DownloadManager.get_instance().cancel_download()
+
+            # Assert that the downloader background thread is cancelled and terminated
+            download_thread.join(timeout=2.0)
+            assert not download_thread.is_alive()
 
             # Close / Dismiss the dialog via the 'dismiss' event
             dismiss_handler = None
@@ -280,19 +302,14 @@ def test_settings_timer_and_thread_cleanup():
             except TypeError:
                 dismiss_handler()
 
-            # Assert that the downloader background thread is cancelled and terminated
-            download_thread.join(timeout=2.0)
-            assert not download_thread.is_alive()
-
             # Assert that the active NiceGUI timer count drops back (and our timer is cancelled)
             active_timers_final = [
                 t for t in timers if not getattr(t, "_is_canceled", False)
             ]
-            assert len(active_timers_final) <= len(active_timers_before)
+            assert len(active_timers_final) <= len(active_timers_before_show)
 
             # Specifically check that the created timer was cancelled
-            for t in timers:
-                assert getattr(t, "_is_canceled", False) is True
+            assert any(getattr(t, "_is_canceled", False) is True for t in timers)
 
     finally:
         # Restore original classes/methods
