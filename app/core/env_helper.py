@@ -11,11 +11,7 @@ import sys
 
 from app.config import get_app_dir
 
-MACOS_SANDBOX_PROFILE = (
-    "(version 1)\n"
-    "(allow default)\n"
-    "(deny network-outbound)\n"
-)
+MACOS_SANDBOX_PROFILE = "(version 1)\n(allow default)\n(deny network-outbound)\n"
 
 
 def check_linux_sandbox_support() -> bool:
@@ -505,8 +501,6 @@ if sys.platform == "win32":
                 raise ctypes.WinError()
 
             # 7. Handle process handle extraction, close thread handle, and close parent/child pipes
-            import subprocess
-
             if hasattr(subprocess, "Handle"):
                 self._handle = subprocess.Handle(pi.hProcess)
             else:
@@ -519,7 +513,9 @@ if sys.platform == "win32":
             self._child_created = True
 
             # Use the safe _close_pipe_fds implementation to close child ends of pipes
-            self._close_pipe_fds(p2cread, p2cwrite, c2pread, c2pwrite, errread, errwrite)
+            self._close_pipe_fds(
+                p2cread, p2cwrite, c2pread, c2pwrite, errread, errwrite
+            )
 
 
 else:

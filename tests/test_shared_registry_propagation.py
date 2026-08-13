@@ -114,6 +114,7 @@ def test_model_downloader_bypasses_sandbox(tmp_path):
     mock_opener = MagicMock()
     mock_opener.open.return_value.__enter__.return_value = mock_response
     from app.core.hashes_registry import HASHES
+
     original_hashes_model_download = HASHES["model_download"]["model.onnx"]
     original_hashes_generative_naming = HASHES["generative_naming"]["model.onnx"]
 
