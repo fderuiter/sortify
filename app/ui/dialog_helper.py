@@ -295,4 +295,5 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {{
         else:
             _on_complete()
 
-    threading.Thread(target=_run_dialog, daemon=True).start()
+    from app.core.shared_registry import ContextPropagatingThread
+    ContextPropagatingThread(target=_run_dialog, daemon=True).start()

@@ -14,7 +14,63 @@ import socket
 import threading
 from contextlib import contextmanager
 
-_thread_local = threading.local()
+import contextvars
+
+class ContextVarLocal:
+    def __init__(self):
+        super().__setattr__("_var", contextvars.ContextVar("context_var_local", default={}))
+
+    def __getattr__(self, name):
+        if name == "_var":
+            raise AttributeError("_var is not initialized")
+        d = self._var.get()
+        if name in d:
+            return d[name]
+        raise AttributeError(f"'ContextVarLocal' object has no attribute '{name}'")
+
+    def __setattr__(self, name, value):
+        if name == "_var":
+            super().__setattr__(name, value)
+            return
+        d = dict(self._var.get())
+        d[name] = value
+        self._var.set(d)
+
+    def __delattr__(self, name):
+        if name == "_var":
+            super().__delattr__(name)
+            return
+        d = dict(self._var.get())
+        if name in d:
+            del d[name]
+            self._var.set(d)
+        else:
+            raise AttributeError(f"'ContextVarLocal' object has no attribute '{name}'")
+
+import sys
+
+if not hasattr(sys, "_sandbox_thread_local"):
+    sys._sandbox_thread_local = ContextVarLocal()
+
+_thread_local = sys._sandbox_thread_local
+
+class ContextPropagatingThread(threading.Thread):
+    def __init__(self, *args, **kwargs):
+        self._ctx = contextvars.copy_context()
+        super().__init__(*args, **kwargs)
+
+    def run(self):
+        def wrapped():
+            if "VectorReconstruction" in self.name or "reconstruction" in self.name.lower():
+                _thread_local.sandboxed = True
+                _thread_local.reason = "background vector reconstruction"
+            super(ContextPropagatingThread, self).run()
+        self._ctx.run(wrapped)
+
+class ContextPropagatingThreadPoolExecutor(concurrent.futures.ThreadPoolExecutor):
+    def submit(self, fn, *args, **kwargs):
+        ctx = contextvars.copy_context()
+        return super().submit(ctx.run, fn, *args, **kwargs)
 
 # Keep track of original functions permanently to avoid recursion/re-patching issues
 if not hasattr(socket, "_real_socket_connect"):
@@ -486,7 +542,7 @@ class SharedWorkerPool:
 
     def __init__(self, max_workers: int):
         apply_global_socket_sandbox()
-        self._executor = concurrent.futures.ThreadPoolExecutor(
+        self._executor = ContextPropagatingThreadPoolExecutor(
             max_workers=max_workers,
             thread_name_prefix="GlobalSharedWorker",
             initializer=apply_global_socket_sandbox,
@@ -495,10 +551,23 @@ class SharedWorkerPool:
 
     def submit(self, fn, *args, **kwargs):
         """Submit a task to the pool, ensuring offline boundaries are enforced."""
+        parent_sandboxed = getattr(_thread_local, "sandboxed", None)
+        parent_reason = getattr(_thread_local, "reason", "worker execution")
 
         def offline_wrapped_fn(*a, **kw):
-            with block_external_network():
+            is_sandboxed = True
+            reason = parent_reason if parent_sandboxed is True else "worker execution"
+            
+            was_sandboxed = getattr(_thread_local, "sandboxed", False)
+            old_reason = getattr(_thread_local, "reason", "worker execution")
+            
+            _thread_local.sandboxed = is_sandboxed
+            _thread_local.reason = reason
+            try:
                 return fn(*a, **kw)
+            finally:
+                _thread_local.sandboxed = was_sandboxed
+                _thread_local.reason = old_reason
 
         return self._executor.submit(offline_wrapped_fn, *args, **kwargs)
 
