@@ -375,38 +375,108 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
 
         doc_map = dict(zip(filenames, documents))
 
-        def filter_plan(node, path_name=""):
-            new_node = {}
-            low_confidence_files = {}
+        # 1. Collect all validation tasks first (to pipeline them)
+        def collect_validation_tasks(node, path_name=""):
+            tasks = []
             for k, v in node.items():
                 if v is None:
                     doc_text = doc_map.get(k, "")[:1000]
                     prompt = f"Does this document about '{doc_text}' belong in a folder for '{path_name}'? Reply YES or NO."
-                    validation_grammar = 'root ::= "YES" | "NO"'
-                    try:
-                        answer = (
-                            self._run_prompt(prompt, 5, grammar=validation_grammar)
-                            .strip()
-                            .upper()
-                        )
+                    tasks.append({
+                        "file": k,
+                        "prompt": prompt,
+                        "path_name": path_name,
+                    })
+                elif isinstance(v, dict):
+                    folder_name = k if not path_name else f"{path_name} {k}"
+                    tasks.extend(collect_validation_tasks(v, path_name=folder_name))
+            return tasks
 
-                        if "NO" in answer:
-                            low_confidence_files[k] = None
-                        else:
-                            new_node[k] = None
+        tasks = collect_validation_tasks(plan)
+        validation_grammar = 'root ::= "YES" | "NO"'
+        results = {}
+
+        use_gguf = self._gguf_active and not self._gguf_failed and self._gguf_process and self._gguf_process.is_alive()
+
+        # 2. Run validations (pipelined if GGUF is active)
+        if use_gguf and tasks:
+            # Push all validation tasks to background worker queue asynchronously before blocking
+            for task in tasks:
+                try:
+                    self._gguf_input_queue.put({
+                        "prompt": task["prompt"],
+                        "max_tokens": 5,
+                        "grammar": validation_grammar
+                    })
+                except Exception as e:
+                    logging.error(f"Failed to queue task for {task['file']}: {e}")
+
+            # Retrieve model responses in First-In, First-Out (FIFO) bulk sequence
+            for task in tasks:
+                filename = task["file"]
+                prompt = task["prompt"]
+                
+                # Check if GGUF is still active and hasn't failed
+                if self._gguf_active and not self._gguf_failed and self._gguf_process and self._gguf_process.is_alive():
+                    try:
+                        estimated_tokens = len(prompt) // 4
+                        timeout = max(8.0, min(60.0, 8.0 + (estimated_tokens / 20.0)))
+                        
+                        res = cooperative_queue_get(self._gguf_output_queue, timeout=timeout)
+                        
+                        if not isinstance(res, dict) or "error" in res or "text" not in res:
+                            raise Exception(
+                                res.get("error") if isinstance(res, dict) else "Null or incomplete response"
+                            )
+                        results[filename] = res["text"].strip().upper()
                     except Exception as e:
-                        logging.error(f"Coherence check failed: {e}")
+                        logging.error(f"Pipelined GGUF worker failed or timed out for {filename}: {e}")
+                        # Fall back to PyTorch
+                        self._fallback_to_pytorch()
+                        try:
+                            results[filename] = self._run_prompt(prompt, 5, grammar=validation_grammar).strip().upper()
+                        except Exception as inner_e:
+                            logging.error(f"Fallback generation failed for {filename}: {inner_e}")
+                            results[filename] = "YES"
+                else:
+                    # GGUF failed/died, fallback to synchronous running (PyTorch)
+                    try:
+                        results[filename] = self._run_prompt(prompt, 5, grammar=validation_grammar).strip().upper()
+                    except Exception as e:
+                        logging.error(f"Fallback generation failed for {filename}: {e}")
+                        results[filename] = "YES"
+        else:
+            # Synchronous processing (e.g., PyTorch)
+            for task in tasks:
+                filename = task["file"]
+                prompt = task["prompt"]
+                try:
+                    results[filename] = self._run_prompt(prompt, 5, grammar=validation_grammar).strip().upper()
+                except Exception as e:
+                    logging.error(f"Synchronous coherence check failed for {filename}: {e}")
+                    results[filename] = "YES"
+
+        # 3. Reconstruct the filtered plan using precomputed validation results
+        def rebuild_filtered_plan(node, path_name=""):
+            new_node = {}
+            low_confidence_files = {}
+            for k, v in node.items():
+                if v is None:
+                    answer = results.get(k, "YES")
+                    if "NO" in answer:
+                        low_confidence_files[k] = None
+                    else:
                         new_node[k] = None
                 elif isinstance(v, dict):
                     folder_name = k if not path_name else f"{path_name} {k}"
-                    filtered_v, lc_v = filter_plan(v, path_name=folder_name)
+                    filtered_v, lc_v = rebuild_filtered_plan(v, path_name=folder_name)
                     if filtered_v:
                         new_node[k] = filtered_v
                     low_confidence_files.update(lc_v)
             return new_node, low_confidence_files
 
         with block_external_network():
-            new_plan, lc_files = filter_plan(plan)
+            new_plan, lc_files = rebuild_filtered_plan(plan)
 
         if lc_files:
             if "Low Confidence" not in new_plan:
