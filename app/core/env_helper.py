@@ -278,33 +278,35 @@ if sys.platform == "win32":
     class RestrictedPopen(subprocess.Popen):
         """A subclass of Popen that executes child processes under a restricted token on Windows."""
 
-        def _execute_child(
-            self,
-            args,
-            executable,
-            preexec_fn,
-            close_fds,
-            pass_fds,
-            cwd,
-            env,
-            startupinfo,
-            creationflags,
-            shell,
-            p2cread,
-            p2cwrite,
-            c2pread,
-            c2pwrite,
-            errread,
-            errwrite,
-            unused_restore_signals=None,
-            unused_gid=None,
-            unused_gids=None,
-            unused_uid=None,
-            unused_umask=None,
-            unused_start_new_session=None,
-            *extra_args,
-            **extra_kwargs,
-        ):
+        def _close_pipe_fds(self, *args, **kwargs):
+            try:
+                super()._close_pipe_fds(*args, **kwargs)
+            except OSError:
+                pass
+
+        def _execute_child(self, *args, **kwargs):
+            # Safe extraction helper for variable signatures across Python versions
+            def get_arg(idx, name, default=None):
+                if len(args) > idx:
+                    return args[idx]
+                return kwargs.get(name, default)
+
+            child_args = get_arg(0, "args")
+            executable = get_arg(1, "executable")
+            _preexec_fn = get_arg(2, "preexec_fn")
+            _close_fds = get_arg(3, "close_fds")
+            _pass_fds = get_arg(4, "pass_fds")
+            cwd = get_arg(5, "cwd")
+            env = get_arg(6, "env")
+            startupinfo = get_arg(7, "startupinfo")
+            creationflags = get_arg(8, "creationflags", 0)
+            _shell = get_arg(9, "shell", False)
+            p2cread = get_arg(10, "p2cread")
+            p2cwrite = get_arg(11, "p2cwrite")
+            c2pread = get_arg(12, "c2pread")
+            c2pwrite = get_arg(13, "c2pwrite")
+            errread = get_arg(14, "errread")
+            errwrite = get_arg(15, "errwrite")
 
             advapi32 = ctypes.windll.advapi32
             kernel32 = ctypes.windll.kernel32
@@ -464,10 +466,10 @@ if sys.platform == "win32":
             inherit_handles = True if (si.dwFlags & 0x00000100) else False
 
             # Convert cmd line
-            if isinstance(args, list):
-                cmd_line = subprocess.list2cmdline(args)
+            if isinstance(child_args, list):
+                cmd_line = subprocess.list2cmdline(child_args)
             else:
-                cmd_line = args
+                cmd_line = child_args
 
             # 5. Convert env and pass CREATE_UNICODE_ENVIRONMENT
             env_block = create_unicode_env_block(env)
@@ -519,15 +521,8 @@ if sys.platform == "win32":
 
             self._child_created = True
 
-            # Close child ends of pipes on the parent side to prevent leaks/hangs.
-            # We do NOT close the parent ends (p2cwrite, c2pread, errread) here,
-            # as they are owned/closed by standard Popen/caller.
-            for pipe in (p2cread, c2pwrite, errwrite):
-                if pipe is not None and pipe != -1:
-                    if hasattr(pipe, "Close"):
-                        pipe.Close()
-                    elif hasattr(pipe, "close"):
-                        pipe.close()
+            # Use the safe _close_pipe_fds implementation to close child ends of pipes
+            self._close_pipe_fds(p2cread, p2cwrite, c2pread, c2pwrite, errread, errwrite)
 
 
 else:
