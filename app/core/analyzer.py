@@ -422,24 +422,77 @@ class IncrementalAnalyzer:
                             np.array(ai_vectors), np.array(hist_vectors)
                         )
                     else:
-                        # Fallback gracefully to standard TF-IDF text similarity
-                        from sklearn.feature_extraction.text import TfidfVectorizer
+                        # Fallback gracefully to standard TF-IDF text similarity using DB pre-computed stats
+                        import math
+                        import numpy as np
+                        from scipy.sparse import csr_matrix
+                        from sklearn.feature_extraction.text import TfidfVectorizer, TfidfTransformer
+                        from sklearn.preprocessing import normalize
 
-                        historical_texts = [doc["text"] for doc in historical_docs]
-                        vectorizer = TfidfVectorizer(
-                            stop_words=list(self.stop_words),
-                            max_features=1000,
-                            sublinear_tf=True,
-                        )
-                        safe_ai_documents = [d or "" for d in ai_documents]
-                        vectorizer.fit(historical_texts)
+                        # 1. Database TF-IDF Statistics Retrieval
+                        N, top_terms, doc_terms, doc_metadata = self.db.get_tfidf_stats(base_dir)
 
-                        historical_vectors = vectorizer.transform(historical_texts)
-                        new_docs_vectors = vectorizer.transform(safe_ai_documents)
+                        # Restrict vocabulary to the top 1,000 terms matching the database query constraints
+                        top_terms = top_terms[:1000]
 
-                        similarities = cosine_similarity(
-                            new_docs_vectors, historical_vectors
-                        )
+                        # Construct the vocabulary dictionary mapping
+                        vocab = {term: idx for idx, (term, df) in enumerate(top_terms)}
+
+                        if len(vocab) == 0:
+                            similarities = np.zeros((len(ai_documents), len(historical_docs)))
+                        else:
+                            # Calculate smoothed IDF values using the system's custom formula: idf_j = ln((1 + N) / (1 + df_j)) + 1
+                            idf_weights = {term: math.log((1 + N) / (1 + df)) + 1 for term, df in top_terms}
+                            idf_values = np.array([idf_weights[term] for term, df in top_terms])
+
+                            # 2. Configure a TfidfVectorizer
+                            vectorizer = TfidfVectorizer(
+                                stop_words=list(self.stop_words),
+                                vocabulary=vocab,
+                                sublinear_tf=True,
+                            )
+                            vectorizer.vocabulary_ = vocab
+                            vectorizer.fixed_vocabulary_ = True
+                            vectorizer.idf_ = idf_values
+
+                            transformer = TfidfTransformer(sublinear_tf=True)
+                            transformer.idf_ = idf_values
+                            vectorizer._tfidf = transformer
+
+                            # 3. Historical Sparse Matrix Reconstruction
+                            # Represent historical document vectors by constructing a standard scipy.sparse.csr_matrix directly from database term statistics.
+                            hist_filepaths = [doc["filepath"].replace("\\", "/") for doc in historical_docs]
+                            filepath_to_row_idx = {fp: idx for idx, fp in enumerate(hist_filepaths)}
+
+                            rows = []
+                            cols = []
+                            data = []
+
+                            for filepath, term, tf in doc_terms:
+                                norm_fp = filepath.replace("\\", "/")
+                                if norm_fp in filepath_to_row_idx:
+                                    row_idx = filepath_to_row_idx[norm_fp]
+                                    if term in vocab:
+                                        col_idx = vocab[term]
+                                        tf_weight = 1.0 + math.log(tf)
+                                        weight = tf_weight * idf_weights[term]
+                                        rows.append(row_idx)
+                                        cols.append(col_idx)
+                                        data.append(weight)
+
+                            num_rows = len(historical_docs)
+                            num_cols = len(vocab)
+                            historical_vectors = csr_matrix((data, (rows, cols)), shape=(num_rows, num_cols))
+
+                            # Apply row-wise L2 normalization to ensure correct cosine similarity calculations
+                            historical_vectors = normalize(historical_vectors, norm='l2', axis=1)
+
+                            # 4. Vectorizing Active Candidate Documents
+                            safe_ai_documents = [d or "" for d in ai_documents]
+                            new_docs_vectors = vectorizer.transform(safe_ai_documents)
+
+                            # 5. Dot Product Similarity Calculation
+                            similarities = new_docs_vectors.dot(historical_vectors.T).toarray()
 
                     historical_targets = [
                         doc["target_folder"] for doc in historical_docs
