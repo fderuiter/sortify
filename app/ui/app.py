@@ -896,21 +896,37 @@ class AutoSorterApp:
         if not self.app_session or not self.base_dir:
             return
 
+        if getattr(self, "_sorting_in_progress", False):
+            return
+
+        import threading
+
+        # Cancel any previous task's cancellation token immediately
+        if hasattr(self, "_current_recalc_token") and self._current_recalc_token:
+            self._current_recalc_token.set()
+
+        # Create isolated cancellation token for this run
+        token = threading.Event()
+        self._current_recalc_token = token
+
         if self._debounce_task:
             self._debounce_task.cancel()
 
-        async def delayed_run():
+        async def delayed_run(token):
             try:
                 await asyncio.sleep(0.5)
             except asyncio.CancelledError:
+                token.set()
                 return
 
-            self._cancel_recalc_flag = False
+            if token.is_set():
+                return
+
             self.recalc_dialog.open()
             self.status_label.set_text("Rebuilding plan...")
 
             def check_cancel():
-                return getattr(self, "_cancel_recalc_flag", False)
+                return token.is_set()
 
             try:
                 plan = await asyncio.to_thread(
@@ -921,21 +937,24 @@ class AutoSorterApp:
                     check_cancel,
                 )
 
-                if self._cancel_recalc_flag:
+                if token.is_set():
                     self.status_label.set_text("Recalculation cancelled.")
                     return
 
                 self.plan = plan
                 await self.verify_current_plan()
+                if token.is_set():
+                    return
                 self.render_tree()
                 self.status_label.set_text("Plan rebuilt.")
             except Exception as e:
                 logger.error(f"Error rebuilding plan: {e}")
                 self.status_label.set_text("Error rebuilding plan.")
             finally:
-                self.recalc_dialog.close()
+                if getattr(self, "_current_recalc_token", None) == token:
+                    self.recalc_dialog.close()
 
-        self._debounce_task = asyncio.create_task(delayed_run())
+        self._debounce_task = asyncio.create_task(delayed_run(token))
 
     def load_locked_files_from_db(self):
         """Load user-verified target paths as locks from the database."""
@@ -1096,6 +1115,24 @@ class AutoSorterApp:
         if not self.app_session or not self.plan:
             return
 
+        if getattr(self, "_sorting_in_progress", False):
+            return
+
+        self._sorting_in_progress = True
+
+        # Immediately cancel any ongoing recalculation and its debounce task
+        if self._debounce_task:
+            try:
+                self._debounce_task.cancel()
+            except Exception:
+                pass
+        if hasattr(self, "_current_recalc_token") and self._current_recalc_token:
+            self._current_recalc_token.set()
+        try:
+            self.recalc_dialog.close()
+        except Exception:
+            pass
+
         self.execute_btn.disable()
         self.status_label.set_text("Executing sort...")
         self.progress_bar.set_value(0)
@@ -1132,6 +1169,7 @@ class AutoSorterApp:
                         )
                 error_dialog.open()
             finally:
+                self._sorting_in_progress = False
                 self.plan = {}
                 self.render_tree()
                 self.execute_btn.enable()
