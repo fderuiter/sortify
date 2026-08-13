@@ -227,9 +227,25 @@ class AppSettings:
             return
 
         has_validation_errors = False
+        needs_migration = False
         try:
             with open(self._filepath, "r", encoding="utf-8") as f:
                 data = json.load(f)
+
+            # Decrypt PROXY setting if encrypted, or mark for migration if legacy plaintext
+            if isinstance(data, dict) and "PROXY" in data:
+                proxy_val = data["PROXY"]
+                if proxy_val:
+                    if proxy_val.startswith("enc:"):
+                        try:
+                            from app.core.path_utils import resolve_db_crypto
+                            crypto = resolve_db_crypto(self._filepath)
+                            decrypted_val = crypto.decrypt_text(proxy_val[4:])
+                            data["PROXY"] = decrypted_val
+                        except Exception as e:
+                            logging.warning(f"Failed to decrypt proxy settings, leaving as-is: {e}")
+                    else:
+                        needs_migration = True
 
             # Validate against static schema file if it exists
             schema_path = Path(__file__).parent / "config_schema.json"
@@ -266,6 +282,9 @@ class AppSettings:
             else:
                 self._has_validation_errors = False
 
+            if needs_migration and not has_validation_errors:
+                self._trigger_save()
+
         except Exception as e:
             logging.warning(f"Failed to load settings, using defaults: {e}")
             # If JSON is corrupted, we don't want to overwrite either
@@ -289,6 +308,19 @@ class AppSettings:
         with self._lock:
             data = self._settings_model.model_dump(mode="json")
         try:
+            # Encrypt PROXY setting if present and not already encrypted
+            proxy_val = data.get("PROXY", "")
+            if proxy_val and not proxy_val.startswith("enc:"):
+                try:
+                    from app.core.path_utils import resolve_db_crypto
+                    crypto = resolve_db_crypto(self._filepath)
+                    encrypted_val = crypto.encrypt_text(proxy_val)
+                    if isinstance(encrypted_val, bytes):
+                        encrypted_val = encrypted_val.decode("utf-8")
+                    data["PROXY"] = f"enc:{encrypted_val}"
+                except Exception as e:
+                    logging.error(f"Failed to encrypt proxy string during save: {e}")
+
             with open(self._filepath, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=4)
         except Exception as e:

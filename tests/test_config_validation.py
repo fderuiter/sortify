@@ -518,3 +518,74 @@ def test_app_settings_save_failure(tmp_path, caplog):
         with caplog.at_level(logging.ERROR):
             app_settings._save()
     assert "Failed to save settings: Write permission denied" in caplog.text
+
+
+def test_proxy_encryption_and_decryption_roundtrip(tmp_path):
+    """Test that setting a proxy automatically encrypts it on disk but keeps it cleartext in memory."""
+    mock_filepath = tmp_path / "settings.json"
+    app_settings = AppSettings(filepath=str(mock_filepath))
+
+    # Clean up background timers
+    if app_settings._save_timer:
+        app_settings._save_timer.cancel()
+
+    proxy_string = "http://user:password123@proxy.example.com:8080"
+    app_settings.PROXY = proxy_string
+
+    assert app_settings.PROXY == proxy_string
+
+    # Trigger a synchronous save to inspect disk contents
+    app_settings._save()
+
+    # Read from disk to verify it's encrypted and not human readable (doesn't contain password123)
+    with open(mock_filepath, "r", encoding="utf-8") as f:
+        disk_data = json.load(f)
+
+    assert "password123" not in disk_data["PROXY"]
+    assert disk_data["PROXY"].startswith("enc:")
+
+    # Load from disk with a new AppSettings instance to verify decryption
+    new_app_settings = AppSettings(filepath=str(mock_filepath))
+    assert new_app_settings.PROXY == proxy_string
+
+    if new_app_settings._save_timer:
+        new_app_settings._save_timer.cancel()
+
+
+def test_proxy_automatic_migration_from_plaintext(tmp_path):
+    """Test that legacy plaintext proxy settings on disk are automatically migrated to encrypted format."""
+    mock_filepath = tmp_path / "settings.json"
+    proxy_string = "http://legacy_user:legacy_password@proxy.example.com:3128"
+
+    # Write legacy format (plaintext) to settings file
+    legacy_data = {
+        "PROXY": proxy_string,
+        "MAX_WORKERS": 4
+    }
+    with open(mock_filepath, "w", encoding="utf-8") as f:
+        json.dump(legacy_data, f, indent=4)
+
+    # Initialize AppSettings. This should detect plaintext, load it, and trigger auto-migration
+    app_settings = AppSettings(filepath=str(mock_filepath))
+    assert app_settings.PROXY == proxy_string
+
+    # Synchronously run save to complete migration
+    app_settings._save()
+
+    if app_settings._save_timer:
+        app_settings._save_timer.cancel()
+
+    # Verify that the file on disk is now encrypted
+    with open(mock_filepath, "r", encoding="utf-8") as f:
+        disk_data = json.load(f)
+
+    assert proxy_string not in disk_data["PROXY"]
+    assert disk_data["PROXY"].startswith("enc:")
+
+    # Load again to verify we can decrypt the migrated format
+    reloaded_settings = AppSettings(filepath=str(mock_filepath))
+    assert reloaded_settings.PROXY == proxy_string
+
+    if reloaded_settings._save_timer:
+        reloaded_settings._save_timer.cancel()
+

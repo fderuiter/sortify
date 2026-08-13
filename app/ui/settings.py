@@ -347,6 +347,8 @@ def show_settings(parent_app, settings):
                     ui.input(
                         "Proxy Server (e.g. http://127.0.0.1:8080)",
                         value=getattr(settings, "PROXY", ""),
+                        password=True,
+                        password_toggle_button=True,
                     )
                     .classes("w-full mb-2")
                     .props(
