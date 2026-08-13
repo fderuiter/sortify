@@ -137,6 +137,11 @@
               "annotation": "List[list] | None",
               "default": "None",
               "name": "pre_fetched_vectors"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "cancel_check"
             }
           ],
           "returns": "tuple[dict, float]"

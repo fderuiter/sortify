@@ -30,18 +30,21 @@ def recursive_kmeans_worker_main(
     pre_fetched_vectors: list | None,
     output_queue,
     strategy_class_name: str = "RecursiveKMeansStrategy",
+    thread_limit: int | None = None,
 ):
     """Worker process main loop that handles core recursive KMeans mathematical clustering calculations."""
+    import logging
     import os
     import sys
-    import logging
 
     # 1. Respect configured CPU thread limits from global registry
-    try:
-        from app.core.shared_registry import SharedModelRegistry
-        thread_limit = SharedModelRegistry.get_instance().get_thread_limit()
-    except Exception:
-        thread_limit = 2
+    if thread_limit is None:
+        try:
+            from app.core.shared_registry import SharedModelRegistry
+
+            thread_limit = SharedModelRegistry.get_instance().get_thread_limit()
+        except Exception:
+            thread_limit = 2
 
     # Set thread limits for all math/vector libraries
     limit_str = str(thread_limit)
@@ -53,6 +56,7 @@ def recursive_kmeans_worker_main(
 
     try:
         import torch
+
         torch.set_num_threads(thread_limit)
     except Exception:
         pass
@@ -60,6 +64,7 @@ def recursive_kmeans_worker_main(
     # 2. Priority management
     try:
         from app.core.semantic_embeddings import set_low_priority
+
         set_low_priority()
     except Exception:
         pass
@@ -89,7 +94,9 @@ def recursive_kmeans_worker_main(
         strategy._error = 0.0
 
         if pre_fetched_vectors is not None:
-            strategy._vector_map = {f: v for f, v in zip(filenames, pre_fetched_vectors)}
+            strategy._vector_map = {
+                f: v for f, v in zip(filenames, pre_fetched_vectors)
+            }
         else:
             strategy._vector_map = {}
 
@@ -104,17 +111,22 @@ def recursive_kmeans_worker_main(
             except Exception:
                 pass
 
-        output_queue.put({
-            "status": "success",
-            "plan": plan,
-            "error": strategy._error,
-            "worker_pid": worker_pid,
-            "worker_niceness": worker_niceness,
-            "worker_thread_limit": thread_limit,
-        })
+        output_queue.put(
+            {
+                "status": "success",
+                "plan": plan,
+                "error": strategy._error,
+                "worker_pid": worker_pid,
+                "worker_niceness": worker_niceness,
+                "worker_thread_limit": thread_limit,
+            }
+        )
     except Exception as e:
         import traceback
-        logging.error(f"Error inside clustering child process: {e}\n{traceback.format_exc()}")
+
+        logging.error(
+            f"Error inside clustering child process: {e}\n{traceback.format_exc()}"
+        )
         output_queue.put({"status": "error", "message": str(e)})
 
 
@@ -130,7 +142,7 @@ class ClusteringStrategy(Protocol):
         max_depth: int = 5,
         max_features: int = 3,
         pre_fetched_vectors: List[list] | None = None,
-        cancel_check = None,
+        cancel_check=None,
     ) -> tuple[dict, float]:
         """Return the clustering plan and the total reconstruction error."""
         ...
@@ -173,7 +185,7 @@ class RecursiveKMeansStrategy:
         max_depth: int = 5,
         max_features: int = 3,
         pre_fetched_vectors: List[list] | None = None,
-        cancel_check = None,
+        cancel_check=None,
     ) -> tuple[dict, float]:
         """Return a hierarchical clustering plan and error using KMeans by delegating to a separate child process."""
         self.stop_words = stop_words
@@ -189,7 +201,10 @@ class RecursiveKMeansStrategy:
 
         # Bypass multiprocessing during normal pytest run to allow mocking/assertions on instance state
         import os
-        if "PYTEST_CURRENT_TEST" in os.environ and not os.environ.get("FORCE_MULTIPROCESSING_CLUSTERING"):
+
+        if "PYTEST_CURRENT_TEST" in os.environ and not os.environ.get(
+            "FORCE_MULTIPROCESSING_CLUSTERING"
+        ):
             return self._generate_plan_inline(
                 filenames,
                 documents,
@@ -200,10 +215,18 @@ class RecursiveKMeansStrategy:
                 pre_fetched_vectors,
             )
 
+        import logging
         import multiprocessing
         import queue
         import time
-        import logging
+
+        # Retrieve the thread limit from the parent process global registry
+        try:
+            from app.core.shared_registry import SharedModelRegistry
+
+            parent_thread_limit = SharedModelRegistry.get_instance().get_thread_limit()
+        except Exception:
+            parent_thread_limit = None
 
         ctx = multiprocessing.get_context("spawn")
         output_queue = ctx.Queue()
@@ -222,7 +245,10 @@ class RecursiveKMeansStrategy:
                 pre_fetched_vectors,
                 output_queue,
                 strategy_class_name,
-            )
+            ),
+            kwargs={
+                "thread_limit": parent_thread_limit,
+            },
         )
         process.start()
 
@@ -232,7 +258,9 @@ class RecursiveKMeansStrategy:
         try:
             while True:
                 if cancel_check is not None and cancel_check():
-                    logging.info("Clustering cancellation requested. Terminating isolated child process...")
+                    logging.info(
+                        "Clustering cancellation requested. Terminating isolated child process..."
+                    )
                     if process.is_alive():
                         process.terminate()
                         process.join(timeout=2.0)
@@ -276,7 +304,9 @@ class RecursiveKMeansStrategy:
             pass
 
         if result is None:
-            logging.warning("Clustering child process did not return any result. Falling back to inline execution.")
+            logging.warning(
+                "Clustering child process did not return any result. Falling back to inline execution."
+            )
             return self._generate_plan_inline(
                 filenames,
                 documents,
@@ -293,7 +323,9 @@ class RecursiveKMeansStrategy:
             self._last_worker_thread_limit = result.get("worker_thread_limit")
             return result["plan"], result["error"]
         else:
-            logging.error(f"Clustering child process failed: {result.get('message')}. Falling back to inline execution.")
+            logging.error(
+                f"Clustering child process failed: {result.get('message')}. Falling back to inline execution."
+            )
             return self._generate_plan_inline(
                 filenames,
                 documents,
@@ -594,7 +626,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         max_depth: int = 5,
         max_features: int = 3,
         pre_fetched_vectors: List[list] | None = None,
-        cancel_check = None,
+        cancel_check=None,
     ) -> tuple[dict, float]:
         """Generate a hierarchical plan of folder names using generative modeling."""
         plan, error = super().generate_plan(
