@@ -1,8 +1,6 @@
 import os
-import shutil
 import tempfile
 import threading
-import time
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -13,7 +11,6 @@ from app.core.downloader import (
     ThreadSafeState,
 )
 from app.ui.wizard import show_wizard
-from app.ui.settings import show_settings
 
 
 def test_download_manager_singleton():
@@ -26,7 +23,7 @@ def test_download_manager_singleton():
 def test_download_manager_single_download_rejection():
     """Verify that multiple simultaneous downloads are rejected."""
     dm = DownloadManager.get_instance()
-    
+
     # Reset state
     dm.state["is_downloading"] = False
     dm.state["error"] = None
@@ -46,7 +43,7 @@ def test_download_manager_unified_state():
     """Verify that the state object of DownloadManager is thread-safe and unified."""
     dm = DownloadManager.get_instance()
     assert isinstance(dm.state, ThreadSafeState)
-    
+
     dm.state["progress"] = 0.5
     assert dm.state["progress"] == 0.5
 
@@ -101,6 +98,7 @@ def test_dismiss_does_not_abort_download(mock_dialog, mock_timer):
     settings.PROXY = ""
 
     from nicegui import Client
+
     with Client(None):
         show_wizard(parent_app, settings)
 
@@ -111,13 +109,17 @@ def test_dismiss_does_not_abort_download(mock_dialog, mock_timer):
             dismiss_handler = call[0][1]
             break
 
-    assert dismiss_handler is not None, "Dismiss handler not registered on wizard dialog"
+    assert dismiss_handler is not None, (
+        "Dismiss handler not registered on wizard dialog"
+    )
 
     # Call the dismiss handler
     dismiss_handler()
 
     # The active background download must NOT be aborted or cancelled
-    assert not dm.cancel_event.is_set(), "Dismissing wizard aborted the active download!"
+    assert not dm.cancel_event.is_set(), (
+        "Dismissing wizard aborted the active download!"
+    )
 
     # Clean up
     dm.state["is_downloading"] = False

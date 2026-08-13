@@ -370,9 +370,13 @@ class IncrementalAnalyzer:
                             )
                         else:
                             # Try to load vector embeddings for historical docs in batch
-                            hist_filepaths = [doc["filepath"] for doc in historical_docs]
-                            hist_vectors_dict = self.embedding_manager.get_vectors_batch(
-                                base_dir, hist_filepaths
+                            hist_filepaths = [
+                                doc["filepath"] for doc in historical_docs
+                            ]
+                            hist_vectors_dict = (
+                                self.embedding_manager.get_vectors_batch(
+                                    base_dir, hist_filepaths
+                                )
                             )
                             hist_vectors = []
                             for fp in hist_filepaths:
@@ -405,7 +409,9 @@ class IncrementalAnalyzer:
                             ai_vectors = []
                             for f_name in ai_filenames:
                                 v = ai_vectors_dict.get(f_name.replace("\\", "/"))
-                                if not self.embedding_manager.validate_vector_dimension(v):
+                                if not self.embedding_manager.validate_vector_dimension(
+                                    v
+                                ):
                                     raise ValueError(
                                         "Retrieved/generated vector dimensions do not match the active model dimensions."
                                     )
@@ -514,7 +520,12 @@ class IncrementalAnalyzer:
                             vectors = []
                             for f_name in ai_filenames:
                                 v = ai_vectors_dict.get(f_name.replace("\\", "/"))
-                                if v is not None and self.embedding_manager.validate_vector_dimension(v):
+                                if (
+                                    v is not None
+                                    and self.embedding_manager.validate_vector_dimension(
+                                        v
+                                    )
+                                ):
                                     vectors.append(v)
                                 else:
                                     vectors.append(None)
