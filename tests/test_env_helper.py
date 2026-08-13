@@ -385,6 +385,10 @@ def test_restricted_popen_execute_child_logic():
                 self._child_created = False
                 self._handle = None
                 self.pid = None
+                self.returncode = None
+
+            def __del__(self):
+                pass
 
         proc = MockPopen()
 

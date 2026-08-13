@@ -336,6 +336,11 @@ if sys.platform == "win32":
                     ctypes.byref(si),
                     ctypes.byref(pi),
                 )
+            except Exception:
+                self._close_pipe_fds(
+                    p2cread, p2cwrite, c2pread, c2pwrite, errread, errwrite
+                )
+                raise
             finally:
                 if null_fd is not None:
                     try:
@@ -352,6 +357,9 @@ if sys.platform == "win32":
             kernel32.CloseHandle(primary_token)
 
             if not success:
+                self._close_pipe_fds(
+                    p2cread, p2cwrite, c2pread, c2pwrite, errread, errwrite
+                )
                 raise ctypes.WinError()
 
             # 7. Handle process handle extraction, close thread handle, and close parent/child pipes
@@ -366,10 +374,22 @@ if sys.platform == "win32":
 
             self._child_created = True
 
-            # Use the safe _close_pipe_fds implementation to close child ends of pipes
-            self._close_pipe_fds(
-                p2cread, p2cwrite, c2pread, c2pwrite, errread, errwrite
-            )
+            # Process creation succeeded. Close child pipe ends in parent process.
+            if p2cread is not None and p2cread != -1:
+                try:
+                    p2cread.Close()
+                except Exception:
+                    pass
+            if c2pwrite is not None and c2pwrite != -1:
+                try:
+                    c2pwrite.Close()
+                except Exception:
+                    pass
+            if errwrite is not None and errwrite != -1:
+                try:
+                    errwrite.Close()
+                except Exception:
+                    pass
 
 
 else:
