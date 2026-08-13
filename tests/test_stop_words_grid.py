@@ -1,6 +1,4 @@
-import string
 from unittest.mock import MagicMock, patch
-import pytest
 
 from nicegui import Client
 from nicegui.elements.button import Button
@@ -15,17 +13,14 @@ from app.ui.settings import show_settings
 def test_analyzer_stop_words_reload():
     """Verify that IncrementalAnalyzer supports reload_stop_words."""
     from app.core.analyzer import IncrementalAnalyzer
-    
+
     with patch("app.core.semantic_embeddings.SemanticEmbeddingManager") as mock_sem:
         analyzer = IncrementalAnalyzer(
-            max_folders=3,
-            stop_words={"the", "and"},
-            db=None,
-            model_path=None
+            max_folders=3, stop_words={"the", "and"}, db=None, model_path=None
         )
-        
+
         assert analyzer.stop_words == {"the", "and"}
-        
+
         analyzer.reload_stop_words({"und", "der", "die"})
         assert analyzer.stop_words == {"und", "der", "die"}
 
@@ -34,16 +29,16 @@ def test_settings_stop_words_setattr(tmp_path):
     """Verify that setting STOP_WORDS reassigns and schedules save."""
     mock_filepath = tmp_path / "settings.json"
     settings = AppSettings(filepath=str(mock_filepath))
-    
+
     # Check default contains 'the'
     assert "the" in settings.STOP_WORDS
-    
+
     initial_words = set(settings.STOP_WORDS)
     initial_words.add("testword123")
-    
+
     settings.STOP_WORDS = initial_words
     assert "testword123" in settings.STOP_WORDS
-    
+
     if settings._save_timer:
         settings._save_timer.cancel()
 
@@ -86,7 +81,7 @@ def test_ui_stop_words_rendering():
             settings = AppSettings()
             # Set a controlled subset of stop words for testing
             settings.STOP_WORDS = {"the", "and", "pdf"}
-            
+
             # Setup a mocked parent app with session and analyzer
             parent_app = MagicMock()
             mock_analyzer = MagicMock()
@@ -101,7 +96,9 @@ def test_ui_stop_words_rendering():
                 if lbl.text == "Custom Stop Words":
                     custom_stop_words_label = lbl
                     break
-            assert custom_stop_words_label is not None, "Custom Stop Words label not found"
+            assert custom_stop_words_label is not None, (
+                "Custom Stop Words label not found"
+            )
 
             # 2. Assert language preset buttons exist (German, French, Spanish)
             german_btn = None
@@ -114,7 +111,7 @@ def test_ui_stop_words_rendering():
                     french_btn = btn
                 elif btn.text == "Spanish":
                     spanish_btn = btn
-            
+
             assert german_btn is not None
             assert french_btn is not None
             assert spanish_btn is not None
@@ -137,7 +134,7 @@ def test_ui_stop_words_rendering():
 
             # Test adding a stop word
             stop_word_input.value = "  Und!  "
-            
+
             # Trigger click
             for l in add_btn._event_listeners.values():
                 if l.type == "click":
@@ -147,7 +144,7 @@ def test_ui_stop_words_rendering():
             assert "und" in settings.STOP_WORDS
             # Analyzer should be reloaded
             mock_analyzer.reload_stop_words.assert_called_with(settings.STOP_WORDS)
-            
+
             # Input field should be cleared
             assert stop_word_input.value == ""
 
