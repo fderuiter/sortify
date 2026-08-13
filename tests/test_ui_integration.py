@@ -1,22 +1,15 @@
-import os
-import shutil
-import tempfile
-import threading
 import time
-import urllib.request
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
-import pytest
-
-from nicegui import Client, ui
+from nicegui import Client
 from nicegui.elements.button import Button
 from nicegui.elements.dialog import Dialog
 from nicegui.elements.timer import Timer
 
 from app.config import AppSettings
-from app.ui.wizard import show_wizard
-from app.ui.settings import show_settings
 from app.core.downloader import run_background_download
+from app.ui.settings import show_settings
+from app.ui.wizard import show_wizard
 
 
 def test_wizard_timer_and_thread_cleanup():
@@ -226,7 +219,10 @@ def test_settings_timer_and_thread_cleanup():
     try:
         with (
             Client(None),
-            patch("app.core.downloader.run_background_download", side_effect=tracking_run_bg),
+            patch(
+                "app.core.downloader.run_background_download",
+                side_effect=tracking_run_bg,
+            ),
             patch("urllib.request.build_opener", return_value=MockOpener()),
             patch("shutil.disk_usage", return_value=(10**12, 10**12, 10**12)),
         ):

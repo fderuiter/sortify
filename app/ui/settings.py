@@ -8,15 +8,22 @@ from app.ui.dialog_helper import get_dialog_card_classes
 
 
 class ThreadSafeState:
+    """A thread-safe state container.
+
+    Provides synchronized dictionary-like access to internal state keys.
+    """
+
     def __init__(self, **kwargs):
         self._lock = threading.Lock()
         self._state = kwargs
 
     def __getitem__(self, key):
+        """Retrieve a value thread-safely."""
         with self._lock:
             return self._state[key]
 
     def __setitem__(self, key, value):
+        """Store a value thread-safely."""
         with self._lock:
             self._state[key] = value
 
@@ -24,6 +31,7 @@ class ThreadSafeState:
 def show_settings(parent_app, settings):
     """Show the settings dialog."""
     import threading
+
     cancel_event = threading.Event()
     timer_ref = [None]
 
@@ -817,6 +825,6 @@ def show_settings(parent_app, settings):
             except Exception:
                 pass
 
-    dialog.on('dismiss', handle_dismiss)
+    dialog.on("dismiss", handle_dismiss)
 
     dialog.open()
