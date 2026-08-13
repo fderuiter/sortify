@@ -35,6 +35,20 @@ def get_ast_value(node):
         return ast.unparse(node)
 
 
+def is_protocol_node(node_to_check):
+    """Check if the AST node represents a Protocol or typing.Protocol."""
+    if isinstance(node_to_check, ast.Name) and node_to_check.id == "Protocol":
+        return True
+    if (
+        isinstance(node_to_check, ast.Attribute)
+        and isinstance(node_to_check.value, ast.Name)
+        and node_to_check.value.id == "typing"
+        and node_to_check.attr == "Protocol"
+    ):
+        return True
+    return False
+
+
 def extract_protocols(file_path):
     """Statically parse a Python file and extract classes that inherit from Protocol."""
     if not os.path.exists(file_path):
@@ -51,21 +65,17 @@ def extract_protocols(file_path):
         if isinstance(node, ast.ClassDef):
             is_protocol = False
             for base in node.bases:
-                if isinstance(base, ast.Name) and base.id == "Protocol":
+                if is_protocol_node(base):
                     is_protocol = True
-                elif (
-                    isinstance(base, ast.Attribute)
-                    and isinstance(base.value, ast.Name)
-                    and base.value.id == "typing"
-                    and base.attr == "Protocol"
-                ):
+                elif isinstance(base, ast.Subscript) and is_protocol_node(base.value):
                     is_protocol = True
 
             if is_protocol:
                 class_name = node.name
                 methods = []
                 for body_node in node.body:
-                    if isinstance(body_node, ast.FunctionDef):
+                    if isinstance(body_node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                        is_async = isinstance(body_node, ast.AsyncFunctionDef)
                         all_args = body_node.args.posonlyargs + body_node.args.args
                         defaults = body_node.args.defaults
                         default_map = {}
@@ -153,6 +163,7 @@ def extract_protocols(file_path):
                                 "name": body_node.name,
                                 "parameters": params,
                                 "returns": return_annotation,
+                                "async": is_async,
                             }
                         )
 

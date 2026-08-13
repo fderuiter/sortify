@@ -96,6 +96,7 @@
       "class_name": "ClusteringStrategy",
       "methods": [
         {
+          "async": false,
           "name": "generate_plan",
           "parameters": [
             {
@@ -147,6 +148,7 @@
       "class_name": "DocumentExtractor",
       "methods": [
         {
+          "async": false,
           "name": "extract",
           "parameters": [
             {
