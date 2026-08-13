@@ -156,9 +156,11 @@ class DownloadManager:
 
     def delete_model_async(self, model_dir: str, on_done=None):
         """Asynchronously delete model files securely in a separate thread."""
+
         def delete_target():
             try:
                 from app.core.shared_registry import _thread_local
+
                 _thread_local.sandboxed = False
                 _thread_local.reason = "model deletion execution"
             except Exception:
@@ -166,11 +168,12 @@ class DownloadManager:
 
             try:
                 self.cancel_download()
-                
+
                 import shutil
+
                 if os.path.exists(model_dir):
                     shutil.rmtree(model_dir, ignore_errors=True)
-                
+
                 with self._manager_lock:
                     self.state["progress"] = 0.0
                     self.state["status_text"] = "Model deleted."
@@ -185,6 +188,7 @@ class DownloadManager:
                     on_done(False, e)
 
         from app.core.shared_registry import ContextPropagatingThread
+
         t = ContextPropagatingThread(target=delete_target, daemon=True)
         t.start()
         return t

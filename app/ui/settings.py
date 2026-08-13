@@ -66,9 +66,6 @@ def get_shadowed_policies(policies: list[dict]) -> list[bool]:
 
 def show_settings(parent_app, settings):
     """Show the settings dialog."""
-    import threading
-
-    cancel_event = threading.Event()
     timer_ref = [None]
 
     def on_explorer_integration_change(e):
@@ -390,13 +387,19 @@ def show_settings(parent_app, settings):
 
                     def on_done(success, err):
                         if success:
-                            ui.notify("Model cache cleared successfully.", type="positive")
+                            ui.notify(
+                                "Model cache cleared successfully.", type="positive"
+                            )
                             if hasattr(parent_app, "update_ai_warning"):
                                 parent_app.update_ai_warning()
                         else:
-                            ui.notify(f"Failed to clear model cache: {err}", type="negative")
+                            ui.notify(
+                                f"Failed to clear model cache: {err}", type="negative"
+                            )
 
-                    DownloadManager.get_instance().delete_model_async(model_dir, on_done=on_done)
+                    DownloadManager.get_instance().delete_model_async(
+                        model_dir, on_done=on_done
+                    )
 
                 ui.button("Reset Model Cache", on_click=reset_model_cache).props(
                     'aria-label="Reset Model Cache Button"'
@@ -470,7 +473,7 @@ def show_settings(parent_app, settings):
                 def sync_settings_ui():
                     dm = DownloadManager.get_instance()
                     is_dl = dm.state["is_downloading"]
-                    
+
                     if is_dl:
                         download_button.disable()
                         progress_container.set_visibility(True)
@@ -493,11 +496,13 @@ def show_settings(parent_app, settings):
                             elif dm.state["error"]:
                                 progress_container.set_visibility(False)
                                 ui.notify(
-                                    f"Download failed: {str(dm.state['error'])}", type="negative"
+                                    f"Download failed: {str(dm.state['error'])}",
+                                    type="negative",
                                 )
                                 dm.state["error"] = None
 
                         from app.core.verifier import check_ai_status
+
                         is_healthy, _ = check_ai_status(settings)
                         if is_healthy:
                             download_button.disable()

@@ -8,9 +8,8 @@ from app.config import get_app_dir
 from app.core.downloader import (
     DEFAULT_MODEL_URL,
     DiskSpaceError,
-    ModelVerificationError,
-    run_background_download,
     DownloadManager,
+    ModelVerificationError,
 )
 from app.ui.dialog_helper import get_dialog_card_classes
 
@@ -95,7 +94,6 @@ def show_wizard(parent_app, settings):
             )
 
         # State Variables
-        timer_ref = [None]
 
         # Periodic sync timer for wizard UI
         def sync_wizard_ui():

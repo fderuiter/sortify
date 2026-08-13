@@ -80,7 +80,10 @@ def test_wizard_timer_and_thread_cleanup():
 
         with (
             Client(None),
-            patch("app.core.downloader.run_background_download", side_effect=tracking_run_bg),
+            patch(
+                "app.core.downloader.run_background_download",
+                side_effect=tracking_run_bg,
+            ),
             patch("urllib.request.build_opener", return_value=MockOpener()),
             patch("shutil.disk_usage", return_value=(10**12, 10**12, 10**12)),
         ):
@@ -282,6 +285,7 @@ def test_settings_timer_and_thread_cleanup():
 
             # Cancel the download programmatically via DownloadManager as settings has no cancel button
             from app.core.downloader import DownloadManager
+
             DownloadManager.get_instance().cancel_download()
 
             # Assert that the downloader background thread is cancelled and terminated
