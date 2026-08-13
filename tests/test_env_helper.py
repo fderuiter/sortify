@@ -384,6 +384,7 @@ def test_restricted_popen_execute_child_logic():
                 self._child_created = False
                 self._handle = None
                 self.pid = None
+                self.returncode = None
 
         proc = MockPopen()
 
@@ -426,6 +427,9 @@ def test_restricted_popen_execute_child_logic():
 
         # Verify that self.pid was set
         assert proc.pid is not None
+
+        # Clean up so subprocess.Popen.__del__ is not called
+        proc._child_created = False
 
     # Clean up by reloading env_helper with standard platform
     from app.core import env_helper
