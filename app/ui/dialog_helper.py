@@ -5,7 +5,7 @@ import logging
 import os
 import sys
 
-from app.core.env_helper import run_background_process
+from app.core.env_helper import SANDBOX_SUPPORTED, run_background_process
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +74,7 @@ def ask_directory_async(
                     "end try",
                 ]
                 result = run_background_process(
-                    cmd, capture_output=True, text=True, check=True
+                    cmd, sandbox=SANDBOX_SUPPORTED, capture_output=True, text=True, check=True
                 )
                 output = result.stdout.strip()
                 if output.startswith("SUCCESS:"):
@@ -100,7 +100,7 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {{
 }}
 """
                 cmd = ["powershell", "-Command", script]
-                result = run_background_process(cmd, capture_output=True, text=True)
+                result = run_background_process(cmd, sandbox=SANDBOX_SUPPORTED, capture_output=True, text=True)
                 output = result.stdout.strip()
                 if output.startswith("SUCCESS:"):
                     path = output[8:]
@@ -124,7 +124,7 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {{
                         "--directory",
                         f"--title={title}",
                     ]
-                    result = run_background_process(cmd, capture_output=True, text=True)
+                    result = run_background_process(cmd, sandbox=SANDBOX_SUPPORTED, capture_output=True, text=True)
                     output = result.stdout.strip()
                     if result.returncode == 0:
                         path = output
@@ -136,7 +136,7 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {{
                         success = False
                 elif kdialog_path:
                     cmd = ["kdialog", "--getexistingdirectory", ".", "--title", title]
-                    result = run_background_process(cmd, capture_output=True, text=True)
+                    result = run_background_process(cmd, sandbox=SANDBOX_SUPPORTED, capture_output=True, text=True)
                     output = result.stdout.strip()
                     if result.returncode == 0:
                         path = output

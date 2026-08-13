@@ -260,7 +260,11 @@ class AudioExtractor:
         import tempfile
         import wave
 
-        from app.core.env_helper import run_background_process, spawn_background_process
+        from app.core.env_helper import (
+            SANDBOX_SUPPORTED,
+            run_background_process,
+            spawn_background_process,
+        )
 
         def is_compliant_wav(path: str) -> bool:
             if not path.lower().endswith(".wav"):
@@ -311,6 +315,7 @@ class AudioExtractor:
                 try:
                     res = run_background_process(
                         ffmpeg_cmd,
+                        sandbox=SANDBOX_SUPPORTED,
                         stdout=subprocess.PIPE,
                         stderr=subprocess.PIPE,
                         text=True,
@@ -378,6 +383,7 @@ class AudioExtractor:
                 try:
                     process = spawn_background_process(
                         cmd,
+                        sandbox=SANDBOX_SUPPORTED,
                         stdout=subprocess.PIPE,
                         stderr=subprocess.STDOUT,
                         text=True,
