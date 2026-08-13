@@ -1,19 +1,20 @@
 import os
-import sys
 import subprocess
 from unittest import mock
+
 import pytest
 
 from app.config import get_app_dir
 from app.core.env_helper import (
+    MACOS_SANDBOX_PROFILE,
+    RestrictedPopen,
+    check_linux_sandbox_support,
+    check_macos_sandbox_support,
+    check_windows_sandbox_support,
     get_cleaned_env,
     get_subprocess_startupinfo,
     run_background_process,
     spawn_background_process,
-    check_linux_sandbox_support,
-    check_macos_sandbox_support,
-    check_windows_sandbox_support,
-    RestrictedPopen,
 )
 
 
@@ -130,15 +131,13 @@ def test_run_background_process_win32(mock_run):
 
 # --- NEW SANDBOXING UNIT TESTS ---
 
+
 def test_check_linux_sandbox_support_success():
     with mock.patch("sys.platform", "linux"), mock.patch("subprocess.run") as mock_run:
         mock_run.return_value.returncode = 0
         assert check_linux_sandbox_support() is True
         mock_run.assert_called_once_with(
-            ["unshare", "-n", "-r", "true"],
-            capture_output=True,
-            text=True,
-            timeout=2
+            ["unshare", "-n", "-r", "true"], capture_output=True, text=True, timeout=2
         )
 
 
@@ -153,10 +152,10 @@ def test_check_macos_sandbox_support_success():
         mock_run.return_value.returncode = 0
         assert check_macos_sandbox_support() is True
         mock_run.assert_called_once_with(
-            ["sandbox-exec", "-p", "(version 1) (allow default)", "true"],
+            ["sandbox-exec", "-p", MACOS_SANDBOX_PROFILE, "true"],
             capture_output=True,
             text=True,
-            timeout=2
+            timeout=2,
         )
 
 
@@ -167,7 +166,10 @@ def test_check_macos_sandbox_support_failure():
 
 
 def test_check_windows_sandbox_support_success():
-    with mock.patch("sys.platform", "win32"), mock.patch("ctypes.windll", create=True) as mock_windll:
+    with (
+        mock.patch("sys.platform", "win32"),
+        mock.patch("ctypes.windll", create=True) as mock_windll,
+    ):
         # Mocking existence of required Win32 APIs
         mock_windll.advapi32.CreateRestrictedToken = mock.MagicMock()
         mock_windll.advapi32.ConvertStringSidToSidW = mock.MagicMock()
@@ -178,7 +180,10 @@ def test_check_windows_sandbox_support_success():
 
 
 def test_check_windows_sandbox_support_failure():
-    with mock.patch("sys.platform", "win32"), mock.patch("ctypes.windll", create=True) as mock_windll:
+    with (
+        mock.patch("sys.platform", "win32"),
+        mock.patch("ctypes.windll", create=True) as mock_windll,
+    ):
         # Cause an exception by making advapi32 lack one of the methods
         mock_windll.advapi32 = mock.MagicMock(spec=[])
         assert check_windows_sandbox_support() is False
@@ -194,7 +199,15 @@ def test_spawn_background_process_sandboxed_linux():
         spawn_background_process(cmd, sandbox=True)
         mock_popen.assert_called_once()
         called_args, called_kwargs = mock_popen.call_args
-        expected_cmd = ["unshare", "-n", "-r", "sh", "-c", 'ip link set lo up && exec "$@"', "--"] + cmd
+        expected_cmd = [
+            "unshare",
+            "-n",
+            "-r",
+            "sh",
+            "-c",
+            'ip link set lo up && exec "$@"',
+            "--",
+        ] + cmd
         assert called_args[0] == expected_cmd
 
 
@@ -223,7 +236,9 @@ def test_spawn_background_process_sandboxed_windows():
         mock.patch("app.core.env_helper.RestrictedPopen") as mock_restricted_popen,
     ):
         spawn_background_process(cmd, sandbox=True)
-        mock_restricted_popen.assert_called_once_with(cmd, env=mock.ANY, startupinfo=mock.ANY)
+        mock_restricted_popen.assert_called_once_with(
+            cmd, env=mock.ANY, startupinfo=mock.ANY
+        )
 
 
 def test_spawn_background_process_fail_closed():
@@ -233,7 +248,9 @@ def test_spawn_background_process_fail_closed():
     ):
         with pytest.raises(PermissionError) as exc_info:
             spawn_background_process(cmd, sandbox=True)
-        assert "Subprocess sandboxing is enabled but not supported" in str(exc_info.value)
+        assert "Subprocess sandboxing is enabled but not supported" in str(
+            exc_info.value
+        )
 
 
 def test_run_background_process_sandboxed_linux():
@@ -246,7 +263,15 @@ def test_run_background_process_sandboxed_linux():
         run_background_process(cmd, sandbox=True)
         mock_run.assert_called_once()
         called_args, called_kwargs = mock_run.call_args
-        expected_cmd = ["unshare", "-n", "-r", "sh", "-c", 'ip link set lo up && exec "$@"', "--"] + cmd
+        expected_cmd = [
+            "unshare",
+            "-n",
+            "-r",
+            "sh",
+            "-c",
+            'ip link set lo up && exec "$@"',
+            "--",
+        ] + cmd
         assert called_args[0] == expected_cmd
 
 
@@ -272,8 +297,6 @@ def test_run_background_process_sandboxed_windows():
 
     def mock_run_side_effect(*args, **kwargs):
         nonlocal is_restricted_popen
-        import subprocess
-        from app.core.env_helper import RestrictedPopen
         if subprocess.Popen is RestrictedPopen:
             is_restricted_popen = True
         return mock.MagicMock()
@@ -295,4 +318,6 @@ def test_run_background_process_fail_closed():
     ):
         with pytest.raises(PermissionError) as exc_info:
             run_background_process(cmd, sandbox=True)
-        assert "Subprocess sandboxing is enabled but not supported" in str(exc_info.value)
+        assert "Subprocess sandboxing is enabled but not supported" in str(
+            exc_info.value
+        )

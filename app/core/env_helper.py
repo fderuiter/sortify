@@ -8,9 +8,16 @@ can resolve decoupled modules from the local cache, and do not pop up terminal w
 import os
 import subprocess
 import sys
-import inspect
 
 from app.config import get_app_dir
+
+MACOS_SANDBOX_PROFILE = (
+    "(version 1)\n"
+    "(allow default)\n"
+    "(deny network-outbound)\n"
+    '(allow network-outbound (remote ip "127.0.0.1"))\n'
+    '(allow network-outbound (remote ip "::1"))\n'
+)
 
 
 def check_linux_sandbox_support() -> bool:
@@ -19,10 +26,7 @@ def check_linux_sandbox_support() -> bool:
         return False
     try:
         res = subprocess.run(
-            ["unshare", "-n", "-r", "true"],
-            capture_output=True,
-            text=True,
-            timeout=2
+            ["unshare", "-n", "-r", "true"], capture_output=True, text=True, timeout=2
         )
         return res.returncode == 0
     except Exception:
@@ -30,16 +34,15 @@ def check_linux_sandbox_support() -> bool:
 
 
 def check_macos_sandbox_support() -> bool:
-    """Verify that sandbox-exec is available and works with a simple profile at startup."""
+    """Verify that sandbox-exec is available and works with our profile at startup."""
     if sys.platform != "darwin":
         return False
     try:
-        profile = "(version 1) (allow default)"
         res = subprocess.run(
-            ["sandbox-exec", "-p", profile, "true"],
+            ["sandbox-exec", "-p", MACOS_SANDBOX_PROFILE, "true"],
             capture_output=True,
             text=True,
-            timeout=2
+            timeout=2,
         )
         return res.returncode == 0
     except Exception:
@@ -52,6 +55,7 @@ def check_windows_sandbox_support() -> bool:
         return False
     try:
         import ctypes
+
         advapi32 = ctypes.windll.advapi32
         _ = advapi32.CreateRestrictedToken
         _ = advapi32.ConvertStringSidToSidW
@@ -125,19 +129,42 @@ if sys.platform == "win32":
     class RestrictedPopen(subprocess.Popen):
         """A subclass of Popen that executes child processes under a restricted token on Windows."""
 
-        def _execute_child(self, args, executable, preexec_fn, close_fds,
-                           pass_fds, cwd, env, startupinfo, creationflags,
-                           shell, p2cread, p2cwrite, c2pread, c2pwrite,
-                           errread, errwrite, unused_restore_signals=None,
-                           unused_gid=None, unused_gids=None, unused_uid=None,
-                           unused_umask=None, unused_start_new_session=None,
-                           *extra_args, **extra_kwargs):
+        def _execute_child(
+            self,
+            args,
+            executable,
+            preexec_fn,
+            close_fds,
+            pass_fds,
+            cwd,
+            env,
+            startupinfo,
+            creationflags,
+            shell,
+            p2cread,
+            p2cwrite,
+            c2pread,
+            c2pwrite,
+            errread,
+            errwrite,
+            unused_restore_signals=None,
+            unused_gid=None,
+            unused_gids=None,
+            unused_uid=None,
+            unused_umask=None,
+            unused_start_new_session=None,
+            *extra_args,
+            **extra_kwargs,
+        ):
 
             advapi32 = ctypes.windll.advapi32
             kernel32 = ctypes.windll.kernel32
 
             # Configure ctypes function signatures
-            advapi32.ConvertStringSidToSidW.argtypes = [wintypes.LPCWSTR, ctypes.POINTER(wintypes.LPVOID)]
+            advapi32.ConvertStringSidToSidW.argtypes = [
+                wintypes.LPCWSTR,
+                ctypes.POINTER(wintypes.LPVOID),
+            ]
             advapi32.ConvertStringSidToSidW.restype = wintypes.BOOL
 
             advapi32.CreateRestrictedToken.argtypes = [
@@ -149,7 +176,7 @@ if sys.platform == "win32":
                 wintypes.LPVOID,
                 wintypes.DWORD,
                 ctypes.POINTER(SID_AND_ATTRIBUTES),
-                ctypes.POINTER(wintypes.HANDLE)
+                ctypes.POINTER(wintypes.HANDLE),
             ]
             advapi32.CreateRestrictedToken.restype = wintypes.BOOL
 
@@ -159,7 +186,7 @@ if sys.platform == "win32":
                 wintypes.LPVOID,
                 ctypes.c_int,
                 ctypes.c_int,
-                ctypes.POINTER(wintypes.HANDLE)
+                ctypes.POINTER(wintypes.HANDLE),
             ]
             advapi32.DuplicateTokenEx.restype = wintypes.BOOL
 
@@ -174,7 +201,7 @@ if sys.platform == "win32":
                 wintypes.LPVOID,
                 wintypes.LPCWSTR,
                 ctypes.POINTER(STARTUPINFOW),
-                ctypes.POINTER(PROCESS_INFORMATION)
+                ctypes.POINTER(PROCESS_INFORMATION),
             ]
             advapi32.CreateProcessAsUserW.restype = wintypes.BOOL
 
@@ -182,7 +209,9 @@ if sys.platform == "win32":
             current_process = kernel32.GetCurrentProcess()
             token_handle = wintypes.HANDLE()
             # TOKEN_DUPLICATE (0x0002) | TOKEN_QUERY (0x0008)
-            if not advapi32.OpenProcessToken(current_process, 0x0002 | 0x0008, ctypes.byref(token_handle)):
+            if not advapi32.OpenProcessToken(
+                current_process, 0x0002 | 0x0008, ctypes.byref(token_handle)
+            ):
                 raise ctypes.WinError()
 
             # 2. Create restricting SID for S-1-5-12
@@ -200,10 +229,13 @@ if sys.platform == "win32":
             if not advapi32.CreateRestrictedToken(
                 token_handle,
                 1,  # DISABLE_MAX_PRIVILEGE
-                0, None,
-                0, None,
-                1, ctypes.byref(restricting_sid),
-                ctypes.byref(restricted_token)
+                0,
+                None,
+                0,
+                None,
+                1,
+                ctypes.byref(restricting_sid),
+                ctypes.byref(restricted_token),
             ):
                 kernel32.CloseHandle(token_handle)
                 kernel32.LocalFree(p_sid)
@@ -218,7 +250,7 @@ if sys.platform == "win32":
                 None,
                 2,
                 1,
-                ctypes.byref(primary_token)
+                ctypes.byref(primary_token),
             ):
                 kernel32.CloseHandle(restricted_token)
                 kernel32.CloseHandle(token_handle)
@@ -285,7 +317,7 @@ if sys.platform == "win32":
                 env_block,
                 cwd,
                 ctypes.byref(si),
-                ctypes.byref(pi)
+                ctypes.byref(pi),
             )
 
             # Close primary token as we no longer need it to spawn
@@ -297,6 +329,7 @@ if sys.platform == "win32":
             # 7. Handle process handle extraction, close thread handle, and close parent/child pipes
             try:
                 import _winapi
+
                 if hasattr(_winapi, "handle"):
                     self._handle = _winapi.handle(pi.hProcess)
                 else:
@@ -324,6 +357,7 @@ if sys.platform == "win32":
                     elif hasattr(pipe, "close"):
                         pipe.close()
 else:
+
     class RestrictedPopen(object):
         pass
 
@@ -365,19 +399,22 @@ def spawn_background_process(cmd, sandbox: bool = True, **kwargs):
     """Spawn a background process asynchronously with platform-specific sandboxing if sandbox=True."""
     if sandbox:
         if not SANDBOX_SUPPORTED:
-            raise PermissionError("Subprocess sandboxing is enabled but not supported or failed to initialize on this platform.")
+            raise PermissionError(
+                "Subprocess sandboxing is enabled but not supported or failed to initialize on this platform."
+            )
 
         if sys.platform == "linux":
-            cmd = ["unshare", "-n", "-r", "sh", "-c", 'ip link set lo up && exec "$@"', "--"] + list(cmd)
+            cmd = [
+                "unshare",
+                "-n",
+                "-r",
+                "sh",
+                "-c",
+                'ip link set lo up && exec "$@"',
+                "--",
+            ] + list(cmd)
         elif sys.platform == "darwin":
-            profile = (
-                "(version 1)\n"
-                "(allow default)\n"
-                "(deny network-outbound)\n"
-                '(allow network-outbound (remote ip "127.0.0.1:*"))\n'
-                '(allow network-outbound (remote ip "::1:*"))\n'
-            )
-            cmd = ["sandbox-exec", "-p", profile] + list(cmd)
+            cmd = ["sandbox-exec", "-p", MACOS_SANDBOX_PROFILE] + list(cmd)
         elif sys.platform == "win32":
             if "env" not in kwargs:
                 kwargs["env"] = get_cleaned_env()
@@ -405,19 +442,22 @@ def run_background_process(cmd, sandbox: bool = True, **kwargs):
     """Run a background process synchronously with platform-specific sandboxing if sandbox=True."""
     if sandbox:
         if not SANDBOX_SUPPORTED:
-            raise PermissionError("Subprocess sandboxing is enabled but not supported or failed to initialize on this platform.")
+            raise PermissionError(
+                "Subprocess sandboxing is enabled but not supported or failed to initialize on this platform."
+            )
 
         if sys.platform == "linux":
-            cmd = ["unshare", "-n", "-r", "sh", "-c", 'ip link set lo up && exec "$@"', "--"] + list(cmd)
+            cmd = [
+                "unshare",
+                "-n",
+                "-r",
+                "sh",
+                "-c",
+                'ip link set lo up && exec "$@"',
+                "--",
+            ] + list(cmd)
         elif sys.platform == "darwin":
-            profile = (
-                "(version 1)\n"
-                "(allow default)\n"
-                "(deny network-outbound)\n"
-                '(allow network-outbound (remote ip "127.0.0.1:*"))\n'
-                '(allow network-outbound (remote ip "::1:*"))\n'
-            )
-            cmd = ["sandbox-exec", "-p", profile] + list(cmd)
+            cmd = ["sandbox-exec", "-p", MACOS_SANDBOX_PROFILE] + list(cmd)
         elif sys.platform == "win32":
             if "env" not in kwargs:
                 kwargs["env"] = get_cleaned_env()
