@@ -415,3 +415,133 @@ def test_no_dns_during_import():
         import app.core.shared_registry
 
         importlib.reload(app.core.shared_registry)
+
+
+def test_sandbox_address_resolution_blocks_external():
+    """Verify that name resolution functions raise standard socket address errors on external domains inside sandbox."""
+    from app.core.shared_registry import block_external_network
+
+    with block_external_network():
+        # 1. getaddrinfo
+        with pytest.raises(socket.gaierror) as excinfo:
+            socket.getaddrinfo("external-domain.com", 80)
+        assert excinfo.value.errno == getattr(socket, "EAI_NONAME", -2)
+
+        # 2. gethostbyname
+        with pytest.raises(socket.gaierror) as excinfo:
+            socket.gethostbyname("external-domain.com")
+        assert excinfo.value.errno == getattr(socket, "EAI_NONAME", -2)
+
+        # 3. gethostbyname_ex
+        with pytest.raises(socket.gaierror) as excinfo:
+            socket.gethostbyname_ex("external-domain.com")
+        assert excinfo.value.errno == getattr(socket, "EAI_NONAME", -2)
+
+        # 4. gethostbyaddr
+        with pytest.raises(socket.herror) as excinfo:
+            socket.gethostbyaddr("8.8.8.8")
+        assert excinfo.value.args[0] == 1
+
+        # 5. getnameinfo
+        with pytest.raises(socket.gaierror) as excinfo:
+            socket.getnameinfo(("8.8.8.8", 80), 0)
+        assert excinfo.value.errno == getattr(socket, "EAI_NONAME", -2)
+
+        # 6. getfqdn returns the original domain name immediately without query
+        assert socket.getfqdn("external-domain.com") == "external-domain.com"
+
+
+def test_sandbox_address_resolution_allows_local():
+    """Verify that localhost and loopback queries are unblocked inside sandboxed execution."""
+    from app.core.shared_registry import block_external_network
+
+    mock_gai = MagicMock(return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 80))])
+    mock_ghn = MagicMock(return_value="127.0.0.1")
+    mock_ghne = MagicMock(return_value=("localhost", [], ["127.0.0.1"]))
+    mock_gha = MagicMock(return_value=("localhost", [], ["127.0.0.1"]))
+    mock_gni = MagicMock(return_value=("localhost", "http"))
+    mock_gfq = MagicMock(return_value="localhost")
+
+    with (
+        patch("app.core.shared_registry._original_getaddrinfo", mock_gai),
+        patch("app.core.shared_registry._original_gethostbyname", mock_ghn),
+        patch("app.core.shared_registry._original_gethostbyname_ex", mock_ghne),
+        patch("app.core.shared_registry._original_gethostbyaddr", mock_gha),
+        patch("app.core.shared_registry._original_getnameinfo", mock_gni),
+        patch("app.core.shared_registry._original_getfqdn", mock_gfq),
+        block_external_network(),
+    ):
+        # 1. getaddrinfo
+        res1 = socket.getaddrinfo("localhost", 80)
+        assert res1 == [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 80))]
+        mock_gai.assert_called_once_with("localhost", 80)
+
+        # 2. gethostbyname
+        res2 = socket.gethostbyname("127.0.0.1")
+        assert res2 == "127.0.0.1"
+        mock_ghn.assert_called_once_with("127.0.0.1")
+
+        # 3. gethostbyname_ex
+        res3 = socket.gethostbyname_ex("localhost")
+        assert res3 == ("localhost", [], ["127.0.0.1"])
+        mock_ghne.assert_called_once_with("localhost")
+
+        # 4. gethostbyaddr
+        res4 = socket.gethostbyaddr("127.0.0.1")
+        assert res4 == ("localhost", [], ["127.0.0.1"])
+        mock_gha.assert_called_once_with("127.0.0.1")
+
+        # 5. getnameinfo
+        res5 = socket.getnameinfo(("127.0.0.1", 80), 0)
+        assert res5 == ("localhost", "http")
+        mock_gni.assert_called_once_with(("127.0.0.1", 80), 0)
+
+        # 6. getfqdn
+        res6 = socket.getfqdn("localhost")
+        assert res6 == "localhost"
+        mock_gfq.assert_called_once_with("localhost")
+
+
+def test_sandbox_address_resolution_inactive_allows_all():
+    """Verify that external lookups are permitted and call original methods when block is inactive."""
+    mock_gai = MagicMock(return_value=[])
+    mock_ghn = MagicMock(return_value="93.184.216.34")
+
+    with (
+        patch("app.core.shared_registry._original_getaddrinfo", mock_gai),
+        patch("app.core.shared_registry._original_gethostbyname", mock_ghn),
+    ):
+        res1 = socket.getaddrinfo("example.com", 80)
+        assert res1 == []
+        mock_gai.assert_called_once_with("example.com", 80)
+
+        res2 = socket.gethostbyname("example.com")
+        assert res2 == "93.184.216.34"
+        mock_ghn.assert_called_once_with("example.com")
+
+
+def test_sandbox_address_resolution_supports_mocks():
+    """Verify that mock/magic mock interfaces are supported and don't cause failures or blocks."""
+    from app.core.shared_registry import block_external_network
+
+    # If the original getaddrinfo is a Mock, it should bypass sandbox and return mock's value
+    mock_orig = MagicMock(return_value="mocked-result")
+
+    with (
+        patch("app.core.shared_registry._original_getaddrinfo", mock_orig),
+        block_external_network(),
+    ):
+        res = socket.getaddrinfo("example.com", 80)
+        assert res == "mocked-result"
+        mock_orig.assert_called_once_with("example.com", 80)
+
+    # If host argument is a Mock, it should also bypass and be processed by original
+    mock_host = MagicMock()
+    mock_orig_host = MagicMock(return_value="mocked-host-result")
+    with (
+        patch("app.core.shared_registry._original_getaddrinfo", mock_orig_host),
+        block_external_network(),
+    ):
+        res_host = socket.getaddrinfo(mock_host, 80)
+        assert res_host == "mocked-host-result"
+        mock_orig_host.assert_called_once_with(mock_host, 80)
