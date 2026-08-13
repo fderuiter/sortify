@@ -95,10 +95,19 @@ def test_model_downloader_bypasses_sandbox(tmp_path):
     def on_failure(err):
         failure_called.set()
 
+    # Register expected hash for verification to pass
+    import hashlib
+    from app.core.shared_registry import SharedModelRegistry
+    mock_data = b"modeldata"
+    mock_hash = hashlib.sha256(mock_data).hexdigest()
+    SharedModelRegistry.get_instance().register_expected_hashes(
+        "model_download", {"model.onnx": mock_hash}
+    )
+
     # Mock response to simulate model downloading successfully
     mock_response = MagicMock()
     mock_response.info.return_value.get.return_value = "10"
-    mock_response.read.side_effect = [b"modeldata", b""]
+    mock_response.read.side_effect = [mock_data, b""]
 
     mock_opener = MagicMock()
     mock_opener.open.return_value.__enter__.return_value = mock_response
