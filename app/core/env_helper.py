@@ -505,14 +505,11 @@ if sys.platform == "win32":
                 raise ctypes.WinError()
 
             # 7. Handle process handle extraction, close thread handle, and close parent/child pipes
-            try:
-                import _winapi
+            import subprocess
 
-                if hasattr(_winapi, "handle"):
-                    self._handle = _winapi.handle(pi.hProcess)
-                else:
-                    self._handle = pi.hProcess
-            except Exception:
+            if hasattr(subprocess, "Handle"):
+                self._handle = subprocess.Handle(pi.hProcess)
+            else:
                 self._handle = pi.hProcess
 
             self.pid = pi.dwProcessId
