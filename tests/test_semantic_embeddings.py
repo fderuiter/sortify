@@ -128,7 +128,9 @@ def test_swapping_model_triggers_purge_and_reconstruction(db, temp_dir):
         assert db.get_model_metadata("active_model_version") == "2.0.0"
 
         # Verify that get_documents_missing_vectors returns the outdated document for lazy regeneration
-        missing = db.get_documents_missing_vectors(str(temp_dir), active_model_signature="new_onnx_sig_hash")
+        missing = db.get_documents_missing_vectors(
+            str(temp_dir), active_model_signature="new_onnx_sig_hash"
+        )
         assert len(missing) == 1
         assert missing[0][0] == "doc1.txt"
 
@@ -438,11 +440,14 @@ def test_real_onnx_pipeline_graceful_fallback(db, temp_dir):
         patch("app.core.semantic_embeddings.get_active_model_properties") as mock_props,
     ):
         mock_props.return_value = ("faulty_sig_hash", 384, "1.0.0")
-        
+
         # When model_path is specified, initializing SemanticEmbeddingManager with a faulty setup must raise ModelValidationError
         from app.core.semantic_embeddings import ModelValidationError
+
         with pytest.raises(ModelValidationError):
-            manager = SemanticEmbeddingManager(db, model_path=str(model_dir), force_validation=True)
+            manager = SemanticEmbeddingManager(
+                db, model_path=str(model_dir), force_validation=True
+            )
 
 
 def test_vector_field_level_encryption_raw_db(db, temp_dir):
@@ -537,6 +542,7 @@ def test_global_model_properties_cache_and_thread_safety(temp_dir):
         _model_properties_cache,
         _model_properties_cache_lock,
     )
+
     with _model_properties_cache_lock:
         _model_properties_cache.clear()
 
@@ -606,6 +612,7 @@ def test_global_model_properties_cache_and_thread_safety(temp_dir):
 def test_strict_model_signature_validation_fails_for_unregistered_hash(db, temp_dir):
     """Verify that startup validation successfully blocks model initialization if the model file does not match the expected SHA-256 signature."""
     from app.core.semantic_embeddings import ModelValidationError
+
     model_dir = temp_dir / "unregistered_model_dir"
     model_dir.mkdir()
     onnx_file = model_dir / "model.onnx"
@@ -617,6 +624,7 @@ def test_strict_model_signature_validation_fails_for_unregistered_hash(db, temp_
 
     # Let's mock the ONNX Session and dimensions to satisfy dimension check
     from unittest.mock import MagicMock, patch
+
     mock_session = MagicMock()
     input_node = MagicMock()
     input_node.name = "input_ids"
@@ -625,36 +633,46 @@ def test_strict_model_signature_validation_fails_for_unregistered_hash(db, temp_
     out_node.shape = [1, 3, 384]
     mock_session.get_outputs.return_value = [out_node]
 
-    with patch("app.core.shared_registry.SharedModelRegistry.get_onnx_session", return_value=mock_session):
+    with patch(
+        "app.core.shared_registry.SharedModelRegistry.get_onnx_session",
+        return_value=mock_session,
+    ):
         # Initializing manager with force_validation=True should raise ModelValidationError due to signature mismatch
         with pytest.raises(ModelValidationError) as exc_info:
-            SemanticEmbeddingManager(db, model_path=str(model_dir), force_validation=True)
+            SemanticEmbeddingManager(
+                db, model_path=str(model_dir), force_validation=True
+            )
         assert "Model SHA-256 signature mismatch or unrecognized" in str(exc_info.value)
 
 
 def test_tokenizer_files_missing_raises_validation_error(db, temp_dir):
     """Verify that startup validation fails if required tokenizer files are missing."""
     from app.core.semantic_embeddings import ModelValidationError
+
     model_dir = temp_dir / "missing_tokenizer_model_dir"
     model_dir.mkdir()
     onnx_file = model_dir / "model.onnx"
-    
+
     # Write registered model.onnx hash content to pass signature check
     from app.core.hashes_registry import HASHES
+
     expected_hash = HASHES["generative_naming"]["model.onnx"]
     from unittest.mock import MagicMock, patch
+
     mock_sha256 = MagicMock()
     mock_sha256().hexdigest.return_value = expected_hash
-    
+
     # Leave vocab.txt or tokenizer_config.json missing
     onnx_file.write_text("dummy onnx content")
-    
+
     with patch("hashlib.sha256") as mock_sha:
         mock_instance = MagicMock()
         mock_instance.hexdigest.return_value = expected_hash
         mock_sha.return_value = mock_instance
-        
+
         # Initializing should raise ModelValidationError because required tokenizer files are missing
         with pytest.raises(ModelValidationError) as exc_info:
-            SemanticEmbeddingManager(db, model_path=str(model_dir), force_validation=True)
+            SemanticEmbeddingManager(
+                db, model_path=str(model_dir), force_validation=True
+            )
         assert "Required tokenizer file is missing" in str(exc_info.value)
