@@ -355,13 +355,21 @@ def test_restricted_popen_execute_child_logic():
 
     # Mock _winapi
     mock_winapi = mock.MagicMock()
+    mock_msvcrt = mock.MagicMock()
 
     with (
         mock.patch("sys.platform", "win32"),
         mock.patch("ctypes.windll", mock_ctypes.windll, create=True),
         mock.patch("ctypes.WinError", Exception, create=True),
+        mock.patch("os.open", return_value=999),
+        mock.patch("os.set_inheritable"),
+        mock.patch("os.close"),
         mock.patch.dict(
-            "sys.modules", {"ctypes.wintypes": mock_wintypes, "_winapi": mock_winapi}
+            "sys.modules", {
+                "ctypes.wintypes": mock_wintypes,
+                "_winapi": mock_winapi,
+                "msvcrt": mock_msvcrt
+            }
         ),
     ):
         # Reload env_helper to define RestrictedPopen Windows class
