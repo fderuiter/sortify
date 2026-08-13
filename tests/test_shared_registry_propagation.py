@@ -113,6 +113,7 @@ def test_model_downloader_bypasses_sandbox(tmp_path):
     mock_response.info.return_value.get.return_value = "10"
     mock_response.read.side_effect = [mock_data, b""]
 
+
     mock_opener = MagicMock()
     mock_opener.open.return_value.__enter__.return_value = mock_response
 
