@@ -382,11 +382,13 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                 if v is None:
                     doc_text = doc_map.get(k, "")[:1000]
                     prompt = f"Does this document about '{doc_text}' belong in a folder for '{path_name}'? Reply YES or NO."
-                    tasks.append({
-                        "file": k,
-                        "prompt": prompt,
-                        "path_name": path_name,
-                    })
+                    tasks.append(
+                        {
+                            "file": k,
+                            "prompt": prompt,
+                            "path_name": path_name,
+                        }
+                    )
                 elif isinstance(v, dict):
                     folder_name = k if not path_name else f"{path_name} {k}"
                     tasks.extend(collect_validation_tasks(v, path_name=folder_name))
@@ -396,18 +398,25 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         validation_grammar = 'root ::= "YES" | "NO"'
         results = {}
 
-        use_gguf = self._gguf_active and not self._gguf_failed and self._gguf_process and self._gguf_process.is_alive()
+        use_gguf = (
+            self._gguf_active
+            and not self._gguf_failed
+            and self._gguf_process
+            and self._gguf_process.is_alive()
+        )
 
         # 2. Run validations (pipelined if GGUF is active)
         if use_gguf and tasks:
             # Push all validation tasks to background worker queue asynchronously before blocking
             for task in tasks:
                 try:
-                    self._gguf_input_queue.put({
-                        "prompt": task["prompt"],
-                        "max_tokens": 5,
-                        "grammar": validation_grammar
-                    })
+                    self._gguf_input_queue.put(
+                        {
+                            "prompt": task["prompt"],
+                            "max_tokens": 5,
+                            "grammar": validation_grammar,
+                        }
+                    )
                 except Exception as e:
                     logging.error(f"Failed to queue task for {task['file']}: {e}")
 
@@ -415,33 +424,58 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
             for task in tasks:
                 filename = task["file"]
                 prompt = task["prompt"]
-                
+
                 # Check if GGUF is still active and hasn't failed
-                if self._gguf_active and not self._gguf_failed and self._gguf_process and self._gguf_process.is_alive():
+                if (
+                    self._gguf_active
+                    and not self._gguf_failed
+                    and self._gguf_process
+                    and self._gguf_process.is_alive()
+                ):
                     try:
                         estimated_tokens = len(prompt) // 4
                         timeout = max(8.0, min(60.0, 8.0 + (estimated_tokens / 20.0)))
-                        
-                        res = cooperative_queue_get(self._gguf_output_queue, timeout=timeout)
-                        
-                        if not isinstance(res, dict) or "error" in res or "text" not in res:
+
+                        res = cooperative_queue_get(
+                            self._gguf_output_queue, timeout=timeout
+                        )
+
+                        if (
+                            not isinstance(res, dict)
+                            or "error" in res
+                            or "text" not in res
+                        ):
                             raise Exception(
-                                res.get("error") if isinstance(res, dict) else "Null or incomplete response"
+                                res.get("error")
+                                if isinstance(res, dict)
+                                else "Null or incomplete response"
                             )
                         results[filename] = res["text"].strip().upper()
                     except Exception as e:
-                        logging.error(f"Pipelined GGUF worker failed or timed out for {filename}: {e}")
+                        logging.error(
+                            f"Pipelined GGUF worker failed or timed out for {filename}: {e}"
+                        )
                         # Fall back to PyTorch
                         self._fallback_to_pytorch()
                         try:
-                            results[filename] = self._run_prompt(prompt, 5, grammar=validation_grammar).strip().upper()
+                            results[filename] = (
+                                self._run_prompt(prompt, 5, grammar=validation_grammar)
+                                .strip()
+                                .upper()
+                            )
                         except Exception as inner_e:
-                            logging.error(f"Fallback generation failed for {filename}: {inner_e}")
+                            logging.error(
+                                f"Fallback generation failed for {filename}: {inner_e}"
+                            )
                             results[filename] = "YES"
                 else:
                     # GGUF failed/died, fallback to synchronous running (PyTorch)
                     try:
-                        results[filename] = self._run_prompt(prompt, 5, grammar=validation_grammar).strip().upper()
+                        results[filename] = (
+                            self._run_prompt(prompt, 5, grammar=validation_grammar)
+                            .strip()
+                            .upper()
+                        )
                     except Exception as e:
                         logging.error(f"Fallback generation failed for {filename}: {e}")
                         results[filename] = "YES"
@@ -451,9 +485,15 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                 filename = task["file"]
                 prompt = task["prompt"]
                 try:
-                    results[filename] = self._run_prompt(prompt, 5, grammar=validation_grammar).strip().upper()
+                    results[filename] = (
+                        self._run_prompt(prompt, 5, grammar=validation_grammar)
+                        .strip()
+                        .upper()
+                    )
                 except Exception as e:
-                    logging.error(f"Synchronous coherence check failed for {filename}: {e}")
+                    logging.error(
+                        f"Synchronous coherence check failed for {filename}: {e}"
+                    )
                     results[filename] = "YES"
 
         # 3. Reconstruct the filtered plan using precomputed validation results

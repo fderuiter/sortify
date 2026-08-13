@@ -392,10 +392,9 @@ def check_windows_sandbox_support() -> bool:
         _ = advapi32.CreateProcessAsUserW
 
         # Check if we are running under standard test mocks to avoid launching actual probe process
-        if (
-            hasattr(advapi32.CreateProcessAsUserW, "assert_called_with")
-            or type(advapi32.CreateProcessAsUserW).__name__ in ("MagicMock", "Mock")
-        ):
+        if hasattr(advapi32.CreateProcessAsUserW, "assert_called_with") or type(
+            advapi32.CreateProcessAsUserW
+        ).__name__ in ("MagicMock", "Mock"):
             return True
 
         # Live Probe / Test: Try spawning a tiny restricted subprocess with pipes to verify end-to-end functionality
