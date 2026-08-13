@@ -787,21 +787,29 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                     ):
                         # 2. Query Pre-computed Historical Vectors directly from DB
                         from app.core.db_conn import get_db_connection
+                        from app.core.extractor_strategies import registry
+                        supported_exts = [ext.lower() for ext in registry._extractors.keys() if ext.lower() not in {".png", ".jpg", ".jpeg"}]
+                        
+                        like_clauses = " OR ".join(["d.filepath LIKE ?" for _ in supported_exts])
 
                         conn = get_db_connection(db.db_path)
                         with conn:
                             cursor = conn.execute(
-                                """
+                                f"""
                                 SELECT d.filepath, d.user_verified_target_path, v.vector
                                 FROM documents d
                                 JOIN document_vectors v ON d.base_dir = v.base_dir AND d.filepath = v.filepath
                                 WHERE d.base_dir = ? AND d.user_verified_target_path IS NOT NULL AND d.user_verified_target_path != ''
+                                AND ({like_clauses})
                             """,
-                                (base_dir,),
+                                (base_dir, *[f"%{ext}" for ext in supported_exts]),
                             )
                             rows = cursor.fetchall()
 
                         if rows:
+                            # Preload vectors concurrently into memory cache
+                            db.preload_document_vectors(base_dir)
+
                             import json
 
                             import numpy as np
@@ -809,45 +817,16 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
 
                             hist_vectors = []
                             hist_meta = []
-                            supported_exts_set = {
-                                ".txt",
-                                ".docx",
-                                ".csv",
-                                ".xlsx",
-                                ".xls",
-                                ".pdf",
-                            }
                             for filepath, user_verified_target, vector_str in rows:
-                                dot_idx = filepath.rfind(".")
-                                ext = (
-                                    filepath[dot_idx:].lower() if dot_idx != -1 else ""
-                                )
-                                # Exclude non-textual attachments and image files from semantic similarity
-                                if (
-                                    ext in {".png", ".jpg", ".jpeg"}
-                                    or ext not in supported_exts_set
-                                ):
-                                    continue
-
-                                if vector_str:
-                                    try:
-                                        decrypted_vector_str = db.crypto.decrypt_vector(
-                                            vector_str
-                                        )
-                                        v = json.loads(decrypted_vector_str)
-                                        if embedding_manager.validate_vector_dimension(
-                                            v
-                                        ):
-                                            hist_vectors.append(v)
-                                            hist_meta.append(
-                                                {
-                                                    "filepath": filepath,
-                                                    "user_verified_target_path": user_verified_target,
-                                                }
-                                            )
-                                    except Exception:
-                                        db.track_corrupted_vector(base_dir, filepath)
-                                        continue
+                                v = db.get_document_vector(base_dir, filepath)
+                                if v is not None and embedding_manager.validate_vector_dimension(v):
+                                    hist_vectors.append(v)
+                                    hist_meta.append(
+                                        {
+                                            "filepath": filepath,
+                                            "user_verified_target_path": user_verified_target,
+                                        }
+                                    )
 
                             if hist_vectors:
                                 # 3. Cosine Similarity Calculation

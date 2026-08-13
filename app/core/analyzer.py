@@ -369,11 +369,14 @@ class IncrementalAnalyzer:
                                 "Background reconstruction active, falling back to standard text similarity."
                             )
                         else:
+                            # Preload vectors concurrently into memory cache
+                            self.db.preload_document_vectors(base_dir)
+
                             # Try to load vector embeddings for historical docs
                             hist_vectors = []
                             for doc in historical_docs:
                                 vector = self.embedding_manager.get_vector(
-                                    base_dir, doc["filepath"]
+                                    base_dir, doc["filepath"], verify_signature=True
                                 )
                                 if (
                                     not vector
@@ -400,7 +403,7 @@ class IncrementalAnalyzer:
                         newly_generated = []
                         try:
                             for f_name, doc_text in zip(ai_filenames, ai_documents):
-                                v = self.embedding_manager.get_vector(base_dir, f_name)
+                                v = self.embedding_manager.get_vector(base_dir, f_name, verify_signature=True)
                                 if (
                                     v is not None
                                     and self.embedding_manager.validate_vector_dimension(
@@ -532,7 +535,7 @@ class IncrementalAnalyzer:
                             for f_name, doc_text in zip(ai_filenames, ai_documents):
                                 try:
                                     v = self.embedding_manager.get_vector(
-                                        base_dir, f_name
+                                        base_dir, f_name, verify_signature=True
                                     )
                                     if (
                                         v is not None

@@ -24,6 +24,11 @@ class Database:
         self._cached_documents = None
         self.corrupted_vectors = set()
         self._corrupted_vectors_lock = threading.Lock()
+
+        self._vector_cache = {}
+        self._vector_cache_lock = threading.Lock()
+        self._preloaded_vector_base_dirs = set()
+
         self.init_db()
 
     def init_db(self):
@@ -360,6 +365,9 @@ class Database:
     def remove_document(self, base_dir, filepath):
         """Remove a document and its historical assignments when deleted."""
         filepath = filepath.replace("\\", "/")
+        base_dir_norm = base_dir.replace("\\", "/")
+        with self._vector_cache_lock:
+            self._vector_cache.pop((base_dir_norm, filepath), None)
         self.invalidate_cache()
 
         def _write():
@@ -388,6 +396,10 @@ class Database:
 
         old_filepath = old_filepath.replace("\\", "/")
         new_filepath = new_filepath.replace("\\", "/")
+        base_dir_norm = base_dir.replace("\\", "/")
+        with self._vector_cache_lock:
+            if (base_dir_norm, old_filepath) in self._vector_cache:
+                self._vector_cache[(base_dir_norm, new_filepath)] = self._vector_cache.pop((base_dir_norm, old_filepath))
         new_dir = os.path.dirname(new_filepath).replace("\\", "/")
 
         with self._cache_lock:
@@ -828,6 +840,10 @@ class Database:
 
     def set_model_metadata(self, key: str, value: str):
         """Set model metadata value for a given key."""
+        if key == "active_model_signature":
+            with self._vector_cache_lock:
+                self._vector_cache.clear()
+                self._preloaded_vector_base_dirs.clear()
 
         def _write():
             conn = get_db_connection(self.db_path)
@@ -914,22 +930,135 @@ class Database:
                     results.append((filepath, dec_text))
         return results
 
-    def get_document_vector(self, base_dir: str, filepath: str) -> list[float] | None:
+    def preload_document_vectors(self, base_dir: str):
+        """Preload, decrypt, and parse all supported document vectors for a base directory concurrently using shared worker threads."""
+        import os
+        base_dir_norm = base_dir.replace("\\", "/")
+        with self._vector_cache_lock:
+            if base_dir_norm in self._preloaded_vector_base_dirs:
+                return
+
+        from app.core.extractor_strategies import registry
+        supported_exts = [ext.lower() for ext in registry._extractors.keys()]
+        
+        # Build query to exclude unsupported file extensions in SQLite directly
+        like_clauses = " OR ".join(["filepath LIKE ?" for _ in supported_exts])
+        query = f"""
+            SELECT filepath, vector, model_signature 
+            FROM document_vectors 
+            WHERE base_dir = ? AND ({like_clauses})
+        """
+        params = [base_dir, *[f"%{ext}" for ext in supported_exts]]
+
+        conn = get_db_connection(self.db_path)
+        with conn:
+            cursor = conn.execute(query, params)
+            rows = cursor.fetchall()
+
+        if not rows:
+            with self._vector_cache_lock:
+                self._preloaded_vector_base_dirs.add(base_dir_norm)
+            return
+
+        # Prepare decryption tasks for the shared worker pool
+        from app.core.shared_registry import SharedWorkerPool
+        worker_pool = SharedWorkerPool.get_instance()
+
+        def decrypt_and_parse_task(row):
+            filepath, enc_vector, sig = row
+            filepath_norm = filepath.replace("\\", "/")
+            
+            import json
+            try:
+                decrypted = self.crypto.decrypt_vector(enc_vector)
+                vector = json.loads(decrypted)
+                return filepath_norm, vector, sig
+            except Exception:
+                self.track_corrupted_vector(base_dir, filepath)
+                return filepath_norm, None, None
+
+        # Submit tasks concurrently to the shared worker pool
+        futures = [worker_pool.submit(decrypt_and_parse_task, row) for row in rows]
+        
+        # Gather results and load into in-memory cache
+        import concurrent.futures
+        results = []
+        for fut in concurrent.futures.as_completed(futures):
+            try:
+                results.append(fut.result())
+            except Exception as e:
+                import logging
+                logging.error(f"Error in vector decryption worker: {e}")
+
+        # Update cache under lock
+        with self._vector_cache_lock:
+            for filepath_norm, vector, sig in results:
+                if vector is not None:
+                    self._vector_cache[(base_dir_norm, filepath_norm)] = (vector, sig)
+            self._preloaded_vector_base_dirs.add(base_dir_norm)
+
+    def get_document_vector(self, base_dir: str, filepath: str, verify_signature: bool = False) -> list[float] | None:
         """Retrieve decoupled vector for a document."""
+        import os
+        from app.core.extractor_strategies import registry
+        
         filepath = filepath.replace("\\", "/")
+        base_dir_norm = base_dir.replace("\\", "/")
+        
+        # Check unsupported extensions first to avoid any DB query or processing
+        ext = os.path.splitext(filepath)[1].lower()
+        if not registry.is_supported(ext):
+            return None
+
+        # 1. Check in-memory cache first
+        with self._vector_cache_lock:
+            if (base_dir_norm, filepath) in self._vector_cache:
+                vector, sig = self._vector_cache[(base_dir_norm, filepath)]
+                if verify_signature:
+                    active_sig = self.get_model_metadata("active_model_signature")
+                    if sig != active_sig:
+                        return None
+                return vector
+
+        # 2. Preload base_dir if not preloaded
+        is_preloaded = False
+        with self._vector_cache_lock:
+            is_preloaded = base_dir_norm in self._preloaded_vector_base_dirs
+
+        if not is_preloaded:
+            self.preload_document_vectors(base_dir)
+            with self._vector_cache_lock:
+                if (base_dir_norm, filepath) in self._vector_cache:
+                    vector, sig = self._vector_cache[(base_dir_norm, filepath)]
+                    if verify_signature:
+                        active_sig = self.get_model_metadata("active_model_signature")
+                        if sig != active_sig:
+                            return None
+                    return vector
+
+        # 3. Fallback to DB
         conn = get_db_connection(self.db_path)
         with conn:
             cursor = conn.execute(
-                "SELECT vector FROM document_vectors WHERE base_dir = ? AND filepath = ?",
+                "SELECT vector, model_signature FROM document_vectors WHERE base_dir = ? AND filepath = ?",
                 (base_dir, filepath),
             )
             row = cursor.fetchone()
             if row and row[0]:
                 import json
 
+                sig = row[1]
+                if verify_signature:
+                    active_sig = self.get_model_metadata("active_model_signature")
+                    if sig != active_sig:
+                        return None
+
                 try:
                     decrypted = self.crypto.decrypt_vector(row[0])
-                    return json.loads(decrypted)
+                    vector = json.loads(decrypted)
+                    with self._vector_cache_lock:
+                        self._vector_cache[(base_dir_norm, filepath)] = (vector, sig)
+                    return vector
                 except Exception:
                     self.track_corrupted_vector(base_dir, filepath)
                     return None
@@ -945,27 +1074,37 @@ class Database:
         if not vectors_data:
             return
 
+        base_dir_norm = base_dir.replace("\\", "/")
+        sig = model_signature
+        if sig is None:
+            sig = self.get_model_metadata("active_model_signature")
+
+        with self._vector_cache_lock:
+            for filepath, vector in vectors_data:
+                filepath_norm = filepath.replace("\\", "/")
+                self._vector_cache[(base_dir_norm, filepath_norm)] = (vector, sig)
+
         def _write():
             import json
 
             conn = get_db_connection(self.db_path)
             with conn:
-                sig = model_signature
-                if sig is None:
+                sig_val = model_signature
+                if sig_val is None:
                     cursor = conn.execute(
                         "SELECT value FROM model_metadata WHERE key = ?",
                         ("active_model_signature",),
                     )
                     row = cursor.fetchone()
                     if row:
-                        sig = row[0]
+                        sig_val = row[0]
 
                 rows_to_insert = []
                 for filepath, vector in vectors_data:
                     filepath = filepath.replace("\\", "/")
                     vector_str = json.dumps(vector)
                     enc_vector = self.crypto.encrypt_vector(vector_str).decode("utf-8")
-                    rows_to_insert.append((base_dir, filepath, enc_vector, sig))
+                    rows_to_insert.append((base_dir, filepath, enc_vector, sig_val))
                 conn.executemany(
                     """
                     INSERT INTO document_vectors (base_dir, filepath, vector, model_signature)
@@ -983,6 +1122,9 @@ class Database:
 
     def clear_all_document_vectors(self):
         """Delete all document vectors from the decoupled table."""
+        with self._vector_cache_lock:
+            self._vector_cache.clear()
+            self._preloaded_vector_base_dirs.clear()
 
         def _write():
             conn = get_db_connection(self.db_path)
@@ -1011,15 +1153,20 @@ class Database:
                 if row:
                     sig = row[0]
 
+            from app.core.extractor_strategies import registry
+            supported_exts = [ext.lower() for ext in registry._extractors.keys()]
+            like_clauses = " OR ".join(["d.filepath LIKE ?" for _ in supported_exts])
+
             cursor = conn.execute(
-                """
+                f"""
                 SELECT d.filepath, d.extracted_text 
                 FROM documents d
                 LEFT JOIN document_vectors v ON d.base_dir = v.base_dir AND d.filepath = v.filepath
                 WHERE d.base_dir = ? AND (v.vector IS NULL OR v.model_signature IS NULL OR v.model_signature != ?)
+                AND ({like_clauses})
                 LIMIT ? OFFSET ?
                 """,
-                (base_dir, sig, limit, offset),
+                (base_dir, sig, *[f"%{ext}" for ext in supported_exts], limit, offset),
             )
             rows = cursor.fetchall()
             results = []
