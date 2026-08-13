@@ -8,15 +8,22 @@ from app.ui.dialog_helper import get_dialog_card_classes
 
 
 class ThreadSafeState:
+    """A thread-safe state container.
+
+    Provides synchronized dictionary-like access to internal state keys.
+    """
+
     def __init__(self, **kwargs):
         self._lock = threading.Lock()
         self._state = kwargs
 
     def __getitem__(self, key):
+        """Retrieve a value thread-safely."""
         with self._lock:
             return self._state[key]
 
     def __setitem__(self, key, value):
+        """Store a value thread-safely."""
         with self._lock:
             self._state[key] = value
 
@@ -24,6 +31,7 @@ class ThreadSafeState:
 def show_settings(parent_app, settings):
     """Show the settings dialog."""
     import threading
+
     cancel_event = threading.Event()
     timer_ref = [None]
 
@@ -673,36 +681,51 @@ def show_settings(parent_app, settings):
                                 with ui.row().classes(
                                     "w-full items-center justify-between border-b pb-2 mb-2 flex-wrap gap-2"
                                 ):
-                                    ui.label(f"[{policy.get('type', '').upper()}]").classes("w-20 font-bold")
-                                    ui.label(policy.get("expression", "")).classes("w-32 font-mono truncate")
-                                    ui.label(policy.get("target_path", "")).classes("w-40 font-mono text-gray-500 truncate")
-                                    ui.label(f"Priority: {policy.get('priority', 0)}").classes("w-24 text-sm")
+                                    ui.label(
+                                        f"[{policy.get('type', '').upper()}]"
+                                    ).classes("w-20 font-bold")
+                                    ui.label(policy.get("expression", "")).classes(
+                                        "w-32 font-mono truncate"
+                                    )
+                                    ui.label(policy.get("target_path", "")).classes(
+                                        "w-40 font-mono text-gray-500 truncate"
+                                    )
+                                    ui.label(
+                                        f"Priority: {policy.get('priority', 0)}"
+                                    ).classes("w-24 text-sm")
 
                                     # Halting toggle checkbox!
                                     halting_val = policy.get("halting", False)
 
                                     def on_halt_toggle(e, index=idx):
-                                        current_policies = list(getattr(settings, "POLICIES", []))
+                                        current_policies = list(
+                                            getattr(settings, "POLICIES", [])
+                                        )
                                         if 0 <= index < len(current_policies):
                                             current_policies[index]["halting"] = e.value
                                             try:
                                                 settings.POLICIES = current_policies
                                                 ui.notify(
                                                     f"Halting setting updated for policy {index}.",
-                                                    type="positive"
+                                                    type="positive",
                                                 )
                                             except Exception as ex:
-                                                ui.notify(f"Failed to update halting setting: {ex}", type="negative")
+                                                ui.notify(
+                                                    f"Failed to update halting setting: {ex}",
+                                                    type="negative",
+                                                )
                                                 render_policies()
 
                                     ui.checkbox(
                                         "Halt on mismatch",
                                         value=halting_val,
-                                        on_change=on_halt_toggle
+                                        on_change=on_halt_toggle,
                                     ).props('aria-label="Halt toggle checkbox"')
 
                                     def delete_policy(idx_to_del=idx):
-                                        current_policies = list(getattr(settings, "POLICIES", []))
+                                        current_policies = list(
+                                            getattr(settings, "POLICIES", [])
+                                        )
                                         if 0 <= idx_to_del < len(current_policies):
                                             removed = current_policies.pop(idx_to_del)
                                             try:
@@ -713,7 +736,10 @@ def show_settings(parent_app, settings):
                                                 )
                                                 render_policies()
                                             except Exception as ex:
-                                                ui.notify(f"Failed to delete policy: {ex}", type="negative")
+                                                ui.notify(
+                                                    f"Failed to delete policy: {ex}",
+                                                    type="negative",
+                                                )
 
                                     ui.button(
                                         "Delete", on_click=delete_policy, color="red"
@@ -726,18 +752,24 @@ def show_settings(parent_app, settings):
                     p_type_select = ui.select(
                         label="Type",
                         options=["keyword", "pattern", "override"],
-                        value="keyword"
+                        value="keyword",
                     ).classes("w-32")
-                    p_expr_input = ui.input("Expression").props(
-                        'placeholder="e.g. invoice" aria-label="Policy Expression input"'
-                    ).classes("w-40")
-                    p_target_input = ui.input("Target Path").props(
-                        'placeholder="Folder name" aria-label="Policy Target Path input"'
-                    ).classes("w-40")
+                    p_expr_input = (
+                        ui.input("Expression")
+                        .props(
+                            'placeholder="e.g. invoice" aria-label="Policy Expression input"'
+                        )
+                        .classes("w-40")
+                    )
+                    p_target_input = (
+                        ui.input("Target Path")
+                        .props(
+                            'placeholder="Folder name" aria-label="Policy Target Path input"'
+                        )
+                        .classes("w-40")
+                    )
                     p_priority_input = ui.number(
-                        label="Priority",
-                        value=10,
-                        step=1
+                        label="Priority", value=10, step=1
                     ).classes("w-20")
                     p_halting_checkbox = ui.checkbox("Halt on mismatch", value=False)
 
@@ -763,7 +795,7 @@ def show_settings(parent_app, settings):
                             "expression": p_expr,
                             "target_path": p_target,
                             "priority": int(p_priority),
-                            "halting": p_halting
+                            "halting": p_halting,
                         }
 
                         current_policies = list(getattr(settings, "POLICIES", []))
@@ -791,6 +823,6 @@ def show_settings(parent_app, settings):
             except Exception:
                 pass
 
-    dialog.on('dismiss', handle_dismiss)
+    dialog.on("dismiss", handle_dismiss)
 
     dialog.open()
