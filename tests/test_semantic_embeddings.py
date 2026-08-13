@@ -511,3 +511,86 @@ def test_vector_unencrypted_purge_on_startup(temp_dir, db_worker):
         cursor = conn2.execute("SELECT count(*) FROM document_vectors")
         assert cursor.fetchone()[0] == 0
     clear_connection_cache()
+
+
+def test_global_model_properties_cache_and_thread_safety(temp_dir):
+    """Verify that:
+    1. Repeated status queries perform exactly zero disk reads/hash checks if model file remains unchanged.
+    2. Modifying the model file on disk instantly forces full re-validation of model properties and updates the cache.
+    3. Concurrent threads accessing model properties do not deadlock or cause write races.
+    """
+    import os
+    from unittest.mock import patch
+    import threading
+    from app.core.semantic_embeddings import get_active_model_properties
+
+    # 1. Setup a dummy ONNX model file
+    model_dir = temp_dir / "test_cache_model"
+    model_dir.mkdir()
+    onnx_file = model_dir / "model.onnx"
+    onnx_file.write_text("fake onnx file content")
+
+    # Clear cache before testing to ensure a clean state
+    from app.core.semantic_embeddings import _model_properties_cache, _model_properties_cache_lock
+    with _model_properties_cache_lock:
+        _model_properties_cache.clear()
+
+    # We mock 'open' to track how many times the file's contents are read
+    open_count = 0
+    original_open = open
+
+    def mock_open_fn(file, *args, **kwargs):
+        nonlocal open_count
+        if str(file) == str(onnx_file):
+            open_count += 1
+        return original_open(file, *args, **kwargs)
+
+    with patch("builtins.open", side_effect=mock_open_fn):
+        # First call: should be a cache miss. File is opened, SHA-256 computed.
+        props1 = get_active_model_properties(str(model_dir))
+        assert props1.is_valid is False  # valid is false because it's not a real ONNX file, but that's fine
+        assert open_count == 1
+
+        # Second call: should be a cache hit. Open should not be called again!
+        props2 = get_active_model_properties(str(model_dir))
+        assert props2 == props1
+        assert open_count == 1
+
+        # 2. Invalidation upon modification
+        # Change the modification time on disk
+        current_mtime = os.path.getmtime(str(onnx_file))
+        new_mtime = current_mtime + 5.0
+        os.utime(str(onnx_file), (new_mtime, new_mtime))
+
+        # Third call: should be a cache miss due to mtime change.
+        props3 = get_active_model_properties(str(model_dir))
+        assert open_count == 2
+        assert props3 == props1
+
+        # Fourth call: should be a cache hit again.
+        props4 = get_active_model_properties(str(model_dir))
+        assert props4 == props3
+        assert open_count == 2
+
+    # 3. Concurrent access test to ensure thread-safety and no deadlocks
+    # We will spawn multiple threads that call get_active_model_properties concurrently on the same path
+    results = []
+    def worker():
+        for _ in range(50):
+            res = get_active_model_properties(str(model_dir))
+            results.append(res)
+
+    threads = []
+    for _ in range(10):
+        t = threading.Thread(target=worker)
+        threads.append(t)
+        t.start()
+
+    for t in threads:
+        t.join()
+
+    # All threads should have successfully finished, and results should all match
+    assert len(results) == 500
+    for res in results:
+        assert res == props3
+
