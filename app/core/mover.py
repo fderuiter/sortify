@@ -148,12 +148,15 @@ def _execute_moves_recursive(
             else:
                 filename = os.path.basename(key)
 
+            import unicodedata
             dest_dir = os.path.normpath(os.path.join(base_dir, current_dest))
+            dest_dir = unicodedata.normalize("NFC", dest_dir)
 
             if not os.path.exists(dest_dir):
                 os.makedirs(dest_dir, exist_ok=True)
 
             dest_path = os.path.normpath(get_safe_path(dest_dir, filename, source_path))
+            dest_path = unicodedata.normalize("NFC", dest_path)
 
             link_info = LinkManager.get_link_info(source_path)
             moved_as_link = False

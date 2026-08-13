@@ -8,6 +8,23 @@ from collections import defaultdict
 from contextlib import contextmanager
 from typing import List, Protocol
 
+LANGUAGE_CHAR_MAP = {
+    "en": "a-zA-Z0-9",
+    "de": "a-zA-Z0-9äöüÄÖÜß",
+    "fr": "a-zA-Z0-9âàæçéèêëîïôœùûüÿÂÀÆÇÉÈÊËÎÏÔŒÙÛÜŸ",
+    "es": "a-zA-Z0-9áéíóúüñÁÉÍÓÚÜÑ",
+    "it": "a-zA-Z0-9àèéìíîòóùúÀÈÉÌÍÎÒÓÙÚ",
+    "pt": "a-zA-Z0-9áâãàçéêíóôõúÁÂÃÀÇÉÊÍÓÔÕÚ",
+    "ru": "a-zA-Z0-9а-яА-ЯёЁ",
+    "uk": "a-zA-Z0-9а-яА-ЯёЁіІїЇєЄґҐ",
+    "bg": "a-zA-Z0-9а-яА-ЯёЁ",
+    "el": "a-zA-Z0-9α-ωΑ-ΩάέίόύώήΆΈΊΌΎΏΉϊϋΐΰ",
+    "ch_sim": "a-zA-Z0-9\u4e00-\u9fff",
+    "ch_tra": "a-zA-Z0-9\u4e00-\u9fff",
+    "ja": "a-zA-Z0-9\u3040-\u309f\u30a0-\u30ff\u4e00-\u9fff",
+    "ko": "a-zA-Z0-9\uac00-\ud7af",
+}
+
 
 @contextmanager
 def block_external_network():
@@ -259,8 +276,14 @@ def gguf_worker_main(model_path, input_queue, output_queue, n_threads=None):
                 except Exception as e:
                     import logging
 
-                    logging.error(f"Failed to compile grammar constraint: {e}")
-                    grammar = None
+                    logging.error(f"Failed to compile grammar constraint: {e}. Falling back to default ASCII grammar.")
+                    try:
+                        from llama_cpp import LlamaGrammar
+                        default_ascii_grammar = 'root ::= word (" " word)? (" " word)? (" " word)?\nword ::= [a-zA-Z0-9]+'
+                        grammar = LlamaGrammar.from_string(default_ascii_grammar)
+                    except Exception as fe:
+                        logging.error(f"Failed to compile default ASCII fallback grammar: {fe}")
+                        grammar = None
 
             if grammar:
                 try:
@@ -1153,7 +1176,68 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
             else:
                 prompt = f"Generate a short, descriptive natural language folder name (1 to 4 words) for a folder containing these documents. Do not use hyphens. Return only the name.\nDocuments: {doc_text}\nFolder Name:"
 
-            naming_grammar = 'root ::= word (" " word)? (" " word)? (" " word)?\nword ::= [a-zA-Z0-9]+'
+            # Dynamic GBNF Grammar Generation
+            try:
+                from app.config import AppSettings
+                settings = AppSettings()
+                ocr_langs = getattr(settings, "OCR_LANGUAGES", "en")
+                
+                lang_codes = [lang.strip().lower() for lang in ocr_langs.split(",") if lang.strip()]
+                if not lang_codes:
+                    lang_codes = ["en"]
+                
+                has_en_ranges = False
+                has_cjk = False
+                has_kana = False
+                has_hiragana = False
+                has_hangul = False
+                other_chars = set()
+                
+                for lang in lang_codes:
+                    if lang not in LANGUAGE_CHAR_MAP:
+                        raise ValueError(f"Unsupported OCR language for grammar constraint: {lang}")
+                    
+                    chars_str = LANGUAGE_CHAR_MAP[lang]
+                    if "a-z" in chars_str or "A-Z" in chars_str or "0-9" in chars_str:
+                        has_en_ranges = True
+                    if "\u4e00-\u9fff" in chars_str:
+                        has_cjk = True
+                    if "\u3040-\u309f" in chars_str:
+                        has_hiragana = True
+                    if "\u30a0-\u30ff" in chars_str:
+                        has_kana = True
+                    if "\uac00-\ud7af" in chars_str:
+                        has_hangul = True
+                    
+                    cleaned = chars_str.replace("a-z", "").replace("A-Z", "").replace("0-9", "")
+                    cleaned = cleaned.replace("\u4e00-\u9fff", "").replace("\u3040-\u309f", "").replace("\u30a0-\u30ff", "").replace("\uac00-\ud7af", "")
+                    for char in cleaned:
+                        other_chars.add(char)
+                
+                parts = []
+                if has_en_ranges:
+                    parts.append("a-zA-Z0-9")
+                if has_hiragana:
+                    parts.append("\u3040-\u309f")
+                if has_kana:
+                    parts.append("\u30a0-\u30ff")
+                if has_hangul:
+                    parts.append("\uac00-\ud7af")
+                if has_cjk:
+                    parts.append("\u4e00-\u9fff")
+                
+                sorted_others = "".join(sorted(list(other_chars)))
+                parts.append(sorted_others)
+                
+                combined_chars = "".join(parts)
+                if not combined_chars:
+                    combined_chars = "a-zA-Z0-9"
+                
+                naming_grammar = f'root ::= word (" " word)? (" " word)? (" " word)?\nword ::= [{combined_chars}]+'
+            except Exception as e:
+                logging.error(f"Failed to generate dynamic GBNF grammar, falling back to English ASCII: {e}")
+                naming_grammar = 'root ::= word (" " word)? (" " word)? (" " word)?\nword ::= [a-zA-Z0-9]+'
+
             with block_external_network():
                 name = self._run_prompt(prompt, 15, grammar=naming_grammar).strip()
 

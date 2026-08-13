@@ -59,12 +59,14 @@ def test_gguf_worker_main_grammar_compilation():
                 "Test Prompt", max_tokens=5, echo=False, grammar=mock_compiled_grammar
             )
 
-            # Second task processing (invalid grammar raises exception in compilation)
+            # Second task processing (invalid grammar raises exception in compilation and falls back to default ASCII)
             res_invalid = output_queue.get()
             assert res_invalid == {
                 "text": "YES"
-            }  # Fell back to unconstrained generation
-            mock_llm.assert_any_call("Test Prompt", max_tokens=5, echo=False)
+            }
+            mock_llm.assert_any_call(
+                "Test Prompt", max_tokens=5, echo=False, grammar=mock_compiled_grammar
+            )
 
 
 def test_generative_naming_strategy_passes_correct_grammars():

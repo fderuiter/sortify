@@ -112,6 +112,9 @@ def sanitize_name(name: str) -> str:
     if not name:
         return name
 
+    import unicodedata
+    name = unicodedata.normalize("NFC", name)
+
     # Replace illegal characters with underscore (or just strip them)
     # The requirement says "strip illegal path characters" but in the example:
     # "Data: Archives" -> "Data_ Archives" so we should replace `:` with `_`.
