@@ -385,6 +385,9 @@ def test_restricted_popen_execute_child_logic():
                 self._handle = None
                 self.pid = None
 
+            def __del__(self):
+                pass
+
         proc = MockPopen()
 
         p2cread_mock = mock.MagicMock()
