@@ -341,13 +341,7 @@ if sys.platform == "win32":
             if pi.hThread:
                 kernel32.CloseHandle(pi.hThread)
 
-            # Close parent ends of pipes
-            for pipe in (p2cwrite, c2pread, errread):
-                if pipe is not None and pipe != -1:
-                    if hasattr(pipe, "Close"):
-                        pipe.Close()
-                    elif hasattr(pipe, "close"):
-                        pipe.close()
+            self._child_created = True
 
             # Close child ends of pipes
             for pipe in (p2cread, c2pwrite, errwrite):
@@ -490,6 +484,7 @@ def is_cuda_available() -> bool:
     """Check if PyTorch CUDA capability is available."""
     try:
         import torch
+
         return torch.cuda.is_available()
     except Exception:
         return False
@@ -499,7 +494,7 @@ def is_mps_available() -> bool:
     """Check if PyTorch MPS capability is available."""
     try:
         import torch
+
         return hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
     except Exception:
         return False
-

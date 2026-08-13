@@ -287,11 +287,14 @@ def main():
             with open(SNAPSHOT_PATH, "w", encoding="utf-8") as f:
                 json.dump(current_definitions, f, indent=2, sort_keys=True)
                 f.write("\n")
-            print(f"Successfully auto-updated baseline snapshot at {SNAPSHOT_PATH} due to interface modifications.")
+            print(
+                f"Successfully auto-updated baseline snapshot at {SNAPSHOT_PATH} due to interface modifications."
+            )
             sys.exit(0)
         else:
             print(
-                "FAIL: Public interface or CLI signature drift detected!", file=sys.stderr
+                "FAIL: Public interface or CLI signature drift detected!",
+                file=sys.stderr,
             )
             print(
                 "----------------------------------------------------------------",
