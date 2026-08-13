@@ -353,7 +353,7 @@ def test_extract_file_text_empty_file(tmp_path):
         "app.core.extractor_strategies.TxtExtractor.extract", return_value="   "
     ):
         text = extract_file_text(str(file_path))
-        assert text == "   "
+        assert text == "[STATUS:EMPTY]"
 
 
 def test_process_item_worker_missing_file(tmp_path):
