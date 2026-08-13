@@ -460,6 +460,12 @@ def main():
 
     import PyInstaller.__main__
 
+    is_cpu = "--cpu" in sys.argv
+    if is_cpu:
+        sys.argv.remove("--cpu")
+        os.environ["CPU_BUILD"] = "1"
+        print("CPU-only build profile enabled.")
+
     is_lite = "--lite" in sys.argv
     if is_lite:
         sys.argv.remove("--lite")
@@ -499,6 +505,28 @@ def main():
                 print(f"Error: Missing machine learning package: {name}")
                 sys.exit(1)
 
+        if is_cpu:
+            print("Verifying CPU-only PyTorch...")
+            try:
+                import torch
+                version = getattr(torch, "__version__", "")
+                is_cpu_torch = False
+                if sys.platform in ("win32", "linux"):
+                    if "+cpu" in version:
+                        is_cpu_torch = True
+                elif sys.platform == "darwin":
+                    if not torch.cuda.is_available():
+                        is_cpu_torch = True
+
+                if not is_cpu_torch or "+cu" in version or "cuda" in version.lower():
+                    print(f"Error: Non-CPU PyTorch detected: {version}. CPU-only PyTorch is required.")
+                    sys.exit(1)
+                else:
+                    print(f"CPU-only PyTorch verified: {version}")
+            except Exception as e:
+                print(f"Error during CPU-only PyTorch verification: {e}")
+                sys.exit(1)
+
         download_and_prepare_weights()
 
     print("Verifying SQLCipher in active environment...")
@@ -514,6 +542,27 @@ def main():
     cmd = ["smart-autosorter.spec", "--noconfirm", "--clean"]
 
     PyInstaller.__main__.run(cmd)
+
+    if is_cpu:
+        print("Scanning standalone package for GPU/CUDA/cuDNN binaries...")
+        dist_dir = "dist/smart-autosorter"
+        if os.path.exists(dist_dir):
+            gpu_terms = ["cuda", "cudnn", "cublas", "nvrtc", "cudart", "nvtx", "libdevice"]
+            found_gpu_libs = []
+            for root, dirs, files in os.walk(dist_dir):
+                for file in files:
+                    name_lower = file.lower()
+                    if any(term in name_lower for term in gpu_terms):
+                        found_gpu_libs.append(os.path.join(root, file))
+            if found_gpu_libs:
+                print("Error: Standalone bundle contains GPU/CUDA/cuDNN binaries!")
+                for lib in found_gpu_libs:
+                    print(f"  - Found: {lib}")
+                sys.exit(1)
+            else:
+                print("Validation passed: No GPU/CUDA/cuDNN binaries found in the standalone package.")
+        else:
+            print(f"Warning: Standalone bundle directory {dist_dir} not found for post-build verification.")
 
 
 if __name__ == "__main__":
