@@ -788,9 +788,16 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                         # 2. Query Pre-computed Historical Vectors directly from DB
                         from app.core.db_conn import get_db_connection
                         from app.core.extractor_strategies import registry
-                        supported_exts = [ext.lower() for ext in registry._extractors.keys() if ext.lower() not in {".png", ".jpg", ".jpeg"}]
-                        
-                        like_clauses = " OR ".join(["d.filepath LIKE ?" for _ in supported_exts])
+
+                        supported_exts = [
+                            ext.lower()
+                            for ext in registry._extractors.keys()
+                            if ext.lower() not in {".png", ".jpg", ".jpeg"}
+                        ]
+
+                        like_clauses = " OR ".join(
+                            ["d.filepath LIKE ?" for _ in supported_exts]
+                        )
 
                         conn = get_db_connection(db.db_path)
                         with conn:
@@ -810,8 +817,6 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                             # Preload vectors concurrently into memory cache
                             db.preload_document_vectors(base_dir)
 
-                            import json
-
                             import numpy as np
                             from sklearn.metrics.pairwise import cosine_similarity
 
@@ -819,7 +824,10 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                             hist_meta = []
                             for filepath, user_verified_target, vector_str in rows:
                                 v = db.get_document_vector(base_dir, filepath)
-                                if v is not None and embedding_manager.validate_vector_dimension(v):
+                                if (
+                                    v is not None
+                                    and embedding_manager.validate_vector_dimension(v)
+                                ):
                                     hist_vectors.append(v)
                                     hist_meta.append(
                                         {

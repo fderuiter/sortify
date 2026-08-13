@@ -399,7 +399,9 @@ class Database:
         base_dir_norm = base_dir.replace("\\", "/")
         with self._vector_cache_lock:
             if (base_dir_norm, old_filepath) in self._vector_cache:
-                self._vector_cache[(base_dir_norm, new_filepath)] = self._vector_cache.pop((base_dir_norm, old_filepath))
+                self._vector_cache[(base_dir_norm, new_filepath)] = (
+                    self._vector_cache.pop((base_dir_norm, old_filepath))
+                )
         new_dir = os.path.dirname(new_filepath).replace("\\", "/")
 
         with self._cache_lock:
@@ -932,15 +934,15 @@ class Database:
 
     def preload_document_vectors(self, base_dir: str):
         """Preload, decrypt, and parse all supported document vectors for a base directory concurrently using shared worker threads."""
-        import os
         base_dir_norm = base_dir.replace("\\", "/")
         with self._vector_cache_lock:
             if base_dir_norm in self._preloaded_vector_base_dirs:
                 return
 
         from app.core.extractor_strategies import registry
+
         supported_exts = [ext.lower() for ext in registry._extractors.keys()]
-        
+
         # Build query to exclude unsupported file extensions in SQLite directly
         like_clauses = " OR ".join(["filepath LIKE ?" for _ in supported_exts])
         query = f"""
@@ -962,13 +964,15 @@ class Database:
 
         # Prepare decryption tasks for the shared worker pool
         from app.core.shared_registry import SharedWorkerPool
+
         worker_pool = SharedWorkerPool.get_instance()
 
         def decrypt_and_parse_task(row):
             filepath, enc_vector, sig = row
             filepath_norm = filepath.replace("\\", "/")
-            
+
             import json
+
             try:
                 decrypted = self.crypto.decrypt_vector(enc_vector)
                 vector = json.loads(decrypted)
@@ -979,15 +983,17 @@ class Database:
 
         # Submit tasks concurrently to the shared worker pool
         futures = [worker_pool.submit(decrypt_and_parse_task, row) for row in rows]
-        
+
         # Gather results and load into in-memory cache
         import concurrent.futures
+
         results = []
         for fut in concurrent.futures.as_completed(futures):
             try:
                 results.append(fut.result())
             except Exception as e:
                 import logging
+
                 logging.error(f"Error in vector decryption worker: {e}")
 
         # Update cache under lock
@@ -997,14 +1003,17 @@ class Database:
                     self._vector_cache[(base_dir_norm, filepath_norm)] = (vector, sig)
             self._preloaded_vector_base_dirs.add(base_dir_norm)
 
-    def get_document_vector(self, base_dir: str, filepath: str, verify_signature: bool = False) -> list[float] | None:
+    def get_document_vector(
+        self, base_dir: str, filepath: str, verify_signature: bool = False
+    ) -> list[float] | None:
         """Retrieve decoupled vector for a document."""
         import os
+
         from app.core.extractor_strategies import registry
-        
+
         filepath = filepath.replace("\\", "/")
         base_dir_norm = base_dir.replace("\\", "/")
-        
+
         # Check unsupported extensions first to avoid any DB query or processing
         ext = os.path.splitext(filepath)[1].lower()
         if not registry.is_supported(ext):
@@ -1154,6 +1163,7 @@ class Database:
                     sig = row[0]
 
             from app.core.extractor_strategies import registry
+
             supported_exts = [ext.lower() for ext in registry._extractors.keys()]
             like_clauses = " OR ".join(["d.filepath LIKE ?" for _ in supported_exts])
 

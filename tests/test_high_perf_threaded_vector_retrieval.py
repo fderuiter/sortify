@@ -1,11 +1,9 @@
 """High-Performance Threaded Vector Retrieval and Database-Level Filtering Tests."""
 
-import os
 import shutil
 import tempfile
-import threading
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
 
@@ -27,6 +25,7 @@ def high_perf_env():
     finally:
         db_worker.stop()
         from app.core.db_conn import clear_connection_cache
+
         clear_connection_cache()
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
@@ -43,10 +42,14 @@ def test_db_level_extension_filtering(high_perf_env):
     supported_file = "doc.txt"
     unsupported_file = "archive.zip"
 
-    db.upsert_document_vectors(base_dir, [
-        (supported_file, [0.1, 0.2, 0.3]),
-        (unsupported_file, [0.4, 0.5, 0.6]),
-    ], model_signature="active_sig")
+    db.upsert_document_vectors(
+        base_dir,
+        [
+            (supported_file, [0.1, 0.2, 0.3]),
+            (unsupported_file, [0.4, 0.5, 0.6]),
+        ],
+        model_signature="active_sig",
+    )
 
     # Clear caches to force query
     with db._vector_cache_lock:
@@ -106,7 +109,9 @@ def test_memory_cache_retrieval(high_perf_env):
     base_dir = "/base"
 
     db.set_model_metadata("active_model_signature", "active_sig")
-    db.upsert_document_vectors(base_dir, [("doc.txt", [1.0, 2.0, 3.0])], model_signature="active_sig")
+    db.upsert_document_vectors(
+        base_dir, [("doc.txt", [1.0, 2.0, 3.0])], model_signature="active_sig"
+    )
 
     # Clear caches to start clean
     with db._vector_cache_lock:
@@ -117,7 +122,9 @@ def test_memory_cache_retrieval(high_perf_env):
     db.preload_document_vectors(base_dir)
 
     # Now, mock the get_db_connection function to raise an error if any DB connection is attempted
-    with patch("app.core.db.get_db_connection", side_effect=AssertionError("DB called!")):
+    with patch(
+        "app.core.db.get_db_connection", side_effect=AssertionError("DB called!")
+    ):
         # Retrieval should succeed entirely from memory cache without hitting database!
         v = db.get_document_vector(base_dir, "doc.txt")
         assert v == [1.0, 2.0, 3.0]
@@ -132,21 +139,30 @@ def test_model_signature_compatibility(high_perf_env):
     db.set_model_metadata("active_model_signature", "new_active_sig")
 
     # Upsert two vectors: one with matching signature, one with stale signature
-    db.upsert_document_vectors(base_dir, [
-        ("matching.txt", [1.0, 1.0]),
-    ], model_signature="new_active_sig")
+    db.upsert_document_vectors(
+        base_dir,
+        [
+            ("matching.txt", [1.0, 1.0]),
+        ],
+        model_signature="new_active_sig",
+    )
 
     # Use low level write or bypass upsert cache for stale signature insertion
     def _write_stale():
         import json
+
         from app.core.db_conn import get_db_connection
+
         conn = get_db_connection(db.db_path)
         with conn:
-            enc_vector = db.crypto.encrypt_vector(json.dumps([2.0, 2.0])).decode("utf-8")
+            enc_vector = db.crypto.encrypt_vector(json.dumps([2.0, 2.0])).decode(
+                "utf-8"
+            )
             conn.execute(
                 "INSERT INTO document_vectors (base_dir, filepath, vector, model_signature) VALUES (?, ?, ?, ?)",
-                (base_dir, "stale.txt", enc_vector, "old_stale_sig")
+                (base_dir, "stale.txt", enc_vector, "old_stale_sig"),
             )
+
     db.worker.execute_write(_write_stale)
 
     # Clear memory cache to force reload

@@ -92,7 +92,9 @@ def test_main_detects_unsynced_files_on_check():
                 def read(self):
                     # Return next item in list
                     idx = counters[self.filepath]
-                    counters[self.filepath] = min(idx + 1, len(file_contents[self.filepath]) - 1)
+                    counters[self.filepath] = min(
+                        idx + 1, len(file_contents[self.filepath]) - 1
+                    )
                     return file_contents[self.filepath][idx]
 
             def mock_open_side_effect(filepath, *args, **kwargs):
@@ -146,7 +148,9 @@ def test_main_clean_on_check():
 
                 def read(self):
                     idx = counters[self.filepath]
-                    counters[self.filepath] = min(idx + 1, len(file_contents[self.filepath]) - 1)
+                    counters[self.filepath] = min(
+                        idx + 1, len(file_contents[self.filepath]) - 1
+                    )
                     return file_contents[self.filepath][idx]
 
             def mock_open_side_effect(filepath, *args, **kwargs):

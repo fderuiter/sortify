@@ -316,7 +316,9 @@ def main():
     import subprocess
     import traceback
 
-    parser = argparse.ArgumentParser(description="Unified Documentation Pipeline Manager")
+    parser = argparse.ArgumentParser(
+        description="Unified Documentation Pipeline Manager"
+    )
     parser.add_argument(
         "--check",
         "--verify",
@@ -405,12 +407,16 @@ def main():
     print(f"Running MkDocs build: {' '.join(build_cmd)}")
     result = subprocess.run(build_cmd, capture_output=False)
     if result.returncode != 0:
-        sys.stderr.write(f"Error: MkDocs build failed with exit code {result.returncode}\n")
+        sys.stderr.write(
+            f"Error: MkDocs build failed with exit code {result.returncode}\n"
+        )
         sys.exit(result.returncode)
 
     # 5. Report if files were out of sync
     if args.check and changed_files:
-        sys.stderr.write("\nError: The following auto-generated documentation files are out of sync or have modified contents:\n")
+        sys.stderr.write(
+            "\nError: The following auto-generated documentation files are out of sync or have modified contents:\n"
+        )
         for f in changed_files:
             sys.stderr.write(f"  - {f}\n")
         sys.stderr.write("\nPlease commit the updated documentation files.\n")

@@ -586,9 +586,13 @@ class SemanticEmbeddingManager:
         # Generate standard normalized floats
         return [rng.uniform(-1.0, 1.0) for _ in range(self.dimensions)]
 
-    def get_vector(self, base_dir: str, filepath: str, verify_signature: bool = False) -> list[float] | None:
+    def get_vector(
+        self, base_dir: str, filepath: str, verify_signature: bool = False
+    ) -> list[float] | None:
         """Retrieve decoupled vector from child store."""
-        return self.db.get_document_vector(base_dir, filepath, verify_signature=verify_signature)
+        return self.db.get_document_vector(
+            base_dir, filepath, verify_signature=verify_signature
+        )
 
     def validate_vector_dimension(self, vector: list[float] | None) -> bool:
         """Validate vector dimension matches active model dimension."""
