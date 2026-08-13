@@ -676,6 +676,8 @@ def test_tokenizer_files_missing_raises_validation_error(db, temp_dir):
                 db, model_path=str(model_dir), force_validation=True
             )
         assert "Required tokenizer file is missing" in str(exc_info.value)
+
+
 def test_fast_path_bypass_verification(db, temp_dir):
     """Verify that empty, None, and whitespace-only inputs return deterministic vectors of length self.dimensions without invoking the tokenizer or model execution."""
     import math
