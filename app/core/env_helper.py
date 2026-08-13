@@ -394,9 +394,7 @@ def check_windows_sandbox_support() -> bool:
 
         # Check if we are running under standard test mocks to avoid launching actual probe process
         if (
-            "pytest" in sys.modules
-            or "unittest" in sys.modules
-            or hasattr(advapi32.CreateProcessAsUserW, "assert_called_with")
+            hasattr(advapi32.CreateProcessAsUserW, "assert_called_with")
             or type(advapi32.CreateProcessAsUserW).__name__ in ("MagicMock", "Mock")
         ):
             return True
