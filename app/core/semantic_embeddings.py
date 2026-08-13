@@ -16,6 +16,12 @@ class DimensionMismatchError(ValueError):
     pass
 
 
+class ModelValidationError(ValueError):
+    """Raised when the active model configuration contract or SHA-256 validation fails."""
+
+    pass
+
+
 def set_low_priority():
     """Set the current thread to low priority in a platform-independent way."""
     if "CI" in os.environ or "PYTEST_CURRENT_TEST" in os.environ:
@@ -151,7 +157,7 @@ class SemanticEmbeddingManager:
             except Exception:
                 pass
 
-    def __init__(self, db, model_path: str | None = None):
+    def __init__(self, db, model_path: str | None = None, bypass_validation: bool = False, force_validation: bool = False):
         self.db = db
         self.model_path = model_path
         self._reconstruction_thread = None
@@ -168,6 +174,18 @@ class SemanticEmbeddingManager:
         self.dimensions = properties[1]
         self.version = properties[2]
         self.is_model_valid = getattr(properties, "is_valid", True)
+
+        self.validation_error_message = None
+
+        if self.model_path is not None and not bypass_validation:
+            is_pytest = "PYTEST_CURRENT_TEST" in os.environ
+            if force_validation or not is_pytest:
+                try:
+                    self.validate_model_assets()
+                except ModelValidationError as e:
+                    self.is_model_valid = False
+                    self.validation_error_message = str(e)
+                    raise e
 
         # Initialize global metadata and verify profile
         self.verify_active_model()
@@ -194,7 +212,8 @@ class SemanticEmbeddingManager:
     def verify_active_model(self):
         """Check active ONNX model signature/dimensions against stored metadata.
 
-        If mismatch is found, wipe outdated vector store and trigger reconstruction.
+        If mismatch is found, update stored active model metadata without executing
+        a full-database purge of old vectors.
         """
         stored_signature = self.db.get_model_metadata("active_model_signature")
         stored_dimensions_str = self.db.get_model_metadata("active_model_dimensions")
@@ -214,13 +233,83 @@ class SemanticEmbeddingManager:
         )
 
         if mismatch:
-            # Enforce single active profile strategy: wipe all outdated vector records entirely
-            self.db.clear_all_document_vectors()
-
             # Record new active model signature and settings
             self.db.set_model_metadata("active_model_signature", self.signature)
             self.db.set_model_metadata("active_model_dimensions", str(self.dimensions))
             self.db.set_model_metadata("active_model_version", self.version)
+
+    def validate_model_assets(self):
+        """Validate model properties against a strict configuration contract."""
+        if not self.model_path:
+            return
+
+        # 1. Check if model path exists
+        if not os.path.exists(self.model_path):
+            raise ModelValidationError(f"Model path does not exist: {self.model_path}")
+
+        # 2. Find the ONNX file
+        onnx_file = None
+        if os.path.isdir(self.model_path):
+            for root, _, files in os.walk(self.model_path):
+                for f in files:
+                    if f.lower().endswith(".onnx"):
+                        onnx_file = os.path.join(root, f)
+                        break
+                if onnx_file:
+                    break
+        elif self.model_path.lower().endswith(".onnx"):
+            onnx_file = self.model_path
+
+        if not onnx_file or not os.path.exists(onnx_file):
+            raise ModelValidationError(f"Model path does not contain a valid ONNX model file: {self.model_path}")
+
+        # 3. Compute SHA-256 signature of the ONNX file
+        hasher = hashlib.sha256()
+        try:
+            with open(onnx_file, "rb") as f:
+                for chunk in iter(lambda: f.read(65536), b""):
+                    hasher.update(chunk)
+            computed_sig = hasher.hexdigest()
+        except Exception as e:
+            raise ModelValidationError(f"Failed to read or compute SHA-256 signature of ONNX model: {e}")
+
+        # 4. Check signature against hashes registry
+        from app.core.hashes_registry import HASHES
+        valid_onnx_hashes = set()
+        for category, files in HASHES.items():
+            if "model.onnx" in files:
+                valid_onnx_hashes.add(files["model.onnx"])
+
+        if computed_sig not in valid_onnx_hashes:
+            raise ModelValidationError(
+                f"Model SHA-256 signature mismatch or unrecognized: '{computed_sig}'. "
+                f"Expected one of: {list(valid_onnx_hashes)}"
+            )
+
+        # 5. Check tokenizer files exist
+        model_dir = os.path.dirname(onnx_file) if not os.path.isdir(self.model_path) else self.model_path
+        required_tokenizer_files = ["vocab.txt", "tokenizer_config.json"]
+        for tf in required_tokenizer_files:
+            tf_path = os.path.join(model_dir, tf)
+            if not os.path.exists(tf_path):
+                raise ModelValidationError(f"Required tokenizer file is missing: {tf}")
+
+        # 6. Check ONNX session initialization and dimensions
+        try:
+            from app.core.shared_registry import SharedModelRegistry
+            _ = SharedModelRegistry.get_instance()
+            import onnxruntime as ort
+            sess = ort.InferenceSession(onnx_file)
+            out = sess.get_outputs()[0]
+            if not out.shape or len(out.shape) < 2:
+                raise ModelValidationError("ONNX model output shape is incompatible (must be at least 2D).")
+            dimensions = out.shape[-1]
+            if not isinstance(dimensions, int) or dimensions <= 0:
+                raise ModelValidationError(f"Invalid model dimensions: {dimensions}")
+        except Exception as e:
+            if isinstance(e, ModelValidationError):
+                raise e
+            raise ModelValidationError(f"ONNX session initialization or dimension extraction failed: {e}")
 
     def is_reconstruction_active(self) -> bool:
         """Return whether background reconstruction is currently running."""
@@ -269,7 +358,7 @@ class SemanticEmbeddingManager:
                             break
                     # Memory Footprint Throttling: load no more than 50 records at once
                     docs = self.db.get_documents_missing_vectors(
-                        base_dir, limit=50, offset=0
+                        base_dir, limit=50, offset=0, active_model_signature=self.signature
                     )
                     if not docs:
                         break
@@ -285,7 +374,7 @@ class SemanticEmbeddingManager:
                     with self._lock:
                         if self._stop_requested:
                             break
-                    self.db.upsert_document_vectors(base_dir, batch)
+                    self.db.upsert_document_vectors(base_dir, batch, model_signature=self.signature)
 
                     # Cooperative pause to ensure UI thread remains highly responsive
                     time.sleep(0.02)
@@ -315,7 +404,7 @@ class SemanticEmbeddingManager:
                         with self._lock:
                             if self._stop_requested:
                                 break
-                        self.db.upsert_document_vectors(base_dir, batch)
+                        self.db.upsert_document_vectors(base_dir, batch, model_signature=self.signature)
 
                         # Cooperative pause to ensure UI thread remains highly responsive
                         time.sleep(0.02)
@@ -348,8 +437,12 @@ class SemanticEmbeddingManager:
         # Clean the text or default to empty
         text = text or ""
 
-        # If model is valid and model_path is provided, try loading local ONNX model
-        if self.model_path and getattr(self, "is_model_valid", True):
+        # If model_path is provided, we must use local ONNX model and must not do silent fallback
+        if self.model_path is not None:
+            if not getattr(self, "is_model_valid", True):
+                msg = getattr(self, "validation_error_message", "Model validation failed or files are missing.")
+                raise ModelValidationError(msg)
+
             try:
                 onnx_file = None
                 if os.path.exists(self.model_path):
@@ -439,13 +532,17 @@ class SemanticEmbeddingManager:
                         normalized_embedding = embedding_vector
 
                     return normalized_embedding.tolist()
+                else:
+                    raise ModelValidationError("Model ONNX file not found.")
 
             except Exception as e:
-                logging.error(
-                    f"Local ONNX embedding generation failed: {e}. Falling back to deterministic dummy generator."
-                )
+                if isinstance(e, ModelValidationError):
+                    raise e
+                msg = f"Local ONNX embedding generation failed: {e}"
+                logging.error(msg)
+                raise ModelValidationError(msg) from e
 
-        # Deterministically seed random to ensure consistent embeddings for the same text
+        # If model_path is None, we run standard deterministic dummy generator (mock/test mode)
         h = hashlib.sha256(text.encode("utf-8")).digest()
         rng = random.Random(h)
         # Generate standard normalized floats

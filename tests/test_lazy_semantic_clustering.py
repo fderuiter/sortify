@@ -77,17 +77,40 @@ def test_semantic_clustering_lazy_generation_and_caching(temp_env):
 
     # Initialize analyzer with our mock model_path and mock get_active_model_properties
     import sys
+    import numpy as np
     from unittest.mock import MagicMock
 
     from app.core.semantic_embeddings import ModelProperties
 
+    mock_tokenizer = MagicMock()
+    mock_inputs = {
+        "input_ids": np.array([[101, 102, 103]], dtype=np.int64),
+        "attention_mask": np.array([[1, 1, 1]], dtype=np.int64),
+    }
+    mock_tokenizer.return_value = mock_inputs
+
     mock_transformers = MagicMock()
-    mock_transformers.AutoTokenizer.from_pretrained.side_effect = OSError(
-        "Mock tokenizer missing for lazy caching test"
-    )
+    mock_transformers.AutoTokenizer.from_pretrained.return_value = mock_tokenizer
+
+    # Set up a mock ONNX session
+    mock_session = MagicMock()
+    input_node_ids = MagicMock()
+    input_node_ids.name = "input_ids"
+    input_node_mask = MagicMock()
+    input_node_mask.name = "attention_mask"
+    mock_session.get_inputs.return_value = [input_node_ids, input_node_mask]
+
+    # dimension 384
+    token_embeddings = np.zeros((1, 3, 384), dtype=np.float32)
+    token_embeddings[0, 0, 0] = 1.0  # make sure it's non-zero
+    mock_session.run.return_value = [token_embeddings]
 
     with (
         patch.dict(sys.modules, {"transformers": mock_transformers}),
+        patch(
+            "app.core.shared_registry.SharedModelRegistry.get_onnx_session",
+            return_value=mock_session,
+        ),
         patch(
             "app.core.semantic_embeddings.get_active_model_properties",
             return_value=ModelProperties("valid_sig", 384, "1.0.0", is_valid=True),

@@ -425,7 +425,7 @@ class IncrementalAnalyzer:
 
                             if newly_generated:
                                 self.db.upsert_document_vectors(
-                                    base_dir, newly_generated
+                                    base_dir, newly_generated, model_signature=self.embedding_manager.signature
                                 )
                         except Exception as e:
                             logging.error(
@@ -560,7 +560,7 @@ class IncrementalAnalyzer:
                             if newly_generated:
                                 try:
                                     self.db.upsert_document_vectors(
-                                        base_dir, newly_generated
+                                        base_dir, newly_generated, model_signature=self.embedding_manager.signature
                                     )
                                 except Exception as db_e:
                                     logging.error(
