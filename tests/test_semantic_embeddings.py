@@ -452,6 +452,13 @@ def test_real_onnx_pipeline_graceful_fallback(db, temp_dir):
 
 def test_vector_field_level_encryption_raw_db(db, temp_dir):
     """Verify that vector data is stored as encrypted string in SQLite, but decrypted by get_document_vector."""
+    # Add a document to standard documents table to satisfy the foreign key constraint
+    db.upsert_document(
+        base_dir="/base",
+        filepath="doc_test.txt",
+        file_hash="hash_test",
+        extracted_text="Some text content here",
+    )
     # Write a vector using the API
     db.upsert_document_vectors("/base", [("doc_test.txt", [0.1, 0.2, 0.3, 0.4])])
 
@@ -489,6 +496,12 @@ def test_vector_unencrypted_purge_on_startup(temp_dir, db_worker):
 
     # Create a properly encrypted SQLCipher database first
     database = Database(db_file, db_worker)
+    database.upsert_document(
+        base_dir="/base",
+        filepath="doc_insecure.txt",
+        file_hash="hash_insecure",
+        extracted_text="Some text",
+    )
 
     # Write an unencrypted vector directly into the SQLCipher database
     import json
