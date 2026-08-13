@@ -14,6 +14,20 @@ from app.core.downloader import (
 from app.ui.dialog_helper import get_dialog_card_classes
 
 
+class ThreadSafeState:
+    def __init__(self, **kwargs):
+        self._lock = threading.Lock()
+        self._state = kwargs
+
+    def __getitem__(self, key):
+        with self._lock:
+            return self._state[key]
+
+    def __setitem__(self, key, value):
+        with self._lock:
+            self._state[key] = value
+
+
 def show_wizard(parent_app, settings):
     """Show the initial setup wizard."""
     with ui.dialog() as dialog, ui.card().classes(get_dialog_card_classes("md")):
@@ -139,12 +153,12 @@ def show_wizard(parent_app, settings):
             cancel_event.clear()
 
             # Shared thread state dictionary
-            state = {
-                "progress": 0.0,
-                "status_text": "Starting background download...",
-                "error": None,
-                "success": False,
-            }
+            state = ThreadSafeState(
+                progress=0.0,
+                status_text="Starting background download...",
+                error=None,
+                success=False,
+            )
 
             def progress_cb(downloaded, total):
                 if total > 0:
@@ -234,5 +248,15 @@ def show_wizard(parent_app, settings):
             ui.button("Decline", on_click=decline).classes(
                 "bg-gray-500 text-white"
             ).props('aria-label="Decline Button"')
+
+        def handle_dismiss():
+            cancel_event.set()
+            if timer_ref[0]:
+                try:
+                    timer_ref[0].cancel()
+                except Exception:
+                    pass
+
+        dialog.on('dismiss', handle_dismiss)
 
     dialog.open()

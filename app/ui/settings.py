@@ -1,12 +1,31 @@
 """Settings module using NiceGUI."""
 
+import threading
+
 from nicegui import ui
 
 from app.ui.dialog_helper import get_dialog_card_classes
 
 
+class ThreadSafeState:
+    def __init__(self, **kwargs):
+        self._lock = threading.Lock()
+        self._state = kwargs
+
+    def __getitem__(self, key):
+        with self._lock:
+            return self._state[key]
+
+    def __setitem__(self, key, value):
+        with self._lock:
+            self._state[key] = value
+
+
 def show_settings(parent_app, settings):
     """Show the settings dialog."""
+    import threading
+    cancel_event = threading.Event()
+    timer_ref = [None]
 
     def on_explorer_integration_change(e):
         import sys
@@ -377,10 +396,7 @@ def show_settings(parent_app, settings):
                         "text-sm text-gray-500 mb-2"
                     )
 
-                import threading
-
-                cancel_event = threading.Event()
-                timer_ref = [None]
+                # Use outer scope cancel_event and timer_ref
 
                 def update_settings_timer_tick(state):
                     if state["success"]:
@@ -417,12 +433,12 @@ def show_settings(parent_app, settings):
                     progress_container.set_visibility(True)
                     cancel_event.clear()
 
-                    state = {
-                        "progress": 0.0,
-                        "status_text": "Starting background download...",
-                        "error": None,
-                        "success": False,
-                    }
+                    state = ThreadSafeState(
+                        progress=0.0,
+                        status_text="Starting background download...",
+                        error=None,
+                        success=False,
+                    )
 
                     def progress_cb(downloaded, total):
                         if total > 0:
@@ -792,5 +808,15 @@ def show_settings(parent_app, settings):
                     ui.button("Add Policy", on_click=add_policy).props(
                         'aria-label="Add Policy Button"'
                     )
+
+    def handle_dismiss():
+        cancel_event.set()
+        if timer_ref[0]:
+            try:
+                timer_ref[0].cancel()
+            except Exception:
+                pass
+
+    dialog.on('dismiss', handle_dismiss)
 
     dialog.open()
