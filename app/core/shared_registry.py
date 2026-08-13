@@ -21,9 +21,27 @@ if not hasattr(socket, "_real_socket_connect"):
     socket._real_socket_connect = socket.socket.connect
 if not hasattr(socket, "_real_socket_connect_ex"):
     socket._real_socket_connect_ex = socket.socket.connect_ex
+if not hasattr(socket, "_real_getaddrinfo"):
+    socket._real_getaddrinfo = socket.getaddrinfo
+if not hasattr(socket, "_real_gethostbyname"):
+    socket._real_gethostbyname = socket.gethostbyname
+if not hasattr(socket, "_real_gethostbyname_ex"):
+    socket._real_gethostbyname_ex = socket.gethostbyname_ex
+if not hasattr(socket, "_real_gethostbyaddr"):
+    socket._real_gethostbyaddr = socket.gethostbyaddr
+if not hasattr(socket, "_real_getnameinfo"):
+    socket._real_getnameinfo = socket.getnameinfo
+if not hasattr(socket, "_real_getfqdn"):
+    socket._real_getfqdn = socket.getfqdn
 
 _original_connect = socket._real_socket_connect
 _original_connect_ex = socket._real_socket_connect_ex
+_original_getaddrinfo = socket._real_getaddrinfo
+_original_gethostbyname = socket._real_gethostbyname
+_original_gethostbyname_ex = socket._real_gethostbyname_ex
+_original_gethostbyaddr = socket._real_gethostbyaddr
+_original_getnameinfo = socket._real_getnameinfo
+_original_getfqdn = socket._real_getfqdn
 
 # Resolve and cache local IP addresses once at import time
 _local_ips = {
@@ -210,6 +228,138 @@ def safe_connect_ex(self, address):
         raise
 
 
+def _is_mock_obj(obj) -> bool:
+    """Helper to detect mock objects or methods."""
+    if obj is None:
+        return False
+    try:
+        from unittest.mock import NonCallableMock
+        if isinstance(obj, NonCallableMock):
+            return True
+    except Exception:
+        pass
+    return (
+        hasattr(obj, "_is_mock")
+        or hasattr(obj, "mock_add_spec")
+        or hasattr(obj, "_mock_methods")
+        or hasattr(obj, "_spec_class")
+        or "Mock" in type(obj).__name__
+        or "mock" in type(obj).__name__
+    )
+
+
+def safe_getaddrinfo(*args, **kwargs):
+    """Safely resolve addresses, raising socket.gaierror for external lookups if sandboxed."""
+    host = None
+    if len(args) > 0:
+        host = args[0]
+    elif "host" in kwargs:
+        host = kwargs["host"]
+
+    if getattr(_thread_local, "sandboxed", False):
+        if host is not None and not _is_mock_obj(host) and not _is_mock_obj(_original_getaddrinfo):
+            if not _is_local_address(str(host)):
+                raise socket.gaierror(
+                    getattr(socket, "EAI_NONAME", -2),
+                    "Name or service not known"
+                )
+
+    return _original_getaddrinfo(*args, **kwargs)
+
+
+def safe_gethostbyname(*args, **kwargs):
+    """Safely resolve host by name, raising socket.gaierror for external lookups if sandboxed."""
+    hostname = None
+    if len(args) > 0:
+        hostname = args[0]
+    elif "hostname" in kwargs:
+        hostname = kwargs["hostname"]
+
+    if getattr(_thread_local, "sandboxed", False):
+        if hostname is not None and not _is_mock_obj(hostname) and not _is_mock_obj(_original_gethostbyname):
+            if not _is_local_address(str(hostname)):
+                raise socket.gaierror(
+                    getattr(socket, "EAI_NONAME", -2),
+                    "Name or service not known"
+                )
+
+    return _original_gethostbyname(*args, **kwargs)
+
+
+def safe_gethostbyname_ex(*args, **kwargs):
+    """Safely resolve host by name (extended), raising socket.gaierror for external lookups if sandboxed."""
+    hostname = None
+    if len(args) > 0:
+        hostname = args[0]
+    elif "hostname" in kwargs:
+        hostname = kwargs["hostname"]
+
+    if getattr(_thread_local, "sandboxed", False):
+        if hostname is not None and not _is_mock_obj(hostname) and not _is_mock_obj(_original_gethostbyname_ex):
+            if not _is_local_address(str(hostname)):
+                raise socket.gaierror(
+                    getattr(socket, "EAI_NONAME", -2),
+                    "Name or service not known"
+                )
+
+    return _original_gethostbyname_ex(*args, **kwargs)
+
+
+def safe_gethostbyaddr(*args, **kwargs):
+    """Safely resolve host by address, raising socket.herror for external lookups if sandboxed."""
+    ip_address = None
+    if len(args) > 0:
+        ip_address = args[0]
+    elif "ip_address" in kwargs:
+        ip_address = kwargs["ip_address"]
+
+    if getattr(_thread_local, "sandboxed", False):
+        if ip_address is not None and not _is_mock_obj(ip_address) and not _is_mock_obj(_original_gethostbyaddr):
+            if not _is_local_address(str(ip_address)):
+                raise socket.herror(1, "Unknown host")
+
+    return _original_gethostbyaddr(*args, **kwargs)
+
+
+def safe_getnameinfo(*args, **kwargs):
+    """Safely resolve name info from sockaddr, raising socket.gaierror for external lookups if sandboxed."""
+    sockaddr = None
+    if len(args) > 0:
+        sockaddr = args[0]
+    elif "sockaddr" in kwargs:
+        sockaddr = kwargs["sockaddr"]
+
+    if getattr(_thread_local, "sandboxed", False):
+        host = None
+        if isinstance(sockaddr, tuple) and len(sockaddr) > 0:
+            host = sockaddr[0]
+
+        if host is not None and not _is_mock_obj(host) and not _is_mock_obj(_original_getnameinfo):
+            if not _is_local_address(str(host)):
+                raise socket.gaierror(
+                    getattr(socket, "EAI_NONAME", -2),
+                    "Name or service not known"
+                )
+
+    return _original_getnameinfo(*args, **kwargs)
+
+
+def safe_getfqdn(*args, **kwargs):
+    """Safely resolve fully qualified domain name, returning host immediately for external if sandboxed."""
+    name = ''
+    if len(args) > 0:
+        name = args[0]
+    elif "name" in kwargs:
+        name = kwargs["name"]
+
+    if getattr(_thread_local, "sandboxed", False):
+        if name is not None and name != '' and not _is_mock_obj(name) and not _is_mock_obj(_original_getfqdn):
+            if not _is_local_address(str(name)):
+                return str(name)
+
+    return _original_getfqdn(*args, **kwargs)
+
+
 def apply_global_socket_sandbox():
     """Apply socket-level blocking of non-localhost outgoing network requests globally."""
     # Kept for backward-compatibility but does not do dangerous dynamic re-patching.
@@ -219,6 +369,12 @@ def apply_global_socket_sandbox():
 # Permanently patch once at import time
 socket.socket.connect = safe_connect
 socket.socket.connect_ex = safe_connect_ex
+socket.getaddrinfo = safe_getaddrinfo
+socket.gethostbyname = safe_gethostbyname
+socket.gethostbyname_ex = safe_gethostbyname_ex
+socket.gethostbyaddr = safe_gethostbyaddr
+socket.getnameinfo = safe_getnameinfo
+socket.getfqdn = safe_getfqdn
 
 
 @contextmanager
