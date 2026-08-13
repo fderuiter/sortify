@@ -1,16 +1,17 @@
 import socket
 import threading
-import pytest
 from unittest.mock import MagicMock, patch
 
+import pytest
+
+from app.core.downloader import run_background_download
 from app.core.shared_registry import (
-    _thread_local,
-    block_external_network,
     ContextPropagatingThread,
     ContextPropagatingThreadPoolExecutor,
     SharedWorkerPool,
+    _thread_local,
+    block_external_network,
 )
-from app.core.downloader import run_background_download
 
 
 def test_extraction_tasks_inherit_sandbox_state(socket_mock):
@@ -28,7 +29,9 @@ def test_extraction_tasks_inherit_sandbox_state(socket_mock):
     # When initiator is sandboxed, the task must execute under sandbox constraints
     with block_external_network(reason="active extraction session"):
         future = pool.submit(task_trying_to_connect)
-        with pytest.raises(PermissionError, match="External network connections are blocked"):
+        with pytest.raises(
+            PermissionError, match="External network connections are blocked"
+        ):
             future.result()
 
     mock_connect.assert_not_called()
@@ -49,7 +52,9 @@ def test_database_decryption_pools_inherit_sandbox(socket_mock):
     with block_external_network(reason="secure cache decryption"):
         with ContextPropagatingThreadPoolExecutor() as executor:
             future = executor.submit(decrypt_task)
-            with pytest.raises(PermissionError, match="External network connections are blocked"):
+            with pytest.raises(
+                PermissionError, match="External network connections are blocked"
+            ):
                 future.result()
 
     mock_connect.assert_not_called()

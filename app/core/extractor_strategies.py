@@ -258,7 +258,6 @@ class AudioExtractor:
         import shutil
         import subprocess
         import tempfile
-        import threading
         import wave
 
         from app.core.env_helper import run_background_process, spawn_background_process
@@ -402,7 +401,10 @@ class AudioExtractor:
                         pass
 
             from app.core.shared_registry import ContextPropagatingThread
-            t = ContextPropagatingThread(target=reader_thread_func, args=(process.stdout, q))
+
+            t = ContextPropagatingThread(
+                target=reader_thread_func, args=(process.stdout, q)
+            )
             t.daemon = True
             t.start()
 

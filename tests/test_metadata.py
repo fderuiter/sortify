@@ -377,4 +377,3 @@ def test_metadata_pass_policy_cascades_by_default(tmp_path):
         db.set_user_verified_target_path.assert_called_once_with(
             str(tmp_path), "unrelated.txt", "/dest/lower_priority_policy"
         )
-
