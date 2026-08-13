@@ -9,6 +9,7 @@ import os
 import sys
 import threading
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field, ValidationError, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -45,7 +46,7 @@ class Settings(BaseSettings):
     OCR_GPU_ENABLED: bool = Field(default=False)
     AUDIO_GPU_ENABLED: bool = Field(default=False)
     OCR_LANGUAGES: str = Field(default="en")
-    CONFLICT_POLICY: str = Field(default="rename")
+    CONFLICT_POLICY: Literal["skip", "rename"] = Field(default="rename")
 
     @field_validator("CONFLICT_POLICY")
     @classmethod

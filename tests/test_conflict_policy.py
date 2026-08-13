@@ -1,10 +1,9 @@
-import os
 import pytest
 from pydantic import ValidationError
-from unittest import mock
 
 from app.config import Settings
 from app.core.mover import _execute_moves_recursive
+
 
 class DummyDB:
     def get_document(self, base_dir, source_rel_path):

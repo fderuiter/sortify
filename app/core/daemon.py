@@ -1,25 +1,29 @@
+"""Continuous background watchdog service daemon."""
+
 import asyncio
 import logging
 import os
-import sys
 import threading
 import time
-from pathlib import Path
 
-from app.config import AppSettings
-from app.core.session import AppSession
-from app.core.scanner import get_files_recursively
-from app.core.metadata import MetadataPass
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
+
+from app.config import AppSettings
+from app.core.metadata import MetadataPass
+from app.core.scanner import get_files_recursively
+from app.core.session import AppSession
 
 logger = logging.getLogger("app.daemon")
 
 class DaemonFolderHandler(FileSystemEventHandler):
+    """Handler for file system events inside monitored directory."""
+
     def __init__(self, daemon):
         self.daemon = daemon
 
     def on_any_event(self, event):
+        """Handle any file system event, trigger recalculation if valid."""
         # We must ignore application metadata, local databases, and temporary cache folders to prevent infinite trigger loops
         if self.daemon.should_ignore_path(event.src_path):
             return
@@ -30,6 +34,8 @@ class DaemonFolderHandler(FileSystemEventHandler):
         self.daemon.trigger_recalculation()
 
 class ContinuousWatchdogDaemon:
+    """Daemon that continuously monitors a folder and triggers silent sorting."""
+
     def __init__(self, settings: AppSettings, base_dir: str):
         self.settings = settings
         self.base_dir = os.path.abspath(base_dir)
@@ -44,6 +50,7 @@ class ContinuousWatchdogDaemon:
         self._execution_thread = None
 
     def should_ignore_path(self, path: str) -> bool:
+        """Check if path should be ignored to prevent infinite feedback loop."""
         if not path:
             return True
         norm_path = os.path.normpath(path).replace("\\", "/")
@@ -74,6 +81,7 @@ class ContinuousWatchdogDaemon:
         return False
 
     def start(self):
+        """Start the continuous watchdog daemon and files system observer."""
         with self._lock:
             if self._is_running:
                 return
@@ -93,6 +101,7 @@ class ContinuousWatchdogDaemon:
         self.trigger_recalculation()
 
     def stop(self):
+        """Stop the continuous watchdog daemon and join the observer thread."""
         with self._lock:
             if not self._is_running:
                 return
@@ -148,7 +157,7 @@ class ContinuousWatchdogDaemon:
             thread.start()
 
     def _run_sorting_sync(self, cancel_event):
-        """The core synchronous sorting runner."""
+        """Run the core synchronous sorting runner."""
         # Check if canceled before starting
         if cancel_event.is_set():
             return

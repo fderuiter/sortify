@@ -1,12 +1,8 @@
-import os
-import sys
-import time
-import asyncio
 import threading
 from unittest import mock
+
 import pytest
 
-from app.config import AppSettings
 from app.core.daemon import ContinuousWatchdogDaemon
 
 
