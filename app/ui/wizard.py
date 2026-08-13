@@ -10,6 +10,7 @@ from app.core.downloader import (
     DiskSpaceError,
     ModelVerificationError,
     run_background_download,
+    DownloadManager,
 )
 from app.ui.dialog_helper import get_dialog_card_classes
 
@@ -94,59 +95,63 @@ def show_wizard(parent_app, settings):
             )
 
         # State Variables
-        cancel_event = threading.Event()
         timer_ref = [None]
 
-        def update_timer_tick(state):
-            if state["success"]:
-                if timer_ref[0]:
-                    timer_ref[0].cancel()
-                settings.AI_CONSENT_GRANTED = True
-                ui.notify("Setup Complete.", type="positive")
-                if hasattr(parent_app, "update_ai_warning"):
-                    parent_app.update_ai_warning()
-                dialog.close()
-                return
+        # Periodic sync timer for wizard UI
+        def sync_wizard_ui():
+            dm = DownloadManager.get_instance()
+            is_dl = dm.state["is_downloading"]
 
-            if state["error"]:
-                if timer_ref[0]:
-                    timer_ref[0].cancel()
+            if is_dl:
+                if welcome_container.visible or error_container.visible:
+                    welcome_container.set_visibility(False)
+                    error_container.set_visibility(False)
+                    download_container.set_visibility(True)
+                    action_row_welcome.set_visibility(False)
+                    action_row_error.set_visibility(False)
+                    action_row_download.set_visibility(True)
 
-                download_container.set_visibility(False)
-                welcome_container.set_visibility(False)
-                error_container.set_visibility(True)
+                progress_bar.set_value(dm.state["progress"])
+                status_label.set_text(dm.state["status_text"])
+            else:
+                if download_container.visible:
+                    if dm.state["success"]:
+                        settings.AI_CONSENT_GRANTED = True
+                        ui.notify("Setup Complete.", type="positive")
+                        if hasattr(parent_app, "update_ai_warning"):
+                            parent_app.update_ai_warning()
+                        dialog.close()
+                    elif dm.state["error"]:
+                        download_container.set_visibility(False)
+                        welcome_container.set_visibility(False)
+                        error_container.set_visibility(True)
+                        action_row_welcome.set_visibility(False)
+                        action_row_download.set_visibility(False)
+                        action_row_error.set_visibility(True)
 
-                # Construct diagnostic messaging based on error type
-                err = state["error"]
-                if isinstance(err, DiskSpaceError):
-                    error_diagnostic_label.set_text(
-                        f"Diagnostic: Insufficient disk space on the target drive. Please clear some space and try again.\n(Details: {str(err)})"
-                    )
-                elif isinstance(err, ModelVerificationError):
-                    error_diagnostic_label.set_text(
-                        f"Diagnostic: Model verification failed. The downloaded file has a mismatched cryptographic hash, indicating potential corruption or tampering.\n(Details: {str(err)})"
-                    )
-                elif (
-                    "PermissionError" in str(err)
-                    or "denied" in str(err).lower()
-                    or "blocked" in str(err).lower()
-                ):
-                    error_diagnostic_label.set_text(
-                        f"Diagnostic: External network connection was blocked. If a sandbox mode is active, please verify that downloaders can bypass sandbox restrictions.\n(Details: {str(err)})"
-                    )
-                else:
-                    error_diagnostic_label.set_text(
-                        f"Diagnostic: Network download timed out or connection failed. This usually indicates VPN/firewall restrictions or an incorrect proxy setup.\n(Details: {str(err)})"
-                    )
+                        err = dm.state["error"]
+                        if isinstance(err, DiskSpaceError):
+                            error_diagnostic_label.set_text(
+                                f"Diagnostic: Insufficient disk space on the target drive. Please clear some space and try again.\n(Details: {str(err)})"
+                            )
+                        elif isinstance(err, ModelVerificationError):
+                            error_diagnostic_label.set_text(
+                                f"Diagnostic: Model verification failed. The downloaded file has a mismatched cryptographic hash, indicating potential corruption or tampering.\n(Details: {str(err)})"
+                            )
+                        elif (
+                            "PermissionError" in str(err)
+                            or "denied" in str(err).lower()
+                            or "blocked" in str(err).lower()
+                        ):
+                            error_diagnostic_label.set_text(
+                                f"Diagnostic: External network connection was blocked. If a sandbox mode is active, please verify that downloaders can bypass sandbox restrictions.\n(Details: {str(err)})"
+                            )
+                        else:
+                            error_diagnostic_label.set_text(
+                                f"Diagnostic: Network download timed out or connection failed. This usually indicates VPN/firewall restrictions or an incorrect proxy setup.\n(Details: {str(err)})"
+                            )
 
-                action_row_welcome.set_visibility(False)
-                action_row_download.set_visibility(False)
-                action_row_error.set_visibility(True)
-                return
-
-            # Update progress metrics
-            progress_bar.set_value(state["progress"])
-            status_label.set_text(state["status_text"])
+        sync_timer = ui.timer(0.1, sync_wizard_ui)
 
         def start_download():
             welcome_container.set_visibility(False)
@@ -157,51 +162,17 @@ def show_wizard(parent_app, settings):
             action_row_error.set_visibility(False)
             action_row_download.set_visibility(True)
 
-            cancel_event.clear()
-
-            # Shared thread state dictionary
-            state = ThreadSafeState(
-                progress=0.0,
-                status_text="Starting background download...",
-                error=None,
-                success=False,
-            )
-
-            def progress_cb(downloaded, total):
-                if total > 0:
-                    pct = (downloaded / total) * 100
-                    state["progress"] = downloaded / total
-                    state["status_text"] = (
-                        f"Downloaded {downloaded / (1024 * 1024):.2f}MB of {total / (1024 * 1024):.2f}MB ({pct:.1f}%)"
-                    )
-                else:
-                    state["progress"] = 0.0
-                    state["status_text"] = (
-                        f"Downloaded {downloaded / (1024 * 1024):.2f}MB..."
-                    )
-
-            def on_success():
-                state["success"] = True
-
-            def on_failure(err):
-                state["error"] = err
-
             model_dir = str(get_app_dir() / "model")
             proxy_val = getattr(settings, "PROXY", "")
 
-            # Launch thread-separated sandboxed bypass downloader
-            run_background_download(
-                url=DEFAULT_MODEL_URL,
-                model_dir=model_dir,
-                proxy=proxy_val,
-                progress_callback=progress_cb,
-                on_success=on_success,
-                on_failure=on_failure,
-                cancel_event=cancel_event,
-            )
-
-            # Start tracking task state using safe main loop timer
-            timer_ref[0] = ui.timer(0.1, lambda: update_timer_tick(state))
+            try:
+                DownloadManager.get_instance().start_download(
+                    url=DEFAULT_MODEL_URL,
+                    model_dir=model_dir,
+                    proxy=proxy_val,
+                )
+            except Exception:
+                pass
 
         def retry_download():
             # Apply edited proxy configuration back to active settings
@@ -209,9 +180,7 @@ def show_wizard(parent_app, settings):
             start_download()
 
         def cancel_download():
-            cancel_event.set()
-            if timer_ref[0]:
-                timer_ref[0].cancel()
+            DownloadManager.get_instance().cancel_download()
             welcome_container.set_visibility(True)
             download_container.set_visibility(False)
             action_row_download.set_visibility(False)
@@ -257,12 +226,7 @@ def show_wizard(parent_app, settings):
             ).props('aria-label="Decline Button"')
 
         def handle_dismiss():
-            cancel_event.set()
-            if timer_ref[0]:
-                try:
-                    timer_ref[0].cancel()
-                except Exception:
-                    pass
+            sync_timer.cancel()
 
         dialog.on("dismiss", handle_dismiss)
 
