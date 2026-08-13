@@ -537,6 +537,7 @@ def test_global_model_properties_cache_and_thread_safety(temp_dir):
         _model_properties_cache,
         _model_properties_cache_lock,
     )
+
     with _model_properties_cache_lock:
         _model_properties_cache.clear()
 
@@ -553,7 +554,9 @@ def test_global_model_properties_cache_and_thread_safety(temp_dir):
     with patch("builtins.open", side_effect=mock_open_fn):
         # First call: should be a cache miss. File is opened, SHA-256 computed.
         props1 = get_active_model_properties(str(model_dir))
-        assert props1.is_valid is False  # valid is false because it's not a real ONNX file, but that's fine
+        assert (
+            props1.is_valid is False
+        )  # valid is false because it's not a real ONNX file, but that's fine
         assert open_count == 1
 
         # Second call: should be a cache hit. Open should not be called again!
@@ -580,6 +583,7 @@ def test_global_model_properties_cache_and_thread_safety(temp_dir):
     # 3. Concurrent access test to ensure thread-safety and no deadlocks
     # We will spawn multiple threads that call get_active_model_properties concurrently on the same path
     results = []
+
     def worker():
         for _ in range(50):
             res = get_active_model_properties(str(model_dir))

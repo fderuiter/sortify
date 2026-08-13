@@ -529,7 +529,9 @@ class IncrementalAnalyzer:
                             newly_generated = []
                             for f_name, doc_text in zip(ai_filenames, ai_documents):
                                 try:
-                                    v = self.embedding_manager.get_vector(base_dir, f_name)
+                                    v = self.embedding_manager.get_vector(
+                                        base_dir, f_name
+                                    )
                                     if (
                                         v is not None
                                         and self.embedding_manager.validate_vector_dimension(

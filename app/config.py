@@ -60,8 +60,10 @@ class Settings(BaseSettings):
             part_stripped = part.strip()
             if not part_stripped:
                 raise ValueError("OCR_LANGUAGES cannot contain empty language codes.")
-            if not all(c.isalnum() or c == '_' for c in part_stripped):
-                raise ValueError(f"Invalid language code: '{part_stripped}'. Only alphanumeric characters and underscores are allowed.")
+            if not all(c.isalnum() or c == "_" for c in part_stripped):
+                raise ValueError(
+                    f"Invalid language code: '{part_stripped}'. Only alphanumeric characters and underscores are allowed."
+                )
         return v
 
     @field_validator("PROTECTED_PATHS")

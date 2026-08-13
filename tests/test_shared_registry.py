@@ -455,7 +455,9 @@ def test_sandbox_address_resolution_allows_local():
     """Verify that localhost and loopback queries are unblocked inside sandboxed execution."""
     from app.core.shared_registry import block_external_network
 
-    mock_gai = MagicMock(return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 80))])
+    mock_gai = MagicMock(
+        return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 80))]
+    )
     mock_ghn = MagicMock(return_value="127.0.0.1")
     mock_ghne = MagicMock(return_value=("localhost", [], ["127.0.0.1"]))
     mock_gha = MagicMock(return_value=("localhost", [], ["127.0.0.1"]))
@@ -592,6 +594,7 @@ def test_get_ocr_reader_dynamic_config(monkeypatch):
 
             # Ensure Reader called with ["en", "de"] and gpu=True
             from unittest.mock import ANY
+
             mock_easyocr.Reader.assert_any_call(
                 ["en", "de"],
                 gpu=True,
@@ -627,6 +630,7 @@ def test_get_ocr_reader_fallback(monkeypatch):
         # It should try once with the configured unsupported language, fail,
         # and then initialize with "en" and gpu=False
         from unittest.mock import ANY
+
         assert mock_easyocr.Reader.call_count == 2
         mock_easyocr.Reader.assert_any_call(
             ["en"],

@@ -50,17 +50,168 @@ def check_macos_sandbox_support() -> bool:
 
 
 def check_windows_sandbox_support() -> bool:
-    """Verify that required Win32 APIs for restricted tokens are available."""
+    """Verify that required Win32 APIs for restricted tokens are available and functional."""
     if sys.platform != "win32":
         return False
     try:
         import ctypes
+        from ctypes import wintypes
 
         advapi32 = ctypes.windll.advapi32
+        kernel32 = ctypes.windll.kernel32
+
+        # 1. Verify symbol presence
         _ = advapi32.CreateRestrictedToken
         _ = advapi32.ConvertStringSidToSidW
         _ = advapi32.DuplicateTokenEx
         _ = advapi32.CreateProcessAsUserW
+
+        # 2. Perform a dry-run of token creation and restricted process execution to ensure the host environment allows it
+        # Try to open the process token
+        current_process = kernel32.GetCurrentProcess()
+        token_handle = wintypes.HANDLE()
+        # TOKEN_DUPLICATE (0x0002) | TOKEN_QUERY (0x0008)
+        if not advapi32.OpenProcessToken(
+            current_process, 0x0002 | 0x0008, ctypes.byref(token_handle)
+        ):
+            return False
+
+        try:
+            # Convert string SID
+            p_sid = wintypes.LPVOID()
+            if not advapi32.ConvertStringSidToSidW("S-1-5-12", ctypes.byref(p_sid)):
+                return False
+
+            try:
+                # Create restricted token
+                class SID_AND_ATTRIBUTES_PROBE(ctypes.Structure):
+                    _fields_ = [
+                        ("Sid", wintypes.LPVOID),
+                        ("Attributes", wintypes.DWORD),
+                    ]
+
+                restricting_sid = SID_AND_ATTRIBUTES_PROBE()
+                restricting_sid.Sid = p_sid
+                restricting_sid.Attributes = 0
+
+                restricted_token = wintypes.HANDLE()
+                if not advapi32.CreateRestrictedToken(
+                    token_handle,
+                    1,  # DISABLE_MAX_PRIVILEGE
+                    0,
+                    None,
+                    0,
+                    None,
+                    1,
+                    ctypes.byref(restricting_sid),
+                    ctypes.byref(restricted_token),
+                ):
+                    return False
+
+                try:
+                    # Duplicate token
+                    primary_token = wintypes.HANDLE()
+                    if not advapi32.DuplicateTokenEx(
+                        restricted_token,
+                        0xF00FF,  # TOKEN_ALL_ACCESS
+                        None,
+                        2,
+                        1,
+                        ctypes.byref(primary_token),
+                    ):
+                        return False
+
+                    try:
+                        # Try a minimal CreateProcessAsUserW to verify it doesn't fail with WinError 6 or privilege issues.
+                        # We try to run "cmd.exe /c exit 0" or similar.
+                        class PROCESS_INFORMATION_PROBE(ctypes.Structure):
+                            _fields_ = [
+                                ("hProcess", wintypes.HANDLE),
+                                ("hThread", wintypes.HANDLE),
+                                ("dwProcessId", wintypes.DWORD),
+                                ("dwThreadId", wintypes.DWORD),
+                            ]
+
+                        class STARTUPINFOW_PROBE(ctypes.Structure):
+                            _fields_ = [
+                                ("cb", wintypes.DWORD),
+                                ("lpReserved", wintypes.LPWSTR),
+                                ("lpDesktop", wintypes.LPWSTR),
+                                ("lpTitle", wintypes.LPWSTR),
+                                ("dwX", wintypes.DWORD),
+                                ("dwY", wintypes.DWORD),
+                                ("dwXSize", wintypes.DWORD),
+                                ("dwYSize", wintypes.DWORD),
+                                ("dwXCountChars", wintypes.DWORD),
+                                ("dwYCountChars", wintypes.DWORD),
+                                ("dwFillAttribute", wintypes.DWORD),
+                                ("dwFlags", wintypes.DWORD),
+                                ("wShowWindow", wintypes.WORD),
+                                ("cbReserved2", wintypes.WORD),
+                                ("lpReserved2", ctypes.POINTER(ctypes.c_byte)),
+                                ("hStdInput", wintypes.HANDLE),
+                                ("hStdOutput", wintypes.HANDLE),
+                                ("hStdError", wintypes.HANDLE),
+                            ]
+
+                        si = STARTUPINFOW_PROBE()
+                        si.cb = ctypes.sizeof(STARTUPINFOW_PROBE)
+                        si.dwFlags = 0
+                        pi = PROCESS_INFORMATION_PROBE()
+
+                        import os
+
+                        comspec = os.environ.get(
+                            "COMSPEC", "C:\\Windows\\System32\\cmd.exe"
+                        )
+                        cmd_line = f'"{comspec}" /c exit 0'
+
+                        advapi32.CreateProcessAsUserW.argtypes = [
+                            wintypes.HANDLE,
+                            wintypes.LPCWSTR,
+                            wintypes.LPWSTR,
+                            wintypes.LPVOID,
+                            wintypes.LPVOID,
+                            wintypes.BOOL,
+                            wintypes.DWORD,
+                            wintypes.LPVOID,
+                            wintypes.LPCWSTR,
+                            ctypes.POINTER(STARTUPINFOW_PROBE),
+                            ctypes.POINTER(PROCESS_INFORMATION_PROBE),
+                        ]
+                        advapi32.CreateProcessAsUserW.restype = wintypes.BOOL
+
+                        success = advapi32.CreateProcessAsUserW(
+                            primary_token,
+                            None,
+                            cmd_line,
+                            None,
+                            None,
+                            False,  # inherit_handles
+                            0x00000400,  # CREATE_UNICODE_ENVIRONMENT
+                            None,
+                            None,
+                            ctypes.byref(si),
+                            ctypes.byref(pi),
+                        )
+                        if not success:
+                            return False
+
+                        # Cleanup spawned process
+                        if pi.hProcess:
+                            kernel32.CloseHandle(pi.hProcess)
+                        if pi.hThread:
+                            kernel32.CloseHandle(pi.hThread)
+
+                    finally:
+                        kernel32.CloseHandle(primary_token)
+                finally:
+                    kernel32.CloseHandle(restricted_token)
+            finally:
+                kernel32.LocalFree(p_sid)
+        finally:
+            kernel32.CloseHandle(token_handle)
+
         return True
     except Exception:
         return False
