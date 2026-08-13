@@ -55,6 +55,7 @@ def test_main_default_strict():
 
 def test_main_detects_unsynced_files_on_check():
     """Verify that --check detects modified files and exits with code 1."""
+    original_open = open
     with patch("sys.argv", ["generate_docs.py", "--check"]):
         with (
             patch("scripts.generate_docs.generate_api_docs"),
@@ -96,7 +97,6 @@ def test_main_detects_unsynced_files_on_check():
                     counters[self.filepath] = min(idx + 1, len(file_contents[self.filepath]) - 1)
                     return file_contents[self.filepath][idx]
 
-            original_open = open
             def mock_open_side_effect(filepath, *args, **kwargs):
                 if filepath in file_contents:
                     return MockFile(filepath)
@@ -112,6 +112,7 @@ def test_main_detects_unsynced_files_on_check():
 
 def test_main_clean_on_check():
     """Verify that --check exits cleanly with 0 if no files were changed."""
+    original_open = open
     with patch("sys.argv", ["generate_docs.py", "--check"]):
         with (
             patch("scripts.generate_docs.generate_api_docs"),
@@ -150,7 +151,6 @@ def test_main_clean_on_check():
                     counters[self.filepath] = min(idx + 1, len(file_contents[self.filepath]) - 1)
                     return file_contents[self.filepath][idx]
 
-            original_open = open
             def mock_open_side_effect(filepath, *args, **kwargs):
                 if filepath in file_contents:
                     return MockFile(filepath)
