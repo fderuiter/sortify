@@ -355,8 +355,11 @@ if sys.platform == "win32":
                 raise ctypes.WinError()
 
             # 7. Handle process handle extraction, close thread handle, and close parent/child pipes
-            if hasattr(subprocess, "Handle"):
-                self._handle = subprocess.Handle(pi.hProcess)
+            if hasattr(subprocess, "Handle") and pi.hProcess is not None:
+                try:
+                    self._handle = subprocess.Handle(pi.hProcess)
+                except Exception:
+                    self._handle = pi.hProcess
             else:
                 self._handle = pi.hProcess
 

@@ -361,6 +361,7 @@ def test_restricted_popen_execute_child_logic():
         mock.patch("sys.platform", "win32"),
         mock.patch("subprocess._mswindows", True),
         mock.patch("ctypes.windll", mock_ctypes.windll, create=True),
+        mock.patch("ctypes.wintypes", mock_wintypes, create=True),
         mock.patch("ctypes.WinError", Exception, create=True),
         mock.patch("os.open", return_value=999),
         mock.patch("os.set_inheritable"),
