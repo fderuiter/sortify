@@ -191,6 +191,9 @@ def get_db_connection(db_path: str):
             # Increase the database in-memory page cache to hold text features and clustering data
             cursor.execute("PRAGMA cache_size = -64000")  # 64MB cache
 
+            # Globally enforce relational integrity constraints on all database connections
+            cursor.execute("PRAGMA foreign_keys = ON")
+
             # Disable mmap_size on Windows to prevent OS-level file locking issues with multiple connections
             if sys.platform != "win32":
                 # Enforce optimized disk page allocations

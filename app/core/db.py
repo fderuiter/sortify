@@ -9,7 +9,7 @@ from app.core.db_worker import DBWorker
 class Database:
     """SQLite database abstraction for persistent storage of document state."""
 
-    CURRENT_VERSION = 5
+    CURRENT_VERSION = 6
 
     def __init__(self, db_path: Path, worker: DBWorker):
         self.db_path = str(db_path)
@@ -28,7 +28,12 @@ class Database:
 
     def init_db(self):
         """Initialize the core database and create tables if they do not exist."""
+        import logging
+
+        logger = logging.getLogger(__name__)
+
         conn = get_db_connection(self.db_path)
+        needs_vacuum = False
         with conn:
             cursor = conn.cursor()
             cursor.execute("PRAGMA user_version")
@@ -59,102 +64,122 @@ class Database:
                     conn.execute(
                         "CREATE INDEX IF NOT EXISTS idx_documents_file_hash ON documents (base_dir, file_hash)"
                     )
+                if db_version < 6:
+                    cursor.execute(
+                        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='document_vectors'"
+                    )
+                    if cursor.fetchone() is not None:
+                        conn.execute("""
+                            DELETE FROM document_vectors
+                            WHERE NOT EXISTS (
+                                SELECT 1 FROM documents
+                                WHERE documents.base_dir = document_vectors.base_dir
+                                  AND documents.filepath = document_vectors.filepath
+                            )
+                        """)
+                        needs_vacuum = True
                 conn.execute(f"PRAGMA user_version = {self.CURRENT_VERSION}")
 
+        if needs_vacuum:
+            old_isolation = conn.isolation_level
+            conn.isolation_level = None
             try:
-                conn.execute("ALTER TABLE documents ADD COLUMN rating TEXT")
-            except Exception:
-                pass
+                conn.execute("VACUUM")
+            except Exception as e:
+                logger.error(f"Failed to vacuum database during migration: {e}")
+            finally:
+                conn.isolation_level = old_isolation
 
-            # Initialize TF-IDF tables
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS tfidf_vocab (
-                    base_dir TEXT,
-                    term TEXT,
-                    df INTEGER,
-                    PRIMARY KEY (base_dir, term)
-                )
-            """)
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS tfidf_doc_terms (
-                    base_dir TEXT,
-                    filepath TEXT,
-                    term TEXT,
-                    tf INTEGER,
-                    PRIMARY KEY (base_dir, filepath, term)
-                )
-            """)
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_tfidf_doc_terms_path ON tfidf_doc_terms (base_dir, filepath)"
+        try:
+            conn.execute("ALTER TABLE documents ADD COLUMN rating TEXT")
+        except Exception:
+            pass
+
+        # Initialize TF-IDF tables
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS tfidf_vocab (
+                base_dir TEXT,
+                term TEXT,
+                df INTEGER,
+                PRIMARY KEY (base_dir, term)
             )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS tfidf_doc_terms (
+                base_dir TEXT,
+                filepath TEXT,
+                term TEXT,
+                tf INTEGER,
+                PRIMARY KEY (base_dir, filepath, term)
+            )
+        """)
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_tfidf_doc_terms_path ON tfidf_doc_terms (base_dir, filepath)"
+        )
 
-            # Initialize decoupled vector and metadata tables unconditionally
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS model_metadata (
-                    key TEXT PRIMARY KEY,
-                    value TEXT
-                )
-            """)
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS document_vectors (
-                    base_dir TEXT,
-                    filepath TEXT,
-                    vector TEXT,
-                    model_signature TEXT,
-                    PRIMARY KEY (base_dir, filepath),
-                    FOREIGN KEY (base_dir, filepath) REFERENCES documents(base_dir, filepath) ON DELETE CASCADE
-                )
-            """)
-            try:
-                conn.execute(
-                    "ALTER TABLE document_vectors ADD COLUMN model_signature TEXT"
-                )
-            except Exception:
-                pass
+        # Initialize decoupled vector and metadata tables unconditionally
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS model_metadata (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS document_vectors (
+                base_dir TEXT,
+                filepath TEXT,
+                vector TEXT,
+                model_signature TEXT,
+                PRIMARY KEY (base_dir, filepath),
+                FOREIGN KEY (base_dir, filepath) REFERENCES documents(base_dir, filepath) ON DELETE CASCADE
+            )
+        """)
+        try:
+            conn.execute("ALTER TABLE document_vectors ADD COLUMN model_signature TEXT")
+        except Exception:
+            pass
 
-            # Purge existing unencrypted vector cache on startup to prevent reading insecure data
-            cursor = conn.cursor()
-            try:
-                cursor.execute(
-                    "SELECT base_dir, filepath, vector FROM document_vectors"
-                )
-                rows = cursor.fetchall()
-                unencrypted_keys = []
-                for b_dir, f_path, vector in rows:
-                    if vector:
-                        is_unencrypted = False
-                        if isinstance(vector, str):
-                            stripped = vector.strip()
-                            if stripped.startswith("[") and stripped.endswith("]"):
-                                try:
-                                    import json
-
-                                    _ = json.loads(stripped)
-                                    is_unencrypted = True
-                                except Exception:
-                                    pass
-                        elif isinstance(vector, bytes):
+        # Purge existing unencrypted vector cache on startup to prevent reading insecure data
+        cursor = conn.cursor()
+        try:
+            cursor.execute("SELECT base_dir, filepath, vector FROM document_vectors")
+            rows = cursor.fetchall()
+            unencrypted_keys = []
+            for b_dir, f_path, vector in rows:
+                if vector:
+                    is_unencrypted = False
+                    if isinstance(vector, str):
+                        stripped = vector.strip()
+                        if stripped.startswith("[") and stripped.endswith("]"):
                             try:
-                                decoded = vector.decode("utf-8").strip()
-                                if decoded.startswith("[") and decoded.endswith("]"):
-                                    import json
+                                import json
 
-                                    _ = json.loads(decoded)
-                                    is_unencrypted = True
+                                _ = json.loads(stripped)
+                                is_unencrypted = True
                             except Exception:
                                 pass
+                    elif isinstance(vector, bytes):
+                        try:
+                            decoded = vector.decode("utf-8").strip()
+                            if decoded.startswith("[") and decoded.endswith("]"):
+                                import json
 
-                        if is_unencrypted:
-                            unencrypted_keys.append((b_dir, f_path))
+                                _ = json.loads(decoded)
+                                is_unencrypted = True
+                        except Exception:
+                            pass
 
-                if unencrypted_keys:
-                    for b_dir, f_path in unencrypted_keys:
-                        conn.execute(
-                            "DELETE FROM document_vectors WHERE base_dir = ? AND filepath = ?",
-                            (b_dir, f_path),
-                        )
-            except Exception:
-                pass
+                    if is_unencrypted:
+                        unencrypted_keys.append((b_dir, f_path))
+
+            if unencrypted_keys:
+                for b_dir, f_path in unencrypted_keys:
+                    conn.execute(
+                        "DELETE FROM document_vectors WHERE base_dir = ? AND filepath = ?",
+                        (b_dir, f_path),
+                    )
+        except Exception:
+            pass
 
     def invalidate_cache(self):
         """Invalidate the in-memory decrypted documents cache."""
