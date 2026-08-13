@@ -6,6 +6,7 @@ from nicegui import Client
 
 from app.config import AppSettings
 from app.core.db import Database
+from app.core.db_conn import clear_connection_cache
 from app.core.db_worker import DBWorker
 from app.ui.app import AutoSorterApp, find_and_remove_file
 
@@ -117,3 +118,4 @@ def test_ui_tree_path_alignment_and_nested_ratings():
 
         finally:
             db_worker.stop()
+            clear_connection_cache(only_current_and_inactive=False)
