@@ -100,6 +100,7 @@ def _execute_moves_recursive(
     db_updates_batch: list = None,
     active_parent_path: str = "",
     depth: int = 0,
+    runtime_settings=None,
 ) -> None:
     """Recursively move files according to the plan."""
     base_dir = os.path.normpath(base_dir)
@@ -152,6 +153,26 @@ def _execute_moves_recursive(
 
             if not os.path.exists(dest_dir):
                 os.makedirs(dest_dir, exist_ok=True)
+
+            target_path = os.path.normpath(os.path.join(dest_dir, filename))
+            collision = False
+            if os.path.lexists(target_path):
+                is_same = False
+                if os.path.lexists(source_path):
+                    try:
+                        is_same = os.path.samefile(target_path, source_path)
+                    except OSError:
+                        is_same = _is_same_path(target_path, source_path)
+                if not is_same:
+                    collision = True
+
+            conflict_policy = "rename"
+            if runtime_settings:
+                conflict_policy = getattr(runtime_settings, "CONFLICT_POLICY", "rename")
+
+            if collision and conflict_policy == "skip":
+                logging.info(f"Collision detected for {target_path}. Policy is 'skip', bypassing move.")
+                continue
 
             dest_path = os.path.normpath(get_safe_path(dest_dir, filename, source_path))
 
@@ -308,6 +329,7 @@ def _execute_moves_recursive(
                 db_updates_batch,
                 os.path.join(active_parent_path, key),
                 depth + 1,
+                runtime_settings,
             )
 
 
@@ -346,7 +368,7 @@ def execute_moves(
     # Execute all moves first
     db_updates_batch = []
     try:
-        _execute_moves_recursive(base_dir, plan, db, "", path_map, db_updates_batch)
+        _execute_moves_recursive(base_dir, plan, db, "", path_map, db_updates_batch, runtime_settings=runtime_settings)
 
         summary = {"deleted_folders": 0, "protected_folders": 0}
         cleanup_enabled = (

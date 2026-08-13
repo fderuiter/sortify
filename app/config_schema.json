@@ -210,6 +210,15 @@
       "default": "en",
       "title": "Ocr Languages",
       "type": "string"
+    },
+    "CONFLICT_POLICY": {
+      "default": "rename",
+      "enum": [
+        "skip",
+        "rename"
+      ],
+      "title": "Conflict Policy",
+      "type": "string"
     }
   },
   "title": "Settings",

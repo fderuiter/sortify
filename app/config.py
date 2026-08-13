@@ -45,6 +45,17 @@ class Settings(BaseSettings):
     OCR_GPU_ENABLED: bool = Field(default=False)
     AUDIO_GPU_ENABLED: bool = Field(default=False)
     OCR_LANGUAGES: str = Field(default="en")
+    CONFLICT_POLICY: str = Field(default="rename")
+
+    @field_validator("CONFLICT_POLICY")
+    @classmethod
+    def validate_conflict_policy(cls, v: str) -> str:
+        """Validate that CONFLICT_POLICY is either 'skip' or 'rename'."""
+        if not isinstance(v, str):
+            raise ValueError("CONFLICT_POLICY must be a string.")
+        if v not in ("skip", "rename"):
+            raise ValueError("CONFLICT_POLICY must be either 'skip' or 'rename'.")
+        return v
 
     @field_validator("OCR_LANGUAGES")
     @classmethod
