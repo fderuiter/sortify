@@ -98,7 +98,10 @@ def test_settings_panel_contains_proxy_and_download(mock_nicegui):
 
         # The proxy input should have been instantiated with settings value
         mock_nicegui["input"].assert_any_call(
-            "Proxy Server (e.g. http://127.0.0.1:8080)", value="http://test-proxy:8080"
+            "Proxy Server (e.g. http://127.0.0.1:8080)",
+            value="http://test-proxy:8080",
+            password=True,
+            password_toggle_button=True,
         )
 
         # Let's verify the Download button exists

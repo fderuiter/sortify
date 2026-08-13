@@ -205,7 +205,7 @@ class SessionCrypto:
 
         # 4. Database Guard Check
         if key is None:
-            if self.db_path.exists():
+            if self.db_path.exists() and self.db_path.suffix.lower() not in (".json", ".txt", ".log"):
                 try:
                     from contextlib import closing
 
