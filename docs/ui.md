@@ -10,6 +10,10 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.ui.dialog_helper
 
+## `app.ui.help_modal`
+
+::: app.ui.help_modal
+
 ## `app.ui.settings`
 
 ::: app.ui.settings
