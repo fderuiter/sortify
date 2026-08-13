@@ -104,6 +104,7 @@ def test_build_script_standard_missing_package():
 def test_build_script_cpu_profile_success():
     """Verify that a CPU build passes if PyTorch is indeed CPU-only."""
     import os
+
     mock_pyinstaller_main.run.reset_mock()
     with patch("sys.argv", ["build.py", "--cpu"]):
         with (
@@ -112,7 +113,9 @@ def test_build_script_cpu_profile_success():
             patch("scripts.build.download_and_prepare_weights") as mock_download,
             patch("scripts.build.update_binaries_and_manifest") as mock_update_bin,
             patch("os.path.exists", return_value=True),
-            patch("os.walk", return_value=[("dist/smart-autosorter", [], [])]), # No GPU binaries
+            patch(
+                "os.walk", return_value=[("dist/smart-autosorter", [], [])]
+            ),  # No GPU binaries
         ):
             # Setup sqlcipher3 and torch mock
             mock_spec = MagicMock()
@@ -123,7 +126,7 @@ def test_build_script_cpu_profile_success():
             mock_torch = MagicMock()
             if sys.platform in ("win32", "linux"):
                 mock_torch.__version__ = "2.1.2+cpu"
-            else: # darwin
+            else:  # darwin
                 mock_torch.__version__ = "2.1.2"
                 mock_torch.cuda.is_available.return_value = False
 
@@ -158,7 +161,7 @@ def test_build_script_cpu_profile_failure_cuda():
             mock_torch = MagicMock()
             if sys.platform in ("win32", "linux"):
                 mock_torch.__version__ = "2.1.2+cu121"
-            else: # darwin
+            else:  # darwin
                 mock_torch.__version__ = "2.1.2"
                 mock_torch.cuda.is_available.return_value = True
 
@@ -184,7 +187,10 @@ def test_build_script_cpu_profile_scan_fails_if_gpu_binaries_exist():
             patch("scripts.build.download_and_prepare_weights") as mock_download,
             patch("scripts.build.update_binaries_and_manifest") as mock_update_bin,
             patch("os.path.exists", return_value=True),
-            patch("os.walk", return_value=[("dist/smart-autosorter", [], ["libcudart.so"])]),
+            patch(
+                "os.walk",
+                return_value=[("dist/smart-autosorter", [], ["libcudart.so"])],
+            ),
             patch("builtins.print") as mock_print,
         ):
             # Setup sqlcipher3 and torch mock
@@ -196,7 +202,7 @@ def test_build_script_cpu_profile_scan_fails_if_gpu_binaries_exist():
             mock_torch = MagicMock()
             if sys.platform in ("win32", "linux"):
                 mock_torch.__version__ = "2.1.2+cpu"
-            else: # darwin
+            else:  # darwin
                 mock_torch.__version__ = "2.1.2"
                 mock_torch.cuda.is_available.return_value = False
 
@@ -208,5 +214,7 @@ def test_build_script_cpu_profile_scan_fails_if_gpu_binaries_exist():
                 printed_messages = "".join(
                     [call.args[0] for call in mock_print.call_args_list if call.args]
                 )
-                assert "Standalone bundle contains GPU/CUDA/cuDNN binaries" in printed_messages
-
+                assert (
+                    "Standalone bundle contains GPU/CUDA/cuDNN binaries"
+                    in printed_messages
+                )
