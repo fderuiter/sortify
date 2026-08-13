@@ -116,6 +116,7 @@ def test_model_downloader_bypasses_sandbox(tmp_path):
     mock_opener = MagicMock()
     mock_opener.open.return_value.__enter__.return_value = mock_response
 
+
     try:
         # Start with active sandbox on initiator thread
         with block_external_network(reason="enterprise restriction"):
