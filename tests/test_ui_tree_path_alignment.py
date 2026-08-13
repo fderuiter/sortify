@@ -43,6 +43,9 @@ def test_ui_tree_path_alignment_and_nested_ratings():
                 # Set document rating in the DB
                 db.set_document_rating(temp_dir, nested_filepath, "positive")
 
+                # Wait for asynchronous DB writes to complete
+                db_worker.q.join()
+
                 # Ensure DB returns the rating keyed by nested_filepath
                 all_ratings = db.get_all_document_ratings(temp_dir)
                 assert nested_filepath in all_ratings
@@ -94,6 +97,9 @@ def test_ui_tree_path_alignment_and_nested_ratings():
                 event_clear = MockEvent("Folder/Subfolder/nested_file.txt", "positive")
                 app.handle_node_rate(event_clear)
 
+                # Wait for asynchronous DB writes to complete
+                db_worker.q.join()
+
                 # Verify database has cleared the rating
                 db_rating = db.get_document_rating(temp_dir, nested_filepath)
                 assert db_rating is None
@@ -103,6 +109,9 @@ def test_ui_tree_path_alignment_and_nested_ratings():
                     "Folder/Subfolder/nested_file.txt", "negative"
                 )
                 app.handle_node_rate(event_negative)
+
+                # Wait for asynchronous DB writes to complete
+                db_worker.q.join()
 
                 # Verify database has recorded negative rating for the relative path
                 db_rating = db.get_document_rating(temp_dir, nested_filepath)
