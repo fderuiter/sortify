@@ -78,6 +78,18 @@ The following parameters are extracted directly from the application's configura
 - **Default**: ``
 - **Required**: `False`
 
+### `OCR_GPU_ENABLED`
+- **Default**: `False`
+- **Required**: `False`
+
+### `AUDIO_GPU_ENABLED`
+- **Default**: `False`
+- **Required**: `False`
+
+### `OCR_LANGUAGES`
+- **Default**: `en`
+- **Required**: `False`
+
 ### `AI_CONSENT_GRANTED`
 - **Default**: `None`
 - **Required**: `False`
