@@ -338,10 +338,12 @@ def test_policy_halting_and_cascading():
                 "target_path": "Tax Folder",
                 "priority": 50,
                 "halting": False,
-            }
+            },
         ]
 
-    plan_cascade = analyzer.generate_sorting_plan("dummy", runtime_settings=MockSettingsCascade())
+    plan_cascade = analyzer.generate_sorting_plan(
+        "dummy", runtime_settings=MockSettingsCascade()
+    )
 
     def find_folder_for(filename, p, current_path=""):
         if not isinstance(p, dict) or p.get("__type__") == "file":
@@ -382,11 +384,15 @@ def test_policy_halting_and_cascading():
                 "target_path": "Legal Folder",
                 "priority": 50,
                 "halting": False,
-            }
+            },
         ]
 
-    plan_global = analyzer.generate_sorting_plan("dummy", runtime_settings=MockSettingsCascadeToGlobal())
-    assert find_folder_for("tax_document_2026.pdf", plan_global) == "Yearly Archive Folder"
+    plan_global = analyzer.generate_sorting_plan(
+        "dummy", runtime_settings=MockSettingsCascadeToGlobal()
+    )
+    assert (
+        find_folder_for("tax_document_2026.pdf", plan_global) == "Yearly Archive Folder"
+    )
 
     # 2. Mismatch with halting enabled immediately halts and prevents any subsequent matches (lower-priority policies or global keyword rules).
     class MockSettingsHalting:
@@ -401,7 +407,7 @@ def test_policy_halting_and_cascading():
                 "expression": "finance",
                 "target_path": "Finance Folder",
                 "priority": 100,
-                "halting": True, # This fails and halts!
+                "halting": True,  # This fails and halts!
             },
             {
                 "type": "keyword",
@@ -409,13 +415,13 @@ def test_policy_halting_and_cascading():
                 "target_path": "Tax Folder",
                 "priority": 50,
                 "halting": False,
-            }
+            },
         ]
 
-    plan_halt = analyzer.generate_sorting_plan("dummy", runtime_settings=MockSettingsHalting())
+    plan_halt = analyzer.generate_sorting_plan(
+        "dummy", runtime_settings=MockSettingsHalting()
+    )
     # Evaluation halted! "tax" and "2026" rules are bypassed, so no rule folder should be found.
     halted_folder = find_folder_for("tax_document_2026.pdf", plan_halt)
     assert halted_folder != "Tax Folder"
     assert halted_folder != "Yearly Archive Folder"
-
-

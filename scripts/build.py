@@ -509,6 +509,7 @@ def main():
             print("Verifying CPU-only PyTorch...")
             try:
                 import torch
+
                 version = getattr(torch, "__version__", "")
                 is_cpu_torch = False
                 if sys.platform in ("win32", "linux"):
@@ -519,7 +520,9 @@ def main():
                         is_cpu_torch = True
 
                 if not is_cpu_torch or "+cu" in version or "cuda" in version.lower():
-                    print(f"Error: Non-CPU PyTorch detected: {version}. CPU-only PyTorch is required.")
+                    print(
+                        f"Error: Non-CPU PyTorch detected: {version}. CPU-only PyTorch is required."
+                    )
                     sys.exit(1)
                 else:
                     print(f"CPU-only PyTorch verified: {version}")
@@ -547,7 +550,15 @@ def main():
         print("Scanning standalone package for GPU/CUDA/cuDNN binaries...")
         dist_dir = "dist/smart-autosorter"
         if os.path.exists(dist_dir):
-            gpu_terms = ["cuda", "cudnn", "cublas", "nvrtc", "cudart", "nvtx", "libdevice"]
+            gpu_terms = [
+                "cuda",
+                "cudnn",
+                "cublas",
+                "nvrtc",
+                "cudart",
+                "nvtx",
+                "libdevice",
+            ]
             found_gpu_libs = []
             for root, dirs, files in os.walk(dist_dir):
                 for file in files:
@@ -560,9 +571,13 @@ def main():
                     print(f"  - Found: {lib}")
                 sys.exit(1)
             else:
-                print("Validation passed: No GPU/CUDA/cuDNN binaries found in the standalone package.")
+                print(
+                    "Validation passed: No GPU/CUDA/cuDNN binaries found in the standalone package."
+                )
         else:
-            print(f"Warning: Standalone bundle directory {dist_dir} not found for post-build verification.")
+            print(
+                f"Warning: Standalone bundle directory {dist_dir} not found for post-build verification."
+            )
 
 
 if __name__ == "__main__":
