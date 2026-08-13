@@ -281,6 +281,7 @@ if sys.platform == "win32":
             inherit_handles = True if (si.dwFlags & 0x00000100) else False
 
             # Ensure all assigned standard handles are inheritable
+            duplicated_handles = []
             if inherit_handles:
                 try:
                     import _winapi
@@ -301,6 +302,7 @@ if sys.platform == "win32":
                                     2,  # DUPLICATE_SAME_ACCESS
                                 )
                                 setattr(si, handle_name, dup)
+                                duplicated_handles.append(dup)
                             except Exception:
                                 pass
                 except Exception:
@@ -336,6 +338,11 @@ if sys.platform == "win32":
                 if null_fd is not None:
                     try:
                         os.close(null_fd)
+                    except Exception:
+                        pass
+                for dup in duplicated_handles:
+                    try:
+                        kernel32.CloseHandle(dup)
                     except Exception:
                         pass
 
@@ -399,7 +406,7 @@ def check_windows_sandbox_support() -> bool:
         ):
             return True
 
-        # Live Probe / Test: Try spawning a tiny restricted subprocess to verify it actually works
+        # Live Probe / Test: Try spawning a tiny restricted subprocess with pipes to verify end-to-end functionality
         try:
             import subprocess
 
@@ -408,11 +415,25 @@ def check_windows_sandbox_support() -> bool:
             startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
             startupinfo.wShowWindow = 0  # SW_HIDE
 
-            proc = RestrictedPopen(cmd, startupinfo=startupinfo)
+            proc = RestrictedPopen(
+                cmd,
+                startupinfo=startupinfo,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
             try:
                 proc.wait(timeout=1.0)
-            except Exception:
-                pass
+            finally:
+                try:
+                    if proc.stdout:
+                        proc.stdout.close()
+                except Exception:
+                    pass
+                try:
+                    if proc.stderr:
+                        proc.stderr.close()
+                except Exception:
+                    pass
             return True
         except Exception as probe_e:
             import logging

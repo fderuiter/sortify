@@ -430,3 +430,23 @@ def test_restricted_popen_execute_child_logic():
     from app.core import env_helper
 
     importlib.reload(env_helper)
+
+
+def test_check_windows_sandbox_support_live_probe_pipe_failure():
+    mock_ctypes = mock.MagicMock()
+    mock_ctypes.windll = mock.MagicMock()
+    mock_ctypes.windll.advapi32 = mock.MagicMock()
+    
+    class FakeFunction:
+        pass
+        
+    mock_ctypes.windll.advapi32.CreateProcessAsUserW = FakeFunction()
+    
+    with (
+        mock.patch("sys.platform", "win32"),
+        mock.patch("ctypes.windll", mock_ctypes.windll, create=True),
+        mock.patch("app.core.env_helper.RestrictedPopen", side_effect=Exception("Pipe creation or duplication failure")),
+    ):
+        from app.core.env_helper import check_windows_sandbox_support
+        assert check_windows_sandbox_support() is False
+
