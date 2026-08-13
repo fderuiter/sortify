@@ -12,7 +12,7 @@ from urllib.parse import urlparse
 
 URL_REGEX = re.compile(r'https?://[^\s\'"<>]+')
 TIMEOUT = 3.0
-DEFAULT_BYPASS_DOMAINS = {"example.com", "test-proxy"}
+DEFAULT_BYPASS_DOMAINS = {"example.com", "test-proxy", "bypassed.com", "smartautosorter.com", "docs.smartautosorter.com"}
 
 
 def validate_url(url: str, bypass_domains: set = None):
