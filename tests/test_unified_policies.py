@@ -303,7 +303,11 @@ def test_policy_override_bypasses_historical_and_ml():
                     return res
         return None
 
-    assert find_folder_for("corp_restricted.xlsx", plan) == "Strict Compliance"
+    # Verified manual user decisions must always take priority over dynamic rules
+    # and cannot be overwritten by automated policy matching, raising a conflict.
+    assert find_folder_for("corp_restricted.xlsx", plan) == "Manual User Folder"
+    assert plan["Manual User Folder"]["corp_restricted.xlsx"]["is_conflicted"] is True
+    assert plan["Manual User Folder"]["corp_restricted.xlsx"]["compliance_path"] == "Strict Compliance"
 
 
 def test_policy_halting_and_cascading():
