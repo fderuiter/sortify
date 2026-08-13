@@ -341,7 +341,9 @@ class AudioExtractor:
 
             from app.core.env_helper import is_cuda_available, is_mps_available
 
-            audio_gpu = getattr(settings, "AUDIO_GPU_ENABLED", False) if settings else False
+            audio_gpu = (
+                getattr(settings, "AUDIO_GPU_ENABLED", False) if settings else False
+            )
             if not isinstance(audio_gpu, bool):
                 audio_gpu = False
 
@@ -394,7 +396,9 @@ class AudioExtractor:
                     break
                 except FileNotFoundError as e:
                     if dev != "cpu":
-                        logging.warning(f"Failed to spawn Whisper on GPU device {dev}, retrying on CPU: {e}")
+                        logging.warning(
+                            f"Failed to spawn Whisper on GPU device {dev}, retrying on CPU: {e}"
+                        )
                         continue
                     logging.error(
                         f"Whisper executable '{whisper_cmd}' not found on system."
@@ -402,7 +406,9 @@ class AudioExtractor:
                     return f"[STATUS:ERROR: Whisper model offline or '{whisper_cmd}' not found]"
                 except Exception as e:
                     if dev != "cpu":
-                        logging.warning(f"Failed to spawn Whisper on GPU device {dev}, retrying on CPU: {e}")
+                        logging.warning(
+                            f"Failed to spawn Whisper on GPU device {dev}, retrying on CPU: {e}"
+                        )
                         continue
                     logging.error(f"Failed to spawn Whisper process: {e}")
                     return f"[STATUS:ERROR: {str(e)}]"
