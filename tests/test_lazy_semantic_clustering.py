@@ -77,8 +77,9 @@ def test_semantic_clustering_lazy_generation_and_caching(temp_env):
 
     # Initialize analyzer with our mock model_path and mock get_active_model_properties
     import sys
-    import numpy as np
     from unittest.mock import MagicMock
+
+    import numpy as np
 
     from app.core.semantic_embeddings import ModelProperties
 

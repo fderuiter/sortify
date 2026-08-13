@@ -87,7 +87,6 @@ def test_vector_reconstruction_automatically_sandboxed():
 
 def test_model_downloader_bypasses_sandbox(tmp_path):
     """Verify that the model downloader is still able to connect to external sites even when the parent thread is sandboxed."""
-    import hashlib
 
     from app.core.shared_registry import SharedModelRegistry
 
@@ -102,8 +101,7 @@ def test_model_downloader_bypasses_sandbox(tmp_path):
         print(f"DOWNLOAD FAILURE: {err}")
 
     # Register expected hash for verification to pass
-    import hashlib
-    from app.core.shared_registry import SharedModelRegistry
+
     mock_data = b"modeldata"
     mock_hash = hashlib.sha256(mock_data).hexdigest()
     SharedModelRegistry.get_instance().register_expected_hashes(

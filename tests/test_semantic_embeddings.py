@@ -521,8 +521,9 @@ def test_global_model_properties_cache_and_thread_safety(temp_dir):
     3. Concurrent threads accessing model properties do not deadlock or cause write races.
     """
     import os
-    from unittest.mock import patch
     import threading
+    from unittest.mock import patch
+
     from app.core.semantic_embeddings import get_active_model_properties
 
     # 1. Setup a dummy ONNX model file
@@ -532,7 +533,10 @@ def test_global_model_properties_cache_and_thread_safety(temp_dir):
     onnx_file.write_text("fake onnx file content")
 
     # Clear cache before testing to ensure a clean state
-    from app.core.semantic_embeddings import _model_properties_cache, _model_properties_cache_lock
+    from app.core.semantic_embeddings import (
+        _model_properties_cache,
+        _model_properties_cache_lock,
+    )
     with _model_properties_cache_lock:
         _model_properties_cache.clear()
 

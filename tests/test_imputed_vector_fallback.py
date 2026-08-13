@@ -6,8 +6,8 @@ These tests verify:
 3. Perfect dimension matching and absence of mathematical alignment or dimension mismatch exceptions when zero vectors are present.
 """
 
-import logging
 from unittest.mock import patch
+
 import pytest
 from sklearn.feature_extraction.text import TfidfVectorizer
 
