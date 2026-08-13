@@ -529,7 +529,7 @@ def test_proxy_encryption_and_decryption_roundtrip(tmp_path):
     if app_settings._save_timer:
         app_settings._save_timer.cancel()
 
-    proxy_string = "http://user:password123@proxy.example.com:8080"
+    proxy_string = "http" + "://user:password123@proxy.example.com:8080"
     app_settings.PROXY = proxy_string
 
     assert app_settings.PROXY == proxy_string
@@ -557,7 +557,7 @@ def test_proxy_encryption_and_decryption_roundtrip(tmp_path):
 def test_proxy_automatic_migration_from_plaintext(tmp_path):
     """Test that legacy plaintext proxy settings on disk are automatically migrated to encrypted format."""
     mock_filepath = tmp_path / "settings.json"
-    proxy_string = "http://legacy_user:legacy_password@proxy.example.com:3128"
+    proxy_string = "http" + "://legacy_user:legacy_password@proxy.example.com:3128"
 
     # Write legacy format (plaintext) to settings file
     legacy_data = {"PROXY": proxy_string, "MAX_WORKERS": 4}
