@@ -384,6 +384,14 @@ def test_restricted_popen_execute_child_logic():
                 self._child_created = False
                 self._handle = None
                 self.pid = None
+                self.returncode = None
+                self.args = []
+                self.stdin = None
+                self.stdout = None
+                self.stderr = None
+
+            def __repr__(self):
+                return f"<MockPopen object at {hex(id(self))}>"
 
             def __del__(self):
                 pass
@@ -398,24 +406,29 @@ def test_restricted_popen_execute_child_logic():
         errwrite_mock = mock.MagicMock()
 
         # Call _execute_child
-        proc._execute_child(
-            args=["dummy.exe"],
-            executable="dummy.exe",
-            preexec_fn=None,
-            close_fds=True,
-            pass_fds=(),
-            cwd=None,
-            env={},
-            startupinfo=None,
-            creationflags=0,
-            shell=False,
-            p2cread=p2cread_mock,
-            p2cwrite=p2cwrite_mock,
-            c2pread=c2pread_mock,
-            c2pwrite=c2pwrite_mock,
-            errread=errread_mock,
-            errwrite=errwrite_mock,
-        )
+        try:
+            proc._execute_child(
+                args=["dummy.exe"],
+                executable="dummy.exe",
+                preexec_fn=None,
+                close_fds=True,
+                pass_fds=(),
+                cwd=None,
+                env={},
+                startupinfo=None,
+                creationflags=0,
+                shell=False,
+                p2cread=p2cread_mock,
+                p2cwrite=p2cwrite_mock,
+                c2pread=c2pread_mock,
+                c2pwrite=c2pwrite_mock,
+                errread=errread_mock,
+                errwrite=errwrite_mock,
+            )
+        except Exception as e:
+            import traceback
+            tb = traceback.format_exc()
+            pytest.fail(f"Exception raised in _execute_child:\n{tb}")
 
         # Verify that only the child pipe ends are closed
         p2cread_mock.Close.assert_called_once()
