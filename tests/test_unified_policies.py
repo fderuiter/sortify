@@ -303,13 +303,14 @@ def test_policy_override_bypasses_historical_and_ml():
                     return res
         return None
 
-    # Verified manual user decisions must always take priority over dynamic rules
-    # and cannot be overwritten by automated policy matching, raising a conflict.
-    assert find_folder_for("corp_restricted.xlsx", plan) == "Manual User Folder"
-    assert plan["Manual User Folder"]["corp_restricted.xlsx"]["is_conflicted"] is True
+    # Under the PolicyEngine architecture, compliance policies take absolute precedence,
+    # overriding manual user decisions and routing the file to the compliance path while raising a conflict.
+    assert find_folder_for("corp_restricted.xlsx", plan) == "Strict Compliance"
+    assert plan["Strict Compliance"]["corp_restricted.xlsx"]["is_conflicted"] is True
+    assert plan["Strict Compliance"]["corp_restricted.xlsx"]["is_corrected"] is True
     assert (
-        plan["Manual User Folder"]["corp_restricted.xlsx"]["compliance_path"]
-        == "Strict Compliance"
+        plan["Strict Compliance"]["corp_restricted.xlsx"]["original_lock_path"]
+        == "Manual User Folder"
     )
 
 

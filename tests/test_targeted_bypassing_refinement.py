@@ -138,15 +138,22 @@ def test_targeted_bypassing_refinement_acceptance_criteria(tmp_path):
         comp_doc_after_drag = next(d for d in docs_after_drag if d[0] == comp_file_name)
         assert comp_doc_after_drag[3] == "User Dragged Folder"
 
-        # Now, even if automated policy exists, the manual override must take priority and raise conflict
+        # Under the PolicyEngine architecture, compliance policies take absolute precedence,
+        # overriding manual overrides and routing to the compliance path while raising a conflict.
         plan_after_drag = analyzer.generate_sorting_plan(
             str(base_dir), runtime_settings=MockSettingsNew()
         )
-        assert "User Dragged Folder" in plan_after_drag
-        assert comp_file_name in plan_after_drag["User Dragged Folder"]
+        assert "New Archive" in plan_after_drag
+        assert comp_file_name in plan_after_drag["New Archive"]
         assert (
-            plan_after_drag["User Dragged Folder"][comp_file_name].get("is_conflicted")
-            is True
+            plan_after_drag["New Archive"][comp_file_name].get("is_conflicted") is True
+        )
+        assert (
+            plan_after_drag["New Archive"][comp_file_name].get("is_corrected") is True
+        )
+        assert (
+            plan_after_drag["New Archive"][comp_file_name].get("original_lock_path")
+            == "User Dragged Folder"
         )
 
         # 4. Verify Acceptance Criterion 4:
