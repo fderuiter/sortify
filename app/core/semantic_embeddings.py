@@ -46,6 +46,10 @@ class ModelProperties(tuple):
         return obj
 
 
+_model_properties_cache = {}
+_model_properties_cache_lock = threading.Lock()
+
+
 def get_active_model_properties(model_path: str | None) -> tuple[str, int, str]:
     """Get active model signature (SHA-256 hash), dimensions, and version.
 
@@ -56,61 +60,77 @@ def get_active_model_properties(model_path: str | None) -> tuple[str, int, str]:
     version = "1.0.0"
     is_valid = True
 
-    if model_path is not None:
-        if os.path.exists(model_path):
-            onnx_file = None
-            if os.path.isdir(model_path):
-                for root, _, files in os.walk(model_path):
-                    for f in files:
-                        if f.lower().endswith(".onnx"):
-                            onnx_file = os.path.join(root, f)
-                            break
-                    if onnx_file:
+    if model_path is None:
+        return ModelProperties(signature, dimensions, version, is_valid)
+
+    # Fast path: check if we can resolve the onnx file and retrieve its modification time
+    onnx_file = None
+    if os.path.exists(model_path):
+        if os.path.isdir(model_path):
+            for root, _, files in os.walk(model_path):
+                for f in files:
+                    if f.lower().endswith(".onnx"):
+                        onnx_file = os.path.join(root, f)
                         break
-            elif model_path.lower().endswith(".onnx"):
-                onnx_file = model_path
+                if onnx_file:
+                    break
+        elif model_path.lower().endswith(".onnx"):
+            onnx_file = model_path
 
-            if onnx_file and os.path.exists(onnx_file):
-                hasher = hashlib.sha256()
-                try:
-                    with open(onnx_file, "rb") as f:
-                        for chunk in iter(lambda: f.read(65536), b""):
-                            hasher.update(chunk)
-                    signature = hasher.hexdigest()
-                except Exception:
-                    signature = f"sig_{os.path.basename(onnx_file)}"
+    if onnx_file and os.path.exists(onnx_file):
+        try:
+            mtime = os.path.getmtime(onnx_file)
+        except Exception:
+            mtime = 0.0
 
-                # Try reading dimensions from the model if onnxruntime is available
-                try:
-                    from app.core.shared_registry import SharedModelRegistry
+        cache_key = (model_path, onnx_file, mtime)
+        with _model_properties_cache_lock:
+            if cache_key in _model_properties_cache:
+                return _model_properties_cache[cache_key]
 
-                    # Ensure thread limits are applied via SharedModelRegistry initialization
-                    _ = SharedModelRegistry.get_instance()
+        # Cache miss: compute properties by reading and parsing the file
+        hasher = hashlib.sha256()
+        try:
+            with open(onnx_file, "rb") as f:
+                for chunk in iter(lambda: f.read(65536), b""):
+                    hasher.update(chunk)
+            signature = hasher.hexdigest()
+        except Exception:
+            signature = f"sig_{os.path.basename(onnx_file)}"
 
-                    import onnxruntime as ort
+        # Try reading dimensions from the model if onnxruntime is available
+        try:
+            from app.core.shared_registry import SharedModelRegistry
 
-                    sess = ort.InferenceSession(onnx_file)
-                    out = sess.get_outputs()[0]
-                    if out.shape and len(out.shape) >= 2:
-                        dimensions = out.shape[-1]
-                        if not isinstance(dimensions, int):
-                            dimensions = 384
-                except Exception:
-                    is_valid = False
+            # Ensure thread limits are applied via SharedModelRegistry initialization
+            _ = SharedModelRegistry.get_instance()
 
-                version_file = os.path.join(os.path.dirname(onnx_file), "version.txt")
-                if os.path.exists(version_file):
-                    try:
-                        with open(version_file, "r") as vf:
-                            version = vf.read().strip()
-                    except Exception:
-                        pass
-            else:
-                is_valid = False
-        else:
+            import onnxruntime as ort
+
+            sess = ort.InferenceSession(onnx_file)
+            out = sess.get_outputs()[0]
+            if out.shape and len(out.shape) >= 2:
+                dimensions = out.shape[-1]
+                if not isinstance(dimensions, int):
+                    dimensions = 384
+        except Exception:
             is_valid = False
 
-    return ModelProperties(signature, dimensions, version, is_valid)
+        version_file = os.path.join(os.path.dirname(onnx_file), "version.txt")
+        if os.path.exists(version_file):
+            try:
+                with open(version_file, "r") as vf:
+                    version = vf.read().strip()
+            except Exception:
+                pass
+
+        props = ModelProperties(signature, dimensions, version, is_valid)
+        with _model_properties_cache_lock:
+            _model_properties_cache[cache_key] = props
+        return props
+    else:
+        is_valid = False
+        return ModelProperties(signature, dimensions, version, is_valid)
 
 
 class SemanticEmbeddingManager:
