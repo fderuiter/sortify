@@ -28,6 +28,40 @@ class ThreadSafeState:
             self._state[key] = value
 
 
+def get_shadowed_policies(policies: list[dict]) -> list[bool]:
+    """Determine which policies are shadowed by a higher-priority policy."""
+    indexed_policies = list(enumerate(policies))
+    sorted_indexed = sorted(indexed_policies, key=lambda item: item[1].get("priority", 0), reverse=True)
+    shadowed_indices = set()
+
+    def is_masked_by(higher_rule, lower_rule) -> bool:
+        ha_type = higher_rule.get("type", "").lower()
+        lo_type = lower_rule.get("type", "").lower()
+        ha_expr = higher_rule.get("expression", "").lower()
+        lo_expr = lower_rule.get("expression", "").lower()
+
+        if not ha_expr or not lo_expr:
+            return False
+
+        if ha_expr in lo_expr:
+            if ha_type == "keyword":
+                return True
+            if ha_type == "pattern":
+                if lo_type in ("pattern", "override"):
+                    return True
+            if ha_type == "override" and lo_type == "override":
+                return True
+        return False
+
+    for i, (orig_idx, lower_rule) in enumerate(sorted_indexed):
+        for higher_orig_idx, higher_rule in sorted_indexed[:i]:
+            if is_masked_by(higher_rule, lower_rule):
+                shadowed_indices.add(orig_idx)
+                break
+
+    return [idx in shadowed_indices for idx in range(len(policies))]
+
+
 def show_settings(parent_app, settings):
     """Show the settings dialog."""
     import threading
@@ -75,6 +109,9 @@ def show_settings(parent_app, settings):
             )
             ui.tab("Rules", label="Routing Rules").props(
                 'aria-label="Routing Rules Tab"'
+            )
+            ui.tab("Policies", label="Policies").props(
+                'aria-label="Policies Tab"'
             )
 
         with ui.tab_panels(tabs, value="General").classes("w-full mt-4"):
@@ -733,7 +770,23 @@ def show_settings(parent_app, settings):
                         'aria-label="Add Rule Button"'
                     )
 
-                ui.label("Unified Policies").classes("text-lg font-bold mt-6 mb-2")
+            with ui.tab_panel("Policies"):
+                if getattr(settings, "_has_validation_errors", False):
+                    with ui.card().classes(
+                        "bg-red-50 border-red-200 border p-4 mb-4 w-full"
+                    ):
+                        with ui.row().classes("items-center gap-2 text-red-800"):
+                            ui.icon("error", size="sm")
+                            ui.label("Configuration Warning").classes("font-bold")
+                        ui.label(
+                            "One or more settings in your configuration file were invalid. "
+                            "Default values are being used temporarily to prevent app crash, and saving is suspended "
+                            "until the configuration file is fixed or reset."
+                        ).classes("text-red-900 text-sm mt-1").props(
+                            'aria-label="Configuration Warning Label"'
+                        )
+
+                ui.label("Unified Policies").classes("text-lg font-bold mb-2")
 
                 policies_container = ui.column().classes("w-full mb-4")
 
@@ -746,22 +799,30 @@ def show_settings(parent_app, settings):
                                 "text-sm text-gray-400 italic"
                             )
                         else:
+                            shadowed_statuses = get_shadowed_policies(policies_list)
                             for idx, policy in enumerate(policies_list):
                                 with ui.row().classes(
                                     "w-full items-center justify-between border-b pb-2 mb-2 flex-wrap gap-2"
                                 ):
-                                    ui.label(
-                                        f"[{policy.get('type', '').upper()}]"
-                                    ).classes("w-20 font-bold")
-                                    ui.label(policy.get("expression", "")).classes(
-                                        "w-32 font-mono truncate"
-                                    )
-                                    ui.label(policy.get("target_path", "")).classes(
-                                        "w-40 font-mono text-gray-500 truncate"
-                                    )
-                                    ui.label(
-                                        f"Priority: {policy.get('priority', 0)}"
-                                    ).classes("w-24 text-sm")
+                                    with ui.row().classes("items-center gap-2 flex-wrap"):
+                                        ui.label(
+                                            f"[{policy.get('type', '').upper()}]"
+                                        ).classes("w-20 font-bold")
+                                        ui.label(policy.get("expression", "")).classes(
+                                            "w-32 font-mono truncate"
+                                        )
+                                        ui.label(policy.get("target_path", "")).classes(
+                                            "w-40 font-mono text-gray-500 truncate"
+                                        )
+                                        ui.label(
+                                            f"Priority: {policy.get('priority', 0)}"
+                                        ).classes("w-24 text-sm")
+
+                                        # Shadow indicator warning badge
+                                        if shadowed_statuses[idx]:
+                                            with ui.row().classes("items-center gap-1 bg-amber-50 text-amber-800 px-2 py-1 rounded border border-amber-200"):
+                                                ui.icon("warning", size="xs")
+                                                ui.label("Shadowed: A higher-priority rule matches the same criteria.").classes("text-xs font-semibold")
 
                                     # Halting toggle checkbox!
                                     halting_val = policy.get("halting", False)
@@ -811,8 +872,8 @@ def show_settings(parent_app, settings):
                                                 )
 
                                     ui.button(
-                                        "Delete", on_click=delete_policy, color="red"
-                                    ).props("size=sm")
+                                        on_click=delete_policy, color="red", icon="delete"
+                                    ).props('size=sm aria-label="Delete Policy Button"')
 
                 render_policies()
 
@@ -849,21 +910,49 @@ def show_settings(parent_app, settings):
                         p_priority = p_priority_input.value
                         p_halting = p_halting_checkbox.value
 
-                        if not p_expr or not p_target:
-                            ui.notify(
-                                "Expression and target path are required.",
-                                type="warning",
-                            )
+                        # 1. Block entries that do not supply a valid type, expression, path, and priority
+                        if not p_type or p_type not in ("keyword", "pattern", "override"):
+                            ui.notify("Type is required and must be keyword, pattern, or override.", type="warning")
                             return
+
+                        if not p_expr or not p_expr.strip():
+                            ui.notify("Expression is required.", type="warning")
+                            return
+                        p_expr = p_expr.strip()
+
+                        if not p_target or not p_target.strip():
+                            ui.notify("Target Path is required.", type="warning")
+                            return
+                        p_target = p_target.strip()
+
                         if p_priority is None:
                             ui.notify("Priority is required.", type="warning")
+                            return
+                        try:
+                            p_priority = int(p_priority)
+                        except ValueError:
+                            ui.notify("Priority must be a valid integer.", type="warning")
+                            return
+
+                        # 2. Path validation: Reject illegal characters, absolute paths, or traversal segments
+                        if any(char in '<>:"|?*' for char in p_target):
+                            ui.notify("Target Path contains illegal characters.", type="negative")
+                            return
+
+                        if p_target.startswith("/") or p_target.startswith("\\"):
+                            ui.notify("Target Path cannot be an absolute path.", type="negative")
+                            return
+
+                        segments = p_target.replace("\\", "/").split("/")
+                        if ".." in segments:
+                            ui.notify("Target Path cannot contain directory traversal segments (..).", type="negative")
                             return
 
                         new_p = {
                             "type": p_type,
                             "expression": p_expr,
                             "target_path": p_target,
-                            "priority": int(p_priority),
+                            "priority": p_priority,
                             "halting": p_halting,
                         }
 
