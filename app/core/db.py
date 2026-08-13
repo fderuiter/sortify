@@ -935,6 +935,38 @@ class Database:
                     return None
             return None
 
+    def get_document_vectors_batch(self, base_dir: str, filepaths: list[str]) -> dict[str, list[float]]:
+        """Retrieve decoupled vectors for a list of document filepaths in batched format."""
+        if not base_dir or not filepaths:
+            return {}
+
+        filepaths_norm = [fp.replace("\\", "/") for fp in filepaths]
+        conn = get_db_connection(self.db_path)
+        results = {}
+        with conn:
+            import json
+            chunk_size = 50
+            for i in range(0, len(filepaths_norm), chunk_size):
+                chunk = filepaths_norm[i : i + chunk_size]
+                placeholders = ",".join(["?"] * len(chunk))
+                cursor = conn.execute(
+                    f"""
+                    SELECT filepath, vector
+                    FROM document_vectors
+                    WHERE base_dir = ? AND filepath IN ({placeholders})
+                    """,
+                    (base_dir, *chunk),
+                )
+                rows = cursor.fetchall()
+                for filepath, enc_vector in rows:
+                    if enc_vector:
+                        try:
+                            decrypted = self.crypto.decrypt_vector(enc_vector)
+                            results[filepath] = json.loads(decrypted)
+                        except Exception:
+                            self.track_corrupted_vector(base_dir, filepath)
+        return results
+
     def upsert_document_vectors(
         self,
         base_dir: str,

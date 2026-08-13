@@ -795,3 +795,85 @@ def test_fully_masked_inputs_safety(db, temp_dir):
         for val in embedding:
             assert not math.isnan(val)
             assert not math.isinf(val)
+
+
+def test_batch_retrieval_and_caching_priority(db, temp_dir):
+    """Test Unified Batch Embedding Manager capabilities:
+    1. Retrieve document vector embeddings in batches across multiple files.
+    2. Large requests (>50 elements) processed in sequential chunks of 50.
+    3. Prioritize local thread-locked decrypted document cache over database file loads.
+    4. Automatically reconstruct missing/invalid dimension vectors on-the-fly.
+    """
+    manager = SemanticEmbeddingManager(db, model_path=None)
+
+    # Let's populate DB with 60 documents
+    docs_to_insert = []
+    filepaths = []
+    for i in range(60):
+        fp = f"doc_{i}.txt"
+        filepaths.append(fp)
+        docs_to_insert.append((
+            str(temp_dir),
+            fp,
+            f"hash_{i}",
+            f"Content of document number {i}"
+        ))
+    db.upsert_documents(docs_to_insert)
+
+    # Initially, no vectors are generated
+    # Now let's call get_vectors_batch on all 60 files.
+    # It should:
+    # - Detect missing vectors.
+    # - Warm up / populate cache in self.db._cached_documents.
+    # - Read from decrypted document cache first.
+    # - Generate embeddings on-the-fly.
+    # - Save them to database.
+    # - Return dictionary mapping normalized filepath to vector of correct dimension.
+
+    # We spy on get_documents_by_filepaths to check cache priority vs disk reads.
+    called_disk_loads = []
+    original_get_docs_by_fp = db.get_documents_by_filepaths
+    def spied_get_docs_by_fp(base_dir, filepaths_list):
+        called_disk_loads.append(len(filepaths_list))
+        return original_get_docs_by_fp(base_dir, filepaths_list)
+    db.get_documents_by_filepaths = spied_get_docs_by_fp
+
+    try:
+        # Check cache is populated/valid
+        db._populate_cache_if_needed(str(temp_dir))
+        assert db._cached_documents is not None
+
+        # Retrieve vectors batch
+        results = manager.get_vectors_batch(str(temp_dir), filepaths)
+
+        # Assert correct count of results
+        assert len(results) == 60
+        for fp in filepaths:
+            vec = results[fp]
+            assert manager.validate_vector_dimension(vec)
+
+        # Since all texts were in the cache, get_documents_by_filepaths should NOT have been called!
+        assert len(called_disk_loads) == 0
+
+        # Now invalidate cache to simulate what happens when we must read from disk
+        db.invalidate_cache()
+        # Delete vectors for a chunk (e.g., first 3) to force reconstruction from disk
+        from app.core.db_conn import get_db_connection
+        conn = get_db_connection(db.db_path)
+        with conn:
+            conn.execute("DELETE FROM document_vectors WHERE filepath IN ('doc_0.txt', 'doc_1.txt', 'doc_2.txt')")
+
+        # Force cache-miss state for the texts to test get_documents_by_filepaths fallback
+        with db._cache_lock:
+            db._cached_base_dir = str(temp_dir)
+            db._cached_documents = []
+
+        # Call get_vectors_batch again
+        # Since cache is empty, it should hit get_documents_by_filepaths to load missing ones from disk
+        results2 = manager.get_vectors_batch(str(temp_dir), filepaths)
+        assert len(results2) == 60
+        # doc_0, doc_1, doc_2 should have been loaded from disk
+        assert len(called_disk_loads) > 0
+    finally:
+        db.get_documents_by_filepaths = original_get_docs_by_fp
+

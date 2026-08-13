@@ -590,6 +590,78 @@ class SemanticEmbeddingManager:
         """Retrieve decoupled vector from child store."""
         return self.db.get_document_vector(base_dir, filepath)
 
+    def get_vectors_batch(self, base_dir: str, filepaths: list[str]) -> dict[str, list[float]]:
+        """Retrieve decoupled vectors for a list of document filepaths in batched format.
+
+        Handles missing vectors or invalid dimensions by reconstructing them on-the-fly,
+        prioritizing the local thread-locked decrypted document cache.
+        """
+        if not base_dir or not filepaths:
+            return {}
+
+        filepaths_norm = [fp.replace("\\", "/") for fp in filepaths]
+
+        # 1. Chunk the query to the DB's batch vector retrieval in groups of 50
+        retrieved_vectors = {}
+        chunk_size = 50
+        for i in range(0, len(filepaths_norm), chunk_size):
+            chunk = filepaths_norm[i : i + chunk_size]
+            batch_result = self.db.get_document_vectors_batch(base_dir, chunk)
+            retrieved_vectors.update(batch_result)
+
+        # 2. Identify missing or invalid vectors
+        missing_or_invalid = []
+        for fp in filepaths_norm:
+            vec = retrieved_vectors.get(fp)
+            if not self.validate_vector_dimension(vec):
+                missing_or_invalid.append(fp)
+
+        if not missing_or_invalid:
+            return retrieved_vectors
+
+        # 3. For missing/invalid, prioritize reading from the local thread-locked decrypted cache in self.db
+        # Call _populate_cache_if_needed beforehand to warm the cache if needed
+        self.db._populate_cache_if_needed(base_dir)
+
+        cache_texts = {}
+        with self.db._cache_lock:
+            if self.db._cached_base_dir == base_dir and self.db._cached_documents is not None:
+                # Cache contains tuples: (filepath, decrypted_text, file_hash, user_verified_target_path)
+                # Let's map filepath to decrypted_text
+                for row in self.db._cached_documents:
+                    cache_texts[row[0]] = row[1]
+
+        still_missing = []
+        resolved_texts = {}
+        for fp in missing_or_invalid:
+            if fp in cache_texts:
+                resolved_texts[fp] = cache_texts[fp]
+            else:
+                still_missing.append(fp)
+
+        # 4. For any files still missing from cache, load them from disk in chunks of 50
+        if still_missing:
+            for i in range(0, len(still_missing), chunk_size):
+                chunk = still_missing[i : i + chunk_size]
+                disk_docs = self.db.get_documents_by_filepaths(base_dir, chunk)
+                for dfp, text in disk_docs:
+                    resolved_texts[dfp.replace("\\", "/")] = text
+
+        # 5. Generate vector embeddings locally on-the-fly
+        # 6. Securely upsert newly generated embeddings back to the database in chunks of 50
+        new_vectors_to_upsert = []
+        for fp, text in resolved_texts.items():
+            vec = self.generate_embedding(text)
+            retrieved_vectors[fp] = vec
+            new_vectors_to_upsert.append((fp, vec))
+
+        if new_vectors_to_upsert:
+            for i in range(0, len(new_vectors_to_upsert), chunk_size):
+                chunk_upsert = new_vectors_to_upsert[i : i + chunk_size]
+                self.db.upsert_document_vectors(base_dir, chunk_upsert, model_signature=self.signature)
+
+        return retrieved_vectors
+
     def validate_vector_dimension(self, vector: list[float] | None) -> bool:
         """Validate vector dimension matches active model dimension."""
         if not vector:

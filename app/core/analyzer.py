@@ -369,12 +369,14 @@ class IncrementalAnalyzer:
                                 "Background reconstruction active, falling back to standard text similarity."
                             )
                         else:
-                            # Try to load vector embeddings for historical docs
+                            # Try to load vector embeddings for historical docs in batch
+                            hist_filepaths = [doc["filepath"] for doc in historical_docs]
+                            hist_vectors_dict = self.embedding_manager.get_vectors_batch(
+                                base_dir, hist_filepaths
+                            )
                             hist_vectors = []
-                            for doc in historical_docs:
-                                vector = self.embedding_manager.get_vector(
-                                    base_dir, doc["filepath"]
-                                )
+                            for fp in hist_filepaths:
+                                vector = hist_vectors_dict.get(fp.replace("\\", "/"))
                                 if (
                                     not vector
                                     or not self.embedding_manager.validate_vector_dimension(
@@ -395,40 +397,19 @@ class IncrementalAnalyzer:
                                 hist_vectors.append(vector)
 
                     if use_semantic:
-                        # Query local database for existing vector embeddings first, generating and bulk-saving only missing ones
-                        ai_vectors = []
-                        newly_generated = []
+                        # Batch retrieve and/or generate active file vectors
                         try:
-                            for f_name, doc_text in zip(ai_filenames, ai_documents):
-                                v = self.embedding_manager.get_vector(base_dir, f_name)
-                                if (
-                                    v is not None
-                                    and self.embedding_manager.validate_vector_dimension(
-                                        v
+                            ai_vectors_dict = self.embedding_manager.get_vectors_batch(
+                                base_dir, ai_filenames
+                            )
+                            ai_vectors = []
+                            for f_name in ai_filenames:
+                                v = ai_vectors_dict.get(f_name.replace("\\", "/"))
+                                if not self.embedding_manager.validate_vector_dimension(v):
+                                    raise ValueError(
+                                        "Retrieved/generated vector dimensions do not match the active model dimensions."
                                     )
-                                ):
-                                    ai_vectors.append(v)
-                                else:
-                                    generated_v = (
-                                        self.embedding_manager.generate_embedding(
-                                            doc_text
-                                        )
-                                    )
-                                    if not self.embedding_manager.validate_vector_dimension(
-                                        generated_v
-                                    ):
-                                        raise ValueError(
-                                            "Generated vector dimensions do not match the active model dimensions."
-                                        )
-                                    ai_vectors.append(generated_v)
-                                    newly_generated.append((f_name, generated_v))
-
-                            if newly_generated:
-                                self.db.upsert_document_vectors(
-                                    base_dir,
-                                    newly_generated,
-                                    model_signature=self.embedding_manager.signature,
-                                )
+                                ai_vectors.append(v)
                         except Exception as e:
                             logging.error(
                                 f"Error generating or retrieving active model vectors: {e}. Falling back to standard text similarity."
@@ -526,53 +507,17 @@ class IncrementalAnalyzer:
 
                     if use_semantic and ai_filenames:
                         try:
-                            # Identify missing vectors, generate them on-the-fly and cache to DB sequentially in sorting thread
+                            # Batch retrieve and/or generate active file vectors
+                            ai_vectors_dict = self.embedding_manager.get_vectors_batch(
+                                base_dir, ai_filenames
+                            )
                             vectors = []
-                            newly_generated = []
-                            for f_name, doc_text in zip(ai_filenames, ai_documents):
-                                try:
-                                    v = self.embedding_manager.get_vector(
-                                        base_dir, f_name
-                                    )
-                                    if (
-                                        v is not None
-                                        and self.embedding_manager.validate_vector_dimension(
-                                            v
-                                        )
-                                    ):
-                                        vectors.append(v)
-                                    else:
-                                        generated_v = (
-                                            self.embedding_manager.generate_embedding(
-                                                doc_text
-                                            )
-                                        )
-                                        if not self.embedding_manager.validate_vector_dimension(
-                                            generated_v
-                                        ):
-                                            raise ValueError(
-                                                "Generated vector dimensions do not match the active model dimensions."
-                                            )
-                                        vectors.append(generated_v)
-                                        newly_generated.append((f_name, generated_v))
-                                except Exception as inner_e:
-                                    logging.error(
-                                        f"Failed to fetch or generate embedding for {f_name}: {inner_e}"
-                                    )
+                            for f_name in ai_filenames:
+                                v = ai_vectors_dict.get(f_name.replace("\\", "/"))
+                                if v is not None and self.embedding_manager.validate_vector_dimension(v):
+                                    vectors.append(v)
+                                else:
                                     vectors.append(None)
-
-                            if newly_generated:
-                                try:
-                                    self.db.upsert_document_vectors(
-                                        base_dir,
-                                        newly_generated,
-                                        model_signature=self.embedding_manager.signature,
-                                    )
-                                except Exception as db_e:
-                                    logging.error(
-                                        f"Failed to save newly generated vectors: {db_e}"
-                                    )
-
                             pre_fetched_vectors = vectors
                         except Exception as e:
                             logging.error(

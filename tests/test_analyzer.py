@@ -379,3 +379,49 @@ def test_empty_files_bypass_incremental_training(mocker):
     called_texts = [call.args[0] for call in mock_generate_embedding.call_args_list]
     assert "Normal text" in called_texts
     assert "[STATUS:EMPTY]" not in called_texts
+
+
+def test_analyzer_no_n_plus_one_queries(mocker):
+    """Verify that during generate_sorting_plan, no sequential single-item database queries
+    occur. Instead, they are batched using get_vectors_batch.
+    """
+    base_dir = "test_n_plus_one_base"
+    db.clear(base_dir)
+
+    analyzer = IncrementalAnalyzer(
+        max_folders=3, stop_words={"the", "and"}, db=db, strategy_name="default"
+    )
+
+    # 1. Historical document (manually verified/sorted to "Receipts")
+    db.upsert_document(base_dir, "historical_1.txt", "hash_hist_1", "Some invoice context")
+    db.set_user_verified_target(base_dir, "hash_hist_1", "Receipts")
+
+    # 2. Active unclassified files
+    corpus = {
+        "new_file_1.txt": "Unclassified file 1 text",
+        "new_file_2.txt": "Unclassified file 2 text",
+        "new_file_3.txt": "Unclassified file 3 text",
+    }
+    analyzer.partial_fit(base_dir, corpus)
+
+    # Spies/Mocks on single retrieval get_vector vs batch retrieval get_vectors_batch
+    spy_get_vector = mocker.spy(analyzer.embedding_manager, "get_vector")
+    spy_get_vectors_batch = mocker.spy(analyzer.embedding_manager, "get_vectors_batch")
+
+    # Force the semantic path by mocking is_mock and is_model_valid
+    mocker.patch(
+        "app.core.semantic_embeddings.SemanticEmbeddingManager.is_mock",
+        new_callable=mocker.PropertyMock,
+        return_value=False,
+    )
+    analyzer.embedding_manager.is_model_valid = True
+
+    # Generate plan
+    plan = analyzer.generate_sorting_plan(base_dir)
+
+    # Assert that get_vector was NOT called during the similarity and pre-fetching phases!
+    # Specifically, any retrievals of vector embeddings for active or historical docs
+    # must go through get_vectors_batch.
+    assert spy_get_vector.call_count == 0
+    assert spy_get_vectors_batch.call_count > 0
+
