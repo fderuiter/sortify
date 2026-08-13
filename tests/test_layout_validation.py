@@ -1,5 +1,5 @@
 import pytest
-from nicegui import ui, context
+from nicegui import ui, context, Client
 from nicegui.elements.card import Card
 from nicegui.elements.dialog import Dialog
 from unittest.mock import MagicMock
@@ -90,66 +90,68 @@ def inspect_runtime_elements():
 
 def test_no_rigid_sizes_in_dialog_cards():
     """Headless unit test to assert that dialog card classes do not use rigid height/width classes."""
-    # 1. Clear elements to have a clean starting point
-    context.client.elements.clear()
+    with Client(None):
+        # 1. Clear elements to have a clean starting point
+        context.client.elements.clear()
 
-    # 2. Instantiate all the main application UI components to inspect their runtime properties
-    settings = MockSettings()
-    app = AutoSorterApp(settings)
+        # 2. Instantiate all the main application UI components to inspect their runtime properties
+        settings = MockSettings()
+        app = AutoSorterApp(settings)
 
-    # Instantiate main UI
-    app.build_ui()
+        # Instantiate main UI
+        app.build_ui()
 
-    # Instantiate setup wizard
-    show_wizard(app, settings)
+        # Instantiate setup wizard
+        show_wizard(app, settings)
 
-    # Instantiate settings view
-    show_settings(app, settings)
+        # Instantiate settings view
+        show_settings(app, settings)
 
-    # Instantiate specific warning and recovery dialog methods
-    app.show_ml_warning_dialog("test_feature")
-    app.show_rollback_recovery_dialog({"base_dir": "/mock/dir"})
+        # Instantiate specific warning and recovery dialog methods
+        app.show_ml_warning_dialog("test_feature")
+        app.show_rollback_recovery_dialog({"base_dir": "/mock/dir"})
 
-    # 3. Check for any rigid layout violations in the instantiated components
-    violations = inspect_runtime_elements()
+        # 3. Check for any rigid layout violations in the instantiated components
+        violations = inspect_runtime_elements()
 
-    if violations:
-        pytest.fail("\n".join(violations))
+        if violations:
+            pytest.fail("\n".join(violations))
 
 def test_rigid_and_responsive_runtime_detection():
     """Verify that the runtime layout checker programmatically blocks rigid width/height classes
 
     and successfully passes when valid responsive CSS classes are used.
     """
-    # Test valid responsive configurations
-    context.client.elements.clear()
-    
-    # These should pass successfully (responsive sizes)
-    ui.card().classes(get_dialog_card_classes("md"))
-    ui.card().classes(get_dialog_card_classes("lg"))
-    ui.card().classes(get_dialog_card_classes("xl"))
-    ui.card().classes("w-full max-w-md min-w-[320px] p-6")
-    
-    violations = inspect_runtime_elements()
-    assert len(violations) == 0, f"Expected zero violations for responsive classes, got: {violations}"
+    with Client(None):
+        # Test valid responsive configurations
+        context.client.elements.clear()
+        
+        # These should pass successfully (responsive sizes)
+        ui.card().classes(get_dialog_card_classes("md"))
+        ui.card().classes(get_dialog_card_classes("lg"))
+        ui.card().classes(get_dialog_card_classes("xl"))
+        ui.card().classes("w-full max-w-md min-w-[320px] p-6")
+        
+        violations = inspect_runtime_elements()
+        assert len(violations) == 0, f"Expected zero violations for responsive classes, got: {violations}"
 
-    # Test rigid width configurations
-    context.client.elements.clear()
-    ui.card().classes("w-96")
-    violations = inspect_runtime_elements()
-    assert len(violations) > 0, "Expected a violation for rigid width 'w-96', but none was detected."
+        # Test rigid width configurations
+        context.client.elements.clear()
+        ui.card().classes("w-96")
+        violations = inspect_runtime_elements()
+        assert len(violations) > 0, "Expected a violation for rigid width 'w-96', but none was detected."
 
-    # Test rigid height configurations
-    context.client.elements.clear()
-    ui.card().classes("h-48")
-    violations = inspect_runtime_elements()
-    assert len(violations) > 0, "Expected a violation for rigid height 'h-48', but none was detected."
+        # Test rigid height configurations
+        context.client.elements.clear()
+        ui.card().classes("h-48")
+        violations = inspect_runtime_elements()
+        assert len(violations) > 0, "Expected a violation for rigid height 'h-48', but none was detected."
 
-    # Test rigid arbitrary value bracket configurations
-    context.client.elements.clear()
-    ui.card().classes("w-[500px]")
-    violations = inspect_runtime_elements()
-    assert len(violations) > 0, "Expected a violation for rigid arbitrary width 'w-[500px]', but none was detected."
+        # Test rigid arbitrary value bracket configurations
+        context.client.elements.clear()
+        ui.card().classes("w-[500px]")
+        violations = inspect_runtime_elements()
+        assert len(violations) > 0, "Expected a violation for rigid arbitrary width 'w-[500px]', but none was detected."
 
 def test_is_rigid_layout_class_validation():
     """Verify that is_rigid_layout_class correctly flags rigid sizes and allows fluid/boundary sizes."""
