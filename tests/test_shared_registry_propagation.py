@@ -87,7 +87,6 @@ def test_vector_reconstruction_automatically_sandboxed():
 
 def test_model_downloader_bypasses_sandbox(tmp_path):
     """Verify that the model downloader is still able to connect to external sites even when the parent thread is sandboxed."""
-
     from app.core.shared_registry import SharedModelRegistry
 
     success_called = threading.Event()
