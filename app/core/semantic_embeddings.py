@@ -215,7 +215,8 @@ class SemanticEmbeddingManager:
             if self._reconstruction_thread and self._reconstruction_thread.is_alive():
                 return
             self._stop_requested = False
-            self._reconstruction_thread = threading.Thread(
+            from app.core.shared_registry import ContextPropagatingThread
+            self._reconstruction_thread = ContextPropagatingThread(
                 target=self._run_reconstruction,
                 args=(base_dir,),
                 name="VectorReconstructionThread",

@@ -13,7 +13,8 @@ class DBWorker:
         self.q = queue.Queue()
         self._stopped = False
         self._lock = threading.Lock()
-        self.thread = threading.Thread(target=self._run, daemon=True)
+        from app.core.shared_registry import ContextPropagatingThread
+        self.thread = ContextPropagatingThread(target=self._run, daemon=True)
         self.thread.start()
 
     def _run(self):

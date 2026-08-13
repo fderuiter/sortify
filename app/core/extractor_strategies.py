@@ -401,7 +401,8 @@ class AudioExtractor:
                     except Exception:
                         pass
 
-            t = threading.Thread(target=reader_thread_func, args=(process.stdout, q))
+            from app.core.shared_registry import ContextPropagatingThread
+            t = ContextPropagatingThread(target=reader_thread_func, args=(process.stdout, q))
             t.daemon = True
             t.start()
 

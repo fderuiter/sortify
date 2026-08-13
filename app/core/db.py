@@ -173,7 +173,7 @@ class Database:
                 )
                 rows = cursor.fetchall()
 
-            import concurrent.futures
+            from app.core.shared_registry import ContextPropagatingThreadPoolExecutor
 
             def _decrypt_row(row):
                 decrypted_text = (
@@ -183,7 +183,7 @@ class Database:
 
             results = []
             if rows:
-                with concurrent.futures.ThreadPoolExecutor() as executor:
+                with ContextPropagatingThreadPoolExecutor() as executor:
                     results = list(executor.map(_decrypt_row, rows))
 
             self._cached_base_dir = base_dir
@@ -301,7 +301,7 @@ class Database:
             )
             rows = cursor.fetchall()
 
-            import concurrent.futures
+            from app.core.shared_registry import ContextPropagatingThreadPoolExecutor
 
             def _decrypt_row(row):
                 decrypted_text = (
@@ -311,7 +311,7 @@ class Database:
 
             results = []
             if rows:
-                with concurrent.futures.ThreadPoolExecutor() as executor:
+                with ContextPropagatingThreadPoolExecutor() as executor:
                     results = list(executor.map(_decrypt_row, rows))
 
             return results
