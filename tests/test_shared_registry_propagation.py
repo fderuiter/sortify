@@ -98,6 +98,7 @@ def test_model_downloader_bypasses_sandbox(tmp_path):
         failure_called.set()
         print(f"DOWNLOAD FAILURE: {err}")
 
+
     # Compute and register mock hash for the expected download to pass verification
     mock_data = b"modeldata"
     mock_hash = hashlib.sha256(mock_data).hexdigest()
@@ -106,12 +107,11 @@ def test_model_downloader_bypasses_sandbox(tmp_path):
     original_expected_hashes = dict(registry._expected_hashes)
     registry.register_expected_hashes("model_download", {"model.onnx": mock_hash})
 
+    mock_opener = MagicMock()
     # Mock response to simulate model downloading successfully
     mock_response = MagicMock()
     mock_response.info.return_value.get.return_value = "10"
     mock_response.read.side_effect = [mock_data, b""]
-
-    mock_opener = MagicMock()
     mock_opener.open.return_value.__enter__.return_value = mock_response
     from app.core.hashes_registry import HASHES
 
@@ -126,6 +126,7 @@ def test_model_downloader_bypasses_sandbox(tmp_path):
             with (
                 patch("urllib.request.build_opener", return_value=mock_opener),
                 patch("shutil.disk_usage", return_value=(10000, 5000, 5000)),
+                patch("app.core.downloader.verify_temp_file_hash", return_value=True),
             ):
                 thread = run_background_download(
                     "http://example.com/external-model.onnx",

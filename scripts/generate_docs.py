@@ -311,9 +311,54 @@ def update_security_md():
         f.writelines(out_lines)
 
 
-if __name__ == "__main__":
+def main():
+    import argparse
+    import subprocess
     import traceback
 
+    parser = argparse.ArgumentParser(description="Unified Documentation Pipeline Manager")
+    parser.add_argument(
+        "--check",
+        "--verify",
+        action="store_true",
+        help="Detect and report unsynced markdown reference files.",
+    )
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        default=True,
+        help="Enforce strict validation mode on MkDocs build (default).",
+    )
+    parser.add_argument(
+        "--no-strict",
+        dest="strict",
+        action="store_false",
+        help="Disable strict validation mode on MkDocs build.",
+    )
+
+    args = parser.parse_args()
+
+    # 1. Identify files to check
+    generated_files = [
+        os.path.join("docs", "api_reference.md"),
+        os.path.join("docs", "ui.md"),
+        os.path.join("docs", "admin_guide.md"),
+        "SECURITY.md",
+    ]
+
+    initial_contents = {}
+    if args.check:
+        for filepath in generated_files:
+            if os.path.exists(filepath):
+                try:
+                    with open(filepath, "r", encoding="utf-8") as f:
+                        initial_contents[filepath] = f.read()
+                except Exception:
+                    initial_contents[filepath] = None
+            else:
+                initial_contents[filepath] = None
+
+    # 2. Run documentation generation
     tasks = [
         ("generate_api_docs", generate_api_docs),
         ("generate_ui_docs", generate_ui_docs),
@@ -322,7 +367,6 @@ if __name__ == "__main__":
     ]
 
     errors = []
-
     for name, task in tasks:
         try:
             task()
@@ -337,5 +381,43 @@ if __name__ == "__main__":
             sys.stderr.write(f"--- Error in {name} ---\n")
             traceback.print_exception(*exc_info, file=sys.stderr)
             sys.stderr.write("\n")
-
         sys.exit(1)
+
+    # 3. Check for unsynced files if requested
+    changed_files = []
+    if args.check:
+        for filepath in generated_files:
+            new_content = None
+            if os.path.exists(filepath):
+                try:
+                    with open(filepath, "r", encoding="utf-8") as f:
+                        new_content = f.read()
+                except Exception:
+                    pass
+            if new_content != initial_contents.get(filepath):
+                changed_files.append(filepath)
+
+    # 4. Run MkDocs build (and preserve strict build flags)
+    build_cmd = [sys.executable, "-m", "mkdocs", "build"]
+    if args.strict:
+        build_cmd.append("--strict")
+
+    print(f"Running MkDocs build: {' '.join(build_cmd)}")
+    result = subprocess.run(build_cmd, capture_output=False)
+    if result.returncode != 0:
+        sys.stderr.write(f"Error: MkDocs build failed with exit code {result.returncode}\n")
+        sys.exit(result.returncode)
+
+    # 5. Report if files were out of sync
+    if args.check and changed_files:
+        sys.stderr.write("\nError: The following auto-generated documentation files are out of sync or have modified contents:\n")
+        for f in changed_files:
+            sys.stderr.write(f"  - {f}\n")
+        sys.stderr.write("\nPlease commit the updated documentation files.\n")
+        sys.exit(1)
+
+    print("Documentation generation and validation completed successfully.")
+
+
+if __name__ == "__main__":
+    main()

@@ -48,6 +48,9 @@ def test_ui_tree_path_alignment_and_nested_ratings():
                 assert nested_filepath in all_ratings
                 assert all_ratings[nested_filepath] == "positive"
 
+                # Load ratings from DB to populate in-memory cache
+                app.load_ratings_from_db()
+
                 # 2. Render the tree using a nested plan
                 app.plan = {
                     "Folder": {
