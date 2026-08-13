@@ -1433,7 +1433,7 @@ def run_incremental_training_in_background(app_session, base_dir):
 
         # 4. Upsert vectors into DB
         if vectors_to_upsert:
-            db.upsert_document_vectors(base_dir, vectors_to_upsert)
+            db.upsert_document_vectors(base_dir, vectors_to_upsert, model_signature=analyzer.embedding_manager.signature)
             logging.info(
                 f"Successfully updated vectors for {len(vectors_to_upsert)} reassigned documents in the background."
             )

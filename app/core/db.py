@@ -100,10 +100,15 @@ class Database:
                     base_dir TEXT,
                     filepath TEXT,
                     vector TEXT,
+                    model_signature TEXT,
                     PRIMARY KEY (base_dir, filepath),
                     FOREIGN KEY (base_dir, filepath) REFERENCES documents(base_dir, filepath) ON DELETE CASCADE
                 )
             """)
+            try:
+                conn.execute("ALTER TABLE document_vectors ADD COLUMN model_signature TEXT")
+            except Exception:
+                pass
 
             # Purge existing unencrypted vector cache on startup to prevent reading insecure data
             cursor = conn.cursor()
@@ -923,7 +928,7 @@ class Database:
             return None
 
     def upsert_document_vectors(
-        self, base_dir: str, vectors_data: list[tuple[str, list[float]]]
+        self, base_dir: str, vectors_data: list[tuple[str, list[float]]], model_signature: str | None = None
     ):
         """Upsert document vector embeddings into the decoupled table."""
         if not vectors_data:
@@ -934,18 +939,28 @@ class Database:
 
             conn = get_db_connection(self.db_path)
             with conn:
+                sig = model_signature
+                if sig is None:
+                    cursor = conn.execute(
+                        "SELECT value FROM model_metadata WHERE key = ?", ("active_model_signature",)
+                    )
+                    row = cursor.fetchone()
+                    if row:
+                        sig = row[0]
+
                 rows_to_insert = []
                 for filepath, vector in vectors_data:
                     filepath = filepath.replace("\\", "/")
                     vector_str = json.dumps(vector)
                     enc_vector = self.crypto.encrypt_vector(vector_str).decode("utf-8")
-                    rows_to_insert.append((base_dir, filepath, enc_vector))
+                    rows_to_insert.append((base_dir, filepath, enc_vector, sig))
                 conn.executemany(
                     """
-                    INSERT INTO document_vectors (base_dir, filepath, vector)
-                    VALUES (?, ?, ?)
+                    INSERT INTO document_vectors (base_dir, filepath, vector, model_signature)
+                    VALUES (?, ?, ?, ?)
                     ON CONFLICT(base_dir, filepath) DO UPDATE SET
-                        vector = excluded.vector
+                        vector = excluded.vector,
+                        model_signature = excluded.model_signature
                     """,
                     rows_to_insert,
                 )
@@ -965,20 +980,29 @@ class Database:
         self.worker.execute_write(_write)
 
     def get_documents_missing_vectors(
-        self, base_dir: str, limit: int = 50, offset: int = 0
+        self, base_dir: str, limit: int = 50, offset: int = 0, active_model_signature: str | None = None
     ) -> list[tuple[str, str]]:
         """Retrieve decrypted documents missing vector embeddings in batched format."""
         conn = get_db_connection(self.db_path)
         with conn:
+            sig = active_model_signature
+            if sig is None:
+                cursor = conn.execute(
+                    "SELECT value FROM model_metadata WHERE key = ?", ("active_model_signature",)
+                )
+                row = cursor.fetchone()
+                if row:
+                    sig = row[0]
+
             cursor = conn.execute(
                 """
                 SELECT d.filepath, d.extracted_text 
                 FROM documents d
                 LEFT JOIN document_vectors v ON d.base_dir = v.base_dir AND d.filepath = v.filepath
-                WHERE d.base_dir = ? AND v.vector IS NULL
+                WHERE d.base_dir = ? AND (v.vector IS NULL OR v.model_signature IS NULL OR v.model_signature != ?)
                 LIMIT ? OFFSET ?
                 """,
-                (base_dir, limit, offset),
+                (base_dir, sig, limit, offset),
             )
             rows = cursor.fetchall()
             results = []
