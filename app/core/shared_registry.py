@@ -117,6 +117,12 @@ _local_ips = {
     "",
 }
 
+_local_hostname = ""
+try:
+    _local_hostname = socket.gethostname().lower()
+except Exception:
+    pass
+
 
 def _is_local_address(host: str) -> bool:
     """Check if the given host/IP is local/loopback/unspecified/private/link-local."""
@@ -124,11 +130,8 @@ def _is_local_address(host: str) -> bool:
     if host_lower in _local_ips:
         return True
 
-    try:
-        if host_lower == socket.gethostname().lower():
-            return True
-    except Exception:
-        pass
+    if _local_hostname and host_lower == _local_hostname:
+        return True
 
     if host_lower.endswith(".local") or host_lower.endswith(".localhost"):
         return True
