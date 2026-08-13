@@ -105,8 +105,6 @@ class MetadataPass:
             if matched_target:
                 bypassed_files.append(item)
                 docs_to_upsert.append((base_dir, item, file_hash, "[STATUS:BYPASSED]"))
-                if db:
-                    db.set_user_verified_target_path(base_dir, item, matched_target)
                 if callback:
                     callback()
 

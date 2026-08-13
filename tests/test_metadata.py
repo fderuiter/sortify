@@ -243,9 +243,7 @@ def test_metadata_pass_policy_override_match(tmp_path):
             str(sub_dir), ["unrelated_name.txt"], settings, db, None, None
         )
         assert res == ["unrelated_name.txt"]
-        db.set_user_verified_target_path.assert_called_once_with(
-            str(sub_dir), "unrelated_name.txt", "/dest/override_special"
-        )
+        db.set_user_verified_target_path.assert_not_called()
 
 
 def test_metadata_pass_policy_pattern_match(tmp_path):
@@ -271,9 +269,7 @@ def test_metadata_pass_policy_pattern_match(tmp_path):
             str(tmp_path), ["my_invoice_abc.pdf"], settings, db, None, None
         )
         assert res == ["my_invoice_abc.pdf"]
-        db.set_user_verified_target_path.assert_called_once_with(
-            str(tmp_path), "my_invoice_abc.pdf", "/dest/pattern_invoice"
-        )
+        db.set_user_verified_target_path.assert_not_called()
 
 
 def test_metadata_pass_policy_priority_ordering(tmp_path):
@@ -305,9 +301,7 @@ def test_metadata_pass_policy_priority_ordering(tmp_path):
             str(tmp_path), ["test_file.txt"], settings, db, None, None
         )
         assert res == ["test_file.txt"]
-        db.set_user_verified_target_path.assert_called_once_with(
-            str(tmp_path), "test_file.txt", "/dest/high_priority"
-        )
+        db.set_user_verified_target_path.assert_not_called()
 
 
 def test_metadata_pass_policy_keyword_halts_lower_rules(tmp_path):
@@ -374,6 +368,4 @@ def test_metadata_pass_policy_cascades_by_default(tmp_path):
         )
         # Should cascade and match on the lower priority policy
         assert res == ["unrelated.txt"]
-        db.set_user_verified_target_path.assert_called_once_with(
-            str(tmp_path), "unrelated.txt", "/dest/lower_priority_policy"
-        )
+        db.set_user_verified_target_path.assert_not_called()
