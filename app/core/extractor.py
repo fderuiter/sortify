@@ -156,6 +156,8 @@ def extract_file_text(
                 kwargs["cancel_check"] = cancel_check
 
             text = extractor.extract(file_path, **kwargs)
+            from app.core.text_utils import sanitize_text
+            text = sanitize_text(text)
             if not text.strip():
                 text = "[STATUS:EMPTY]"
         else:
