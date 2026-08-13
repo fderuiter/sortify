@@ -341,21 +341,7 @@ if sys.platform == "win32":
             if pi.hThread:
                 kernel32.CloseHandle(pi.hThread)
 
-            # Close parent ends of pipes
-            for pipe in (p2cwrite, c2pread, errread):
-                if pipe is not None and pipe != -1:
-                    if hasattr(pipe, "Close"):
-                        pipe.Close()
-                    elif hasattr(pipe, "close"):
-                        pipe.close()
 
-            # Close child ends of pipes
-            for pipe in (p2cread, c2pwrite, errwrite):
-                if pipe is not None and pipe != -1:
-                    if hasattr(pipe, "Close"):
-                        pipe.Close()
-                    elif hasattr(pipe, "close"):
-                        pipe.close()
 else:
 
     class RestrictedPopen(object):
