@@ -20,6 +20,7 @@ class AutoSorterApp:
         self.base_dir = ""
         self.plan = {}
         self.locked_files = {}
+        self._ratings_cache = {}
         self.manual_folders = set()
         self.protected_folders = set()
         self.plan_errors = {}
@@ -711,6 +712,9 @@ class AutoSorterApp:
             self.loop = asyncio.get_running_loop()
         except RuntimeError:
             self.loop = None
+        self.plan = {}
+        self.locked_files = {}
+        self._ratings_cache = {}
         self.app_session = AppSession(self.settings, self.base_dir)
         self.status_label.set_text("Scanning directory...")
         self.cancel_btn.set_visibility(True)
@@ -824,7 +828,8 @@ class AutoSorterApp:
                 self.file_progress_label.set_visibility(False)
 
             if not self._cancel_analysis_flag:
-                self.load_locked_files_from_db()
+                await asyncio.to_thread(self.load_locked_files_from_db)
+                await asyncio.to_thread(self.load_ratings_from_db)
                 self.plan = await asyncio.to_thread(
                     self.app_session.generate_sorting_plan
                 )
@@ -970,6 +975,17 @@ class AutoSorterApp:
         except Exception as e:
             logger.error(f"Error loading locked files: {e}")
 
+    def load_ratings_from_db(self):
+        """Load document ratings from the database into the in-memory cache."""
+        if not self.app_session or not self.base_dir:
+            return
+        try:
+            self._ratings_cache = self.app_session.db.get_all_document_ratings(
+                self.base_dir
+            )
+        except Exception as e:
+            logger.error(f"Error loading ratings from DB: {e}")
+
     def handle_node_drop(self, e):
         """Handle drag-and-drop of a file node onto a folder node."""
         try:
@@ -1050,15 +1066,6 @@ class AutoSorterApp:
     def render_tree(self):
         """Render the tree view of the sorting plan."""
         self.tree_nodes = []
-        self._ratings_cache = {}
-        if self.app_session and self.base_dir:
-            try:
-                self._ratings_cache = self.app_session.db.get_all_document_ratings(
-                    self.base_dir
-                )
-            except Exception as e:
-                logger.error(f"Error loading ratings cache: {e}")
-
         self._flatten(self.plan, "", self.tree_nodes)
         if hasattr(self, "tree_view"):
             self.tree_view._props["nodes"] = self.tree_nodes
@@ -1469,7 +1476,11 @@ def run_incremental_training_in_background(app_session, base_dir):
 
         # 4. Upsert vectors into DB
         if vectors_to_upsert:
-            db.upsert_document_vectors(base_dir, vectors_to_upsert, model_signature=analyzer.embedding_manager.signature)
+            db.upsert_document_vectors(
+                base_dir,
+                vectors_to_upsert,
+                model_signature=analyzer.embedding_manager.signature,
+            )
             logging.info(
                 f"Successfully updated vectors for {len(vectors_to_upsert)} reassigned documents in the background."
             )
