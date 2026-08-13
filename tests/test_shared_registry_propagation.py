@@ -9,6 +9,7 @@ from app.core.downloader import run_background_download
 from app.core.shared_registry import (
     ContextPropagatingThread,
     ContextPropagatingThreadPoolExecutor,
+    SharedModelRegistry,
     SharedWorkerPool,
     _thread_local,
     block_external_network,
@@ -87,8 +88,6 @@ def test_vector_reconstruction_automatically_sandboxed():
 
 def test_model_downloader_bypasses_sandbox(tmp_path):
     """Verify that the model downloader is still able to connect to external sites even when the parent thread is sandboxed."""
-    from app.core.shared_registry import SharedModelRegistry
-
     success_called = threading.Event()
     failure_called = threading.Event()
 
@@ -114,8 +113,13 @@ def test_model_downloader_bypasses_sandbox(tmp_path):
 
     mock_opener = MagicMock()
     mock_opener.open.return_value.__enter__.return_value = mock_response
+    from app.core.hashes_registry import HASHES
 
+    original_hashes_model_download = HASHES["model_download"]["model.onnx"]
+    original_hashes_generative_naming = HASHES["generative_naming"]["model.onnx"]
 
+    HASHES["model_download"]["model.onnx"] = mock_hash
+    HASHES["generative_naming"]["model.onnx"] = mock_hash
     try:
         # Start with active sandbox on initiator thread
         with block_external_network(reason="enterprise restriction"):
@@ -135,6 +139,8 @@ def test_model_downloader_bypasses_sandbox(tmp_path):
         assert success_called.is_set() or success_called.wait(timeout=1)
     finally:
         registry._expected_hashes = original_expected_hashes
+        HASHES["model_download"]["model.onnx"] = original_hashes_model_download
+        HASHES["generative_naming"]["model.onnx"] = original_hashes_generative_naming
 
 
 def test_localhost_connections_succeed_under_sandbox():

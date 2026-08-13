@@ -27,6 +27,7 @@ class MockSettings:
         self.IMAGE_MAX_DIMENSION = 1024
         self.IMAGE_SKIP_THRESHOLD = 500
         self.AI_CONSENT_GRANTED = False
+        self.STOP_WORDS = {"the", "and", "or"}
 
 
 def is_rigid_layout_class(cls_name: str) -> bool:

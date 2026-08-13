@@ -60,6 +60,9 @@ def test_ui_tree_path_alignment_and_nested_ratings():
                     }
                 }
 
+                # Load ratings from DB to populate in-memory cache
+                app.load_ratings_from_db()
+
                 # Render tree which populates tree_nodes
                 app.render_tree()
 
