@@ -1,5 +1,6 @@
 """Model downloader module with sandbox bypass, proxy support, and real-time tracking."""
 
+import hashlib
 import json
 import logging
 import os
@@ -35,6 +36,69 @@ class DownloadCancelledError(DownloadError):
     """Raised when the download is cancelled by the user."""
 
     pass
+
+
+class ModelVerificationError(DownloadError):
+    """Raised when downloaded model integrity or cryptographic validation fails."""
+
+    pass
+
+
+def verify_temp_file_hash(temp_path: str, target_path: str) -> bool:
+    """Calculate SHA-256 hash of the temp file and verify it against the central registry.
+
+    Raises ModelVerificationError if verification fails.
+    """
+    if not os.path.exists(temp_path):
+        raise ModelVerificationError("Temporary download file does not exist.")
+
+    # Requirement 1: Calculate the SHA-256 hash using low-memory chunked streaming
+    # Keeping memory footprint under 100MB of RAM even for large files.
+    hasher = hashlib.sha256()
+    try:
+        with open(temp_path, "rb") as f:
+            # Use 64KB chunk size (65536 bytes) to keep memory footprint minimal
+            for chunk in iter(lambda: f.read(65536), b""):
+                hasher.update(chunk)
+    except OSError as e:
+        raise ModelVerificationError(f"Failed to read temporary file during hash calculation: {e}")
+
+    actual_hash = hasher.hexdigest()
+
+    # Requirement 2: Validate computed hash against central registry
+    from app.core.shared_registry import SharedModelRegistry
+    registry = SharedModelRegistry.get_instance()
+
+    filename = os.path.basename(target_path)
+    expected_hash = None
+
+    if "model_download" in registry._expected_hashes:
+        expected_hash = registry._expected_hashes["model_download"].get(filename)
+    if not expected_hash and "generative_naming" in registry._expected_hashes:
+        expected_hash = registry._expected_hashes["generative_naming"].get(filename)
+
+    if not expected_hash:
+        raise ModelVerificationError(
+            f"No cryptographic hash registered in the central registry for {filename}. "
+            "Verification cannot proceed."
+        )
+
+    if actual_hash != expected_hash:
+        # Requirement 3: Block finalization and immediately discard the temporary file
+        if os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except Exception as e:
+                logger.error(f"Failed to immediately delete temporary file {temp_path}: {e}")
+
+        raise ModelVerificationError(
+            f"Cryptographic signature verification failed for {filename}.\n"
+            f"Expected: {expected_hash}\n"
+            f"Actual: {actual_hash}\n"
+            "This file may be corrupted, incomplete, or tampered with."
+        )
+
+    return True
 
 
 def verify_downloaded_model(model_dir: str) -> bool:
@@ -147,7 +211,10 @@ def run_background_download(
                             except Exception:
                                 pass
 
-                # If we successfully wrote the full file, rename it and write config
+                # Requirement 3 & Zero-Trust File Finalization: Calculate and verify cryptographic hash before moving to final destination
+                verify_temp_file_hash(temp_path, target_path)
+
+                # If verification passes, finalize and rename it and write config
                 if os.path.exists(temp_path):
                     if os.path.exists(target_path):
                         os.remove(target_path)

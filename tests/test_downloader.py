@@ -64,6 +64,15 @@ def test_downloader_sandboxing_bypass(temp_model_dir):
             captured_error.append(err)
             failure_called.set()
 
+        # Compute and register mock hash for the expected download to pass verification
+        import hashlib
+        from app.core.shared_registry import SharedModelRegistry
+        mock_data = b"chunk1chunk2"
+        mock_hash = hashlib.sha256(mock_data).hexdigest()
+        SharedModelRegistry.get_instance().register_expected_hashes(
+            "model_download", {"model.onnx": mock_hash}
+        )
+
         # We mock urllib.request.build_opener and open to return a mock response
         mock_response = MagicMock()
         mock_response.info.return_value.get.return_value = "100"
@@ -168,3 +177,130 @@ def test_downloader_insufficient_disk_space(temp_model_dir):
         assert failure_called.wait(timeout=5)
         assert len(captured_error) == 1
         assert isinstance(captured_error[0], DiskSpaceError)
+
+
+def test_verify_temp_file_hash_success(temp_model_dir):
+    from app.core.downloader import verify_temp_file_hash
+    from app.core.shared_registry import SharedModelRegistry
+    import hashlib
+
+    temp_path = os.path.join(temp_model_dir, "model.onnx.tmp")
+    target_path = os.path.join(temp_model_dir, "model.onnx")
+
+    # Write some dummy model content
+    dummy_content = b"valid onnx content data stream"
+    with open(temp_path, "wb") as f:
+        f.write(dummy_content)
+
+    # Calculate mock expected hash and register it
+    expected_hash = hashlib.sha256(dummy_content).hexdigest()
+    registry = SharedModelRegistry.get_instance()
+    registry.register_expected_hashes("model_download", {"model.onnx": expected_hash})
+
+    # Call verification -> should succeed
+    assert verify_temp_file_hash(temp_path, target_path) is True
+    # The temp file should still exist since it passed
+    assert os.path.exists(temp_path)
+
+
+def test_verify_temp_file_hash_mismatch_raises_error(temp_model_dir):
+    from app.core.downloader import verify_temp_file_hash, ModelVerificationError
+    from app.core.shared_registry import SharedModelRegistry
+
+    temp_path = os.path.join(temp_model_dir, "model.onnx.tmp")
+    target_path = os.path.join(temp_model_dir, "model.onnx")
+
+    # Write some dummy model content
+    dummy_content = b"corrupted content data stream"
+    with open(temp_path, "wb") as f:
+        f.write(dummy_content)
+
+    # Register an incorrect hash in registry
+    registry = SharedModelRegistry.get_instance()
+    registry.register_expected_hashes("model_download", {"model.onnx": "incorrect_hash_value"})
+
+    # Call verification -> should raise ModelVerificationError
+    with pytest.raises(ModelVerificationError, match="Cryptographic signature verification failed"):
+        verify_temp_file_hash(temp_path, target_path)
+
+    # Temp file must be immediately deleted/discarded from disk
+    assert not os.path.exists(temp_path)
+
+
+def test_verify_temp_file_hash_no_hash_registered(temp_model_dir):
+    from app.core.downloader import verify_temp_file_hash, ModelVerificationError
+    from app.core.shared_registry import SharedModelRegistry
+
+    temp_path = os.path.join(temp_model_dir, "model.onnx.tmp")
+    target_path = os.path.join(temp_model_dir, "model.onnx")
+
+    with open(temp_path, "wb") as f:
+        f.write(b"some model content")
+
+    # Reset registry or clear expected hashes for model_download / generative_naming
+    registry = SharedModelRegistry.get_instance()
+    if "model_download" in registry._expected_hashes:
+        del registry._expected_hashes["model_download"]
+    if "generative_naming" in registry._expected_hashes:
+        # Save old one to restore later
+        old_hashes = registry._expected_hashes["generative_naming"]
+        del registry._expected_hashes["generative_naming"]
+    else:
+        old_hashes = None
+
+    try:
+        with pytest.raises(ModelVerificationError, match="No cryptographic hash registered"):
+            verify_temp_file_hash(temp_path, target_path)
+    finally:
+        # Restore old hashes if deleted
+        if old_hashes:
+            registry.register_expected_hashes("generative_naming", old_hashes)
+
+
+def test_downloader_fails_on_hash_mismatch(temp_model_dir):
+    from app.core.downloader import run_background_download, ModelVerificationError
+    from app.core.shared_registry import SharedModelRegistry
+
+    success_called = threading.Event()
+    failure_called = threading.Event()
+    captured_error = []
+
+    def on_success():
+        success_called.set()
+
+    def on_failure(err):
+        captured_error.append(err)
+        failure_called.set()
+
+    # Register an incorrect hash in registry to force mismatch
+    registry = SharedModelRegistry.get_instance()
+    registry.register_expected_hashes("model_download", {"model.onnx": "some_mismatched_hash"})
+
+    # We mock urllib.request.build_opener and open to return a mock response
+    mock_response = MagicMock()
+    mock_response.info.return_value.get.return_value = "100"
+    mock_response.read.side_effect = [b"data1", b"data2", b""]
+
+    mock_opener = MagicMock()
+    mock_opener.open.return_value.__enter__.return_value = mock_response
+
+    with (
+        patch("urllib.request.build_opener", return_value=mock_opener),
+        patch("shutil.disk_usage", return_value=(10000, 5000, 5000)),
+    ):
+        run_background_download(
+            "http://example.com/model.onnx",
+            temp_model_dir,
+            progress_callback=None,
+            on_success=on_success,
+            on_failure=on_failure,
+        )
+
+        assert failure_called.wait(timeout=5)
+        assert len(captured_error) == 1
+        assert isinstance(captured_error[0], ModelVerificationError)
+        assert "Cryptographic signature verification failed" in str(captured_error[0])
+        # Assert temp file is gone
+        temp_path = os.path.join(temp_model_dir, "model.onnx.tmp")
+        assert not os.path.exists(temp_path)
+

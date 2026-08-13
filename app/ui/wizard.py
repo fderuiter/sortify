@@ -8,6 +8,7 @@ from app.config import get_app_dir
 from app.core.downloader import (
     DEFAULT_MODEL_URL,
     DiskSpaceError,
+    ModelVerificationError,
     run_background_download,
 )
 from app.ui.dialog_helper import get_dialog_card_classes
@@ -97,6 +98,10 @@ def show_wizard(parent_app, settings):
                 if isinstance(err, DiskSpaceError):
                     error_diagnostic_label.set_text(
                         f"Diagnostic: Insufficient disk space on the target drive. Please clear some space and try again.\n(Details: {str(err)})"
+                    )
+                elif isinstance(err, ModelVerificationError):
+                    error_diagnostic_label.set_text(
+                        f"Diagnostic: Model verification failed. The downloaded file has a mismatched cryptographic hash, indicating potential corruption or tampering.\n(Details: {str(err)})"
                     )
                 elif (
                     "PermissionError" in str(err)
