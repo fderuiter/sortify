@@ -952,7 +952,7 @@ def show_settings(parent_app, settings):
                             "type": p_type,
                             "expression": p_expr,
                             "target_path": p_target,
-                            "priority": p_priority,
+                            "priority": int(p_priority),
                             "halting": p_halting,
                         }
 
