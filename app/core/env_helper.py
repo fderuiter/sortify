@@ -341,6 +341,18 @@ if sys.platform == "win32":
             if pi.hThread:
                 kernel32.CloseHandle(pi.hThread)
 
+            self._child_created = True
+
+            # Close child ends of pipes on the parent side to prevent leaks/hangs.
+            # We do NOT close the parent ends (p2cwrite, c2pread, errread) here,
+            # as they are owned/closed by standard Popen/caller.
+            for pipe in (p2cread, c2pwrite, errwrite):
+                if pipe is not None and pipe != -1:
+                    if hasattr(pipe, "Close"):
+                        pipe.Close()
+                    elif hasattr(pipe, "close"):
+                        pipe.close()
+
 
 else:
 
