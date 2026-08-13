@@ -104,6 +104,7 @@ def test_in_place_vector_caching_during_similarity(temp_env):
 
     # Set up mocks for transformers and get_active_model_properties
     import sys
+
     import numpy as np
 
     mock_tokenizer = MagicMock()

@@ -1,9 +1,9 @@
-import pytest
 from unittest.mock import MagicMock, patch
+
 from nicegui import Client
 
 from app.config import AppSettings
-from app.ui.settings import show_settings, get_shadowed_policies
+from app.ui.settings import get_shadowed_policies, show_settings
 
 
 def test_get_shadowed_policies():
