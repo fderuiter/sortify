@@ -86,6 +86,10 @@ def test_vector_reconstruction_automatically_sandboxed():
 
 def test_model_downloader_bypasses_sandbox(tmp_path):
     """Verify that the model downloader is still able to connect to external sites even when the parent thread is sandboxed."""
+    import hashlib
+
+    from app.core.shared_registry import SharedModelRegistry
+
     success_called = threading.Event()
     failure_called = threading.Event()
 
@@ -103,22 +107,33 @@ def test_model_downloader_bypasses_sandbox(tmp_path):
     mock_opener = MagicMock()
     mock_opener.open.return_value.__enter__.return_value = mock_response
 
-    # Start with active sandbox on initiator thread
-    with block_external_network(reason="enterprise restriction"):
-        with (
-            patch("urllib.request.build_opener", return_value=mock_opener),
-            patch("shutil.disk_usage", return_value=(10000, 5000, 5000)),
-        ):
-            thread = run_background_download(
-                "http://example.com/external-model.onnx",
-                str(tmp_path / "model_dir"),
-                on_success=on_success,
-                on_failure=on_failure,
-            )
-            thread.join(timeout=5.0)
+    registry = SharedModelRegistry.get_instance()
+    original_expected_hashes = dict(registry._expected_hashes)
 
-    # The download should have run successfully because the downloader thread clears the sandbox state
-    assert success_called.is_set() or success_called.wait(timeout=1)
+    mock_hash = hashlib.sha256(b"modeldata").hexdigest()
+    registry.register_expected_hashes(
+        "model_download", {"model.onnx": mock_hash}
+    )
+
+    try:
+        # Start with active sandbox on initiator thread
+        with block_external_network(reason="enterprise restriction"):
+            with (
+                patch("urllib.request.build_opener", return_value=mock_opener),
+                patch("shutil.disk_usage", return_value=(10000, 5000, 5000)),
+            ):
+                thread = run_background_download(
+                    "http://example.com/external-model.onnx",
+                    str(tmp_path / "model_dir"),
+                    on_success=on_success,
+                    on_failure=on_failure,
+                )
+                thread.join(timeout=5.0)
+
+        # The download should have run successfully because the downloader thread clears the sandbox state
+        assert success_called.is_set() or success_called.wait(timeout=1)
+    finally:
+        registry._expected_hashes = original_expected_hashes
 
 
 def test_localhost_connections_succeed_under_sandbox():
