@@ -359,6 +359,7 @@ def test_restricted_popen_execute_child_logic():
 
     with (
         mock.patch("sys.platform", "win32"),
+        mock.patch("subprocess._mswindows", True, create=True),
         mock.patch("ctypes.windll", mock_ctypes.windll, create=True),
         mock.patch("ctypes.WinError", Exception, create=True),
         mock.patch("os.open", return_value=999),
@@ -383,6 +384,7 @@ def test_restricted_popen_execute_child_logic():
                 self._child_created = False
                 self._handle = None
                 self.pid = None
+                self.returncode = None
 
         proc = MockPopen()
 
@@ -425,6 +427,9 @@ def test_restricted_popen_execute_child_logic():
 
         # Verify that self.pid was set
         assert proc.pid is not None
+
+        # Clean up so subprocess.Popen.__del__ is not called
+        proc._child_created = False
 
     # Clean up by reloading env_helper with standard platform
     from app.core import env_helper
