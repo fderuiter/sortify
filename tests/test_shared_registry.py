@@ -455,7 +455,9 @@ def test_sandbox_address_resolution_allows_local():
     """Verify that localhost and loopback queries are unblocked inside sandboxed execution."""
     from app.core.shared_registry import block_external_network
 
-    mock_gai = MagicMock(return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 80))])
+    mock_gai = MagicMock(
+        return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 80))]
+    )
     mock_ghn = MagicMock(return_value="127.0.0.1")
     mock_ghne = MagicMock(return_value=("localhost", [], ["127.0.0.1"]))
     mock_gha = MagicMock(return_value=("localhost", [], ["127.0.0.1"]))

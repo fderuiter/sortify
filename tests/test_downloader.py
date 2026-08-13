@@ -212,10 +212,14 @@ def test_verify_temp_file_hash_mismatch_raises_error(temp_model_dir):
 
     # Register an incorrect hash in registry
     registry = SharedModelRegistry.get_instance()
-    registry.register_expected_hashes("model_download", {"model.onnx": "incorrect_hash_value"})
+    registry.register_expected_hashes(
+        "model_download", {"model.onnx": "incorrect_hash_value"}
+    )
 
     # Call verification -> should raise ModelVerificationError
-    with pytest.raises(ModelVerificationError, match="Cryptographic signature verification failed"):
+    with pytest.raises(
+        ModelVerificationError, match="Cryptographic signature verification failed"
+    ):
         verify_temp_file_hash(temp_path, target_path)
 
     # Temp file must be immediately deleted/discarded from disk
@@ -241,7 +245,9 @@ def test_verify_temp_file_hash_no_hash_registered(temp_model_dir):
         old_hashes = None
 
     try:
-        with pytest.raises(ModelVerificationError, match="No cryptographic hash registered"):
+        with pytest.raises(
+            ModelVerificationError, match="No cryptographic hash registered"
+        ):
             verify_temp_file_hash(temp_path, target_path)
     finally:
         # Restore old hashes if deleted
@@ -263,7 +269,9 @@ def test_downloader_fails_on_hash_mismatch(temp_model_dir):
 
     # Register an incorrect hash in registry to force mismatch
     registry = SharedModelRegistry.get_instance()
-    registry.register_expected_hashes("model_download", {"model.onnx": "some_mismatched_hash"})
+    registry.register_expected_hashes(
+        "model_download", {"model.onnx": "some_mismatched_hash"}
+    )
 
     # We mock urllib.request.build_opener and open to return a mock response
     mock_response = MagicMock()
@@ -292,4 +300,3 @@ def test_downloader_fails_on_hash_mismatch(temp_model_dir):
         # Assert temp file is gone
         temp_path = os.path.join(temp_model_dir, "model.onnx.tmp")
         assert not os.path.exists(temp_path)
-

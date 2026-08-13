@@ -858,7 +858,8 @@ class Database:
         base_dir_norm = base_dir.replace("\\", "/")
         with self._corrupted_vectors_lock:
             return [
-                filepath for b_dir, filepath in self.corrupted_vectors
+                filepath
+                for b_dir, filepath in self.corrupted_vectors
                 if b_dir.replace("\\", "/").lower() == base_dir_norm.lower()
             ]
 
@@ -870,25 +871,28 @@ class Database:
         filepaths_norm = {f.replace("\\", "/") for f in filepaths}
         with self._corrupted_vectors_lock:
             self.corrupted_vectors = {
-                (b_dir, filepath) for b_dir, filepath in self.corrupted_vectors
+                (b_dir, filepath)
+                for b_dir, filepath in self.corrupted_vectors
                 if not (
                     b_dir.replace("\\", "/").lower() == base_dir_norm.lower()
                     and filepath.replace("\\", "/") in filepaths_norm
                 )
             }
 
-    def get_documents_by_filepaths(self, base_dir: str, filepaths: list[str]) -> list[tuple[str, str]]:
+    def get_documents_by_filepaths(
+        self, base_dir: str, filepaths: list[str]
+    ) -> list[tuple[str, str]]:
         """Retrieve filepath and decrypted text for specific files."""
         if not base_dir or not filepaths:
             return []
-        
+
         conn = get_db_connection(self.db_path)
         results = []
         with conn:
             # Process in small chunks to avoid sqlite query argument limits
             chunk_size = 50
             for i in range(0, len(filepaths), chunk_size):
-                chunk = filepaths[i:i+chunk_size]
+                chunk = filepaths[i : i + chunk_size]
                 placeholders = ",".join(["?"] * len(chunk))
                 cursor = conn.execute(
                     f"""
@@ -901,7 +905,9 @@ class Database:
                 rows = cursor.fetchall()
                 for filepath, enc_text in rows:
                     dec_text = (
-                        self.crypto.decrypt_text(enc_text) if enc_text is not None else None
+                        self.crypto.decrypt_text(enc_text)
+                        if enc_text is not None
+                        else None
                     )
                     results.append((filepath, dec_text))
         return results

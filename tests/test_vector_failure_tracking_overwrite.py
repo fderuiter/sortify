@@ -76,16 +76,16 @@ def test_corrupt_vector_tracking_and_overwrite(temp_env):
     assert (base_dir.replace("\\", "/"), "corrupt_doc.txt") in db.corrupted_vectors
 
     # 5. Initialize the SemanticEmbeddingManager with model_path=None to force fast mock generation
-    embedding_manager = SemanticEmbeddingManager(
-        db, model_path=None
-    )
+    embedding_manager = SemanticEmbeddingManager(db, model_path=None)
 
     # Trigger reconstruction and wait briefly for the background thread to finish
     embedding_manager.trigger_reconstruction(base_dir)
 
     # Wait for reconstruction thread to complete
     start_time = time.time()
-    while embedding_manager.is_reconstruction_active() and (time.time() - start_time < 5.0):
+    while embedding_manager.is_reconstruction_active() and (
+        time.time() - start_time < 5.0
+    ):
         time.sleep(0.05)
 
     # 6. Verify that:
