@@ -149,6 +149,7 @@ def _execute_moves_recursive(
                 filename = os.path.basename(key)
 
             import unicodedata
+
             dest_dir = os.path.normpath(os.path.join(base_dir, current_dest))
             dest_dir = unicodedata.normalize("NFC", dest_dir)
 

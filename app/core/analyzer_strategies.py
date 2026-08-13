@@ -276,13 +276,18 @@ def gguf_worker_main(model_path, input_queue, output_queue, n_threads=None):
                 except Exception as e:
                     import logging
 
-                    logging.error(f"Failed to compile grammar constraint: {e}. Falling back to default ASCII grammar.")
+                    logging.error(
+                        f"Failed to compile grammar constraint: {e}. Falling back to default ASCII grammar."
+                    )
                     try:
                         from llama_cpp import LlamaGrammar
+
                         default_ascii_grammar = 'root ::= word (" " word)? (" " word)? (" " word)?\nword ::= [a-zA-Z0-9]+'
                         grammar = LlamaGrammar.from_string(default_ascii_grammar)
                     except Exception as fe:
-                        logging.error(f"Failed to compile default ASCII fallback grammar: {fe}")
+                        logging.error(
+                            f"Failed to compile default ASCII fallback grammar: {fe}"
+                        )
                         grammar = None
 
             if grammar:
@@ -1179,24 +1184,31 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
             # Dynamic GBNF Grammar Generation
             try:
                 from app.config import AppSettings
+
                 settings = AppSettings()
                 ocr_langs = getattr(settings, "OCR_LANGUAGES", "en")
-                
-                lang_codes = [lang.strip().lower() for lang in ocr_langs.split(",") if lang.strip()]
+
+                lang_codes = [
+                    lang.strip().lower()
+                    for lang in ocr_langs.split(",")
+                    if lang.strip()
+                ]
                 if not lang_codes:
                     lang_codes = ["en"]
-                
+
                 has_en_ranges = False
                 has_cjk = False
                 has_kana = False
                 has_hiragana = False
                 has_hangul = False
                 other_chars = set()
-                
+
                 for lang in lang_codes:
                     if lang not in LANGUAGE_CHAR_MAP:
-                        raise ValueError(f"Unsupported OCR language for grammar constraint: {lang}")
-                    
+                        raise ValueError(
+                            f"Unsupported OCR language for grammar constraint: {lang}"
+                        )
+
                     chars_str = LANGUAGE_CHAR_MAP[lang]
                     if "a-z" in chars_str or "A-Z" in chars_str or "0-9" in chars_str:
                         has_en_ranges = True
@@ -1208,12 +1220,21 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                         has_kana = True
                     if "\uac00-\ud7af" in chars_str:
                         has_hangul = True
-                    
-                    cleaned = chars_str.replace("a-z", "").replace("A-Z", "").replace("0-9", "")
-                    cleaned = cleaned.replace("\u4e00-\u9fff", "").replace("\u3040-\u309f", "").replace("\u30a0-\u30ff", "").replace("\uac00-\ud7af", "")
+
+                    cleaned = (
+                        chars_str.replace("a-z", "")
+                        .replace("A-Z", "")
+                        .replace("0-9", "")
+                    )
+                    cleaned = (
+                        cleaned.replace("\u4e00-\u9fff", "")
+                        .replace("\u3040-\u309f", "")
+                        .replace("\u30a0-\u30ff", "")
+                        .replace("\uac00-\ud7af", "")
+                    )
                     for char in cleaned:
                         other_chars.add(char)
-                
+
                 parts = []
                 if has_en_ranges:
                     parts.append("a-zA-Z0-9")
@@ -1225,17 +1246,19 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                     parts.append("\uac00-\ud7af")
                 if has_cjk:
                     parts.append("\u4e00-\u9fff")
-                
+
                 sorted_others = "".join(sorted(list(other_chars)))
                 parts.append(sorted_others)
-                
+
                 combined_chars = "".join(parts)
                 if not combined_chars:
                     combined_chars = "a-zA-Z0-9"
-                
+
                 naming_grammar = f'root ::= word (" " word)? (" " word)? (" " word)?\nword ::= [{combined_chars}]+'
             except Exception as e:
-                logging.error(f"Failed to generate dynamic GBNF grammar, falling back to English ASCII: {e}")
+                logging.error(
+                    f"Failed to generate dynamic GBNF grammar, falling back to English ASCII: {e}"
+                )
                 naming_grammar = 'root ::= word (" " word)? (" " word)? (" " word)?\nword ::= [a-zA-Z0-9]+'
 
             with block_external_network():

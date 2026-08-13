@@ -113,6 +113,7 @@ def sanitize_name(name: str) -> str:
         return name
 
     import unicodedata
+
     name = unicodedata.normalize("NFC", name)
 
     # Replace illegal characters with underscore (or just strip them)

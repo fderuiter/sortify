@@ -61,9 +61,7 @@ def test_gguf_worker_main_grammar_compilation():
 
             # Second task processing (invalid grammar raises exception in compilation and falls back to default ASCII)
             res_invalid = output_queue.get()
-            assert res_invalid == {
-                "text": "YES"
-            }
+            assert res_invalid == {"text": "YES"}
             mock_llm.assert_any_call(
                 "Test Prompt", max_tokens=5, echo=False, grammar=mock_compiled_grammar
             )
