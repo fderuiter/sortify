@@ -70,6 +70,8 @@ def show_settings(parent_app, settings):
 
     cancel_event = threading.Event()
     timer_ref = [None]
+    from queue import Queue
+    notification_queue = Queue()
 
     def on_explorer_integration_change(e):
         import sys
@@ -444,6 +446,17 @@ def show_settings(parent_app, settings):
                 # Use outer scope cancel_event and timer_ref
 
                 def update_settings_timer_tick(state):
+                    # Process any pending notifications from the queue thread-safely
+                    while not notification_queue.empty():
+                        try:
+                            msg = notification_queue.get_nowait()
+                            # Show notification to user safely on the main thread
+                            ui.notify(msg, type="warning")
+                            # Also update the live status text so the user is informed
+                            state["status_text"] = msg
+                        except Exception:
+                            break
+
                     if state["success"]:
                         if timer_ref[0]:
                             timer_ref[0].cancel()
@@ -477,6 +490,13 @@ def show_settings(parent_app, settings):
 
                     progress_container.set_visibility(True)
                     cancel_event.clear()
+
+                    # Clear any stale messages from the notification queue
+                    while not notification_queue.empty():
+                        try:
+                            notification_queue.get_nowait()
+                        except Exception:
+                            break
 
                     state = ThreadSafeState(
                         progress=0.0,
@@ -520,6 +540,7 @@ def show_settings(parent_app, settings):
                         on_success=on_success,
                         on_failure=on_failure,
                         cancel_event=cancel_event,
+                        notification_queue=notification_queue,
                     )
 
                     timer_ref[0] = ui.timer(

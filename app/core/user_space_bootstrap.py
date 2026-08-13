@@ -22,15 +22,31 @@ def get_bootstrap_bin_dir() -> Path:
     return bin_dir
 
 
-def check_internet_connection(timeout: float = 2.0) -> bool:
-    """Check if we have an active internet connection by trying to reach a reliable host."""
-    import urllib.request
+def check_internet_connection(timeout: float = 2.0, max_attempts: int = 5, base_delay: float = 0.1) -> bool:
+    """Check if we have an active internet connection by trying to reach a reliable host.
 
-    try:
-        urllib.request.urlopen("https://www.google.com", timeout=timeout)
-        return True
-    except Exception:
-        return False
+    Retries failed connection attempts up to max_attempts times with exponential backoff and randomized jitter.
+    """
+    import urllib.request
+    import time
+    import random
+
+    for attempt in range(1, max_attempts + 1):
+        try:
+            urllib.request.urlopen("https://www.google.com", timeout=timeout)
+            return True
+        except Exception as e:
+            if attempt == max_attempts:
+                logger.error(f"Internet connection check failed after {max_attempts} attempts: {e}")
+                return False
+            # Exponential backoff with randomized jitter
+            delay = base_delay * (2 ** (attempt - 1)) + random.uniform(0.01, 0.05)
+            logger.info(
+                f"Connection check failed. Retrying in {delay:.2f} seconds "
+                f"(attempt {attempt}/{max_attempts})..."
+            )
+            time.sleep(delay)
+    return False
 
 
 def verify_sqlcipher_encryption() -> bool:

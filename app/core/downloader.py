@@ -133,6 +133,8 @@ def run_background_download(
     on_success=None,
     on_failure=None,
     cancel_event=None,
+    notification_queue=None,
+    base_delay: float = 1.0,
 ):
     """Run model download in a dedicated background thread that bypasses sandboxing."""
     if cancel_event is None:
@@ -152,92 +154,134 @@ def run_background_download(
             # Create model directory
             os.makedirs(model_dir, exist_ok=True)
             target_path = os.path.join(model_dir, "model.onnx")
+            temp_path = target_path + ".tmp"
 
-            # Setup urllib opener with proxy support if specified
-            handlers = []
-            if proxy and proxy.strip():
-                p_str = proxy.strip()
-                handlers.append(
-                    urllib.request.ProxyHandler({"http": p_str, "https": p_str})
-                )
-            opener = urllib.request.build_opener(*handlers)
+            max_attempts = 5
+            success = False
 
-            req = urllib.request.Request(
-                url, headers={"User-Agent": "Smart-AutoSorter/1.0"}
-            )
-
-            with opener.open(req, timeout=15) as response:
-                total_size = int(response.info().get("Content-Length", 0))
-
-                # Proactive disk space check
-                if total_size > 0:
-                    try:
-                        _, _, free = shutil.disk_usage(model_dir)
-                        if free < total_size:
-                            raise DiskSpaceError(
-                                f"Insufficient disk space. Required: {total_size} bytes, Free: {free} bytes."
-                            )
-                    except OSError as e:
-                        # If disk_usage fails (e.g. on custom mount), we log and proceed
-                        logger.warning(f"Could not retrieve disk usage: {e}")
-
-                bytes_downloaded = 0
-                chunk_size = 1024 * 64  # 64KB chunks
-                temp_path = target_path + ".tmp"
-
-                with open(temp_path, "wb") as f:
-                    while True:
-                        if cancel_event.is_set():
-                            raise DownloadCancelledError(
-                                "Download was cancelled by the user."
-                            )
-
+            for attempt in range(1, max_attempts + 1):
+                try:
+                    # Clear out any previous partial download file to start from scratch (0%)
+                    if os.path.exists(temp_path):
                         try:
-                            chunk = response.read(chunk_size)
-                        except Exception as e:
-                            raise NetworkError(f"Network error during read: {e}") from e
+                            os.remove(temp_path)
+                        except Exception:
+                            pass
 
-                        if not chunk:
-                            break
+                    # Setup urllib opener with proxy support if specified
+                    handlers = []
+                    if proxy and proxy.strip():
+                        p_str = proxy.strip()
+                        handlers.append(
+                            urllib.request.ProxyHandler({"http": p_str, "https": p_str})
+                        )
+                    opener = urllib.request.build_opener(*handlers)
 
-                        try:
-                            f.write(chunk)
-                        except OSError as e:
-                            if e.errno == 28 or "No space" in str(e):
-                                raise DiskSpaceError(
-                                    "Insufficient disk space on the target drive."
-                                ) from e
-                            raise DiskSpaceError(f"Local file write error: {e}") from e
-
-                        bytes_downloaded += len(chunk)
-                        if progress_callback:
-                            try:
-                                progress_callback(bytes_downloaded, total_size)
-                            except Exception:
-                                pass
-
-                # Requirement 3 & Zero-Trust File Finalization: Calculate and verify cryptographic hash before moving to final destination
-                verify_temp_file_hash(temp_path, target_path)
-
-                # If verification passes, finalize and rename it and write config
-                if os.path.exists(temp_path):
-                    if os.path.exists(target_path):
-                        os.remove(target_path)
-                    os.rename(temp_path, target_path)
-
-                # Write a placeholder config.json next to it
-                config_path = os.path.join(model_dir, "config.json")
-                with open(config_path, "w", encoding="utf-8") as cf:
-                    json.dump({"model_type": "onnx", "dimensions": 384}, cf)
-
-                # Requirement 6: Run integrity verification on completed download
-                if not verify_downloaded_model(model_dir):
-                    raise DownloadError(
-                        "Integrity verification failed for the downloaded model."
+                    req = urllib.request.Request(
+                        url, headers={"User-Agent": "Smart-AutoSorter/1.0"}
                     )
 
-                if on_success:
-                    on_success()
+                    with opener.open(req, timeout=15) as response:
+                        total_size = int(response.info().get("Content-Length", 0))
+
+                        # Proactive disk space check
+                        if total_size > 0:
+                            try:
+                                _, _, free = shutil.disk_usage(model_dir)
+                                if free < total_size:
+                                    raise DiskSpaceError(
+                                        f"Insufficient disk space. Required: {total_size} bytes, Free: {free} bytes."
+                                    )
+                            except OSError as e:
+                                # If disk_usage fails (e.g. on custom mount), we log and proceed
+                                logger.warning(f"Could not retrieve disk usage: {e}")
+
+                        bytes_downloaded = 0
+                        chunk_size = 1024 * 64  # 64KB chunks
+
+                        with open(temp_path, "wb") as f:
+                            while True:
+                                if cancel_event.is_set():
+                                    raise DownloadCancelledError(
+                                        "Download was cancelled by the user."
+                                    )
+
+                                try:
+                                    chunk = response.read(chunk_size)
+                                except Exception as e:
+                                    if cancel_event.is_set():
+                                        raise DownloadCancelledError(
+                                            "Download was cancelled by the user."
+                                        )
+                                    raise NetworkError(f"Network error during read: {e}") from e
+
+                                if not chunk:
+                                    break
+
+                                try:
+                                    f.write(chunk)
+                                except OSError as e:
+                                    if e.errno == 28 or "No space" in str(e):
+                                        raise DiskSpaceError(
+                                            "Insufficient disk space on the target drive."
+                                        ) from e
+                                    raise DiskSpaceError(f"Local file write error: {e}") from e
+
+                                bytes_downloaded += len(chunk)
+                                if progress_callback:
+                                    try:
+                                        progress_callback(bytes_downloaded, total_size)
+                                    except Exception:
+                                        pass
+
+                        # If we reached here, the download of the file is complete
+                        success = True
+                        break
+
+                except (DownloadCancelledError, DiskSpaceError) as e:
+                    # Do not retry on explicit cancellation or disk space exhaustion
+                    raise e
+                except Exception as e:
+                    if attempt == max_attempts:
+                        # Retries exhausted, raise final error
+                        raise e
+                    else:
+                        # Exponential backoff retry with randomized jitter
+                        import random
+                        import time
+
+                        delay = base_delay * (2 ** (attempt - 1)) + random.uniform(0.1, 0.5)
+                        msg = f"Network drop detected. Retrying download (attempt {attempt}/{max_attempts}) in {delay:.2f}s..."
+                        logger.warning(msg)
+                        if notification_queue is not None:
+                            try:
+                                notification_queue.put(msg)
+                            except Exception:
+                                pass
+                        time.sleep(delay)
+
+            # Requirement 3 & Zero-Trust File Finalization: Calculate and verify cryptographic hash before moving to final destination
+            verify_temp_file_hash(temp_path, target_path)
+
+            # If verification passes, finalize and rename it and write config
+            if os.path.exists(temp_path):
+                if os.path.exists(target_path):
+                    os.remove(target_path)
+                os.rename(temp_path, target_path)
+
+            # Write a placeholder config.json next to it
+            config_path = os.path.join(model_dir, "config.json")
+            with open(config_path, "w", encoding="utf-8") as cf:
+                json.dump({"model_type": "onnx", "dimensions": 384}, cf)
+
+            # Requirement 6: Run integrity verification on completed download
+            if not verify_downloaded_model(model_dir):
+                raise DownloadError(
+                    "Integrity verification failed for the downloaded model."
+                )
+
+            if on_success:
+                on_success()
 
         except DownloadCancelledError as e:
             # Clean up temp files
