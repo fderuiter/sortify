@@ -55,12 +55,29 @@ print("[00:15.000 --> 00:20.000] Hello segment 4", flush=True)
     def progress_cb(pct):
         progress_vals.append(pct)
 
+    from unittest.mock import patch
+
+    from app.core.env_helper import run_background_process as real_run
+    from app.core.env_helper import spawn_background_process as real_spawn
+
+    def mock_spawn(cmd, *args, **kwargs):
+        kwargs["sandbox"] = False
+        return real_spawn(cmd, *args, **kwargs)
+
+    def mock_run(cmd, *args, **kwargs):
+        kwargs["sandbox"] = False
+        return real_run(cmd, *args, **kwargs)
+
     # Let's run transcription and verify we get real-time progress updates!
-    text = extractor.extract(
-        str(dummy_wav),
-        settings=settings,
-        progress_callback=progress_cb,
-    )
+    with (
+        patch("app.core.env_helper.spawn_background_process", side_effect=mock_spawn),
+        patch("app.core.env_helper.run_background_process", side_effect=mock_run),
+    ):
+        text = extractor.extract(
+            str(dummy_wav),
+            settings=settings,
+            progress_callback=progress_cb,
+        )
 
     # Since the script runs to completion (unless cancelled), it should output transcription
     assert "Hello segment 1" in text
@@ -117,13 +134,30 @@ print("[00:05.000 --> 00:10.000] Hello segment 2", flush=True)
         if cancel_time is None:
             cancel_time = time.time()
 
+    from unittest.mock import patch
+
+    from app.core.env_helper import run_background_process as real_run
+    from app.core.env_helper import spawn_background_process as real_spawn
+
+    def mock_spawn(cmd, *args, **kwargs):
+        kwargs["sandbox"] = False
+        return real_spawn(cmd, *args, **kwargs)
+
+    def mock_run(cmd, *args, **kwargs):
+        kwargs["sandbox"] = False
+        return real_run(cmd, *args, **kwargs)
+
     start_time = time.time()
-    text = extractor.extract(
-        str(dummy_wav),
-        settings=settings,
-        progress_callback=progress_cb,
-        cancel_check=cancel_check,
-    )
+    with (
+        patch("app.core.env_helper.spawn_background_process", side_effect=mock_spawn),
+        patch("app.core.env_helper.run_background_process", side_effect=mock_run),
+    ):
+        text = extractor.extract(
+            str(dummy_wav),
+            settings=settings,
+            progress_callback=progress_cb,
+            cancel_check=cancel_check,
+        )
     elapsed = time.time() - start_time
 
     # Verification:
