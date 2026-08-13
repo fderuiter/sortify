@@ -299,6 +299,7 @@ def _is_mock_obj(obj) -> bool:
         return False
     try:
         from unittest.mock import NonCallableMock
+
         if isinstance(obj, NonCallableMock):
             return True
     except Exception:
@@ -322,11 +323,14 @@ def safe_getaddrinfo(*args, **kwargs):
         host = kwargs["host"]
 
     if getattr(_thread_local, "sandboxed", False):
-        if host is not None and not _is_mock_obj(host) and not _is_mock_obj(_original_getaddrinfo):
+        if (
+            host is not None
+            and not _is_mock_obj(host)
+            and not _is_mock_obj(_original_getaddrinfo)
+        ):
             if not _is_local_address(str(host)):
                 raise socket.gaierror(
-                    getattr(socket, "EAI_NONAME", -2),
-                    "Name or service not known"
+                    getattr(socket, "EAI_NONAME", -2), "Name or service not known"
                 )
 
     return _original_getaddrinfo(*args, **kwargs)
@@ -341,11 +345,14 @@ def safe_gethostbyname(*args, **kwargs):
         hostname = kwargs["hostname"]
 
     if getattr(_thread_local, "sandboxed", False):
-        if hostname is not None and not _is_mock_obj(hostname) and not _is_mock_obj(_original_gethostbyname):
+        if (
+            hostname is not None
+            and not _is_mock_obj(hostname)
+            and not _is_mock_obj(_original_gethostbyname)
+        ):
             if not _is_local_address(str(hostname)):
                 raise socket.gaierror(
-                    getattr(socket, "EAI_NONAME", -2),
-                    "Name or service not known"
+                    getattr(socket, "EAI_NONAME", -2), "Name or service not known"
                 )
 
     return _original_gethostbyname(*args, **kwargs)
@@ -360,11 +367,14 @@ def safe_gethostbyname_ex(*args, **kwargs):
         hostname = kwargs["hostname"]
 
     if getattr(_thread_local, "sandboxed", False):
-        if hostname is not None and not _is_mock_obj(hostname) and not _is_mock_obj(_original_gethostbyname_ex):
+        if (
+            hostname is not None
+            and not _is_mock_obj(hostname)
+            and not _is_mock_obj(_original_gethostbyname_ex)
+        ):
             if not _is_local_address(str(hostname)):
                 raise socket.gaierror(
-                    getattr(socket, "EAI_NONAME", -2),
-                    "Name or service not known"
+                    getattr(socket, "EAI_NONAME", -2), "Name or service not known"
                 )
 
     return _original_gethostbyname_ex(*args, **kwargs)
@@ -379,7 +389,11 @@ def safe_gethostbyaddr(*args, **kwargs):
         ip_address = kwargs["ip_address"]
 
     if getattr(_thread_local, "sandboxed", False):
-        if ip_address is not None and not _is_mock_obj(ip_address) and not _is_mock_obj(_original_gethostbyaddr):
+        if (
+            ip_address is not None
+            and not _is_mock_obj(ip_address)
+            and not _is_mock_obj(_original_gethostbyaddr)
+        ):
             if not _is_local_address(str(ip_address)):
                 raise socket.herror(1, "Unknown host")
 
@@ -399,11 +413,14 @@ def safe_getnameinfo(*args, **kwargs):
         if isinstance(sockaddr, tuple) and len(sockaddr) > 0:
             host = sockaddr[0]
 
-        if host is not None and not _is_mock_obj(host) and not _is_mock_obj(_original_getnameinfo):
+        if (
+            host is not None
+            and not _is_mock_obj(host)
+            and not _is_mock_obj(_original_getnameinfo)
+        ):
             if not _is_local_address(str(host)):
                 raise socket.gaierror(
-                    getattr(socket, "EAI_NONAME", -2),
-                    "Name or service not known"
+                    getattr(socket, "EAI_NONAME", -2), "Name or service not known"
                 )
 
     return _original_getnameinfo(*args, **kwargs)
@@ -411,14 +428,19 @@ def safe_getnameinfo(*args, **kwargs):
 
 def safe_getfqdn(*args, **kwargs):
     """Safely resolve fully qualified domain name, returning host immediately for external if sandboxed."""
-    name = ''
+    name = ""
     if len(args) > 0:
         name = args[0]
     elif "name" in kwargs:
         name = kwargs["name"]
 
     if getattr(_thread_local, "sandboxed", False):
-        if name is not None and name != '' and not _is_mock_obj(name) and not _is_mock_obj(_original_getfqdn):
+        if (
+            name is not None
+            and name != ""
+            and not _is_mock_obj(name)
+            and not _is_mock_obj(_original_getfqdn)
+        ):
             if not _is_local_address(str(name)):
                 return str(name)
 

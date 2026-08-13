@@ -61,12 +61,15 @@ def verify_temp_file_hash(temp_path: str, target_path: str) -> bool:
             for chunk in iter(lambda: f.read(65536), b""):
                 hasher.update(chunk)
     except OSError as e:
-        raise ModelVerificationError(f"Failed to read temporary file during hash calculation: {e}")
+        raise ModelVerificationError(
+            f"Failed to read temporary file during hash calculation: {e}"
+        )
 
     actual_hash = hasher.hexdigest()
 
     # Requirement 2: Validate computed hash against central registry
     from app.core.shared_registry import SharedModelRegistry
+
     registry = SharedModelRegistry.get_instance()
 
     filename = os.path.basename(target_path)
@@ -89,7 +92,9 @@ def verify_temp_file_hash(temp_path: str, target_path: str) -> bool:
             try:
                 os.remove(temp_path)
             except Exception as e:
-                logger.error(f"Failed to immediately delete temporary file {temp_path}: {e}")
+                logger.error(
+                    f"Failed to immediately delete temporary file {temp_path}: {e}"
+                )
 
         raise ModelVerificationError(
             f"Cryptographic signature verification failed for {filename}.\n"

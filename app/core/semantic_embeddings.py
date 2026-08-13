@@ -387,7 +387,7 @@ class SemanticEmbeddingManager:
                         with self._lock:
                             if self._stop_requested:
                                 break
-                        chunk = corrupted_paths[i:i+chunk_size]
+                        chunk = corrupted_paths[i : i + chunk_size]
                         # Fetch extracted_text of only these corrupt file paths
                         docs = self.db.get_documents_by_filepaths(base_dir, chunk)
                         if not docs:
