@@ -30,7 +30,7 @@ dependencies = [
 
 [project.scripts]
 smart-autosorter = "app.main:main"
-docs = "mkdocs:build"
+docs = "scripts.generate_docs:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["app"]
