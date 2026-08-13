@@ -1,3 +1,4 @@
+import hashlib
 import socket
 import threading
 from unittest.mock import MagicMock, patch
@@ -98,6 +99,7 @@ def test_model_downloader_bypasses_sandbox(tmp_path):
 
     def on_failure(err):
         failure_called.set()
+        print(f"DOWNLOAD FAILURE: {err}")
 
     # Register expected hash for verification to pass
     import hashlib
@@ -112,6 +114,14 @@ def test_model_downloader_bypasses_sandbox(tmp_path):
     mock_response = MagicMock()
     mock_response.info.return_value.get.return_value = "10"
     mock_response.read.side_effect = [mock_data, b""]
+
+    # Compute and register mock hash to pass cryptographic verification
+    from app.core.shared_registry import SharedModelRegistry
+
+    mock_hash = hashlib.sha256(b"modeldata").hexdigest()
+    SharedModelRegistry.get_instance().register_expected_hashes(
+        "model_download", {"model.onnx": mock_hash}
+    )
 
     mock_opener = MagicMock()
     mock_opener.open.return_value.__enter__.return_value = mock_response
