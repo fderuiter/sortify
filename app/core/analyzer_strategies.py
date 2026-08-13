@@ -101,8 +101,26 @@ class RecursiveKMeansStrategy:
             try:
                 import numpy as np
 
-                if all(f in self._vector_map for f in filenames):
-                    X_list = [self._vector_map[f] for f in filenames]
+                # Filter valid vectors (non-None elements)
+                valid_vectors = [
+                    self._vector_map[f]
+                    for f in filenames
+                    if self._vector_map.get(f) is not None
+                ]
+
+                # We must only fall back to lexical TF-IDF clustering if 100% of the documents in the partition lack valid embeddings
+                if len(valid_vectors) > 0:
+                    dimension = len(valid_vectors[0])
+                    X_list = []
+                    for f in filenames:
+                        v = self._vector_map.get(f)
+                        if v is not None:
+                            X_list.append(v)
+                        else:
+                            # Generate a zero-filled vector of the exact matching dimension for any missing document embedding
+                            zero_vector = [0.0] * dimension
+                            X_list.append(zero_vector)
+
                     X = np.array(X_list)
                     use_dense_vectors = True
             except Exception as e:

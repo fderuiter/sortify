@@ -528,33 +528,44 @@ class IncrementalAnalyzer:
                             vectors = []
                             newly_generated = []
                             for f_name, doc_text in zip(ai_filenames, ai_documents):
-                                v = self.embedding_manager.get_vector(base_dir, f_name)
-                                if (
-                                    v is not None
-                                    and self.embedding_manager.validate_vector_dimension(
-                                        v
-                                    )
-                                ):
-                                    vectors.append(v)
-                                else:
-                                    generated_v = (
-                                        self.embedding_manager.generate_embedding(
-                                            doc_text
+                                try:
+                                    v = self.embedding_manager.get_vector(base_dir, f_name)
+                                    if (
+                                        v is not None
+                                        and self.embedding_manager.validate_vector_dimension(
+                                            v
                                         )
-                                    )
-                                    if not self.embedding_manager.validate_vector_dimension(
-                                        generated_v
                                     ):
-                                        raise ValueError(
-                                            "Generated vector dimensions do not match the active model dimensions."
+                                        vectors.append(v)
+                                    else:
+                                        generated_v = (
+                                            self.embedding_manager.generate_embedding(
+                                                doc_text
+                                            )
                                         )
-                                    vectors.append(generated_v)
-                                    newly_generated.append((f_name, generated_v))
+                                        if not self.embedding_manager.validate_vector_dimension(
+                                            generated_v
+                                        ):
+                                            raise ValueError(
+                                                "Generated vector dimensions do not match the active model dimensions."
+                                            )
+                                        vectors.append(generated_v)
+                                        newly_generated.append((f_name, generated_v))
+                                except Exception as inner_e:
+                                    logging.error(
+                                        f"Failed to fetch or generate embedding for {f_name}: {inner_e}"
+                                    )
+                                    vectors.append(None)
 
                             if newly_generated:
-                                self.db.upsert_document_vectors(
-                                    base_dir, newly_generated
-                                )
+                                try:
+                                    self.db.upsert_document_vectors(
+                                        base_dir, newly_generated
+                                    )
+                                except Exception as db_e:
+                                    logging.error(
+                                        f"Failed to save newly generated vectors: {db_e}"
+                                    )
 
                             pre_fetched_vectors = vectors
                         except Exception as e:
