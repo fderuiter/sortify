@@ -22,6 +22,8 @@ class Database:
         self._cache_lock = threading.Lock()
         self._cached_base_dir = None
         self._cached_documents = None
+        self.corrupted_vectors = set()
+        self._corrupted_vectors_lock = threading.Lock()
         self.init_db()
 
     def init_db(self):
@@ -834,6 +836,71 @@ class Database:
 
         self.worker.execute_write(_write)
 
+    def track_corrupted_vector(self, base_dir: str, filepath: str):
+        """Track document file paths whose vectors failed to decrypt or deserialize in-memory."""
+        if not base_dir or not filepath:
+            return
+        base_dir = base_dir.replace("\\", "/")
+        filepath = filepath.replace("\\", "/")
+        with self._corrupted_vectors_lock:
+            if len(self.corrupted_vectors) < 1000:
+                self.corrupted_vectors.add((base_dir, filepath))
+
+    def get_corrupted_vectors_by_base_dir(self, base_dir: str) -> list[str]:
+        """Retrieve in-memory tracked corrupted document file paths for a given base directory."""
+        if not base_dir:
+            return []
+        base_dir_norm = base_dir.replace("\\", "/")
+        with self._corrupted_vectors_lock:
+            return [
+                filepath for b_dir, filepath in self.corrupted_vectors
+                if b_dir.replace("\\", "/").lower() == base_dir_norm.lower()
+            ]
+
+    def clear_corrupted_vectors(self, base_dir: str, filepaths: list[str]):
+        """Clear successfully reconstructed document file paths from the in-memory failure tracker."""
+        if not base_dir or not filepaths:
+            return
+        base_dir_norm = base_dir.replace("\\", "/")
+        filepaths_norm = {f.replace("\\", "/") for f in filepaths}
+        with self._corrupted_vectors_lock:
+            self.corrupted_vectors = {
+                (b_dir, filepath) for b_dir, filepath in self.corrupted_vectors
+                if not (
+                    b_dir.replace("\\", "/").lower() == base_dir_norm.lower()
+                    and filepath.replace("\\", "/") in filepaths_norm
+                )
+            }
+
+    def get_documents_by_filepaths(self, base_dir: str, filepaths: list[str]) -> list[tuple[str, str]]:
+        """Retrieve filepath and decrypted text for specific files."""
+        if not base_dir or not filepaths:
+            return []
+        
+        conn = get_db_connection(self.db_path)
+        results = []
+        with conn:
+            # Process in small chunks to avoid sqlite query argument limits
+            chunk_size = 50
+            for i in range(0, len(filepaths), chunk_size):
+                chunk = filepaths[i:i+chunk_size]
+                placeholders = ",".join(["?"] * len(chunk))
+                cursor = conn.execute(
+                    f"""
+                    SELECT filepath, extracted_text
+                    FROM documents
+                    WHERE base_dir = ? AND filepath IN ({placeholders})
+                    """,
+                    (base_dir, *chunk),
+                )
+                rows = cursor.fetchall()
+                for filepath, enc_text in rows:
+                    dec_text = (
+                        self.crypto.decrypt_text(enc_text) if enc_text is not None else None
+                    )
+                    results.append((filepath, dec_text))
+        return results
+
     def get_document_vector(self, base_dir: str, filepath: str) -> list[float] | None:
         """Retrieve decoupled vector for a document."""
         filepath = filepath.replace("\\", "/")
@@ -851,6 +918,7 @@ class Database:
                     decrypted = self.crypto.decrypt_vector(row[0])
                     return json.loads(decrypted)
                 except Exception:
+                    self.track_corrupted_vector(base_dir, filepath)
                     return None
             return None
 
@@ -881,6 +949,8 @@ class Database:
                     """,
                     rows_to_insert,
                 )
+            filepaths_to_clear = [filepath for filepath, _ in vectors_data]
+            self.clear_corrupted_vectors(base_dir, filepaths_to_clear)
 
         self.worker.execute_write(_write)
 

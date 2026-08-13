@@ -828,6 +828,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                                                 }
                                             )
                                     except Exception:
+                                        db.track_corrupted_vector(base_dir, filepath)
                                         continue
 
                             if hist_vectors:

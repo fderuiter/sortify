@@ -269,6 +269,36 @@ class SemanticEmbeddingManager:
 
                     # Cooperative pause to ensure UI thread remains highly responsive
                     time.sleep(0.02)
+
+                # Process in-memory tracked corrupted vectors for this base_dir
+                corrupted_paths = self.db.get_corrupted_vectors_by_base_dir(base_dir)
+                if corrupted_paths:
+                    chunk_size = 50
+                    for i in range(0, len(corrupted_paths), chunk_size):
+                        with self._lock:
+                            if self._stop_requested:
+                                break
+                        chunk = corrupted_paths[i:i+chunk_size]
+                        # Fetch extracted_text of only these corrupt file paths
+                        docs = self.db.get_documents_by_filepaths(base_dir, chunk)
+                        if not docs:
+                            continue
+
+                        batch = []
+                        for filepath, text in docs:
+                            with self._lock:
+                                if self._stop_requested:
+                                    break
+                            vector = self.generate_embedding(text)
+                            batch.append((filepath, vector))
+
+                        with self._lock:
+                            if self._stop_requested:
+                                break
+                        self.db.upsert_document_vectors(base_dir, batch)
+
+                        # Cooperative pause to ensure UI thread remains highly responsive
+                        time.sleep(0.02)
         except Exception as e:
             logging.error(f"Error during background vector reconstruction: {e}")
         finally:
