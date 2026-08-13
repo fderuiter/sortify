@@ -203,6 +203,7 @@ def run_background_download(
                 on_failure(err)
 
     from app.core.shared_registry import ContextPropagatingThread
+
     thread = ContextPropagatingThread(target=thread_target, daemon=True)
     thread.start()
     return thread

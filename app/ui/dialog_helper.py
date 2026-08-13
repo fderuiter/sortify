@@ -4,7 +4,6 @@ import asyncio
 import logging
 import os
 import sys
-import threading
 
 from app.core.env_helper import run_background_process
 
@@ -296,4 +295,5 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {{
             _on_complete()
 
     from app.core.shared_registry import ContextPropagatingThread
+
     ContextPropagatingThread(target=_run_dialog, daemon=True).start()

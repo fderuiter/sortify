@@ -14,6 +14,7 @@ class DBWorker:
         self._stopped = False
         self._lock = threading.Lock()
         from app.core.shared_registry import ContextPropagatingThread
+
         self.thread = ContextPropagatingThread(target=self._run, daemon=True)
         self.thread.start()
 

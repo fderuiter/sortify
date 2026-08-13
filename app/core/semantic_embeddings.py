@@ -216,6 +216,7 @@ class SemanticEmbeddingManager:
                 return
             self._stop_requested = False
             from app.core.shared_registry import ContextPropagatingThread
+
             self._reconstruction_thread = ContextPropagatingThread(
                 target=self._run_reconstruction,
                 args=(base_dir,),

@@ -6,19 +6,22 @@ with offline enforcement and thread limits.
 """
 
 import concurrent.futures
+import contextvars
 import hashlib
 import ipaddress
 import logging
 import os
 import socket
+import sys
 import threading
 from contextlib import contextmanager
 
-import contextvars
 
 class ContextVarLocal:
     def __init__(self):
-        super().__setattr__("_var", contextvars.ContextVar("context_var_local", default={}))
+        super().__setattr__(
+            "_var", contextvars.ContextVar("context_var_local", default={})
+        )
 
     def __getattr__(self, name):
         if name == "_var":
@@ -47,12 +50,12 @@ class ContextVarLocal:
         else:
             raise AttributeError(f"'ContextVarLocal' object has no attribute '{name}'")
 
-import sys
 
 if not hasattr(sys, "_sandbox_thread_local"):
     sys._sandbox_thread_local = ContextVarLocal()
 
 _thread_local = sys._sandbox_thread_local
+
 
 class ContextPropagatingThread(threading.Thread):
     def __init__(self, *args, **kwargs):
@@ -61,16 +64,22 @@ class ContextPropagatingThread(threading.Thread):
 
     def run(self):
         def wrapped():
-            if "VectorReconstruction" in self.name or "reconstruction" in self.name.lower():
+            if (
+                "VectorReconstruction" in self.name
+                or "reconstruction" in self.name.lower()
+            ):
                 _thread_local.sandboxed = True
                 _thread_local.reason = "background vector reconstruction"
             super(ContextPropagatingThread, self).run()
+
         self._ctx.run(wrapped)
+
 
 class ContextPropagatingThreadPoolExecutor(concurrent.futures.ThreadPoolExecutor):
     def submit(self, fn, *args, **kwargs):
         ctx = contextvars.copy_context()
         return super().submit(ctx.run, fn, *args, **kwargs)
+
 
 # Keep track of original functions permanently to avoid recursion/re-patching issues
 if not hasattr(socket, "_real_socket_connect"):
@@ -557,10 +566,10 @@ class SharedWorkerPool:
         def offline_wrapped_fn(*a, **kw):
             is_sandboxed = True
             reason = parent_reason if parent_sandboxed is True else "worker execution"
-            
+
             was_sandboxed = getattr(_thread_local, "sandboxed", False)
             old_reason = getattr(_thread_local, "reason", "worker execution")
-            
+
             _thread_local.sandboxed = is_sandboxed
             _thread_local.reason = reason
             try:
