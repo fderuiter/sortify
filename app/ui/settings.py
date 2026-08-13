@@ -382,23 +382,21 @@ def show_settings(parent_app, settings):
                         ).classes("text-green-900 text-sm mt-1")
 
                 def reset_model_cache():
-                    import shutil
-
-                    from nicegui import run
-
                     from app.config import get_app_dir
+                    from app.core.downloader import DownloadManager
 
-                    model_dir = get_app_dir() / "model"
-
+                    model_dir = str(get_app_dir() / "model")
                     ui.notify("Clearing model cache in background...")
 
-                    async def do_reset():
-                        await run.io_bound(shutil.rmtree, model_dir, ignore_errors=True)
-                        ui.notify("Model cache cleared successfully.", type="positive")
+                    def on_done(success, err):
+                        if success:
+                            ui.notify("Model cache cleared successfully.", type="positive")
+                            if hasattr(parent_app, "update_ai_warning"):
+                                parent_app.update_ai_warning()
+                        else:
+                            ui.notify(f"Failed to clear model cache: {err}", type="negative")
 
-                    import asyncio
-
-                    asyncio.create_task(do_reset())
+                    DownloadManager.get_instance().delete_model_async(model_dir, on_done=on_done)
 
                 ui.button("Reset Model Cache", on_click=reset_model_cache).props(
                     'aria-label="Reset Model Cache Button"'
@@ -441,94 +439,74 @@ def show_settings(parent_app, settings):
                         "text-sm text-gray-500 mb-2"
                     )
 
-                # Use outer scope cancel_event and timer_ref
-
-                def update_settings_timer_tick(state):
-                    if state["success"]:
-                        if timer_ref[0]:
-                            timer_ref[0].cancel()
-                        progress_container.set_visibility(False)
-                        settings.AI_CONSENT_GRANTED = True
-                        ui.notify(
-                            "Model download completed and verified successfully!",
-                            type="positive",
-                        )
-                        if hasattr(parent_app, "update_ai_warning"):
-                            parent_app.update_ai_warning()
-                        # Close setting dialog to refresh the parent UI
-                        dialog.close()
-                        return
-
-                    if state["error"]:
-                        if timer_ref[0]:
-                            timer_ref[0].cancel()
-                        progress_container.set_visibility(False)
-                        ui.notify(
-                            f"Download failed: {str(state['error'])}", type="negative"
-                        )
-                        return
-
-                    settings_progress_bar.set_value(state["progress"])
-                    settings_status_label.set_text(state["status_text"])
-
                 def trigger_on_demand_download():
                     # Save proxy setting first
                     settings.PROXY = proxy_input.value
 
-                    progress_container.set_visibility(True)
-                    cancel_event.clear()
-
-                    state = ThreadSafeState(
-                        progress=0.0,
-                        status_text="Starting background download...",
-                        error=None,
-                        success=False,
-                    )
-
-                    def progress_cb(downloaded, total):
-                        if total > 0:
-                            state["progress"] = downloaded / total
-                            state["status_text"] = (
-                                f"Downloaded {downloaded / (1024 * 1024):.2f}MB of {total / (1024 * 1024):.2f}MB"
-                            )
-                        else:
-                            state["progress"] = 0.0
-                            state["status_text"] = (
-                                f"Downloaded {downloaded / (1024 * 1024):.2f}MB..."
-                            )
-
-                    def on_success():
-                        state["success"] = True
-
-                    def on_failure(err):
-                        state["error"] = err
-
                     from app.config import get_app_dir
                     from app.core.downloader import (
                         DEFAULT_MODEL_URL,
-                        run_background_download,
+                        DownloadManager,
                     )
 
                     model_dir = str(get_app_dir() / "model")
                     proxy_val = getattr(settings, "PROXY", "")
 
-                    run_background_download(
-                        url=DEFAULT_MODEL_URL,
-                        model_dir=model_dir,
-                        proxy=proxy_val,
-                        progress_callback=progress_cb,
-                        on_success=on_success,
-                        on_failure=on_failure,
-                        cancel_event=cancel_event,
-                    )
+                    try:
+                        DownloadManager.get_instance().start_download(
+                            url=DEFAULT_MODEL_URL,
+                            model_dir=model_dir,
+                            proxy=proxy_val,
+                        )
+                    except Exception as e:
+                        ui.notify(f"Cannot start download: {e}", type="negative")
 
-                    timer_ref[0] = ui.timer(
-                        0.1, lambda: update_settings_timer_tick(state)
-                    )
-
-                ui.button(
+                download_button = ui.button(
                     "Download AI Model", on_click=trigger_on_demand_download
                 ).props('aria-label="Download AI Model Button"')
+
+                from app.core.downloader import DownloadManager
+
+                def sync_settings_ui():
+                    dm = DownloadManager.get_instance()
+                    is_dl = dm.state["is_downloading"]
+                    
+                    if is_dl:
+                        download_button.disable()
+                        progress_container.set_visibility(True)
+                        settings_progress_bar.set_value(dm.state["progress"])
+                        settings_status_label.set_text(dm.state["status_text"])
+                    else:
+                        if progress_container.visible:
+                            # Download finished
+                            if dm.state["success"]:
+                                progress_container.set_visibility(False)
+                                settings.AI_CONSENT_GRANTED = True
+                                ui.notify(
+                                    "Model download completed and verified successfully!",
+                                    type="positive",
+                                )
+                                if hasattr(parent_app, "update_ai_warning"):
+                                    parent_app.update_ai_warning()
+                                # Close setting dialog to refresh the parent UI
+                                dialog.close()
+                            elif dm.state["error"]:
+                                progress_container.set_visibility(False)
+                                ui.notify(
+                                    f"Download failed: {str(dm.state['error'])}", type="negative"
+                                )
+                                dm.state["error"] = None
+
+                        from app.core.verifier import check_ai_status
+                        is_healthy, _ = check_ai_status(settings)
+                        if is_healthy:
+                            download_button.disable()
+                            download_button.set_text("AI Model Downloaded")
+                        else:
+                            download_button.enable()
+                            download_button.set_text("Download AI Model")
+
+                sync_timer = ui.timer(0.1, sync_settings_ui)
 
                 with ui.expansion("Advanced AI Settings", icon="psychology").classes(
                     "w-full mt-4"
@@ -1253,7 +1231,7 @@ def show_settings(parent_app, settings):
                     )
 
     def handle_dismiss():
-        cancel_event.set()
+        sync_timer.cancel()
         if timer_ref[0]:
             try:
                 timer_ref[0].cancel()

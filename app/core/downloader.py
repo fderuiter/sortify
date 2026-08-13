@@ -44,6 +44,152 @@ class ModelVerificationError(DownloadError):
     pass
 
 
+class ThreadSafeState:
+    """A thread-safe state container.
+
+    Provides synchronized dictionary-like access to internal state keys.
+    """
+
+    def __init__(self, **kwargs):
+        self._lock = threading.Lock()
+        self._state = kwargs
+
+    def __getitem__(self, key):
+        """Retrieve a value thread-safely."""
+        with self._lock:
+            return self._state[key]
+
+    def __setitem__(self, key, value):
+        """Store a value thread-safely."""
+        with self._lock:
+            self._state[key] = value
+
+    def get(self, key, default=None):
+        """Get a value safely with fallback."""
+        with self._lock:
+            return self._state.get(key, default)
+
+
+class DownloadManager:
+    """Centralized manager coordinating model downloads and progress sharing."""
+
+    _instance = None
+    _lock = threading.Lock()
+
+    @classmethod
+    def get_instance(cls):
+        """Retrieve the singleton instance of DownloadManager."""
+        with cls._lock:
+            if cls._instance is None:
+                cls._instance = cls()
+            return cls._instance
+
+    def __init__(self):
+        self.state = ThreadSafeState(
+            progress=0.0,
+            status_text="Idle",
+            error=None,
+            success=False,
+            is_downloading=False,
+        )
+        self.cancel_event = threading.Event()
+        self.current_thread = None
+        self._manager_lock = threading.Lock()
+
+    def start_download(self, url: str, model_dir: str, proxy: str = ""):
+        """Initiate model download thread-safely if not already downloading."""
+        with self._manager_lock:
+            if self.state["is_downloading"]:
+                raise DownloadError("An installation is already underway.")
+
+            self.state["progress"] = 0.0
+            self.state["status_text"] = "Starting background download..."
+            self.state["error"] = None
+            self.state["success"] = False
+            self.state["is_downloading"] = True
+            self.cancel_event.clear()
+
+            def on_success_wrapper():
+                with self._manager_lock:
+                    self.state["success"] = True
+                    self.state["is_downloading"] = False
+                    self.current_thread = None
+
+            def on_failure_wrapper(err):
+                with self._manager_lock:
+                    self.state["error"] = err
+                    self.state["is_downloading"] = False
+                    self.current_thread = None
+
+            def progress_callback_wrapper(downloaded, total):
+                if total > 0:
+                    pct = (downloaded / total) * 100
+                    self.state["progress"] = downloaded / total
+                    self.state["status_text"] = (
+                        f"Downloaded {downloaded / (1024 * 1024):.2f}MB of {total / (1024 * 1024):.2f}MB ({pct:.1f}%)"
+                    )
+                else:
+                    self.state["progress"] = 0.0
+                    self.state["status_text"] = (
+                        f"Downloaded {downloaded / (1024 * 1024):.2f}MB..."
+                    )
+
+            self.current_thread = run_background_download(
+                url=url,
+                model_dir=model_dir,
+                proxy=proxy,
+                progress_callback=progress_callback_wrapper,
+                on_success=on_success_wrapper,
+                on_failure=on_failure_wrapper,
+                cancel_event=self.cancel_event,
+            )
+            return self.current_thread
+
+    def cancel_download(self):
+        """Cancel the active background download process."""
+        with self._manager_lock:
+            if self.state["is_downloading"]:
+                self.cancel_event.set()
+                self.state["is_downloading"] = False
+                self.state["status_text"] = "Download cancelled."
+                self.current_thread = None
+
+    def delete_model_async(self, model_dir: str, on_done=None):
+        """Asynchronously delete model files securely in a separate thread."""
+        def delete_target():
+            try:
+                from app.core.shared_registry import _thread_local
+                _thread_local.sandboxed = False
+                _thread_local.reason = "model deletion execution"
+            except Exception:
+                pass
+
+            try:
+                self.cancel_download()
+                
+                import shutil
+                if os.path.exists(model_dir):
+                    shutil.rmtree(model_dir, ignore_errors=True)
+                
+                with self._manager_lock:
+                    self.state["progress"] = 0.0
+                    self.state["status_text"] = "Model deleted."
+                    self.state["success"] = False
+                    self.state["error"] = None
+                    self.state["is_downloading"] = False
+
+                if on_done:
+                    on_done(True, None)
+            except Exception as e:
+                if on_done:
+                    on_done(False, e)
+
+        from app.core.shared_registry import ContextPropagatingThread
+        t = ContextPropagatingThread(target=delete_target, daemon=True)
+        t.start()
+        return t
+
+
 def verify_temp_file_hash(temp_path: str, target_path: str) -> bool:
     """Calculate SHA-256 hash of the temp file and verify it against the central registry.
 
