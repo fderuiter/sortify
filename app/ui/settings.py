@@ -31,7 +31,9 @@ class ThreadSafeState:
 def get_shadowed_policies(policies: list[dict]) -> list[bool]:
     """Determine which policies are shadowed by a higher-priority policy."""
     indexed_policies = list(enumerate(policies))
-    sorted_indexed = sorted(indexed_policies, key=lambda item: item[1].get("priority", 0), reverse=True)
+    sorted_indexed = sorted(
+        indexed_policies, key=lambda item: item[1].get("priority", 0), reverse=True
+    )
     shadowed_indices = set()
 
     def is_masked_by(higher_rule, lower_rule) -> bool:
@@ -110,9 +112,7 @@ def show_settings(parent_app, settings):
             ui.tab("Rules", label="Routing Rules").props(
                 'aria-label="Routing Rules Tab"'
             )
-            ui.tab("Policies", label="Policies").props(
-                'aria-label="Policies Tab"'
-            )
+            ui.tab("Policies", label="Policies").props('aria-label="Policies Tab"')
 
         with ui.tab_panels(tabs, value="General").classes("w-full mt-4"):
             with ui.tab_panel("General"):
@@ -645,11 +645,17 @@ def show_settings(parent_app, settings):
                     cuda_ok = is_cuda_available()
                     mps_ok = is_mps_available()
 
-                    ui.label(f"CUDA Hardware Acceleration: {'Available' if cuda_ok else 'Unavailable'}").classes(
-                        "text-sm font-semibold " + ("text-green-600" if cuda_ok else "text-gray-500")
+                    ui.label(
+                        f"CUDA Hardware Acceleration: {'Available' if cuda_ok else 'Unavailable'}"
+                    ).classes(
+                        "text-sm font-semibold "
+                        + ("text-green-600" if cuda_ok else "text-gray-500")
                     ).props('aria-label="CUDA status label"')
-                    ui.label(f"MPS Hardware Acceleration: {'Available' if mps_ok else 'Unavailable'}").classes(
-                        "text-sm font-semibold " + ("text-green-600" if mps_ok else "text-gray-500")
+                    ui.label(
+                        f"MPS Hardware Acceleration: {'Available' if mps_ok else 'Unavailable'}"
+                    ).classes(
+                        "text-sm font-semibold "
+                        + ("text-green-600" if mps_ok else "text-gray-500")
                     ).props('aria-label="MPS status label"')
 
                     def on_ocr_gpu_change(e):
@@ -657,7 +663,10 @@ def show_settings(parent_app, settings):
                             settings.OCR_GPU_ENABLED = e.value
                         except Exception as ex:
                             e.sender.value = settings.OCR_GPU_ENABLED
-                            ui.notify(f"Failed to update OCR GPU setting: {ex}", type="negative")
+                            ui.notify(
+                                f"Failed to update OCR GPU setting: {ex}",
+                                type="negative",
+                            )
 
                     ui.switch(
                         "Enable GPU Acceleration for OCR",
@@ -670,7 +679,10 @@ def show_settings(parent_app, settings):
                             settings.AUDIO_GPU_ENABLED = e.value
                         except Exception as ex:
                             e.sender.value = settings.AUDIO_GPU_ENABLED
-                            ui.notify(f"Failed to update Audio GPU setting: {ex}", type="negative")
+                            ui.notify(
+                                f"Failed to update Audio GPU setting: {ex}",
+                                type="negative",
+                            )
 
                     ui.switch(
                         "Enable GPU Acceleration for Audio Transcription",
@@ -678,11 +690,15 @@ def show_settings(parent_app, settings):
                         on_change=on_audio_gpu_change,
                     ).props('aria-label="Audio GPU acceleration toggle"')
 
-                    ocr_langs_input = ui.input(
-                        "OCR Target Languages (comma-separated, e.g. en,de)",
-                        value=getattr(settings, "OCR_LANGUAGES", "en"),
-                    ).classes("w-full mb-2").props(
-                        'aria-label="OCR target languages input" placeholder="e.g. en,de"'
+                    ocr_langs_input = (
+                        ui.input(
+                            "OCR Target Languages (comma-separated, e.g. en,de)",
+                            value=getattr(settings, "OCR_LANGUAGES", "en"),
+                        )
+                        .classes("w-full mb-2")
+                        .props(
+                            'aria-label="OCR target languages input" placeholder="e.g. en,de"'
+                        )
                     )
 
                     def save_ocr_languages():
@@ -691,13 +707,19 @@ def show_settings(parent_app, settings):
                             val = ""
                         try:
                             settings.OCR_LANGUAGES = val
-                            ui.notify("OCR target languages updated successfully.", type="positive")
+                            ui.notify(
+                                "OCR target languages updated successfully.",
+                                type="positive",
+                            )
                         except Exception as ex:
                             ocr_langs_input.value = settings.OCR_LANGUAGES
                             error_msg = str(ex)
                             if "Value error," in error_msg:
                                 error_msg = error_msg.split("Value error,")[-1].strip()
-                            ui.notify(f"Invalid language configuration: {error_msg}", type="negative")
+                            ui.notify(
+                                f"Invalid language configuration: {error_msg}",
+                                type="negative",
+                            )
 
                     ui.button("Save OCR Languages", on_click=save_ocr_languages).props(
                         'aria-label="Save OCR Languages Button"'
@@ -804,7 +826,9 @@ def show_settings(parent_app, settings):
                                 with ui.row().classes(
                                     "w-full items-center justify-between border-b pb-2 mb-2 flex-wrap gap-2"
                                 ):
-                                    with ui.row().classes("items-center gap-2 flex-wrap"):
+                                    with ui.row().classes(
+                                        "items-center gap-2 flex-wrap"
+                                    ):
                                         ui.label(
                                             f"[{policy.get('type', '').upper()}]"
                                         ).classes("w-20 font-bold")
@@ -820,9 +844,13 @@ def show_settings(parent_app, settings):
 
                                         # Shadow indicator warning badge
                                         if shadowed_statuses[idx]:
-                                            with ui.row().classes("items-center gap-1 bg-amber-50 text-amber-800 px-2 py-1 rounded border border-amber-200"):
+                                            with ui.row().classes(
+                                                "items-center gap-1 bg-amber-50 text-amber-800 px-2 py-1 rounded border border-amber-200"
+                                            ):
                                                 ui.icon("warning", size="xs")
-                                                ui.label("Shadowed: A higher-priority rule matches the same criteria.").classes("text-xs font-semibold")
+                                                ui.label(
+                                                    "Shadowed: A higher-priority rule matches the same criteria."
+                                                ).classes("text-xs font-semibold")
 
                                     # Halting toggle checkbox!
                                     halting_val = policy.get("halting", False)
@@ -872,7 +900,9 @@ def show_settings(parent_app, settings):
                                                 )
 
                                     ui.button(
-                                        on_click=delete_policy, color="red", icon="delete"
+                                        on_click=delete_policy,
+                                        color="red",
+                                        icon="delete",
                                     ).props('size=sm aria-label="Delete Policy Button"')
 
                 render_policies()
@@ -911,8 +941,15 @@ def show_settings(parent_app, settings):
                         p_halting = p_halting_checkbox.value
 
                         # 1. Block entries that do not supply a valid type, expression, path, and priority
-                        if not p_type or p_type not in ("keyword", "pattern", "override"):
-                            ui.notify("Type is required and must be keyword, pattern, or override.", type="warning")
+                        if not p_type or p_type not in (
+                            "keyword",
+                            "pattern",
+                            "override",
+                        ):
+                            ui.notify(
+                                "Type is required and must be keyword, pattern, or override.",
+                                type="warning",
+                            )
                             return
 
                         if not p_expr or not p_expr.strip():
@@ -931,21 +968,32 @@ def show_settings(parent_app, settings):
                         try:
                             p_priority = int(p_priority)
                         except ValueError:
-                            ui.notify("Priority must be a valid integer.", type="warning")
+                            ui.notify(
+                                "Priority must be a valid integer.", type="warning"
+                            )
                             return
 
                         # 2. Path validation: Reject illegal characters, absolute paths, or traversal segments
                         if any(char in '<>:"|?*' for char in p_target):
-                            ui.notify("Target Path contains illegal characters.", type="negative")
+                            ui.notify(
+                                "Target Path contains illegal characters.",
+                                type="negative",
+                            )
                             return
 
                         if p_target.startswith("/") or p_target.startswith("\\"):
-                            ui.notify("Target Path cannot be an absolute path.", type="negative")
+                            ui.notify(
+                                "Target Path cannot be an absolute path.",
+                                type="negative",
+                            )
                             return
 
                         segments = p_target.replace("\\", "/").split("/")
                         if ".." in segments:
-                            ui.notify("Target Path cannot contain directory traversal segments (..).", type="negative")
+                            ui.notify(
+                                "Target Path cannot contain directory traversal segments (..).",
+                                type="negative",
+                            )
                             return
 
                         new_p = {
