@@ -1,5 +1,8 @@
 import os
+import sys
+import subprocess
 from unittest import mock
+import pytest
 
 from app.config import get_app_dir
 from app.core.env_helper import (
@@ -7,6 +10,10 @@ from app.core.env_helper import (
     get_subprocess_startupinfo,
     run_background_process,
     spawn_background_process,
+    check_linux_sandbox_support,
+    check_macos_sandbox_support,
+    check_windows_sandbox_support,
+    RestrictedPopen,
 )
 
 
@@ -73,8 +80,8 @@ def test_get_subprocess_startupinfo_non_windows():
 def test_spawn_background_process(mock_popen):
     cmd = ["python", "-c", "print('hello')"]
 
-    # Test without custom env
-    spawn_background_process(cmd)
+    # Test without custom env, passing sandbox=False to preserve original test assertions
+    spawn_background_process(cmd, sandbox=False)
 
     # Retrieve arguments passed to Popen
     mock_popen.assert_called_once()
@@ -89,8 +96,8 @@ def test_spawn_background_process(mock_popen):
 def test_run_background_process(mock_run):
     cmd = ["python", "-c", "print('hello')"]
 
-    # Test without custom env
-    run_background_process(cmd)
+    # Test without custom env, passing sandbox=False to preserve original test assertions
+    run_background_process(cmd, sandbox=False)
 
     # Retrieve arguments passed to run
     mock_run.assert_called_once()
@@ -113,9 +120,179 @@ def test_run_background_process_win32(mock_run):
         mock.patch("subprocess.STARTUPINFO", mock_startupinfo_class, create=True),
         mock.patch("subprocess.STARTF_USESHOWWINDOW", 1, create=True),
     ):
-        run_background_process(cmd)
+        run_background_process(cmd, sandbox=False)
 
         mock_run.assert_called_once()
         args, kwargs = mock_run.call_args
         assert "startupinfo" in kwargs
         assert kwargs["startupinfo"] is not None
+
+
+# --- NEW SANDBOXING UNIT TESTS ---
+
+def test_check_linux_sandbox_support_success():
+    with mock.patch("sys.platform", "linux"), mock.patch("subprocess.run") as mock_run:
+        mock_run.return_value.returncode = 0
+        assert check_linux_sandbox_support() is True
+        mock_run.assert_called_once_with(
+            ["unshare", "-n", "-r", "true"],
+            capture_output=True,
+            text=True,
+            timeout=2
+        )
+
+
+def test_check_linux_sandbox_support_failure():
+    with mock.patch("sys.platform", "linux"), mock.patch("subprocess.run") as mock_run:
+        mock_run.side_effect = Exception("Not supported")
+        assert check_linux_sandbox_support() is False
+
+
+def test_check_macos_sandbox_support_success():
+    with mock.patch("sys.platform", "darwin"), mock.patch("subprocess.run") as mock_run:
+        mock_run.return_value.returncode = 0
+        assert check_macos_sandbox_support() is True
+        mock_run.assert_called_once_with(
+            ["sandbox-exec", "-p", "(version 1) (allow default)", "true"],
+            capture_output=True,
+            text=True,
+            timeout=2
+        )
+
+
+def test_check_macos_sandbox_support_failure():
+    with mock.patch("sys.platform", "darwin"), mock.patch("subprocess.run") as mock_run:
+        mock_run.side_effect = Exception("Not supported")
+        assert check_macos_sandbox_support() is False
+
+
+def test_check_windows_sandbox_support_success():
+    with mock.patch("sys.platform", "win32"), mock.patch("ctypes.windll", create=True) as mock_windll:
+        # Mocking existence of required Win32 APIs
+        mock_windll.advapi32.CreateRestrictedToken = mock.MagicMock()
+        mock_windll.advapi32.ConvertStringSidToSidW = mock.MagicMock()
+        mock_windll.advapi32.DuplicateTokenEx = mock.MagicMock()
+        mock_windll.advapi32.CreateProcessAsUserW = mock.MagicMock()
+
+        assert check_windows_sandbox_support() is True
+
+
+def test_check_windows_sandbox_support_failure():
+    with mock.patch("sys.platform", "win32"), mock.patch("ctypes.windll", create=True) as mock_windll:
+        # Cause an exception by making advapi32 lack one of the methods
+        mock_windll.advapi32 = mock.MagicMock(spec=[])
+        assert check_windows_sandbox_support() is False
+
+
+def test_spawn_background_process_sandboxed_linux():
+    cmd = ["ffmpeg", "-i", "input.mp3"]
+    with (
+        mock.patch("sys.platform", "linux"),
+        mock.patch("app.core.env_helper.SANDBOX_SUPPORTED", True),
+        mock.patch("subprocess.Popen") as mock_popen,
+    ):
+        spawn_background_process(cmd, sandbox=True)
+        mock_popen.assert_called_once()
+        called_args, called_kwargs = mock_popen.call_args
+        expected_cmd = ["unshare", "-n", "-r", "sh", "-c", 'ip link set lo up && exec "$@"', "--"] + cmd
+        assert called_args[0] == expected_cmd
+
+
+def test_spawn_background_process_sandboxed_macos():
+    cmd = ["ffmpeg", "-i", "input.mp3"]
+    with (
+        mock.patch("sys.platform", "darwin"),
+        mock.patch("app.core.env_helper.SANDBOX_SUPPORTED", True),
+        mock.patch("subprocess.Popen") as mock_popen,
+    ):
+        spawn_background_process(cmd, sandbox=True)
+        mock_popen.assert_called_once()
+        called_args, called_kwargs = mock_popen.call_args
+        assert called_args[0][0] == "sandbox-exec"
+        assert called_args[0][1] == "-p"
+        assert "deny network-outbound" in called_args[0][2]
+        assert called_args[0][3:] == cmd
+
+
+def test_spawn_background_process_sandboxed_windows():
+    cmd = ["ffmpeg", "-i", "input.mp3"]
+    # Mock RestrictedPopen and Windows platform
+    with (
+        mock.patch("sys.platform", "win32"),
+        mock.patch("app.core.env_helper.SANDBOX_SUPPORTED", True),
+        mock.patch("app.core.env_helper.RestrictedPopen") as mock_restricted_popen,
+    ):
+        spawn_background_process(cmd, sandbox=True)
+        mock_restricted_popen.assert_called_once_with(cmd, env=mock.ANY, startupinfo=mock.ANY)
+
+
+def test_spawn_background_process_fail_closed():
+    cmd = ["ffmpeg", "-i", "input.mp3"]
+    with (
+        mock.patch("app.core.env_helper.SANDBOX_SUPPORTED", False),
+    ):
+        with pytest.raises(PermissionError) as exc_info:
+            spawn_background_process(cmd, sandbox=True)
+        assert "Subprocess sandboxing is enabled but not supported" in str(exc_info.value)
+
+
+def test_run_background_process_sandboxed_linux():
+    cmd = ["ffmpeg", "-i", "input.mp3"]
+    with (
+        mock.patch("sys.platform", "linux"),
+        mock.patch("app.core.env_helper.SANDBOX_SUPPORTED", True),
+        mock.patch("subprocess.run") as mock_run,
+    ):
+        run_background_process(cmd, sandbox=True)
+        mock_run.assert_called_once()
+        called_args, called_kwargs = mock_run.call_args
+        expected_cmd = ["unshare", "-n", "-r", "sh", "-c", 'ip link set lo up && exec "$@"', "--"] + cmd
+        assert called_args[0] == expected_cmd
+
+
+def test_run_background_process_sandboxed_macos():
+    cmd = ["ffmpeg", "-i", "input.mp3"]
+    with (
+        mock.patch("sys.platform", "darwin"),
+        mock.patch("app.core.env_helper.SANDBOX_SUPPORTED", True),
+        mock.patch("subprocess.run") as mock_run,
+    ):
+        run_background_process(cmd, sandbox=True)
+        mock_run.assert_called_once()
+        called_args, called_kwargs = mock_run.call_args
+        assert called_args[0][0] == "sandbox-exec"
+        assert called_args[0][1] == "-p"
+        assert "deny network-outbound" in called_args[0][2]
+        assert called_args[0][3:] == cmd
+
+
+def test_run_background_process_sandboxed_windows():
+    cmd = ["ffmpeg", "-i", "input.mp3"]
+    is_restricted_popen = False
+
+    def mock_run_side_effect(*args, **kwargs):
+        nonlocal is_restricted_popen
+        import subprocess
+        from app.core.env_helper import RestrictedPopen
+        if subprocess.Popen is RestrictedPopen:
+            is_restricted_popen = True
+        return mock.MagicMock()
+
+    with (
+        mock.patch("sys.platform", "win32"),
+        mock.patch("app.core.env_helper.SANDBOX_SUPPORTED", True),
+        mock.patch("subprocess.run", side_effect=mock_run_side_effect) as mock_run,
+    ):
+        run_background_process(cmd, sandbox=True)
+        mock_run.assert_called_once()
+        assert is_restricted_popen is True
+
+
+def test_run_background_process_fail_closed():
+    cmd = ["ffmpeg", "-i", "input.mp3"]
+    with (
+        mock.patch("app.core.env_helper.SANDBOX_SUPPORTED", False),
+    ):
+        with pytest.raises(PermissionError) as exc_info:
+            run_background_process(cmd, sandbox=True)
+        assert "Subprocess sandboxing is enabled but not supported" in str(exc_info.value)
