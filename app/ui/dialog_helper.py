@@ -5,7 +5,7 @@ import logging
 import os
 import sys
 
-from app.core.env_helper import SANDBOX_SUPPORTED, run_background_process
+from app.core.env_helper import run_background_process
 
 logger = logging.getLogger(__name__)
 

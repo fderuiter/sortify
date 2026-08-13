@@ -106,7 +106,9 @@ class Database:
                 )
             """)
             try:
-                conn.execute("ALTER TABLE document_vectors ADD COLUMN model_signature TEXT")
+                conn.execute(
+                    "ALTER TABLE document_vectors ADD COLUMN model_signature TEXT"
+                )
             except Exception:
                 pass
 
@@ -934,7 +936,10 @@ class Database:
             return None
 
     def upsert_document_vectors(
-        self, base_dir: str, vectors_data: list[tuple[str, list[float]]], model_signature: str | None = None
+        self,
+        base_dir: str,
+        vectors_data: list[tuple[str, list[float]]],
+        model_signature: str | None = None,
     ):
         """Upsert document vector embeddings into the decoupled table."""
         if not vectors_data:
@@ -948,7 +953,8 @@ class Database:
                 sig = model_signature
                 if sig is None:
                     cursor = conn.execute(
-                        "SELECT value FROM model_metadata WHERE key = ?", ("active_model_signature",)
+                        "SELECT value FROM model_metadata WHERE key = ?",
+                        ("active_model_signature",),
                     )
                     row = cursor.fetchone()
                     if row:
@@ -986,7 +992,11 @@ class Database:
         self.worker.execute_write(_write)
 
     def get_documents_missing_vectors(
-        self, base_dir: str, limit: int = 50, offset: int = 0, active_model_signature: str | None = None
+        self,
+        base_dir: str,
+        limit: int = 50,
+        offset: int = 0,
+        active_model_signature: str | None = None,
     ) -> list[tuple[str, str]]:
         """Retrieve decrypted documents missing vector embeddings in batched format."""
         conn = get_db_connection(self.db_path)
@@ -994,7 +1004,8 @@ class Database:
             sig = active_model_signature
             if sig is None:
                 cursor = conn.execute(
-                    "SELECT value FROM model_metadata WHERE key = ?", ("active_model_signature",)
+                    "SELECT value FROM model_metadata WHERE key = ?",
+                    ("active_model_signature",),
                 )
                 row = cursor.fetchone()
                 if row:

@@ -157,7 +157,13 @@ class SemanticEmbeddingManager:
             except Exception:
                 pass
 
-    def __init__(self, db, model_path: str | None = None, bypass_validation: bool = False, force_validation: bool = False):
+    def __init__(
+        self,
+        db,
+        model_path: str | None = None,
+        bypass_validation: bool = False,
+        force_validation: bool = False,
+    ):
         self.db = db
         self.model_path = model_path
         self._reconstruction_thread = None
@@ -261,7 +267,9 @@ class SemanticEmbeddingManager:
             onnx_file = self.model_path
 
         if not onnx_file or not os.path.exists(onnx_file):
-            raise ModelValidationError(f"Model path does not contain a valid ONNX model file: {self.model_path}")
+            raise ModelValidationError(
+                f"Model path does not contain a valid ONNX model file: {self.model_path}"
+            )
 
         # 3. Compute SHA-256 signature of the ONNX file
         hasher = hashlib.sha256()
@@ -271,10 +279,13 @@ class SemanticEmbeddingManager:
                     hasher.update(chunk)
             computed_sig = hasher.hexdigest()
         except Exception as e:
-            raise ModelValidationError(f"Failed to read or compute SHA-256 signature of ONNX model: {e}")
+            raise ModelValidationError(
+                f"Failed to read or compute SHA-256 signature of ONNX model: {e}"
+            )
 
         # 4. Check signature against hashes registry
         from app.core.hashes_registry import HASHES
+
         valid_onnx_hashes = set()
         for category, files in HASHES.items():
             if "model.onnx" in files:
@@ -287,7 +298,11 @@ class SemanticEmbeddingManager:
             )
 
         # 5. Check tokenizer files exist
-        model_dir = os.path.dirname(onnx_file) if not os.path.isdir(self.model_path) else self.model_path
+        model_dir = (
+            os.path.dirname(onnx_file)
+            if not os.path.isdir(self.model_path)
+            else self.model_path
+        )
         required_tokenizer_files = ["vocab.txt", "tokenizer_config.json"]
         for tf in required_tokenizer_files:
             tf_path = os.path.join(model_dir, tf)
@@ -297,19 +312,25 @@ class SemanticEmbeddingManager:
         # 6. Check ONNX session initialization and dimensions
         try:
             from app.core.shared_registry import SharedModelRegistry
+
             _ = SharedModelRegistry.get_instance()
             import onnxruntime as ort
+
             sess = ort.InferenceSession(onnx_file)
             out = sess.get_outputs()[0]
             if not out.shape or len(out.shape) < 2:
-                raise ModelValidationError("ONNX model output shape is incompatible (must be at least 2D).")
+                raise ModelValidationError(
+                    "ONNX model output shape is incompatible (must be at least 2D)."
+                )
             dimensions = out.shape[-1]
             if not isinstance(dimensions, int) or dimensions <= 0:
                 raise ModelValidationError(f"Invalid model dimensions: {dimensions}")
         except Exception as e:
             if isinstance(e, ModelValidationError):
                 raise e
-            raise ModelValidationError(f"ONNX session initialization or dimension extraction failed: {e}")
+            raise ModelValidationError(
+                f"ONNX session initialization or dimension extraction failed: {e}"
+            )
 
     def is_reconstruction_active(self) -> bool:
         """Return whether background reconstruction is currently running."""
@@ -358,7 +379,10 @@ class SemanticEmbeddingManager:
                             break
                     # Memory Footprint Throttling: load no more than 50 records at once
                     docs = self.db.get_documents_missing_vectors(
-                        base_dir, limit=50, offset=0, active_model_signature=self.signature
+                        base_dir,
+                        limit=50,
+                        offset=0,
+                        active_model_signature=self.signature,
                     )
                     if not docs:
                         break
@@ -374,7 +398,9 @@ class SemanticEmbeddingManager:
                     with self._lock:
                         if self._stop_requested:
                             break
-                    self.db.upsert_document_vectors(base_dir, batch, model_signature=self.signature)
+                    self.db.upsert_document_vectors(
+                        base_dir, batch, model_signature=self.signature
+                    )
 
                     # Cooperative pause to ensure UI thread remains highly responsive
                     time.sleep(0.02)
@@ -404,7 +430,9 @@ class SemanticEmbeddingManager:
                         with self._lock:
                             if self._stop_requested:
                                 break
-                        self.db.upsert_document_vectors(base_dir, batch, model_signature=self.signature)
+                        self.db.upsert_document_vectors(
+                            base_dir, batch, model_signature=self.signature
+                        )
 
                         # Cooperative pause to ensure UI thread remains highly responsive
                         time.sleep(0.02)
@@ -440,7 +468,11 @@ class SemanticEmbeddingManager:
         # If model_path is provided, we must use local ONNX model and must not do silent fallback
         if self.model_path is not None:
             if not getattr(self, "is_model_valid", True):
-                msg = getattr(self, "validation_error_message", "Model validation failed or files are missing.")
+                msg = getattr(
+                    self,
+                    "validation_error_message",
+                    "Model validation failed or files are missing.",
+                )
                 raise ModelValidationError(msg)
 
             try:

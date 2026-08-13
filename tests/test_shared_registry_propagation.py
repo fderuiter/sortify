@@ -103,7 +103,6 @@ def test_model_downloader_bypasses_sandbox(tmp_path):
     # Compute and register mock hash for the expected download to pass verification
     mock_data = b"modeldata"
     mock_hash = hashlib.sha256(mock_data).hexdigest()
-
     # Store old hashes to restore them later
     registry = SharedModelRegistry.get_instance()
     original_expected_hashes = dict(registry._expected_hashes)
@@ -114,10 +113,8 @@ def test_model_downloader_bypasses_sandbox(tmp_path):
     mock_response.info.return_value.get.return_value = "10"
     mock_response.read.side_effect = [mock_data, b""]
 
-
     mock_opener = MagicMock()
     mock_opener.open.return_value.__enter__.return_value = mock_response
-
 
     try:
         # Start with active sandbox on initiator thread
