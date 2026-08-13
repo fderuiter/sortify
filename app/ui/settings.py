@@ -725,6 +725,139 @@ def show_settings(parent_app, settings):
                         'aria-label="Save OCR Languages Button"'
                     )
 
+                    ui.label("Custom Stop Words").classes(
+                        "text-md font-bold mt-6 mb-2"
+                    )
+                    ui.label(
+                        "Configure words that should be excluded from semantic folder and topic analysis."
+                    ).classes("text-sm text-gray-500 mb-2")
+
+                    # Language presets buttons
+                    with ui.row().classes("w-full items-center gap-2 mb-4"):
+                        ui.label("Load Presets:").classes("text-sm font-semibold text-gray-700")
+                        
+                        def make_preset_handler(lang):
+                            return lambda: load_preset(lang)
+                        
+                        ui.button("German", on_click=make_preset_handler("German")).props("outline size=sm")
+                        ui.button("French", on_click=make_preset_handler("French")).props("outline size=sm")
+                        ui.button("Spanish", on_click=make_preset_handler("Spanish")).props("outline size=sm")
+
+                    stopwords_container = ui.row().classes("flex-wrap gap-2 w-full max-h-60 overflow-y-auto border p-2 rounded mb-4")
+
+                    import string
+
+                    def render_stopwords():
+                        stopwords_container.clear()
+                        words = sorted(list(settings.STOP_WORDS))
+                        with stopwords_container:
+                            if not words:
+                                ui.label("No stop words configured.").classes(
+                                    "text-sm text-gray-400 italic"
+                                )
+                            else:
+                                for word in words:
+                                    with ui.row().classes(
+                                        "items-center gap-1 bg-gray-100 dark:bg-gray-800 px-3 py-1 rounded-full border border-gray-200 dark:border-gray-700"
+                                    ):
+                                        ui.label(word).classes("text-sm text-gray-800 dark:text-gray-200 font-medium")
+                                        
+                                        def make_delete_handler(w=word):
+                                            return lambda: delete_stopword(w)
+                                            
+                                        ui.button(
+                                            icon="close",
+                                            on_click=make_delete_handler()
+                                        ).props("flat round dense size=xs color=grey").classes("hover:text-red-500")
+
+                    def delete_stopword(word: str):
+                        new_words = set(settings.STOP_WORDS)
+                        new_words.discard(word)
+                        settings.STOP_WORDS = new_words
+                        
+                        if parent_app and hasattr(parent_app, "app_session") and parent_app.app_session:
+                            if hasattr(parent_app.app_session, "analyzer") and parent_app.app_session.analyzer:
+                                parent_app.app_session.analyzer.reload_stop_words(settings.STOP_WORDS)
+                                
+                        ui.notify(f"Removed stop word: {word}", type="positive")
+                        render_stopwords()
+
+                    def load_preset(lang: str):
+                        presets = {
+                            "German": {"und", "der", "die", "das", "ist", "ein", "eine", "ich", "mit", "auf", "zu", "den", "dem"},
+                            "French": {"et", "le", "la", "les", "est", "un", "une", "je", "avec", "dans", "pour", "par", "sur"},
+                            "Spanish": {"y", "el", "la", "los", "es", "un", "una", "con", "en", "para", "por", "del"},
+                        }
+                        
+                        words_to_add = presets.get(lang, set())
+                        if not words_to_add:
+                            return
+                            
+                        current_words = set(settings.STOP_WORDS)
+                        newly_added = words_to_add - current_words
+                        
+                        if not newly_added:
+                            ui.notify(f"All {lang} preset words are already in the list.", type="warning")
+                            return
+                            
+                        settings.STOP_WORDS = current_words.union(newly_added)
+                        
+                        if parent_app and hasattr(parent_app, "app_session") and parent_app.app_session:
+                            if hasattr(parent_app.app_session, "analyzer") and parent_app.app_session.analyzer:
+                                parent_app.app_session.analyzer.reload_stop_words(settings.STOP_WORDS)
+                                
+                        ui.notify(f"Appended {len(newly_added)} {lang} stop words.", type="positive")
+                        render_stopwords()
+
+                    render_stopwords()
+
+                    with ui.row().classes("w-full items-center gap-4 mt-2 flex-wrap"):
+                        new_word_input = ui.input("Add Stop Word").props(
+                            'placeholder="e.g. und" aria-label="Add Stop Word input" class="w-1/2"'
+                        )
+
+                        def add_stopword():
+                            val = new_word_input.value
+                            if not val or not val.strip():
+                                ui.notify("Please enter a word to add.", type="warning")
+                                return
+                                
+                            cleaned_input = val.lower().translate(str.maketrans("", "", string.punctuation))
+                            added_words = [w for w in cleaned_input.split() if w]
+                            
+                            if not added_words:
+                                ui.notify("Input must contain valid alphanumeric characters.", type="warning")
+                                return
+                                
+                            current_words = set(settings.STOP_WORDS)
+                            newly_added = []
+                            for w in added_words:
+                                if w not in current_words:
+                                    current_words.add(w)
+                                    newly_added.append(w)
+                                    
+                            if not newly_added:
+                                ui.notify("Word(s) already in the list.", type="warning")
+                                return
+                                
+                            settings.STOP_WORDS = current_words
+                            
+                            if parent_app and hasattr(parent_app, "app_session") and parent_app.app_session:
+                                if hasattr(parent_app.app_session, "analyzer") and parent_app.app_session.analyzer:
+                                    parent_app.app_session.analyzer.reload_stop_words(settings.STOP_WORDS)
+                                    
+                            if len(newly_added) == 1:
+                                ui.notify(f"Added stop word: {newly_added[0]}", type="positive")
+                            else:
+                                ui.notify(f"Added {len(newly_added)} stop words.", type="positive")
+                                
+                            new_word_input.value = ""
+                            render_stopwords()
+
+                        ui.button("Add", on_click=add_stopword).props(
+                            'aria-label="Add Stop Word Button"'
+                        )
+
             with ui.tab_panel("Rules"):
                 ui.label("Keyword Routing").classes("text-lg font-bold mb-2")
 
