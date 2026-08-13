@@ -8,7 +8,7 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from nicegui import ui
+from nicegui import Client, ui
 from nicegui.elements.button import Button
 from nicegui.elements.dialog import Dialog
 from nicegui.elements.timer import Timer
@@ -82,6 +82,7 @@ def test_wizard_timer_and_thread_cleanup():
 
     try:
         with (
+            Client(None),
             patch("app.ui.wizard.run_background_download", side_effect=tracking_run_bg),
             patch("urllib.request.build_opener", return_value=MockOpener()),
             patch("shutil.disk_usage", return_value=(10**12, 10**12, 10**12)),
@@ -224,6 +225,7 @@ def test_settings_timer_and_thread_cleanup():
 
     try:
         with (
+            Client(None),
             patch("app.core.downloader.run_background_download", side_effect=tracking_run_bg),
             patch("urllib.request.build_opener", return_value=MockOpener()),
             patch("shutil.disk_usage", return_value=(10**12, 10**12, 10**12)),
