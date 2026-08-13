@@ -122,6 +122,7 @@ def test_model_downloader_bypasses_sandbox(tmp_path):
             with (
                 patch("urllib.request.build_opener", return_value=mock_opener),
                 patch("shutil.disk_usage", return_value=(10000, 5000, 5000)),
+                patch("app.core.downloader.verify_temp_file_hash", return_value=True),
             ):
                 thread = run_background_download(
                     "http://example.com/external-model.onnx",

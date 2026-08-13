@@ -96,7 +96,13 @@ def test_main_detects_unsynced_files_on_check():
                     counters[self.filepath] = min(idx + 1, len(file_contents[self.filepath]) - 1)
                     return file_contents[self.filepath][idx]
 
-            mock_open.side_effect = lambda filepath, *args, **kwargs: MockFile(filepath)
+            original_open = open
+            def mock_open_side_effect(filepath, *args, **kwargs):
+                if filepath in file_contents:
+                    return MockFile(filepath)
+                return original_open(filepath, *args, **kwargs)
+
+            mock_open.side_effect = mock_open_side_effect
 
             main()
 
@@ -144,7 +150,13 @@ def test_main_clean_on_check():
                     counters[self.filepath] = min(idx + 1, len(file_contents[self.filepath]) - 1)
                     return file_contents[self.filepath][idx]
 
-            mock_open.side_effect = lambda filepath, *args, **kwargs: MockFile(filepath)
+            original_open = open
+            def mock_open_side_effect(filepath, *args, **kwargs):
+                if filepath in file_contents:
+                    return MockFile(filepath)
+                return original_open(filepath, *args, **kwargs)
+
+            mock_open.side_effect = mock_open_side_effect
 
             main()
 
