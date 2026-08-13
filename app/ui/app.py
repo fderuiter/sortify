@@ -690,7 +690,9 @@ class AutoSorterApp:
 
     def show_help_view(self):
         """Display help information."""
-        ui.notify("Help documentation is available in the user manual.")
+        from app.ui.help_modal import show_help
+
+        show_help(self)
 
     def select_directory(self):
         """Prompt the user to select a directory for analysis."""
