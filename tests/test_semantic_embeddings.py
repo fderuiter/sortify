@@ -799,9 +799,10 @@ def test_fully_masked_inputs_safety(db, temp_dir):
 
 def test_relaxed_tokenizer_validation(db, temp_dir):
     """Verify that validation succeeds for WordPiece, SentencePiece, and BPE file structures, and fails when mandatory files are missing."""
-    from app.core.semantic_embeddings import ModelValidationError
-    from app.core.hashes_registry import HASHES
     from unittest.mock import MagicMock, patch
+
+    from app.core.hashes_registry import HASHES
+    from app.core.semantic_embeddings import ModelValidationError
 
     expected_hash = HASHES["generative_naming"]["model.onnx"]
 
