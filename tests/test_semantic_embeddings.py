@@ -529,7 +529,11 @@ def test_global_model_properties_cache_and_thread_safety(temp_dir):
     import threading
     from unittest.mock import patch
 
-    from app.core.semantic_embeddings import get_active_model_properties
+    from app.core.semantic_embeddings import (
+        _model_properties_cache,
+        _model_properties_cache_lock,
+        get_active_model_properties,
+    )
 
     # 1. Setup a dummy ONNX model file
     model_dir = temp_dir / "test_cache_model"
@@ -538,11 +542,6 @@ def test_global_model_properties_cache_and_thread_safety(temp_dir):
     onnx_file.write_text("fake onnx file content")
 
     # Clear cache before testing to ensure a clean state
-    from app.core.semantic_embeddings import (
-        _model_properties_cache,
-        _model_properties_cache_lock,
-    )
-
     with _model_properties_cache_lock:
         _model_properties_cache.clear()
 
