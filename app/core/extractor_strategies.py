@@ -352,7 +352,6 @@ class AudioExtractor:
                 devices_to_try.append("cpu")
 
             process = None
-            used_device = "cpu"
 
             for dev in devices_to_try:
                 if isinstance(whisper_cmd, list):
@@ -386,7 +385,6 @@ class AudioExtractor:
                         errors="replace",
                         bufsize=1,
                     )
-                    used_device = dev
                     break
                 except FileNotFoundError as e:
                     if dev != "cpu":

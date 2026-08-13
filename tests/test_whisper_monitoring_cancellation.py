@@ -142,8 +142,7 @@ print("[00:05.000 --> 00:10.000] Hello segment 2", flush=True)
 
 def test_audio_extractor_gpu_device_and_fallback(tmp_path):
     """Test that the AudioExtractor targets cuda device when GPU is enabled, and falls back to CPU if spawning fails."""
-    from unittest.mock import patch, MagicMock
-    import sys
+    from unittest.mock import patch
 
     dummy_wav = tmp_path / "test.wav"
     dummy_wav.touch()
