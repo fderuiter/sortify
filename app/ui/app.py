@@ -1100,14 +1100,14 @@ class AutoSorterApp:
                     text += f" (Error: {err_msg})"
                     icon = "error"
 
-                rating = self._ratings_cache.get(k)
+                rating = self._ratings_cache.get(node_id)
                 nodes_list.append(
                     {
                         "id": node_id,
                         "text": text,
                         "icon": icon,
                         "is_file": True,
-                        "filepath": k,
+                        "filepath": node_id,
                         "rating": rating,
                     }
                 )
@@ -1359,6 +1359,38 @@ def find_and_remove_file(node, file_key):
     """
     if not isinstance(node, dict):
         return None
+
+    # If file_key is a relative path with slashes, we can traverse/pop it specifically
+    if "/" in file_key or "\\" in file_key:
+        parts = file_key.replace("\\", "/").split("/")
+        current = node
+        # We need to keep track of the path taken so we can clean up empty folders
+        path_nodes = [(current, None)]  # list of tuples (node, key_used_to_get_here)
+        for part in parts[:-1]:
+            if part in current and isinstance(current[part], dict):
+                next_node = current[part]
+                path_nodes.append((next_node, part))
+                current = next_node
+            else:
+                current = None
+                break
+        if current is not None:
+            leaf_key = parts[-1]
+            if (
+                leaf_key in current
+                and isinstance(current[leaf_key], dict)
+                and current[leaf_key].get("__type__") == "file"
+            ):
+                val = current.pop(leaf_key)
+                # Clean up empty parent directories up the chain
+                for i in range(len(path_nodes) - 1, 0, -1):
+                    p_node, p_key = path_nodes[i]
+                    if not p_node:
+                        parent_node, _ = path_nodes[i - 1]
+                        parent_node.pop(p_key, None)
+                return val
+
+    # Fallback to the original logic
     if (
         file_key in node
         and isinstance(node[file_key], dict)
