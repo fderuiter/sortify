@@ -315,12 +315,20 @@ def test_empty_files_bypassed_from_ai_clustering(mocker):
 
     # Insert an empty-tagged file and a normal file
     db.upsert_document(base_dir, "empty_file.txt", "hash_empty", "[STATUS:EMPTY]")
-    db.upsert_document(base_dir, "normal_file.txt", "hash_normal", "This is some normal text for clustering.")
+    db.upsert_document(
+        base_dir,
+        "normal_file.txt",
+        "hash_normal",
+        "This is some normal text for clustering.",
+    )
 
     # We can spy on or mock the strategy's generate_plan to verify what it receives
     from app.core.analyzer_strategies import clustering_registry
+
     strategy = clustering_registry.get_strategy("default")
-    mock_generate_plan = mocker.patch.object(strategy, "generate_plan", return_value=({}, 0.0))
+    mock_generate_plan = mocker.patch.object(
+        strategy, "generate_plan", return_value=({}, 0.0)
+    )
 
     plan = analyzer.generate_sorting_plan(base_dir)
 
@@ -346,7 +354,7 @@ def test_empty_files_bypass_incremental_training(mocker):
     analyzer = IncrementalAnalyzer(
         max_folders=3, stop_words={"the", "and"}, db=db, model_path="all-MiniLM-L6-v2"
     )
-    
+
     mock_session = SimpleNamespace(db=db, analyzer=analyzer, settings=SimpleNamespace())
 
     # Document in DB with verified target path but with EMPTY status tag
@@ -358,9 +366,12 @@ def test_empty_files_bypass_incremental_training(mocker):
     db.set_user_verified_target(base_dir, "hash_n", "SomeFolder")
 
     # Spy on generate_embedding to see which texts are embedded
-    mock_generate_embedding = mocker.spy(analyzer.embedding_manager, "generate_embedding")
+    mock_generate_embedding = mocker.spy(
+        analyzer.embedding_manager, "generate_embedding"
+    )
 
     from app.ui.app import run_incremental_training_in_background
+
     run_incremental_training_in_background(mock_session, base_dir)
 
     # Verify that we only called generate_embedding for normal text, not the empty status tag
@@ -368,4 +379,3 @@ def test_empty_files_bypass_incremental_training(mocker):
     called_texts = [call.args[0] for call in mock_generate_embedding.call_args_list]
     assert "Normal text" in called_texts
     assert "[STATUS:EMPTY]" not in called_texts
-
