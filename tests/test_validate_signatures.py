@@ -274,6 +274,7 @@ def test_signature_mismatch_detection():
 def test_validation_runner_detects_mismatch(tmp_path, monkeypatch):
     import json
     import sys
+
     from scripts import validate_signatures
 
     fake_snapshot = tmp_path / "fake_snapshot.json"
