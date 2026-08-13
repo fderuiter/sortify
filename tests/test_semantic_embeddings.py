@@ -795,3 +795,98 @@ def test_fully_masked_inputs_safety(db, temp_dir):
         for val in embedding:
             assert not math.isnan(val)
             assert not math.isinf(val)
+
+
+def test_relaxed_tokenizer_validation(db, temp_dir):
+    """Verify that validation succeeds for WordPiece, SentencePiece, and BPE file structures, and fails when mandatory files are missing."""
+    from app.core.semantic_embeddings import ModelValidationError
+    from app.core.hashes_registry import HASHES
+    from unittest.mock import MagicMock, patch
+
+    expected_hash = HASHES["generative_naming"]["model.onnx"]
+
+    # Let's mock the ONNX Session and dimensions to satisfy dimension check
+    mock_session = MagicMock()
+    input_node = MagicMock()
+    input_node.name = "input_ids"
+    mock_session.get_inputs.return_value = [input_node]
+    out_node = MagicMock()
+    out_node.shape = [1, 3, 384]
+    mock_session.get_outputs.return_value = [out_node]
+
+    # Helper function to create model directory and basic assets
+    def setup_model_dir(name):
+        model_dir = temp_dir / name
+        model_dir.mkdir()
+        onnx_file = model_dir / "model.onnx"
+        onnx_file.write_text("dummy onnx content")
+        return model_dir
+
+    # 1. WordPiece (tokenizer_config.json + vocab.txt)
+    wp_dir = setup_model_dir("wordpiece_model")
+    (wp_dir / "tokenizer_config.json").write_text("{}")
+    (wp_dir / "vocab.txt").write_text("hello")
+
+    with patch("hashlib.sha256") as mock_sha, patch("onnxruntime.InferenceSession", return_value=mock_session):
+        mock_instance = MagicMock()
+        mock_instance.hexdigest.return_value = expected_hash
+        mock_sha.return_value = mock_instance
+
+        # Should pass validation
+        manager = SemanticEmbeddingManager(db, model_path=str(wp_dir), force_validation=True)
+        assert manager.is_model_valid is True
+
+    # 2. SentencePiece (tokenizer_config.json + tokenizer.model)
+    sp_dir = setup_model_dir("sentencepiece_model")
+    (sp_dir / "tokenizer_config.json").write_text("{}")
+    (sp_dir / "tokenizer.model").write_text("dummy sp model")
+
+    with patch("hashlib.sha256") as mock_sha, patch("onnxruntime.InferenceSession", return_value=mock_session):
+        mock_instance = MagicMock()
+        mock_instance.hexdigest.return_value = expected_hash
+        mock_sha.return_value = mock_instance
+
+        # Should pass validation
+        manager = SemanticEmbeddingManager(db, model_path=str(sp_dir), force_validation=True)
+        assert manager.is_model_valid is True
+
+    # 3. BPE (tokenizer_config.json + tokenizer.json)
+    bpe_dir = setup_model_dir("bpe_model")
+    (bpe_dir / "tokenizer_config.json").write_text("{}")
+    (bpe_dir / "tokenizer.json").write_text("{}")
+
+    with patch("hashlib.sha256") as mock_sha, patch("onnxruntime.InferenceSession", return_value=mock_session):
+        mock_instance = MagicMock()
+        mock_instance.hexdigest.return_value = expected_hash
+        mock_sha.return_value = mock_instance
+
+        # Should pass validation
+        manager = SemanticEmbeddingManager(db, model_path=str(bpe_dir), force_validation=True)
+        assert manager.is_model_valid is True
+
+    # 4. Failure: configuration file is missing
+    missing_config_dir = setup_model_dir("missing_config_model")
+    (missing_config_dir / "vocab.txt").write_text("hello")
+
+    with patch("hashlib.sha256") as mock_sha, patch("onnxruntime.InferenceSession", return_value=mock_session):
+        mock_instance = MagicMock()
+        mock_instance.hexdigest.return_value = expected_hash
+        mock_sha.return_value = mock_instance
+
+        with pytest.raises(ModelValidationError) as exc_info:
+            SemanticEmbeddingManager(db, model_path=str(missing_config_dir), force_validation=True)
+        assert "Required tokenizer file is missing: tokenizer_config.json" in str(exc_info.value)
+
+    # 5. Failure: only arbitrary file exists, no standard vocab files
+    arbitrary_dir = setup_model_dir("arbitrary_model")
+    (arbitrary_dir / "tokenizer_config.json").write_text("{}")
+    (arbitrary_dir / "arbitrary.bin").write_text("arbitrary content")
+
+    with patch("hashlib.sha256") as mock_sha, patch("onnxruntime.InferenceSession", return_value=mock_session):
+        mock_instance = MagicMock()
+        mock_instance.hexdigest.return_value = expected_hash
+        mock_sha.return_value = mock_instance
+
+        with pytest.raises(ModelValidationError) as exc_info:
+            SemanticEmbeddingManager(db, model_path=str(arbitrary_dir), force_validation=True)
+        assert "vocabulary file (must be standard .txt, .json, or .model)" in str(exc_info.value)

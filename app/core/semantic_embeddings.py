@@ -303,11 +303,25 @@ class SemanticEmbeddingManager:
             if not os.path.isdir(self.model_path)
             else self.model_path
         )
-        required_tokenizer_files = ["vocab.txt", "tokenizer_config.json"]
-        for tf in required_tokenizer_files:
-            tf_path = os.path.join(model_dir, tf)
-            if not os.path.exists(tf_path):
-                raise ModelValidationError(f"Required tokenizer file is missing: {tf}")
+        config_path = os.path.join(model_dir, "tokenizer_config.json")
+        if not os.path.exists(config_path):
+            raise ModelValidationError("Required tokenizer file is missing: tokenizer_config.json")
+
+        vocab_extensions = {".txt", ".json", ".model"}
+        excluded_files = {"tokenizer_config.json", "config.json", "version.txt"}
+        found_vocab_files = []
+        for name in os.listdir(model_dir):
+            if name in excluded_files:
+                continue
+            path = os.path.join(model_dir, name)
+            if os.path.isfile(path):
+                _, ext = os.path.splitext(name)
+                ext = ext.lower()
+                if ext in vocab_extensions:
+                    found_vocab_files.append(name)
+
+        if not found_vocab_files:
+            raise ModelValidationError("Required tokenizer file is missing: vocabulary file (must be standard .txt, .json, or .model)")
 
         # 6. Check ONNX session initialization and dimensions
         try:
