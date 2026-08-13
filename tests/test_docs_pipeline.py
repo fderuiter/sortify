@@ -1,7 +1,5 @@
 import os
-import sys
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 from scripts.generate_docs import main
 

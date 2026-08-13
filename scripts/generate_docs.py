@@ -313,8 +313,8 @@ def update_security_md():
 
 def main():
     import argparse
-    import traceback
     import subprocess
+    import traceback
 
     parser = argparse.ArgumentParser(description="Unified Documentation Pipeline Manager")
     parser.add_argument(
