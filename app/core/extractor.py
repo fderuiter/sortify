@@ -157,8 +157,7 @@ def extract_file_text(
 
             text = extractor.extract(file_path, **kwargs)
             if not text.strip():
-                if os.path.getsize(file_path) > 0:
-                    text = "[STATUS:EMPTY]"
+                text = "[STATUS:EMPTY]"
         else:
             text = "[STATUS:UNSUPPORTED]"
     except pypdf.errors.FileNotDecryptedError:

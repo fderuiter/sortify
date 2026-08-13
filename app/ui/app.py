@@ -1415,6 +1415,8 @@ def run_incremental_training_in_background(app_session, base_dir):
             user_verified_target = d[3] if len(d) > 3 else None
 
             if user_verified_target and text:
+                if text.startswith("[STATUS:"):
+                    continue
                 reassigned_docs.append((filepath, text))
 
         if not reassigned_docs:

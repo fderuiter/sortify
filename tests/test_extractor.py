@@ -208,3 +208,21 @@ def test_get_file_hash_m4a(tmp_path):
     import hashlib
 
     assert hash_val == hashlib.sha256(b"audio_data").hexdigest()
+
+
+def test_extract_zero_byte_file(tmp_path):
+    # Create a completely zero-byte text file
+    zero_byte_file = tmp_path / "zero.txt"
+    zero_byte_file.touch()
+
+    text = extract_file_text(str(zero_byte_file))
+    assert text == "[STATUS:EMPTY]"
+
+
+def test_extract_whitespace_only_file(tmp_path):
+    # Create a whitespace-only text file
+    whitespace_file = tmp_path / "whitespace.txt"
+    whitespace_file.write_text("   \n  \t ")
+
+    text = extract_file_text(str(whitespace_file))
+    assert text == "[STATUS:EMPTY]"

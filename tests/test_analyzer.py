@@ -302,3 +302,80 @@ def test_document_similarity_guardrail_unverified():
     # Since there are no verified historical documents, new_space.txt should NOT be matched
     # and the returned plan should be empty because we bypassed clustering.
     assert plan == {}
+
+
+def test_empty_files_bypassed_from_ai_clustering(mocker):
+    # Setup base directory
+    base_dir = "test_empty_bypassed_base"
+    db.clear(base_dir)
+
+    analyzer = IncrementalAnalyzer(
+        max_folders=3, stop_words={"the", "and"}, db=db, strategy_name="default"
+    )
+
+    # Insert an empty-tagged file and a normal file
+    db.upsert_document(base_dir, "empty_file.txt", "hash_empty", "[STATUS:EMPTY]")
+    db.upsert_document(
+        base_dir,
+        "normal_file.txt",
+        "hash_normal",
+        "This is some normal text for clustering.",
+    )
+
+    # We can spy on or mock the strategy's generate_plan to verify what it receives
+    from app.core.analyzer_strategies import clustering_registry
+
+    strategy = clustering_registry.get_strategy("default")
+    mock_generate_plan = mocker.patch.object(
+        strategy, "generate_plan", return_value=({}, 0.0)
+    )
+
+    plan = analyzer.generate_sorting_plan(base_dir)
+
+    # Assert that empty_file.txt was bypassed from AI clustering and routed to Miscellaneous
+    assert "Miscellaneous" in plan
+    assert "empty_file.txt" in plan["Miscellaneous"]
+    assert plan["Miscellaneous"]["empty_file.txt"]["extraction_status"] == "EMPTY"
+
+    # Assert that generate_plan was called only with normal_file.txt
+    mock_generate_plan.assert_called_once()
+    called_args = mock_generate_plan.call_args[0]
+    # first argument of generate_plan is ai_filenames
+    assert called_args[0] == ["normal_file.txt"]
+    # second argument of generate_plan is ai_documents
+    assert called_args[1] == ["This is some normal text for clustering."]
+
+
+def test_empty_files_bypass_incremental_training(mocker):
+    base_dir = "test_incremental_bypass_base"
+    db.clear(base_dir)
+
+    # Create a mock session containing our db and analyzer
+    analyzer = IncrementalAnalyzer(
+        max_folders=3, stop_words={"the", "and"}, db=db, model_path="all-MiniLM-L6-v2"
+    )
+
+    mock_session = SimpleNamespace(db=db, analyzer=analyzer, settings=SimpleNamespace())
+
+    # Document in DB with verified target path but with EMPTY status tag
+    db.upsert_document(base_dir, "empty_reassigned.txt", "hash_e", "[STATUS:EMPTY]")
+    db.set_user_verified_target(base_dir, "hash_e", "SomeFolder")
+
+    # Document in DB with verified target path and normal text
+    db.upsert_document(base_dir, "normal_reassigned.txt", "hash_n", "Normal text")
+    db.set_user_verified_target(base_dir, "hash_n", "SomeFolder")
+
+    # Spy on generate_embedding to see which texts are embedded
+    mock_generate_embedding = mocker.spy(
+        analyzer.embedding_manager, "generate_embedding"
+    )
+
+    from app.ui.app import run_incremental_training_in_background
+
+    run_incremental_training_in_background(mock_session, base_dir)
+
+    # Verify that we only called generate_embedding for normal text, not the empty status tag
+    # Since we mocked generate_embedding, we can inspect its call arguments
+    called_texts = [call.args[0] for call in mock_generate_embedding.call_args_list]
+    assert "Normal text" in called_texts
+    assert "[STATUS:EMPTY]" not in called_texts
