@@ -117,10 +117,13 @@ def test_swapping_model_triggers_purge_and_reconstruction(db, temp_dir):
         # Initialize new manager, which triggers verify_active_model on startup
         new_manager = SemanticEmbeddingManager(db, model_path=None)
 
-        # Outdated vector records must NOT be purged immediately! They must remain searchable during migration
+        # Outdated vector records must NOT be purged immediately, but we treat signature mismatches as cache misses
         purged_vector = new_manager.get_vector(str(temp_dir), "doc1.txt")
-        assert purged_vector is not None
-        assert purged_vector == [0.5] * manager.dimensions
+        assert purged_vector is None
+        # They must remain in the database (not deleted during retrieval)
+        db_vector = db.get_document_vector(str(temp_dir), "doc1.txt")
+        assert db_vector is not None
+        assert db_vector == [0.5] * manager.dimensions
 
         # Verify new active metadata is updated
         assert db.get_model_metadata("active_model_signature") == "new_onnx_sig_hash"
@@ -795,3 +798,94 @@ def test_fully_masked_inputs_safety(db, temp_dir):
         for val in embedding:
             assert not math.isnan(val)
             assert not math.isinf(val)
+
+
+def test_database_level_signature_enforcement(db, temp_dir):
+    """Test all database-level signature enforcement acceptance criteria."""
+    # 1. Store a vector under one signature (e.g. 'sig_one')
+    db.upsert_document(
+        base_dir=str(temp_dir),
+        filepath="test_doc.txt",
+        file_hash="hash123",
+        extracted_text="Some document text for embeddings",
+    )
+
+    db.upsert_document_vectors(
+        str(temp_dir),
+        [("test_doc.txt", [0.1, 0.2, 0.3])],
+        model_signature="sig_one",
+    )
+
+    # Mock decrypt_vector to track call count
+    original_decrypt = db.crypto.decrypt_vector
+    decrypt_called_count = 0
+
+    def mock_decrypt_vector(enc_vector):
+        nonlocal decrypt_called_count
+        decrypt_called_count += 1
+        return original_decrypt(enc_vector)
+
+    db.crypto.decrypt_vector = mock_decrypt_vector
+
+    try:
+        # Query with same signature 'sig_one' (Valid vector query) -> successfully returns the decrypted float array.
+        vector_match = db.get_document_vector(
+            str(temp_dir), "test_doc.txt", active_model_signature="sig_one"
+        )
+        assert vector_match == [0.1, 0.2, 0.3]
+        assert decrypt_called_count == 1
+
+        # Reset decrypt called count
+        decrypt_called_count = 0
+
+        # Query with different signature 'sig_two' (Mismatch) -> returns empty (None).
+        # No decryption attempts must be run on vectors that fail model signature verification.
+        vector_mismatch = db.get_document_vector(
+            str(temp_dir), "test_doc.txt", active_model_signature="sig_two"
+        )
+        assert vector_mismatch is None
+        assert decrypt_called_count == 0  # CRITICAL: zero decryption attempts!
+
+        # Stale record is NOT deleted on mismatch
+        stored_still = db.get_document_vector(
+            str(temp_dir), "test_doc.txt", active_model_signature=None
+        )
+        assert stored_still == [0.1, 0.2, 0.3]
+
+    finally:
+        db.crypto.decrypt_vector = original_decrypt
+
+
+def test_semantic_embeddings_mismatch_triggers_background_regeneration(db, temp_dir):
+    """Test that a model signature mismatch automatically triggers background vector regeneration."""
+    # Initialize a SemanticEmbeddingManager with active signature 'sig_new'
+    with patch(
+        "app.core.semantic_embeddings.get_active_model_properties"
+    ) as mock_props:
+        mock_props.return_value = ("sig_new", 3, "2.0.0")
+        manager = SemanticEmbeddingManager(db, model_path=None)
+
+    # Seed a document with a mismatching vector signature 'sig_old'
+    db.upsert_document(
+        base_dir=str(temp_dir),
+        filepath="mismatch_doc.txt",
+        file_hash="hash999",
+        extracted_text="This text will be regenerated",
+    )
+    db.upsert_document_vectors(
+        str(temp_dir),
+        [("mismatch_doc.txt", [0.9, 0.9, 0.9])],
+        model_signature="sig_old",
+    )
+
+    # Spy on trigger_reconstruction
+    with patch.object(
+        manager, "trigger_reconstruction", wraps=manager.trigger_reconstruction
+    ) as mock_trigger:
+        # Retrieve vector
+        vec = manager.get_vector(str(temp_dir), "mismatch_doc.txt")
+        # Must return None (cache miss)
+        assert vec is None
+        # Must have triggered reconstruction
+        mock_trigger.assert_called_once_with(str(temp_dir))
+

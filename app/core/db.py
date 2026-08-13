@@ -914,26 +914,50 @@ class Database:
                     results.append((filepath, dec_text))
         return results
 
-    def get_document_vector(self, base_dir: str, filepath: str) -> list[float] | None:
+    def get_document_vector(
+        self, base_dir: str, filepath: str, active_model_signature: str | None = None
+    ) -> list[float] | None:
         """Retrieve decoupled vector for a document."""
         filepath = filepath.replace("\\", "/")
         conn = get_db_connection(self.db_path)
         with conn:
             cursor = conn.execute(
-                "SELECT vector FROM document_vectors WHERE base_dir = ? AND filepath = ?",
+                "SELECT vector, model_signature FROM document_vectors WHERE base_dir = ? AND filepath = ?",
                 (base_dir, filepath),
             )
             row = cursor.fetchone()
-            if row and row[0]:
-                import json
-
-                try:
-                    decrypted = self.crypto.decrypt_vector(row[0])
-                    return json.loads(decrypted)
-                except Exception:
-                    self.track_corrupted_vector(base_dir, filepath)
+            if row:
+                enc_vector, model_sig = row
+                if active_model_signature is not None and model_sig != active_model_signature:
                     return None
+                if enc_vector:
+                    import json
+
+                    try:
+                        decrypted = self.crypto.decrypt_vector(enc_vector)
+                        return json.loads(decrypted)
+                    except Exception:
+                        self.track_corrupted_vector(base_dir, filepath)
+                        return None
             return None
+
+    def has_document_vector_mismatch(
+        self, base_dir: str, filepath: str, active_model_signature: str | None
+    ) -> bool:
+        """Check if a vector record exists but has a different model signature."""
+        filepath = filepath.replace("\\", "/")
+        conn = get_db_connection(self.db_path)
+        with conn:
+            cursor = conn.execute(
+                "SELECT model_signature FROM document_vectors WHERE base_dir = ? AND filepath = ?",
+                (base_dir, filepath),
+            )
+            row = cursor.fetchone()
+            if row:
+                fetched_sig = row[0]
+                if active_model_signature is not None and fetched_sig != active_model_signature:
+                    return True
+            return False
 
     def upsert_document_vectors(
         self,

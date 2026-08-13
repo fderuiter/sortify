@@ -588,7 +588,13 @@ class SemanticEmbeddingManager:
 
     def get_vector(self, base_dir: str, filepath: str) -> list[float] | None:
         """Retrieve decoupled vector from child store."""
-        return self.db.get_document_vector(base_dir, filepath)
+        vector = self.db.get_document_vector(
+            base_dir, filepath, active_model_signature=self.signature
+        )
+        if vector is None:
+            if self.db.has_document_vector_mismatch(base_dir, filepath, self.signature):
+                self.trigger_reconstruction(base_dir)
+        return vector
 
     def validate_vector_dimension(self, vector: list[float] | None) -> bool:
         """Validate vector dimension matches active model dimension."""
