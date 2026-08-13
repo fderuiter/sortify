@@ -1,11 +1,31 @@
-import ast
-from pathlib import Path
-
 import pytest
+from nicegui import ui, context
+from nicegui.elements.card import Card
+from nicegui.elements.dialog import Dialog
+from unittest.mock import MagicMock
+from app.ui.app import AutoSorterApp
+from app.ui.wizard import show_wizard
+from app.ui.settings import show_settings
+from app.ui.dialog_helper import get_dialog_card_classes
 
-# Paths to scan
-UI_DIR = Path(__file__).resolve().parent.parent / "app" / "ui"
-
+class MockSettings:
+    def __init__(self):
+        self.CONTEXTUAL_RENAMING = False
+        self.PRESERVE_HIERARCHY = False
+        self.EXPLORER_INTEGRATION = False
+        self.CLEANUP_EMPTY_FOLDERS = False
+        self.PROTECTED_PATHS = []
+        self.MAX_DEPTH = 10
+        self.MAX_FOLDERS = 100
+        self.MAX_WORKERS = 4
+        self.VISUAL_TIMEOUT = 10
+        self.PROXY = ""
+        self.KEYWORD_RULES = {}
+        self.POLICIES = []
+        self.MODEL_THREADS = 4
+        self.IMAGE_MAX_DIMENSION = 1024
+        self.IMAGE_SKIP_THRESHOLD = 500
+        self.AI_CONSENT_GRANTED = False
 
 def is_rigid_layout_class(cls_name: str) -> bool:
     """Determine if a CSS/Tailwind class is a rigid absolute/hardcoded height or width.
@@ -46,102 +66,90 @@ def is_rigid_layout_class(cls_name: str) -> bool:
 
     return False
 
+def inspect_runtime_elements():
+    """Inspect all instantiated elements in context.client.elements and return any rigid layout violations."""
+    violations = []
+    # Fetch all elements from context
+    elements = list(context.client.elements.values())
+    for element in elements:
+        # Check if it's a Card element or has 'nicegui-card' in classes, or is a Dialog/dialog-related element
+        is_card_or_dialog = (
+            isinstance(element, Card)
+            or isinstance(element, Dialog)
+            or 'nicegui-card' in element._classes
+            or 'nicegui-dialog' in element._classes
+        )
+        if is_card_or_dialog:
+            # Check its applied classes
+            for cls in element._classes:
+                if is_rigid_layout_class(cls):
+                    violations.append(
+                        f"Rigid layout class '{cls}' used in {type(element).__name__} element at runtime."
+                    )
+    return violations
 
 def test_no_rigid_sizes_in_dialog_cards():
     """Headless unit test to assert that dialog card classes do not use rigid height/width classes."""
-    print(f"Resolving UI directory path: {UI_DIR}")
-    ui_files = list(UI_DIR.glob("*.py"))
-    print(f"Matched UI files to scan: {[f.name for f in ui_files]}")
-    assert ui_files, f"No UI files found in {UI_DIR}"
+    # 1. Clear elements to have a clean starting point
+    context.client.elements.clear()
 
-    failures = []
+    # 2. Instantiate all the main application UI components to inspect their runtime properties
+    settings = MockSettings()
+    app = AutoSorterApp(settings)
 
-    for file_path in ui_files:
-        with open(file_path, "r", encoding="utf-8") as f:
-            content = f.read()
+    # Instantiate main UI
+    app.build_ui()
 
-        try:
-            tree = ast.parse(content, filename=str(file_path))
-        except SyntaxError as e:
-            failures.append(f"Syntax error in {file_path}: {e}")
-            continue
+    # Instantiate setup wizard
+    show_wizard(app, settings)
 
-        # Map to find variable definitions for constants
-        assigned_constants = {}
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Assign):
-                # Check for constant assignments like STANDARD_DIALOG_CARD_MD = "..."
-                for target in node.targets:
-                    if isinstance(target, ast.Name):
-                        if isinstance(node.value, ast.Constant) and isinstance(
-                            node.value.value, str
-                        ):
-                            assigned_constants[target.id] = node.value.value
+    # Instantiate settings view
+    show_settings(app, settings)
 
-        class DialogCardVisitor(ast.NodeVisitor):
-            def visit_Call(self, node):
-                # Look for calls to .classes(...)
-                if isinstance(node.func, ast.Attribute) and node.func.attr == "classes":
-                    # Check if the method call is chained to a card element (e.g., ui.card() or card())
-                    subject = node.func.value
-                    is_card_call = False
-                    if isinstance(subject, ast.Call):
-                        if (
-                            isinstance(subject.func, ast.Attribute)
-                            and subject.func.attr == "card"
-                        ):
-                            is_card_call = True
-                        elif (
-                            isinstance(subject.func, ast.Name)
-                            and subject.func.id == "card"
-                        ):
-                            is_card_call = True
+    # Instantiate specific warning and recovery dialog methods
+    app.show_ml_warning_dialog("test_feature")
+    app.show_rollback_recovery_dialog({"base_dir": "/mock/dir"})
 
-                    # Also detect ui.card() used within dialog context via AST parent/child or general check
-                    # To be exhaustive and safe, we validate ALL card classes in the UI files
-                    if is_card_call:
-                        # Extract the classes passed to the call
-                        for arg in node.args:
-                            cls_str = ""
-                            if isinstance(arg, ast.Constant) and isinstance(
-                                arg.value, str
-                            ):
-                                cls_str = arg.value
-                            elif (
-                                isinstance(arg, ast.Name)
-                                and arg.id in assigned_constants
-                            ):
-                                cls_str = assigned_constants[arg.id]
+    # 3. Check for any rigid layout violations in the instantiated components
+    violations = inspect_runtime_elements()
 
-                            if cls_str:
-                                # Split by space and find any offending class names
-                                class_list = cls_str.split()
-                                for cls in class_list:
-                                    if is_rigid_layout_class(cls):
-                                        failures.append(
-                                            f"Rigid layout class '{cls}' used in card at "
-                                            f"{file_path.name}:line {node.lineno}"
-                                        )
+    if violations:
+        pytest.fail("\n".join(violations))
 
-                self.generic_visit(node)
+def test_rigid_and_responsive_runtime_detection():
+    """Verify that the runtime layout checker programmatically blocks rigid width/height classes
 
-        visitor = DialogCardVisitor()
-        visitor.visit(tree)
+    and successfully passes when valid responsive CSS classes are used.
+    """
+    # Test valid responsive configurations
+    context.client.elements.clear()
+    
+    # These should pass successfully (responsive sizes)
+    ui.card().classes(get_dialog_card_classes("md"))
+    ui.card().classes(get_dialog_card_classes("lg"))
+    ui.card().classes(get_dialog_card_classes("xl"))
+    ui.card().classes("w-full max-w-md min-w-[320px] p-6")
+    
+    violations = inspect_runtime_elements()
+    assert len(violations) == 0, f"Expected zero violations for responsive classes, got: {violations}"
 
-        # Also validate any defined string constants with 'CARD' or 'DIALOG' in their names
-        for const_name, const_val in assigned_constants.items():
-            if "CARD" in const_name or "DIALOG" in const_name:
-                for cls in const_val.split():
-                    if is_rigid_layout_class(cls):
-                        failures.append(
-                            f"Rigid layout class '{cls}' used in constant '{const_name}' "
-                            f"in {file_path.name}"
-                        )
+    # Test rigid width configurations
+    context.client.elements.clear()
+    ui.card().classes("w-96")
+    violations = inspect_runtime_elements()
+    assert len(violations) > 0, "Expected a violation for rigid width 'w-96', but none was detected."
 
-    # If any rigid sizes are found, fail the test suite
-    if failures:
-        pytest.fail("\n".join(failures))
+    # Test rigid height configurations
+    context.client.elements.clear()
+    ui.card().classes("h-48")
+    violations = inspect_runtime_elements()
+    assert len(violations) > 0, "Expected a violation for rigid height 'h-48', but none was detected."
 
+    # Test rigid arbitrary value bracket configurations
+    context.client.elements.clear()
+    ui.card().classes("w-[500px]")
+    violations = inspect_runtime_elements()
+    assert len(violations) > 0, "Expected a violation for rigid arbitrary width 'w-[500px]', but none was detected."
 
 def test_is_rigid_layout_class_validation():
     """Verify that is_rigid_layout_class correctly flags rigid sizes and allows fluid/boundary sizes."""

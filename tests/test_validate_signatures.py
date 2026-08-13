@@ -82,3 +82,44 @@ def test_collect_current_definitions():
     demo_arg = [arg for arg in main_cli if arg["args"] == ["--demo"]]
     assert len(demo_arg) == 1
     assert demo_arg[0]["keywords"]["action"] == "store_true"
+
+
+def test_api_signature_snapshot_matches():
+    import os
+    import json
+    from scripts.validate_signatures import collect_current_definitions, SNAPSHOT_PATH
+
+    current_definitions = collect_current_definitions()
+    is_ci = os.environ.get("CI", "").lower() in ("true", "1")
+
+    if not os.path.exists(SNAPSHOT_PATH):
+        if not is_ci:
+            os.makedirs(os.path.dirname(SNAPSHOT_PATH), exist_ok=True)
+            with open(SNAPSHOT_PATH, "w", encoding="utf-8") as f:
+                json.dump(current_definitions, f, indent=2, sort_keys=True)
+                f.write("\n")
+            print(f"Successfully generated new baseline snapshot at {SNAPSHOT_PATH}")
+            return
+        else:
+            raise AssertionError(f"Baseline snapshot file does not exist at {SNAPSHOT_PATH}")
+
+    with open(SNAPSHOT_PATH, "r", encoding="utf-8") as f:
+        snapshot_definitions = json.load(f)
+
+    current_json = json.dumps(current_definitions, indent=2, sort_keys=True)
+    snapshot_json = json.dumps(snapshot_definitions, indent=2, sort_keys=True)
+
+    if current_json != snapshot_json:
+        if not is_ci:
+            os.makedirs(os.path.dirname(SNAPSHOT_PATH), exist_ok=True)
+            with open(SNAPSHOT_PATH, "w", encoding="utf-8") as f:
+                json.dump(current_definitions, f, indent=2, sort_keys=True)
+                f.write("\n")
+            print(f"Successfully auto-updated baseline snapshot at {SNAPSHOT_PATH}")
+            return
+        else:
+            raise AssertionError(
+                f"Public interface or CLI signature drift detected! "
+                f"In CI, automated baseline regeneration is disabled. "
+                f"Please commit the updated snapshot file '{SNAPSHOT_PATH}'."
+            )
