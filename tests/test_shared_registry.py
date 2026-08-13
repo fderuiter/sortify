@@ -594,6 +594,7 @@ def test_get_ocr_reader_dynamic_config(monkeypatch):
 
             # Ensure Reader called with ["en", "de"] and gpu=True
             from unittest.mock import ANY
+
             mock_easyocr.Reader.assert_any_call(
                 ["en", "de"],
                 gpu=True,
@@ -629,6 +630,7 @@ def test_get_ocr_reader_fallback(monkeypatch):
         # It should try once with the configured unsupported language, fail,
         # and then initialize with "en" and gpu=False
         from unittest.mock import ANY
+
         assert mock_easyocr.Reader.call_count == 2
         mock_easyocr.Reader.assert_any_call(
             ["en"],

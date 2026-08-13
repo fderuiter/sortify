@@ -639,6 +639,7 @@ class SharedModelRegistry:
 
         # Get settings
         from app.config import AppSettings
+
         settings = getattr(self, "_cached_settings", None) or AppSettings()
 
         # Safely retrieve OCR_LANGUAGES and OCR_GPU_ENABLED, handling mocks/missing attributes
@@ -655,6 +656,7 @@ class SharedModelRegistry:
             ocr_gpu_enabled = False
 
         from app.core.env_helper import is_cuda_available, is_mps_available
+
         gpu_available = is_cuda_available() or is_mps_available()
         use_gpu = bool(ocr_gpu_enabled and gpu_available)
 
@@ -669,7 +671,9 @@ class SharedModelRegistry:
                 import torch
 
                 torch.set_num_threads(self.get_thread_limit())
-                logging.info(f"Initializing EasyOCR reader with languages {langs} and gpu={use_gpu}")
+                logging.info(
+                    f"Initializing EasyOCR reader with languages {langs} and gpu={use_gpu}"
+                )
                 self._models[model_id] = easyocr.Reader(
                     langs,
                     gpu=use_gpu,
@@ -678,7 +682,9 @@ class SharedModelRegistry:
                 )
                 self._models["easyocr_info"] = (langs, use_gpu)
             except Exception as e:
-                logging.error(f"Failed to load EasyOCR reader with languages {langs} and gpu={use_gpu}: {e}. Falling back to 'en' and cpu.")
+                logging.error(
+                    f"Failed to load EasyOCR reader with languages {langs} and gpu={use_gpu}: {e}. Falling back to 'en' and cpu."
+                )
                 try:
                     import easyocr
                     import torch
@@ -692,7 +698,9 @@ class SharedModelRegistry:
                     )
                     self._models["easyocr_info"] = (["en"], False)
                 except Exception as ex:
-                    logging.critical(f"Critical: Fallback EasyOCR initialization failed: {ex}")
+                    logging.critical(
+                        f"Critical: Fallback EasyOCR initialization failed: {ex}"
+                    )
                     self._models[model_id] = None
                     self._models["easyocr_info"] = (None, None)
 

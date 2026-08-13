@@ -159,7 +159,7 @@ def test_audio_extractor_gpu_device_and_fallback(tmp_path):
     mock_process = MagicMock()
     mock_process.stdout.readline.return_value = ""
     mock_process.returncode = 0
-    
+
     mock_spawn.side_effect = [Exception("GPU Spawn Fail"), mock_process]
 
     with (
@@ -171,7 +171,7 @@ def test_audio_extractor_gpu_device_and_fallback(tmp_path):
 
         # It should try once with GPU (cuda), fail, then retry with CPU
         assert mock_spawn.call_count == 2
-        
+
         # Verify first call had --device cuda
         first_call_cmd = mock_spawn.call_args_list[0][0][0]
         assert "--device" in first_call_cmd
@@ -181,4 +181,3 @@ def test_audio_extractor_gpu_device_and_fallback(tmp_path):
         second_call_cmd = mock_spawn.call_args_list[1][0][0]
         assert "--device" in second_call_cmd
         assert "cpu" in second_call_cmd
-

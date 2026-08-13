@@ -9,13 +9,33 @@ from app.ui.settings import get_shadowed_policies, show_settings
 def test_get_shadowed_policies():
     """Verify that get_shadowed_policies correctly identifies shadowed policies based on type and priority."""
     policies = [
-        {"type": "keyword", "expression": "invoice", "target_path": "Invoices", "priority": 10},
+        {
+            "type": "keyword",
+            "expression": "invoice",
+            "target_path": "Invoices",
+            "priority": 10,
+        },
         # Shadowed by "invoice" because ha_expr in lo_expr and priority 10 > 5
-        {"type": "keyword", "expression": "invoice_overdue", "target_path": "Overdue", "priority": 5},
+        {
+            "type": "keyword",
+            "expression": "invoice_overdue",
+            "target_path": "Overdue",
+            "priority": 5,
+        },
         # Not shadowed because priority 20 > 10
-        {"type": "keyword", "expression": "invoice_final", "target_path": "Final", "priority": 20},
+        {
+            "type": "keyword",
+            "expression": "invoice_final",
+            "target_path": "Final",
+            "priority": 20,
+        },
         # Pattern masked by keyword with higher priority
-        {"type": "pattern", "expression": "final_invoice", "target_path": "FinalPattern", "priority": 5},
+        {
+            "type": "pattern",
+            "expression": "final_invoice",
+            "target_path": "FinalPattern",
+            "priority": 5,
+        },
     ]
 
     shadowed = get_shadowed_policies(policies)
@@ -25,8 +45,18 @@ def test_get_shadowed_policies():
 def test_get_shadowed_policies_tie_breaking():
     """Verify stable tie-breaking when priorities are equal (preserving original list order)."""
     policies = [
-        {"type": "keyword", "expression": "invoice", "target_path": "First", "priority": 10},
-        {"type": "keyword", "expression": "invoice_overdue", "target_path": "Second", "priority": 10},
+        {
+            "type": "keyword",
+            "expression": "invoice",
+            "target_path": "First",
+            "priority": 10,
+        },
+        {
+            "type": "keyword",
+            "expression": "invoice_overdue",
+            "target_path": "Second",
+            "priority": 10,
+        },
     ]
     # Since they have equal priority, first one comes first in sorted order, so second one is shadowed
     shadowed = get_shadowed_policies(policies)
@@ -115,8 +145,18 @@ def test_policies_tab_and_validation():
     # Standard setting initialization
     settings = AppSettings()
     settings.POLICIES = [
-        {"type": "keyword", "expression": "tax", "target_path": "TaxDocs", "priority": 50},
-        {"type": "keyword", "expression": "tax_2026", "target_path": "Tax2026", "priority": 10},
+        {
+            "type": "keyword",
+            "expression": "tax",
+            "target_path": "TaxDocs",
+            "priority": 50,
+        },
+        {
+            "type": "keyword",
+            "expression": "tax_2026",
+            "target_path": "Tax2026",
+            "priority": 10,
+        },
     ]
 
     parent_app = MagicMock()
@@ -142,7 +182,9 @@ def test_policies_tab_and_validation():
         show_settings(parent_app, settings)
 
         # 1. Verify Policies tab is rendered
-        assert any(name == "Policies" for name, _ in created_tabs), "Policies tab not found in created tabs"
+        assert any(name == "Policies" for name, _ in created_tabs), (
+            "Policies tab not found in created tabs"
+        )
         assert "Policies" in created_tab_panels, "Policies tab panel not created"
 
         # 2. Retrieve form fields
@@ -202,7 +244,10 @@ def test_policies_tab_and_validation():
         notifications.clear()
         target_field.value = "some/../traversal"
         add_btn.on_click()
-        assert any("cannot contain directory traversal segments" in msg for msg, _ in notifications)
+        assert any(
+            "cannot contain directory traversal segments" in msg
+            for msg, _ in notifications
+        )
 
         # Test Form Validation 4: Illegal OS Characters Rejection
         notifications.clear()
@@ -221,7 +266,9 @@ def test_policies_tab_and_validation():
         expr_field.value = "invoice"
         target_field.value = "InvoiceFolder"
         priority_field.value = 5
-        print(f"BEFORE SUCCESSFUL ADD: type={type_field.value}, expr={expr_field.value}, target={target_field.value}, priority={priority_field.value}")
+        print(
+            f"BEFORE SUCCESSFUL ADD: type={type_field.value}, expr={expr_field.value}, target={target_field.value}, priority={priority_field.value}"
+        )
         add_btn.on_click()
         print(f"NOTIFICATIONS RECORDED: {notifications}")
         assert len(settings.POLICIES) == initial_count + 1
