@@ -1,3 +1,4 @@
+import hashlib
 import os
 import shutil
 import tempfile
@@ -9,9 +10,12 @@ import pytest
 from app.core.downloader import (
     DiskSpaceError,
     DownloadCancelledError,
+    ModelVerificationError,
     run_background_download,
     verify_downloaded_model,
+    verify_temp_file_hash,
 )
+from app.core.shared_registry import SharedModelRegistry
 
 
 @pytest.fixture
@@ -65,8 +69,6 @@ def test_downloader_sandboxing_bypass(temp_model_dir):
             failure_called.set()
 
         # Compute and register mock hash for the expected download to pass verification
-        import hashlib
-        from app.core.shared_registry import SharedModelRegistry
         mock_data = b"chunk1chunk2"
         mock_hash = hashlib.sha256(mock_data).hexdigest()
         SharedModelRegistry.get_instance().register_expected_hashes(
@@ -180,10 +182,6 @@ def test_downloader_insufficient_disk_space(temp_model_dir):
 
 
 def test_verify_temp_file_hash_success(temp_model_dir):
-    from app.core.downloader import verify_temp_file_hash
-    from app.core.shared_registry import SharedModelRegistry
-    import hashlib
-
     temp_path = os.path.join(temp_model_dir, "model.onnx.tmp")
     target_path = os.path.join(temp_model_dir, "model.onnx")
 
@@ -204,9 +202,6 @@ def test_verify_temp_file_hash_success(temp_model_dir):
 
 
 def test_verify_temp_file_hash_mismatch_raises_error(temp_model_dir):
-    from app.core.downloader import verify_temp_file_hash, ModelVerificationError
-    from app.core.shared_registry import SharedModelRegistry
-
     temp_path = os.path.join(temp_model_dir, "model.onnx.tmp")
     target_path = os.path.join(temp_model_dir, "model.onnx")
 
@@ -228,9 +223,6 @@ def test_verify_temp_file_hash_mismatch_raises_error(temp_model_dir):
 
 
 def test_verify_temp_file_hash_no_hash_registered(temp_model_dir):
-    from app.core.downloader import verify_temp_file_hash, ModelVerificationError
-    from app.core.shared_registry import SharedModelRegistry
-
     temp_path = os.path.join(temp_model_dir, "model.onnx.tmp")
     target_path = os.path.join(temp_model_dir, "model.onnx")
 
@@ -258,9 +250,6 @@ def test_verify_temp_file_hash_no_hash_registered(temp_model_dir):
 
 
 def test_downloader_fails_on_hash_mismatch(temp_model_dir):
-    from app.core.downloader import run_background_download, ModelVerificationError
-    from app.core.shared_registry import SharedModelRegistry
-
     success_called = threading.Event()
     failure_called = threading.Event()
     captured_error = []
