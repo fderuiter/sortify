@@ -980,7 +980,9 @@ class AutoSorterApp:
         if not self.app_session or not self.base_dir:
             return
         try:
-            self._ratings_cache = self.app_session.db.get_all_document_ratings(self.base_dir)
+            self._ratings_cache = self.app_session.db.get_all_document_ratings(
+                self.base_dir
+            )
         except Exception as e:
             logger.error(f"Error loading ratings from DB: {e}")
 
