@@ -1,6 +1,6 @@
 import sys
 import time
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from app.core.extractor_strategies import AudioExtractor, get_audio_duration
 
