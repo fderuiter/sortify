@@ -676,3 +676,121 @@ def test_tokenizer_files_missing_raises_validation_error(db, temp_dir):
                 db, model_path=str(model_dir), force_validation=True
             )
         assert "Required tokenizer file is missing" in str(exc_info.value)
+def test_fast_path_bypass_verification(db, temp_dir):
+    """Verify that empty, None, and whitespace-only inputs return deterministic vectors of length self.dimensions without invoking the tokenizer or model execution."""
+    import math
+    import sys
+    from unittest.mock import MagicMock, patch
+
+    # Create dummy model dir with a mock onnx file
+    model_dir = temp_dir / "mock_model_dir"
+    model_dir.mkdir()
+    onnx_file = model_dir / "model.onnx"
+    onnx_file.write_text("dummy onnx content")
+
+    # Create mock structures that would fail or raise errors if invoked
+    # to prove tokenizer/model are never invoked
+    mock_transformers = MagicMock()
+    mock_transformers.AutoTokenizer.from_pretrained.side_effect = AssertionError(
+        "Tokenizer should not be invoked for fast-path!"
+    )
+
+    with (
+        patch.dict(sys.modules, {"transformers": mock_transformers}),
+        patch(
+            "app.core.shared_registry.SharedModelRegistry.get_onnx_session"
+        ) as mock_get_sess,
+        patch("app.core.semantic_embeddings.get_active_model_properties") as mock_props,
+    ):
+        mock_props.return_value = ("mock_sig_hash", 128, "1.0.0")
+        mock_get_sess.side_effect = AssertionError(
+            "ONNX session should not be retrieved for fast-path!"
+        )
+
+        manager = SemanticEmbeddingManager(db, model_path=str(model_dir))
+        assert manager.dimensions == 128
+
+        # Test cases for fast-path inputs
+        test_inputs = [None, "", "   ", "\n\t", " \n \t "]
+
+        for inp in test_inputs:
+            vector = manager.generate_embedding(inp)
+            assert len(vector) == 128
+            # Check no NaN or Inf values
+            assert all(math.isfinite(x) for x in vector)
+            # Check deterministic behavior
+            vector_again = manager.generate_embedding(inp)
+            assert vector == vector_again
+
+        # Test that different whitespace inputs also return a valid vector of 128 dimensions
+        v_empty = manager.generate_embedding("")
+        v_space = manager.generate_embedding("   ")
+        v_newline = manager.generate_embedding("\n")
+
+        assert len(v_empty) == 128
+        assert len(v_space) == 128
+        assert len(v_newline) == 128
+
+
+def test_fully_masked_inputs_safety(db, temp_dir):
+    """Verify that fully masked token sequences do not trigger division-by-zero errors in the pooling calculations and return non-NaN, non-Inf vectors."""
+    import math
+    import sys
+    from unittest.mock import MagicMock, patch
+
+    import numpy as np
+
+    # Set up a mock tokenizer that returns all-zero attention masks (fully masked)
+    mock_tokenizer = MagicMock()
+    mock_inputs = {
+        "input_ids": np.array([[101, 102, 103]], dtype=np.int64),
+        "attention_mask": np.array([[0, 0, 0]], dtype=np.int64),  # Fully masked!
+    }
+    mock_tokenizer.return_value = mock_inputs
+
+    mock_transformers = MagicMock()
+    mock_transformers.AutoTokenizer.from_pretrained.return_value = mock_tokenizer
+
+    # Set up a mock ONNX session
+    mock_session = MagicMock()
+    input_node_ids = MagicMock()
+    input_node_ids.name = "input_ids"
+    input_node_mask = MagicMock()
+    input_node_mask.name = "attention_mask"
+    mock_session.get_inputs.return_value = [input_node_ids, input_node_mask]
+
+    # Mock output token embeddings: shape [1, 3, 4]
+    token_embeddings = np.array(
+        [[[0.1, 0.2, 0.3, 0.4], [0.5, 0.6, 0.7, 0.8], [0.9, 1.0, 1.1, 1.2]]],
+        dtype=np.float32,
+    )
+    mock_session.run.return_value = [token_embeddings]
+
+    # Create dummy model dir with a mock onnx file
+    model_dir = temp_dir / "mock_model_dir"
+    model_dir.mkdir()
+    onnx_file = model_dir / "model.onnx"
+    onnx_file.write_text("dummy onnx content")
+
+    with (
+        patch.dict(sys.modules, {"transformers": mock_transformers}),
+        patch(
+            "app.core.shared_registry.SharedModelRegistry.get_onnx_session",
+            return_value=mock_session,
+        ),
+        patch("app.core.semantic_embeddings.get_active_model_properties") as mock_props,
+    ):
+        mock_props.return_value = ("mock_sig_hash", 4, "1.0.0")
+
+        manager = SemanticEmbeddingManager(db, model_path=str(model_dir))
+        assert manager.dimensions == 4
+
+        # This should NOT crash with division by zero or produce NaNs/Infs
+        embedding = manager.generate_embedding("Fully masked input text")
+
+        assert len(embedding) == 4
+        assert all(math.isfinite(x) for x in embedding)
+        # Ensure no NaN/Inf
+        for val in embedding:
+            assert not math.isnan(val)
+            assert not math.isinf(val)
