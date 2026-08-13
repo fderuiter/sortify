@@ -462,6 +462,12 @@ class SemanticEmbeddingManager:
 
     def generate_embedding(self, text: str | None) -> list[float]:
         """Generate vector embedding of active model dimensions."""
+        if not text or not text.strip():
+            text_cleaned = text or ""
+            h = hashlib.sha256(text_cleaned.encode("utf-8")).digest()
+            rng = random.Random(h)
+            return [rng.uniform(-1.0, 1.0) for _ in range(self.dimensions)]
+
         # Clean the text or default to empty
         text = text or ""
 
@@ -552,7 +558,7 @@ class SemanticEmbeddingManager:
                         token_embeddings * input_mask_expanded, axis=1
                     )
                     sum_mask = np.sum(input_mask_expanded, axis=1)
-                    sum_mask = np.clip(sum_mask, a_min=1e-9, a_max=None)
+                    sum_mask = np.clip(sum_mask, a_min=1, a_max=None)
                     embedding = sum_embeddings / sum_mask
                     embedding_vector = embedding[0]
 

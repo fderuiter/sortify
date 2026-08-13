@@ -1065,6 +1065,10 @@ class AutoSorterApp:
 
     def render_tree(self):
         """Render the tree view of the sorting plan."""
+        if not self._ratings_cache and self.app_session and self.base_dir:
+            self.load_ratings_from_db()
+        if not self.locked_files and self.app_session and self.base_dir:
+            self.load_locked_files_from_db()
         self.tree_nodes = []
         self._flatten(self.plan, "", self.tree_nodes)
         if hasattr(self, "tree_view"):

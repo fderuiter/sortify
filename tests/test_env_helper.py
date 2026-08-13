@@ -321,3 +321,132 @@ def test_run_background_process_fail_closed():
         assert "Subprocess sandboxing is enabled but not supported" in str(
             exc_info.value
         )
+
+
+def test_restricted_popen_execute_child_logic():
+    import ctypes
+    import importlib
+
+    # We will temporarily mock sys.platform and other Win32-specific components
+    mock_ctypes = mock.MagicMock()
+    mock_ctypes.windll = mock.MagicMock()
+    mock_ctypes.windll.advapi32 = mock.MagicMock()
+    mock_ctypes.windll.kernel32 = mock.MagicMock()
+
+    # Configure mock return values to allow token duplication and process creation
+    mock_ctypes.windll.advapi32.OpenProcessToken.return_value = True
+    mock_ctypes.windll.advapi32.ConvertStringSidToSidW.return_value = True
+    mock_ctypes.windll.advapi32.CreateRestrictedToken.return_value = True
+    mock_ctypes.windll.advapi32.DuplicateTokenEx.return_value = True
+    mock_ctypes.windll.advapi32.CreateProcessAsUserW.return_value = True
+    mock_ctypes.windll.kernel32.GetCurrentProcess.return_value = 1234
+    mock_ctypes.windll.kernel32.CloseHandle.return_value = True
+    mock_ctypes.windll.kernel32.LocalFree.return_value = True
+
+    # Mock wintypes using actual ctypes types so Structure compilation succeeds
+    mock_wintypes = mock.MagicMock()
+    mock_wintypes.LPVOID = ctypes.c_void_p
+    mock_wintypes.DWORD = ctypes.c_ulong
+    mock_wintypes.HANDLE = ctypes.c_void_p
+    mock_wintypes.WORD = ctypes.c_ushort
+    mock_wintypes.LPWSTR = ctypes.c_wchar_p
+    mock_wintypes.LPCWSTR = ctypes.c_wchar_p
+    mock_wintypes.BOOL = ctypes.c_long
+
+    # Mock _winapi
+    mock_winapi = mock.MagicMock()
+    mock_msvcrt = mock.MagicMock()
+
+    with (
+        mock.patch("sys.platform", "win32"),
+        mock.patch("ctypes.windll", mock_ctypes.windll, create=True),
+        mock.patch("ctypes.WinError", Exception, create=True),
+        mock.patch("os.open", return_value=999),
+        mock.patch("os.set_inheritable"),
+        mock.patch("os.close"),
+        mock.patch.dict(
+            "sys.modules", {
+                "ctypes.wintypes": mock_wintypes,
+                "_winapi": mock_winapi,
+                "msvcrt": mock_msvcrt
+            }
+        ),
+    ):
+        # Reload env_helper to define RestrictedPopen Windows class
+        from app.core import env_helper
+
+        importlib.reload(env_helper)
+
+        # Instantiate a mock Popen and call _execute_child
+        class MockPopen(env_helper.RestrictedPopen):
+            def __init__(self):
+                self._child_created = False
+                self._handle = None
+                self.pid = None
+
+        proc = MockPopen()
+
+        p2cread_mock = mock.MagicMock()
+        p2cwrite_mock = mock.MagicMock()
+        c2pread_mock = mock.MagicMock()
+        c2pwrite_mock = mock.MagicMock()
+        errread_mock = mock.MagicMock()
+        errwrite_mock = mock.MagicMock()
+
+        # Call _execute_child
+        proc._execute_child(
+            args=["dummy.exe"],
+            executable="dummy.exe",
+            preexec_fn=None,
+            close_fds=True,
+            pass_fds=(),
+            cwd=None,
+            env={},
+            startupinfo=None,
+            creationflags=0,
+            shell=False,
+            p2cread=p2cread_mock,
+            p2cwrite=p2cwrite_mock,
+            c2pread=c2pread_mock,
+            c2pwrite=c2pwrite_mock,
+            errread=errread_mock,
+            errwrite=errwrite_mock,
+        )
+
+        # Verify that only the child pipe ends are closed
+        p2cread_mock.Close.assert_called_once()
+        c2pwrite_mock.Close.assert_called_once()
+        errwrite_mock.Close.assert_called_once()
+
+        # Verify that parent ends are NOT closed
+        p2cwrite_mock.Close.assert_not_called()
+        c2pread_mock.Close.assert_not_called()
+        errread_mock.Close.assert_not_called()
+
+        # Verify that self.pid was set
+        assert proc.pid is not None
+
+    # Clean up by reloading env_helper with standard platform
+    from app.core import env_helper
+
+    importlib.reload(env_helper)
+
+
+def test_check_windows_sandbox_support_live_probe_pipe_failure():
+    mock_ctypes = mock.MagicMock()
+    mock_ctypes.windll = mock.MagicMock()
+    mock_ctypes.windll.advapi32 = mock.MagicMock()
+    
+    class FakeFunction:
+        pass
+        
+    mock_ctypes.windll.advapi32.CreateProcessAsUserW = FakeFunction()
+    
+    with (
+        mock.patch("sys.platform", "win32"),
+        mock.patch("ctypes.windll", mock_ctypes.windll, create=True),
+        mock.patch("app.core.env_helper.RestrictedPopen", side_effect=Exception("Pipe creation or duplication failure")),
+    ):
+        from app.core.env_helper import check_windows_sandbox_support
+        assert check_windows_sandbox_support() is False
+
