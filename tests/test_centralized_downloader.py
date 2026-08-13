@@ -100,7 +100,9 @@ def test_dismiss_does_not_abort_download(mock_dialog, mock_timer):
     settings = MagicMock()
     settings.PROXY = ""
 
-    show_wizard(parent_app, settings)
+    from nicegui import Client
+    with Client(None):
+        show_wizard(parent_app, settings)
 
     # Locate the dismiss event callback
     dismiss_handler = None
