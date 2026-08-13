@@ -239,11 +239,14 @@ class AppSettings:
                     if proxy_val.startswith("enc:"):
                         try:
                             from app.core.path_utils import resolve_db_crypto
+
                             crypto = resolve_db_crypto(self._filepath)
                             decrypted_val = crypto.decrypt_text(proxy_val[4:])
                             data["PROXY"] = decrypted_val
                         except Exception as e:
-                            logging.warning(f"Failed to decrypt proxy settings, leaving as-is: {e}")
+                            logging.warning(
+                                f"Failed to decrypt proxy settings, leaving as-is: {e}"
+                            )
                     else:
                         needs_migration = True
 
@@ -313,6 +316,7 @@ class AppSettings:
             if proxy_val and not proxy_val.startswith("enc:"):
                 try:
                     from app.core.path_utils import resolve_db_crypto
+
                     crypto = resolve_db_crypto(self._filepath)
                     encrypted_val = crypto.encrypt_text(proxy_val)
                     if isinstance(encrypted_val, bytes):
