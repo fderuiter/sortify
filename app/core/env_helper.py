@@ -15,8 +15,6 @@ MACOS_SANDBOX_PROFILE = (
     "(version 1)\n"
     "(allow default)\n"
     "(deny network-outbound)\n"
-    '(allow network-outbound (remote ip "127.0.0.1"))\n'
-    '(allow network-outbound (remote ip "::1"))\n'
 )
 
 
