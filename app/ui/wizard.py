@@ -97,6 +97,7 @@ def show_wizard(parent_app, settings):
         cancel_event = threading.Event()
         timer_ref = [None]
         from queue import Queue
+
         notification_queue = Queue()
 
         def update_timer_tick(state):

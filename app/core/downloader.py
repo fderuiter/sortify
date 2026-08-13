@@ -157,7 +157,6 @@ def run_background_download(
             temp_path = target_path + ".tmp"
 
             max_attempts = 5
-            success = False
 
             for attempt in range(1, max_attempts + 1):
                 try:
@@ -213,7 +212,9 @@ def run_background_download(
                                         raise DownloadCancelledError(
                                             "Download was cancelled by the user."
                                         )
-                                    raise NetworkError(f"Network error during read: {e}") from e
+                                    raise NetworkError(
+                                        f"Network error during read: {e}"
+                                    ) from e
 
                                 if not chunk:
                                     break
@@ -225,7 +226,9 @@ def run_background_download(
                                         raise DiskSpaceError(
                                             "Insufficient disk space on the target drive."
                                         ) from e
-                                    raise DiskSpaceError(f"Local file write error: {e}") from e
+                                    raise DiskSpaceError(
+                                        f"Local file write error: {e}"
+                                    ) from e
 
                                 bytes_downloaded += len(chunk)
                                 if progress_callback:
@@ -235,7 +238,6 @@ def run_background_download(
                                         pass
 
                         # If we reached here, the download of the file is complete
-                        success = True
                         break
 
                 except (DownloadCancelledError, DiskSpaceError) as e:
@@ -250,7 +252,9 @@ def run_background_download(
                         import random
                         import time
 
-                        delay = base_delay * (2 ** (attempt - 1)) + random.uniform(0.1, 0.5)
+                        delay = base_delay * (2 ** (attempt - 1)) + random.uniform(
+                            0.1, 0.5
+                        )
                         msg = f"Network drop detected. Retrying download (attempt {attempt}/{max_attempts}) in {delay:.2f}s..."
                         logger.warning(msg)
                         if notification_queue is not None:

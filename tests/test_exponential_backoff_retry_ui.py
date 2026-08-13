@@ -3,7 +3,6 @@ import os
 import shutil
 import tempfile
 import threading
-import time
 from queue import Queue
 from unittest.mock import MagicMock, patch
 
@@ -11,14 +10,12 @@ import pytest
 
 from app.core.downloader import (
     DiskSpaceError,
-    DownloadCancelledError,
-    ModelVerificationError,
     NetworkError,
     run_background_download,
     verify_downloaded_model,
 )
-from app.core.user_space_bootstrap import check_internet_connection
 from app.core.shared_registry import SharedModelRegistry
+from app.core.user_space_bootstrap import check_internet_connection
 
 
 @pytest.fixture
@@ -94,7 +91,10 @@ def test_downloader_retries_on_network_drop_and_succeeds(temp_model_dir):
             raise Exception("Initial Connection Timeout")
         elif open_count == 2:
             # Second attempt fails mid-stream
-            response.read.side_effect = [b"completed_", Exception("Mid-stream Network Drop")]
+            response.read.side_effect = [
+                b"completed_",
+                Exception("Mid-stream Network Drop"),
+            ]
         else:
             # Third attempt succeeds
             response.read.side_effect = [mock_data, b""]

@@ -98,7 +98,6 @@ def test_model_downloader_bypasses_sandbox(tmp_path):
         failure_called.set()
         print(f"DOWNLOAD FAILURE: {err}")
 
-
     # Compute and register mock hash for the expected download to pass verification
     mock_data = b"modeldata"
     mock_hash = hashlib.sha256(mock_data).hexdigest()

@@ -71,6 +71,7 @@ def show_settings(parent_app, settings):
     cancel_event = threading.Event()
     timer_ref = [None]
     from queue import Queue
+
     notification_queue = Queue()
 
     def on_explorer_integration_change(e):
