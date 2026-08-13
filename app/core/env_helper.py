@@ -292,6 +292,26 @@ if sys.platform == "win32":
                 si.hStdError = int(startupinfo.hStdError)
                 si.dwFlags |= 0x00000100
 
+            # If STARTF_USESTDHANDLES is set, all standard handles must be valid and inheritable.
+            # Fill any missing/None standard handles with a guaranteed valid and inheritable handle to NUL.
+            null_fd = None
+            if si.dwFlags & 0x00000100:  # STARTF_USESTDHANDLES
+                import msvcrt
+
+                try:
+                    null_fd = os.open("NUL", os.O_RDWR)
+                    os.set_inheritable(null_fd, True)
+                    null_handle = msvcrt.get_osfhandle(null_fd)
+                except Exception:
+                    null_handle = None
+
+                if not si.hStdInput:
+                    si.hStdInput = null_handle
+                if not si.hStdOutput:
+                    si.hStdOutput = null_handle
+                if not si.hStdError:
+                    si.hStdError = null_handle
+
             inherit_handles = True if (si.dwFlags & 0x00000100) else False
 
             # Convert cmd line
@@ -306,19 +326,26 @@ if sys.platform == "win32":
 
             # 6. Execute CreateProcessAsUserW
             pi = PROCESS_INFORMATION()
-            success = advapi32.CreateProcessAsUserW(
-                primary_token,
-                executable,
-                cmd_line,
-                None,
-                None,
-                inherit_handles,
-                creationflags,
-                env_block,
-                cwd,
-                ctypes.byref(si),
-                ctypes.byref(pi),
-            )
+            try:
+                success = advapi32.CreateProcessAsUserW(
+                    primary_token,
+                    executable,
+                    cmd_line,
+                    None,
+                    None,
+                    inherit_handles,
+                    creationflags,
+                    env_block,
+                    cwd,
+                    ctypes.byref(si),
+                    ctypes.byref(pi),
+                )
+            finally:
+                if null_fd is not None:
+                    try:
+                        os.close(null_fd)
+                    except Exception:
+                        pass
 
             # Close primary token as we no longer need it to spawn
             kernel32.CloseHandle(primary_token)
