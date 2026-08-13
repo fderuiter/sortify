@@ -138,3 +138,48 @@ print("[00:05.000 --> 00:10.000] Hello segment 2", flush=True)
     # 3. Only the first progress was registered
     assert any(abs(p - 0.05) < 1e-4 for p in progress_vals)
     assert all(p < 0.08 for p in progress_vals)
+
+
+def test_audio_extractor_gpu_device_and_fallback(tmp_path):
+    """Test that the AudioExtractor targets cuda device when GPU is enabled, and falls back to CPU if spawning fails."""
+    from unittest.mock import patch, MagicMock
+    import sys
+
+    dummy_wav = tmp_path / "test.wav"
+    dummy_wav.touch()
+
+    extractor = AudioExtractor()
+    settings = MagicMock()
+    settings.AUDIO_GPU_ENABLED = True
+    settings.WHISPER_CMD = "whisper"
+
+    # We will mock spawn_background_process to inspect the command passed
+    mock_spawn = MagicMock()
+    # Let the first spawn fail with an exception to simulate a GPU spawn error,
+    # and the second spawn succeed with a mock process
+    mock_process = MagicMock()
+    mock_process.stdout.readline.return_value = ""
+    mock_process.returncode = 0
+    
+    mock_spawn.side_effect = [Exception("GPU Spawn Fail"), mock_process]
+
+    with (
+        patch("app.core.env_helper.is_cuda_available", return_value=True),
+        patch("app.core.env_helper.is_mps_available", return_value=False),
+        patch("app.core.env_helper.spawn_background_process", mock_spawn),
+    ):
+        text = extractor.extract(str(dummy_wav), settings=settings)
+
+        # It should try once with GPU (cuda), fail, then retry with CPU
+        assert mock_spawn.call_count == 2
+        
+        # Verify first call had --device cuda
+        first_call_cmd = mock_spawn.call_args_list[0][0][0]
+        assert "--device" in first_call_cmd
+        assert "cuda" in first_call_cmd
+
+        # Verify second call had --device cpu
+        second_call_cmd = mock_spawn.call_args_list[1][0][0]
+        assert "--device" in second_call_cmd
+        assert "cpu" in second_call_cmd
+

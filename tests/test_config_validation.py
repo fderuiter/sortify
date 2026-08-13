@@ -587,3 +587,39 @@ def test_proxy_automatic_migration_from_plaintext(tmp_path):
 
     if reloaded_settings._save_timer:
         reloaded_settings._save_timer.cancel()
+
+
+def test_granular_acceleration_and_multi_lang_defaults():
+    """Test that default values for the acceleration and language fields are correctly initialized."""
+    settings = Settings()
+    assert settings.OCR_GPU_ENABLED is False
+    assert settings.AUDIO_GPU_ENABLED is False
+    assert settings.OCR_LANGUAGES == "en"
+
+
+def test_ocr_languages_validation():
+    """Test validator for OCR_LANGUAGES field."""
+    # Valid values
+    assert Settings(OCR_LANGUAGES="en").OCR_LANGUAGES == "en"
+    assert Settings(OCR_LANGUAGES="en,de").OCR_LANGUAGES == "en,de"
+    assert Settings(OCR_LANGUAGES="en, de").OCR_LANGUAGES == "en, de"
+    assert Settings(OCR_LANGUAGES="ch_sim,en").OCR_LANGUAGES == "ch_sim,en"
+
+    # Invalid type
+    with pytest.raises(ValidationError):
+        Settings(OCR_LANGUAGES=123)
+
+    # Empty string
+    with pytest.raises(ValidationError):
+        Settings(OCR_LANGUAGES="")
+
+    # Missing parts or spaces only / empty codes
+    with pytest.raises(ValidationError):
+        Settings(OCR_LANGUAGES="en,,de")
+
+    with pytest.raises(ValidationError):
+        Settings(OCR_LANGUAGES="en, ")
+
+    # Non-alphanumeric/underscore codes
+    with pytest.raises(ValidationError):
+        Settings(OCR_LANGUAGES="en,de-ch")

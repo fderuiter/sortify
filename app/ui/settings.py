@@ -599,6 +599,73 @@ def show_settings(parent_app, settings):
                             img_skip_slider, "value", backward=lambda v: f"{int(v)}"
                         )
 
+                    ui.label("Hardware Acceleration & Language Support").classes(
+                        "text-md font-bold mt-4 mb-2"
+                    )
+
+                    from app.core.env_helper import is_cuda_available, is_mps_available
+
+                    cuda_ok = is_cuda_available()
+                    mps_ok = is_mps_available()
+
+                    ui.label(f"CUDA Hardware Acceleration: {'Available' if cuda_ok else 'Unavailable'}").classes(
+                        "text-sm font-semibold " + ("text-green-600" if cuda_ok else "text-gray-500")
+                    ).props('aria-label="CUDA status label"')
+                    ui.label(f"MPS Hardware Acceleration: {'Available' if mps_ok else 'Unavailable'}").classes(
+                        "text-sm font-semibold " + ("text-green-600" if mps_ok else "text-gray-500")
+                    ).props('aria-label="MPS status label"')
+
+                    def on_ocr_gpu_change(e):
+                        try:
+                            settings.OCR_GPU_ENABLED = e.value
+                        except Exception as ex:
+                            e.sender.value = settings.OCR_GPU_ENABLED
+                            ui.notify(f"Failed to update OCR GPU setting: {ex}", type="negative")
+
+                    ui.switch(
+                        "Enable GPU Acceleration for OCR",
+                        value=getattr(settings, "OCR_GPU_ENABLED", False),
+                        on_change=on_ocr_gpu_change,
+                    ).props('aria-label="OCR GPU acceleration toggle"')
+
+                    def on_audio_gpu_change(e):
+                        try:
+                            settings.AUDIO_GPU_ENABLED = e.value
+                        except Exception as ex:
+                            e.sender.value = settings.AUDIO_GPU_ENABLED
+                            ui.notify(f"Failed to update Audio GPU setting: {ex}", type="negative")
+
+                    ui.switch(
+                        "Enable GPU Acceleration for Audio Transcription",
+                        value=getattr(settings, "AUDIO_GPU_ENABLED", False),
+                        on_change=on_audio_gpu_change,
+                    ).props('aria-label="Audio GPU acceleration toggle"')
+
+                    ocr_langs_input = ui.input(
+                        "OCR Target Languages (comma-separated, e.g. en,de)",
+                        value=getattr(settings, "OCR_LANGUAGES", "en"),
+                    ).classes("w-full mb-2").props(
+                        'aria-label="OCR target languages input" placeholder="e.g. en,de"'
+                    )
+
+                    def save_ocr_languages():
+                        val = ocr_langs_input.value
+                        if val is None:
+                            val = ""
+                        try:
+                            settings.OCR_LANGUAGES = val
+                            ui.notify("OCR target languages updated successfully.", type="positive")
+                        except Exception as ex:
+                            ocr_langs_input.value = settings.OCR_LANGUAGES
+                            error_msg = str(ex)
+                            if "Value error," in error_msg:
+                                error_msg = error_msg.split("Value error,")[-1].strip()
+                            ui.notify(f"Invalid language configuration: {error_msg}", type="negative")
+
+                    ui.button("Save OCR Languages", on_click=save_ocr_languages).props(
+                        'aria-label="Save OCR Languages Button"'
+                    )
+
             with ui.tab_panel("Rules"):
                 ui.label("Keyword Routing").classes("text-lg font-bold mb-2")
 
