@@ -189,9 +189,13 @@ def test_graceful_fallback_during_reconstruction(db, temp_dir):
             analyzer.embedding_manager, "is_reconstruction_active", return_value=True
         ):
             # We also patch standard TF-IDF similarity calculation to verify it gets called
+            from sklearn.feature_extraction.text import TfidfVectorizer
+
             with patch(
-                "sklearn.feature_extraction.text.TfidfVectorizer.fit"
-            ) as mock_tfidf_fit:
+                "sklearn.feature_extraction.text.TfidfVectorizer.transform",
+                side_effect=TfidfVectorizer.transform,
+                autospec=True,
+            ) as mock_tfidf_transform:
                 # Prepare some documents
                 db.upsert_documents(
                     [
@@ -215,7 +219,7 @@ def test_graceful_fallback_during_reconstruction(db, temp_dir):
                 plan = analyzer.generate_sorting_plan(str(temp_dir))
 
                 # It must fall back gracefully to text similarity (TF-IDF vectorizer is called)
-                assert mock_tfidf_fit.called
+                assert mock_tfidf_transform.called
     finally:
         analyzer.close()
 
