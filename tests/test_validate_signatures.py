@@ -85,9 +85,10 @@ def test_collect_current_definitions():
 
 
 def test_api_signature_snapshot_matches():
-    import os
     import json
-    from scripts.validate_signatures import collect_current_definitions, SNAPSHOT_PATH
+    import os
+
+    from scripts.validate_signatures import SNAPSHOT_PATH, collect_current_definitions
 
     current_definitions = collect_current_definitions()
     is_ci = os.environ.get("CI", "").lower() in ("true", "1")
@@ -101,7 +102,9 @@ def test_api_signature_snapshot_matches():
             print(f"Successfully generated new baseline snapshot at {SNAPSHOT_PATH}")
             return
         else:
-            raise AssertionError(f"Baseline snapshot file does not exist at {SNAPSHOT_PATH}")
+            raise AssertionError(
+                f"Baseline snapshot file does not exist at {SNAPSHOT_PATH}"
+            )
 
     with open(SNAPSHOT_PATH, "r", encoding="utf-8") as f:
         snapshot_definitions = json.load(f)
