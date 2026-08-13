@@ -1,14 +1,17 @@
-import pytest
-from app.core.text_utils import sanitize_text
 from app.core.extractor import extract_file_text
+from app.core.text_utils import sanitize_text
 
 
 def test_sanitize_text_html_and_xml():
     """Verify that standard XML/HTML tags are stripped and semantic text is preserved."""
-    raw_html = "<div>Hello <b>World</b>! Welcome to <span>text sanitization</span>.</div>"
+    raw_html = (
+        "<div>Hello <b>World</b>! Welcome to <span>text sanitization</span>.</div>"
+    )
     assert sanitize_text(raw_html) == "Hello World! Welcome to text sanitization."
 
-    raw_xml = "<note>\n<to>User</to>\n<from>System</from>\n<body>Action items</body>\n</note>"
+    raw_xml = (
+        "<note>\n<to>User</to>\n<from>System</from>\n<body>Action items</body>\n</note>"
+    )
     assert sanitize_text(raw_xml) == "User\nSystem\nAction items"
 
 
@@ -26,7 +29,9 @@ def test_sanitize_text_florence_task_tags():
     raw = "<OD> Bounding boxes of objects: <loc_100> <loc_200>"
     assert sanitize_text(raw) == "Bounding boxes of objects:"
 
-    raw_all = "<CAPTION_TO_PHRASE_GROUNDING> A cat on a <OCR_WITH_REGION_AND_BOX> chair."
+    raw_all = (
+        "<CAPTION_TO_PHRASE_GROUNDING> A cat on a <OCR_WITH_REGION_AND_BOX> chair."
+    )
     assert sanitize_text(raw_all) == "A cat on a chair."
 
 
@@ -80,11 +85,5 @@ def test_extractor_level_sanitization_integration(tmp_path):
     result = extract_file_text(str(test_file))
 
     # The result should have all markup elements stripped, and whitespaces normalized
-    expected = (
-        "Invoice Details\n"
-        "Region:\n"
-        "Bbox:\n"
-        "Task:\n"
-        "Status: Active"
-    )
+    expected = "Invoice Details\nRegion:\nBbox:\nTask:\nStatus: Active"
     assert result == expected
