@@ -395,7 +395,7 @@ def get_subprocess_startupinfo():
     return None
 
 
-def spawn_background_process(cmd, sandbox: bool = True, **kwargs):
+def spawn_background_process(cmd, sandbox: bool = SANDBOX_SUPPORTED, **kwargs):
     """Spawn a background process asynchronously with platform-specific sandboxing if sandbox=True."""
     if sandbox:
         if not SANDBOX_SUPPORTED:
@@ -438,7 +438,7 @@ def spawn_background_process(cmd, sandbox: bool = True, **kwargs):
     return subprocess.Popen(cmd, **kwargs)
 
 
-def run_background_process(cmd, sandbox: bool = True, **kwargs):
+def run_background_process(cmd, sandbox: bool = SANDBOX_SUPPORTED, **kwargs):
     """Run a background process synchronously with platform-specific sandboxing if sandbox=True."""
     if sandbox:
         if not SANDBOX_SUPPORTED:
