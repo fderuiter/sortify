@@ -1,7 +1,6 @@
 import queue
 import unicodedata
 from unittest.mock import MagicMock, patch
-import pytest
 
 from app.core.analyzer_strategies import GenerativeNamingStrategy, gguf_worker_main
 from app.core.path_utils import sanitize_name
@@ -103,12 +102,12 @@ def test_dynamic_gbnf_nfc_normalization_in_sanitize_name():
     """Verify that folder names are explicitly written in Unicode Normalization Form C (NFC)."""
     # Decomposed representation of 'Einkäufe' (NFD form: 'Einka' + combining diaeresis + 'ufe')
     nfd_name = "Einka\u0308ufe"
-    
+
     # Assert NFD form is different from NFC
     assert unicodedata.is_normalized("NFC", nfd_name) is False
 
     sanitized = sanitize_name(nfd_name)
-    
+
     # Assert that output is NFC-normalized
     assert unicodedata.is_normalized("NFC", sanitized) is True
     assert sanitized == "Eink\u00e4ufe"
@@ -148,13 +147,15 @@ def test_gguf_worker_main_compilation_fallback_ascii():
 
             # Get status message
             assert output_queue.get() == {"status": "ready"}
-            
+
             # Get task result
             assert output_queue.get() == {"text": "OK"}
-            
+
             # Verify that from_string was called for both, and llm was run with compiled default grammar
             mock_from_string.assert_any_call("some dynamic invalid grammar")
-            mock_from_string.assert_any_call('root ::= word (" " word)? (" " word)? (" " word)?\nword ::= [a-zA-Z0-9]+')
+            mock_from_string.assert_any_call(
+                'root ::= word (" " word)? (" " word)? (" " word)?\nword ::= [a-zA-Z0-9]+'
+            )
             mock_llm.assert_any_call(
                 "Test Prompt", max_tokens=5, echo=False, grammar=mock_compiled_grammar
             )
