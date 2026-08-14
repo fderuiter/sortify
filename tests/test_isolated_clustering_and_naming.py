@@ -1,12 +1,13 @@
-import pytest
+from unittest.mock import patch
+
 import numpy as np
-from unittest.mock import patch, MagicMock
+
 from app.core.analyzer_strategies import (
     RecursiveKMeansStrategy,
-    GenerativeNamingStrategy,
     get_status_friendly_name,
-    sanitize_placeholder_tags
+    sanitize_placeholder_tags,
 )
+
 
 def test_get_status_friendly_name():
     assert get_status_friendly_name("[STATUS:ENCRYPTED]") == "Password Protected Files"

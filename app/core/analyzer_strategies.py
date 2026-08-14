@@ -3,6 +3,7 @@
 import logging
 import multiprocessing
 import os
+import re
 import sys
 from collections import defaultdict
 from contextlib import contextmanager
@@ -53,9 +54,6 @@ class ClusteringStrategy(Protocol):
         """Return the clustering plan and the total reconstruction error."""
         ...
 
-
-import re
-from collections import Counter
 
 def get_status_friendly_name(status_str: str) -> str:
     # Remove brackets if present
@@ -801,6 +799,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
 
         try:
             import torch
+
             from app.core.shared_registry import SharedModelRegistry
             torch.set_num_threads(SharedModelRegistry.get_instance().get_thread_limit())
         except Exception:
