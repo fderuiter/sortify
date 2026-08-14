@@ -209,7 +209,18 @@ class RecursiveKMeansStrategy:
 
 
 def is_gguf_model_dir(model_path: str) -> bool:
-    """Check recursively if the given path contains any GGUF files."""
+    """Check recursively if the given path contains any GGUF files.
+
+    Parameters
+    ----------
+    model_path : str
+        The folder path to scan recursively.
+
+    Returns
+    -------
+    bool
+        True if at least one GGUF file is found, False otherwise.
+    """
     if not model_path or not os.path.exists(model_path):
         return False
     for root, _, files in os.walk(model_path):
@@ -220,7 +231,19 @@ def is_gguf_model_dir(model_path: str) -> bool:
 
 
 def gguf_worker_main(model_path, input_queue, output_queue, n_threads=None):
-    """Worker process main loop that handles local GGUF model generation."""
+    """Worker process main loop that handles local GGUF model generation.
+
+    Parameters
+    ----------
+    model_path : str
+        The folder path containing the GGUF model files.
+    input_queue : multiprocessing.Queue
+        Queue to receive tasks from the main process.
+    output_queue : multiprocessing.Queue
+        Queue to send results back to the main process.
+    n_threads : int, optional
+        Number of CPU threads to allocate for the model. If None, resolves from the registry thread limit.
+    """
     import os
 
     gguf_file = None
