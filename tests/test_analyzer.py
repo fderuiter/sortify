@@ -393,7 +393,9 @@ def test_analyzer_no_n_plus_one_queries(mocker):
     )
 
     # 1. Historical document (manually verified/sorted to "Receipts")
-    db.upsert_document(base_dir, "historical_1.txt", "hash_hist_1", "Some invoice context")
+    db.upsert_document(
+        base_dir, "historical_1.txt", "hash_hist_1", "Some invoice context"
+    )
     db.set_user_verified_target(base_dir, "hash_hist_1", "Receipts")
 
     # 2. Active unclassified files
@@ -424,4 +426,3 @@ def test_analyzer_no_n_plus_one_queries(mocker):
     # must go through get_vectors_batch.
     assert spy_get_vector.call_count == 0
     assert spy_get_vectors_batch.call_count > 0
-

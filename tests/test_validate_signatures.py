@@ -213,16 +213,11 @@ def test_signature_mismatch_detection():
             "MyProtocol": {
                 "class_name": "MyProtocol",
                 "methods": [
-                    {
-                        "name": "run",
-                        "async": False,
-                        "parameters": [],
-                        "returns": "None"
-                    }
-                ]
+                    {"name": "run", "async": False, "parameters": [], "returns": "None"}
+                ],
             }
         },
-        "cli": {}
+        "cli": {},
     }
 
     # Dict B has different parameter name (breaking change)
@@ -234,13 +229,15 @@ def test_signature_mismatch_detection():
                     {
                         "name": "run",
                         "async": False,
-                        "parameters": [{"name": "x", "annotation": "int", "default": None}],
-                        "returns": "None"
+                        "parameters": [
+                            {"name": "x", "annotation": "int", "default": None}
+                        ],
+                        "returns": "None",
                     }
-                ]
+                ],
             }
         },
-        "cli": {}
+        "cli": {},
     }
 
     # Dict C has different async modifier (breaking change)
@@ -249,20 +246,16 @@ def test_signature_mismatch_detection():
             "MyProtocol": {
                 "class_name": "MyProtocol",
                 "methods": [
-                    {
-                        "name": "run",
-                        "async": True,
-                        "parameters": [],
-                        "returns": "None"
-                    }
-                ]
+                    {"name": "run", "async": True, "parameters": [], "returns": "None"}
+                ],
             }
         },
-        "cli": {}
+        "cli": {},
     }
 
     # Test JSON string inequality which triggers mismatch
     import json
+
     json_a = json.dumps(dict_a, indent=2, sort_keys=True)
     json_b = json.dumps(dict_b, indent=2, sort_keys=True)
     json_c = json.dumps(dict_c, indent=2, sort_keys=True)
@@ -278,27 +271,22 @@ def test_validation_runner_detects_mismatch(tmp_path, monkeypatch):
     from scripts import validate_signatures
 
     fake_snapshot = tmp_path / "fake_snapshot.json"
-    
+
     # Pre-populate fake snapshot with one definition
     initial_defs = {
         "protocols": {
             "MyProtocol": {
                 "class_name": "MyProtocol",
                 "methods": [
-                    {
-                        "name": "run",
-                        "async": True,
-                        "parameters": [],
-                        "returns": "None"
-                    }
-                ]
+                    {"name": "run", "async": True, "parameters": [], "returns": "None"}
+                ],
             }
         },
-        "cli": {}
+        "cli": {},
     }
-    
+
     fake_snapshot.write_text(json.dumps(initial_defs, indent=2, sort_keys=True))
-    
+
     # Now simulate changed codebase definitions (e.g. async changed to false)
     changed_defs = {
         "protocols": {
@@ -309,20 +297,23 @@ def test_validation_runner_detects_mismatch(tmp_path, monkeypatch):
                         "name": "run",
                         "async": False,  # mismatch!
                         "parameters": [],
-                        "returns": "None"
+                        "returns": "None",
                     }
-                ]
+                ],
             }
         },
-        "cli": {}
+        "cli": {},
     }
 
     # Mock variables and functions
     monkeypatch.setattr(validate_signatures, "SNAPSHOT_PATH", str(fake_snapshot))
-    monkeypatch.setattr(validate_signatures, "collect_current_definitions", lambda: changed_defs)
+    monkeypatch.setattr(
+        validate_signatures, "collect_current_definitions", lambda: changed_defs
+    )
     monkeypatch.setenv("CI", "true")
 
     exited_code = None
+
     def mock_exit(code):
         nonlocal exited_code
         exited_code = code
@@ -333,8 +324,27 @@ def test_validation_runner_detects_mismatch(tmp_path, monkeypatch):
 
     # Run main, should exit with 1 because of mismatch in CI
     import pytest
+
     with pytest.raises(SystemExit) as exc_info:
         validate_signatures.main()
     assert exc_info.value.code == 1
     assert exited_code == 1
 
+
+def test_safe_relpath(monkeypatch):
+    import os
+
+    from scripts.validate_signatures import safe_relpath
+
+    # Standard case where paths are on the same mount/drive
+    res = safe_relpath("/app/tests/fake.json", "/app")
+    assert res in ("tests/fake.json", "tests\\fake.json")
+
+    # Mock os.path.relpath to raise ValueError (simulating Windows cross-drive)
+    def mock_relpath(path, start):
+        raise ValueError("path is on mount 'C:', start on mount 'D:'")
+
+    monkeypatch.setattr(os.path, "relpath", mock_relpath)
+    assert safe_relpath("/app/tests/fake.json", "/app") == os.path.abspath(
+        "/app/tests/fake.json"
+    )

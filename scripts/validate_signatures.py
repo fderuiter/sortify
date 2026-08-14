@@ -27,6 +27,14 @@ MAIN_CLI_PATH = os.path.join(BASE_DIR, "app", "main.py")
 SANDBOX_CLI_PATH = os.path.join(BASE_DIR, "sandbox_cli.py")
 
 
+def safe_relpath(path, start):
+    """Compute relative path if possible, fallback to absolute path if on different Windows drives."""
+    try:
+        return os.path.relpath(path, start)
+    except ValueError:
+        return os.path.abspath(path)
+
+
 def get_ast_value(node):
     """Safely extract literal values from AST nodes or fallback to unparsed code representation."""
     try:
@@ -315,7 +323,7 @@ def main():
                 difflib.unified_diff(
                     snapshot_json.splitlines(keepends=True),
                     current_json.splitlines(keepends=True),
-                    fromfile=f"Snapshot ({os.path.relpath(SNAPSHOT_PATH, BASE_DIR)})",
+                    fromfile=f"Snapshot ({safe_relpath(SNAPSHOT_PATH, BASE_DIR)})",
                     tofile="Current Codebase",
                 )
             )
@@ -329,7 +337,7 @@ def main():
                 file=sys.stderr,
             )
             print(
-                f"  python3 {os.path.relpath(__file__, BASE_DIR)} --regenerate",
+                f"  python3 {safe_relpath(__file__, BASE_DIR)} --regenerate",
                 file=sys.stderr,
             )
             sys.exit(1)
