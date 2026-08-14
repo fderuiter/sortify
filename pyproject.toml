@@ -77,6 +77,9 @@ dev = [
     "pytest-xdist>=3.8.0",
     "reportlab>=5.0.0",
     "ruff",
+    "jupyter",
+    "ipykernel",
+    "notebook",
 ]
 
 build = [
