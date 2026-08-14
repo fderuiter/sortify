@@ -894,7 +894,9 @@ def test_adaptive_onnx_compatibility(db, temp_dir):
     """
     import sys
     from unittest.mock import MagicMock, patch
+
     import numpy as np
+
     from app.core.semantic_embeddings import SemanticEmbeddingManager
 
     # Set up mock tokenizer returning standard int64 input_ids but missing other keys
@@ -986,4 +988,3 @@ def test_adaptive_onnx_compatibility(db, temp_dir):
 
         # Check returned vector is valid
         assert len(embedding) == 2
-
