@@ -47,6 +47,7 @@ class Settings(BaseSettings):
     AUDIO_GPU_ENABLED: bool = Field(default=False)
     OCR_LANGUAGES: str = Field(default="en")
     CONFLICT_POLICY: Literal["skip", "rename"] = Field(default="rename")
+    COHERENCE_THRESHOLD: float = Field(default=0.5, ge=0.0, le=1.0)
 
     @field_validator("CONFLICT_POLICY")
     @classmethod
