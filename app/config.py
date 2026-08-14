@@ -246,6 +246,7 @@ class AppSettings:
         self._filepath = filepath or str(get_app_dir() / "settings.json")
         self._save_timer = None
         self._lock = threading.Lock()
+        self._raw_encrypted_proxy = None
 
         try:
             self._settings_model = Settings()
@@ -272,6 +273,7 @@ class AppSettings:
                 proxy_val = data["PROXY"]
                 if proxy_val:
                     if proxy_val.startswith("enc:"):
+                        self._raw_encrypted_proxy = proxy_val
                         try:
                             from app.core.path_utils import resolve_db_crypto
 
@@ -280,8 +282,9 @@ class AppSettings:
                             data["PROXY"] = decrypted_val
                         except Exception as e:
                             logging.warning(
-                                f"Failed to decrypt proxy settings, leaving as-is: {e}"
+                                f"Failed to decrypt proxy settings, replacing with placeholder: {e}"
                             )
+                            data["PROXY"] = "<DECRYPTION_FAILED>"
                     else:
                         needs_migration = True
 
@@ -348,7 +351,10 @@ class AppSettings:
         try:
             # Encrypt PROXY setting if present and not already encrypted
             proxy_val = data.get("PROXY", "")
-            if proxy_val and not proxy_val.startswith("enc:"):
+            if proxy_val == "<DECRYPTION_FAILED>":
+                if self._raw_encrypted_proxy:
+                    data["PROXY"] = self._raw_encrypted_proxy
+            elif proxy_val and not proxy_val.startswith("enc:"):
                 try:
                     from app.core.path_utils import resolve_db_crypto
 
@@ -375,8 +381,10 @@ class AppSettings:
 
     def __setattr__(self, name, value):
         """Set attribute dynamically and trigger a save."""
-        if name in ("_filepath", "_lock", "_save_timer", "_settings_model"):
+        if name in ("_filepath", "_lock", "_save_timer", "_settings_model", "_raw_encrypted_proxy"):
             super().__setattr__(name, value)
         else:
+            if name == "PROXY" and value != "<DECRYPTION_FAILED>":
+                super().__setattr__("_raw_encrypted_proxy", None)
             setattr(self._settings_model, name, value)
             self._trigger_save()

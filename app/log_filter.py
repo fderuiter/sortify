@@ -26,8 +26,44 @@ class LogScrubbingFilter(logging.Filter):
             return self._scrub(str(arg))
         return arg
 
+    def _has_encrypted_credentials(self, text: str) -> bool:
+        if not isinstance(text, str):
+            return False
+        return "enc:" in text
+
     def filter(self, record: logging.LogRecord) -> bool:
         """Filter and scrub the given log record."""
+        # Dynamically filter out any log lines matching the standard encrypted credential prefix "enc:"
+        if isinstance(record.msg, str) and self._has_encrypted_credentials(record.msg):
+            return False
+
+        try:
+            formatted_msg = record.getMessage()
+            if self._has_encrypted_credentials(formatted_msg):
+                return False
+        except Exception:
+            pass
+
+        if isinstance(record.args, tuple):
+            if any(self._has_encrypted_credentials(str(arg)) for arg in record.args):
+                return False
+        elif isinstance(record.args, dict):
+            if any(self._has_encrypted_credentials(str(v)) for v in record.args.values()):
+                return False
+
+        if record.stack_info and self._has_encrypted_credentials(record.stack_info):
+            return False
+
+        # Pre-format exception info and check it
+        if record.exc_info and not record.exc_text:
+            try:
+                record.exc_text = "".join(traceback.format_exception(*record.exc_info))
+            except Exception:
+                pass
+
+        if record.exc_text and self._has_encrypted_credentials(record.exc_text):
+            return False
+
         # Scrub message
         if isinstance(record.msg, str):
             record.msg = self._scrub(record.msg)
@@ -41,13 +77,6 @@ class LogScrubbingFilter(logging.Filter):
         # Scrub stack info
         if record.stack_info:
             record.stack_info = self._scrub(record.stack_info)
-
-        # Pre-format exception info and scrub it
-        if record.exc_info and not record.exc_text:
-            try:
-                record.exc_text = "".join(traceback.format_exception(*record.exc_info))
-            except Exception:
-                pass
 
         # Scrub pre-formatted exception text
         if record.exc_text:

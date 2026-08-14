@@ -71,3 +71,15 @@ def test_retain_relative_paths(memory_log):
     logger, stream = memory_log
     logger.error("Missing relative file ./docs/manual.pdf")
     assert "./docs/manual.pdf" in stream.getvalue()
+
+
+def test_filter_encrypted_credentials(memory_log):
+    logger, stream = memory_log
+    logger.error("Normal log message about starting the service")
+    logger.error("Failed to connect with proxy: enc:U2VjcmV0Q3JlZGVudGlhbHM=")
+
+    output = stream.getvalue()
+    assert "Normal log message about starting the service" in output
+    assert "Failed to connect with proxy" not in output
+    assert "enc:U2VjcmV0Q3JlZGVudGlhbHM=" not in output
+
