@@ -853,11 +853,11 @@ class SharedModelRegistry:
         model_id = "florence-2"
         if model_id not in self._models:
             from app.core.offline_loader import Florence2VisualProcessor
+
             processor = Florence2VisualProcessor(model_id=model_id)
             processor.load()
             self._models[model_id] = processor
         return self._models[model_id]
-
 
 
 class SharedWorkerPool:
