@@ -300,3 +300,33 @@ def test_downloader_fails_on_hash_mismatch(temp_model_dir):
         # Assert temp file is gone
         temp_path = os.path.join(temp_model_dir, "model.onnx.tmp")
         assert not os.path.exists(temp_path)
+
+
+def test_downloader_aborts_on_placeholder_proxy(temp_model_dir):
+    success_called = threading.Event()
+    failure_called = threading.Event()
+    captured_error = []
+
+    def on_success():
+        success_called.set()
+
+    def on_failure(err):
+        captured_error.append(err)
+        failure_called.set()
+
+    from app.core.downloader import NetworkError
+    
+    run_background_download(
+        "http://example.com/model.onnx",
+        temp_model_dir,
+        proxy="<DECRYPTION_FAILED>",
+        progress_callback=None,
+        on_success=on_success,
+        on_failure=on_failure,
+    )
+
+    assert failure_called.wait(timeout=5)
+    assert len(captured_error) == 1
+    assert isinstance(captured_error[0], NetworkError)
+    assert "Invalid proxy configuration" in str(captured_error[0])
+
