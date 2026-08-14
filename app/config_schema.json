@@ -133,6 +133,13 @@
       "title": "Conflict Policy",
       "type": "string"
     },
+    "COHERENCE_THRESHOLD": {
+      "default": 0.5,
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "title": "Coherence Threshold",
+      "type": "number"
+    },
     "AI_CONSENT_GRANTED": {
       "anyOf": [
         {

@@ -103,18 +103,23 @@ def test_generative_naming_strategy_passes_correct_grammars():
     strategy.set_db_context(db, "/dummy")
 
     # We will trigger filter_plan inside generate_plan
-    filenames = ["file1.txt"]
-    documents = ["doc content 1"]
+    filenames = ["file1.txt", "file2.txt"]
+    documents = ["doc content 1", "doc content 2"]
+    pre_fetched_vectors = [[1.0, 0.0], [0.0, 1.0]]
+    strategy.threshold = 0.8
+    strategy._vector_map = {f: v for f, v in zip(filenames, pre_fetched_vectors)}
 
     # We patch super().generate_plan to return a plan structure
     with patch(
         "app.core.analyzer_strategies.RecursiveKMeansStrategy.generate_plan",
-        return_value=({"file1.txt": None}, 0.0),
+        return_value=({"Folder": {"file1.txt": None, "file2.txt": None}}, 0.0),
     ):
-        new_plan, error = strategy.generate_plan(filenames, documents, 2, set())
+        new_plan, error = strategy.generate_plan(filenames, documents, 2, set(), pre_fetched_vectors=pre_fetched_vectors)
 
-        # Verify that validation grammar was passed
-        assert len(captured_calls) == 1
-        prompt, max_tokens, grammar = captured_calls[0]
-        assert "YES" in prompt
-        assert grammar == 'root ::= "YES" | "NO"'
+        # Verify that NO LLM validation prompts were called (captured_calls is empty)
+        assert len(captured_calls) == 0
+
+        # Verify that the files with low similarity to centroid are routed to "Review Required" fallback folder
+        assert "Review Required" in new_plan
+        assert "file1.txt" in new_plan["Review Required"]
+        assert "file2.txt" in new_plan["Review Required"]

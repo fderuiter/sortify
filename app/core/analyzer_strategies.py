@@ -691,51 +691,128 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
             cancel_check=cancel_check,
         )
 
-        if not getattr(self, "_model_initialized", False):
-            self._init_model()
+        # Retrieve configurable similarity threshold
+        threshold = getattr(self, "threshold", None)
+        if threshold is None:
+            try:
+                from app.config import AppSettings
+                settings = AppSettings()
+                threshold = getattr(settings, "COHERENCE_THRESHOLD", 0.5)
+            except Exception:
+                threshold = 0.5
 
-        if self.generator is None and not (self._gguf_active and not self._gguf_failed):
-            return plan, error
+        # 1. Gather all document vectors in filenames
+        import numpy as np
+        vector_dict = {}
+        use_dense = False
 
-        doc_map = dict(zip(filenames, documents))
+        if getattr(self, "_vector_map", None):
+            valid_vectors = {f: v for f, v in self._vector_map.items() if v is not None}
+            if len(valid_vectors) > 0:
+                vector_dict = {f: v for f, v in self._vector_map.items()}
+                use_dense = True
 
-        def filter_plan(node, path_name=""):
+        db = getattr(self, "db", None)
+        base_dir = getattr(self, "base_dir", None)
+        if not use_dense and db and base_dir:
+            try:
+                from app.core.semantic_embeddings import SemanticEmbeddingManager
+                embedding_manager = SemanticEmbeddingManager(
+                    db, model_path=getattr(self, "model_path", None)
+                )
+                if not embedding_manager.is_mock and not embedding_manager.is_reconstruction_active():
+                    fetched = embedding_manager.get_vectors_batch(base_dir, filenames)
+                    if fetched:
+                        vector_dict = {f: v for f, v in fetched.items() if v is not None}
+                        if len(vector_dict) > 0:
+                            use_dense = True
+            except Exception as e:
+                logging.error(f"Failed to fetch vectors in GenerativeNamingStrategy: {e}")
+
+        # Fallback to TF-IDF if dense vectors are not available/mock
+        if not use_dense:
+            try:
+                from sklearn.feature_extraction.text import TfidfVectorizer
+
+                vectorizer = TfidfVectorizer(
+                    stop_words=list(stop_words), max_features=1000
+                )
+                safe_docs = [doc or "" for doc in documents]
+                X = vectorizer.fit_transform(safe_docs)
+                for i, f in enumerate(filenames):
+                    vector_dict[f] = X[i].toarray()[0]
+            except Exception as e:
+                logging.error(f"Failed to generate TF-IDF vectors: {e}")
+                for f in filenames:
+                    vector_dict[f] = [0.0] * 384
+
+        def get_cosine_similarity(vec1, vec2):
+            v1 = np.array(vec1)
+            v2 = np.array(vec2)
+            norm1 = np.linalg.norm(v1)
+            norm2 = np.linalg.norm(v2)
+            if norm1 == 0 or norm2 == 0:
+                return 0.0
+            return float(np.dot(v1, v2) / (norm1 * norm2))
+
+        def get_recursive_files(n):
+            res = []
+            for key, val in n.items():
+                if val is None or not isinstance(val, dict):
+                    res.append(key)
+                else:
+                    res.extend(get_recursive_files(val))
+            return res
+
+        def filter_plan_vector(node):
             new_node = {}
             low_confidence_files = {}
-            for k, v in node.items():
-                if v is None:
-                    doc_text = doc_map.get(k, "")[:1000]
-                    prompt = f"Does this document about '{doc_text}' belong in a folder for '{path_name}'? Reply YES or NO."
-                    validation_grammar = 'root ::= "YES" | "NO"'
-                    try:
-                        answer = (
-                            self._run_prompt(prompt, 5, grammar=validation_grammar)
-                            .strip()
-                            .upper()
-                        )
 
-                        if "NO" in answer:
-                            low_confidence_files[k] = None
+            # Separate files and subfolders in this node
+            files = []
+            subfolders = {}
+            for k, v in node.items():
+                if v is None or not isinstance(v, dict):
+                    files.append(k)
+                else:
+                    subfolders[k] = v
+
+            # 1. Process subfolders recursively
+            for folder_name, folder_content in subfolders.items():
+                filtered_sub, lc_sub = filter_plan_vector(folder_content)
+                if filtered_sub:
+                    new_node[folder_name] = filtered_sub
+                low_confidence_files.update(lc_sub)
+
+            # 2. Process files in current folder node
+            if files:
+                all_recursive_files = get_recursive_files(node)
+                vectors = [vector_dict[f] for f in all_recursive_files if f in vector_dict]
+                if vectors:
+                    centroid = np.mean(vectors, axis=0)
+                    for f in files:
+                        f_vec = vector_dict.get(f)
+                        if f_vec is not None:
+                            sim = get_cosine_similarity(f_vec, centroid)
+                            if sim < threshold:
+                                low_confidence_files[f] = None
+                            else:
+                                new_node[f] = None
                         else:
-                            new_node[k] = None
-                    except Exception as e:
-                        logging.error(f"Coherence check failed: {e}")
-                        new_node[k] = None
-                elif isinstance(v, dict):
-                    folder_name = k if not path_name else f"{path_name} {k}"
-                    filtered_v, lc_v = filter_plan(v, path_name=folder_name)
-                    if filtered_v:
-                        new_node[k] = filtered_v
-                    low_confidence_files.update(lc_v)
+                            new_node[f] = None
+                else:
+                    for f in files:
+                        new_node[f] = None
+
             return new_node, low_confidence_files
 
-        with block_external_network():
-            new_plan, lc_files = filter_plan(plan)
+        # Run vector similarity filtering asynchronously (completely avoiding generative validation prompts)
+        new_plan, lc_files = filter_plan_vector(plan)
 
         if lc_files:
-            if "Low Confidence" not in new_plan:
-                new_plan["Low Confidence"] = {}
-            new_plan["Low Confidence"].update(lc_files)
+            if "Review Required" not in new_plan:
+                new_plan["Review Required"] = {}
+            new_plan["Review Required"].update(lc_files)
 
         return new_plan, error
 
