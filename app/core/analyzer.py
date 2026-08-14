@@ -662,7 +662,7 @@ class IncrementalAnalyzer:
             if unsupported_files:
                 from app.core.analyzer_strategies import get_status_friendly_name
                 for f, ext_status in unsupported_files:
-                    if ext_status == "EMPTY":
+                    if ext_status in ("EMPTY", "BYPASSED"):
                         folder_name = "Miscellaneous"
                     else:
                         folder_name = get_status_friendly_name(ext_status)
@@ -805,7 +805,7 @@ class IncrementalAnalyzer:
             if unsupported_files:
                 from app.core.analyzer_strategies import get_status_friendly_name
                 for f, status in unsupported_files:
-                    if status == "EMPTY":
+                    if status in ("EMPTY", "BYPASSED"):
                         folder_name = "Miscellaneous"
                     else:
                         folder_name = get_status_friendly_name(status)
