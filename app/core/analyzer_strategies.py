@@ -54,6 +54,53 @@ class ClusteringStrategy(Protocol):
         ...
 
 
+import re
+from collections import Counter
+
+def get_status_friendly_name(status_str: str) -> str:
+    # Remove brackets if present
+    status = status_str.strip()
+    if status.startswith("[") and status.endswith("]"):
+        status = status[1:-1]
+    if status.startswith("STATUS:"):
+        status = status[7:]
+    
+    status_upper = status.upper()
+    
+    if "ENCRYPTED" in status_upper:
+        return "Password Protected Files"
+    elif "CORRUPT" in status_upper:
+        return "Corrupted Files"
+    elif "TIMEOUT" in status_upper:
+        return "Timed Out Files"
+    elif "CANCELLED" in status_upper:
+        return "Cancelled Extractions"
+    elif "UNSUPPORTED" in status_upper:
+        return "Unsupported Files"
+    elif "EMPTY" in status_upper:
+        return "Empty Files"
+    elif "SKIPPED" in status_upper:
+        return "Skipped Files"
+    elif "BYPASSED" in status_upper:
+        return "Bypassed Files"
+    elif "OFFLINE" in status_upper:
+        return "Offline Model Failures"
+    elif "WHISPER" in status_upper or "TRANSCRIPTION" in status_upper:
+        return "Transcription Failures"
+    elif "FFMPEG" in status_upper or "TRANSCODING" in status_upper:
+        return "Transcoding Failures"
+    elif "FAILED" in status_upper or "ERROR" in status_upper:
+        return "Failed Extractions"
+    else:
+        return "Failed Extractions"
+
+def sanitize_placeholder_tags(text: str) -> str:
+    if not text:
+        return ""
+    # Remove any pattern like [STATUS:...]
+    return re.sub(r"\[STATUS:[^\]]+\]", "", text)
+
+
 class RecursiveKMeansStrategy:
     """Strategy that uses recursive KMeans to cluster documents."""
 
@@ -85,13 +132,41 @@ class RecursiveKMeansStrategy:
     def _get_cluster_keywords(self, documents: list) -> str:
         if not documents:
             return "Miscellaneous"
+
+        # Check if all documents are status sentinels
+        if all(doc and doc.startswith("[STATUS:") for doc in documents):
+            friendly_names = [get_status_friendly_name(doc) for doc in documents if doc]
+            if friendly_names:
+                from collections import Counter
+                return Counter(friendly_names).most_common(1)[0][0]
+            return "Failed Extractions"
+
+        # Filter out system placeholder tags
+        cleaned_docs = []
+        for doc in documents:
+            if not doc:
+                continue
+            cleaned = sanitize_placeholder_tags(doc)
+            if cleaned.strip():
+                cleaned_docs.append(cleaned)
+
+        if not cleaned_docs:
+            return "Miscellaneous"
+
         try:
             from sklearn.feature_extraction.text import TfidfVectorizer
 
+            # Expand stop words with technical status words
+            local_stop_words = set(self.stop_words) if getattr(self, "stop_words", None) else set()
+            local_stop_words.update({
+                "status", "encrypted", "failed", "unsupported", "empty", 
+                "skipped", "bypassed", "cancelled", "timeout", "error", "corrupt"
+            })
+
             vectorizer = TfidfVectorizer(
-                stop_words=list(self.stop_words), max_features=self.max_features
+                stop_words=list(local_stop_words), max_features=self.max_features
             )
-            X = vectorizer.fit_transform(documents)
+            X = vectorizer.fit_transform(cleaned_docs)
             feature_names = vectorizer.get_feature_names_out()
             if len(feature_names) == 0:
                 return "Miscellaneous"
@@ -109,70 +184,162 @@ class RecursiveKMeansStrategy:
         plan = {}
 
         if depth >= self.max_depth or len(documents) < 3:
-            for f in filenames:
-                plan[f] = None
-            return {"Miscellaneous": plan} if depth == 1 else plan
+            leaf_plan = {}
+            failed_plan = {}
+            for f, doc in zip(filenames, documents):
+                if doc and doc.startswith("[STATUS:"):
+                    friendly_name = get_status_friendly_name(doc)
+                    if friendly_name not in failed_plan:
+                        failed_plan[friendly_name] = {}
+                    failed_plan[friendly_name][f] = None
+                else:
+                    leaf_plan[f] = None
+            
+            if depth == 1:
+                final_plan = {}
+                if leaf_plan:
+                    final_plan["Miscellaneous"] = leaf_plan
+                if failed_plan:
+                    final_plan.update(failed_plan)
+                return final_plan
+            else:
+                leaf_plan.update(failed_plan)
+                return leaf_plan
 
+        # Separate valid, failed status, and unembedded text indices
+        valid_indices = []
+        failed_status_indices = []
+        unembedded_text_indices = []
+
+        for idx, (f, doc) in enumerate(zip(filenames, documents)):
+            if doc and doc.startswith("[STATUS:"):
+                failed_status_indices.append(idx)
+            else:
+                v = getattr(self, "_vector_map", {}).get(f) if getattr(self, "_vector_map", None) else None
+                import numpy as np
+                if v is not None and not np.all(np.array(v) == 0.0):
+                    valid_indices.append(idx)
+                else:
+                    unembedded_text_indices.append(idx)
+
+        # We must only fall back to lexical TF-IDF clustering if 100% of the documents in the partition lack valid embeddings
         use_dense_vectors = False
-        if getattr(self, "_vector_map", None):
+        if len(valid_indices) > 0:
+            use_dense_vectors = True
+
+        topic_groups = defaultdict(list)
+
+        if use_dense_vectors:
             try:
                 import numpy as np
+                valid_vectors = [self._vector_map[filenames[idx]] for idx in valid_indices]
+                X = np.array(valid_vectors)
 
-                # Filter valid vectors (non-None elements)
-                valid_vectors = [
-                    self._vector_map[f]
-                    for f in filenames
-                    if self._vector_map.get(f) is not None
-                ]
+                actual_k = min(self.max_folders, len(valid_indices) // 2)
+                if actual_k < 2:
+                    actual_k = 2
+                if actual_k > len(valid_indices):
+                    actual_k = len(valid_indices)
 
-                # We must only fall back to lexical TF-IDF clustering if 100% of the documents in the partition lack valid embeddings
-                if len(valid_vectors) > 0:
-                    dimension = len(valid_vectors[0])
-                    X_list = []
-                    for f in filenames:
-                        v = self._vector_map.get(f)
-                        if v is not None:
-                            X_list.append(v)
-                        else:
-                            # Generate a zero-filled vector of the exact matching dimension for any missing document embedding
-                            zero_vector = [0.0] * dimension
-                            X_list.append(zero_vector)
+                if actual_k < 2:
+                    labels = np.zeros(len(valid_indices), dtype=int)
+                    self._error += 0.0
+                else:
+                    from sklearn.cluster import MiniBatchKMeans
+                    kmeans = MiniBatchKMeans(n_clusters=actual_k, random_state=42, n_init="auto")
+                    labels = kmeans.fit_predict(X)
+                    self._error += kmeans.inertia_
 
-                    X = np.array(X_list)
-                    use_dense_vectors = True
+                # Group valid documents
+                for val_idx, label in enumerate(labels):
+                    orig_idx = valid_indices[val_idx]
+                    topic_groups[label].append((filenames[orig_idx], documents[orig_idx]))
+
+                # Assign unembedded text documents to the closest cluster using TF-IDF similarity
+                if unembedded_text_indices:
+                    if len(topic_groups) > 1:
+                        from sklearn.feature_extraction.text import TfidfVectorizer
+                        from sklearn.metrics.pairwise import cosine_similarity
+
+                        # Group valid documents' texts by cluster
+                        cluster_texts = defaultdict(list)
+                        for val_idx, label in enumerate(labels):
+                            orig_idx = valid_indices[val_idx]
+                            cluster_texts[label].append(documents[orig_idx])
+
+                        vectorizer = TfidfVectorizer(stop_words="english")
+                        try:
+                            vectorizer.fit(documents)
+                            cluster_vecs = {}
+                            for label, texts in cluster_texts.items():
+                                combined_text = " ".join(texts)
+                                cluster_vecs[label] = vectorizer.transform([combined_text]).toarray()[0]
+
+                            for inv_idx in unembedded_text_indices:
+                                inv_doc = documents[inv_idx]
+                                inv_vec = vectorizer.transform([inv_doc]).toarray()[0]
+
+                                best_label = 0
+                                best_sim = -1.0
+                                for label, c_vec in cluster_vecs.items():
+                                    sim = cosine_similarity([inv_vec], [c_vec])[0][0]
+                                    if sim > best_sim:
+                                        best_sim = sim
+                                        best_label = label
+
+                                topic_groups[best_label].append((filenames[inv_idx], documents[inv_idx]))
+                        except Exception:
+                            # Fallback if TF-IDF fails
+                            for i, inv_idx in enumerate(unembedded_text_indices):
+                                best_label = i % len(topic_groups) if topic_groups else 0
+                                topic_groups[best_label].append((filenames[inv_idx], documents[inv_idx]))
+                    else:
+                        # Only 1 cluster exists, assign everything to it
+                        best_label = list(topic_groups.keys())[0] if topic_groups else 0
+                        for inv_idx in unembedded_text_indices:
+                            topic_groups[best_label].append((filenames[inv_idx], documents[inv_idx]))
+
             except Exception as e:
-                logging.error(
-                    f"Failed to prepare dense vectors for clustering step: {e}"
-                )
+                logging.error(f"Failed dense vector clustering step: {e}")
                 use_dense_vectors = False
 
         if not use_dense_vectors:
-            try:
-                from sklearn.feature_extraction.text import TfidfVectorizer
+            lexical_indices = valid_indices + unembedded_text_indices
+            if len(lexical_indices) > 0:
+                try:
+                    from sklearn.feature_extraction.text import TfidfVectorizer
 
-                vectorizer = TfidfVectorizer(
-                    stop_words=list(self.stop_words), max_features=1000
-                )
-                X = vectorizer.fit_transform(documents)
-            except Exception:
-                for f in filenames:
-                    plan[f] = None
-                return {"Miscellaneous": plan} if depth == 1 else plan
+                    vectorizer = TfidfVectorizer(
+                        stop_words=list(self.stop_words), max_features=1000
+                    )
+                    lexical_documents = [documents[idx] for idx in lexical_indices]
+                    X = vectorizer.fit_transform(lexical_documents)
 
-        actual_k = min(self.max_folders, len(documents) // 2)
-        if actual_k < 2:
-            actual_k = 2
+                    actual_k = min(self.max_folders, len(lexical_indices) // 2)
+                    if actual_k < 2:
+                        actual_k = 2
+                    if actual_k > len(lexical_indices):
+                        actual_k = len(lexical_indices)
 
-        from sklearn.cluster import MiniBatchKMeans
+                    if actual_k < 2:
+                        labels = np.zeros(len(lexical_indices), dtype=int)
+                        self._error += 0.0
+                    else:
+                        from sklearn.cluster import MiniBatchKMeans
+                        kmeans = MiniBatchKMeans(n_clusters=actual_k, random_state=42, n_init="auto")
+                        labels = kmeans.fit_predict(X)
+                        self._error += kmeans.inertia_
 
-        kmeans = MiniBatchKMeans(n_clusters=actual_k, random_state=42, n_init="auto")
-        labels = kmeans.fit_predict(X)
-        self._error += kmeans.inertia_
+                    # Group lexical documents
+                    for i, label in enumerate(labels):
+                        orig_idx = lexical_indices[i]
+                        topic_groups[label].append((filenames[orig_idx], documents[orig_idx]))
+                except Exception:
+                    topic_groups = {0: [(filenames[idx], documents[idx]) for idx in lexical_indices]}
+            else:
+                topic_groups = {}
 
-        topic_groups = defaultdict(list)
-        for i, label in enumerate(labels):
-            topic_groups[label].append((filenames[i], documents[i]))
-
+        # 1. Process clustered folders
         for topic_idx, group in topic_groups.items():
             sub_filenames = [item[0] for item in group]
             sub_documents = [item[1] for item in group]
@@ -204,6 +371,16 @@ class RecursiveKMeansStrategy:
                     plan[folder_name] = sub_plan
                 else:
                     deep_update(plan[folder_name], sub_plan)
+
+        # 2. Process failed status files into user-friendly folders
+        if failed_status_indices:
+            for idx in failed_status_indices:
+                f = filenames[idx]
+                doc = documents[idx]
+                friendly_name = get_status_friendly_name(doc)
+                if friendly_name not in plan:
+                    plan[friendly_name] = {}
+                plan[friendly_name][f] = None
 
         return plan
 
@@ -658,6 +835,14 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         if not clean_str:
             return False
 
+        lower_str = clean_str.lower()
+        blocked_status_words = {
+            "status", "encrypted", "failed", "unsupported", "empty", 
+            "skipped", "bypassed", "cancelled", "timeout", "error", "corrupt"
+        }
+        if lower_str in blocked_status_words or "status" in lower_str or "encrypted" in lower_str or "failed" in lower_str:
+            return True
+
         # Hyphen and punctuation check
         import string
 
@@ -767,6 +952,14 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         if not documents:
             return "Miscellaneous"
 
+        # Check if all documents are status sentinels
+        if all(doc and doc.startswith("[STATUS:") for doc in documents):
+            friendly_names = [get_status_friendly_name(doc) for doc in documents if doc]
+            if friendly_names:
+                from collections import Counter
+                return Counter(friendly_names).most_common(1)[0][0]
+            return "Failed Extractions"
+
         if not getattr(self, "_model_initialized", False):
             self._init_model()
 
@@ -778,14 +971,19 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         use_semantic = False
         top_examples = []
         few_shot_context = ""
-        # Filter out non-textual attachments and skipped/unsupported files from target documents
-        filtered_documents = [
-            doc
-            for doc in documents
-            if doc and not doc.startswith("[STATUS:") and doc.strip()
-        ]
+        # Filter out non-textual attachments, skipped/unsupported files, and any system placeholder tags
+        filtered_documents = []
+        for doc in documents:
+            if not doc:
+                continue
+            if doc.startswith("[STATUS:"):
+                continue
+            cleaned = sanitize_placeholder_tags(doc)
+            if cleaned.strip():
+                filtered_documents.append(cleaned)
+
         if not filtered_documents:
-            filtered_documents = documents
+            filtered_documents = [sanitize_placeholder_tags(doc) for doc in documents if doc]
 
         if db and base_dir:
             try:
@@ -1282,6 +1480,11 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
 
                 if not name or len(name) < 2:
                     return super()._get_cluster_keywords(documents)
+
+                # Ensure no raw status or technical words are present
+                for w in ["status", "encrypted", "failed", "unsupported", "empty", "skipped", "bypassed", "cancelled", "timeout", "error", "corrupt"]:
+                    name = re.sub(r'\b' + re.escape(w) + r'\b', '', name, flags=re.IGNORECASE)
+                name = " ".join(name.split())
 
                 # Final OS-level path sanitization
                 from app.core.path_utils import sanitize_name

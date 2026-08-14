@@ -660,12 +660,18 @@ class IncrementalAnalyzer:
                         current = current[part]
 
             if unsupported_files:
-                if "Miscellaneous" not in plan:
-                    plan["Miscellaneous"] = {}
-                elif not isinstance(plan["Miscellaneous"], dict):
-                    plan["Miscellaneous"] = {"_original": plan["Miscellaneous"]}
+                from app.core.analyzer_strategies import get_status_friendly_name
                 for f, ext_status in unsupported_files:
-                    plan["Miscellaneous"][f] = {"extraction_status": ext_status}
+                    if ext_status == "EMPTY":
+                        folder_name = "Miscellaneous"
+                    else:
+                        folder_name = get_status_friendly_name(ext_status)
+                    
+                    if folder_name not in plan:
+                        plan[folder_name] = {}
+                    elif not isinstance(plan[folder_name], dict):
+                        plan[folder_name] = {"_original": plan[folder_name]}
+                    plan[folder_name][f] = {"extraction_status": ext_status}
 
             def remove_from_plan(node, target_f):
                 for k, v in list(node.items()):
@@ -797,11 +803,17 @@ class IncrementalAnalyzer:
 
             # Phase 3: Route unsupported files safely
             if unsupported_files:
-                if "Miscellaneous" not in plan:
-                    plan["Miscellaneous"] = {}
+                from app.core.analyzer_strategies import get_status_friendly_name
                 for f, status in unsupported_files:
-                    if f not in plan["Miscellaneous"]:
-                        plan["Miscellaneous"][f] = {
+                    if status == "EMPTY":
+                        folder_name = "Miscellaneous"
+                    else:
+                        folder_name = get_status_friendly_name(status)
+                    
+                    if folder_name not in plan:
+                        plan[folder_name] = {}
+                    if f not in plan[folder_name]:
+                        plan[folder_name][f] = {
                             "__type__": "file",
                             "routed_by": "fallback",
                             "match": "none",
