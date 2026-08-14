@@ -1,16 +1,18 @@
 import math
 import tempfile
 from pathlib import Path
+
 import numpy as np
 import pytest
-from sklearn.feature_extraction.text import TfidfVectorizer, TfidfTransformer
-from sklearn.preprocessing import normalize
 from scipy.sparse import csr_matrix
+from sklearn.feature_extraction.text import TfidfTransformer, TfidfVectorizer
+from sklearn.preprocessing import normalize
 
 from app.core.analyzer import IncrementalAnalyzer
 from app.core.db import Database
-from app.core.db_worker import DBWorker
 from app.core.db_conn import clear_connection_cache
+from app.core.db_worker import DBWorker
+
 
 def test_db_backed_sparse_csr_reconstruction_and_math():
     """Verify that fallback lexical matching is performed without reading raw historical documents from disk,

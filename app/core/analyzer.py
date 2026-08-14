@@ -424,9 +424,13 @@ class IncrementalAnalyzer:
                     else:
                         # Fallback gracefully to standard TF-IDF text similarity using DB pre-computed stats
                         import math
+
                         import numpy as np
                         from scipy.sparse import csr_matrix
-                        from sklearn.feature_extraction.text import TfidfVectorizer, TfidfTransformer
+                        from sklearn.feature_extraction.text import (
+                            TfidfTransformer,
+                            TfidfVectorizer,
+                        )
                         from sklearn.preprocessing import normalize
 
                         # 1. Database TF-IDF Statistics Retrieval
