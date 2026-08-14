@@ -440,7 +440,9 @@ class IncrementalAnalyzer:
                         from sklearn.preprocessing import normalize
 
                         # 1. Database TF-IDF Statistics Retrieval
-                        N, top_terms, doc_terms, doc_metadata = self.db.get_tfidf_stats(base_dir)
+                        N, top_terms, doc_terms, doc_metadata = self.db.get_tfidf_stats(
+                            base_dir
+                        )
 
                         # Restrict vocabulary to the top 1,000 terms matching the database query constraints
                         top_terms = top_terms[:1000]
@@ -449,11 +451,18 @@ class IncrementalAnalyzer:
                         vocab = {term: idx for idx, (term, df) in enumerate(top_terms)}
 
                         if len(vocab) == 0:
-                            similarities = np.zeros((len(ai_documents), len(historical_docs)))
+                            similarities = np.zeros(
+                                (len(ai_documents), len(historical_docs))
+                            )
                         else:
                             # Calculate smoothed IDF values using the system's custom formula: idf_j = ln((1 + N) / (1 + df_j)) + 1
-                            idf_weights = {term: math.log((1 + N) / (1 + df)) + 1 for term, df in top_terms}
-                            idf_values = np.array([idf_weights[term] for term, df in top_terms])
+                            idf_weights = {
+                                term: math.log((1 + N) / (1 + df)) + 1
+                                for term, df in top_terms
+                            }
+                            idf_values = np.array(
+                                [idf_weights[term] for term, df in top_terms]
+                            )
 
                             # 2. Configure a TfidfVectorizer
                             vectorizer = TfidfVectorizer(
@@ -471,8 +480,13 @@ class IncrementalAnalyzer:
 
                             # 3. Historical Sparse Matrix Reconstruction
                             # Represent historical document vectors by constructing a standard scipy.sparse.csr_matrix directly from database term statistics.
-                            hist_filepaths = [doc["filepath"].replace("\\", "/") for doc in historical_docs]
-                            filepath_to_row_idx = {fp: idx for idx, fp in enumerate(hist_filepaths)}
+                            hist_filepaths = [
+                                doc["filepath"].replace("\\", "/")
+                                for doc in historical_docs
+                            ]
+                            filepath_to_row_idx = {
+                                fp: idx for idx, fp in enumerate(hist_filepaths)
+                            }
 
                             rows = []
                             cols = []
@@ -492,17 +506,23 @@ class IncrementalAnalyzer:
 
                             num_rows = len(historical_docs)
                             num_cols = len(vocab)
-                            historical_vectors = csr_matrix((data, (rows, cols)), shape=(num_rows, num_cols))
+                            historical_vectors = csr_matrix(
+                                (data, (rows, cols)), shape=(num_rows, num_cols)
+                            )
 
                             # Apply row-wise L2 normalization to ensure correct cosine similarity calculations
-                            historical_vectors = normalize(historical_vectors, norm='l2', axis=1)
+                            historical_vectors = normalize(
+                                historical_vectors, norm="l2", axis=1
+                            )
 
                             # 4. Vectorizing Active Candidate Documents
                             safe_ai_documents = [d or "" for d in ai_documents]
                             new_docs_vectors = vectorizer.transform(safe_ai_documents)
 
                             # 5. Dot Product Similarity Calculation
-                            similarities = new_docs_vectors.dot(historical_vectors.T).toarray()
+                            similarities = new_docs_vectors.dot(
+                                historical_vectors.T
+                            ).toarray()
 
                     historical_targets = [
                         doc["target_folder"] for doc in historical_docs
@@ -662,12 +682,13 @@ class IncrementalAnalyzer:
 
             if unsupported_files:
                 from app.core.analyzer_strategies import get_status_friendly_name
+
                 for f, ext_status in unsupported_files:
                     if ext_status in ("EMPTY", "BYPASSED"):
                         folder_name = "Miscellaneous"
                     else:
                         folder_name = get_status_friendly_name(ext_status)
-                    
+
                     if folder_name not in plan:
                         plan[folder_name] = {}
                     elif not isinstance(plan[folder_name], dict):
@@ -805,12 +826,13 @@ class IncrementalAnalyzer:
             # Phase 3: Route unsupported files safely
             if unsupported_files:
                 from app.core.analyzer_strategies import get_status_friendly_name
+
                 for f, status in unsupported_files:
                     if status in ("EMPTY", "BYPASSED"):
                         folder_name = "Miscellaneous"
                     else:
                         folder_name = get_status_friendly_name(status)
-                    
+
                     if folder_name not in plan:
                         plan[folder_name] = {}
                     if f not in plan[folder_name]:

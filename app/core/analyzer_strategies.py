@@ -167,15 +167,27 @@ class ClusteringStrategy(Protocol):
 
 
 def get_status_friendly_name(status_str: str) -> str:
+    """Map a raw technical status string to a user-friendly folder name.
+
+    Parameters
+    ----------
+    status_str : str
+        The raw technical status string (e.g. "[STATUS:ENCRYPTED]").
+
+    Returns
+    -------
+    str
+        The friendly folder name mapping (e.g. "Password Protected Files").
+    """
     # Remove brackets if present
     status = status_str.strip()
     if status.startswith("[") and status.endswith("]"):
         status = status[1:-1]
     if status.startswith("STATUS:"):
         status = status[7:]
-    
+
     status_upper = status.upper()
-    
+
     if "ENCRYPTED" in status_upper:
         return "Password Protected Files"
     elif "CORRUPT" in status_upper:
@@ -203,7 +215,20 @@ def get_status_friendly_name(status_str: str) -> str:
     else:
         return "Failed Extractions"
 
+
 def sanitize_placeholder_tags(text: str) -> str:
+    """Remove any system placeholder tags of the format [STATUS:...] from the text.
+
+    Parameters
+    ----------
+    text : str
+        The input document text that may contain system placeholder tags.
+
+    Returns
+    -------
+    str
+        The cleaned text with all placeholder tags removed.
+    """
     if not text:
         return ""
     # Remove any pattern like [STATUS:...]
@@ -407,6 +432,7 @@ class RecursiveKMeansStrategy:
             friendly_names = [get_status_friendly_name(doc) for doc in documents if doc]
             if friendly_names:
                 from collections import Counter
+
                 return Counter(friendly_names).most_common(1)[0][0]
             return "Failed Extractions"
 
@@ -426,11 +452,24 @@ class RecursiveKMeansStrategy:
             from sklearn.feature_extraction.text import TfidfVectorizer
 
             # Expand stop words with technical status words
-            local_stop_words = set(self.stop_words) if getattr(self, "stop_words", None) else set()
-            local_stop_words.update({
-                "status", "encrypted", "failed", "unsupported", "empty", 
-                "skipped", "bypassed", "cancelled", "timeout", "error", "corrupt"
-            })
+            local_stop_words = (
+                set(self.stop_words) if getattr(self, "stop_words", None) else set()
+            )
+            local_stop_words.update(
+                {
+                    "status",
+                    "encrypted",
+                    "failed",
+                    "unsupported",
+                    "empty",
+                    "skipped",
+                    "bypassed",
+                    "cancelled",
+                    "timeout",
+                    "error",
+                    "corrupt",
+                }
+            )
 
             vectorizer = TfidfVectorizer(
                 stop_words=list(local_stop_words), max_features=self.max_features
@@ -463,7 +502,7 @@ class RecursiveKMeansStrategy:
                     failed_plan[friendly_name][f] = None
                 else:
                     leaf_plan[f] = None
-            
+
             if depth == 1:
                 final_plan = {}
                 if leaf_plan:
@@ -484,8 +523,13 @@ class RecursiveKMeansStrategy:
             if doc and doc.startswith("[STATUS:"):
                 failed_status_indices.append(idx)
             else:
-                v = getattr(self, "_vector_map", {}).get(f) if getattr(self, "_vector_map", None) else None
+                v = (
+                    getattr(self, "_vector_map", {}).get(f)
+                    if getattr(self, "_vector_map", None)
+                    else None
+                )
                 import numpy as np
+
                 if v is not None and not np.all(np.array(v) == 0.0):
                     valid_indices.append(idx)
                 else:
@@ -501,7 +545,10 @@ class RecursiveKMeansStrategy:
         if use_dense_vectors:
             try:
                 import numpy as np
-                valid_vectors = [self._vector_map[filenames[idx]] for idx in valid_indices]
+
+                valid_vectors = [
+                    self._vector_map[filenames[idx]] for idx in valid_indices
+                ]
                 X = np.array(valid_vectors)
 
                 actual_k = min(self.max_folders, len(valid_indices) // 2)
@@ -515,14 +562,19 @@ class RecursiveKMeansStrategy:
                     self._error += 0.0
                 else:
                     from sklearn.cluster import MiniBatchKMeans
-                    kmeans = MiniBatchKMeans(n_clusters=actual_k, random_state=42, n_init="auto")
+
+                    kmeans = MiniBatchKMeans(
+                        n_clusters=actual_k, random_state=42, n_init="auto"
+                    )
                     labels = kmeans.fit_predict(X)
                     self._error += kmeans.inertia_
 
                 # Group valid documents
                 for val_idx, label in enumerate(labels):
                     orig_idx = valid_indices[val_idx]
-                    topic_groups[label].append((filenames[orig_idx], documents[orig_idx]))
+                    topic_groups[label].append(
+                        (filenames[orig_idx], documents[orig_idx])
+                    )
 
                 # Assign unembedded text documents to the closest cluster using TF-IDF similarity
                 if unembedded_text_indices:
@@ -542,7 +594,9 @@ class RecursiveKMeansStrategy:
                             cluster_vecs = {}
                             for label, texts in cluster_texts.items():
                                 combined_text = " ".join(texts)
-                                cluster_vecs[label] = vectorizer.transform([combined_text]).toarray()[0]
+                                cluster_vecs[label] = vectorizer.transform(
+                                    [combined_text]
+                                ).toarray()[0]
 
                             for inv_idx in unembedded_text_indices:
                                 inv_doc = documents[inv_idx]
@@ -556,17 +610,25 @@ class RecursiveKMeansStrategy:
                                         best_sim = sim
                                         best_label = label
 
-                                topic_groups[best_label].append((filenames[inv_idx], documents[inv_idx]))
+                                topic_groups[best_label].append(
+                                    (filenames[inv_idx], documents[inv_idx])
+                                )
                         except Exception:
                             # Fallback if TF-IDF fails
                             for i, inv_idx in enumerate(unembedded_text_indices):
-                                best_label = i % len(topic_groups) if topic_groups else 0
-                                topic_groups[best_label].append((filenames[inv_idx], documents[inv_idx]))
+                                best_label = (
+                                    i % len(topic_groups) if topic_groups else 0
+                                )
+                                topic_groups[best_label].append(
+                                    (filenames[inv_idx], documents[inv_idx])
+                                )
                     else:
                         # Only 1 cluster exists, assign everything to it
                         best_label = list(topic_groups.keys())[0] if topic_groups else 0
                         for inv_idx in unembedded_text_indices:
-                            topic_groups[best_label].append((filenames[inv_idx], documents[inv_idx]))
+                            topic_groups[best_label].append(
+                                (filenames[inv_idx], documents[inv_idx])
+                            )
 
             except Exception as e:
                 logging.error(f"Failed dense vector clustering step: {e}")
@@ -595,16 +657,23 @@ class RecursiveKMeansStrategy:
                         self._error += 0.0
                     else:
                         from sklearn.cluster import MiniBatchKMeans
-                        kmeans = MiniBatchKMeans(n_clusters=actual_k, random_state=42, n_init="auto")
+
+                        kmeans = MiniBatchKMeans(
+                            n_clusters=actual_k, random_state=42, n_init="auto"
+                        )
                         labels = kmeans.fit_predict(X)
                         self._error += kmeans.inertia_
 
                     # Group lexical documents
                     for i, label in enumerate(labels):
                         orig_idx = lexical_indices[i]
-                        topic_groups[label].append((filenames[orig_idx], documents[orig_idx]))
+                        topic_groups[label].append(
+                            (filenames[orig_idx], documents[orig_idx])
+                        )
                 except Exception:
-                    topic_groups = {0: [(filenames[idx], documents[idx]) for idx in lexical_indices]}
+                    topic_groups = {
+                        0: [(filenames[idx], documents[idx]) for idx in lexical_indices]
+                    }
             else:
                 topic_groups = {}
 
@@ -1097,12 +1166,14 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
             import torch
 
             from app.core.shared_registry import SharedModelRegistry
+
             torch.set_num_threads(SharedModelRegistry.get_instance().get_thread_limit())
         except Exception:
             pass
 
         try:
             from transformers import LogitsProcessorList
+
             logits_processor = LogitsProcessorList()
         except Exception:
             logits_processor = []
@@ -1136,10 +1207,24 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
 
         lower_str = clean_str.lower()
         blocked_status_words = {
-            "status", "encrypted", "failed", "unsupported", "empty", 
-            "skipped", "bypassed", "cancelled", "timeout", "error", "corrupt"
+            "status",
+            "encrypted",
+            "failed",
+            "unsupported",
+            "empty",
+            "skipped",
+            "bypassed",
+            "cancelled",
+            "timeout",
+            "error",
+            "corrupt",
         }
-        if lower_str in blocked_status_words or "status" in lower_str or "encrypted" in lower_str or "failed" in lower_str:
+        if (
+            lower_str in blocked_status_words
+            or "status" in lower_str
+            or "encrypted" in lower_str
+            or "failed" in lower_str
+        ):
             return True
 
         # Hyphen and punctuation check
@@ -1256,6 +1341,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
             friendly_names = [get_status_friendly_name(doc) for doc in documents if doc]
             if friendly_names:
                 from collections import Counter
+
                 return Counter(friendly_names).most_common(1)[0][0]
             return "Failed Extractions"
 
@@ -1282,7 +1368,9 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                 filtered_documents.append(cleaned)
 
         if not filtered_documents:
-            filtered_documents = [sanitize_placeholder_tags(doc) for doc in documents if doc]
+            filtered_documents = [
+                sanitize_placeholder_tags(doc) for doc in documents if doc
+            ]
 
         if db and base_dir:
             try:
@@ -1782,8 +1870,23 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
 
                 # Ensure no raw status or technical words are present
                 import re
-                for w in ["status", "encrypted", "failed", "unsupported", "empty", "skipped", "bypassed", "cancelled", "timeout", "error", "corrupt"]:
-                    name = re.sub(r'\b' + re.escape(w) + r'\b', '', name, flags=re.IGNORECASE)
+
+                for w in [
+                    "status",
+                    "encrypted",
+                    "failed",
+                    "unsupported",
+                    "empty",
+                    "skipped",
+                    "bypassed",
+                    "cancelled",
+                    "timeout",
+                    "error",
+                    "corrupt",
+                ]:
+                    name = re.sub(
+                        r"\b" + re.escape(w) + r"\b", "", name, flags=re.IGNORECASE
+                    )
                 name = " ".join(name.split())
 
                 # Final OS-level path sanitization

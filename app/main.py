@@ -320,7 +320,7 @@ def main():
     parser.add_argument(
         "--daemon",
         action="store_true",
-        help="Launch the persistent directory-watching daemon"
+        help="Launch the persistent directory-watching daemon",
     )
 
     args = parser.parse_args()
@@ -374,6 +374,7 @@ def main():
 
     if getattr(args, "daemon", False) is True:
         from app.core.daemon import start_daemon
+
         start_daemon(settings, args.directory)
     elif args.demo:
         from app.demo import run_demo

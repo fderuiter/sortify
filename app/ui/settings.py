@@ -1034,9 +1034,16 @@ def show_settings(parent_app, settings):
 
                 def move_policy_up(index: int):
                     current_policies = list(getattr(settings, "POLICIES", []))
-                    current_policies = sorted(current_policies, key=lambda x: x.get("priority", 0), reverse=True)
+                    current_policies = sorted(
+                        current_policies,
+                        key=lambda x: x.get("priority", 0),
+                        reverse=True,
+                    )
                     if 0 < index < len(current_policies):
-                        current_policies[index], current_policies[index - 1] = current_policies[index - 1], current_policies[index]
+                        current_policies[index], current_policies[index - 1] = (
+                            current_policies[index - 1],
+                            current_policies[index],
+                        )
                         for i, p in enumerate(current_policies):
                             p["priority"] = (len(current_policies) - i) * 10
                         try:
@@ -1044,13 +1051,22 @@ def show_settings(parent_app, settings):
                             ui.notify("Policy moved up.", type="positive")
                             render_policies()
                         except Exception as ex:
-                            ui.notify(f"Failed to re-order policies: {ex}", type="negative")
+                            ui.notify(
+                                f"Failed to re-order policies: {ex}", type="negative"
+                            )
 
                 def move_policy_down(index: int):
                     current_policies = list(getattr(settings, "POLICIES", []))
-                    current_policies = sorted(current_policies, key=lambda x: x.get("priority", 0), reverse=True)
+                    current_policies = sorted(
+                        current_policies,
+                        key=lambda x: x.get("priority", 0),
+                        reverse=True,
+                    )
                     if 0 <= index < len(current_policies) - 1:
-                        current_policies[index], current_policies[index + 1] = current_policies[index + 1], current_policies[index]
+                        current_policies[index], current_policies[index + 1] = (
+                            current_policies[index + 1],
+                            current_policies[index],
+                        )
                         for i, p in enumerate(current_policies):
                             p["priority"] = (len(current_policies) - i) * 10
                         try:
@@ -1058,13 +1074,19 @@ def show_settings(parent_app, settings):
                             ui.notify("Policy moved down.", type="positive")
                             render_policies()
                         except Exception as ex:
-                            ui.notify(f"Failed to re-order policies: {ex}", type="negative")
+                            ui.notify(
+                                f"Failed to re-order policies: {ex}", type="negative"
+                            )
 
                 def render_policies():
                     policies_container.clear()
                     with policies_container:
                         policies_list = list(getattr(settings, "POLICIES", []))
-                        policies_list = sorted(policies_list, key=lambda x: x.get("priority", 0), reverse=True)
+                        policies_list = sorted(
+                            policies_list,
+                            key=lambda x: x.get("priority", 0),
+                            reverse=True,
+                        )
                         if not policies_list:
                             ui.label("No active policies configured.").classes(
                                 "text-sm text-gray-400 italic"
@@ -1078,10 +1100,13 @@ def show_settings(parent_app, settings):
                                     with ui.row().classes(
                                         "items-center gap-2 flex-wrap"
                                     ):
-                                        friendly_type = OPTIONS.get(policy.get("type", ""), policy.get("type", "").upper())
-                                        ui.label(
-                                            friendly_type
-                                        ).classes("w-36 font-bold")
+                                        friendly_type = OPTIONS.get(
+                                            policy.get("type", ""),
+                                            policy.get("type", "").upper(),
+                                        )
+                                        ui.label(friendly_type).classes(
+                                            "w-36 font-bold"
+                                        )
                                         ui.label(policy.get("expression", "")).classes(
                                             "w-32 font-mono truncate"
                                         )
@@ -1090,22 +1115,28 @@ def show_settings(parent_app, settings):
                                         )
 
                                         with ui.row().classes("items-center gap-1"):
+
                                             def make_move_up(index=idx):
                                                 return lambda: move_policy_up(index)
+
                                             def make_move_down(index=idx):
                                                 return lambda: move_policy_down(index)
 
                                             up_btn = ui.button(
                                                 icon="arrow_upward",
                                                 on_click=make_move_up(),
-                                            ).props("flat round dense size=sm aria-label='Move Up Policy Button'")
+                                            ).props(
+                                                "flat round dense size=sm aria-label='Move Up Policy Button'"
+                                            )
                                             if idx == 0:
                                                 up_btn.disable()
 
                                             down_btn = ui.button(
                                                 icon="arrow_downward",
                                                 on_click=make_move_down(),
-                                            ).props("flat round dense size=sm aria-label='Move Down Policy Button'")
+                                            ).props(
+                                                "flat round dense size=sm aria-label='Move Down Policy Button'"
+                                            )
                                             if idx == len(policies_list) - 1:
                                                 down_btn.disable()
 
@@ -1126,7 +1157,11 @@ def show_settings(parent_app, settings):
                                         current_policies = list(
                                             getattr(settings, "POLICIES", [])
                                         )
-                                        current_policies = sorted(current_policies, key=lambda x: x.get("priority", 0), reverse=True)
+                                        current_policies = sorted(
+                                            current_policies,
+                                            key=lambda x: x.get("priority", 0),
+                                            reverse=True,
+                                        )
                                         if 0 <= index < len(current_policies):
                                             current_policies[index]["halting"] = e.value
                                             try:
@@ -1142,7 +1177,9 @@ def show_settings(parent_app, settings):
                                                 )
                                                 render_policies()
 
-                                    with ui.expansion("Advanced Settings", icon="settings").classes("text-xs"):
+                                    with ui.expansion(
+                                        "Advanced Settings", icon="settings"
+                                    ).classes("text-xs"):
                                         ui.checkbox(
                                             "Halt on mismatch",
                                             value=halting_val,
@@ -1153,11 +1190,17 @@ def show_settings(parent_app, settings):
                                         current_policies = list(
                                             getattr(settings, "POLICIES", [])
                                         )
-                                        current_policies = sorted(current_policies, key=lambda x: x.get("priority", 0), reverse=True)
+                                        current_policies = sorted(
+                                            current_policies,
+                                            key=lambda x: x.get("priority", 0),
+                                            reverse=True,
+                                        )
                                         if 0 <= idx_to_del < len(current_policies):
                                             removed = current_policies.pop(idx_to_del)
                                             for i, p in enumerate(current_policies):
-                                                p["priority"] = (len(current_policies) - i) * 10
+                                                p["priority"] = (
+                                                    len(current_policies) - i
+                                                ) * 10
                                             try:
                                                 settings.POLICIES = current_policies
                                                 ui.notify(
@@ -1200,12 +1243,16 @@ def show_settings(parent_app, settings):
                         )
                         .classes("w-40")
                     )
-                    with ui.expansion("Advanced Settings", icon="settings").classes("w-full text-xs"):
+                    with ui.expansion("Advanced Settings", icon="settings").classes(
+                        "w-full text-xs"
+                    ):
                         p_priority_input = ui.number(
                             label="Priority", value=10, step=1
                         ).classes("w-20")
                         p_priority_input.set_visibility(False)
-                        p_halting_checkbox = ui.checkbox("Halt on mismatch", value=False)
+                        p_halting_checkbox = ui.checkbox(
+                            "Halt on mismatch", value=False
+                        )
 
                     def add_policy():
                         p_type = p_type_select.value
@@ -1280,7 +1327,11 @@ def show_settings(parent_app, settings):
 
                         current_policies = list(getattr(settings, "POLICIES", []))
                         current_policies.append(new_p)
-                        current_policies = sorted(current_policies, key=lambda x: x.get("priority", 0), reverse=True)
+                        current_policies = sorted(
+                            current_policies,
+                            key=lambda x: x.get("priority", 0),
+                            reverse=True,
+                        )
                         for i, p in enumerate(current_policies):
                             p["priority"] = (len(current_policies) - i) * 10
                         try:

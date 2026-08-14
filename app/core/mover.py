@@ -174,7 +174,9 @@ def _execute_moves_recursive(
                 conflict_policy = getattr(runtime_settings, "CONFLICT_POLICY", "rename")
 
             if collision and conflict_policy == "skip":
-                logging.info(f"Collision detected for {target_path}. Policy is 'skip', bypassing move.")
+                logging.info(
+                    f"Collision detected for {target_path}. Policy is 'skip', bypassing move."
+                )
                 continue
 
             dest_path = os.path.normpath(get_safe_path(dest_dir, filename, source_path))
@@ -372,7 +374,15 @@ def execute_moves(
     # Execute all moves first
     db_updates_batch = []
     try:
-        _execute_moves_recursive(base_dir, plan, db, "", path_map, db_updates_batch, runtime_settings=runtime_settings)
+        _execute_moves_recursive(
+            base_dir,
+            plan,
+            db,
+            "",
+            path_map,
+            db_updates_batch,
+            runtime_settings=runtime_settings,
+        )
 
         summary = {"deleted_folders": 0, "protected_folders": 0}
         cleanup_enabled = (
