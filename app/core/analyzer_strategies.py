@@ -1,5 +1,7 @@
 """Defines clustering strategies for grouping documents."""
 
+import contextvars
+import functools
 import logging
 import multiprocessing
 import os
@@ -7,6 +9,106 @@ import sys
 from collections import defaultdict
 from contextlib import contextmanager
 from typing import List, Protocol
+
+
+class IsolatedStrategyMixin:
+    """Mixin class to isolate execution parameters, target paths, and active document maps to the executing thread/context."""
+
+    _THREAD_ISOLATED_ATTRIBUTES = {
+        "stop_words",
+        "max_folders",
+        "max_depth",
+        "max_features",
+        "_error",
+        "_vector_map",
+        "db",
+        "base_dir",
+    }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        object.__setattr__(self, "_local_state_var", contextvars.ContextVar(f"state_{id(self)}", default={}))
+
+    def _get_local_state(self):
+        if not hasattr(self, "_local_state_var"):
+            object.__setattr__(self, "_local_state_var", contextvars.ContextVar(f"state_{id(self)}", default={}))
+        return self._local_state_var.get()
+
+    def _set_local_state(self, state):
+        if not hasattr(self, "_local_state_var"):
+            object.__setattr__(self, "_local_state_var", contextvars.ContextVar(f"state_{id(self)}", default={}))
+        self._local_state_var.set(state)
+
+    def __getattribute__(self, name):
+        """Get attribute, routing thread-isolated variables to contextvars."""
+        if name in object.__getattribute__(self, "_THREAD_ISOLATED_ATTRIBUTES"):
+            state = object.__getattribute__(self, "_get_local_state")()
+            if name in state:
+                return state[name]
+            try:
+                return object.__getattribute__(self, name)
+            except AttributeError:
+                raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+        return object.__getattribute__(self, name)
+
+    def __setattr__(self, name, value):
+        """Set attribute, routing thread-isolated variables to contextvars."""
+        if name in getattr(self, "_THREAD_ISOLATED_ATTRIBUTES", set()):
+            state = dict(self._get_local_state())
+            state[name] = value
+            self._set_local_state(state)
+        else:
+            object.__setattr__(self, name, value)
+
+    def __delattr__(self, name):
+        """Delete attribute, routing thread-isolated variables to contextvars."""
+        if name in getattr(self, "_THREAD_ISOLATED_ATTRIBUTES", set()):
+            state = dict(self._get_local_state())
+            if name in state:
+                del state[name]
+                self._set_local_state(state)
+            else:
+                try:
+                    object.__delattr__(self, name)
+                except AttributeError:
+                    raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+        else:
+            object.__delattr__(self, name)
+
+    def clear_isolated_state(self):
+        """Clean up the thread-isolated context variables to prevent memory leaks."""
+        self._set_local_state({})
+
+
+def thread_isolated_execution(func):
+    """Track execution depth and automatically clean up isolated state at the outermost call."""
+    @functools.wraps(func)
+    def wrapper(self, *args, **kwargs):
+        import threading
+        if not hasattr(self, "_local_state_var"):
+            object.__setattr__(self, "_local_state_var", contextvars.ContextVar(f"state_{id(self)}", default={}))
+        state = self._local_state_var.get()
+        depth = state.get("_execution_depth", 0)
+
+        state = dict(state)
+        state["_execution_depth"] = depth + 1
+        self._local_state_var.set(state)
+
+        try:
+            return func(self, *args, **kwargs)
+        finally:
+            state = dict(self._local_state_var.get())
+            current_depth = state.get("_execution_depth", 1) - 1
+            if current_depth <= 0:
+                if threading.current_thread() is not threading.main_thread():
+                    self._local_state_var.set({})
+                else:
+                    state["_execution_depth"] = 0
+                    self._local_state_var.set(state)
+            else:
+                state["_execution_depth"] = current_depth
+                self._local_state_var.set(state)
+    return wrapper
 
 LANGUAGE_CHAR_MAP = {
     "en": "a-zA-Z0-9",
@@ -165,7 +267,7 @@ class ClusteringStrategy(Protocol):
         ...
 
 
-class RecursiveKMeansStrategy:
+class RecursiveKMeansStrategy(IsolatedStrategyMixin):
     """Strategy that uses recursive KMeans to cluster documents."""
 
     def _generate_plan_inline(
@@ -193,6 +295,7 @@ class RecursiveKMeansStrategy:
         plan = self._cluster_recursive(filenames, documents, depth=1)
         return plan, self._error
 
+    @thread_isolated_execution
     def generate_plan(
         self,
         filenames: List[str],
@@ -668,6 +771,7 @@ def cooperative_join(target, timeout=1.0):
 class GenerativeNamingStrategy(RecursiveKMeansStrategy):
     """Strategy that uses a generative model to create descriptive folder names."""
 
+    @thread_isolated_execution
     def generate_plan(
         self,
         filenames: List[str],

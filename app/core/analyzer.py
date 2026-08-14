@@ -845,3 +845,15 @@ class IncrementalAnalyzer:
                 f"Failed during generate_sorting_plan. Error: {str(e)}", exc_info=True
             )
             return {}
+        finally:
+            try:
+                active_strategy_name = self.strategy_name
+                if self.strategy_name and getattr(self, "embedding_manager", None) and self.embedding_manager.is_mock:
+                    active_strategy_name = "default"
+                if active_strategy_name:
+                    import app.core.analyzer_strategies
+                    strategy = app.core.analyzer_strategies.clustering_registry.get_strategy(active_strategy_name)
+                    if strategy and hasattr(strategy, "clear_isolated_state"):
+                        strategy.clear_isolated_state()
+            except Exception:
+                pass
