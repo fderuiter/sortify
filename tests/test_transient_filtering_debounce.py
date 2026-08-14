@@ -1,9 +1,9 @@
 import threading
-import time
 from unittest import mock
+
 import pytest
 
-from app.config import Settings, AppSettings
+from app.config import AppSettings, Settings
 from app.core.daemon import ContinuousWatchdogDaemon
 
 
