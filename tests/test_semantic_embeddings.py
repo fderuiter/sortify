@@ -882,3 +882,108 @@ def test_batch_retrieval_and_caching_priority(db, temp_dir):
         assert len(called_disk_loads) > 0
     finally:
         db.get_documents_by_filepaths = original_get_docs_by_fp
+
+
+def test_adaptive_onnx_compatibility(db, temp_dir):
+    """Test dynamic type-casting and missing node synthesis in the embedding manager.
+
+    Verifies:
+    1. Input token arrays are cast to the target type requested by the model (e.g., int32, float32, etc.).
+    2. Missing auxiliary nodes (like 'token_type_ids' or 'attention_mask') are generated dynamically
+       matching the exact dimensions of current token inputs and populated with defaults.
+    """
+    import sys
+    from unittest.mock import MagicMock, patch
+    import numpy as np
+    from app.core.semantic_embeddings import SemanticEmbeddingManager
+
+    # Set up mock tokenizer returning standard int64 input_ids but missing other keys
+    mock_tokenizer = MagicMock()
+    mock_inputs = {
+        "input_ids": np.array([[101, 102, 103]], dtype=np.int64),
+    }
+    mock_tokenizer.return_value = mock_inputs
+
+    mock_transformers = MagicMock()
+    mock_transformers.AutoTokenizer.from_pretrained.return_value = mock_tokenizer
+
+    # Mock ONNX session requesting:
+    # 1. 'input_ids' as tensor(int32) (requires down-casting from int64)
+    # 2. 'attention_mask' as tensor(int32) (missing from inputs, should be synthesized as ones)
+    # 3. 'token_type_ids' as tensor(int64) (missing from inputs, should be synthesized as zeros)
+    node_input_ids = MagicMock()
+    node_input_ids.name = "input_ids"
+    node_input_ids.type = "tensor(int32)"
+
+    node_attention_mask = MagicMock()
+    node_attention_mask.name = "attention_mask"
+    node_attention_mask.type = "tensor(int32)"
+
+    node_token_type_ids = MagicMock()
+    node_token_type_ids.name = "token_type_ids"
+    node_token_type_ids.type = "tensor(int64)"
+
+    mock_session = MagicMock()
+    mock_session.get_inputs.return_value = [
+        node_input_ids,
+        node_attention_mask,
+        node_token_type_ids,
+    ]
+
+    # Mock outputs
+    token_embeddings = np.array(
+        [[[0.1, 0.2], [0.3, 0.4], [0.5, 0.6]]], dtype=np.float32
+    )
+    mock_session.run.return_value = [token_embeddings]
+
+    # Dummy model path
+    model_dir = temp_dir / "mock_compatibility_model_dir"
+    model_dir.mkdir()
+    onnx_file = model_dir / "model.onnx"
+    onnx_file.write_text("dummy compatibility onnx content")
+
+    with (
+        patch.dict(sys.modules, {"transformers": mock_transformers}),
+        patch(
+            "app.core.shared_registry.SharedModelRegistry.get_onnx_session",
+            return_value=mock_session,
+        ),
+        patch("app.core.semantic_embeddings.get_active_model_properties") as mock_props,
+    ):
+        mock_props.return_value = ("mock_compat_sig", 2, "1.0.0")
+
+        manager = SemanticEmbeddingManager(db, model_path=str(model_dir))
+
+        # This execution must succeed without crashes
+        embedding = manager.generate_embedding("Test text")
+
+        # Let's inspect the inputs passed to mock_session.run
+        assert mock_session.run.called
+        run_args = mock_session.run.call_args
+        # run_args[0] is (None, session_inputs)
+        session_inputs = run_args[0][1]
+
+        # Check 'input_ids' was cast to int32
+        assert "input_ids" in session_inputs
+        assert session_inputs["input_ids"].dtype == np.int32
+        np.testing.assert_array_equal(
+            session_inputs["input_ids"], np.array([[101, 102, 103]], dtype=np.int32)
+        )
+
+        # Check 'attention_mask' was synthesized as ones and cast to int32
+        assert "attention_mask" in session_inputs
+        assert session_inputs["attention_mask"].dtype == np.int32
+        np.testing.assert_array_equal(
+            session_inputs["attention_mask"], np.array([[1, 1, 1]], dtype=np.int32)
+        )
+
+        # Check 'token_type_ids' was synthesized as zeros and cast to int64
+        assert "token_type_ids" in session_inputs
+        assert session_inputs["token_type_ids"].dtype == np.int64
+        np.testing.assert_array_equal(
+            session_inputs["token_type_ids"], np.array([[0, 0, 0]], dtype=np.int64)
+        )
+
+        # Check returned vector is valid
+        assert len(embedding) == 2
+
