@@ -4,13 +4,13 @@ Provides a centralized, single standardized retry timing and count profile on Wi
 for moving, deleting, hashing, and cleaning up directories.
 """
 
-import sys
 import gc
-import time
+import logging
 import os
 import shutil
 import stat
-import logging
+import sys
+import time
 
 # Load the original shutil.move to detect if it has been mocked or monkeypatched in tests.
 _ORIGINAL_SHUTIL_MOVE = None
@@ -153,8 +153,8 @@ def resilient_file_hash(file_path: str) -> str:
     For MP3 and M4A files, skips metadata headers and structural atoms
     to isolate raw audio payload.
     """
-    import struct
     import hashlib
+    import struct
 
     for attempt in range(MAX_ATTEMPTS):
         hasher = hashlib.sha256()
