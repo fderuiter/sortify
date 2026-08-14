@@ -11,7 +11,13 @@ except ImportError:
 
 
 def is_ml_available() -> bool:
-    """Check if heavy machine learning dependencies (torch, easyocr) are available."""
+    """Check if heavy machine learning dependencies (torch, easyocr) are available.
+
+    Returns
+    -------
+    bool
+        True if torch and easyocr are both importable, False otherwise.
+    """
     try:
         import easyocr  # noqa: F401
         import torch  # noqa: F401
@@ -22,7 +28,25 @@ def is_ml_available() -> bool:
 
 
 def check_ai_status(settings) -> tuple[bool, str | None]:
-    """Check AI models status, returning (is_healthy, warning_message)."""
+    """Check AI models status, returning (is_healthy, warning_message).
+
+    Parameters
+    ----------
+    settings : app.config.AppSettings
+        The settings object of the application containing features flags.
+
+    Returns
+    -------
+    tuple of (bool, str or None)
+        A tuple containing:
+        - is_healthy (bool): True if the machine learning/AI subsystem is healthy and fully available.
+        - warning_message (str or None): A warning description if fallback or corrupt state is detected, otherwise None.
+
+    Raises
+    ------
+    ValueError
+        If key dependencies are missing/corrupted and we are running in sandboxed execution.
+    """
     import sys
 
     from app.core.path_utils import is_packaged

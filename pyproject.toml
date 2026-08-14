@@ -51,11 +51,8 @@ convention = "numpy"
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["D", "F841", "E741"]
 "scripts/*" = ["D"]
-"app/core/analyzer_strategies.py" = ["D"]
-"app/core/env_helper.py" = ["D"]
 "app/core/metadata.py" = ["F841"]
-"app/core/shared_registry.py" = ["D"]
-"app/core/verifier.py" = ["D", "F401", "E741"]
+"app/core/verifier.py" = ["F401", "E741"]
 
 [tool.ruff.format]
 docstring-code-format = true

@@ -48,12 +48,36 @@ if sys.platform == "win32":
     from ctypes import wintypes
 
     class SID_AND_ATTRIBUTES(ctypes.Structure):
+        """Win32 SID_AND_ATTRIBUTES structure.
+
+        Attributes
+        ----------
+        Sid : wintypes.LPVOID
+            Pointer to a SID structure.
+        Attributes : wintypes.DWORD
+            Attributes of the SID.
+        """
+
         _fields_ = [
             ("Sid", wintypes.LPVOID),
             ("Attributes", wintypes.DWORD),
         ]
 
     class PROCESS_INFORMATION(ctypes.Structure):
+        """Win32 PROCESS_INFORMATION structure.
+
+        Attributes
+        ----------
+        hProcess : wintypes.HANDLE
+            Handle to the newly created process.
+        hThread : wintypes.HANDLE
+            Handle to the primary thread of the newly created process.
+        dwProcessId : wintypes.DWORD
+            Value identifying the process.
+        dwThreadId : wintypes.DWORD
+            Value identifying the thread.
+        """
+
         _fields_ = [
             ("hProcess", wintypes.HANDLE),
             ("hThread", wintypes.HANDLE),
@@ -62,6 +86,48 @@ if sys.platform == "win32":
         ]
 
     class STARTUPINFOW(ctypes.Structure):
+        """Win32 STARTUPINFOW structure.
+
+        Attributes
+        ----------
+        cb : wintypes.DWORD
+            Size of the structure, in bytes.
+        lpReserved : wintypes.LPWSTR
+            Reserved; must be NULL.
+        lpDesktop : wintypes.LPWSTR
+            Name of the desktop.
+        lpTitle : wintypes.LPWSTR
+            Title displayed in the title bar.
+        dwX : wintypes.DWORD
+            The x-offset of the window.
+        dwY : wintypes.DWORD
+            The y-offset of the window.
+        dwXSize : wintypes.DWORD
+            The width of the window.
+        dwYSize : wintypes.DWORD
+            The height of the window.
+        dwXCountChars : wintypes.DWORD
+            The screen buffer width in character columns.
+        dwYCountChars : wintypes.DWORD
+            The screen buffer height in character rows.
+        dwFillAttribute : wintypes.DWORD
+            The initial text and background colors.
+        dwFlags : wintypes.DWORD
+            Bitfield determining window properties.
+        wShowWindow : wintypes.WORD
+            Show window value.
+        cbReserved2 : wintypes.WORD
+            Reserved; must be 0.
+        lpReserved2 : ctypes.POINTER(ctypes.c_byte)
+            Reserved; must be NULL.
+        hStdInput : wintypes.HANDLE
+            Handle to the standard input device.
+        hStdOutput : wintypes.HANDLE
+            Handle to the standard output device.
+        hStdError : wintypes.HANDLE
+            Handle to the standard error device.
+        """
+
         _fields_ = [
             ("cb", wintypes.DWORD),
             ("lpReserved", wintypes.LPWSTR),
@@ -84,6 +150,18 @@ if sys.platform == "win32":
         ]
 
     def create_unicode_env_block(env_dict):
+        """Create a Win32 unicode environment block from an environment dictionary.
+
+        Parameters
+        ----------
+        env_dict : dict
+            A dictionary of environment variables.
+
+        Returns
+        -------
+        ctypes.Array or None
+            A ctypes unicode character buffer, or None if the input dictionary is empty.
+        """
         if not env_dict:
             return None
         block_elements = []
@@ -375,6 +453,8 @@ if sys.platform == "win32":
 else:
 
     class RestrictedPopen(object):
+        """Fallback mock/placeholder of RestrictedPopen for non-Windows platforms."""
+
         pass
 
 
@@ -453,6 +533,16 @@ def get_cleaned_env(env: dict = None) -> dict:
     """Return a copy of the environment dictionary with PyInstaller-specific variables removed.
 
     This also explicitly injects the local cache directory into PYTHONPATH.
+
+    Parameters
+    ----------
+    env : dict, optional
+        An environment dictionary to clean. If None, copies and cleans os.environ.
+
+    Returns
+    -------
+    dict
+        A cleaned environment dictionary.
     """
     if env is None:
         env = os.environ.copy()
@@ -472,7 +562,13 @@ def get_cleaned_env(env: dict = None) -> dict:
 
 
 def get_subprocess_startupinfo():
-    """Return a STARTUPINFO object that hides the console window on Windows."""
+    """Return a STARTUPINFO object that hides the console window on Windows.
+
+    Returns
+    -------
+    subprocess.STARTUPINFO or None
+        The startupinfo object configuring a hidden window on Windows, or None on other platforms.
+    """
     if sys.platform == "win32":
         if hasattr(subprocess, "STARTUPINFO"):
             startupinfo = subprocess.STARTUPINFO()
@@ -483,7 +579,27 @@ def get_subprocess_startupinfo():
 
 
 def spawn_background_process(cmd, sandbox: bool = SANDBOX_SUPPORTED, **kwargs):
-    """Spawn a background process asynchronously with platform-specific sandboxing if sandbox=True."""
+    """Spawn a background process asynchronously with platform-specific sandboxing if sandbox=True.
+
+    Parameters
+    ----------
+    cmd : list of str
+        The command line arguments to execute.
+    sandbox : bool, default=SANDBOX_SUPPORTED
+        If True, executes under a platform-specific sandbox constraint (e.g. unshare on Linux, sandbox-exec on macOS, restricted token on Windows).
+    **kwargs : dict
+        Additional keyword arguments passed to subprocess.Popen.
+
+    Returns
+    -------
+    subprocess.Popen or RestrictedPopen
+        The spawned child process.
+
+    Raises
+    ------
+    PermissionError
+        If sandboxing is requested but not supported/initialized on the current platform.
+    """
     if sandbox:
         if not SANDBOX_SUPPORTED:
             raise PermissionError(
@@ -526,7 +642,27 @@ def spawn_background_process(cmd, sandbox: bool = SANDBOX_SUPPORTED, **kwargs):
 
 
 def run_background_process(cmd, sandbox: bool = SANDBOX_SUPPORTED, **kwargs):
-    """Run a background process synchronously with platform-specific sandboxing if sandbox=True."""
+    """Run a background process synchronously with platform-specific sandboxing if sandbox=True.
+
+    Parameters
+    ----------
+    cmd : list of str
+        The command line arguments to execute.
+    sandbox : bool, default=SANDBOX_SUPPORTED
+        If True, executes under a platform-specific sandbox constraint (e.g. unshare on Linux, sandbox-exec on macOS, restricted token on Windows).
+    **kwargs : dict
+        Additional keyword arguments passed to subprocess.run.
+
+    Returns
+    -------
+    subprocess.CompletedProcess
+        The result of the synchronous run.
+
+    Raises
+    ------
+    PermissionError
+        If sandboxing is requested but not supported/initialized on the current platform.
+    """
     if sandbox:
         if not SANDBOX_SUPPORTED:
             raise PermissionError(
@@ -574,7 +710,13 @@ def run_background_process(cmd, sandbox: bool = SANDBOX_SUPPORTED, **kwargs):
 
 
 def is_cuda_available() -> bool:
-    """Check if PyTorch CUDA capability is available."""
+    """Check if PyTorch CUDA capability is available.
+
+    Returns
+    -------
+    bool
+        True if CUDA is available, False otherwise.
+    """
     try:
         import torch
 
@@ -584,7 +726,13 @@ def is_cuda_available() -> bool:
 
 
 def is_mps_available() -> bool:
-    """Check if PyTorch MPS capability is available."""
+    """Check if PyTorch MPS capability is available.
+
+    Returns
+    -------
+    bool
+        True if MPS is available, False otherwise.
+    """
     try:
         import torch
 
