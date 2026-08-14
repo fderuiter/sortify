@@ -76,6 +76,7 @@ def _remove_empty_dirs(path: str, protected_paths: list[str] = None):
 
     if not os.listdir(path):
         from app.core.resilient_file_ops import resilient_remove
+
         try:
             resilient_remove(path)
         except OSError:
@@ -165,7 +166,9 @@ def _execute_moves_recursive(
                 conflict_policy = getattr(runtime_settings, "CONFLICT_POLICY", "rename")
 
             if collision and conflict_policy == "skip":
-                logging.info(f"Collision detected for {target_path}. Policy is 'skip', bypassing move.")
+                logging.info(
+                    f"Collision detected for {target_path}. Policy is 'skip', bypassing move."
+                )
                 continue
 
             dest_path = os.path.normpath(get_safe_path(dest_dir, filename, source_path))
@@ -215,11 +218,13 @@ def _execute_moves_recursive(
                             os.replace(shadow_name, dest_path)
                             if not _is_same_path(dest_path, source_path):
                                 from app.core.resilient_file_ops import resilient_remove
+
                                 resilient_remove(source_path)
                             moved_as_link = True
                         except Exception as e:
                             if os.path.lexists(shadow_name):
                                 from app.core.resilient_file_ops import resilient_remove
+
                                 resilient_remove(shadow_name)
                             logging.error(
                                 f"Failed to atomically update symlink {source_path}: {e}",
@@ -250,11 +255,13 @@ def _execute_moves_recursive(
                             os.replace(shadow_name, dest_path)
                             if not _is_same_path(dest_path, source_path):
                                 from app.core.resilient_file_ops import resilient_remove
+
                                 resilient_remove(source_path)
                             moved_as_link = True
                         except Exception as e:
                             if os.path.lexists(shadow_name):
                                 from app.core.resilient_file_ops import resilient_remove
+
                                 resilient_remove(shadow_name)
                             logging.error(
                                 f"Failed to atomically update Windows shortcut {source_path}: {e}",
@@ -287,6 +294,7 @@ def _execute_moves_recursive(
 
             if not moved_as_link:
                 from app.core.resilient_file_ops import resilient_move
+
                 resilient_move(source_path, dest_path)
 
             # Record user verified target and update filepath only after successful move
@@ -368,7 +376,15 @@ def execute_moves(
     # Execute all moves first
     db_updates_batch = []
     try:
-        _execute_moves_recursive(base_dir, plan, db, "", path_map, db_updates_batch, runtime_settings=runtime_settings)
+        _execute_moves_recursive(
+            base_dir,
+            plan,
+            db,
+            "",
+            path_map,
+            db_updates_batch,
+            runtime_settings=runtime_settings,
+        )
 
         summary = {"deleted_folders": 0, "protected_folders": 0}
         cleanup_enabled = (
@@ -421,6 +437,7 @@ def execute_moves(
                             node["source_path"]
                         ):
                             from app.core.resilient_file_ops import resilient_remove
+
                             resilient_remove(node["source_path"])
                             summary["deleted_folders"] += 1
                     except OSError:

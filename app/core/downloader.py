@@ -308,7 +308,9 @@ def run_background_download(
             if proxy and proxy.strip():
                 p_str = proxy.strip()
                 if "<DECRYPTION_FAILED>" in p_str:
-                    raise NetworkError("Invalid proxy configuration: decryption failed.")
+                    raise NetworkError(
+                        "Invalid proxy configuration: decryption failed."
+                    )
                 handlers.append(
                     urllib.request.ProxyHandler({"http": p_str, "https": p_str})
                 )

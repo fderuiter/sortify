@@ -82,4 +82,3 @@ def test_filter_encrypted_credentials(memory_log):
     assert "Normal log message about starting the service" in output
     assert "Failed to connect with proxy" not in output
     assert "enc:U2VjcmV0Q3JlZGVudGlhbHM=" not in output
-

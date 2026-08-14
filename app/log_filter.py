@@ -48,7 +48,9 @@ class LogScrubbingFilter(logging.Filter):
             if any(self._has_encrypted_credentials(str(arg)) for arg in record.args):
                 return False
         elif isinstance(record.args, dict):
-            if any(self._has_encrypted_credentials(str(v)) for v in record.args.values()):
+            if any(
+                self._has_encrypted_credentials(str(v)) for v in record.args.values()
+            ):
                 return False
 
         if record.stack_info and self._has_encrypted_credentials(record.stack_info):

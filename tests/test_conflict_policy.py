@@ -8,8 +8,10 @@ from app.core.mover import _execute_moves_recursive
 class DummyDB:
     def get_document(self, base_dir, source_rel_path):
         return None
+
     def update_document_path(self, base_dir, source_rel_path, rel_dest):
         pass
+
 
 def test_conflict_policy_validation():
     # Valid values
@@ -43,7 +45,7 @@ def test_conflict_policy_skip(tmp_path):
             "__type__": "file",
             "relative_source": "source/test.txt",
             "target_filename": "test.txt",
-            "status": "To Be Moved"
+            "status": "To Be Moved",
         }
     }
 
@@ -58,7 +60,7 @@ def test_conflict_policy_skip(tmp_path):
         plan=plan,
         db=db,
         current_dest="dest",
-        runtime_settings=DummySettings()
+        runtime_settings=DummySettings(),
     )
 
     # Since policy is skip, the source file should still exist and the destination file should not be modified
@@ -87,7 +89,7 @@ def test_conflict_policy_rename(tmp_path):
             "__type__": "file",
             "relative_source": "source/test.txt",
             "target_filename": "test.txt",
-            "status": "To Be Moved"
+            "status": "To Be Moved",
         }
     }
 
@@ -102,7 +104,7 @@ def test_conflict_policy_rename(tmp_path):
         plan=plan,
         db=db,
         current_dest="dest",
-        runtime_settings=DummySettings()
+        runtime_settings=DummySettings(),
     )
 
     # Since policy is rename, the source file should be moved, and a new suffix path created

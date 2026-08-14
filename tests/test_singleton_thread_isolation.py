@@ -134,6 +134,7 @@ def test_strategy_context_propagation_across_thread_pool():
 
     # Verify standard thread does NOT propagate unless it's a ContextPropagatingThread
     captured_non_prop = [None]
+
     def background_task_non_prop():
         try:
             captured_non_prop[0] = getattr(strategy, "db", None)
@@ -148,6 +149,7 @@ def test_strategy_context_propagation_across_thread_pool():
 
     # Verify ContextPropagatingThread DOES propagate correctly
     captured_prop_thread = [None]
+
     def background_task_prop_thread():
         captured_prop_thread[0] = getattr(strategy, "db", None)
 
@@ -222,4 +224,3 @@ def test_strategy_automatic_cleanup():
         _ = strategy.stop_words
     with pytest.raises(AttributeError):
         _ = strategy.max_folders
-

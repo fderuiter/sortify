@@ -3,6 +3,7 @@ import shutil
 import tempfile
 import time
 from pathlib import Path
+
 import pytest
 
 from app.core.analyzer import IncrementalAnalyzer
@@ -10,13 +11,16 @@ from app.core.db import Database
 from app.core.db_worker import DBWorker
 from app.core.semantic_embeddings import ModelProperties
 
+
 @pytest.fixture
 def temp_dir():
     dir_path = tempfile.mkdtemp()
     yield Path(dir_path)
     from app.core.db_conn import clear_connection_cache
+
     clear_connection_cache()
     shutil.rmtree(dir_path, ignore_errors=True)
+
 
 @pytest.fixture
 def db_worker():
@@ -24,12 +28,15 @@ def db_worker():
     yield worker
     worker.stop()
 
+
 @pytest.fixture
 def db(temp_dir, db_worker):
     database = Database(temp_dir / "test.db", db_worker)
     yield database
     from app.core.db_conn import clear_connection_cache
+
     clear_connection_cache()
+
 
 def test_multiprocess_few_shot_prefetch_flow(db, temp_dir):
     """
@@ -115,11 +122,12 @@ def test_multiprocess_few_shot_prefetch_flow(db, temp_dir):
         stop_words={"the", "and"},
         db=db,
         strategy_name="generative",
-        model_path=str(temp_dir), # point to a valid folder to pass checks
+        model_path=str(temp_dir),  # point to a valid folder to pass checks
     )
 
     # We must patch the active model properties to match
     from unittest.mock import patch
+
     valid_properties = ModelProperties(
         signature="mock_sig_hash_prefetch",
         dimensions=384,
@@ -148,7 +156,9 @@ def test_multiprocess_few_shot_prefetch_flow(db, temp_dir):
     os.environ.pop("FORCE_MULTIPROCESSING_CLUSTERING", None)
 
     # Read the dumped prompts
-    assert prompt_dump_path.exists(), "Prompt dump file was not created by the child process"
+    assert prompt_dump_path.exists(), (
+        "Prompt dump file was not created by the child process"
+    )
     with open(prompt_dump_path, "r") as f:
         prompts_text = f.read()
 

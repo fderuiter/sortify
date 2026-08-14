@@ -198,7 +198,7 @@ def test_policies_tab_and_validation():
         assert type_field.options == {
             "keyword": "Contains the name",
             "pattern": "Matches text pattern",
-            "override": "Matches text exactly"
+            "override": "Matches text exactly",
         }
         expr_field = inputs["Expression"]
         target_field = inputs["Target Path"]

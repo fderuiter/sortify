@@ -28,16 +28,28 @@ class IsolatedStrategyMixin:
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        object.__setattr__(self, "_local_state_var", contextvars.ContextVar(f"state_{id(self)}", default={}))
+        object.__setattr__(
+            self,
+            "_local_state_var",
+            contextvars.ContextVar(f"state_{id(self)}", default={}),
+        )
 
     def _get_local_state(self):
         if not hasattr(self, "_local_state_var"):
-            object.__setattr__(self, "_local_state_var", contextvars.ContextVar(f"state_{id(self)}", default={}))
+            object.__setattr__(
+                self,
+                "_local_state_var",
+                contextvars.ContextVar(f"state_{id(self)}", default={}),
+            )
         return self._local_state_var.get()
 
     def _set_local_state(self, state):
         if not hasattr(self, "_local_state_var"):
-            object.__setattr__(self, "_local_state_var", contextvars.ContextVar(f"state_{id(self)}", default={}))
+            object.__setattr__(
+                self,
+                "_local_state_var",
+                contextvars.ContextVar(f"state_{id(self)}", default={}),
+            )
         self._local_state_var.set(state)
 
     def __getattribute__(self, name):
@@ -49,7 +61,9 @@ class IsolatedStrategyMixin:
             try:
                 return object.__getattribute__(self, name)
             except AttributeError:
-                raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+                raise AttributeError(
+                    f"'{type(self).__name__}' object has no attribute '{name}'"
+                )
         return object.__getattribute__(self, name)
 
     def __setattr__(self, name, value):
@@ -72,7 +86,9 @@ class IsolatedStrategyMixin:
                 try:
                     object.__delattr__(self, name)
                 except AttributeError:
-                    raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+                    raise AttributeError(
+                        f"'{type(self).__name__}' object has no attribute '{name}'"
+                    )
         else:
             object.__delattr__(self, name)
 
@@ -83,11 +99,17 @@ class IsolatedStrategyMixin:
 
 def thread_isolated_execution(func):
     """Track execution depth and automatically clean up isolated state at the outermost call."""
+
     @functools.wraps(func)
     def wrapper(self, *args, **kwargs):
         import threading
+
         if not hasattr(self, "_local_state_var"):
-            object.__setattr__(self, "_local_state_var", contextvars.ContextVar(f"state_{id(self)}", default={}))
+            object.__setattr__(
+                self,
+                "_local_state_var",
+                contextvars.ContextVar(f"state_{id(self)}", default={}),
+            )
         state = self._local_state_var.get()
         depth = state.get("_execution_depth", 0)
 
@@ -109,7 +131,9 @@ def thread_isolated_execution(func):
             else:
                 state["_execution_depth"] = current_depth
                 self._local_state_var.set(state)
+
     return wrapper
+
 
 LANGUAGE_CHAR_MAP = {
     "en": "a-zA-Z0-9",
@@ -815,6 +839,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         if threshold is None:
             try:
                 from app.config import AppSettings
+
                 settings = AppSettings()
                 threshold = getattr(settings, "COHERENCE_THRESHOLD", 0.5)
             except Exception:
@@ -822,6 +847,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
 
         # 1. Gather all document vectors in filenames
         import numpy as np
+
         vector_dict = {}
         use_dense = False
 
@@ -836,17 +862,25 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         if not use_dense and db and base_dir:
             try:
                 from app.core.semantic_embeddings import SemanticEmbeddingManager
+
                 embedding_manager = SemanticEmbeddingManager(
                     db, model_path=getattr(self, "model_path", None)
                 )
-                if not embedding_manager.is_mock and not embedding_manager.is_reconstruction_active():
+                if (
+                    not embedding_manager.is_mock
+                    and not embedding_manager.is_reconstruction_active()
+                ):
                     fetched = embedding_manager.get_vectors_batch(base_dir, filenames)
                     if fetched:
-                        vector_dict = {f: v for f, v in fetched.items() if v is not None}
+                        vector_dict = {
+                            f: v for f, v in fetched.items() if v is not None
+                        }
                         if len(vector_dict) > 0:
                             use_dense = True
             except Exception as e:
-                logging.error(f"Failed to fetch vectors in GenerativeNamingStrategy: {e}")
+                logging.error(
+                    f"Failed to fetch vectors in GenerativeNamingStrategy: {e}"
+                )
 
         # Fallback to TF-IDF if dense vectors are not available/mock
         if not use_dense:
@@ -906,7 +940,9 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
             # 2. Process files in current folder node
             if files:
                 all_recursive_files = get_recursive_files(node)
-                vectors = [vector_dict[f] for f in all_recursive_files if f in vector_dict]
+                vectors = [
+                    vector_dict[f] for f in all_recursive_files if f in vector_dict
+                ]
                 if vectors:
                     centroid = np.mean(vectors, axis=0)
                     for f in files:
@@ -1266,13 +1302,18 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
 
     def _get_cluster_keywords(self, documents: list) -> str:
         import os
+
         if not documents:
             return "Miscellaneous"
 
         if not getattr(self, "_model_initialized", False):
             self._init_model()
 
-        if self.generator is None and not (self._gguf_active and not self._gguf_failed) and not os.environ.get("PROMPT_DUMP_FILE"):
+        if (
+            self.generator is None
+            and not (self._gguf_active and not self._gguf_failed)
+            and not os.environ.get("PROMPT_DUMP_FILE")
+        ):
             return super()._get_cluster_keywords(documents)
 
         db = getattr(self, "db", None)
@@ -1296,11 +1337,14 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
             if model_metadata and getattr(self, "model_path", None):
                 try:
                     from app.core.semantic_embeddings import SemanticEmbeddingManager
+
                     class InMemoryDBMock:
                         def __init__(self, meta):
                             self._meta = meta or {}
+
                         def get_model_metadata(self, key):
                             return self._meta.get(key)
+
                         def set_model_metadata(self, key, value):
                             self._meta[key] = value
 
@@ -1323,8 +1367,11 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                     try:
                         target_text = " ".join(filtered_documents)
                         target_vector = embedding_manager.get_embedding(target_text)
-                        if target_vector and embedding_manager.validate_vector_dimension(
+                        if (
                             target_vector
+                            and embedding_manager.validate_vector_dimension(
+                                target_vector
+                            )
                         ):
                             hist_vectors = []
                             hist_meta = []
@@ -1343,7 +1390,9 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                                 if v:
                                     dot_idx = filepath.rfind(".")
                                     ext = (
-                                        filepath[dot_idx:].lower() if dot_idx != -1 else ""
+                                        filepath[dot_idx:].lower()
+                                        if dot_idx != -1
+                                        else ""
                                     )
                                     if (
                                         ext in {".png", ".jpg", ".jpeg"}
@@ -1356,7 +1405,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                                             {
                                                 "filepath": filepath,
                                                 "user_verified_target_path": user_verified_target,
-                                                "text": ex.get("text", "")
+                                                "text": ex.get("text", ""),
                                             }
                                         )
 
@@ -1386,7 +1435,11 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                                         "Here are some historical examples of documents and their corresponding user-corrected folder names:"
                                     )
                                     for ex_idx, (ex, sim) in enumerate(top_examples):
-                                        snippet = ex.get("text", "")[:500].replace("\n", " ").strip()
+                                        snippet = (
+                                            ex.get("text", "")[:500]
+                                            .replace("\n", " ")
+                                            .strip()
+                                        )
                                         if not snippet:
                                             snippet = os.path.basename(ex["filepath"])
 
@@ -1398,7 +1451,9 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                                         "\n\n".join(few_shot_lines) + "\n\n"
                                     )
                     except Exception as e:
-                        logging.error(f"Semantic historical matching failed in child process: {e}")
+                        logging.error(
+                            f"Semantic historical matching failed in child process: {e}"
+                        )
                         top_examples = []
                         few_shot_context = ""
 
@@ -1416,7 +1471,10 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                         continue
 
                     historical_examples.append(
-                        {"text": decrypted_text, "target_path": ex["user_verified_target_path"]}
+                        {
+                            "text": decrypted_text,
+                            "target_path": ex["user_verified_target_path"],
+                        }
                     )
 
                 if historical_examples:
@@ -1473,7 +1531,9 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                             )
                         few_shot_context = "\n\n".join(few_shot_lines) + "\n\n"
                     except Exception as e:
-                        logging.error(f"Error formatting few_shot_context in child process fallback: {e}")
+                        logging.error(
+                            f"Error formatting few_shot_context in child process fallback: {e}"
+                        )
 
         elif db and base_dir:
             try:

@@ -53,7 +53,9 @@ def test_daemon_trigger_recalculation_and_debounce(tmp_path):
         daemon.trigger_recalculation()
         timer2 = daemon._debounce_timer
         assert timer2 is not None
-        assert timer1 is not timer2  # First timer should have been canceled and replaced
+        assert (
+            timer1 is not timer2
+        )  # First timer should have been canceled and replaced
 
         # Clean up
         daemon.stop()
@@ -83,7 +85,7 @@ def test_daemon_execution_flow(tmp_path):
     # Set up folders
     src_dir = tmp_path / "src"
     src_dir.mkdir()
-    
+
     file_to_sort = src_dir / "invoice.txt"
     file_to_sort.write_text("Invoice contents")
 
@@ -97,16 +99,21 @@ def test_daemon_execution_flow(tmp_path):
     mock_app_session_class.return_value = mock_app_session_inst
 
     # Mock get_files_recursively to return our test file
-    with mock.patch("app.core.daemon.AppSession", mock_app_session_class), \
-         mock.patch("app.core.daemon.get_files_recursively", return_value=["invoice.txt"]), \
-         mock.patch("app.core.daemon.MetadataPass.run", return_value=[]):
-        
+    with (
+        mock.patch("app.core.daemon.AppSession", mock_app_session_class),
+        mock.patch(
+            "app.core.daemon.get_files_recursively", return_value=["invoice.txt"]
+        ),
+        mock.patch("app.core.daemon.MetadataPass.run", return_value=[]),
+    ):
         # We also mock process_items_async
         async def dummy_process_items(items, cancel_check, **kwargs):
             yield "invoice.txt", "extracted text", "hash123", False
 
         mock_app_session_inst.process_items_async = dummy_process_items
-        mock_app_session_inst.generate_sorting_plan.return_value = {"invoice.txt": "dest/invoice.txt"}
+        mock_app_session_inst.generate_sorting_plan.return_value = {
+            "invoice.txt": "dest/invoice.txt"
+        }
         mock_app_session_inst.execute_moves.return_value = {"moved": 1}
 
         # Run the sorting sync manually
@@ -117,5 +124,7 @@ def test_daemon_execution_flow(tmp_path):
         mock_app_session_class.assert_called_once_with(settings, str(src_dir))
         mock_app_session_inst.partial_fit.assert_called()
         mock_app_session_inst.generate_sorting_plan.assert_called_once()
-        mock_app_session_inst.execute_moves.assert_called_once_with({"invoice.txt": "dest/invoice.txt"})
+        mock_app_session_inst.execute_moves.assert_called_once_with(
+            {"invoice.txt": "dest/invoice.txt"}
+        )
         mock_app_session_inst.close.assert_called_once()

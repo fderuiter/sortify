@@ -12,11 +12,15 @@ from app.core.analyzer_strategies import clustering_registry
 _UNSPECIFIED = object()
 
 
-def pre_fetch_historical_corpus(db, base_dir, filenames, documents, pre_fetched_vectors=None, max_examples=50):
+def pre_fetch_historical_corpus(
+    db, base_dir, filenames, documents, pre_fetched_vectors=None, max_examples=50
+):
     """Query, decrypt, and package up to 50 relevant historical folder examples from the database."""
-    import logging
     import json
+    import logging
+
     import numpy as np
+
     from app.core.db_conn import get_db_connection
 
     # Retrieve model metadata from the database
@@ -52,22 +56,20 @@ def pre_fetch_historical_corpus(db, base_dir, filenames, documents, pre_fetched_
             rows = cursor.fetchall()
     except Exception as e:
         logging.error(f"Failed to query historical documents from DB: {e}")
-        return {
-            "model_metadata": model_metadata,
-            "examples": []
-        }
+        return {"model_metadata": model_metadata, "examples": []}
 
     if not rows:
-        return {
-            "model_metadata": model_metadata,
-            "examples": []
-        }
+        return {"model_metadata": model_metadata, "examples": []}
 
     # Decrypt and parse candidates
     candidates = []
     for filepath, user_verified_target_path, vector_str, extracted_text_enc in rows:
         try:
-            decrypted_text = db.crypto.decrypt_text(extracted_text_enc) if extracted_text_enc is not None else ""
+            decrypted_text = (
+                db.crypto.decrypt_text(extracted_text_enc)
+                if extracted_text_enc is not None
+                else ""
+            )
         except Exception:
             decrypted_text = ""
 
@@ -79,12 +81,14 @@ def pre_fetch_historical_corpus(db, base_dir, filenames, documents, pre_fetched_
             except Exception:
                 pass
 
-        candidates.append({
-            "filepath": filepath,
-            "user_verified_target_path": user_verified_target_path,
-            "vector": vector,
-            "text": decrypted_text
-        })
+        candidates.append(
+            {
+                "filepath": filepath,
+                "user_verified_target_path": user_verified_target_path,
+                "vector": vector,
+                "text": decrypted_text,
+            }
+        )
 
     # Restrict to maximum of 50 relevant historical examples
     if len(candidates) <= max_examples:
@@ -98,24 +102,33 @@ def pre_fetch_historical_corpus(db, base_dir, filenames, documents, pre_fetched_
             try:
                 centroid = np.mean(active_vectors, axis=0)
                 from sklearn.metrics.pairwise import cosine_similarity
+
                 cand_vectors = []
                 cand_indices = []
                 for idx, c in enumerate(candidates):
                     if c["vector"] is not None and len(c["vector"]) == len(centroid):
                         cand_vectors.append(c["vector"])
                         cand_indices.append(idx)
-                
+
                 if cand_vectors:
                     sims = cosine_similarity([centroid], cand_vectors).flatten()
-                    sorted_cand_indices = [cand_indices[i] for i in sims.argsort()[::-1]]
+                    sorted_cand_indices = [
+                        cand_indices[i] for i in sims.argsort()[::-1]
+                    ]
                     selected_indices = set(sorted_cand_indices[:max_examples])
                     selected_examples = []
                     for idx, c in enumerate(candidates):
                         if idx in selected_indices:
                             selected_examples.append(c)
                     if len(selected_examples) < max_examples:
-                        remaining = [c for idx, c in enumerate(candidates) if idx not in selected_indices]
-                        selected_examples.extend(remaining[:max_examples - len(selected_examples)])
+                        remaining = [
+                            c
+                            for idx, c in enumerate(candidates)
+                            if idx not in selected_indices
+                        ]
+                        selected_examples.extend(
+                            remaining[: max_examples - len(selected_examples)]
+                        )
                     ranked = True
             except Exception as e:
                 logging.error(f"Semantic ranking of historical examples failed: {e}")
@@ -125,17 +138,17 @@ def pre_fetch_historical_corpus(db, base_dir, filenames, documents, pre_fetched_
             try:
                 from sklearn.feature_extraction.text import TfidfVectorizer
                 from sklearn.metrics.pairwise import cosine_similarity
-                
+
                 hist_texts = [c["text"] or "" for c in candidates]
                 active_text = " ".join(documents or [])
-                
+
                 vectorizer = TfidfVectorizer(max_features=1000, stop_words="english")
                 hist_vectors = vectorizer.fit_transform(hist_texts)
                 active_vector = vectorizer.transform([active_text])
-                
+
                 sims = cosine_similarity(active_vector, hist_vectors).flatten()
                 sorted_indices = sims.argsort()[::-1]
-                
+
                 selected_examples = []
                 for idx in sorted_indices[:max_examples]:
                     selected_examples.append(candidates[idx])
@@ -143,10 +156,7 @@ def pre_fetch_historical_corpus(db, base_dir, filenames, documents, pre_fetched_
                 logging.error(f"TF-IDF ranking of historical examples failed: {e}")
                 selected_examples = candidates[:max_examples]
 
-    return {
-        "model_metadata": model_metadata,
-        "examples": selected_examples
-    }
+    return {"model_metadata": model_metadata, "examples": selected_examples}
 
 
 class IncrementalAnalyzer:
@@ -577,7 +587,9 @@ class IncrementalAnalyzer:
                         from sklearn.preprocessing import normalize
 
                         # 1. Database TF-IDF Statistics Retrieval
-                        N, top_terms, doc_terms, doc_metadata = self.db.get_tfidf_stats(base_dir)
+                        N, top_terms, doc_terms, doc_metadata = self.db.get_tfidf_stats(
+                            base_dir
+                        )
 
                         # Restrict vocabulary to the top 1,000 terms matching the database query constraints
                         top_terms = top_terms[:1000]
@@ -586,11 +598,18 @@ class IncrementalAnalyzer:
                         vocab = {term: idx for idx, (term, df) in enumerate(top_terms)}
 
                         if len(vocab) == 0:
-                            similarities = np.zeros((len(ai_documents), len(historical_docs)))
+                            similarities = np.zeros(
+                                (len(ai_documents), len(historical_docs))
+                            )
                         else:
                             # Calculate smoothed IDF values using the system's custom formula: idf_j = ln((1 + N) / (1 + df_j)) + 1
-                            idf_weights = {term: math.log((1 + N) / (1 + df)) + 1 for term, df in top_terms}
-                            idf_values = np.array([idf_weights[term] for term, df in top_terms])
+                            idf_weights = {
+                                term: math.log((1 + N) / (1 + df)) + 1
+                                for term, df in top_terms
+                            }
+                            idf_values = np.array(
+                                [idf_weights[term] for term, df in top_terms]
+                            )
 
                             # 2. Configure a TfidfVectorizer
                             vectorizer = TfidfVectorizer(
@@ -608,8 +627,13 @@ class IncrementalAnalyzer:
 
                             # 3. Historical Sparse Matrix Reconstruction
                             # Represent historical document vectors by constructing a standard scipy.sparse.csr_matrix directly from database term statistics.
-                            hist_filepaths = [doc["filepath"].replace("\\", "/") for doc in historical_docs]
-                            filepath_to_row_idx = {fp: idx for idx, fp in enumerate(hist_filepaths)}
+                            hist_filepaths = [
+                                doc["filepath"].replace("\\", "/")
+                                for doc in historical_docs
+                            ]
+                            filepath_to_row_idx = {
+                                fp: idx for idx, fp in enumerate(hist_filepaths)
+                            }
 
                             rows = []
                             cols = []
@@ -629,17 +653,23 @@ class IncrementalAnalyzer:
 
                             num_rows = len(historical_docs)
                             num_cols = len(vocab)
-                            historical_vectors = csr_matrix((data, (rows, cols)), shape=(num_rows, num_cols))
+                            historical_vectors = csr_matrix(
+                                (data, (rows, cols)), shape=(num_rows, num_cols)
+                            )
 
                             # Apply row-wise L2 normalization to ensure correct cosine similarity calculations
-                            historical_vectors = normalize(historical_vectors, norm='l2', axis=1)
+                            historical_vectors = normalize(
+                                historical_vectors, norm="l2", axis=1
+                            )
 
                             # 4. Vectorizing Active Candidate Documents
                             safe_ai_documents = [d or "" for d in ai_documents]
                             new_docs_vectors = vectorizer.transform(safe_ai_documents)
 
                             # 5. Dot Product Similarity Calculation
-                            similarities = new_docs_vectors.dot(historical_vectors.T).toarray()
+                            similarities = new_docs_vectors.dot(
+                                historical_vectors.T
+                            ).toarray()
 
                     historical_targets = [
                         doc["target_folder"] for doc in historical_docs
@@ -740,7 +770,7 @@ class IncrementalAnalyzer:
                                 filenames=ai_filenames,
                                 documents=ai_documents,
                                 pre_fetched_vectors=pre_fetched_vectors,
-                                max_examples=50
+                                max_examples=50,
                             )
                         except Exception as e:
                             logging.error(f"Failed to pre-fetch historical corpus: {e}")
@@ -1007,11 +1037,20 @@ class IncrementalAnalyzer:
         finally:
             try:
                 active_strategy_name = self.strategy_name
-                if self.strategy_name and getattr(self, "embedding_manager", None) and self.embedding_manager.is_mock:
+                if (
+                    self.strategy_name
+                    and getattr(self, "embedding_manager", None)
+                    and self.embedding_manager.is_mock
+                ):
                     active_strategy_name = "default"
                 if active_strategy_name:
                     import app.core.analyzer_strategies
-                    strategy = app.core.analyzer_strategies.clustering_registry.get_strategy(active_strategy_name)
+
+                    strategy = (
+                        app.core.analyzer_strategies.clustering_registry.get_strategy(
+                            active_strategy_name
+                        )
+                    )
                     if strategy and hasattr(strategy, "clear_isolated_state"):
                         strategy.clear_isolated_state()
             except Exception:

@@ -16,6 +16,7 @@ import time
 _ORIGINAL_SHUTIL_MOVE = None
 try:
     import importlib.util
+
     _spec = importlib.util.find_spec("shutil")
     if _spec is not None:
         _m = importlib.util.module_from_spec(_spec)
@@ -25,7 +26,7 @@ except Exception:
     pass
 
 # Centralized Retry Engine configuration
-IS_WINDOWS = (sys.platform == "win32")
+IS_WINDOWS = sys.platform == "win32"
 
 # Single standardized retry timing and count profile on Windows:
 # 15 attempts with 0.05 seconds sleep delay.
@@ -37,10 +38,12 @@ RETRY_DELAY = 0.05 if IS_WINDOWS else 0.0
 def resilient_move(src, dst):
     """Resiliently move a file or directory, retrying on transient locks/sharing violations on Windows."""
     import unittest.mock
-    
+
     # If shutil.move is mocked/patched by pytest/unittest, call it directly to preserve test assertions/side_effects
     is_mocked = False
-    if isinstance(shutil.move, unittest.mock.Mock) or hasattr(shutil.move, "mock_add_spec"):
+    if isinstance(shutil.move, unittest.mock.Mock) or hasattr(
+        shutil.move, "mock_add_spec"
+    ):
         is_mocked = True
     elif not hasattr(shutil.move, "__code__"):
         is_mocked = True
@@ -69,9 +72,11 @@ def resilient_move(src, dst):
                 return
         except (OSError, PermissionError) as e:
             if attempt == MAX_ATTEMPTS - 1:
-                logging.error(f"Failed to move {src} to {dst} after {MAX_ATTEMPTS} attempts: {e}")
+                logging.error(
+                    f"Failed to move {src} to {dst} after {MAX_ATTEMPTS} attempts: {e}"
+                )
                 raise e
-            
+
             # Force a garbage collection cycle immediately before every retry attempt
             gc.collect()
             if RETRY_DELAY > 0:
@@ -98,7 +103,7 @@ def resilient_remove(path):
                 os.chmod(path, stat.S_IWRITE)
             except Exception:
                 pass
-            
+
             try:
                 # Try again immediately after chmod within the same attempt
                 if os.path.isdir(path) and not os.path.islink(path):
@@ -110,9 +115,11 @@ def resilient_remove(path):
                 pass
 
             if attempt == MAX_ATTEMPTS - 1:
-                logging.error(f"Failed to remove path {path} after {MAX_ATTEMPTS} attempts: {e}")
+                logging.error(
+                    f"Failed to remove path {path} after {MAX_ATTEMPTS} attempts: {e}"
+                )
                 raise e
-            
+
             # Force a garbage collection cycle immediately before every retry attempt
             gc.collect()
             if RETRY_DELAY > 0:
@@ -121,6 +128,7 @@ def resilient_remove(path):
 
 def resilient_rmtree(path, ignore_errors=False):
     """Resiliently delete a directory tree, adjusting permissions on write-permission locks."""
+
     def _handle_error(func, p, exc_info):
         try:
             os.chmod(p, stat.S_IWRITE)
@@ -136,11 +144,13 @@ def resilient_rmtree(path, ignore_errors=False):
         except (OSError, PermissionError) as e:
             if ignore_errors:
                 return
-            
+
             if attempt == MAX_ATTEMPTS - 1:
-                logging.error(f"Failed to rmtree {path} after {MAX_ATTEMPTS} attempts: {e}")
+                logging.error(
+                    f"Failed to rmtree {path} after {MAX_ATTEMPTS} attempts: {e}"
+                )
                 raise e
-                
+
             gc.collect()
             if RETRY_DELAY > 0:
                 time.sleep(RETRY_DELAY)
@@ -233,9 +243,11 @@ def resilient_file_hash(file_path: str) -> str:
             success = True
         except (OSError, PermissionError) as e:
             if attempt == MAX_ATTEMPTS - 1:
-                logging.error(f"Failed to calculate hash of {file_path} after {MAX_ATTEMPTS} attempts: {e}")
+                logging.error(
+                    f"Failed to calculate hash of {file_path} after {MAX_ATTEMPTS} attempts: {e}"
+                )
                 break
-            
+
             gc.collect()
             if RETRY_DELAY > 0:
                 time.sleep(RETRY_DELAY)
@@ -255,9 +267,11 @@ def resilient_file_hash(file_path: str) -> str:
                 success = True
             except (OSError, PermissionError) as e:
                 if attempt == MAX_ATTEMPTS - 1:
-                    logging.error(f"Failed to calculate fallback hash of {file_path} after {MAX_ATTEMPTS} attempts: {e}")
+                    logging.error(
+                        f"Failed to calculate fallback hash of {file_path} after {MAX_ATTEMPTS} attempts: {e}"
+                    )
                     break
-                
+
                 gc.collect()
                 if RETRY_DELAY > 0:
                     time.sleep(RETRY_DELAY)
