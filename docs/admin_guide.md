@@ -94,6 +94,10 @@ The following parameters are extracted directly from the application's configura
 - **Default**: `rename`
 - **Required**: `False`
 
+### `COHERENCE_THRESHOLD`
+- **Default**: `0.5`
+- **Required**: `False`
+
 ### `AI_CONSENT_GRANTED`
 - **Default**: `None`
 - **Required**: `False`
