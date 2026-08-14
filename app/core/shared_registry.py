@@ -848,6 +848,17 @@ class SharedModelRegistry:
                 raise e
         return self._models.get(model_id, (None, None, None))
 
+    def get_florence_processor(self):
+        """Lazily load and return the Florence-2 visual processor wrapper from registry."""
+        model_id = "florence-2"
+        if model_id not in self._models:
+            from app.core.offline_loader import Florence2VisualProcessor
+            processor = Florence2VisualProcessor(model_id=model_id)
+            processor.load()
+            self._models[model_id] = processor
+        return self._models[model_id]
+
+
 
 class SharedWorkerPool:
     """Global background task worker pool restricting concurrency and enforcing offline boundaries."""
