@@ -935,7 +935,9 @@ class Database:
                     return None
             return None
 
-    def get_document_vectors_batch(self, base_dir: str, filepaths: list[str]) -> dict[str, list[float]]:
+    def get_document_vectors_batch(
+        self, base_dir: str, filepaths: list[str]
+    ) -> dict[str, list[float]]:
         """Retrieve decoupled vectors for a list of document filepaths in batched format."""
         if not base_dir or not filepaths:
             return {}
@@ -945,6 +947,7 @@ class Database:
         results = {}
         with conn:
             import json
+
             chunk_size = 50
             for i in range(0, len(filepaths_norm), chunk_size):
                 chunk = filepaths_norm[i : i + chunk_size]

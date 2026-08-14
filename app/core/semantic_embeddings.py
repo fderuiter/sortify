@@ -590,7 +590,9 @@ class SemanticEmbeddingManager:
         """Retrieve decoupled vector from child store."""
         return self.db.get_document_vector(base_dir, filepath)
 
-    def get_vectors_batch(self, base_dir: str, filepaths: list[str]) -> dict[str, list[float]]:
+    def get_vectors_batch(
+        self, base_dir: str, filepaths: list[str]
+    ) -> dict[str, list[float]]:
         """Retrieve decoupled vectors for a list of document filepaths in batched format.
 
         Handles missing vectors or invalid dimensions by reconstructing them on-the-fly,
@@ -625,7 +627,10 @@ class SemanticEmbeddingManager:
 
         cache_texts = {}
         with self.db._cache_lock:
-            if self.db._cached_base_dir == base_dir and self.db._cached_documents is not None:
+            if (
+                self.db._cached_base_dir == base_dir
+                and self.db._cached_documents is not None
+            ):
                 # Cache contains tuples: (filepath, decrypted_text, file_hash, user_verified_target_path)
                 # Let's map filepath to decrypted_text
                 for row in self.db._cached_documents:
@@ -658,7 +663,9 @@ class SemanticEmbeddingManager:
         if new_vectors_to_upsert:
             for i in range(0, len(new_vectors_to_upsert), chunk_size):
                 chunk_upsert = new_vectors_to_upsert[i : i + chunk_size]
-                self.db.upsert_document_vectors(base_dir, chunk_upsert, model_signature=self.signature)
+                self.db.upsert_document_vectors(
+                    base_dir, chunk_upsert, model_signature=self.signature
+                )
 
         return retrieved_vectors
 

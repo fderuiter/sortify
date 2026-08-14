@@ -812,12 +812,9 @@ def test_batch_retrieval_and_caching_priority(db, temp_dir):
     for i in range(60):
         fp = f"doc_{i}.txt"
         filepaths.append(fp)
-        docs_to_insert.append((
-            str(temp_dir),
-            fp,
-            f"hash_{i}",
-            f"Content of document number {i}"
-        ))
+        docs_to_insert.append(
+            (str(temp_dir), fp, f"hash_{i}", f"Content of document number {i}")
+        )
     db.upsert_documents(docs_to_insert)
 
     # Initially, no vectors are generated
@@ -833,9 +830,11 @@ def test_batch_retrieval_and_caching_priority(db, temp_dir):
     # We spy on get_documents_by_filepaths to check cache priority vs disk reads.
     called_disk_loads = []
     original_get_docs_by_fp = db.get_documents_by_filepaths
+
     def spied_get_docs_by_fp(base_dir, filepaths_list):
         called_disk_loads.append(len(filepaths_list))
         return original_get_docs_by_fp(base_dir, filepaths_list)
+
     db.get_documents_by_filepaths = spied_get_docs_by_fp
 
     try:
@@ -859,9 +858,12 @@ def test_batch_retrieval_and_caching_priority(db, temp_dir):
         db.invalidate_cache()
         # Delete vectors for a chunk (e.g., first 3) to force reconstruction from disk
         from app.core.db_conn import get_db_connection
+
         conn = get_db_connection(db.db_path)
         with conn:
-            conn.execute("DELETE FROM document_vectors WHERE filepath IN ('doc_0.txt', 'doc_1.txt', 'doc_2.txt')")
+            conn.execute(
+                "DELETE FROM document_vectors WHERE filepath IN ('doc_0.txt', 'doc_1.txt', 'doc_2.txt')"
+            )
 
         # Force cache-miss state for the texts to test get_documents_by_filepaths fallback
         with db._cache_lock:
@@ -876,4 +878,3 @@ def test_batch_retrieval_and_caching_priority(db, temp_dir):
         assert len(called_disk_loads) > 0
     finally:
         db.get_documents_by_filepaths = original_get_docs_by_fp
-
