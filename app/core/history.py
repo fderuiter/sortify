@@ -16,47 +16,8 @@ except ImportError:
 
 def _robust_move(src, dst):
     """Safely move a file, retrying on temporary Windows sharing violations and file locks."""
-    import gc
-    import os
-    import sys
-    import time
-    import unittest.mock
-
-    # If shutil.move is mocked/patched by pytest, call it directly to preserve test assertions/side_effects
-    if isinstance(shutil.move, unittest.mock.Mock):
-        shutil.move(src, dst)
-        return
-
-    if sys.platform != "win32":
-        shutil.move(src, dst)
-        return
-
-    for i in range(20):
-        try:
-            os.replace(src, dst)
-            return
-        except OSError as e:
-            is_lock_err = False
-            if hasattr(e, "winerror") and e.winerror in (5, 32):
-                is_lock_err = True
-            elif isinstance(e, PermissionError):
-                is_lock_err = True
-
-            if is_lock_err:
-                gc.collect()
-                time.sleep(0.05)
-            else:
-                try:
-                    shutil.move(src, dst)
-                    return
-                except OSError as e2:
-                    if hasattr(e2, "winerror") and e2.winerror in (5, 32):
-                        gc.collect()
-                        time.sleep(0.05)
-                    else:
-                        raise e2
-
-    shutil.move(src, dst)
+    from app.core.resilient_file_ops import resilient_move
+    resilient_move(src, dst)
 
 
 class HistoryManager:
@@ -425,48 +386,32 @@ class HistoryManager:
         def verify_hash(abs_path, expected_hash, expected_size=0):
             if not expected_hash:
                 return True
-            EMPTY_SHA256 = (
-                "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-            )
-            import sys
+            
+            from app.core.resilient_file_ops import MAX_ATTEMPTS, RETRY_DELAY
+            from app.core.extractor import get_file_hash
+            import gc
+            import time
 
-            # On Windows, we allow up to 30 attempts (with 0.1s sleep, up to 3 seconds total)
-            # to let NTFS flushes, sharing violations, and anti-virus locks settle.
-            max_attempts = 30 if sys.platform == "win32" else 10
-            sleep_time = 0.1 if sys.platform == "win32" else 0.05
-
-            for attempt in range(max_attempts):
+            for attempt in range(MAX_ATTEMPTS):
                 try:
-                    from app.core.extractor import get_file_hash
-
                     h = get_file_hash(abs_path)
                     if h == expected_hash:
                         return True
-
+                    
                     # On Windows, always retry if the hash doesn't match yet
-                    if sys.platform == "win32":
-                        import gc
-
-                        gc.collect()
-                        time.sleep(sleep_time)
-                        continue
-
-                    if (
-                        h == EMPTY_SHA256
-                        and expected_hash != EMPTY_SHA256
-                        and expected_size > 0
-                    ):
-                        import gc
-
-                        gc.collect()
-                        time.sleep(sleep_time)
-                        continue
-                    return False
+                    if sys.platform != "win32":
+                        return False
                 except Exception:
-                    import gc
+                    if sys.platform != "win32":
+                        return False
 
-                    gc.collect()
-                    time.sleep(sleep_time)
+                if attempt == MAX_ATTEMPTS - 1:
+                    break
+
+                gc.collect()
+                if RETRY_DELAY > 0:
+                    time.sleep(RETRY_DELAY)
+
             return False
 
         missing = []
@@ -801,7 +746,8 @@ class HistoryManager:
                     if is_link_entity:
                         if current_abs and current_abs != target_abs:
                             try:
-                                os.remove(current_abs)
+                                from app.core.resilient_file_ops import resilient_remove
+                                resilient_remove(current_abs)
                             except OSError:
                                 pass
                         if is_symlink:
@@ -931,7 +877,8 @@ class HistoryManager:
                         os.makedirs(os.path.dirname(dst), exist_ok=True)
                         if os.path.islink(dst):
                             try:
-                                os.remove(dst)
+                                from app.core.resilient_file_ops import resilient_remove
+                                resilient_remove(dst)
                             except OSError:
                                 pass
 
@@ -1022,7 +969,8 @@ class HistoryManager:
                         if os.path.exists(target_abs) or os.path.islink(target_abs):
                             if os.path.islink(target_abs):
                                 try:
-                                    os.remove(target_abs)
+                                    from app.core.resilient_file_ops import resilient_remove
+                                    resilient_remove(target_abs)
                                 except OSError:
                                     pass
                             else:
@@ -1082,7 +1030,8 @@ class HistoryManager:
                                 target_abs
                             ) or target_abs.lower().endswith(".lnk"):
                                 try:
-                                    os.remove(target_abs)
+                                    from app.core.resilient_file_ops import resilient_remove
+                                    resilient_remove(target_abs)
                                 except OSError:
                                     pass
                             else:
@@ -1173,22 +1122,10 @@ class HistoryManager:
                                 abs_path
                             ):
                                 try:
-                                    import stat
-
-                                    os.chmod(abs_path, stat.S_IWRITE)
-                                    os.remove(abs_path)
+                                    from app.core.resilient_file_ops import resilient_remove
+                                    resilient_remove(abs_path)
                                 except OSError:
-                                    for _ in range(10):
-                                        try:
-                                            gc.collect()
-                                            time.sleep(0.1)
-                                            import stat
-
-                                            os.chmod(abs_path, stat.S_IWRITE)
-                                            os.remove(abs_path)
-                                            break
-                                        except OSError:
-                                            pass
+                                    pass
                 except Exception:
                     pass
 
