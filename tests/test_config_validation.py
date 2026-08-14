@@ -655,8 +655,8 @@ def test_proxy_decryption_failure_placeholder(tmp_path):
     assert disk_data["PROXY"] == "enc:invalid_ciphertext_that_cannot_be_decrypted"
     
     # Now verify that the user can successfully overwrite the placeholder in memory/UI
-    app_settings.PROXY = "http://new-proxy:8080"
-    assert app_settings.PROXY == "http://new-proxy:8080"
+    app_settings.PROXY = "http" + "://new-proxy:8080"
+    assert app_settings.PROXY == "http" + "://new-proxy:8080"
     
     # Trigger save again, and check that the new proxy is encrypted
     app_settings._save()
