@@ -1,7 +1,6 @@
 """History management module for snapshotting and rollback."""
 
 import os
-import shutil
 import time
 import uuid
 from typing import Any, Dict, List
@@ -387,10 +386,12 @@ class HistoryManager:
             if not expected_hash:
                 return True
             
-            from app.core.resilient_file_ops import MAX_ATTEMPTS, RETRY_DELAY
-            from app.core.extractor import get_file_hash
             import gc
+            import sys
             import time
+
+            from app.core.extractor import get_file_hash
+            from app.core.resilient_file_ops import MAX_ATTEMPTS, RETRY_DELAY
 
             for attempt in range(MAX_ATTEMPTS):
                 try:
@@ -969,7 +970,9 @@ class HistoryManager:
                         if os.path.exists(target_abs) or os.path.islink(target_abs):
                             if os.path.islink(target_abs):
                                 try:
-                                    from app.core.resilient_file_ops import resilient_remove
+                                    from app.core.resilient_file_ops import (
+                                        resilient_remove,
+                                    )
                                     resilient_remove(target_abs)
                                 except OSError:
                                     pass
@@ -1030,7 +1033,9 @@ class HistoryManager:
                                 target_abs
                             ) or target_abs.lower().endswith(".lnk"):
                                 try:
-                                    from app.core.resilient_file_ops import resilient_remove
+                                    from app.core.resilient_file_ops import (
+                                        resilient_remove,
+                                    )
                                     resilient_remove(target_abs)
                                 except OSError:
                                     pass
@@ -1122,7 +1127,9 @@ class HistoryManager:
                                 abs_path
                             ):
                                 try:
-                                    from app.core.resilient_file_ops import resilient_remove
+                                    from app.core.resilient_file_ops import (
+                                        resilient_remove,
+                                    )
                                     resilient_remove(abs_path)
                                 except OSError:
                                     pass

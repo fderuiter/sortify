@@ -4,10 +4,8 @@ This module provides utilities to read text from various file formats.
 """
 
 import concurrent.futures
-import hashlib
 import logging
 import os
-import struct
 from typing import Callable, Tuple
 
 import pypdf.errors

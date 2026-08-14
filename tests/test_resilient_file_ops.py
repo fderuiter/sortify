@@ -1,17 +1,15 @@
-import sys
 import os
 import stat
-import gc
-import time
+from unittest.mock import patch
+
 import pytest
-from unittest.mock import MagicMock, patch
 
 from app.core.resilient_file_ops import (
+    resilient_file_hash,
     resilient_move,
     resilient_remove,
-    resilient_rmtree,
-    resilient_file_hash,
 )
+
 
 def test_resilient_remove_success(tmp_path):
     # Test successful removal of a file
