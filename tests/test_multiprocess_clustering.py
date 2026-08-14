@@ -7,8 +7,9 @@ priority management, and immediate cancellation of the clustering child process.
 import os
 import sys
 import time
-import pytest
 from unittest.mock import MagicMock
+
+import pytest
 
 from app.core.analyzer_strategies import RecursiveKMeansStrategy
 from app.core.shared_registry import SharedModelRegistry
@@ -45,7 +46,7 @@ def test_multiprocess_clustering_execution():
     ]
 
     strategy = RecursiveKMeansStrategy()
-    
+
     plan, error = strategy.generate_plan(
         filenames=filenames,
         documents=documents,
