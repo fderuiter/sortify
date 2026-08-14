@@ -16,6 +16,7 @@ except ImportError:
 def _robust_move(src, dst):
     """Safely move a file, retrying on temporary Windows sharing violations and file locks."""
     from app.core.resilient_file_ops import resilient_move
+
     resilient_move(src, dst)
 
 
@@ -385,7 +386,7 @@ class HistoryManager:
         def verify_hash(abs_path, expected_hash, expected_size=0):
             if not expected_hash:
                 return True
-            
+
             import gc
             import sys
             import time
@@ -398,7 +399,7 @@ class HistoryManager:
                     h = get_file_hash(abs_path)
                     if h == expected_hash:
                         return True
-                    
+
                     # On Windows, always retry if the hash doesn't match yet
                     if sys.platform != "win32":
                         return False
@@ -748,6 +749,7 @@ class HistoryManager:
                         if current_abs and current_abs != target_abs:
                             try:
                                 from app.core.resilient_file_ops import resilient_remove
+
                                 resilient_remove(current_abs)
                             except OSError:
                                 pass
@@ -879,6 +881,7 @@ class HistoryManager:
                         if os.path.islink(dst):
                             try:
                                 from app.core.resilient_file_ops import resilient_remove
+
                                 resilient_remove(dst)
                             except OSError:
                                 pass
@@ -973,6 +976,7 @@ class HistoryManager:
                                     from app.core.resilient_file_ops import (
                                         resilient_remove,
                                     )
+
                                     resilient_remove(target_abs)
                                 except OSError:
                                     pass
@@ -1036,6 +1040,7 @@ class HistoryManager:
                                     from app.core.resilient_file_ops import (
                                         resilient_remove,
                                     )
+
                                     resilient_remove(target_abs)
                                 except OSError:
                                     pass
@@ -1130,6 +1135,7 @@ class HistoryManager:
                                     from app.core.resilient_file_ops import (
                                         resilient_remove,
                                     )
+
                                     resilient_remove(abs_path)
                                 except OSError:
                                     pass

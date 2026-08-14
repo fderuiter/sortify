@@ -315,7 +315,7 @@ def test_downloader_aborts_on_placeholder_proxy(temp_model_dir):
         failure_called.set()
 
     from app.core.downloader import NetworkError
-    
+
     run_background_download(
         "http://example.com/model.onnx",
         temp_model_dir,
@@ -329,4 +329,3 @@ def test_downloader_aborts_on_placeholder_proxy(temp_model_dir):
     assert len(captured_error) == 1
     assert isinstance(captured_error[0], NetworkError)
     assert "Invalid proxy configuration" in str(captured_error[0])
-

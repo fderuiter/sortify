@@ -12,7 +12,7 @@ def test_vector_similarity_filtering_below_threshold():
     documents = [
         "stock investment banking money portfolio",
         "market investment stocks wealth wealth",
-        "alien planets astronomy rocket launch"
+        "alien planets astronomy rocket launch",
     ]
 
     # Pre-fetched vectors where finance1 and finance2 are close, unrelated is orthogonal
@@ -36,28 +36,22 @@ def test_vector_similarity_filtering_below_threshold():
     # finance1 & finance2 have sim 0.885 >= 0.7, so they are kept.
     # unrelated has sim 0.466 < 0.7, so it goes to "Review Required".
 
-    pre_fetched_vectors = [
-        [1.0, 0.0, 0.0],
-        [0.9, 0.1, 0.0],
-        [0.0, 0.0, 1.0]
-    ]
+    pre_fetched_vectors = [[1.0, 0.0, 0.0], [0.9, 0.1, 0.0], [0.0, 0.0, 1.0]]
 
     strategy._vector_map = {f: v for f, v in zip(filenames, pre_fetched_vectors)}
 
     # Mock super().generate_plan to return the initial plan (all files in one cluster "Finance")
     initial_plan = {
-        "Finance": {
-            "finance1.txt": None,
-            "finance2.txt": None,
-            "unrelated.txt": None
-        }
+        "Finance": {"finance1.txt": None, "finance2.txt": None, "unrelated.txt": None}
     }
 
     with patch(
         "app.core.analyzer_strategies.RecursiveKMeansStrategy.generate_plan",
-        return_value=(initial_plan, 0.0)
+        return_value=(initial_plan, 0.0),
     ):
-        new_plan, error = strategy.generate_plan(filenames, documents, 3, set(), pre_fetched_vectors=pre_fetched_vectors)
+        new_plan, error = strategy.generate_plan(
+            filenames, documents, 3, set(), pre_fetched_vectors=pre_fetched_vectors
+        )
 
         # unrelated.txt should be in "Review Required"
         assert "Review Required" in new_plan
@@ -79,30 +73,24 @@ def test_vector_similarity_filtering_no_outliers():
     documents = [
         "money investment bank",
         "investment money stock",
-        "wealth finance portfolio"
+        "wealth finance portfolio",
     ]
 
-    pre_fetched_vectors = [
-        [1.0, 0.0, 0.0],
-        [0.9, 0.1, 0.0],
-        [0.8, 0.2, 0.0]
-    ]
+    pre_fetched_vectors = [[1.0, 0.0, 0.0], [0.9, 0.1, 0.0], [0.8, 0.2, 0.0]]
 
     strategy._vector_map = {f: v for f, v in zip(filenames, pre_fetched_vectors)}
 
     initial_plan = {
-        "Finance": {
-            "finance1.txt": None,
-            "finance2.txt": None,
-            "finance3.txt": None
-        }
+        "Finance": {"finance1.txt": None, "finance2.txt": None, "finance3.txt": None}
     }
 
     with patch(
         "app.core.analyzer_strategies.RecursiveKMeansStrategy.generate_plan",
-        return_value=(initial_plan, 0.0)
+        return_value=(initial_plan, 0.0),
     ):
-        new_plan, error = strategy.generate_plan(filenames, documents, 3, set(), pre_fetched_vectors=pre_fetched_vectors)
+        new_plan, error = strategy.generate_plan(
+            filenames, documents, 3, set(), pre_fetched_vectors=pre_fetched_vectors
+        )
 
         # "Review Required" should not be created
         assert "Review Required" not in new_plan
@@ -124,7 +112,7 @@ def test_vector_similarity_filtering_tfidf_fallback():
     documents = [
         "quantum physics theory relativity science mechanics",
         "relativity science physics mechanics quantum",
-        "chocolate baking recipe dessert sugar kitchen cake cookies"
+        "chocolate baking recipe dessert sugar kitchen cake cookies",
     ]
 
     # Do not set _vector_map or pre_fetched_vectors. It should fallback to TF-IDF.
@@ -132,16 +120,12 @@ def test_vector_similarity_filtering_tfidf_fallback():
     # Therefore, "unrelated.txt" will fall below the threshold and be routed to "Review Required".
 
     initial_plan = {
-        "Science": {
-            "file1.txt": None,
-            "file2.txt": None,
-            "unrelated.txt": None
-        }
+        "Science": {"file1.txt": None, "file2.txt": None, "unrelated.txt": None}
     }
 
     with patch(
         "app.core.analyzer_strategies.RecursiveKMeansStrategy.generate_plan",
-        return_value=(initial_plan, 0.0)
+        return_value=(initial_plan, 0.0),
     ):
         new_plan, error = strategy.generate_plan(filenames, documents, 3, set())
 

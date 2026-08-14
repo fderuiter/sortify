@@ -114,7 +114,9 @@ def test_generative_naming_strategy_passes_correct_grammars():
         "app.core.analyzer_strategies.RecursiveKMeansStrategy.generate_plan",
         return_value=({"Folder": {"file1.txt": None, "file2.txt": None}}, 0.0),
     ):
-        new_plan, error = strategy.generate_plan(filenames, documents, 2, set(), pre_fetched_vectors=pre_fetched_vectors)
+        new_plan, error = strategy.generate_plan(
+            filenames, documents, 2, set(), pre_fetched_vectors=pre_fetched_vectors
+        )
 
         # Verify that NO LLM validation prompts were called (captured_calls is empty)
         assert len(captured_calls) == 0
