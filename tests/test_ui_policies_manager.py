@@ -195,6 +195,11 @@ def test_policies_tab_and_validation():
         assert "Priority" in inputs
 
         type_field = inputs["Type"]
+        assert type_field.options == {
+            "keyword": "Contains the name",
+            "pattern": "Matches text pattern",
+            "override": "Matches text exactly"
+        }
         expr_field = inputs["Expression"]
         target_field = inputs["Target Path"]
         priority_field = inputs["Priority"]
@@ -275,3 +280,10 @@ def test_policies_tab_and_validation():
         assert settings.POLICIES[-1]["expression"] == "invoice"
         assert settings.POLICIES[-1]["target_path"] == "InvoiceFolder"
         assert any("Policy for 'invoice' added" in msg for msg, _ in notifications)
+        # Verify that sequential priorities are recalculated descending:
+        # tax (original priority 50) -> priority 30
+        # tax_2026 (original priority 10) -> priority 20
+        # invoice (new priority 5) -> priority 10
+        assert settings.POLICIES[0]["priority"] == 30
+        assert settings.POLICIES[1]["priority"] == 20
+        assert settings.POLICIES[2]["priority"] == 10
