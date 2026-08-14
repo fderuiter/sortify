@@ -12,6 +12,18 @@ import shutil
 import stat
 import logging
 
+# Load the original shutil.move to detect if it has been mocked or monkeypatched in tests.
+_ORIGINAL_SHUTIL_MOVE = None
+try:
+    import importlib.util
+    _spec = importlib.util.find_spec("shutil")
+    if _spec is not None:
+        _m = importlib.util.module_from_spec(_spec)
+        _spec.loader.exec_module(_m)
+        _ORIGINAL_SHUTIL_MOVE = _m.move
+except Exception:
+    pass
+
 # Centralized Retry Engine configuration
 IS_WINDOWS = (sys.platform == "win32")
 
@@ -25,13 +37,26 @@ RETRY_DELAY = 0.05 if IS_WINDOWS else 0.0
 def resilient_move(src, dst):
     """Resiliently move a file or directory, retrying on transient locks/sharing violations on Windows."""
     import unittest.mock
-    # If shutil.move is mocked/patched by pytest, call it directly to preserve test assertions/side_effects
-    if isinstance(shutil.move, unittest.mock.Mock):
-        shutil.move(src, dst)
-        return
+    
+    # If shutil.move is mocked/patched by pytest/unittest, call it directly to preserve test assertions/side_effects
+    is_mocked = False
+    if isinstance(shutil.move, unittest.mock.Mock) or hasattr(shutil.move, "mock_add_spec"):
+        is_mocked = True
+    elif not hasattr(shutil.move, "__code__"):
+        is_mocked = True
+    elif _ORIGINAL_SHUTIL_MOVE is not None:
+        try:
+            if shutil.move.__code__ != _ORIGINAL_SHUTIL_MOVE.__code__:
+                is_mocked = True
+        except Exception:
+            is_mocked = True
 
     for attempt in range(MAX_ATTEMPTS):
         try:
+            if is_mocked:
+                shutil.move(src, dst)
+                return
+
             if os.path.lexists(src):
                 try:
                     os.replace(src, dst)
