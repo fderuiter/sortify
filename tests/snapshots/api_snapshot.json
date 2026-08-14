@@ -45,6 +45,17 @@
           "nargs": "?"
         },
         "method": "add_argument"
+      },
+      {
+        "args": [
+          "--daemon"
+        ],
+        "caller": "parser",
+        "keywords": {
+          "action": "store_true",
+          "help": "Launch the persistent directory-watching daemon"
+        },
+        "method": "add_argument"
       }
     ],
     "sandbox_cli.py": [

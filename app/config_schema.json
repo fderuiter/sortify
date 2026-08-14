@@ -104,6 +104,35 @@
       "title": "Protected Paths",
       "type": "array"
     },
+    "PROXY": {
+      "default": "",
+      "title": "Proxy",
+      "type": "string"
+    },
+    "OCR_GPU_ENABLED": {
+      "default": false,
+      "title": "Ocr Gpu Enabled",
+      "type": "boolean"
+    },
+    "AUDIO_GPU_ENABLED": {
+      "default": false,
+      "title": "Audio Gpu Enabled",
+      "type": "boolean"
+    },
+    "OCR_LANGUAGES": {
+      "default": "en",
+      "title": "Ocr Languages",
+      "type": "string"
+    },
+    "CONFLICT_POLICY": {
+      "default": "rename",
+      "enum": [
+        "skip",
+        "rename"
+      ],
+      "title": "Conflict Policy",
+      "type": "string"
+    },
     "AI_CONSENT_GRANTED": {
       "anyOf": [
         {
@@ -190,26 +219,6 @@
       "title": "Stop Words",
       "type": "array",
       "uniqueItems": true
-    },
-    "PROXY": {
-      "default": "",
-      "title": "Proxy",
-      "type": "string"
-    },
-    "OCR_GPU_ENABLED": {
-      "default": false,
-      "title": "Ocr Gpu Enabled",
-      "type": "boolean"
-    },
-    "AUDIO_GPU_ENABLED": {
-      "default": false,
-      "title": "Audio Gpu Enabled",
-      "type": "boolean"
-    },
-    "OCR_LANGUAGES": {
-      "default": "en",
-      "title": "Ocr Languages",
-      "type": "string"
     }
   },
   "title": "Settings",

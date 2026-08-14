@@ -90,6 +90,10 @@ The following parameters are extracted directly from the application's configura
 - **Default**: `en`
 - **Required**: `False`
 
+### `CONFLICT_POLICY`
+- **Default**: `rename`
+- **Required**: `False`
+
 ### `AI_CONSENT_GRANTED`
 - **Default**: `None`
 - **Required**: `False`

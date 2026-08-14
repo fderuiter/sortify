@@ -22,6 +22,10 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.core.crypto
 
+## `app.core.daemon`
+
+::: app.core.daemon
+
 ## `app.core.db`
 
 ::: app.core.db

@@ -317,6 +317,11 @@ def main():
     parser.add_argument(
         "directory", nargs="?", default=None, help="Directory to analyze automatically"
     )
+    parser.add_argument(
+        "--daemon",
+        action="store_true",
+        help="Launch the persistent directory-watching daemon"
+    )
 
     args = parser.parse_args()
 
@@ -367,7 +372,10 @@ def main():
     for handler in root_logger.handlers:
         handler.addFilter(scrubber)
 
-    if args.demo:
+    if getattr(args, "daemon", False) is True:
+        from app.core.daemon import start_daemon
+        start_daemon(settings, args.directory)
+    elif args.demo:
         from app.demo import run_demo
 
         run_demo(settings)
