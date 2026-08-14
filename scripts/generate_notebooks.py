@@ -1,6 +1,6 @@
 import json
-import os
 from pathlib import Path
+
 
 def create_ml_analyzer_notebook():
     notebook_content = {
@@ -37,15 +37,15 @@ def create_ml_analyzer_notebook():
                 "metadata": {},
                 "outputs": [],
                 "source": [
-                    "import os\n",
-                    "import tempfile\n",
                     "import json\n",
+                    "import tempfile\n",
                     "from pathlib import Path\n",
                     "\n",
-                    "# Core imports from Smart AutoSorter AI Pro\n",
-                    "from app.core.db_worker import DBWorker\n",
+                    "from app.core.analyzer import IncrementalAnalyzer\n",
                     "from app.core.db import Database\n",
-                    "from app.core.analyzer import IncrementalAnalyzer"
+                    "\n",
+                    "# Core imports from Smart AutoSorter AI Pro\n",
+                    "from app.core.db_worker import DBWorker"
                 ]
             },
             {
@@ -210,10 +210,9 @@ def create_multi_format_text_extraction_notebook():
                 "metadata": {},
                 "outputs": [],
                 "source": [
-                    "import os\n",
                     "import csv\n",
+                    "import os\n",
                     "import tempfile\n",
-                    "from pathlib import Path\n",
                     "\n",
                     "# Install helpers/libraries for office formats\n",
                     "import docx\n",
@@ -221,9 +220,9 @@ def create_multi_format_text_extraction_notebook():
                     "\n",
                     "# Core Smart AutoSorter imports\n",
                     "from app.config import Settings\n",
-                    "from app.core.session import AppSession\n",
+                    "from app.core.db_conn import get_db_connection\n",
                     "from app.core.extractor import build_corpus_generator\n",
-                    "from app.core.db_conn import get_db_connection"
+                    "from app.core.session import AppSession"
                 ]
             },
             {
@@ -302,6 +301,7 @@ def create_multi_format_text_extraction_notebook():
                     "print(f\"[*] Session directory containing logs & databases: {session.session_dir}\")\n",
                     "\n",
                     "def progress_callback():\n",
+                    "    \"\"\"Progress callback function for text extraction.\"\"\"\n",
                     "    print(\"    -> Extracting file...\")\n",
                     "\n",
                     "# Execute synchronous extraction of text payload and hashing from sample documents\n",
@@ -420,10 +420,9 @@ def create_virtual_sorting_verification_notebook():
                 "metadata": {},
                 "outputs": [],
                 "source": [
-                    "import os\n",
                     "import json\n",
+                    "import os\n",
                     "import tempfile\n",
-                    "from pathlib import Path\n",
                     "\n",
                     "# Core Smart AutoSorter imports\n",
                     "from app.core.verifier import VerificationEngine"
