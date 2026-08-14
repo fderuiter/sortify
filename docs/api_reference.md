@@ -78,6 +78,10 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.core.mover
 
+## `app.core.offline_loader`
+
+::: app.core.offline_loader
+
 ## `app.core.path_utils`
 
 ::: app.core.path_utils
