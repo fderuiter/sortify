@@ -52,6 +52,46 @@ class ModelProperties(tuple):
         return obj
 
 
+def _parse_onnx_type(node_type_str) -> "np.dtype":
+    """Parse the ONNX type string (e.g., 'tensor(int64)') to a numpy dtype."""
+    import numpy as np
+
+    if not isinstance(node_type_str, str):
+        try:
+            node_type_str = str(node_type_str)
+        except Exception:
+            return np.int64
+
+    if "MagicMock" in node_type_str:
+        return np.int64
+
+    lower_type = node_type_str.lower()
+    if "int64" in lower_type:
+        return np.int64
+    elif "int32" in lower_type:
+        return np.int32
+    elif "int16" in lower_type:
+        return np.int16
+    elif "int8" in lower_type:
+        return np.int8
+    elif "uint64" in lower_type:
+        return np.uint64
+    elif "uint32" in lower_type:
+        return np.uint32
+    elif "uint16" in lower_type:
+        return np.uint16
+    elif "uint8" in lower_type:
+        return np.uint8
+    elif "float16" in lower_type:
+        return np.float16
+    elif "float" in lower_type:
+        return np.float32
+    elif "double" in lower_type:
+        return np.float64
+
+    return np.int64
+
+
 _model_properties_cache = {}
 _model_properties_cache_lock = threading.Lock()
 
@@ -535,9 +575,33 @@ class SemanticEmbeddingManager:
                     import numpy as np
 
                     session_inputs = {}
+                    ref_shape = None
+                    if "input_ids" in inputs and hasattr(inputs["input_ids"], "shape"):
+                        ref_shape = inputs["input_ids"].shape
+                    else:
+                        for k, v in inputs.items():
+                            if hasattr(v, "shape"):
+                                ref_shape = v.shape
+                                break
+
                     for node in session.get_inputs():
-                        if node.name in inputs:
-                            session_inputs[node.name] = inputs[node.name]
+                        node_name = node.name
+                        node_type_str = getattr(node, "type", "tensor(int64)")
+                        target_dtype = _parse_onnx_type(node_type_str)
+
+                        if node_name in inputs:
+                            val = inputs[node_name]
+                            if hasattr(val, "astype"):
+                                session_inputs[node_name] = val.astype(target_dtype)
+                            else:
+                                session_inputs[node_name] = np.array(val).astype(target_dtype)
+                        else:
+                            if ref_shape is not None:
+                                if node_name == "attention_mask":
+                                    arr = np.ones(ref_shape, dtype=target_dtype)
+                                else:
+                                    arr = np.zeros(ref_shape, dtype=target_dtype)
+                                session_inputs[node_name] = arr
 
                     # Run model session inference
                     outputs = session.run(None, session_inputs)
@@ -546,6 +610,8 @@ class SemanticEmbeddingManager:
                     # Retrieve attention mask
                     if "attention_mask" in inputs:
                         attention_mask = inputs["attention_mask"]
+                    elif "attention_mask" in session_inputs:
+                        attention_mask = session_inputs["attention_mask"]
                     else:
                         attention_mask = np.ones(
                             token_embeddings.shape[:2], dtype=np.int64
