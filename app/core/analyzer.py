@@ -601,6 +601,7 @@ class IncrementalAnalyzer:
                         max_depth,
                         max_features,
                         pre_fetched_vectors=pre_fetched_vectors,
+                        cancel_check=cancel_check,
                     )
                     self._last_reconstruction_error = error
                 else:
