@@ -12,6 +12,143 @@ from app.core.analyzer_strategies import clustering_registry
 _UNSPECIFIED = object()
 
 
+def pre_fetch_historical_corpus(db, base_dir, filenames, documents, pre_fetched_vectors=None, max_examples=50):
+    """Query, decrypt, and package up to 50 relevant historical folder examples from the database."""
+    import logging
+    import json
+    import numpy as np
+    from app.core.db_conn import get_db_connection
+
+    # Retrieve model metadata from the database
+    try:
+        stored_signature = db.get_model_metadata("active_model_signature")
+        stored_dimensions = db.get_model_metadata("active_model_dimensions")
+        stored_version = db.get_model_metadata("active_model_version")
+    except Exception as e:
+        logging.error(f"Failed to fetch model metadata for pre-fetched corpus: {e}")
+        stored_signature = None
+        stored_dimensions = None
+        stored_version = None
+
+    model_metadata = {
+        "active_model_signature": stored_signature,
+        "active_model_dimensions": stored_dimensions,
+        "active_model_version": stored_version,
+    }
+
+    conn = get_db_connection(db.db_path)
+    rows = []
+    try:
+        with conn:
+            cursor = conn.execute(
+                """
+                SELECT d.filepath, d.user_verified_target_path, v.vector, d.extracted_text
+                FROM documents d
+                LEFT JOIN document_vectors v ON d.base_dir = v.base_dir AND d.filepath = v.filepath
+                WHERE d.base_dir = ? AND d.user_verified_target_path IS NOT NULL AND d.user_verified_target_path != ''
+                """,
+                (base_dir,),
+            )
+            rows = cursor.fetchall()
+    except Exception as e:
+        logging.error(f"Failed to query historical documents from DB: {e}")
+        return {
+            "model_metadata": model_metadata,
+            "examples": []
+        }
+
+    if not rows:
+        return {
+            "model_metadata": model_metadata,
+            "examples": []
+        }
+
+    # Decrypt and parse candidates
+    candidates = []
+    for filepath, user_verified_target_path, vector_str, extracted_text_enc in rows:
+        try:
+            decrypted_text = db.crypto.decrypt_text(extracted_text_enc) if extracted_text_enc is not None else ""
+        except Exception:
+            decrypted_text = ""
+
+        vector = None
+        if vector_str:
+            try:
+                decrypted_vector_str = db.crypto.decrypt_vector(vector_str)
+                vector = json.loads(decrypted_vector_str)
+            except Exception:
+                pass
+
+        candidates.append({
+            "filepath": filepath,
+            "user_verified_target_path": user_verified_target_path,
+            "vector": vector,
+            "text": decrypted_text
+        })
+
+    # Restrict to maximum of 50 relevant historical examples
+    if len(candidates) <= max_examples:
+        selected_examples = candidates
+    else:
+        # Rank candidates by relevance
+        # Attempt semantic ranking if active vectors and candidate vectors exist
+        ranked = False
+        active_vectors = [v for v in (pre_fetched_vectors or []) if v is not None]
+        if active_vectors and any(c["vector"] is not None for c in candidates):
+            try:
+                centroid = np.mean(active_vectors, axis=0)
+                from sklearn.metrics.pairwise import cosine_similarity
+                cand_vectors = []
+                cand_indices = []
+                for idx, c in enumerate(candidates):
+                    if c["vector"] is not None and len(c["vector"]) == len(centroid):
+                        cand_vectors.append(c["vector"])
+                        cand_indices.append(idx)
+                
+                if cand_vectors:
+                    sims = cosine_similarity([centroid], cand_vectors).flatten()
+                    sorted_cand_indices = [cand_indices[i] for i in sims.argsort()[::-1]]
+                    selected_indices = set(sorted_cand_indices[:max_examples])
+                    selected_examples = []
+                    for idx, c in enumerate(candidates):
+                        if idx in selected_indices:
+                            selected_examples.append(c)
+                    if len(selected_examples) < max_examples:
+                        remaining = [c for idx, c in enumerate(candidates) if idx not in selected_indices]
+                        selected_examples.extend(remaining[:max_examples - len(selected_examples)])
+                    ranked = True
+            except Exception as e:
+                logging.error(f"Semantic ranking of historical examples failed: {e}")
+
+        if not ranked:
+            # Fallback: TF-IDF ranking
+            try:
+                from sklearn.feature_extraction.text import TfidfVectorizer
+                from sklearn.metrics.pairwise import cosine_similarity
+                
+                hist_texts = [c["text"] or "" for c in candidates]
+                active_text = " ".join(documents or [])
+                
+                vectorizer = TfidfVectorizer(max_features=1000, stop_words="english")
+                hist_vectors = vectorizer.fit_transform(hist_texts)
+                active_vector = vectorizer.transform([active_text])
+                
+                sims = cosine_similarity(active_vector, hist_vectors).flatten()
+                sorted_indices = sims.argsort()[::-1]
+                
+                selected_examples = []
+                for idx in sorted_indices[:max_examples]:
+                    selected_examples.append(candidates[idx])
+            except Exception as e:
+                logging.error(f"TF-IDF ranking of historical examples failed: {e}")
+                selected_examples = candidates[:max_examples]
+
+    return {
+        "model_metadata": model_metadata,
+        "examples": selected_examples
+    }
+
+
 class IncrementalAnalyzer:
     """Stateful ML analyzer using incremental topic modeling."""
 
@@ -593,6 +730,21 @@ class IncrementalAnalyzer:
                             )
                             pre_fetched_vectors = None
 
+                    # Pre-fetch and serialize historical folder examples to prevent database lockups in child process
+                    pre_fetched_corpus = None
+                    if self.db:
+                        try:
+                            pre_fetched_corpus = pre_fetch_historical_corpus(
+                                db=self.db,
+                                base_dir=base_dir,
+                                filenames=ai_filenames,
+                                documents=ai_documents,
+                                pre_fetched_vectors=pre_fetched_vectors,
+                                max_examples=50
+                            )
+                        except Exception as e:
+                            logging.error(f"Failed to pre-fetch historical corpus: {e}")
+
                     plan, error = strategy.generate_plan(
                         ai_filenames,
                         ai_documents,
@@ -602,8 +754,15 @@ class IncrementalAnalyzer:
                         max_features,
                         pre_fetched_vectors=pre_fetched_vectors,
                         cancel_check=cancel_check,
+                        pre_fetched_corpus=pre_fetched_corpus,
                     )
                     self._last_reconstruction_error = error
+
+                    # Data Boundary Safeguard: Clear/Garbage collect pre_fetched_corpus decrypted data immediately
+                    if pre_fetched_corpus:
+                        pre_fetched_corpus.clear()
+                        del pre_fetched_corpus
+                        pre_fetched_corpus = None
                 else:
                     plan = {}
 
