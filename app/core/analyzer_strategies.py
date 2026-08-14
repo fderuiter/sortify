@@ -799,14 +799,18 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         if self.generator is None:
             return ""
 
-        import torch
-        from transformers import LogitsProcessorList
+        try:
+            import torch
+            from app.core.shared_registry import SharedModelRegistry
+            torch.set_num_threads(SharedModelRegistry.get_instance().get_thread_limit())
+        except Exception:
+            pass
 
-        from app.core.shared_registry import SharedModelRegistry
-
-        torch.set_num_threads(SharedModelRegistry.get_instance().get_thread_limit())
-
-        logits_processor = LogitsProcessorList()
+        try:
+            from transformers import LogitsProcessorList
+            logits_processor = LogitsProcessorList()
+        except Exception:
+            logits_processor = []
         if getattr(self, "token_biases", None):
             logits_processor.append(NegativeLogitBiasProcessor(self.token_biases))
 
@@ -1482,6 +1486,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                     return super()._get_cluster_keywords(documents)
 
                 # Ensure no raw status or technical words are present
+                import re
                 for w in ["status", "encrypted", "failed", "unsupported", "empty", "skipped", "bypassed", "cancelled", "timeout", "error", "corrupt"]:
                     name = re.sub(r'\b' + re.escape(w) + r'\b', '', name, flags=re.IGNORECASE)
                 name = " ".join(name.split())
