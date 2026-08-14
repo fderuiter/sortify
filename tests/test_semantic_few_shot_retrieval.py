@@ -318,6 +318,7 @@ def test_generative_naming_latency_performance_1000_docs(db, temp_dir):
         # Must be under 200ms locally, but more generous under high parallel/CI load
         is_parallel = (
             "PYTEST_XDIST_WORKER" in os.environ
+            or "CI" in os.environ
             or os.environ.get("GITHUB_ACTIONS") == "true"
         )
         threshold = 800.0 if is_parallel else 400.0
