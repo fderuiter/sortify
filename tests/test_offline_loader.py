@@ -1,17 +1,17 @@
 """Unit tests for the Unified Offline Model Loading Utility."""
 
 import os
-import sys
 import socket
+import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from app.core.offline_loader import (
-    OfflineModelLoader,
     Florence2VisualProcessor,
-    OfflineModelLoadError,
     ModelWeightsNotFoundError,
+    OfflineModelLoader,
+    OfflineModelLoadError,
 )
 from app.core.shared_registry import SharedModelRegistry
 
@@ -93,10 +93,11 @@ def test_dynamic_path_resolution_order(tmp_path, monkeypatch):
             return True
         return original_isdir(path)
 
-    with patch("os.path.exists", side_effect=mock_exists), \
-         patch("os.path.isdir", side_effect=mock_isdir), \
-         patch.dict(os.environ, {"DUMMY_MODEL_PATH": str(env_dir)}):
-
+    with (
+        patch("os.path.exists", side_effect=mock_exists),
+        patch("os.path.isdir", side_effect=mock_isdir),
+        patch.dict(os.environ, {"DUMMY_MODEL_PATH": str(env_dir)}),
+    ):
         # Precedence 1: Env variable path should win
         resolved = OfflineModelLoader.resolve_model_path("dummy-model")
         assert resolved == str(env_dir)
@@ -111,22 +112,30 @@ def test_dynamic_path_resolution_order(tmp_path, monkeypatch):
                 return True
         return False
 
-    with patch("os.path.exists", side_effect=mock_exists_meipass), \
-         patch("os.path.isdir", return_value=True):
+    with (
+        patch("os.path.exists", side_effect=mock_exists_meipass),
+        patch("os.path.isdir", return_value=True),
+    ):
         resolved = OfflineModelLoader.resolve_model_path("dummy-model")
         assert "sys_meipass" in resolved or "_MEIPASS" in resolved
 
     # Disable MEIPASS path -> Precedence 3: Workspace folder
     def mock_exists_workspace(path):
         if "dummy-model" in path:
-            if "offline_bundle" in path and not "sys_meipass" in path and not ".smart-autosorter" in path:
+            if (
+                "offline_bundle" in path
+                and "sys_meipass" not in path
+                and ".smart-autosorter" not in path
+            ):
                 if "config.json" in path:
                     return original_exists(str(workspace_dir / "config.json"))
                 return True
         return False
 
-    with patch("os.path.exists", side_effect=mock_exists_workspace), \
-         patch("os.path.isdir", return_value=True):
+    with (
+        patch("os.path.exists", side_effect=mock_exists_workspace),
+        patch("os.path.isdir", return_value=True),
+    ):
         resolved = OfflineModelLoader.resolve_model_path("dummy-model")
         assert "offline_bundle" in resolved
         assert ".smart-autosorter" not in resolved
@@ -140,8 +149,10 @@ def test_dynamic_path_resolution_order(tmp_path, monkeypatch):
                 return True
         return False
 
-    with patch("os.path.exists", side_effect=mock_exists_home), \
-         patch("os.path.isdir", return_value=True):
+    with (
+        patch("os.path.exists", side_effect=mock_exists_home),
+        patch("os.path.isdir", return_value=True),
+    ):
         resolved = OfflineModelLoader.resolve_model_path("dummy-model")
         assert ".smart-autosorter" in resolved
 
@@ -157,10 +168,11 @@ def test_offline_sandboxing_enforced_connect():
         s.connect(("8.8.8.8", 80))  # External DNS IP
         return "loaded_model"
 
-    with patch("os.path.exists", return_value=True), \
-         patch("os.path.isdir", return_value=True), \
-         patch("os.listdir", return_value=["weights.bin"]):
-
+    with (
+        patch("os.path.exists", return_value=True),
+        patch("os.path.isdir", return_value=True),
+        patch("os.listdir", return_value=["weights.bin"]),
+    ):
         with pytest.raises(OfflineModelLoadError, match="prohibited network access"):
             OfflineModelLoader.load_model("sandbox-model", bad_loader_fn)
 
@@ -175,10 +187,11 @@ def test_offline_sandboxing_enforced_dns():
         socket.getaddrinfo("huggingface.co", 443)
         return "loaded_model"
 
-    with patch("os.path.exists", return_value=True), \
-         patch("os.path.isdir", return_value=True), \
-         patch("os.listdir", return_value=["weights.bin"]):
-
+    with (
+        patch("os.path.exists", return_value=True),
+        patch("os.path.isdir", return_value=True),
+        patch("os.listdir", return_value=["weights.bin"]),
+    ):
         with pytest.raises(OfflineModelLoadError, match="prohibited network access"):
             OfflineModelLoader.load_model("sandbox-model", bad_loader_fn)
 
@@ -190,10 +203,11 @@ def test_automatic_injection_of_local_files_only():
 
     mock_loader = MagicMock(return_value="success_model")
 
-    with patch("os.path.exists", return_value=True), \
-         patch("os.path.isdir", return_value=True), \
-         patch("os.listdir", return_value=["some_weight"]):
-
+    with (
+        patch("os.path.exists", return_value=True),
+        patch("os.path.isdir", return_value=True),
+        patch("os.listdir", return_value=["some_weight"]),
+    ):
         result = OfflineModelLoader.load_model("auto-inject-model", mock_loader)
 
         assert result == "success_model"
@@ -276,7 +290,10 @@ def test_florence2_visual_processor_mock_load_and_run(mocker):
     )
 
     # Mock file path resolution
-    mocker.patch("app.core.offline_loader.OfflineModelLoader.resolve_model_path", return_value="/mock/florence-2")
+    mocker.patch(
+        "app.core.offline_loader.OfflineModelLoader.resolve_model_path",
+        return_value="/mock/florence-2",
+    )
 
     # Initialize processor
     f2 = Florence2VisualProcessor()
@@ -289,7 +306,6 @@ def test_florence2_visual_processor_mock_load_and_run(mocker):
     mock_from_pretrained_model.assert_called_once()
     mock_from_pretrained_processor.assert_called_once()
 
-
     # Now mock run_image
     mock_image = MagicMock()
     mock_image.size = (800, 600)
@@ -301,7 +317,9 @@ def test_florence2_visual_processor_mock_load_and_run(mocker):
     # Mock processor encoding/decoding
     mock_processor.return_value = {"input_ids": "inputs", "pixel_values": "pixels"}
     mock_model.generate.return_value = ["output_tokens"]
-    mock_processor.batch_decode.return_value = ["<OD><loc_100><loc_200><loc_300><loc_400>cat"]
+    mock_processor.batch_decode.return_value = [
+        "<OD><loc_100><loc_200><loc_300><loc_400>cat"
+    ]
 
     result = f2.process_image("/path/to/cat.jpg", task_prompt="<OD>")
 

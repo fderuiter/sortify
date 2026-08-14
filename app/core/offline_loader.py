@@ -11,7 +11,7 @@ import os
 import re
 import socket
 import sys
-from typing import Callable, Any, Dict, List, Tuple, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from app.core.shared_registry import block_external_network
 from app.core.text_utils import sanitize_text
@@ -27,6 +27,7 @@ LOC_BOX_PATTERN = re.compile(
 
 class OfflineModelLoadError(Exception):
     """Base exception for all offline model loading errors."""
+
     pass
 
 
@@ -53,7 +54,9 @@ class OfflineModelLoader:
     _registered_models: Dict[str, Dict[str, Any]] = {}
 
     @classmethod
-    def register_model(cls, model_id: str, expected_files: Optional[List[str]] = None) -> None:
+    def register_model(
+        cls, model_id: str, expected_files: Optional[List[str]] = None
+    ) -> None:
         """Register a model's expected files to enable automatic resolution and integrity verification.
 
         Parameters
@@ -63,9 +66,7 @@ class OfflineModelLoader:
         expected_files : list of str, optional
             List of files that must exist in the model directory.
         """
-        cls._registered_models[model_id] = {
-            "expected_files": expected_files or []
-        }
+        cls._registered_models[model_id] = {"expected_files": expected_files or []}
 
     @classmethod
     def resolve_model_path(cls, model_id: str) -> str:
@@ -106,6 +107,7 @@ class OfflineModelLoader:
         # Also resolve workspace path relative to path_utils base path
         try:
             from app.core.path_utils import get_base_path
+
             base_dir = get_base_path()
             workspace_base_path = os.path.join(base_dir, "offline_bundle", model_id)
             if workspace_base_path not in searched_paths:
@@ -149,7 +151,9 @@ class OfflineModelLoader:
         raise ModelWeightsNotFoundError(model_id, unique_paths)
 
     @classmethod
-    def load_model(cls, model_id: str, loader_fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+    def load_model(
+        cls, model_id: str, loader_fn: Callable[..., Any], *args: Any, **kwargs: Any
+    ) -> Any:
         """Execute the loading callable within the restricted network sandbox.
 
         Automatically injects `local_files_only=True` if supported.
@@ -184,7 +188,9 @@ class OfflineModelLoader:
 
         # 2. Automatically inject local_files_only=True if applicable
         sig = inspect.signature(loader_fn)
-        has_kwargs = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
+        has_kwargs = any(
+            p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
+        )
         if "local_files_only" in sig.parameters or has_kwargs:
             kwargs["local_files_only"] = True
 
@@ -197,7 +203,9 @@ class OfflineModelLoader:
             with block_external_network(reason=f"loading offline model {model_id}"):
                 return loader_fn(*args, **kwargs)
         except (PermissionError, socket.gaierror) as e:
-            logger.critical(f"Network request blocked during sandboxed loading of model '{model_id}': {e}")
+            logger.critical(
+                f"Network request blocked during sandboxed loading of model '{model_id}': {e}"
+            )
             raise OfflineModelLoadError(
                 f"Model loading for '{model_id}' failed due to prohibited network access. "
                 f"Verify that all model configuration and weight files are present locally in '{model_path}'."
@@ -205,7 +213,9 @@ class OfflineModelLoader:
         except Exception as e:
             logger.error(f"Error loading model '{model_id}' from '{model_path}': {e}")
             if not isinstance(e, OfflineModelLoadError):
-                raise OfflineModelLoadError(f"Failed to load offline model '{model_id}' from '{model_path}': {e}") from e
+                raise OfflineModelLoadError(
+                    f"Failed to load offline model '{model_id}' from '{model_path}': {e}"
+                ) from e
             raise
 
 
@@ -243,8 +253,9 @@ class Florence2VisualProcessor:
             raise
 
         def load_florence_model(path: str, **kwargs: Any) -> Any:
-            from transformers import AutoModelForCausalLM
             import torch
+            from transformers import AutoModelForCausalLM
+
             from app.core.shared_registry import SharedModelRegistry
 
             # Limit torch threads to configured limit
@@ -259,18 +270,28 @@ class Florence2VisualProcessor:
 
         def load_florence_processor(path: str, **kwargs: Any) -> Any:
             from transformers import AutoProcessor
+
             kwargs["trust_remote_code"] = True
             return AutoProcessor.from_pretrained(path, **kwargs)
 
         try:
-            self.model = OfflineModelLoader.load_model(self.model_id, load_florence_model)
-            self.processor = OfflineModelLoader.load_model(self.model_id, load_florence_processor)
+            self.model = OfflineModelLoader.load_model(
+                self.model_id, load_florence_model
+            )
+            self.processor = OfflineModelLoader.load_model(
+                self.model_id, load_florence_processor
+            )
         except Exception as e:
-            logger.error(f"Failed to load local Florence-2 processor/model components: {e}")
+            logger.error(
+                f"Failed to load local Florence-2 processor/model components: {e}"
+            )
             raise OfflineModelLoadError(f"Florence-2 model load failed: {e}") from e
 
     def process_image(
-        self, image_path: str, task_prompt: str = "<OD>", image_size: Optional[Tuple[int, int]] = None
+        self,
+        image_path: str,
+        task_prompt: str = "<OD>",
+        image_size: Optional[Tuple[int, int]] = None,
     ) -> Dict[str, Any]:
         """Perform visual analysis task on local image and return parsed results.
 
@@ -288,8 +309,8 @@ class Florence2VisualProcessor:
         dict
             Contains parsed, cleaned coordinates and text elements.
         """
-        from PIL import Image
         import torch
+        from PIL import Image
 
         self.load()
 
@@ -302,8 +323,12 @@ class Florence2VisualProcessor:
 
         # 1. Local sandboxed inference execution
         try:
-            with block_external_network(reason=f"Florence-2 local inference ({task_prompt})"):
-                inputs = self.processor(text=task_prompt, images=image, return_tensors="pt")
+            with block_external_network(
+                reason=f"Florence-2 local inference ({task_prompt})"
+            ):
+                inputs = self.processor(
+                    text=task_prompt, images=image, return_tensors="pt"
+                )
 
                 with torch.no_grad():
                     generated_ids = self.model.generate(
@@ -325,7 +350,9 @@ class Florence2VisualProcessor:
         return self.parse_and_sanitize(generated_text, image_size)
 
     @classmethod
-    def parse_and_sanitize(cls, text: str, image_size: Tuple[int, int]) -> Dict[str, Any]:
+    def parse_and_sanitize(
+        cls, text: str, image_size: Tuple[int, int]
+    ) -> Dict[str, Any]:
         """Parse coordinate coordinates, strip markup tags, normalize, and sanitize text.
 
         Parameters
@@ -350,7 +377,7 @@ class Florence2VisualProcessor:
         segments = []
         last_idx = 0
         for match in matches:
-            segments.append(text[last_idx:match.start()])
+            segments.append(text[last_idx : match.start()])
             last_idx = match.end()
         segments.append(text[last_idx:])
 
@@ -376,7 +403,12 @@ class Florence2VisualProcessor:
             # Heuristically associate label from adjacent segments
             label = ""
             # Try preceding segment first if not empty, not already used, and doesn't end with a colon
-            if i < len(clean_segs) and clean_segs[i] and not clean_segs[i].endswith(":") and not used_segs[i]:
+            if (
+                i < len(clean_segs)
+                and clean_segs[i]
+                and not clean_segs[i].endswith(":")
+                and not used_segs[i]
+            ):
                 label = clean_segs[i]
                 used_segs[i] = True
             # Otherwise try succeeding segment
@@ -390,12 +422,18 @@ class Florence2VisualProcessor:
             else:
                 label = "detected_object"
 
-
-            coordinates.append({
-                "box_2d_relative": [ymin_rel, xmin_rel, ymax_rel, xmax_rel],
-                "box_2d_scaled": [ymin_scaled, xmin_scaled, ymax_scaled, xmax_scaled],
-                "label": label,
-            })
+            coordinates.append(
+                {
+                    "box_2d_relative": [ymin_rel, xmin_rel, ymax_rel, xmax_rel],
+                    "box_2d_scaled": [
+                        ymin_scaled,
+                        xmin_scaled,
+                        ymax_scaled,
+                        xmax_scaled,
+                    ],
+                    "label": label,
+                }
+            )
 
         sanitized_text = sanitize_text(text)
 
