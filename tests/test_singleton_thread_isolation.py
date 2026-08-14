@@ -1,8 +1,16 @@
 import threading
-import time
+
 import pytest
-from app.core.analyzer_strategies import clustering_registry, RecursiveKMeansStrategy, GenerativeNamingStrategy
-from app.core.shared_registry import ContextPropagatingThreadPoolExecutor, ContextPropagatingThread
+
+from app.core.analyzer_strategies import (
+    GenerativeNamingStrategy,
+    RecursiveKMeansStrategy,
+    clustering_registry,
+)
+from app.core.shared_registry import (
+    ContextPropagatingThread,
+    ContextPropagatingThreadPoolExecutor,
+)
 
 
 def test_strategy_singleton_retrieval_and_type():
@@ -184,8 +192,9 @@ def test_strategy_automatic_cleanup():
 
     # 2. Test cleanup of generate_sorting_plan on main thread (the sorting job completes via finally block)
     # Let's mock a simple database and analyzer to test generate_sorting_plan cleanup
-    from app.core.analyzer import IncrementalAnalyzer
     from unittest.mock import MagicMock
+
+    from app.core.analyzer import IncrementalAnalyzer
 
     mock_db = MagicMock()
     mock_db.get_all_documents.return_value = [

@@ -40,6 +40,7 @@ class IsolatedStrategyMixin:
         self._local_state_var.set(state)
 
     def __getattribute__(self, name):
+        """Get attribute, routing thread-isolated variables to contextvars."""
         if name in object.__getattribute__(self, "_THREAD_ISOLATED_ATTRIBUTES"):
             state = object.__getattribute__(self, "_get_local_state")()
             if name in state:
@@ -51,6 +52,7 @@ class IsolatedStrategyMixin:
         return object.__getattribute__(self, name)
 
     def __setattr__(self, name, value):
+        """Set attribute, routing thread-isolated variables to contextvars."""
         if name in getattr(self, "_THREAD_ISOLATED_ATTRIBUTES", set()):
             state = dict(self._get_local_state())
             state[name] = value
@@ -59,6 +61,7 @@ class IsolatedStrategyMixin:
             object.__setattr__(self, name, value)
 
     def __delattr__(self, name):
+        """Delete attribute, routing thread-isolated variables to contextvars."""
         if name in getattr(self, "_THREAD_ISOLATED_ATTRIBUTES", set()):
             state = dict(self._get_local_state())
             if name in state:
@@ -78,7 +81,7 @@ class IsolatedStrategyMixin:
 
 
 def thread_isolated_execution(func):
-    """Decorator to automatically increment execution depth and clean up isolated state at the outermost call."""
+    """Track execution depth and automatically clean up isolated state at the outermost call."""
     @functools.wraps(func)
     def wrapper(self, *args, **kwargs):
         import threading
