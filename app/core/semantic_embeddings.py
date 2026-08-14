@@ -9,6 +9,8 @@ import threading
 import time
 import weakref
 
+import numpy as np
+
 
 class DimensionMismatchError(ValueError):
     """Raised when there is a dimension mismatch between model and vector."""
@@ -54,8 +56,6 @@ class ModelProperties(tuple):
 
 def _parse_onnx_type(node_type_str) -> "np.dtype":
     """Parse the ONNX type string (e.g., 'tensor(int64)') to a numpy dtype."""
-    import numpy as np
-
     if not isinstance(node_type_str, str):
         try:
             node_type_str = str(node_type_str)
@@ -594,7 +594,9 @@ class SemanticEmbeddingManager:
                             if hasattr(val, "astype"):
                                 session_inputs[node_name] = val.astype(target_dtype)
                             else:
-                                session_inputs[node_name] = np.array(val).astype(target_dtype)
+                                session_inputs[node_name] = np.array(val).astype(
+                                    target_dtype
+                                )
                         else:
                             if ref_shape is not None:
                                 if node_name == "attention_mask":
