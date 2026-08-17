@@ -659,7 +659,7 @@ class SemanticEmbeddingManager:
         return self.db.get_document_vector(base_dir, filepath)
 
     def get_vectors_batch(
-        self, base_dir: str, filepaths: list[str]
+        self, base_dir: str, filepaths: list[str], regenerate: bool = True
     ) -> dict[str, list[float]]:
         """Retrieve decoupled vectors for a list of document filepaths in batched format.
 
@@ -687,6 +687,9 @@ class SemanticEmbeddingManager:
                 missing_or_invalid.append(fp)
 
         if not missing_or_invalid:
+            return retrieved_vectors
+
+        if not regenerate:
             return retrieved_vectors
 
         # 3. For missing/invalid, prioritize reading from the local thread-locked decrypted cache in self.db

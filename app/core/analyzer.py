@@ -499,177 +499,185 @@ class IncrementalAnalyzer:
                 try:
                     import numpy as np
                     from sklearn.metrics.pairwise import cosine_similarity
+                    from app.core.db_conn import get_db_connection
 
-                    # Check if embedding reconstruction is active
-                    if self.embedding_manager.is_mock:
-                        use_semantic = False
-                        logging.info(
-                            "Semantic engine in mock state, bypassing semantic routing and using text similarity."
+                    # 1. Fetch existing vectors from DB batch-wise (with regenerate=False)
+                    hist_filepaths = [doc["filepath"] for doc in historical_docs]
+                    
+                    ai_vectors_dict = self.embedding_manager.get_vectors_batch(
+                        base_dir, ai_filenames, regenerate=False
+                    )
+                    hist_vectors_dict = self.embedding_manager.get_vectors_batch(
+                        base_dir, hist_filepaths, regenerate=False
+                    )
+
+                    # 2. Check each vector's validity and trigger background reconstruction if any are invalid/missing
+                    D = self.embedding_manager.dimensions
+                    ai_vectors_list = []
+                    is_ai_vector_valid = []
+                    any_invalid_or_missing = False
+
+                    for f_name in ai_filenames:
+                        v = ai_vectors_dict.get(f_name.replace("\\", "/"))
+                        if v is not None and self.embedding_manager.validate_vector_dimension(v):
+                            ai_vectors_list.append(v)
+                            is_ai_vector_valid.append(True)
+                        else:
+                            ai_vectors_list.append([0.0] * D)
+                            is_ai_vector_valid.append(False)
+                            any_invalid_or_missing = True
+                            
+                            # Label and persist failure as candidate for background reconstruction
+                            self.db.track_corrupted_vector(base_dir, f_name)
+                            def _delete_active(fp=f_name):
+                                conn = get_db_connection(self.db.db_path)
+                                with conn:
+                                    conn.execute(
+                                        "DELETE FROM document_vectors WHERE base_dir = ? AND filepath = ?",
+                                        (base_dir, fp.replace("\\", "/")),
+                                    )
+                            self.db.worker.execute_write(_delete_active)
+
+                    hist_vectors_list = []
+                    is_hist_vector_valid = []
+                    for doc in historical_docs:
+                        fp = doc["filepath"]
+                        v = hist_vectors_dict.get(fp.replace("\\", "/"))
+                        if v is not None and self.embedding_manager.validate_vector_dimension(v):
+                            hist_vectors_list.append(v)
+                            is_hist_vector_valid.append(True)
+                        else:
+                            hist_vectors_list.append([0.0] * D)
+                            is_hist_vector_valid.append(False)
+                            any_invalid_or_missing = True
+                            
+                            # Label and persist failure as candidate for background reconstruction
+                            self.db.track_corrupted_vector(base_dir, fp)
+                            def _delete_hist(fp=fp):
+                                conn = get_db_connection(self.db.db_path)
+                                with conn:
+                                    conn.execute(
+                                        "DELETE FROM document_vectors WHERE base_dir = ? AND filepath = ?",
+                                        (base_dir, fp.replace("\\", "/")),
+                                    )
+                            self.db.worker.execute_write(_delete_hist)
+
+                    # Queue missing/invalid vectors for background reconstruction asynchronously without blocking
+                    if any_invalid_or_missing:
+                        self.embedding_manager.trigger_reconstruction(base_dir)
+
+                    # 3. Compute TF-IDF keyword-frequency similarity matrix
+                    import math
+                    from scipy.sparse import csr_matrix
+                    from sklearn.feature_extraction.text import (
+                        TfidfTransformer,
+                        TfidfVectorizer,
+                    )
+                    from sklearn.preprocessing import normalize
+
+                    # Database TF-IDF Statistics Retrieval
+                    N, top_terms, doc_terms, doc_metadata = self.db.get_tfidf_stats(
+                        base_dir
+                    )
+
+                    # Restrict vocabulary to the top 1,000 terms matching the database query constraints
+                    top_terms = top_terms[:1000]
+
+                    # Construct the vocabulary dictionary mapping
+                    vocab = {term: idx for idx, (term, df) in enumerate(top_terms)}
+
+                    if len(vocab) == 0:
+                        keyword_similarities = np.zeros(
+                            (len(ai_documents), len(historical_docs))
                         )
                     else:
-                        use_semantic = getattr(
-                            self.embedding_manager, "is_model_valid", True
-                        )
-                        if self.embedding_manager.is_reconstruction_active():
-                            use_semantic = False
-                            logging.info(
-                                "Background reconstruction active, falling back to standard text similarity."
-                            )
-                        else:
-                            # Try to load vector embeddings for historical docs in batch
-                            hist_filepaths = [
-                                doc["filepath"] for doc in historical_docs
-                            ]
-                            hist_vectors_dict = (
-                                self.embedding_manager.get_vectors_batch(
-                                    base_dir, hist_filepaths
-                                )
-                            )
-                            hist_vectors = []
-                            for fp in hist_filepaths:
-                                vector = hist_vectors_dict.get(fp.replace("\\", "/"))
-                                if (
-                                    not vector
-                                    or not self.embedding_manager.validate_vector_dimension(
-                                        vector
-                                    )
-                                ):
-                                    use_semantic = False
-                                    logging.info(
-                                        "Obsolete/missing vectors or dimension mismatch detected. Initiating cleanup and background recovery."
-                                    )
-                                    # Re-verify model to perform purge of outdated vectors
-                                    self.embedding_manager.verify_active_model()
-                                    # Trigger background reconstruction
-                                    self.embedding_manager.trigger_reconstruction(
-                                        base_dir
-                                    )
-                                    break
-                                hist_vectors.append(vector)
-
-                    if use_semantic:
-                        # Batch retrieve and/or generate active file vectors
-                        try:
-                            ai_vectors_dict = self.embedding_manager.get_vectors_batch(
-                                base_dir, ai_filenames
-                            )
-                            ai_vectors = []
-                            for f_name in ai_filenames:
-                                v = ai_vectors_dict.get(f_name.replace("\\", "/"))
-                                if not self.embedding_manager.validate_vector_dimension(
-                                    v
-                                ):
-                                    raise ValueError(
-                                        "Retrieved/generated vector dimensions do not match the active model dimensions."
-                                    )
-                                ai_vectors.append(v)
-                        except Exception as e:
-                            logging.error(
-                                f"Error generating or retrieving active model vectors: {e}. Falling back to standard text similarity."
-                            )
-                            use_semantic = False
-
-                    if use_semantic:
-                        # Calculate similarity using vector embeddings
-                        similarities = cosine_similarity(
-                            np.array(ai_vectors), np.array(hist_vectors)
-                        )
-                    else:
-                        # Fallback gracefully to standard TF-IDF text similarity using DB pre-computed stats
-                        import math
-
-                        import numpy as np
-                        from scipy.sparse import csr_matrix
-                        from sklearn.feature_extraction.text import (
-                            TfidfTransformer,
-                            TfidfVectorizer,
-                        )
-                        from sklearn.preprocessing import normalize
-
-                        # 1. Database TF-IDF Statistics Retrieval
-                        N, top_terms, doc_terms, doc_metadata = self.db.get_tfidf_stats(
-                            base_dir
+                        # Calculate smoothed IDF values using the system's custom formula: idf_j = ln((1 + N) / (1 + df_j)) + 1
+                        idf_weights = {
+                            term: math.log((1 + N) / (1 + df)) + 1
+                            for term, df in top_terms
+                        }
+                        idf_values = np.array(
+                            [idf_weights[term] for term, df in top_terms]
                         )
 
-                        # Restrict vocabulary to the top 1,000 terms matching the database query constraints
-                        top_terms = top_terms[:1000]
+                        # Configure a TfidfVectorizer
+                        vectorizer = TfidfVectorizer(
+                            stop_words=list(self.stop_words),
+                            vocabulary=vocab,
+                            sublinear_tf=True,
+                        )
+                        vectorizer.vocabulary_ = vocab
+                        vectorizer.fixed_vocabulary_ = True
+                        vectorizer.idf_ = idf_values
 
-                        # Construct the vocabulary dictionary mapping
-                        vocab = {term: idx for idx, (term, df) in enumerate(top_terms)}
+                        transformer = TfidfTransformer(sublinear_tf=True)
+                        transformer.idf_ = idf_values
+                        vectorizer._tfidf = transformer
 
-                        if len(vocab) == 0:
-                            similarities = np.zeros(
-                                (len(ai_documents), len(historical_docs))
-                            )
-                        else:
-                            # Calculate smoothed IDF values using the system's custom formula: idf_j = ln((1 + N) / (1 + df_j)) + 1
-                            idf_weights = {
-                                term: math.log((1 + N) / (1 + df)) + 1
-                                for term, df in top_terms
-                            }
-                            idf_values = np.array(
-                                [idf_weights[term] for term, df in top_terms]
-                            )
+                        # Historical Sparse Matrix Reconstruction
+                        # Represent historical document vectors by constructing a standard scipy.sparse.csr_matrix directly from database term statistics.
+                        hist_filepaths_norm = [
+                            doc["filepath"].replace("\\", "/")
+                            for doc in historical_docs
+                        ]
+                        filepath_to_row_idx = {
+                            fp: idx for idx, fp in enumerate(hist_filepaths_norm)
+                        }
 
-                            # 2. Configure a TfidfVectorizer
-                            vectorizer = TfidfVectorizer(
-                                stop_words=list(self.stop_words),
-                                vocabulary=vocab,
-                                sublinear_tf=True,
-                            )
-                            vectorizer.vocabulary_ = vocab
-                            vectorizer.fixed_vocabulary_ = True
-                            vectorizer.idf_ = idf_values
+                        rows = []
+                        cols = []
+                        data = []
 
-                            transformer = TfidfTransformer(sublinear_tf=True)
-                            transformer.idf_ = idf_values
-                            vectorizer._tfidf = transformer
+                        for filepath, term, tf in doc_terms:
+                            norm_fp = filepath.replace("\\", "/")
+                            if norm_fp in filepath_to_row_idx:
+                                row_idx = filepath_to_row_idx[norm_fp]
+                                if term in vocab:
+                                    col_idx = vocab[term]
+                                    tf_weight = 1.0 + math.log(tf)
+                                    weight = tf_weight * idf_weights[term]
+                                    rows.append(row_idx)
+                                    cols.append(col_idx)
+                                    data.append(weight)
 
-                            # 3. Historical Sparse Matrix Reconstruction
-                            # Represent historical document vectors by constructing a standard scipy.sparse.csr_matrix directly from database term statistics.
-                            hist_filepaths = [
-                                doc["filepath"].replace("\\", "/")
-                                for doc in historical_docs
-                            ]
-                            filepath_to_row_idx = {
-                                fp: idx for idx, fp in enumerate(hist_filepaths)
-                            }
+                        num_rows = len(historical_docs)
+                        num_cols = len(vocab)
+                        historical_vectors = csr_matrix(
+                            (data, (rows, cols)), shape=(num_rows, num_cols)
+                        )
 
-                            rows = []
-                            cols = []
-                            data = []
+                        # Apply row-wise L2 normalization to ensure correct cosine similarity calculations
+                        historical_vectors = normalize(
+                            historical_vectors, norm="l2", axis=1
+                        )
 
-                            for filepath, term, tf in doc_terms:
-                                norm_fp = filepath.replace("\\", "/")
-                                if norm_fp in filepath_to_row_idx:
-                                    row_idx = filepath_to_row_idx[norm_fp]
-                                    if term in vocab:
-                                        col_idx = vocab[term]
-                                        tf_weight = 1.0 + math.log(tf)
-                                        weight = tf_weight * idf_weights[term]
-                                        rows.append(row_idx)
-                                        cols.append(col_idx)
-                                        data.append(weight)
+                        # Vectorizing Active Candidate Documents
+                        safe_ai_documents = [d or "" for d in ai_documents]
+                        new_docs_vectors = vectorizer.transform(safe_ai_documents)
 
-                            num_rows = len(historical_docs)
-                            num_cols = len(vocab)
-                            historical_vectors = csr_matrix(
-                                (data, (rows, cols)), shape=(num_rows, num_cols)
-                            )
+                        # Dot Product Similarity Calculation
+                        keyword_similarities = new_docs_vectors.dot(
+                            historical_vectors.T
+                        ).toarray()
 
-                            # Apply row-wise L2 normalization to ensure correct cosine similarity calculations
-                            historical_vectors = normalize(
-                                historical_vectors, norm="l2", axis=1
-                            )
+                    # 4. Compute semantic (cosine) similarity matrix
+                    semantic_similarities = cosine_similarity(
+                        np.array(ai_vectors_list), np.array(hist_vectors_list)
+                    )
+                    # Handle NaNs (e.g., division by zero if all-zero vector is used)
+                    semantic_similarities = np.nan_to_num(semantic_similarities, nan=0.0)
 
-                            # 4. Vectorizing Active Candidate Documents
-                            safe_ai_documents = [d or "" for d in ai_documents]
-                            new_docs_vectors = vectorizer.transform(safe_ai_documents)
+                    # 5. Merge scores on a per-comparison basis: cosine similarity for healthy pairs, TF-IDF for fallback pairs
+                    similarities = np.zeros((len(ai_filenames), len(historical_docs)))
+                    for i in range(len(ai_filenames)):
+                        for j in range(len(historical_docs)):
+                            if is_ai_vector_valid[i] and is_hist_vector_valid[j]:
+                                similarities[i, j] = semantic_similarities[i, j]
+                            else:
+                                similarities[i, j] = keyword_similarities[i, j]
 
-                            # 5. Dot Product Similarity Calculation
-                            similarities = new_docs_vectors.dot(
-                                historical_vectors.T
-                            ).toarray()
+                    # Ensure merged scores stay within 0.0 - 1.0 range
+                    similarities = np.clip(similarities, 0.0, 1.0)
 
                     historical_targets = [
                         doc["target_folder"] for doc in historical_docs
@@ -739,7 +747,7 @@ class IncrementalAnalyzer:
                         try:
                             # Batch retrieve and/or generate active file vectors
                             ai_vectors_dict = self.embedding_manager.get_vectors_batch(
-                                base_dir, ai_filenames
+                                base_dir, ai_filenames, regenerate=False
                             )
                             vectors = []
                             for f_name in ai_filenames:

@@ -870,7 +870,9 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                     not embedding_manager.is_mock
                     and not embedding_manager.is_reconstruction_active()
                 ):
-                    fetched = embedding_manager.get_vectors_batch(base_dir, filenames)
+                    fetched = embedding_manager.get_vectors_batch(
+                        base_dir, filenames, regenerate=False
+                    )
                     if fetched:
                         vector_dict = {
                             f: v for f, v in fetched.items() if v is not None
@@ -941,7 +943,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
             if files:
                 all_recursive_files = get_recursive_files(node)
                 vectors = [
-                    vector_dict[f] for f in all_recursive_files if f in vector_dict
+                    vector_dict[f] for f in all_recursive_files if f in vector_dict and vector_dict[f] is not None
                 ]
                 if vectors:
                     centroid = np.mean(vectors, axis=0)
