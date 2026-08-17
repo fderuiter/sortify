@@ -308,10 +308,9 @@ class AppSettings:
                     logging.warning(
                         f"Configuration validation failed for field '{path}': {error.message}. Using default value."
                     )
-                    self._validation_errors.append({
-                        "field": path,
-                        "message": error.message
-                    })
+                    self._validation_errors.append(
+                        {"field": path, "message": error.message}
+                    )
 
             for key, value in data.items():
                 if hasattr(self._settings_model, key):
@@ -323,10 +322,9 @@ class AppSettings:
                                 f"Invalid {key} in config, using default: {e}"
                             )
                         has_validation_errors = True
-                        self._validation_errors.append({
-                            "field": key,
-                            "message": str(e)
-                        })
+                        self._validation_errors.append(
+                            {"field": key, "message": str(e)}
+                        )
 
             if has_validation_errors:
                 # Do not allow saving to overwrite the invalid user settings
@@ -341,10 +339,9 @@ class AppSettings:
             logging.warning(f"Failed to load settings, using defaults: {e}")
             # If JSON is corrupted, we don't want to overwrite either
             self._has_validation_errors = True
-            self._validation_errors.append({
-                "field": "json",
-                "message": f"Failed to load settings file: {e}"
-            })
+            self._validation_errors.append(
+                {"field": "json", "message": f"Failed to load settings file: {e}"}
+            )
 
     def _trigger_save(self):
         if getattr(self, "_has_validation_errors", False):
