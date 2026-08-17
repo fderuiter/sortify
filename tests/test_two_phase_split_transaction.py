@@ -145,13 +145,17 @@ def test_ocr_bypassing_for_fast_path_moved_files(temp_environment):
         temp_environment["base_dir"], refreshed_files, settings, session.db, None, lambda: False
     )
     
+    # Normalize paths for platform-agnostic assertion
+    refreshed_files_norm = [f.replace("\\", "/") for f in refreshed_files]
+    bypassed_files_ph2_norm = [f.replace("\\", "/") for f in bypassed_files_ph2]
+    
     # The successfully moved file is marked as bypassed or is in a target directory
     # and should NOT undergo text extraction / OCR
     rel_moved_path = os.path.join("Invoices", temp_environment["keyword_file"]).replace("\\", "/")
-    assert rel_moved_path in bypassed_files_ph2
+    assert rel_moved_path in bypassed_files_ph2_norm
 
     # Check that the items to sort (which undergo heavy text extraction) do NOT contain the moved file!
-    items_to_sort_ph2 = [f for f in refreshed_files if f not in bypassed_files_ph2]
+    items_to_sort_ph2 = [f for f in refreshed_files_norm if f not in bypassed_files_ph2_norm]
     assert rel_moved_path not in items_to_sort_ph2
 
     session.close()
