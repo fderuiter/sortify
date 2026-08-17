@@ -664,13 +664,18 @@ def test_check_ai_status_local_offline_bundle(tmp_path, monkeypatch):
     (easyocr_dir / "english_g2.pth").write_text("", encoding="utf-8")
 
     # Mock get_base_path to point to our tmp_path base_dir
-    monkeypatch.setattr("app.core.path_utils.get_base_path", lambda *args, **kwargs: str(base_dir))
+    monkeypatch.setattr(
+        "app.core.path_utils.get_base_path", lambda *args, **kwargs: str(base_dir)
+    )
     monkeypatch.setattr("os.getcwd", lambda: str(base_dir))
 
     # Mock is_ml_available to True
     with (
         patch("app.core.verifier.is_ml_available", return_value=True),
-        patch("app.core.shared_registry.SharedModelRegistry.verify_integrity", return_value=True) as mock_verify,
+        patch(
+            "app.core.shared_registry.SharedModelRegistry.verify_integrity",
+            return_value=True,
+        ) as mock_verify,
     ):
         is_healthy, warn_msg = check_ai_status(settings)
         # Should be healthy, with no warning/error message
@@ -684,4 +689,3 @@ def test_check_ai_status_local_offline_bundle(tmp_path, monkeypatch):
             _, kwargs = mock_reader.call_args
             assert "offline_bundle" in kwargs.get("model_storage_directory", "")
             assert "easyocr" in kwargs.get("model_storage_directory", "")
-

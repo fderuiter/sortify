@@ -82,6 +82,7 @@ class SessionCrypto:
 
     def __init__(self, key_path: Path, db_path: Path):
         import threading
+
         self.db_path = Path(os.path.abspath(db_path))
         self.key_path = Path(os.path.abspath(key_path))
         self._cipher = None
@@ -374,6 +375,7 @@ class SessionCrypto:
             return None
 
         import json
+
         try:
             parsed = json.loads(decrypted_str)
             with self._vector_decrypt_lock:
