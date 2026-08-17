@@ -19,11 +19,20 @@ def main():
 
     print("Preparing offline bundle...")
     bundle_dir = Path("offline_bundle")
-    if bundle_dir.exists():
-        shutil.rmtree(bundle_dir)
-    bundle_dir.mkdir()
+    bundle_dir.mkdir(exist_ok=True)
 
+    # Clean up previous ZIP output if any
+    zip_output = Path("offline_bundle.zip")
+    if zip_output.exists():
+        try:
+            zip_output.unlink()
+        except OSError as e:
+            print(f"Warning: could not delete {zip_output}: {e}")
+
+    # Clean up wheels directory specifically
     wheels_dir = bundle_dir / "wheels"
+    if wheels_dir.exists():
+        shutil.rmtree(wheels_dir)
     wheels_dir.mkdir()
 
     # 1. Compile requirements with CPU-only PyTorch

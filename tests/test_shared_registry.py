@@ -638,3 +638,50 @@ def test_get_ocr_reader_fallback(monkeypatch):
             model_storage_directory=ANY,
             download_enabled=False,
         )
+
+
+def test_check_ai_status_local_offline_bundle(tmp_path, monkeypatch):
+    """Verify that check_ai_status and get_ocr_reader can locate and verify easyocr and model files in the offline_bundle directory."""
+    from app.config import AppSettings
+    from app.core.verifier import check_ai_status
+    from app.core.shared_registry import SharedModelRegistry
+
+    settings = AppSettings()
+    settings.AI_ASSISTED_NAMING = True
+
+    # Setup directories
+    base_dir = tmp_path
+    offline_bundle_dir = base_dir / "offline_bundle"
+    model_dir = offline_bundle_dir / "model"
+    easyocr_dir = offline_bundle_dir / "easyocr"
+
+    model_dir.mkdir(parents=True)
+    easyocr_dir.mkdir(parents=True)
+
+    # Create empty dummy files to satisfy path existence checks
+    (model_dir / "config.json").write_text("{}", encoding="utf-8")
+    (easyocr_dir / "craft_mlt_25k.pth").write_text("", encoding="utf-8")
+    (easyocr_dir / "english_g2.pth").write_text("", encoding="utf-8")
+
+    # Mock get_base_path to point to our tmp_path base_dir
+    monkeypatch.setattr("app.core.path_utils.get_base_path", lambda *args, **kwargs: str(base_dir))
+    monkeypatch.setattr("os.getcwd", lambda: str(base_dir))
+
+    # Mock is_ml_available to True
+    with (
+        patch("app.core.verifier.is_ml_available", return_value=True),
+        patch("app.core.shared_registry.SharedModelRegistry.verify_integrity", return_value=True) as mock_verify,
+    ):
+        is_healthy, warn_msg = check_ai_status(settings)
+        # Should be healthy, with no warning/error message
+        assert is_healthy is True
+        assert warn_msg is None
+
+        # Verify that get_ocr_reader also correctly resolves the directory
+        registry = SharedModelRegistry.get_instance()
+        with patch("easyocr.Reader") as mock_reader:
+            registry.get_ocr_reader()
+            _, kwargs = mock_reader.call_args
+            assert "offline_bundle" in kwargs.get("model_storage_directory", "")
+            assert "easyocr" in kwargs.get("model_storage_directory", "")
+
