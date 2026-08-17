@@ -1,5 +1,4 @@
 import os
-import shutil
 import tempfile
 from pathlib import Path
 from unittest import mock
@@ -7,10 +6,8 @@ from unittest import mock
 import pytest
 
 from app.config import AppSettings
-from app.core.session import AppSession
 from app.core.metadata import MetadataPass
-from app.core.analyzer import IncrementalAnalyzer
-from app.core.history import HistoryManager
+from app.core.session import AppSession
 
 
 @pytest.fixture

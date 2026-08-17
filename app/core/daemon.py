@@ -202,7 +202,7 @@ class ContinuousWatchdogDaemon:
                 return
 
             # Run MetadataPass to identify deterministic rule-matched files and mark them as BYPASSED
-            bypassed_files = MetadataPass.run(
+            MetadataPass.run(
                 self.base_dir, files, self.settings, app_session.db, None, cancel_check
             )
 
