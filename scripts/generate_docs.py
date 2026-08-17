@@ -113,6 +113,79 @@ def generate_admin_guide():
             "System settings modified during runtime are dynamically saved to the local JSON configuration file (`~/.autosorter/settings.json`) located in the user's home directory. To ensure stability and prevent excessive disk writes, these dynamic changes are saved with a short debounced delay of 0.5 seconds.\n\n"
         )
 
+        f.write("## Compliance Policies & Routing Rules\n\n")
+        f.write("### Rule Syntax & Types\n\n")
+        f.write(
+            "Compliance policies categorize and sort documents based on three rule types:\n\n"
+        )
+        f.write(
+            "- **Keyword Rules**: Search for files containing a specific word or phrase anywhere in their text contents (for example, 'invoice' or 'billing').\n"
+        )
+        f.write(
+            "- **Pattern Rules**: Match files using structured formatting or text sequences (such as a standard format of letters followed by numbers) to match specific document types.\n"
+        )
+        f.write(
+            "- **Override Rules**: Check for exact text matches, taking precedent to bypass standard classification rules.\n\n"
+        )
+
+        f.write("### Sequential Execution & Priority\n\n")
+        f.write(
+            "Rules are evaluated sequentially, starting from the highest priority value down to the lowest. "
+        )
+        f.write(
+            "Because rules are checked in priority order, if a higher-priority rule matches, it will be executed first. "
+        )
+        f.write(
+            "This can sometimes result in 'shadowing', where a lower-priority rule never runs because a higher-priority rule has already matched the same conditions. "
+        )
+        f.write(
+            "To resolve overlaps, adjust rule priority numbers or make matching conditions more specific.\n\n"
+        )
+
+        f.write("### Halting Parameters\n\n")
+        f.write("Each policy includes a 'Halt on mismatch' setting. ")
+        f.write(
+            "When active, if a document fails to meet this rule's criteria, the system will immediately stop evaluating any remaining lower-priority rules. "
+        )
+        f.write(
+            "This halting behavior is crucial for enforcing strict sequential checks and ensuring that files do not proceed to general classification or AI-based sorting if they fail compliance conditions.\n\n"
+        )
+
+        f.write("### Path Validation Rules\n\n")
+        f.write(
+            "To ensure system security, stability, and compatibility across operating systems, all target paths must comply with the following strict validation rules:\n\n"
+        )
+        f.write(
+            "- **No Absolute Paths**: All target paths must be relative paths and cannot start with leading slashes (such as `/` or `\\`).\n"
+        )
+        f.write(
+            "- **No Directory Traversal**: Paths are blocked from using directory traversal segments (such as `..`) to prevent files from being moved outside of the designated folders.\n"
+        )
+        f.write(
+            '- **No Illegal Characters**: Target paths must not contain any prohibited characters, including `<`, `>`, `:`, `"`, `|`, `?`, or `*`.\n\n'
+        )
+
+        f.write("### Configuration Recovery & Troubleshooting\n\n")
+        f.write(
+            "If the system detects invalid fields or syntax errors in the configuration file (`settings.json`), automatic saves are locked. "
+        )
+        f.write(
+            "This safeguard prevents overwriting and potentially corrupting your existing settings. "
+        )
+        f.write(
+            "While saves are suspended, the application will use temporary default values to prevent crashes.\n\n"
+        )
+        f.write("To resolve a blocked-save state, follow these recovery options:\n\n")
+        f.write(
+            "1. **Check Warning Banners**: Review the detailed list of validation errors displayed under the warning banner in the application settings dialog.\n"
+        )
+        f.write(
+            "2. **Manually Edit Settings**: Open the local configuration file (`~/.autosorter/settings.json`) and correct the invalid values or formats.\n"
+        )
+        f.write(
+            "3. **Reset Configuration**: Delete the invalid `settings.json` file or click the reset button to restore default, valid configuration values, which will immediately re-enable automatic saving.\n\n"
+        )
+
         f.write("## Maintenance Scripts and CLI Commands\n\n")
 
         # sandbox_cli.py
