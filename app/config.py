@@ -48,6 +48,9 @@ class Settings(BaseSettings):
     OCR_LANGUAGES: str = Field(default="en")
     CONFLICT_POLICY: Literal["skip", "rename"] = Field(default="rename")
     COHERENCE_THRESHOLD: float = Field(default=0.5, ge=0.0, le=1.0)
+    DEBOUNCE_DELAY: float = Field(default=0.6, gt=0.0)
+    MAX_DEBOUNCE_DELAY: float = Field(default=5.0, gt=0.0)
+    IGNORED_EXTENSIONS: list[str] = Field(default=[".crdownload", ".tmp", ".download"])
 
     @field_validator("CONFLICT_POLICY")
     @classmethod
@@ -248,6 +251,7 @@ class AppSettings:
         self._save_timer = None
         self._lock = threading.Lock()
         self._raw_encrypted_proxy = None
+        self._validation_errors = []
 
         try:
             self._settings_model = Settings()
@@ -259,6 +263,7 @@ class AppSettings:
 
     def load(self):
         """Load settings from the configuration file."""
+        self._validation_errors = []
         if not os.path.exists(self._filepath):
             self._trigger_save()
             return
@@ -306,6 +311,9 @@ class AppSettings:
                     logging.warning(
                         f"Configuration validation failed for field '{path}': {error.message}. Using default value."
                     )
+                    self._validation_errors.append(
+                        {"field": path, "message": error.message}
+                    )
 
             for key, value in data.items():
                 if hasattr(self._settings_model, key):
@@ -317,6 +325,9 @@ class AppSettings:
                                 f"Invalid {key} in config, using default: {e}"
                             )
                         has_validation_errors = True
+                        self._validation_errors.append(
+                            {"field": key, "message": str(e)}
+                        )
 
             if has_validation_errors:
                 # Do not allow saving to overwrite the invalid user settings
@@ -331,6 +342,9 @@ class AppSettings:
             logging.warning(f"Failed to load settings, using defaults: {e}")
             # If JSON is corrupted, we don't want to overwrite either
             self._has_validation_errors = True
+            self._validation_errors.append(
+                {"field": "json", "message": f"Failed to load settings file: {e}"}
+            )
 
     def _trigger_save(self):
         if getattr(self, "_has_validation_errors", False):
@@ -388,6 +402,8 @@ class AppSettings:
             "_save_timer",
             "_settings_model",
             "_raw_encrypted_proxy",
+            "_validation_errors",
+            "_has_validation_errors",
         ):
             super().__setattr__(name, value)
         else:

@@ -721,8 +721,19 @@ class SharedModelRegistry:
         if hasattr(sys, "_MEIPASS"):
             easyocr_dir = os.path.join(sys._MEIPASS, "offline_bundle", "easyocr")
         else:
+            try:
+                from app.core.path_utils import get_base_path
+                base_path = get_base_path(__file__)
+            except Exception:
+                base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            local_easyocr_path = os.path.join(base_path, "offline_bundle", "easyocr")
+            cwd_easyocr_path = os.path.join(os.getcwd(), "offline_bundle", "easyocr")
             easyocr_path = os.environ.get("EASYOCR_MODULE_PATH")
-            if easyocr_path:
+            if os.path.exists(local_easyocr_path):
+                easyocr_dir = local_easyocr_path
+            elif os.path.exists(cwd_easyocr_path):
+                easyocr_dir = cwd_easyocr_path
+            elif easyocr_path:
                 easyocr_dir = os.path.join(easyocr_path, "model")
             else:
                 easyocr_dir = os.path.expanduser("~/.EasyOCR/model")
