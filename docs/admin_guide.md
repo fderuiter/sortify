@@ -98,6 +98,18 @@ The following parameters are extracted directly from the application's configura
 - **Default**: `0.5`
 - **Required**: `False`
 
+### `DEBOUNCE_DELAY`
+- **Default**: `0.6`
+- **Required**: `False`
+
+### `MAX_DEBOUNCE_DELAY`
+- **Default**: `5.0`
+- **Required**: `False`
+
+### `IGNORED_EXTENSIONS`
+- **Default**: `['.crdownload', '.tmp', '.download']`
+- **Required**: `False`
+
 ### `AI_CONSENT_GRANTED`
 - **Default**: `None`
 - **Required**: `False`

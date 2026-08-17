@@ -437,6 +437,72 @@ def show_settings(parent_app, settings):
                             timeout_slider, "value", backward=lambda v: f"{int(v)}"
                         )
 
+                    def on_debounce_delay_change(e):
+                        val = (
+                            float(e.value)
+                            if e.value is not None
+                            else settings.DEBOUNCE_DELAY
+                        )
+                        if val == settings.DEBOUNCE_DELAY:
+                            return
+                        try:
+                            settings.DEBOUNCE_DELAY = val
+                        except Exception as ex:
+                            e.sender.value = settings.DEBOUNCE_DELAY
+                            ui.notify(f"Invalid debounce delay: {ex}", type="negative")
+
+                    ui.label("Min Debounce Delay (seconds)").classes(
+                        "text-sm text-gray-700 mt-4"
+                    )
+                    with ui.row().classes("w-full items-center gap-4"):
+                        debounce_slider = (
+                            ui.slider(
+                                min=0.1,
+                                max=10.0,
+                                value=settings.DEBOUNCE_DELAY,
+                                step=0.1,
+                                on_change=on_debounce_delay_change,
+                            )
+                            .props('aria-label="Min Debounce Delay" label')
+                            .classes("flex-grow")
+                        )
+                        ui.label().bind_text_from(
+                            debounce_slider, "value", backward=lambda v: f"{float(v):.1f}"
+                        )
+
+                    def on_max_debounce_delay_change(e):
+                        val = (
+                            float(e.value)
+                            if e.value is not None
+                            else settings.MAX_DEBOUNCE_DELAY
+                        )
+                        if val == settings.MAX_DEBOUNCE_DELAY:
+                            return
+                        try:
+                            settings.MAX_DEBOUNCE_DELAY = val
+                        except Exception as ex:
+                            e.sender.value = settings.MAX_DEBOUNCE_DELAY
+                            ui.notify(f"Invalid max debounce delay: {ex}", type="negative")
+
+                    ui.label("Max Debounce Delay (seconds)").classes(
+                        "text-sm text-gray-700 mt-4"
+                    )
+                    with ui.row().classes("w-full items-center gap-4"):
+                        max_debounce_slider = (
+                            ui.slider(
+                                min=0.5,
+                                max=30.0,
+                                value=settings.MAX_DEBOUNCE_DELAY,
+                                step=0.5,
+                                on_change=on_max_debounce_delay_change,
+                            )
+                            .props('aria-label="Max Debounce Delay" label')
+                            .classes("flex-grow")
+                        )
+                        ui.label().bind_text_from(
+                            max_debounce_slider, "value", backward=lambda v: f"{float(v):.1f}"
+                        )
+
             with ui.tab_panel("AI"):
                 ui.label("Privacy Options").classes("text-lg font-bold mb-2")
                 ui.label("AI processing is fully offline.").classes(

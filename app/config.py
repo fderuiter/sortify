@@ -48,6 +48,9 @@ class Settings(BaseSettings):
     OCR_LANGUAGES: str = Field(default="en")
     CONFLICT_POLICY: Literal["skip", "rename"] = Field(default="rename")
     COHERENCE_THRESHOLD: float = Field(default=0.5, ge=0.0, le=1.0)
+    DEBOUNCE_DELAY: float = Field(default=0.6, gt=0.0)
+    MAX_DEBOUNCE_DELAY: float = Field(default=5.0, gt=0.0)
+    IGNORED_EXTENSIONS: list[str] = Field(default=[".crdownload", ".tmp", ".download"])
 
     @field_validator("CONFLICT_POLICY")
     @classmethod
