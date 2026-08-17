@@ -28,6 +28,9 @@ class MockSettings:
         self.IMAGE_SKIP_THRESHOLD = 500
         self.AI_CONSENT_GRANTED = False
         self.STOP_WORDS = {"the", "and", "or"}
+        self.DEBOUNCE_DELAY = 0.6
+        self.MAX_DEBOUNCE_DELAY = 5.0
+        self.IGNORED_EXTENSIONS = [".crdownload", ".tmp", ".download"]
 
 
 def is_rigid_layout_class(cls_name: str) -> bool:
