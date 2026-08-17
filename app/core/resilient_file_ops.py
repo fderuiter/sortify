@@ -192,7 +192,9 @@ def resilient_file_hash(file_path: str) -> str:
                             has_footer = (flags & 0x10) != 0
                             tag_size = 10 + size + (10 if has_footer else 0)
                             if size < 0 or tag_size < 10 or (tag_size - 10) < 0:
-                                raise ValueError("Invalid MP3 metadata header size or negative offset")
+                                raise ValueError(
+                                    "Invalid MP3 metadata header size or negative offset"
+                                )
                             if offset + tag_size > file_size:
                                 raise ValueError("Invalid MP3 metadata header boundary")
                             offset += tag_size

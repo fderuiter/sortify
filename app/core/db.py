@@ -683,7 +683,10 @@ class Database:
             return
         if getattr(self, "active_rollback", False):
             import logging
-            logging.info("Active physical rollback in progress. Bypassing database path updates.")
+
+            logging.info(
+                "Active physical rollback in progress. Bypassing database path updates."
+            )
             return
         self.invalidate_cache()
 
