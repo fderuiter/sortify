@@ -499,17 +499,29 @@ class IncrementalAnalyzer:
                 try:
                     import numpy as np
                     from sklearn.metrics.pairwise import cosine_similarity
+
                     from app.core.db_conn import get_db_connection
 
-                    # 1. Fetch existing vectors from DB batch-wise (with regenerate=False)
+                    # Check if embedding reconstruction is active or mock state is detected
+                    is_mock = self.embedding_manager.is_mock
+                    is_reconstruction_active = (
+                        self.embedding_manager.is_reconstruction_active()
+                    )
+                    use_semantic = not is_mock and not is_reconstruction_active
+
+                    # 1. Fetch existing vectors from DB batch-wise (regenerating active on-the-fly if semantic is enabled)
                     hist_filepaths = [doc["filepath"] for doc in historical_docs]
-                    
-                    ai_vectors_dict = self.embedding_manager.get_vectors_batch(
-                        base_dir, ai_filenames, regenerate=False
-                    )
-                    hist_vectors_dict = self.embedding_manager.get_vectors_batch(
-                        base_dir, hist_filepaths, regenerate=False
-                    )
+
+                    if use_semantic:
+                        ai_vectors_dict = self.embedding_manager.get_vectors_batch(
+                            base_dir, ai_filenames, regenerate=True
+                        )
+                        hist_vectors_dict = self.embedding_manager.get_vectors_batch(
+                            base_dir, hist_filepaths, regenerate=False
+                        )
+                    else:
+                        ai_vectors_dict = {}
+                        hist_vectors_dict = {}
 
                     # 2. Check each vector's validity and trigger background reconstruction if any are invalid/missing
                     D = self.embedding_manager.dimensions
@@ -519,55 +531,68 @@ class IncrementalAnalyzer:
 
                     for f_name in ai_filenames:
                         v = ai_vectors_dict.get(f_name.replace("\\", "/"))
-                        if v is not None and self.embedding_manager.validate_vector_dimension(v):
+                        if (
+                            v is not None
+                            and self.embedding_manager.validate_vector_dimension(v)
+                        ):
                             ai_vectors_list.append(v)
                             is_ai_vector_valid.append(True)
                         else:
                             ai_vectors_list.append([0.0] * D)
                             is_ai_vector_valid.append(False)
-                            any_invalid_or_missing = True
-                            
-                            # Label and persist failure as candidate for background reconstruction
-                            self.db.track_corrupted_vector(base_dir, f_name)
-                            def _delete_active(fp=f_name):
-                                conn = get_db_connection(self.db.db_path)
-                                with conn:
-                                    conn.execute(
-                                        "DELETE FROM document_vectors WHERE base_dir = ? AND filepath = ?",
-                                        (base_dir, fp.replace("\\", "/")),
-                                    )
-                            self.db.worker.execute_write(_delete_active)
+                            if use_semantic:
+                                any_invalid_or_missing = True
+
+                                # Label and persist failure as candidate for background reconstruction
+                                self.db.track_corrupted_vector(base_dir, f_name)
+
+                                def _delete_active(fp=f_name):
+                                    conn = get_db_connection(self.db.db_path)
+                                    with conn:
+                                        conn.execute(
+                                            "DELETE FROM document_vectors WHERE base_dir = ? AND filepath = ?",
+                                            (base_dir, fp.replace("\\", "/")),
+                                        )
+
+                                self.db.worker.execute_write(_delete_active)
 
                     hist_vectors_list = []
                     is_hist_vector_valid = []
                     for doc in historical_docs:
                         fp = doc["filepath"]
                         v = hist_vectors_dict.get(fp.replace("\\", "/"))
-                        if v is not None and self.embedding_manager.validate_vector_dimension(v):
+                        if (
+                            v is not None
+                            and self.embedding_manager.validate_vector_dimension(v)
+                        ):
                             hist_vectors_list.append(v)
                             is_hist_vector_valid.append(True)
                         else:
                             hist_vectors_list.append([0.0] * D)
                             is_hist_vector_valid.append(False)
-                            any_invalid_or_missing = True
-                            
-                            # Label and persist failure as candidate for background reconstruction
-                            self.db.track_corrupted_vector(base_dir, fp)
-                            def _delete_hist(fp=fp):
-                                conn = get_db_connection(self.db.db_path)
-                                with conn:
-                                    conn.execute(
-                                        "DELETE FROM document_vectors WHERE base_dir = ? AND filepath = ?",
-                                        (base_dir, fp.replace("\\", "/")),
-                                    )
-                            self.db.worker.execute_write(_delete_hist)
+                            if use_semantic:
+                                any_invalid_or_missing = True
+
+                                # Label and persist failure as candidate for background reconstruction
+                                self.db.track_corrupted_vector(base_dir, fp)
+
+                                def _delete_hist(fp=fp):
+                                    conn = get_db_connection(self.db.db_path)
+                                    with conn:
+                                        conn.execute(
+                                            "DELETE FROM document_vectors WHERE base_dir = ? AND filepath = ?",
+                                            (base_dir, fp.replace("\\", "/")),
+                                        )
+
+                                self.db.worker.execute_write(_delete_hist)
 
                     # Queue missing/invalid vectors for background reconstruction asynchronously without blocking
-                    if any_invalid_or_missing:
+                    if use_semantic and any_invalid_or_missing:
                         self.embedding_manager.trigger_reconstruction(base_dir)
 
                     # 3. Compute TF-IDF keyword-frequency similarity matrix
                     import math
+
                     from scipy.sparse import csr_matrix
                     from sklearn.feature_extraction.text import (
                         TfidfTransformer,
@@ -665,7 +690,9 @@ class IncrementalAnalyzer:
                         np.array(ai_vectors_list), np.array(hist_vectors_list)
                     )
                     # Handle NaNs (e.g., division by zero if all-zero vector is used)
-                    semantic_similarities = np.nan_to_num(semantic_similarities, nan=0.0)
+                    semantic_similarities = np.nan_to_num(
+                        semantic_similarities, nan=0.0
+                    )
 
                     # 5. Merge scores on a per-comparison basis: cosine similarity for healthy pairs, TF-IDF for fallback pairs
                     similarities = np.zeros((len(ai_filenames), len(historical_docs)))
@@ -747,7 +774,7 @@ class IncrementalAnalyzer:
                         try:
                             # Batch retrieve and/or generate active file vectors
                             ai_vectors_dict = self.embedding_manager.get_vectors_batch(
-                                base_dir, ai_filenames, regenerate=False
+                                base_dir, ai_filenames, regenerate=True
                             )
                             vectors = []
                             for f_name in ai_filenames:

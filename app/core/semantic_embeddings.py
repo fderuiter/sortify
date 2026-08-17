@@ -727,9 +727,12 @@ class SemanticEmbeddingManager:
         # 6. Securely upsert newly generated embeddings back to the database in chunks of 50
         new_vectors_to_upsert = []
         for fp, text in resolved_texts.items():
-            vec = self.generate_embedding(text)
-            retrieved_vectors[fp] = vec
-            new_vectors_to_upsert.append((fp, vec))
+            try:
+                vec = self.generate_embedding(text)
+                retrieved_vectors[fp] = vec
+                new_vectors_to_upsert.append((fp, vec))
+            except Exception as e:
+                logging.error(f"Failed to generate embedding for {fp}: {e}")
 
         if new_vectors_to_upsert:
             for i in range(0, len(new_vectors_to_upsert), chunk_size):
