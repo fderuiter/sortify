@@ -296,7 +296,10 @@ def test_render_validation_warning_banner():
     settings = MagicMock()
     settings._validation_errors = [
         {"field": "PROXY", "message": "Invalid proxy URL format"},
-        {"field": "PROTECTED_PATHS", "message": "Paths cannot contain directory traversal"},
+        {
+            "field": "PROTECTED_PATHS",
+            "message": "Paths cannot contain directory traversal",
+        },
     ]
 
     mock_lbls = []
@@ -329,4 +332,3 @@ def test_render_validation_warning_banner():
         for lbl in mock_lbls:
             if lbl.text and ("PROXY" in lbl.text or "PROTECTED_PATHS" in lbl.text):
                 lbl.tooltip.assert_called_once()
-
