@@ -87,3 +87,50 @@ def test_extractor_level_sanitization_integration(tmp_path):
     # The result should have all markup elements stripped, and whitespaces normalized
     expected = "Invoice Details\nRegion:\nBbox:\nTask:\nStatus: Active"
     assert result == expected
+
+
+def test_sanitize_text_refined_regex_and_truncated_tags():
+    """Verify that standard mathematical inequalities are preserved, coordinate lists are stripped individually, and trailing truncated tags are removed."""
+    # 1. Standard mathematical inequalities remain fully intact after sanitization
+    inequality_1 = "a < b and c > d"
+    assert sanitize_text(inequality_1) == "a < b and c > d"
+
+    inequality_2 = "x < y and y > z"
+    assert sanitize_text(inequality_2) == "x < y and y > z"
+
+    inequality_no_spaces = "3<5 and 10>8"
+    assert sanitize_text(inequality_no_spaces) == "3<5 and 10>8"
+
+    # 2. Individual bracketed numeric coordinate sequences are cleanly removed, but plain text numbers separating them are preserved
+    separated_coords = "Coordinates [100, 200] 5.0 [300, 400] on the screen."
+    assert sanitize_text(separated_coords) == "Coordinates 5.0 on the screen."
+
+    nested_separated_coords = "Coordinates [[10.5, 20.3], [30.1, 40.2]] 5.0 [[50.5, 60.3], [70.1, 80.2]] correspond to the boxes."
+    assert sanitize_text(nested_separated_coords) == "Coordinates 5.0 correspond to the boxes."
+
+    # 3. Incomplete tokens cut off at the end of the ingested text stream are identified and entirely removed
+    truncated_1 = "The object is at <loc_120> <loc_85> <loc_30"
+    assert sanitize_text(truncated_1) == "The object is at"
+
+    truncated_2 = "The object is at <loc_120> <loc_85> <loc_"
+    assert sanitize_text(truncated_2) == "The object is at"
+
+    truncated_3 = "The object is at <loc_120> <loc_85> <"
+    assert sanitize_text(truncated_3) == "The object is at"
+
+    truncated_4 = "Incomplete VLM token here: <CAPTION_TO_"
+    assert sanitize_text(truncated_4) == "Incomplete VLM token here:"
+
+    truncated_5 = "Some random text with trailing incomplete tag: <OD"
+    assert sanitize_text(truncated_5) == "Some random text with trailing incomplete tag:"
+
+    truncated_6 = "Some random text with trailing incomplete html: </div"
+    assert sanitize_text(truncated_6) == "Some random text with trailing incomplete html:"
+
+    # 4. Trailing whitespace/newlines are handled properly during truncation removal
+    truncated_with_spaces = "The object is at <loc_120> <loc_85> <loc_30   "
+    assert sanitize_text(truncated_with_spaces) == "The object is at"
+
+    truncated_with_newlines = "The object is at <loc_120> <loc_85> <loc_30\n\n"
+    assert sanitize_text(truncated_with_newlines) == "The object is at"
+
