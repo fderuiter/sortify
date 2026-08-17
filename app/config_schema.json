@@ -140,6 +140,30 @@
       "title": "Coherence Threshold",
       "type": "number"
     },
+    "DEBOUNCE_DELAY": {
+      "default": 0.6,
+      "exclusiveMinimum": 0.0,
+      "title": "Debounce Delay",
+      "type": "number"
+    },
+    "MAX_DEBOUNCE_DELAY": {
+      "default": 5.0,
+      "exclusiveMinimum": 0.0,
+      "title": "Max Debounce Delay",
+      "type": "number"
+    },
+    "IGNORED_EXTENSIONS": {
+      "default": [
+        ".crdownload",
+        ".tmp",
+        ".download"
+      ],
+      "items": {
+        "type": "string"
+      },
+      "title": "Ignored Extensions",
+      "type": "array"
+    },
     "AI_CONSENT_GRANTED": {
       "anyOf": [
         {

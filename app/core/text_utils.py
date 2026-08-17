@@ -9,13 +9,18 @@ FLORENCE_LOC_PATTERN = re.compile(r"<loc_\d{1,4}>")
 # 2. General Coordinate Arrays:
 # Matches single or nested brackets enclosing only numbers, commas, periods, and whitespace.
 # e.g., [100, 150, 200, 250] or [[100, 150], [200, 250]]
-COORD_ARRAY_PATTERN = re.compile(r"\[[\s\d.,\[\]]+\]")
+COORD_ARRAY_PATTERN = re.compile(r"\[\s*(?:\[[\s\d.,]+\]|[\s\d.,])+\s*\]")
 
 # 3. HTML and XML tag pattern: e.g., <div>, </span>, <OD>, <OCR_WITH_REGION_AND_BOX>
 # Matches any sequence starting with < and ending with > which doesn't contain > in between.
-HTML_XML_TAG_PATTERN = re.compile(r"<[^>]+>")
+HTML_XML_TAG_PATTERN = re.compile(
+    r"</?[a-zA-Z0-9_\-:]+(?:\s+[a-zA-Z0-9_\-:]+=(?:\"[^\"]*\"|'[^']*'|[^'\">\s]+))*\s*/?>"
+)
 
-# 4. Whitespace patterns
+# 4. Truncated trailing VLM/HTML tags pattern: matches incomplete tags cut off at the end of text
+TRUNCATED_TAG_PATTERN = re.compile(r"<[a-zA-Z0-9_\-:/]*$")
+
+# 5. Whitespace patterns
 HORIZONTAL_WHITESPACE_PATTERN = re.compile(r"[ \t]+")
 VERTICAL_WHITESPACE_PATTERN = re.compile(r"\s*\n\s*")
 
@@ -44,6 +49,11 @@ def sanitize_text(text: str) -> str:
 
     # Strip generic HTML / XML tags and Florence-2 task tags
     text = HTML_XML_TAG_PATTERN.sub("", text)
+
+    # Strip truncated trailing VLM/HTML tag at the very end of the text stream
+    text_rstrip = text.rstrip()
+    if TRUNCATED_TAG_PATTERN.search(text_rstrip):
+        text = TRUNCATED_TAG_PATTERN.sub("", text_rstrip)
 
     # Normalize horizontal whitespaces (spaces, tabs)
     text = HORIZONTAL_WHITESPACE_PATTERN.sub(" ", text)
