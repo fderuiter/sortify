@@ -260,6 +260,12 @@ def main():
     is_ci = os.environ.get("CI", "").lower() in ("true", "1")
 
     if args.regenerate:
+        if is_ci:
+            print(
+                "Error: Baseline regeneration is disabled in continuous integration.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
         # Create directory if missing
         os.makedirs(os.path.dirname(SNAPSHOT_PATH), exist_ok=True)
         with open(SNAPSHOT_PATH, "w", encoding="utf-8") as f:
@@ -270,20 +276,12 @@ def main():
 
     # Check if snapshot baseline exists
     if not os.path.exists(SNAPSHOT_PATH):
-        if not is_ci:
-            os.makedirs(os.path.dirname(SNAPSHOT_PATH), exist_ok=True)
-            with open(SNAPSHOT_PATH, "w", encoding="utf-8") as f:
-                json.dump(current_definitions, f, indent=2, sort_keys=True)
-                f.write("\n")
-            print(f"Successfully generated new baseline snapshot at {SNAPSHOT_PATH}")
-            sys.exit(0)
-        else:
-            print(
-                f"Error: Baseline snapshot file does not exist at {SNAPSHOT_PATH}.\n"
-                f"Run this script with --regenerate to initialize it.",
-                file=sys.stderr,
-            )
-            sys.exit(1)
+        print(
+            f"Error: Baseline snapshot file does not exist at {SNAPSHOT_PATH}.\n"
+            f"Run this script with --regenerate to initialize it.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     # Load checked-in baseline snapshot
     with open(SNAPSHOT_PATH, "r", encoding="utf-8") as f:
@@ -301,37 +299,28 @@ def main():
     snapshot_json = json.dumps(snapshot_definitions, indent=2, sort_keys=True)
 
     if current_json != snapshot_json:
+        print(
+            "FAIL: Public interface or CLI signature drift detected!",
+            file=sys.stderr,
+        )
+        print(
+            "----------------------------------------------------------------",
+            file=sys.stderr,
+        )
+        diff = list(
+            difflib.unified_diff(
+                snapshot_json.splitlines(keepends=True),
+                current_json.splitlines(keepends=True),
+                fromfile=f"Snapshot ({safe_relpath(SNAPSHOT_PATH, BASE_DIR)})",
+                tofile="Current Codebase",
+            )
+        )
+        sys.stderr.writelines(diff)
+        print(
+            "----------------------------------------------------------------",
+            file=sys.stderr,
+        )
         if not is_ci:
-            os.makedirs(os.path.dirname(SNAPSHOT_PATH), exist_ok=True)
-            with open(SNAPSHOT_PATH, "w", encoding="utf-8") as f:
-                json.dump(current_definitions, f, indent=2, sort_keys=True)
-                f.write("\n")
-            print(
-                f"Successfully auto-updated baseline snapshot at {SNAPSHOT_PATH} due to interface modifications."
-            )
-            sys.exit(0)
-        else:
-            print(
-                "FAIL: Public interface or CLI signature drift detected!",
-                file=sys.stderr,
-            )
-            print(
-                "----------------------------------------------------------------",
-                file=sys.stderr,
-            )
-            diff = list(
-                difflib.unified_diff(
-                    snapshot_json.splitlines(keepends=True),
-                    current_json.splitlines(keepends=True),
-                    fromfile=f"Snapshot ({safe_relpath(SNAPSHOT_PATH, BASE_DIR)})",
-                    tofile="Current Codebase",
-                )
-            )
-            sys.stderr.writelines(diff)
-            print(
-                "----------------------------------------------------------------",
-                file=sys.stderr,
-            )
             print(
                 "If this change was intentional, update the baseline snapshot by running:",
                 file=sys.stderr,
@@ -340,7 +329,13 @@ def main():
                 f"  python3 {safe_relpath(__file__, BASE_DIR)} --regenerate",
                 file=sys.stderr,
             )
-            sys.exit(1)
+        else:
+            print(
+                "In CI, automated baseline regeneration is disabled. "
+                f"Please commit the updated snapshot file '{safe_relpath(SNAPSHOT_PATH, BASE_DIR)}'.",
+                file=sys.stderr,
+            )
+        sys.exit(1)
 
     print("SUCCESS: Codebase signatures match baseline snapshot.")
     sys.exit(0)

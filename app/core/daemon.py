@@ -49,6 +49,7 @@ class ContinuousWatchdogDaemon:
         self._debounce_timer = None
         self._cancel_event = threading.Event()
         self._is_running = False
+        self._first_event_time = None
 
         # We run the actual sorting loop on a dedicated background execution thread
         self._execution_thread = None
@@ -81,6 +82,13 @@ class ContinuousWatchdogDaemon:
         # Also ignore any temporary folder/session folders
         if "autosorter_sessions" in norm_path:
             return True
+            
+        # Suffix matching on lowercase file extensions using IGNORED_EXTENSIONS configuration
+        ignored_exts = getattr(self.settings, "IGNORED_EXTENSIONS", [".crdownload", ".tmp", ".download"])
+        lower_path = norm_path.lower()
+        for ext in ignored_exts:
+            if lower_path.endswith(ext.lower()):
+                return True
 
         return False
 
@@ -111,6 +119,7 @@ class ContinuousWatchdogDaemon:
                 return
             self._is_running = False
             self._cancel_event.set()
+            self._first_event_time = None
 
             if self._debounce_timer:
                 self._debounce_timer.cancel()
@@ -139,20 +148,36 @@ class ContinuousWatchdogDaemon:
 
             # Reset cancel event for the upcoming run
             self._cancel_event = threading.Event()
+            
+            # Track the start time of the first event in a sequence
+            now = time.time()
+            if getattr(self, "_first_event_time", None) is None:
+                self._first_event_time = now
+            
+            elapsed = now - self._first_event_time
+            debounce_delay = getattr(self.settings, "DEBOUNCE_DELAY", 0.6)
+            max_debounce_delay = getattr(self.settings, "MAX_DEBOUNCE_DELAY", 5.0)
+            
+            if elapsed >= max_debounce_delay:
+                # Under continuous event traffic, if the max debounce delay has been reached,
+                # we let the already scheduled timer execute rather than canceling and rescheduling it.
+                # This guarantees that the run initiates and doesn't get starved by rapid events.
+                return
 
-            # Debounce by at least 0.5 seconds (we use 0.6 seconds)
+            max_delay = max(0.0, max_debounce_delay - elapsed)
+            delay = min(debounce_delay, max_delay)
+            
             if self._debounce_timer:
                 self._debounce_timer.cancel()
-
-            self._debounce_timer = threading.Timer(
-                0.6, self._schedule_run, args=(self._cancel_event,)
-            )
+                
+            self._debounce_timer = threading.Timer(delay, self._schedule_run, args=(self._cancel_event,))
             self._debounce_timer.daemon = True
             self._debounce_timer.start()
 
     def _schedule_run(self, cancel_event):
         """Timer callback that executes the run on a background thread."""
         with self._lock:
+            self._first_event_time = None
             if not self._is_running or cancel_event.is_set():
                 return
 

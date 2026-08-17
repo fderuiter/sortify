@@ -445,12 +445,14 @@ def test_advanced_settings_sliders():
     settings.MODEL_THREADS = 2
     settings.IMAGE_MAX_DIMENSION = 1000
     settings.IMAGE_SKIP_THRESHOLD = 3000
+    settings.DEBOUNCE_DELAY = 0.6
+    settings.MAX_DEBOUNCE_DELAY = 5.0
 
     with patch("app.ui.settings.ui") as mock_ui:
         show_settings(parent_app, settings)
 
-        # We expect exactly 5 sliders
-        assert mock_ui.slider.call_count == 5
+        # We expect exactly 7 sliders
+        assert mock_ui.slider.call_count == 7
 
         # Locate sliders based on min/max bounds
         sliders_by_bounds = {}
@@ -494,6 +496,20 @@ def test_advanced_settings_sliders():
         on_skip_change = skip_kwargs.get("on_change")
         assert on_skip_change is not None
 
+        # 6. DEBOUNCE_DELAY: 0.1 to 10.0
+        assert (0.1, 10.0) in sliders_by_bounds
+        debounce_kwargs = sliders_by_bounds[(0.1, 10.0)]
+        assert debounce_kwargs.get("value") == 0.6
+        on_debounce_change = debounce_kwargs.get("on_change")
+        assert on_debounce_change is not None
+
+        # 7. MAX_DEBOUNCE_DELAY: 0.5 to 30.0
+        assert (0.5, 30.0) in sliders_by_bounds
+        max_debounce_kwargs = sliders_by_bounds[(0.5, 30.0)]
+        assert max_debounce_kwargs.get("value") == 5.0
+        on_max_debounce_change = max_debounce_kwargs.get("on_change")
+        assert on_max_debounce_change is not None
+
         # Test valid changes
         # Max Workers change
         mock_event = MagicMock()
@@ -520,6 +536,16 @@ def test_advanced_settings_sliders():
         mock_event.value = 4000
         on_skip_change(mock_event)
         assert settings.IMAGE_SKIP_THRESHOLD == 4000
+
+        # Debounce Delay change
+        mock_event.value = 1.5
+        on_debounce_change(mock_event)
+        assert settings.DEBOUNCE_DELAY == 1.5
+
+        # Max Debounce Delay change
+        mock_event.value = 10.0
+        on_max_debounce_change(mock_event)
+        assert settings.MAX_DEBOUNCE_DELAY == 10.0
 
         # Test invalid values trigger revert-and-notify
         # Invalid Max Workers (e.g. 100 which is > 64)
@@ -553,5 +579,39 @@ def test_advanced_settings_sliders():
         assert last_call_kwargs.get("type") == "negative"
         assert (
             "threads" in last_call_args[0].lower()
+            or "validation" in last_call_args[0].lower()
+        )
+
+        # Invalid Debounce Delay (e.g. -1.0 which is <= 0.0)
+        mock_sender = MagicMock()
+        mock_event.sender = mock_sender
+        mock_event.value = -1.0
+        mock_ui.notify.reset_mock()
+        on_debounce_change(mock_event)
+        # Should be reverted to 1.5
+        assert settings.DEBOUNCE_DELAY == 1.5
+        assert mock_sender.value == 1.5
+        assert mock_ui.notify.call_count >= 1
+        last_call_args, last_call_kwargs = mock_ui.notify.call_args
+        assert last_call_kwargs.get("type") == "negative"
+        assert (
+            "debounce delay" in last_call_args[0].lower()
+            or "validation" in last_call_args[0].lower()
+        )
+
+        # Invalid Max Debounce Delay (e.g. -1.0 which is <= 0.0)
+        mock_sender = MagicMock()
+        mock_event.sender = mock_sender
+        mock_event.value = -1.0
+        mock_ui.notify.reset_mock()
+        on_max_debounce_change(mock_event)
+        # Should be reverted to 10.0
+        assert settings.MAX_DEBOUNCE_DELAY == 10.0
+        assert mock_sender.value == 10.0
+        assert mock_ui.notify.call_count >= 1
+        last_call_args, last_call_kwargs = mock_ui.notify.call_args
+        assert last_call_kwargs.get("type") == "negative"
+        assert (
+            "max debounce delay" in last_call_args[0].lower()
             or "validation" in last_call_args[0].lower()
         )
