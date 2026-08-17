@@ -943,7 +943,9 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
             if files:
                 all_recursive_files = get_recursive_files(node)
                 vectors = [
-                    vector_dict[f] for f in all_recursive_files if f in vector_dict and vector_dict[f] is not None
+                    vector_dict[f]
+                    for f in all_recursive_files
+                    if f in vector_dict and vector_dict[f] is not None
                 ]
                 if vectors:
                     centroid = np.mean(vectors, axis=0)

@@ -1,19 +1,15 @@
-import tempfile
+import hashlib
 import math
 import shutil
-import json
-import hashlib
+import tempfile
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
-import numpy as np
 
 from app.core.analyzer import IncrementalAnalyzer
 from app.core.db import Database
 from app.core.db_conn import clear_connection_cache, get_db_connection
 from app.core.db_worker import DBWorker
-from app.core.semantic_embeddings import SemanticEmbeddingManager
 
 _test_dir = None
 db_worker = None
@@ -65,16 +61,14 @@ def test_per_comparison_hybrid_routing(mocker):
     # 2. Add historical document with valid vector
     # We use partial_fit to ensure TF-IDF tables are populated
     hist_text = "billing invoice payments finance cash bank"
-    analyzer.partial_fit(base_dir, {
-        "hist_doc_finance.txt": hist_text
-    })
+    analyzer.partial_fit(base_dir, {"hist_doc_finance.txt": hist_text})
     h_hist = hashlib.md5(hist_text.encode("utf-8")).hexdigest()
     db.set_user_verified_target(base_dir, h_hist, "Finance")
 
     # 3. Add active documents: one healthy, one with a missing vector
     corpus = {
         "healthy_doc.txt": "invoice billing payments transaction account credit",
-        "unreadable_doc.txt": "completely unrelated text without any finance terms"
+        "unreadable_doc.txt": "completely unrelated text without any finance terms",
     }
     analyzer.partial_fit(base_dir, corpus)
 
@@ -84,11 +78,8 @@ def test_per_comparison_hybrid_routing(mocker):
 
     db.upsert_document_vectors(
         base_dir,
-        [
-            ("hist_doc_finance.txt", vec),
-            ("healthy_doc.txt", vec)
-        ],
-        model_signature="active_sig"
+        [("hist_doc_finance.txt", vec), ("healthy_doc.txt", vec)],
+        model_signature="active_sig",
     )
 
     # Mock semantic manager properties
@@ -101,7 +92,9 @@ def test_per_comparison_hybrid_routing(mocker):
     analyzer.embedding_manager.dimensions = 384
 
     # Mock trigger_reconstruction to be a no-op so the background thread doesn't run and clear our tracking set
-    mock_trigger = mocker.patch.object(analyzer.embedding_manager, "trigger_reconstruction")
+    mock_trigger = mocker.patch.object(
+        analyzer.embedding_manager, "trigger_reconstruction"
+    )
 
     # 6. Generate sorting plan
     plan = analyzer.generate_sorting_plan(base_dir)
@@ -139,10 +132,9 @@ def test_similarity_score_merging_range(mocker):
 
     # 2. Setup documents
     hist_text = "finance invoice money"
-    analyzer.partial_fit(base_dir, {
-        "hist_1.txt": hist_text,
-        "active_1.txt": "finance invoice money"
-    })
+    analyzer.partial_fit(
+        base_dir, {"hist_1.txt": hist_text, "active_1.txt": "finance invoice money"}
+    )
     h_hist = hashlib.md5(hist_text.encode("utf-8")).hexdigest()
     db.set_user_verified_target(base_dir, h_hist, "Finance")
 
@@ -151,11 +143,8 @@ def test_similarity_score_merging_range(mocker):
     vec_healthy = [1.5] * dim  # Non-normalized
     db.upsert_document_vectors(
         base_dir,
-        [
-            ("hist_1.txt", vec_healthy),
-            ("active_1.txt", vec_healthy)
-        ],
-        model_signature="active_sig"
+        [("hist_1.txt", vec_healthy), ("active_1.txt", vec_healthy)],
+        model_signature="active_sig",
     )
 
     mocker.patch(

@@ -467,7 +467,9 @@ def show_settings(parent_app, settings):
                             .classes("flex-grow")
                         )
                         ui.label().bind_text_from(
-                            debounce_slider, "value", backward=lambda v: f"{float(v):.1f}"
+                            debounce_slider,
+                            "value",
+                            backward=lambda v: f"{float(v):.1f}",
                         )
 
                     def on_max_debounce_delay_change(e):
@@ -482,7 +484,9 @@ def show_settings(parent_app, settings):
                             settings.MAX_DEBOUNCE_DELAY = val
                         except Exception as ex:
                             e.sender.value = settings.MAX_DEBOUNCE_DELAY
-                            ui.notify(f"Invalid max debounce delay: {ex}", type="negative")
+                            ui.notify(
+                                f"Invalid max debounce delay: {ex}", type="negative"
+                            )
 
                     ui.label("Max Debounce Delay (seconds)").classes(
                         "text-sm text-gray-700 mt-4"
@@ -500,7 +504,9 @@ def show_settings(parent_app, settings):
                             .classes("flex-grow")
                         )
                         ui.label().bind_text_from(
-                            max_debounce_slider, "value", backward=lambda v: f"{float(v):.1f}"
+                            max_debounce_slider,
+                            "value",
+                            backward=lambda v: f"{float(v):.1f}",
                         )
 
             with ui.tab_panel("AI"):
