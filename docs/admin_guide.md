@@ -122,6 +122,42 @@ The application evaluates configuration parameters using a strict precedence hie
 
 System settings modified during runtime are dynamically saved to the local JSON configuration file (`~/.autosorter/settings.json`) located in the user's home directory. To ensure stability and prevent excessive disk writes, these dynamic changes are saved with a short debounced delay of 0.5 seconds.
 
+## Compliance Policies & Routing Rules
+
+### Rule Syntax & Types
+
+Compliance policies categorize and sort documents based on three rule types:
+
+- **Keyword Rules**: Search for files containing a specific word or phrase anywhere in their text contents (for example, 'invoice' or 'billing').
+- **Pattern Rules**: Match files using structured formatting or text sequences (such as a standard format of letters followed by numbers) to match specific document types.
+- **Override Rules**: Check for exact text matches, taking precedent to bypass standard classification rules.
+
+### Sequential Execution & Priority
+
+Rules are evaluated sequentially, starting from the highest priority value down to the lowest. Because rules are checked in priority order, if a higher-priority rule matches, it will be executed first. This can sometimes result in 'shadowing', where a lower-priority rule never runs because a higher-priority rule has already matched the same conditions. To resolve overlaps, adjust rule priority numbers or make matching conditions more specific.
+
+### Halting Parameters
+
+Each policy includes a 'Halt on mismatch' setting. When active, if a document fails to meet this rule's criteria, the system will immediately stop evaluating any remaining lower-priority rules. This halting behavior is crucial for enforcing strict sequential checks and ensuring that files do not proceed to general classification or AI-based sorting if they fail compliance conditions.
+
+### Path Validation Rules
+
+To ensure system security, stability, and compatibility across operating systems, all target paths must comply with the following strict validation rules:
+
+- **No Absolute Paths**: All target paths must be relative paths and cannot start with leading slashes (such as `/` or `\`).
+- **No Directory Traversal**: Paths are blocked from using directory traversal segments (such as `..`) to prevent files from being moved outside of the designated folders.
+- **No Illegal Characters**: Target paths must not contain any prohibited characters, including `<`, `>`, `:`, `"`, `|`, `?`, or `*`.
+
+### Configuration Recovery & Troubleshooting
+
+If the system detects invalid fields or syntax errors in the configuration file (`settings.json`), automatic saves are locked. This safeguard prevents overwriting and potentially corrupting your existing settings. While saves are suspended, the application will use temporary default values to prevent crashes.
+
+To resolve a blocked-save state, follow these recovery options:
+
+1. **Check Warning Banners**: Review the detailed list of validation errors displayed under the warning banner in the application settings dialog.
+2. **Manually Edit Settings**: Open the local configuration file (`~/.autosorter/settings.json`) and correct the invalid values or formats.
+3. **Reset Configuration**: Delete the invalid `settings.json` file or click the reset button to restore default, valid configuration values, which will immediately re-enable automatic saving.
+
 ## Maintenance Scripts and CLI Commands
 
 ### `sandbox_cli.py`

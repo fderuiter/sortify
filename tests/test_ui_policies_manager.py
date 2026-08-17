@@ -287,3 +287,46 @@ def test_policies_tab_and_validation():
         assert settings.POLICIES[0]["priority"] == 30
         assert settings.POLICIES[1]["priority"] == 20
         assert settings.POLICIES[2]["priority"] == 10
+
+
+def test_render_validation_warning_banner():
+    """Verify that render_validation_warning_banner correctly processes settings validation errors."""
+    from app.ui.settings import render_validation_warning_banner
+
+    settings = MagicMock()
+    settings._validation_errors = [
+        {"field": "PROXY", "message": "Invalid proxy URL format"},
+        {"field": "PROTECTED_PATHS", "message": "Paths cannot contain directory traversal"},
+    ]
+
+    mock_lbls = []
+
+    def mock_label(text="", **kwargs):
+        lbl = MagicMock()
+        lbl.text = text
+        lbl.classes = MagicMock(return_value=lbl)
+        lbl.tooltip = MagicMock(return_value=lbl)
+        mock_lbls.append(lbl)
+        return lbl
+
+    with (
+        patch("nicegui.ui.card", return_value=MagicMock()),
+        patch("nicegui.ui.row", return_value=MagicMock()),
+        patch("nicegui.ui.label", side_effect=mock_label),
+        patch("nicegui.ui.icon", return_value=MagicMock()),
+        patch("nicegui.ui.link", return_value=MagicMock()),
+        patch("nicegui.ui.button", return_value=MagicMock()),
+    ):
+        render_validation_warning_banner(settings)
+
+        # Verify that warning texts and field errors are rendered
+        all_texts = [lbl.text for lbl in mock_lbls]
+        assert any("Automatic saving is locked" in t for t in all_texts if t)
+        assert any("PROXY" in t for t in all_texts if t)
+        assert any("PROTECTED_PATHS" in t for t in all_texts if t)
+
+        # Verify tooltips were attached to the field error labels
+        for lbl in mock_lbls:
+            if lbl.text and ("PROXY" in lbl.text or "PROTECTED_PATHS" in lbl.text):
+                lbl.tooltip.assert_called_once()
+

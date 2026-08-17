@@ -64,6 +64,86 @@ def get_shadowed_policies(policies: list[dict]) -> list[bool]:
     return [idx in shadowed_indices for idx in range(len(policies))]
 
 
+def render_validation_warning_banner(settings):
+    """Render an interactive configuration warning banner with contextual tooltips and recovery links."""
+    with ui.card().classes("bg-red-50 border-red-200 border p-4 mb-4 w-full"):
+        with ui.row().classes("items-center gap-2 text-red-800"):
+            ui.icon("error", size="sm")
+            ui.label("Configuration Saves Suspended").classes("font-bold")
+        
+        ui.label(
+            "Automatic saving is locked because your settings file contains invalid values or errors. "
+            "The system is temporarily using healthy default values to keep the application running."
+        ).classes("text-red-900 text-sm mt-1").props('aria-label="Configuration Warning Label"')
+        
+        # Display specific errors and add a tooltip to each
+        errs = getattr(settings, "_validation_errors", [])
+        if errs:
+            ui.label("Validation Errors Found:").classes("text-xs font-bold text-red-800 mt-2")
+            for err in errs:
+                err_row = ui.row().classes("items-center gap-1 text-xs text-red-700 ml-4")
+                with err_row:
+                    ui.icon("arrow_right", size="xs")
+                    lbl = ui.label(f"Field '{err.get('field', '')}': {err.get('message', '')}").classes("font-mono")
+                    
+                    # Tooltip in plain language explaining the error
+                    field_name = err.get('field', '').lower()
+                    msg = err.get('message', '').lower()
+                    tip = f"The value for '{err.get('field')}' is not allowed. "
+                    if "path" in field_name or "directory" in field_name or "invalid path" in msg:
+                        tip += "Make sure the directory path is relative, does not use '..', and has no invalid characters like :, *, ?, or |."
+                    elif "empty" in msg or "required" in msg:
+                        tip += "This field cannot be left blank. Please specify a value."
+                    else:
+                        tip += "Please ensure the value matches the requested format or number limits."
+                    lbl.tooltip(tip)
+        
+        # Recovery/Troubleshooting links
+        with ui.row().classes("items-center gap-2 mt-3 flex-wrap"):
+            ui.icon("help", size="xs", color="primary")
+            ui.link(
+                "Open Troubleshooting Guide (Online)",
+                "https://docs.smartautosorter.com/admin_guide/#configuration-recovery-troubleshooting",
+                new_tab=True
+            ).classes("text-blue-600 hover:underline text-sm").props('aria-label="Troubleshooting Guide Link"')
+            
+            ui.label("|").classes("text-gray-300 text-sm")
+            
+            def show_offline_admin_guide():
+                import sys
+                from pathlib import Path
+                from app.core.path_utils import get_base_path, is_packaged
+                from app.ui.dialog_helper import get_dialog_card_classes
+                
+                if is_packaged() and hasattr(sys, "_MEIPASS"):
+                    base_dir = Path(sys._MEIPASS)
+                else:
+                    base_dir = Path(get_base_path(__file__)).parent.parent
+                    
+                path = base_dir / "docs" / "admin_guide.md"
+                try:
+                    if path.exists():
+                        content = path.read_text(encoding="utf-8")
+                    else:
+                        content = f"Error: Admin guide not found at `{path}`."
+                except Exception as e:
+                    content = f"Error reading admin guide: {e}"
+                    
+                with ui.dialog() as d:
+                    with ui.card().classes(get_dialog_card_classes("xl", "h-[80vh] flex flex-col")):
+                        with ui.row().classes("w-full justify-between items-center mb-4"):
+                            ui.label("Admin Guide & Troubleshooting").classes("text-2xl font-bold")
+                            ui.button("Close", on_click=d.close).classes("bg-gray-200 text-black")
+                        with ui.scroll_area().classes("w-full flex-grow border rounded p-4 overflow-y-auto"):
+                            ui.markdown(content).classes("w-full")
+                    d.open()
+            
+            ui.button(
+                "View Guide (Offline)",
+                on_click=show_offline_admin_guide
+            ).props("flat dense size=sm color=primary").classes("hover:underline").props('aria-label="Offline Troubleshooting Guide Link"')
+
+
 def show_settings(parent_app, settings):
     """Show the settings dialog."""
     timer_ref = [None]
@@ -114,19 +194,7 @@ def show_settings(parent_app, settings):
         with ui.tab_panels(tabs, value="General").classes("w-full mt-4"):
             with ui.tab_panel("General"):
                 if getattr(settings, "_has_validation_errors", False):
-                    with ui.card().classes(
-                        "bg-red-50 border-red-200 border p-4 mb-4 w-full"
-                    ):
-                        with ui.row().classes("items-center gap-2 text-red-800"):
-                            ui.icon("error", size="sm")
-                            ui.label("Configuration Warning").classes("font-bold")
-                        ui.label(
-                            "One or more settings in your configuration file were invalid. "
-                            "Default values are being used temporarily to prevent app crash, and saving is suspended "
-                            "until the configuration file is fixed or reset."
-                        ).classes("text-red-900 text-sm mt-1").props(
-                            'aria-label="Configuration Warning Label"'
-                        )
+                    render_validation_warning_banner(settings)
 
                 ui.label("System Integration").classes("text-lg font-bold mb-2")
                 ui.switch(
@@ -1008,19 +1076,7 @@ def show_settings(parent_app, settings):
 
             with ui.tab_panel("Policies"):
                 if getattr(settings, "_has_validation_errors", False):
-                    with ui.card().classes(
-                        "bg-red-50 border-red-200 border p-4 mb-4 w-full"
-                    ):
-                        with ui.row().classes("items-center gap-2 text-red-800"):
-                            ui.icon("error", size="sm")
-                            ui.label("Configuration Warning").classes("font-bold")
-                        ui.label(
-                            "One or more settings in your configuration file were invalid. "
-                            "Default values are being used temporarily to prevent app crash, and saving is suspended "
-                            "until the configuration file is fixed or reset."
-                        ).classes("text-red-900 text-sm mt-1").props(
-                            'aria-label="Configuration Warning Label"'
-                        )
+                    render_validation_warning_banner(settings)
 
                 ui.label("Unified Policies").classes("text-lg font-bold mb-2")
 
@@ -1104,9 +1160,19 @@ def show_settings(parent_app, settings):
                                             policy.get("type", ""),
                                             policy.get("type", "").upper(),
                                         )
-                                        ui.label(friendly_type).classes(
+                                        type_lbl = ui.label(friendly_type).classes(
                                             "w-36 font-bold"
                                         )
+                                        p_type = policy.get("type", "").lower()
+                                        if p_type == "keyword":
+                                            type_lbl.tooltip("Keyword rules find files containing a specific word or phrase in their text.")
+                                        elif p_type == "pattern":
+                                            type_lbl.tooltip("Pattern rules find files matching a particular sequence or format of text.")
+                                        elif p_type == "override":
+                                            type_lbl.tooltip("Override rules find files containing an exact match and bypass standard routing.")
+                                        else:
+                                            type_lbl.tooltip("Sequential rules evaluate documents in order to determine compliance.")
+
                                         ui.label(policy.get("expression", "")).classes(
                                             "w-32 font-mono truncate"
                                         )
@@ -1150,6 +1216,29 @@ def show_settings(parent_app, settings):
                                                     "Shadowed: A higher-priority rule matches the same criteria."
                                                 ).classes("text-xs font-semibold")
 
+                                                # Dedicated explanation help badge/icon
+                                                info_icon = ui.icon("help_outline", size="xs").classes("cursor-pointer text-amber-800")
+                                                info_icon.tooltip(
+                                                    "This rule is overridden by a higher-priority policy and will never run. "
+                                                    "Click for details."
+                                                )
+
+                                                def show_shadow_help():
+                                                    with ui.dialog() as d, ui.card():
+                                                        ui.label("Overridden (Shadowed) Policy").classes("text-lg font-bold")
+                                                        ui.label(
+                                                            "A rule is 'shadowed' when a higher-priority rule matches the "
+                                                            "same text patterns or keywords. Since rules are evaluated "
+                                                            "sequentially from top to bottom, the higher-priority rule "
+                                                            "will always process the matching files first, preventing "
+                                                            "this rule from ever executing. To fix this, change the order "
+                                                            "using priority values or make your matching criteria more specific."
+                                                        ).classes("text-sm text-gray-700")
+                                                        ui.button("Close", on_click=d.close).classes("mt-4")
+                                                    d.open()
+
+                                                info_icon.on("click", show_shadow_help)
+
                                     # Halting toggle checkbox!
                                     halting_val = policy.get("halting", False)
 
@@ -1180,11 +1269,12 @@ def show_settings(parent_app, settings):
                                     with ui.expansion(
                                         "Advanced Settings", icon="settings"
                                     ).classes("text-xs"):
-                                        ui.checkbox(
+                                        halt_chk = ui.checkbox(
                                             "Halt on mismatch",
                                             value=halting_val,
                                             on_change=on_halt_toggle,
                                         ).props('aria-label="Halt toggle checkbox"')
+                                        halt_chk.tooltip("Stops checking subsequent rules if this rule criteria is not met, ensuring strict order.")
 
                                     def delete_policy(idx_to_del=idx):
                                         current_policies = list(
@@ -1229,6 +1319,7 @@ def show_settings(parent_app, settings):
                         options=OPTIONS,
                         value="keyword",
                     ).classes("w-48")
+                    p_type_select.tooltip("Select a rule type: Keyword (word search), Pattern (text sequences), or Override (exact match).")
                     p_expr_input = (
                         ui.input("Expression")
                         .props(
@@ -1253,6 +1344,7 @@ def show_settings(parent_app, settings):
                         p_halting_checkbox = ui.checkbox(
                             "Halt on mismatch", value=False
                         )
+                        p_halting_checkbox.tooltip("Stops evaluating subsequent rules if this rule criteria is not met.")
 
                     def add_policy():
                         p_type = p_type_select.value
