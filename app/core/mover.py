@@ -54,6 +54,8 @@ def get_safe_path(dest_dir: str, filename: str, source_path: str = None) -> str:
                     f"Failed to verify if paths conflict for {safe_path} and {source_path}: {e}",
                     exc_info=True,
                 )
+        if counter > 1000:
+            raise RuntimeError(f"Unique name cannot be resolved within 1,000 attempts for {filename}")
         safe_path = os.path.join(dest_dir, f"{base}_{counter}{extension}")
         counter += 1
     return safe_path
@@ -66,11 +68,16 @@ def _remove_empty_dirs(path: str, protected_paths: list[str] = None):
             if is_subpath_or_equal(path, p):
                 return
 
+    if os.path.islink(path):
+        return
+
     if not os.path.isdir(path):
         return
 
     for entry in os.listdir(path):
         entry_path = os.path.join(path, entry)
+        if os.path.islink(entry_path):
+            continue
         if os.path.isdir(entry_path):
             _remove_empty_dirs(entry_path, protected_paths)
 
@@ -456,11 +463,6 @@ def execute_moves(
         return summary
 
     except Exception as e:
-        try:
-            db.execute_batch_updates(db_updates_batch)
-        except Exception:
-            pass
-
         if session_id:
             logging.error(
                 f"Error during background sorting: {e}. Initiating automatic rollback for session {session_id}"

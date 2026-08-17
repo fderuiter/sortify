@@ -1206,7 +1206,14 @@ class HistoryManager:
 
                     logging.warning(f"Failed to delete rollback journal: {ex}")
 
-        return self.db.worker.execute_write(_write)
+        def wrapped_write():
+            self.db.active_rollback = True
+            try:
+                return _write()
+            finally:
+                self.db.active_rollback = False
+
+        return self.db.worker.execute_write(wrapped_write)
 
     def resume_rollback(self, session_id: str):
         """Resume and complete an interrupted rollback session."""

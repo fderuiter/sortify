@@ -176,6 +176,9 @@ def resilient_file_hash(file_path: str) -> str:
             ext = os.path.splitext(file_path)[1].lower()
             if ext == ".mp3":
                 with open(file_path, "rb") as f:
+                    f.seek(0, 2)
+                    file_size = f.tell()
+                    f.seek(0)
                     while True:
                         header = f.read(10)
                         if len(header) >= 10 and header[:3] == b"ID3":
@@ -188,12 +191,19 @@ def resilient_file_hash(file_path: str) -> str:
                             )
                             has_footer = (flags & 0x10) != 0
                             tag_size = 10 + size + (10 if has_footer else 0)
+                            if size < 0 or tag_size < 10 or (tag_size - 10) < 0:
+                                raise ValueError("Invalid MP3 metadata header size or negative offset")
+                            if offset + tag_size > file_size:
+                                raise ValueError("Invalid MP3 metadata header boundary")
                             offset += tag_size
                             f.seek(tag_size - 10, 1)
                         else:
                             break
             elif ext == ".m4a":
                 with open(file_path, "rb") as f:
+                    f.seek(0, 2)
+                    file_size = f.tell()
+                    f.seek(0)
                     while True:
                         header = f.read(8)
                         if len(header) < 8:
@@ -202,7 +212,10 @@ def resilient_file_hash(file_path: str) -> str:
                         header_size = 8
 
                         if box_size == 1:
-                            box_size = struct.unpack(">Q", f.read(8))[0]
+                            box_read = f.read(8)
+                            if len(box_read) < 8:
+                                raise ValueError("Invalid M4A box header size")
+                            box_size = struct.unpack(">Q", box_read)[0]
                             header_size = 16
                         elif box_size == 0:
                             # extends to EOF
@@ -210,6 +223,13 @@ def resilient_file_hash(file_path: str) -> str:
                                 offset = f.tell()
                                 size_to_hash = -1
                             break
+
+                        if box_size < 0 or (box_size - header_size) < 0:
+                            raise ValueError("Invalid M4A box size or negative offset")
+
+                        current_pos = f.tell()
+                        if current_pos + (box_size - header_size) > file_size:
+                            raise ValueError("Invalid M4A box boundary")
 
                         if box_type == b"mdat":
                             offset = f.tell()

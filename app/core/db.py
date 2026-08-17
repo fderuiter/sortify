@@ -681,6 +681,10 @@ class Database:
         """Execute all collected database updates in a single unified database transaction."""
         if not updates:
             return
+        if getattr(self, "active_rollback", False):
+            import logging
+            logging.info("Active physical rollback in progress. Bypassing database path updates.")
+            return
         self.invalidate_cache()
 
         def _write():
