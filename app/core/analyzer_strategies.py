@@ -6,9 +6,23 @@ import logging
 import multiprocessing
 import os
 import sys
+import threading
 from collections import defaultdict
 from contextlib import contextmanager
+from concurrent.futures import ThreadPoolExecutor
 from typing import List, Protocol
+
+_DECRYPTION_EXECUTOR = None
+_DECRYPTION_EXECUTOR_LOCK = threading.Lock()
+
+def get_decryption_executor():
+    global _DECRYPTION_EXECUTOR
+    if _DECRYPTION_EXECUTOR is None:
+        with _DECRYPTION_EXECUTOR_LOCK:
+            if _DECRYPTION_EXECUTOR is None:
+                max_workers = min(32, (os.cpu_count() or 1) + 4)
+                _DECRYPTION_EXECUTOR = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="decryption_worker")
+    return _DECRYPTION_EXECUTOR
 
 
 class IsolatedStrategyMixin:
@@ -1437,17 +1451,28 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                                     (base_dir,),
                                 )
                                 rows = cursor.fetchall()
-                            for filepath, folder, vector_str in rows:
+
+                            def decrypt_item(row):
+                                filepath, folder, vector_str = row
                                 if folder and vector_str:
                                     try:
-                                        decrypted_vector_str = db.crypto.decrypt_vector(vector_str)
-                                        v = json.loads(decrypted_vector_str)
+                                        v = db.crypto.decrypt_and_parse_vector(vector_str)
+                                        return filepath, folder, v
+                                    except Exception:
+                                        return filepath, folder, None
+                                return None, None, None
+
+                            executor = get_decryption_executor()
+                            decrypted_results = list(executor.map(decrypt_item, rows))
+
+                            for filepath, folder, v in decrypted_results:
+                                if folder:
+                                    if v is not None:
                                         if use_semantic:
                                             if embedding_manager.validate_vector_dimension(v):
                                                 historical_folder_vectors[folder].append(v)
-                                    except Exception:
+                                    else:
                                         db.track_corrupted_vector(base_dir, filepath)
-                                        continue
                         except Exception as e:
                             logging.error(f"Failed to query historical folder vectors: {e}")
 
@@ -1818,7 +1843,9 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                                 ".xls",
                                 ".pdf",
                             }
-                            for filepath, user_verified_target, vector_str in rows:
+
+                            def decrypt_historical_item(row):
+                                filepath, user_verified_target, vector_str = row
                                 dot_idx = filepath.rfind(".")
                                 ext = (
                                     filepath[dot_idx:].lower() if dot_idx != -1 else ""
@@ -1828,17 +1855,23 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                                     ext in {".png", ".jpg", ".jpeg"}
                                     or ext not in supported_exts_set
                                 ):
-                                    continue
+                                    return None, None, None
 
                                 if vector_str:
                                     try:
-                                        decrypted_vector_str = db.crypto.decrypt_vector(
-                                            vector_str
-                                        )
-                                        v = json.loads(decrypted_vector_str)
-                                        if embedding_manager.validate_vector_dimension(
-                                            v
-                                        ):
+                                        v = db.crypto.decrypt_and_parse_vector(vector_str)
+                                        return filepath, user_verified_target, v
+                                    except Exception:
+                                        return filepath, user_verified_target, None
+                                return None, None, None
+
+                            executor = get_decryption_executor()
+                            decrypted_hist_results = list(executor.map(decrypt_historical_item, rows))
+
+                            for filepath, user_verified_target, v in decrypted_hist_results:
+                                if filepath:
+                                    if v is not None:
+                                        if embedding_manager.validate_vector_dimension(v):
                                             hist_vectors.append(v)
                                             hist_meta.append(
                                                 {
@@ -1846,9 +1879,8 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                                                     "user_verified_target_path": user_verified_target,
                                                 }
                                             )
-                                    except Exception:
+                                    else:
                                         db.track_corrupted_vector(base_dir, filepath)
-                                        continue
 
                             if hist_vectors:
                                 # 3. Cosine Similarity Calculation
@@ -1879,9 +1911,39 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                                         snippet = None
                                         if db and base_dir:
                                             try:
-                                                ex_doc = db.get_document(
-                                                    base_dir, ex["filepath"]
-                                                )
+                                                cached_doc = None
+                                                with db._cache_lock:
+                                                    if db._cached_base_dir == base_dir and db._cached_documents is not None:
+                                                        for row in db._cached_documents:
+                                                            if row[0] == ex["filepath"].replace("\\", "/"):
+                                                                cached_doc = {
+                                                                    "file_hash": row[2],
+                                                                    "extracted_text": row[1],
+                                                                }
+                                                                break
+                                                if cached_doc:
+                                                    ex_doc = cached_doc
+                                                elif len(rows) <= 50:
+                                                    ex_doc = db.get_document(base_dir, ex["filepath"])
+                                                else:
+                                                    from app.core.db_conn import get_db_connection
+                                                    conn = get_db_connection(db.db_path)
+                                                    with conn:
+                                                        cursor = conn.execute(
+                                                            "SELECT file_hash, extracted_text FROM documents WHERE base_dir = ? AND filepath = ?",
+                                                            (base_dir, ex["filepath"].replace("\\", "/")),
+                                                        )
+                                                        row = cursor.fetchone()
+                                                        if row:
+                                                            decrypted_text = (
+                                                                db.crypto.decrypt_text(row[1]) if row[1] is not None else None
+                                                            )
+                                                            ex_doc = {
+                                                                "file_hash": row[0],
+                                                                "extracted_text": decrypted_text,
+                                                            }
+                                                        else:
+                                                            ex_doc = None
                                                 if ex_doc and ex_doc.get(
                                                     "extracted_text"
                                                 ):
