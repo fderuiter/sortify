@@ -137,6 +137,7 @@ def test_prepare_offline_preserves_models(
             # We want to check that Path("offline_bundle") is not removed.
             # Only Path("offline_bundle/wheels") should be removed if it exists.
             deleted_paths = []
+
             def fake_rmtree(path, *args, **kwargs):
                 deleted_paths.append(str(path))
 
@@ -165,4 +166,6 @@ def test_prepare_offline_preserves_models(
                 # Verify that offline_bundle directory itself was not deleted
                 assert "offline_bundle" not in deleted_paths
                 # Verify that previous ZIP output was checked and wheels dir specifically deleted
-                assert "offline_bundle/wheels" in deleted_paths or any("wheels" in p for p in deleted_paths)
+                assert "offline_bundle/wheels" in deleted_paths or any(
+                    "wheels" in p for p in deleted_paths
+                )

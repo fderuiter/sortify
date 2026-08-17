@@ -1072,12 +1072,14 @@ class AutoSorterApp:
     def expand_all_nodes(self):
         """Traverse self.plan and add all directory IDs to self.expanded_nodes."""
         self.expanded_nodes = set()
+
         def _collect_dirs(node, current_path):
             for k, v in node.items():
                 node_id = f"{current_path}/{k}" if current_path else k
                 if isinstance(v, dict) and "__type__" not in v:
                     self.expanded_nodes.add(node_id)
                     _collect_dirs(v, node_id)
+
         _collect_dirs(self.plan, "")
 
     def render_tree(self):
@@ -1088,8 +1090,13 @@ class AutoSorterApp:
             self.load_locked_files_from_db()
 
         import sys
+
         is_testing = "pytest" in sys.modules or "unittest" in sys.modules
-        if is_testing and not self.expanded_nodes and not getattr(self, "disable_auto_expand_in_test", False):
+        if (
+            is_testing
+            and not self.expanded_nodes
+            and not getattr(self, "disable_auto_expand_in_test", False)
+        ):
             self.expand_all_nodes()
 
         self.tree_nodes = []

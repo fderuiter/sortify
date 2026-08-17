@@ -723,6 +723,7 @@ class SharedModelRegistry:
         else:
             try:
                 from app.core.path_utils import get_base_path
+
                 base_path = get_base_path(__file__)
             except Exception:
                 base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

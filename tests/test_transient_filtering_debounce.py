@@ -9,6 +9,7 @@ from app.core.daemon import ContinuousWatchdogDaemon
 
 class DummySettings:
     """Mock configuration for testing."""
+
     def __init__(self):
         self.DEBOUNCE_DELAY = 0.6
         self.MAX_DEBOUNCE_DELAY = 5.0
@@ -92,9 +93,10 @@ def test_sorting_run_initiates_at_max_debounce_limit(tmp_path):
         m = mock.MagicMock()
         return m
 
-    with mock.patch("time.time", return_value=mock_time) as patch_time, \
-         mock.patch("threading.Timer", side_effect=mock_timer_init):
-        
+    with (
+        mock.patch("time.time", return_value=mock_time) as patch_time,
+        mock.patch("threading.Timer", side_effect=mock_timer_init),
+    ):
         # 1. First event at t=0.0
         # Should start tracking first event time and schedule debounce timer with DEBOUNCE_DELAY (0.6)
         daemon.trigger_recalculation()
@@ -151,10 +153,13 @@ def test_scanning_stage_filters_out_transient_files(tmp_path):
         str(tmp_path / "temp_file.tmp"),
     ]
 
-    with mock.patch("app.core.daemon.AppSession", mock_app_session_class), \
-         mock.patch("app.core.daemon.get_files_recursively", return_value=scanned_files) as mock_scan, \
-         mock.patch("app.core.daemon.MetadataPass.run", return_value=[]):
-        
+    with (
+        mock.patch("app.core.daemon.AppSession", mock_app_session_class),
+        mock.patch(
+            "app.core.daemon.get_files_recursively", return_value=scanned_files
+        ) as mock_scan,
+        mock.patch("app.core.daemon.MetadataPass.run", return_value=[]),
+    ):
         # We also mock process_items_async
         async def dummy_process_items(items, cancel_check, **kwargs):
             # Verify only non-ignored files are processed!

@@ -1,10 +1,9 @@
-import sys
 import pytest
-from unittest.mock import MagicMock
 from nicegui import Client
 
 from app.config import AppSettings
 from app.ui.app import AutoSorterApp
+
 
 @pytest.mark.anyio
 async def test_dynamic_virtual_tree_expansion():
@@ -14,7 +13,7 @@ async def test_dynamic_virtual_tree_expansion():
         settings = AppSettings()
         app = AutoSorterApp(settings)
         app.disable_auto_expand_in_test = True  # Enable lazy evaluation in test
-        
+
         # Define a standard plan hierarchy
         app.plan = {
             "Documents": {
@@ -32,9 +31,9 @@ async def test_dynamic_virtual_tree_expansion():
         # Since expanded_nodes is empty, only top level directories ("Documents", "Images") should be populated,
         # and their children should be empty/contain only a dummy node.
         app.render_tree()
-        
+
         assert len(app.tree_nodes) == 2
-        
+
         # Verify "Documents" node
         docs_node = next(n for n in app.tree_nodes if n["text"] == "Documents")
         assert docs_node["id"] == "Documents"
@@ -71,7 +70,7 @@ async def test_dynamic_virtual_tree_expansion():
         docs_node = next(n for n in app.tree_nodes if n["text"] == "Documents")
         # Direct children of "Documents" are "Invoices" and "report.txt"
         assert len(docs_node["children"]) == 2
-        
+
         # Verify "report.txt" child
         file_node = next(n for n in docs_node["children"] if n["is_file"])
         assert file_node["id"] == "Documents/report.txt"
@@ -97,7 +96,7 @@ async def test_dynamic_virtual_tree_expansion():
 
         docs_node = next(n for n in app.tree_nodes if n["text"] == "Documents")
         invoices_node = next(n for n in docs_node["children"] if not n["is_file"])
-        
+
         # Verify invoice_1.pdf is now fully loaded
         assert len(invoices_node["children"]) == 1
         invoice_file_node = invoices_node["children"][0]
