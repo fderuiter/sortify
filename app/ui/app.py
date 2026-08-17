@@ -1154,11 +1154,62 @@ class AutoSorterApp:
         async def run():
             success = False
             try:
-                summary = await asyncio.to_thread(
-                    self.app_session.execute_moves, self.plan
+                # During Phase 1: "Executing fast-path rules..."
+                self.status_label.set_text("Executing fast-path rules...")
+                self.progress_bar.set_value(0.1)
+
+                # Generate fast-path plan
+                fast_path_plan = await asyncio.to_thread(
+                    self.app_session.generate_sorting_plan, fast_path_only=True
                 )
+
+                fast_path_summary = None
+                if fast_path_plan:
+                    fast_path_summary = await asyncio.to_thread(
+                        self.app_session.execute_moves, fast_path_plan
+                    )
+
+                self.progress_bar.set_value(0.4)
+
+                # After Phase 1: "Fast-path rules completed. Initiating AI classification..."
+                self.status_label.set_text("Fast-path rules completed. Initiating AI classification...")
+                await asyncio.sleep(0.5)
+
+                # Refresh in-memory DB and cache states before initiating AI phase to prevent path corruption
+                self.app_session.db.invalidate_cache()
+                await asyncio.to_thread(self.load_locked_files_from_db)
+                await asyncio.to_thread(self.load_ratings_from_db)
+
+                self.progress_bar.set_value(0.5)
+
+                # During Phase 2: "Executing AI classification..."
+                self.status_label.set_text("Executing AI classification...")
+
+                # Generate slow-path plan
+                slow_path_plan = await asyncio.to_thread(
+                    self.app_session.generate_sorting_plan, fast_path_only=False
+                )
+
+                slow_path_summary = None
+                if slow_path_plan:
+                    slow_path_summary = await asyncio.to_thread(
+                        self.app_session.execute_moves, slow_path_plan
+                    )
+
+                self.progress_bar.set_value(0.9)
+
+                # Combine summaries
+                summary = {"deleted_folders": 0, "protected_folders": 0}
+                if fast_path_summary:
+                    summary["deleted_folders"] += fast_path_summary.get("deleted_folders", 0)
+                    summary["protected_folders"] += fast_path_summary.get("protected_folders", 0)
+                if slow_path_summary:
+                    summary["deleted_folders"] += slow_path_summary.get("deleted_folders", 0)
+                    summary["protected_folders"] += slow_path_summary.get("protected_folders", 0)
+
                 ui.notify(f"Sorted successfully: {summary}")
                 self.status_label.set_text("Sorting complete.")
+                self.progress_bar.set_value(1.0)
                 success = True
             except Exception as e:
                 logger.error(f"Error executing sort: {e}")

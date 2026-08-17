@@ -199,13 +199,13 @@ class AppSession:
             return
         self.analyzer.partial_fit(self.base_dir, chunk, self.settings)
 
-    def generate_sorting_plan(self):
+    def generate_sorting_plan(self, fast_path_only: bool = False):
         """Generate sorting plan from analyzer."""
         if not self.base_dir:
             return {}
         _, locked, _, _ = self.cache_manager.load_cache(self.base_dir)
         return self.analyzer.generate_sorting_plan(
-            self.base_dir, self.settings, locked_files=locked
+            self.base_dir, self.settings, locked_files=locked, fast_path_only=fast_path_only
         )
 
     def rollback(self, session_id, ignore_missing=False):
