@@ -55,7 +55,9 @@ def get_safe_path(dest_dir: str, filename: str, source_path: str = None) -> str:
                     exc_info=True,
                 )
         if counter > 1000:
-            raise RuntimeError(f"Unique name cannot be resolved within 1,000 attempts for {filename}")
+            raise RuntimeError(
+                f"Unique name cannot be resolved within 1,000 attempts for {filename}"
+            )
         safe_path = os.path.join(dest_dir, f"{base}_{counter}{extension}")
         counter += 1
     return safe_path
@@ -463,6 +465,7 @@ def execute_moves(
         return summary
 
     except Exception as e:
+        rollback_success = False
         if session_id:
             logging.error(
                 f"Error during background sorting: {e}. Initiating automatic rollback for session {session_id}"
@@ -472,9 +475,15 @@ def execute_moves(
                 logging.info(
                     f"Automatic rollback completed successfully for session {session_id}"
                 )
+                rollback_success = True
             except Exception as rollback_err:
                 logging.error(
                     f"Automatic rollback failed for session {session_id}: {rollback_err}",
                     exc_info=True,
                 )
+        if not rollback_success:
+            try:
+                db.execute_batch_updates(db_updates_batch)
+            except Exception:
+                pass
         raise e
