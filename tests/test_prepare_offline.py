@@ -126,8 +126,6 @@ def test_prepare_offline_preserves_models(
     mock_print, mock_mkdir, mock_archive, mock_rmtree, mock_run
 ):
     """Test that prepare_offline.py does not delete the model weight subdirectories."""
-    import pathlib
-    from pathlib import Path
     with patch("sys.argv", ["prepare_offline.py", "--cpu"]):
         with patch("sys.exit", side_effect=SystemExit) as mock_exit:
             mock_requirements = (
