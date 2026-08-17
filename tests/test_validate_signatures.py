@@ -91,20 +91,12 @@ def test_api_signature_snapshot_matches():
     from scripts.validate_signatures import SNAPSHOT_PATH, collect_current_definitions
 
     current_definitions = collect_current_definitions()
-    is_ci = os.environ.get("CI", "").lower() in ("true", "1")
 
     if not os.path.exists(SNAPSHOT_PATH):
-        if not is_ci:
-            os.makedirs(os.path.dirname(SNAPSHOT_PATH), exist_ok=True)
-            with open(SNAPSHOT_PATH, "w", encoding="utf-8") as f:
-                json.dump(current_definitions, f, indent=2, sort_keys=True)
-                f.write("\n")
-            print(f"Successfully generated new baseline snapshot at {SNAPSHOT_PATH}")
-            return
-        else:
-            raise AssertionError(
-                f"Baseline snapshot file does not exist at {SNAPSHOT_PATH}"
-            )
+        raise AssertionError(
+            f"Baseline snapshot file does not exist at {SNAPSHOT_PATH}. "
+            "Please run 'python scripts/validate_signatures.py --regenerate' to initialize it."
+        )
 
     with open(SNAPSHOT_PATH, "r", encoding="utf-8") as f:
         snapshot_definitions = json.load(f)
@@ -113,19 +105,12 @@ def test_api_signature_snapshot_matches():
     snapshot_json = json.dumps(snapshot_definitions, indent=2, sort_keys=True)
 
     if current_json != snapshot_json:
-        if not is_ci:
-            os.makedirs(os.path.dirname(SNAPSHOT_PATH), exist_ok=True)
-            with open(SNAPSHOT_PATH, "w", encoding="utf-8") as f:
-                json.dump(current_definitions, f, indent=2, sort_keys=True)
-                f.write("\n")
-            print(f"Successfully auto-updated baseline snapshot at {SNAPSHOT_PATH}")
-            return
-        else:
-            raise AssertionError(
-                f"Public interface or CLI signature drift detected! "
-                f"In CI, automated baseline regeneration is disabled. "
-                f"Please commit the updated snapshot file '{SNAPSHOT_PATH}'."
-            )
+        raise AssertionError(
+            f"Public interface or CLI signature drift detected! "
+            f"Automated baseline regeneration is disabled. "
+            f"If this change was intentional, update the baseline snapshot locally "
+            f"by running: 'python scripts/validate_signatures.py --regenerate' and committing the updated file."
+        )
 
 
 def test_extract_async_and_generic_protocols(tmp_path):
@@ -348,3 +333,193 @@ def test_safe_relpath(monkeypatch):
     assert safe_relpath("/app/tests/fake.json", "/app") == os.path.abspath(
         "/app/tests/fake.json"
     )
+
+
+def test_validation_local_fails_by_default_on_mismatch(tmp_path, monkeypatch):
+    import json
+    import sys
+    from scripts import validate_signatures
+
+    fake_snapshot = tmp_path / "fake_snapshot.json"
+    initial_defs = {
+        "protocols": {
+            "MyProtocol": {
+                "class_name": "MyProtocol",
+                "methods": [
+                    {"name": "run", "async": True, "parameters": [], "returns": "None"}
+                ],
+            }
+        },
+        "cli": {},
+    }
+    fake_snapshot.write_text(json.dumps(initial_defs, indent=2, sort_keys=True))
+
+    changed_defs = {
+        "protocols": {
+            "MyProtocol": {
+                "class_name": "MyProtocol",
+                "methods": [
+                    {"name": "run", "async": False, "parameters": [], "returns": "None"}
+                ],
+            }
+        },
+        "cli": {},
+    }
+
+    monkeypatch.setattr(validate_signatures, "SNAPSHOT_PATH", str(fake_snapshot))
+    monkeypatch.setattr(validate_signatures, "collect_current_definitions", lambda: changed_defs)
+    monkeypatch.delenv("CI", raising=False)
+
+    exited_code = None
+    def mock_exit(code):
+        nonlocal exited_code
+        exited_code = code
+        raise SystemExit(code)
+
+    monkeypatch.setattr(sys, "exit", mock_exit)
+    monkeypatch.setattr(sys, "argv", ["validate_signatures.py"])
+
+    import pytest
+    with pytest.raises(SystemExit) as exc_info:
+        validate_signatures.main()
+    assert exc_info.value.code == 1
+    assert exited_code == 1
+
+    # Ensure the baseline file was NOT updated
+    with open(fake_snapshot, "r") as f:
+        data = json.load(f)
+    assert data["protocols"]["MyProtocol"]["methods"][0]["async"] is True
+
+
+def test_validation_local_success_on_regenerate(tmp_path, monkeypatch):
+    import json
+    import sys
+    from scripts import validate_signatures
+
+    fake_snapshot = tmp_path / "fake_snapshot.json"
+    initial_defs = {
+        "protocols": {
+            "MyProtocol": {
+                "class_name": "MyProtocol",
+                "methods": [
+                    {"name": "run", "async": True, "parameters": [], "returns": "None"}
+                ],
+            }
+        },
+        "cli": {},
+    }
+    fake_snapshot.write_text(json.dumps(initial_defs, indent=2, sort_keys=True))
+
+    changed_defs = {
+        "protocols": {
+            "MyProtocol": {
+                "class_name": "MyProtocol",
+                "methods": [
+                    {"name": "run", "async": False, "parameters": [], "returns": "None"}
+                ],
+            }
+        },
+        "cli": {},
+    }
+
+    monkeypatch.setattr(validate_signatures, "SNAPSHOT_PATH", str(fake_snapshot))
+    monkeypatch.setattr(validate_signatures, "collect_current_definitions", lambda: changed_defs)
+    monkeypatch.delenv("CI", raising=False)
+
+    exited_code = None
+    def mock_exit(code):
+        nonlocal exited_code
+        exited_code = code
+        raise SystemExit(code)
+
+    monkeypatch.setattr(sys, "exit", mock_exit)
+    monkeypatch.setattr(sys, "argv", ["validate_signatures.py", "--regenerate"])
+
+    import pytest
+    with pytest.raises(SystemExit) as exc_info:
+        validate_signatures.main()
+    assert exc_info.value.code == 0
+    assert exited_code == 0
+
+    # Ensure the baseline file WAS updated
+    with open(fake_snapshot, "r") as f:
+        data = json.load(f)
+    assert data["protocols"]["MyProtocol"]["methods"][0]["async"] is False
+
+
+def test_validation_ci_fails_on_regenerate(tmp_path, monkeypatch):
+    import json
+    import sys
+    from scripts import validate_signatures
+
+    fake_snapshot = tmp_path / "fake_snapshot.json"
+    initial_defs = {
+        "protocols": {},
+        "cli": {},
+    }
+    fake_snapshot.write_text(json.dumps(initial_defs, indent=2, sort_keys=True))
+
+    changed_defs = {
+        "protocols": {
+            "MyProtocol": {
+                "class_name": "MyProtocol",
+                "methods": [],
+            }
+        },
+        "cli": {},
+    }
+
+    monkeypatch.setattr(validate_signatures, "SNAPSHOT_PATH", str(fake_snapshot))
+    monkeypatch.setattr(validate_signatures, "collect_current_definitions", lambda: changed_defs)
+    monkeypatch.setenv("CI", "true")
+
+    exited_code = None
+    def mock_exit(code):
+        nonlocal exited_code
+        exited_code = code
+        raise SystemExit(code)
+
+    monkeypatch.setattr(sys, "exit", mock_exit)
+    monkeypatch.setattr(sys, "argv", ["validate_signatures.py", "--regenerate"])
+
+    import pytest
+    with pytest.raises(SystemExit) as exc_info:
+        validate_signatures.main()
+    assert exc_info.value.code == 1
+    assert exited_code == 1
+
+    # Ensure snapshot file was NOT updated
+    with open(fake_snapshot, "r") as f:
+        data = json.load(f)
+    assert "MyProtocol" not in data["protocols"]
+
+
+def test_validation_fails_on_missing_snapshot(tmp_path, monkeypatch):
+    import sys
+    from scripts import validate_signatures
+
+    fake_snapshot = tmp_path / "non_existent_snapshot.json"
+    current_defs = {
+        "protocols": {},
+        "cli": {},
+    }
+
+    monkeypatch.setattr(validate_signatures, "SNAPSHOT_PATH", str(fake_snapshot))
+    monkeypatch.setattr(validate_signatures, "collect_current_definitions", lambda: current_defs)
+    monkeypatch.delenv("CI", raising=False)
+
+    exited_code = None
+    def mock_exit(code):
+        nonlocal exited_code
+        exited_code = code
+        raise SystemExit(code)
+
+    monkeypatch.setattr(sys, "exit", mock_exit)
+    monkeypatch.setattr(sys, "argv", ["validate_signatures.py"])
+
+    import pytest
+    with pytest.raises(SystemExit) as exc_info:
+        validate_signatures.main()
+    assert exc_info.value.code == 1
+    assert exited_code == 1
+
