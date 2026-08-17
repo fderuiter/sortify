@@ -98,8 +98,8 @@ def test_generative_naming_uses_precomputed_vectors_and_zero_decryption(db, temp
         is_valid=True,
     )
 
-    # We also mock generate_embedding to return a vector strongly aligned with space
-    target_vector = [0.9] + [0.0] * 383
+    # We also mock generate_embedding to return a vector strongly aligned with space, within standard generative range (0.3 to 0.85) to avoid high-confidence bypass
+    target_vector = [0.6, 0.4] + [0.0] * 382
 
     # Set up generator mock on strategy
     strategy.generator = MagicMock()
@@ -284,7 +284,8 @@ def test_generative_naming_latency_performance_1000_docs(db, temp_dir):
         is_valid=True,
     )
 
-    target_vector = [1.0] + [0.0] * 383
+    # We set target_vector to have a similarity within standard generative range (0.3 to 0.85) to avoid high-confidence bypass
+    target_vector = [0.6, 0.4] + [0.0] * 382
 
     with (
         patch(
