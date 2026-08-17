@@ -628,45 +628,44 @@ def test_ocr_languages_validation():
 def test_proxy_decryption_failure_placeholder(tmp_path):
     """Test that decryption failure for proxy sets it to a placeholder and preserves the encrypted string on subsequent saves."""
     mock_filepath = tmp_path / "settings.json"
-    
+
     # Let's create an invalid encrypted proxy in the config
     invalid_encrypted_data = {
         "PROXY": "enc:invalid_ciphertext_that_cannot_be_decrypted",
-        "MAX_WORKERS": 4
+        "MAX_WORKERS": 4,
     }
     with open(mock_filepath, "w", encoding="utf-8") as f:
         json.dump(invalid_encrypted_data, f, indent=4)
-        
+
     # Initialize AppSettings. It should fail to decrypt, set PROXY to "<DECRYPTION_FAILED>"
     app_settings = AppSettings(filepath=str(mock_filepath))
-    
+
     # Cancel the save timer so we can manually save and test
     if app_settings._save_timer:
         app_settings._save_timer.cancel()
-        
+
     assert app_settings.PROXY == "<DECRYPTION_FAILED>"
-    
+
     # Now trigger self._save() and verify that the invalid encrypted ciphertext is NOT lost on disk
     app_settings._save()
-    
+
     with open(mock_filepath, "r", encoding="utf-8") as f:
         disk_data = json.load(f)
-        
+
     assert disk_data["PROXY"] == "enc:invalid_ciphertext_that_cannot_be_decrypted"
-    
+
     # Now verify that the user can successfully overwrite the placeholder in memory/UI
     app_settings.PROXY = "http" + "://new-proxy:8080"
     assert app_settings.PROXY == "http" + "://new-proxy:8080"
-    
+
     # Trigger save again, and check that the new proxy is encrypted
     app_settings._save()
-    
+
     with open(mock_filepath, "r", encoding="utf-8") as f:
         disk_data = json.load(f)
-        
+
     assert disk_data["PROXY"].startswith("enc:")
     assert "new-proxy" not in disk_data["PROXY"]
-    
+
     if app_settings._save_timer:
         app_settings._save_timer.cancel()
-

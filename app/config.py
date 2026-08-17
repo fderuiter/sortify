@@ -385,7 +385,13 @@ class AppSettings:
 
     def __setattr__(self, name, value):
         """Set attribute dynamically and trigger a save."""
-        if name in ("_filepath", "_lock", "_save_timer", "_settings_model", "_raw_encrypted_proxy"):
+        if name in (
+            "_filepath",
+            "_lock",
+            "_save_timer",
+            "_settings_model",
+            "_raw_encrypted_proxy",
+        ):
             super().__setattr__(name, value)
         else:
             if name == "PROXY" and value != "<DECRYPTION_FAILED>":

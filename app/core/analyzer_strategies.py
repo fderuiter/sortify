@@ -23,20 +23,33 @@ class IsolatedStrategyMixin:
         "_vector_map",
         "db",
         "base_dir",
+        "pre_fetched_corpus",
     }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        object.__setattr__(self, "_local_state_var", contextvars.ContextVar(f"state_{id(self)}", default={}))
+        object.__setattr__(
+            self,
+            "_local_state_var",
+            contextvars.ContextVar(f"state_{id(self)}", default={}),
+        )
 
     def _get_local_state(self):
         if not hasattr(self, "_local_state_var"):
-            object.__setattr__(self, "_local_state_var", contextvars.ContextVar(f"state_{id(self)}", default={}))
+            object.__setattr__(
+                self,
+                "_local_state_var",
+                contextvars.ContextVar(f"state_{id(self)}", default={}),
+            )
         return self._local_state_var.get()
 
     def _set_local_state(self, state):
         if not hasattr(self, "_local_state_var"):
-            object.__setattr__(self, "_local_state_var", contextvars.ContextVar(f"state_{id(self)}", default={}))
+            object.__setattr__(
+                self,
+                "_local_state_var",
+                contextvars.ContextVar(f"state_{id(self)}", default={}),
+            )
         self._local_state_var.set(state)
 
     def __getattribute__(self, name):
@@ -48,7 +61,9 @@ class IsolatedStrategyMixin:
             try:
                 return object.__getattribute__(self, name)
             except AttributeError:
-                raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+                raise AttributeError(
+                    f"'{type(self).__name__}' object has no attribute '{name}'"
+                )
         return object.__getattribute__(self, name)
 
     def __setattr__(self, name, value):
@@ -71,7 +86,9 @@ class IsolatedStrategyMixin:
                 try:
                     object.__delattr__(self, name)
                 except AttributeError:
-                    raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+                    raise AttributeError(
+                        f"'{type(self).__name__}' object has no attribute '{name}'"
+                    )
         else:
             object.__delattr__(self, name)
 
@@ -82,11 +99,17 @@ class IsolatedStrategyMixin:
 
 def thread_isolated_execution(func):
     """Track execution depth and automatically clean up isolated state at the outermost call."""
+
     @functools.wraps(func)
     def wrapper(self, *args, **kwargs):
         import threading
+
         if not hasattr(self, "_local_state_var"):
-            object.__setattr__(self, "_local_state_var", contextvars.ContextVar(f"state_{id(self)}", default={}))
+            object.__setattr__(
+                self,
+                "_local_state_var",
+                contextvars.ContextVar(f"state_{id(self)}", default={}),
+            )
         state = self._local_state_var.get()
         depth = state.get("_execution_depth", 0)
 
@@ -108,7 +131,9 @@ def thread_isolated_execution(func):
             else:
                 state["_execution_depth"] = current_depth
                 self._local_state_var.set(state)
+
     return wrapper
+
 
 LANGUAGE_CHAR_MAP = {
     "en": "a-zA-Z0-9",
@@ -150,6 +175,7 @@ def recursive_kmeans_worker_main(
     output_queue,
     strategy_class_name: str = "RecursiveKMeansStrategy",
     thread_limit: int | None = None,
+    pre_fetched_corpus: list | dict | None = None,
 ):
     """Worker process main loop that handles core recursive KMeans mathematical clustering calculations."""
     import logging
@@ -195,6 +221,7 @@ def recursive_kmeans_worker_main(
             pass
 
     # 3. Create the appropriate strategy instance and execute calculations
+    strategy = None
     try:
         strategy_cls = globals().get(strategy_class_name)
         if strategy_cls is not None:
@@ -205,6 +232,7 @@ def recursive_kmeans_worker_main(
         # Prevent DB access in child process
         strategy.db = None
         strategy.base_dir = None
+        strategy.pre_fetched_corpus = pre_fetched_corpus
 
         strategy.stop_words = stop_words
         strategy.max_folders = max_folders
@@ -247,6 +275,11 @@ def recursive_kmeans_worker_main(
             f"Error inside clustering child process: {e}\n{traceback.format_exc()}"
         )
         output_queue.put({"status": "error", "message": str(e)})
+    finally:
+        # Data Boundary Safeguard: clear decrypted data immediately after folder naming concludes
+        if strategy is not None:
+            strategy.pre_fetched_corpus = None
+        pre_fetched_corpus = None
 
 
 class ClusteringStrategy(Protocol):
@@ -262,6 +295,7 @@ class ClusteringStrategy(Protocol):
         max_features: int = 3,
         pre_fetched_vectors: List[list] | None = None,
         cancel_check=None,
+        pre_fetched_corpus: list | dict | None = None,
     ) -> tuple[dict, float]:
         """Return the clustering plan and the total reconstruction error."""
         ...
@@ -306,6 +340,7 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
         max_features: int = 3,
         pre_fetched_vectors: List[list] | None = None,
         cancel_check=None,
+        pre_fetched_corpus: list | dict | None = None,
     ) -> tuple[dict, float]:
         """Return a hierarchical clustering plan and error using KMeans by delegating to a separate child process."""
         self.stop_words = stop_words
@@ -313,6 +348,7 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
         self.max_depth = max_depth
         self.max_features = max_features
         self._error = 0.0
+        self.pre_fetched_corpus = pre_fetched_corpus
 
         if pre_fetched_vectors is not None:
             self._vector_map = {f: v for f, v in zip(filenames, pre_fetched_vectors)}
@@ -368,6 +404,7 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
             ),
             kwargs={
                 "thread_limit": parent_thread_limit,
+                "pre_fetched_corpus": pre_fetched_corpus,
             },
         )
         process.start()
@@ -782,6 +819,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         max_features: int = 3,
         pre_fetched_vectors: List[list] | None = None,
         cancel_check=None,
+        pre_fetched_corpus: list | dict | None = None,
     ) -> tuple[dict, float]:
         """Generate a hierarchical plan of folder names using generative modeling."""
         plan, error = super().generate_plan(
@@ -793,6 +831,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
             max_features,
             pre_fetched_vectors,
             cancel_check=cancel_check,
+            pre_fetched_corpus=pre_fetched_corpus,
         )
 
         # Retrieve configurable similarity threshold
@@ -800,6 +839,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         if threshold is None:
             try:
                 from app.config import AppSettings
+
                 settings = AppSettings()
                 threshold = getattr(settings, "COHERENCE_THRESHOLD", 0.5)
             except Exception:
@@ -807,6 +847,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
 
         # 1. Gather all document vectors in filenames
         import numpy as np
+
         vector_dict = {}
         use_dense = False
 
@@ -821,17 +862,25 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         if not use_dense and db and base_dir:
             try:
                 from app.core.semantic_embeddings import SemanticEmbeddingManager
+
                 embedding_manager = SemanticEmbeddingManager(
                     db, model_path=getattr(self, "model_path", None)
                 )
-                if not embedding_manager.is_mock and not embedding_manager.is_reconstruction_active():
+                if (
+                    not embedding_manager.is_mock
+                    and not embedding_manager.is_reconstruction_active()
+                ):
                     fetched = embedding_manager.get_vectors_batch(base_dir, filenames)
                     if fetched:
-                        vector_dict = {f: v for f, v in fetched.items() if v is not None}
+                        vector_dict = {
+                            f: v for f, v in fetched.items() if v is not None
+                        }
                         if len(vector_dict) > 0:
                             use_dense = True
             except Exception as e:
-                logging.error(f"Failed to fetch vectors in GenerativeNamingStrategy: {e}")
+                logging.error(
+                    f"Failed to fetch vectors in GenerativeNamingStrategy: {e}"
+                )
 
         # Fallback to TF-IDF if dense vectors are not available/mock
         if not use_dense:
@@ -891,7 +940,9 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
             # 2. Process files in current folder node
             if files:
                 all_recursive_files = get_recursive_files(node)
-                vectors = [vector_dict[f] for f in all_recursive_files if f in vector_dict]
+                vectors = [
+                    vector_dict[f] for f in all_recursive_files if f in vector_dict
+                ]
                 if vectors:
                     centroid = np.mean(vectors, axis=0)
                     for f in files:
@@ -1071,6 +1122,15 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
             self.generator = None
 
     def _run_prompt(self, prompt: str, max_tokens: int, grammar: str = None) -> str:
+        dump_file = os.environ.get("PROMPT_DUMP_FILE")
+        if dump_file:
+            try:
+                with open(dump_file, "a") as f:
+                    f.write(prompt + "\n===PROMPT_END===\n")
+            except Exception:
+                pass
+            return "Mock Generated Folder Name"
+
         if self._gguf_active and not self._gguf_failed:
             if not self._gguf_process or not self._gguf_process.is_alive():
                 logging.error("GGUF process died unexpectedly")
@@ -1241,13 +1301,19 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         self.base_dir = base_dir
 
     def _get_cluster_keywords(self, documents: list) -> str:
+        import os
+
         if not documents:
             return "Miscellaneous"
 
         if not getattr(self, "_model_initialized", False):
             self._init_model()
 
-        if self.generator is None and not (self._gguf_active and not self._gguf_failed):
+        if (
+            self.generator is None
+            and not (self._gguf_active and not self._gguf_failed)
+            and not os.environ.get("PROMPT_DUMP_FILE")
+        ):
             return super()._get_cluster_keywords(documents)
 
         db = getattr(self, "db", None)
@@ -1264,7 +1330,212 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         if not filtered_documents:
             filtered_documents = documents
 
-        if db and base_dir:
+        pre_fetched_corpus = getattr(self, "pre_fetched_corpus", None)
+        if pre_fetched_corpus is not None:
+            # In-memory pre-fetched few-shot logic
+            model_metadata = pre_fetched_corpus.get("model_metadata")
+            if model_metadata and getattr(self, "model_path", None):
+                try:
+                    from app.core.semantic_embeddings import SemanticEmbeddingManager
+
+                    class InMemoryDBMock:
+                        def __init__(self, meta):
+                            self._meta = meta or {}
+
+                        def get_model_metadata(self, key):
+                            return self._meta.get(key)
+
+                        def set_model_metadata(self, key, value):
+                            self._meta[key] = value
+
+                    dummy_db = InMemoryDBMock(model_metadata)
+                    embedding_manager = SemanticEmbeddingManager(
+                        dummy_db, model_path=self.model_path
+                    )
+                    if (
+                        not embedding_manager.is_mock
+                        and not embedding_manager.is_reconstruction_active()
+                    ):
+                        use_semantic = True
+                except Exception as e:
+                    logging.error(
+                        f"Failed to initialize SemanticEmbeddingManager in child process: {e}"
+                    )
+                    use_semantic = False
+
+                if use_semantic:
+                    try:
+                        target_text = " ".join(filtered_documents)
+                        target_vector = embedding_manager.get_embedding(target_text)
+                        if (
+                            target_vector
+                            and embedding_manager.validate_vector_dimension(
+                                target_vector
+                            )
+                        ):
+                            hist_vectors = []
+                            hist_meta = []
+                            supported_exts_set = {
+                                ".txt",
+                                ".docx",
+                                ".csv",
+                                ".xlsx",
+                                ".xls",
+                                ".pdf",
+                            }
+                            for ex in pre_fetched_corpus.get("examples", []):
+                                filepath = ex["filepath"]
+                                user_verified_target = ex["user_verified_target_path"]
+                                v = ex.get("vector")
+                                if v:
+                                    dot_idx = filepath.rfind(".")
+                                    ext = (
+                                        filepath[dot_idx:].lower()
+                                        if dot_idx != -1
+                                        else ""
+                                    )
+                                    if (
+                                        ext in {".png", ".jpg", ".jpeg"}
+                                        or ext not in supported_exts_set
+                                    ):
+                                        continue
+                                    if embedding_manager.validate_vector_dimension(v):
+                                        hist_vectors.append(v)
+                                        hist_meta.append(
+                                            {
+                                                "filepath": filepath,
+                                                "user_verified_target_path": user_verified_target,
+                                                "text": ex.get("text", ""),
+                                            }
+                                        )
+
+                            if hist_vectors:
+                                import numpy as np
+                                from sklearn.metrics.pairwise import cosine_similarity
+
+                                target_vector_arr = np.array([target_vector])
+                                hist_vectors_arr = np.array(hist_vectors)
+                                similarities = cosine_similarity(
+                                    target_vector_arr, hist_vectors_arr
+                                ).flatten()
+
+                                sorted_indices = similarities.argsort()[::-1]
+
+                                for idx in sorted_indices:
+                                    if similarities[idx] >= 0.1:
+                                        top_examples.append(
+                                            (hist_meta[idx], similarities[idx])
+                                        )
+                                        if len(top_examples) >= 3:
+                                            break
+
+                                if top_examples:
+                                    few_shot_lines = []
+                                    few_shot_lines.append(
+                                        "Here are some historical examples of documents and their corresponding user-corrected folder names:"
+                                    )
+                                    for ex_idx, (ex, sim) in enumerate(top_examples):
+                                        snippet = (
+                                            ex.get("text", "")[:500]
+                                            .replace("\n", " ")
+                                            .strip()
+                                        )
+                                        if not snippet:
+                                            snippet = os.path.basename(ex["filepath"])
+
+                                        folder_name = ex["user_verified_target_path"]
+                                        few_shot_lines.append(
+                                            f"Example {ex_idx + 1}:\nDocument: {snippet}\nFolder Name: {folder_name}"
+                                        )
+                                    few_shot_context = (
+                                        "\n\n".join(few_shot_lines) + "\n\n"
+                                    )
+                    except Exception as e:
+                        logging.error(
+                            f"Semantic historical matching failed in child process: {e}"
+                        )
+                        top_examples = []
+                        few_shot_context = ""
+
+            if not use_semantic or not top_examples:
+                fallback_top_examples = []
+                historical_examples = []
+                for ex in pre_fetched_corpus.get("examples", []):
+                    filepath = ex["filepath"]
+                    if not filepath.lower().endswith(
+                        (".txt", ".docx", ".csv", ".xlsx", ".xls", ".pdf")
+                    ):
+                        continue
+                    decrypted_text = ex.get("text", "")
+                    if decrypted_text.startswith("[STATUS:"):
+                        continue
+
+                    historical_examples.append(
+                        {
+                            "text": decrypted_text,
+                            "target_path": ex["user_verified_target_path"],
+                        }
+                    )
+
+                if historical_examples:
+                    try:
+                        from sklearn.feature_extraction.text import TfidfVectorizer
+                        from sklearn.metrics.pairwise import cosine_similarity
+
+                        stop_words_list = (
+                            list(self.stop_words)
+                            if getattr(self, "stop_words", None)
+                            else "english"
+                        )
+                        vectorizer = TfidfVectorizer(
+                            stop_words=stop_words_list,
+                            max_features=1000,
+                            sublinear_tf=True,
+                        )
+
+                        hist_texts = [ex["text"] for ex in historical_examples]
+                        target_text = " ".join(filtered_documents)
+
+                        hist_vectors = vectorizer.fit_transform(hist_texts)
+                        target_vector = vectorizer.transform([target_text])
+
+                        similarities = cosine_similarity(
+                            target_vector, hist_vectors
+                        ).flatten()
+
+                        sorted_indices = similarities.argsort()[::-1]
+
+                        for idx in sorted_indices:
+                            if similarities[idx] >= 0.1:
+                                fallback_top_examples.append(
+                                    (historical_examples[idx], similarities[idx])
+                                )
+                                if len(fallback_top_examples) >= 3:
+                                    break
+                    except Exception as e:
+                        logging.error(
+                            f"Error querying TF-IDF historical examples in child process fallback: {e}"
+                        )
+
+                if fallback_top_examples:
+                    try:
+                        few_shot_lines = []
+                        few_shot_lines.append(
+                            "Here are some historical examples of documents and their corresponding user-corrected folder names:"
+                        )
+                        for ex_idx, (ex, sim) in enumerate(fallback_top_examples):
+                            snippet = ex["text"][:500].replace("\n", " ").strip()
+                            folder_name = ex["target_path"]
+                            few_shot_lines.append(
+                                f"Example {ex_idx + 1}:\nDocument: {snippet}\nFolder Name: {folder_name}"
+                            )
+                        few_shot_context = "\n\n".join(few_shot_lines) + "\n\n"
+                    except Exception as e:
+                        logging.error(
+                            f"Error formatting few_shot_context in child process fallback: {e}"
+                        )
+
+        elif db and base_dir:
             try:
                 from app.core.semantic_embeddings import SemanticEmbeddingManager
 
@@ -1414,7 +1685,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                     top_examples = []
                     few_shot_context = ""
 
-        if not use_semantic or not top_examples:
+        if (not pre_fetched_corpus) and (not use_semantic or not top_examples):
             # Fallback path (Keyword-Based Matching)
             few_shot_context = ""
             fallback_top_examples = []

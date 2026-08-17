@@ -16,6 +16,7 @@ from app.core.session import AppSession
 
 logger = logging.getLogger("app.daemon")
 
+
 class DaemonFolderHandler(FileSystemEventHandler):
     """Handler for file system events inside monitored directory."""
 
@@ -27,11 +28,14 @@ class DaemonFolderHandler(FileSystemEventHandler):
         # We must ignore application metadata, local databases, and temporary cache folders to prevent infinite trigger loops
         if self.daemon.should_ignore_path(event.src_path):
             return
-        if hasattr(event, 'dest_path') and self.daemon.should_ignore_path(event.dest_path):
+        if hasattr(event, "dest_path") and self.daemon.should_ignore_path(
+            event.dest_path
+        ):
             return
-        
+
         # Trigger sorting recalculation (thread-safe and debounced)
         self.daemon.trigger_recalculation()
+
 
 class ContinuousWatchdogDaemon:
     """Daemon that continuously monitors a folder and triggers silent sorting."""
@@ -40,13 +44,13 @@ class ContinuousWatchdogDaemon:
         self.settings = settings
         self.base_dir = os.path.abspath(base_dir)
         self.observer = None
-        
+
         self._lock = threading.Lock()
         self._debounce_timer = None
         self._cancel_event = threading.Event()
         self._is_running = False
         self._first_event_time = None
-        
+
         # We run the actual sorting loop on a dedicated background execution thread
         self._execution_thread = None
 
@@ -55,7 +59,7 @@ class ContinuousWatchdogDaemon:
         if not path:
             return True
         norm_path = os.path.normpath(path).replace("\\", "/")
-        
+
         # Ignore database files, cache/temp folders, and application metadata files
         ignored_patterns = [
             ".autosorter",
@@ -70,11 +74,11 @@ class ContinuousWatchdogDaemon:
             "settings.json",
             "autosorter.log",
         ]
-        
+
         for pattern in ignored_patterns:
             if pattern in norm_path:
                 return True
-        
+
         # Also ignore any temporary folder/session folders
         if "autosorter_sessions" in norm_path:
             return True
@@ -116,7 +120,7 @@ class ContinuousWatchdogDaemon:
             self._is_running = False
             self._cancel_event.set()
             self._first_event_time = None
-            
+
             if self._debounce_timer:
                 self._debounce_timer.cancel()
                 self._debounce_timer = None
@@ -138,10 +142,10 @@ class ContinuousWatchdogDaemon:
         with self._lock:
             if not self._is_running:
                 return
-                
+
             # Interrupt current run immediately by setting the cancel event
             self._cancel_event.set()
-            
+
             # Reset cancel event for the upcoming run
             self._cancel_event = threading.Event()
             
@@ -176,10 +180,12 @@ class ContinuousWatchdogDaemon:
             self._first_event_time = None
             if not self._is_running or cancel_event.is_set():
                 return
-            
+
             # Start a background execution thread for sorting
             # (Ensures we don't block the timer thread or watchdog event handling)
-            thread = threading.Thread(target=self._run_sorting_sync, args=(cancel_event,))
+            thread = threading.Thread(
+                target=self._run_sorting_sync, args=(cancel_event,)
+            )
             thread.daemon = True
             thread.start()
 
@@ -191,7 +197,7 @@ class ContinuousWatchdogDaemon:
 
         logger.info("Executing background sorting run...")
         print("Executing background sorting run...")
-        
+
         # Define the cancel check callback
         def cancel_check():
             return cancel_event.is_set() or not self._is_running
@@ -205,19 +211,19 @@ class ContinuousWatchdogDaemon:
         # Setup isolated event loop for this background thread to process async tasks
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        
+
         app_session = None
         try:
             app_session = AppSession(self.settings, self.base_dir)
-            
+
             # 1. Scan directory recursively
             if cancel_check():
                 return
             files = get_files_recursively(self.base_dir)
-            
+
             # Filter out ignored/metadata paths from the scanned files list
             files = [f for f in files if not self.should_ignore_path(f)]
-            
+
             if not files:
                 logger.info("No files found to organize.")
                 return
@@ -226,33 +232,31 @@ class ContinuousWatchdogDaemon:
             if cancel_check():
                 return
             bypassed_files = MetadataPass.run(
-                self.base_dir,
-                files,
-                self.settings,
-                app_session.db,
-                None,
-                cancel_check
+                self.base_dir, files, self.settings, app_session.db, None, cancel_check
             )
-            
+
             bypassed_set = set(bypassed_files)
             items_to_sort = [f for f in files if f not in bypassed_set]
-            
+
             if cancel_check():
                 return
 
             # 3. Process new/changed files and partial fit analyzer
             if items_to_sort:
+
                 async def process_and_fit():
-                    async for item, text, file_hash, was_skipped in app_session.process_items_async(
-                        items_to_sort,
-                        cancel_check
-                    ):
+                    async for (
+                        item,
+                        text,
+                        file_hash,
+                        was_skipped,
+                    ) in app_session.process_items_async(items_to_sort, cancel_check):
                         if cancel_check():
                             break
                         if not was_skipped:
                             chunk = {item: {"text": text, "hash": file_hash}}
                             await asyncio.to_thread(app_session.partial_fit, chunk)
-                
+
                 loop.run_until_complete(process_and_fit())
 
             if cancel_check():
@@ -273,7 +277,9 @@ class ContinuousWatchdogDaemon:
             print(f"Silent move execution completed successfully: {summary}")
 
         except Exception as e:
-            logger.error(f"Error during continuous watchdog execution run: {e}", exc_info=True)
+            logger.error(
+                f"Error during continuous watchdog execution run: {e}", exc_info=True
+            )
             print(f"Error during background sorting run: {e}")
         finally:
             if app_session:
@@ -288,10 +294,10 @@ def start_daemon(settings: AppSettings, base_dir: str = None):
     """Start the persistent directory-watching daemon service."""
     if not base_dir:
         base_dir = os.getcwd()
-    
+
     daemon = ContinuousWatchdogDaemon(settings, base_dir)
     daemon.start()
-    
+
     # Keep the main thread alive while monitoring
     try:
         while True:

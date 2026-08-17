@@ -20,6 +20,7 @@ def get_file_hash(file_path: str) -> str:
     to isolate the raw audio payload, ensuring stable hashes after tag edits.
     """
     from app.core.resilient_file_ops import resilient_file_hash
+
     return resilient_file_hash(file_path)
 
 

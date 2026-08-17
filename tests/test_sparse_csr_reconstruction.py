@@ -51,10 +51,12 @@ def test_db_backed_sparse_csr_reconstruction_and_math():
             # 2. Check the manual custom IDF formula calculation
             top_terms = top_terms[:1000]
             vocab = {term: idx for idx, (term, df) in enumerate(top_terms)}
-            
+
             # idf_j = ln((1 + N) / (1 + df_j)) + 1
-            idf_weights = {term: math.log((1 + N) / (1 + df)) + 1 for term, df in top_terms}
-            
+            idf_weights = {
+                term: math.log((1 + N) / (1 + df)) + 1 for term, df in top_terms
+            }
+
             # Assert the formula values
             for term, df in top_terms:
                 expected_idf = math.log((1 + N) / (1 + df)) + 1
@@ -79,7 +81,10 @@ def test_db_backed_sparse_csr_reconstruction_and_math():
 
             # 4. Check mathematical equivalence directly
             # Reconstruct the expected historical vectors manually
-            hist_filepaths = ["non_existent_folder/file1.txt", "non_existent_folder/file2.txt"]
+            hist_filepaths = [
+                "non_existent_folder/file1.txt",
+                "non_existent_folder/file2.txt",
+            ]
             filepath_to_row_idx = {fp: idx for idx, fp in enumerate(hist_filepaths)}
 
             rows = []
@@ -98,8 +103,10 @@ def test_db_backed_sparse_csr_reconstruction_and_math():
                         cols.append(col_idx)
                         data.append(weight)
 
-            expected_vectors = csr_matrix((data, (rows, cols)), shape=(len(hist_filepaths), len(vocab)))
-            expected_vectors = normalize(expected_vectors, norm='l2', axis=1)
+            expected_vectors = csr_matrix(
+                (data, (rows, cols)), shape=(len(hist_filepaths), len(vocab))
+            )
+            expected_vectors = normalize(expected_vectors, norm="l2", axis=1)
 
             # Manually transform candidate.txt using the injected vectorizer
             # (which we can recreate to check matching math)

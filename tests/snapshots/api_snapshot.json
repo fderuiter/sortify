@@ -154,6 +154,11 @@
               "annotation": null,
               "default": "None",
               "name": "cancel_check"
+            },
+            {
+              "annotation": "list | dict | None",
+              "default": "None",
+              "name": "pre_fetched_corpus"
             }
           ],
           "returns": "tuple[dict, float]"
