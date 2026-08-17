@@ -106,10 +106,10 @@ def test_api_signature_snapshot_matches():
 
     if current_json != snapshot_json:
         raise AssertionError(
-            f"Public interface or CLI signature drift detected! "
-            f"Automated baseline regeneration is disabled. "
-            f"If this change was intentional, update the baseline snapshot locally "
-            f"by running: 'python scripts/validate_signatures.py --regenerate' and committing the updated file."
+            "Public interface or CLI signature drift detected! "
+            "Automated baseline regeneration is disabled. "
+            "If this change was intentional, update the baseline snapshot locally "
+            "by running: 'python scripts/validate_signatures.py --regenerate' and committing the updated file."
         )
 
 
@@ -338,6 +338,7 @@ def test_safe_relpath(monkeypatch):
 def test_validation_local_fails_by_default_on_mismatch(tmp_path, monkeypatch):
     import json
     import sys
+
     from scripts import validate_signatures
 
     fake_snapshot = tmp_path / "fake_snapshot.json"
@@ -367,10 +368,13 @@ def test_validation_local_fails_by_default_on_mismatch(tmp_path, monkeypatch):
     }
 
     monkeypatch.setattr(validate_signatures, "SNAPSHOT_PATH", str(fake_snapshot))
-    monkeypatch.setattr(validate_signatures, "collect_current_definitions", lambda: changed_defs)
+    monkeypatch.setattr(
+        validate_signatures, "collect_current_definitions", lambda: changed_defs
+    )
     monkeypatch.delenv("CI", raising=False)
 
     exited_code = None
+
     def mock_exit(code):
         nonlocal exited_code
         exited_code = code
@@ -380,6 +384,7 @@ def test_validation_local_fails_by_default_on_mismatch(tmp_path, monkeypatch):
     monkeypatch.setattr(sys, "argv", ["validate_signatures.py"])
 
     import pytest
+
     with pytest.raises(SystemExit) as exc_info:
         validate_signatures.main()
     assert exc_info.value.code == 1
@@ -394,6 +399,7 @@ def test_validation_local_fails_by_default_on_mismatch(tmp_path, monkeypatch):
 def test_validation_local_success_on_regenerate(tmp_path, monkeypatch):
     import json
     import sys
+
     from scripts import validate_signatures
 
     fake_snapshot = tmp_path / "fake_snapshot.json"
@@ -423,10 +429,13 @@ def test_validation_local_success_on_regenerate(tmp_path, monkeypatch):
     }
 
     monkeypatch.setattr(validate_signatures, "SNAPSHOT_PATH", str(fake_snapshot))
-    monkeypatch.setattr(validate_signatures, "collect_current_definitions", lambda: changed_defs)
+    monkeypatch.setattr(
+        validate_signatures, "collect_current_definitions", lambda: changed_defs
+    )
     monkeypatch.delenv("CI", raising=False)
 
     exited_code = None
+
     def mock_exit(code):
         nonlocal exited_code
         exited_code = code
@@ -436,6 +445,7 @@ def test_validation_local_success_on_regenerate(tmp_path, monkeypatch):
     monkeypatch.setattr(sys, "argv", ["validate_signatures.py", "--regenerate"])
 
     import pytest
+
     with pytest.raises(SystemExit) as exc_info:
         validate_signatures.main()
     assert exc_info.value.code == 0
@@ -450,6 +460,7 @@ def test_validation_local_success_on_regenerate(tmp_path, monkeypatch):
 def test_validation_ci_fails_on_regenerate(tmp_path, monkeypatch):
     import json
     import sys
+
     from scripts import validate_signatures
 
     fake_snapshot = tmp_path / "fake_snapshot.json"
@@ -470,10 +481,13 @@ def test_validation_ci_fails_on_regenerate(tmp_path, monkeypatch):
     }
 
     monkeypatch.setattr(validate_signatures, "SNAPSHOT_PATH", str(fake_snapshot))
-    monkeypatch.setattr(validate_signatures, "collect_current_definitions", lambda: changed_defs)
+    monkeypatch.setattr(
+        validate_signatures, "collect_current_definitions", lambda: changed_defs
+    )
     monkeypatch.setenv("CI", "true")
 
     exited_code = None
+
     def mock_exit(code):
         nonlocal exited_code
         exited_code = code
@@ -483,6 +497,7 @@ def test_validation_ci_fails_on_regenerate(tmp_path, monkeypatch):
     monkeypatch.setattr(sys, "argv", ["validate_signatures.py", "--regenerate"])
 
     import pytest
+
     with pytest.raises(SystemExit) as exc_info:
         validate_signatures.main()
     assert exc_info.value.code == 1
@@ -496,6 +511,7 @@ def test_validation_ci_fails_on_regenerate(tmp_path, monkeypatch):
 
 def test_validation_fails_on_missing_snapshot(tmp_path, monkeypatch):
     import sys
+
     from scripts import validate_signatures
 
     fake_snapshot = tmp_path / "non_existent_snapshot.json"
@@ -505,10 +521,13 @@ def test_validation_fails_on_missing_snapshot(tmp_path, monkeypatch):
     }
 
     monkeypatch.setattr(validate_signatures, "SNAPSHOT_PATH", str(fake_snapshot))
-    monkeypatch.setattr(validate_signatures, "collect_current_definitions", lambda: current_defs)
+    monkeypatch.setattr(
+        validate_signatures, "collect_current_definitions", lambda: current_defs
+    )
     monkeypatch.delenv("CI", raising=False)
 
     exited_code = None
+
     def mock_exit(code):
         nonlocal exited_code
         exited_code = code
@@ -518,8 +537,8 @@ def test_validation_fails_on_missing_snapshot(tmp_path, monkeypatch):
     monkeypatch.setattr(sys, "argv", ["validate_signatures.py"])
 
     import pytest
+
     with pytest.raises(SystemExit) as exc_info:
         validate_signatures.main()
     assert exc_info.value.code == 1
     assert exited_code == 1
-
