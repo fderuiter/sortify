@@ -67,9 +67,7 @@ class Settings(BaseSettings):
     COHERENCE_THRESHOLD: float = Field(default=0.5, ge=0.0, le=1.0)
     DEBOUNCE_DELAY: float = Field(default=0.6, gt=0.0)
     MAX_DEBOUNCE_DELAY: float = Field(default=5.0, gt=0.0)
-    IGNORED_EXTENSIONS: list[str] = Field(
-        default_factory=lambda: list(DEFAULT_IGNORED_EXTENSIONS)
-    )
+    IGNORED_EXTENSIONS: list[str] = Field(default=DEFAULT_IGNORED_EXTENSIONS)
 
     @field_validator("IGNORED_EXTENSIONS")
     @classmethod
