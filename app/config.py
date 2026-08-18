@@ -45,6 +45,15 @@ class Settings(BaseSettings):
     PROXY: str = Field(default="")
     OCR_GPU_ENABLED: bool = Field(default=False)
     AUDIO_GPU_ENABLED: bool = Field(default=False)
+    AUDIO_MAX_WORKERS: int = Field(default=2, gt=0, le=64)
+
+    @property
+    def MAX_AUDIO_WORKERS(self) -> int:
+        return self.AUDIO_MAX_WORKERS
+
+    @MAX_AUDIO_WORKERS.setter
+    def MAX_AUDIO_WORKERS(self, val: int) -> None:
+        self.AUDIO_MAX_WORKERS = val
     OCR_LANGUAGES: str = Field(default="en")
     CONFLICT_POLICY: Literal["skip", "rename"] = Field(default="rename")
     SORTING_STRATEGY: Literal[
@@ -480,6 +489,8 @@ class AppSettings:
 
     def __getattr__(self, name):
         """Get attribute dynamically from the settings model."""
+        if name == "MAX_AUDIO_WORKERS":
+            return getattr(self._settings_model, "AUDIO_MAX_WORKERS", 2)
         if hasattr(self._settings_model, name):
             return getattr(self._settings_model, name)
         raise AttributeError(
@@ -499,6 +510,8 @@ class AppSettings:
         ):
             super().__setattr__(name, value)
         else:
+            if name == "MAX_AUDIO_WORKERS":
+                name = "AUDIO_MAX_WORKERS"
             if name == "PROXY" and value != "<DECRYPTION_FAILED>":
                 super().__setattr__("_raw_encrypted_proxy", None)
             setattr(self._settings_model, name, value)
