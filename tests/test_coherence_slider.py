@@ -1,7 +1,7 @@
 import json
-import os
 import time
 from unittest.mock import MagicMock
+
 import pytest
 
 from app.config import AppSettings, Settings
@@ -82,8 +82,8 @@ def test_generative_naming_strategy_uses_coherence_threshold():
 def test_ui_coherence_threshold_slider_rendering():
     """Verify that Coherence Threshold slider control renders correctly in settings UI."""
     from nicegui import Client
-    from nicegui.elements.slider import Slider
     from nicegui.elements.label import Label
+    from nicegui.elements.slider import Slider
 
     sliders = []
     labels = []

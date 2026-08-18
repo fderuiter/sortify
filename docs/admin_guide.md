@@ -94,6 +94,18 @@ The following parameters are extracted directly from the application's configura
 - **Default**: `rename`
 - **Required**: `False`
 
+### `SORTING_STRATEGY`
+- **Default**: `default`
+- **Required**: `False`
+
+### `CLINICAL_SMART_RENAMING`
+- **Default**: `False`
+- **Required**: `False`
+
+### `CLINICAL_GENERATE_AUDIT_REPORT`
+- **Default**: `True`
+- **Required**: `False`
+
 ### `COHERENCE_THRESHOLD`
 - **Default**: `0.5`
 - **Required**: `False`
