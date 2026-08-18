@@ -8,7 +8,7 @@ import os
 import shutil  # noqa: F401
 
 from app.core.link_manager import LinkManager
-from app.core.path_utils import is_junction_path
+from app.core.path_utils import is_junction_path, safe_relpath
 from app.core.verifier import VerificationEngine
 
 try:
@@ -107,7 +107,7 @@ def resolve_new_target(abs_target: str, path_map: dict) -> str:
         )
         src_norm = os.path.normcase(os.path.abspath(src_clean))
         if norm_target.startswith(src_norm + os.sep):
-            rel = os.path.relpath(abs_target, src_clean)
+            rel = safe_relpath(abs_target, src_clean)
             return os.path.normpath(os.path.join(dst_path, rel))
 
     for src_file, dst_file in path_map.items():
@@ -116,7 +116,7 @@ def resolve_new_target(abs_target: str, path_map: dict) -> str:
         )
         src_file_norm = os.path.normcase(os.path.abspath(src_file_clean))
         if src_file_norm.startswith(norm_target + os.sep):
-            rel = os.path.relpath(src_file_clean, abs_target)
+            rel = safe_relpath(src_file_clean, abs_target)
             dst_file_str = str(dst_file)
             if dst_file_str.replace("\\", "/").endswith(rel.replace("\\", "/")):
                 inferred = dst_file_str[: -len(rel)].rstrip("\\/")
@@ -286,7 +286,7 @@ def _execute_moves_recursive(
 
                     if link_info["type"] == "symlink":
                         if not os.path.isabs(original_target):
-                            final_target = os.path.relpath(new_abs_target, dest_dir)
+                            final_target = safe_relpath(new_abs_target, dest_dir)
                         else:
                             final_target = new_abs_target
 
@@ -316,7 +316,7 @@ def _execute_moves_recursive(
 
                     elif link_info["type"] == "junction":
                         if not os.path.isabs(original_target):
-                            final_target = os.path.relpath(new_abs_target, dest_dir)
+                            final_target = safe_relpath(new_abs_target, dest_dir)
                         else:
                             final_target = new_abs_target
 
@@ -386,7 +386,7 @@ def _execute_moves_recursive(
                             )
                             raise
 
-            source_rel_path = os.path.relpath(source_path, base_dir).replace("\\", "/")
+            source_rel_path = safe_relpath(source_path, base_dir).replace("\\", "/")
             doc = db.get_document(base_dir, source_rel_path)
 
             if dest_path == source_path:
@@ -433,7 +433,7 @@ def _execute_moves_recursive(
                     )
 
             # Update filepath in database
-            rel_dest = os.path.relpath(dest_path, base_dir).replace("\\", "/")
+            rel_dest = safe_relpath(dest_path, base_dir).replace("\\", "/")
             if db_updates_batch is not None:
                 db_updates_batch.append(
                     {
@@ -487,8 +487,16 @@ def execute_moves(
     # Build path mapping to track where targets move
     moves_list = VerificationEngine.get_moves(base_dir, plan)
     path_map = {}
+    target_dirs = set()
     for rel_src, src, dst in moves_list:
         path_map[os.path.normcase(os.path.abspath(src))] = os.path.abspath(dst)
+        target_dirs.add(os.path.normpath(os.path.dirname(dst)))
+
+    if session_id and target_dirs and history_manager:
+        try:
+            history_manager.register_target_dirs(session_id, list(target_dirs))
+        except Exception as ex:
+            logging.warning(f"Failed to register target dirs: {ex}")
 
     # Execute all moves first
     db_updates_batch = []
@@ -583,11 +591,6 @@ def execute_moves(
         return summary
 
     except Exception as e:
-        try:
-            db.execute_batch_updates(db_updates_batch)
-        except Exception:
-            pass
-
         if session_id:
             logging.error(
                 f"Error during background sorting: {e}. Initiating automatic rollback for session {session_id}"

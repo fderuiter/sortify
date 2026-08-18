@@ -6,6 +6,7 @@ import os
 
 from nicegui import ui
 
+from app.core.path_utils import safe_relpath
 from app.core.session import AppSession
 from app.ui.dialog_helper import ask_directory_async, get_dialog_card_classes
 
@@ -2028,19 +2029,19 @@ body {
             for item in integrity_result.get("collisions", []):
                 src_abs = item.get("source")
                 if src_abs:
-                    rel_src = os.path.relpath(src_abs, self.base_dir).replace("\\", "/")
+                    rel_src = safe_relpath(src_abs, self.base_dir).replace("\\", "/")
                     self.plan_errors[rel_src] = item["message"]
                     self.plan_errors[os.path.basename(src_abs)] = item["message"]
                 dst_abs = item.get("path")
                 if dst_abs:
-                    rel_dst = os.path.relpath(dst_abs, self.base_dir).replace("\\", "/")
+                    rel_dst = safe_relpath(dst_abs, self.base_dir).replace("\\", "/")
                     self.plan_errors[rel_dst] = item["message"]
                     self.plan_errors[os.path.basename(dst_abs)] = item["message"]
 
             for item in integrity_result.get("circular_renames", []):
                 path_abs = item.get("path")
                 if path_abs:
-                    rel_path = os.path.relpath(path_abs, self.base_dir).replace(
+                    rel_path = safe_relpath(path_abs, self.base_dir).replace(
                         "\\", "/"
                     )
                     self.plan_errors[rel_path] = item["message"]
@@ -2049,7 +2050,7 @@ body {
             for item in integrity_result.get("broken_links", []):
                 path_abs = item.get("path")
                 if path_abs:
-                    rel_path = os.path.relpath(path_abs, self.base_dir).replace(
+                    rel_path = safe_relpath(path_abs, self.base_dir).replace(
                         "\\", "/"
                     )
                     self.plan_errors[rel_path] = item["message"]
@@ -2058,12 +2059,12 @@ body {
             for item in integrity_result.get("long_paths", []):
                 src_abs = item.get("source")
                 if src_abs:
-                    rel_src = os.path.relpath(src_abs, self.base_dir).replace("\\", "/")
+                    rel_src = safe_relpath(src_abs, self.base_dir).replace("\\", "/")
                     self.plan_errors[rel_src] = item["message"]
                     self.plan_errors[os.path.basename(src_abs)] = item["message"]
                 dst_abs = item.get("path")
                 if dst_abs:
-                    rel_dst = os.path.relpath(dst_abs, self.base_dir).replace("\\", "/")
+                    rel_dst = safe_relpath(dst_abs, self.base_dir).replace("\\", "/")
                     self.plan_errors[rel_dst] = item["message"]
                     self.plan_errors[os.path.basename(dst_abs)] = item["message"]
 

@@ -6,7 +6,7 @@ import uuid
 from typing import Any, Dict, List
 
 from app.core.db_conn import get_db_connection
-from app.core.path_utils import is_junction_path
+from app.core.path_utils import is_junction_path, safe_relpath
 
 try:
     import pylnk3
@@ -40,9 +40,14 @@ class HistoryManager:
                     session_id TEXT PRIMARY KEY,
                     timestamp REAL,
                     base_dir TEXT,
-                    status TEXT
+                    status TEXT,
+                    target_dirs TEXT
                 )
             """)
+            try:
+                conn.execute("ALTER TABLE sessions ADD COLUMN target_dirs TEXT")
+            except Exception:
+                pass
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS snapshot_files (
                     session_id TEXT,
@@ -129,9 +134,11 @@ class HistoryManager:
                 )
             """)
 
-    def _create_snapshot_internal(self, base_dir: str) -> str:
+    def _create_snapshot_internal(self, base_dir: str, target_dirs: List[str] = None) -> str:
         session_id = str(uuid.uuid4())
         timestamp = time.time()
+        import json
+        target_dirs_json = json.dumps([os.path.normpath(d) for d in target_dirs]) if target_dirs else json.dumps([])
 
         from app.core.link_manager import LinkManager
         from app.core.scanner import get_files_recursively
@@ -141,8 +148,8 @@ class HistoryManager:
         conn = get_db_connection(self.db_path)
         with conn:
             conn.execute(
-                "INSERT INTO sessions (session_id, timestamp, base_dir, status) VALUES (?, ?, ?, ?)",
-                (session_id, timestamp, base_dir, "active"),
+                "INSERT INTO sessions (session_id, timestamp, base_dir, status, target_dirs) VALUES (?, ?, ?, ?, ?)",
+                (session_id, timestamp, base_dir, "active", target_dirs_json),
             )
 
             # 1. Snapshot Files
@@ -284,13 +291,45 @@ class HistoryManager:
 
         return session_id
 
-    def create_snapshot(self, base_dir: str) -> str:
+    def create_snapshot(self, base_dir: str, target_dirs: List[str] = None) -> str:
         """Create a complete snapshot of the directory tree and its metadata."""
 
         def _write():
-            return self._create_snapshot_internal(base_dir)
+            return self._create_snapshot_internal(base_dir, target_dirs=target_dirs)
 
         return self.db.worker.execute_write(_write)
+
+    def register_target_dirs(self, session_id: str, target_dirs: List[str]) -> None:
+        """Register external target directory paths for a session."""
+        if not target_dirs:
+            return
+        import json
+        conn = get_db_connection(self.db_path)
+        with conn:
+            try:
+                cur = conn.execute(
+                    "SELECT target_dirs FROM sessions WHERE session_id = ?", (session_id,)
+                )
+                row = cur.fetchone()
+            except Exception:
+                row = None
+            existing = []
+            if row and row[0]:
+                try:
+                    existing = json.loads(row[0])
+                except Exception:
+                    existing = [row[0]]
+
+            merged = list(existing)
+            for td in target_dirs:
+                norm_td = os.path.normpath(td)
+                if norm_td not in merged:
+                    merged.append(norm_td)
+
+            conn.execute(
+                "UPDATE sessions SET target_dirs = ? WHERE session_id = ?",
+                (json.dumps(merged), session_id),
+            )
 
     def _prune_snapshots(self, conn, limit=10):
         cur = conn.execute(
@@ -311,32 +350,71 @@ class HistoryManager:
 
     def get_sessions(self) -> List[Dict[str, Any]]:
         """Retrieve a list of all historical sessions, ordered by time."""
+        import json
         conn = get_db_connection(self.db_path)
         with conn:
-            cur = conn.execute(
-                "SELECT session_id, timestamp, base_dir, status FROM sessions ORDER BY timestamp DESC"
-            )
-            return [
-                {
-                    "session_id": r[0],
-                    "timestamp": r[1],
-                    "base_dir": r[2],
-                    "status": r[3],
-                }
-                for r in cur.fetchall()
-            ]
+            try:
+                cur = conn.execute(
+                    "SELECT session_id, timestamp, base_dir, status, target_dirs FROM sessions ORDER BY timestamp DESC"
+                )
+                rows = cur.fetchall()
+                results = []
+                for r in rows:
+                    target_dirs = []
+                    if len(r) > 4 and r[4]:
+                        try:
+                            target_dirs = json.loads(r[4])
+                        except Exception:
+                            target_dirs = [r[4]]
+                    results.append({
+                        "session_id": r[0],
+                        "timestamp": r[1],
+                        "base_dir": r[2],
+                        "status": r[3],
+                        "target_dirs": target_dirs,
+                    })
+                return results
+            except Exception:
+                cur = conn.execute(
+                    "SELECT session_id, timestamp, base_dir, status FROM sessions ORDER BY timestamp DESC"
+                )
+                return [
+                    {
+                        "session_id": r[0],
+                        "timestamp": r[1],
+                        "base_dir": r[2],
+                        "status": r[3],
+                        "target_dirs": [],
+                    }
+                    for r in cur.fetchall()
+                ]
 
     def check_missing_files(self, session_id: str) -> List[str]:
         """Check if any files from the snapshot are missing from the disk."""
+        import json
         conn = get_db_connection(self.db_path)
         with conn:
-            cur = conn.execute(
-                "SELECT base_dir FROM sessions WHERE session_id = ?", (session_id,)
-            )
-            row = cur.fetchone()
+            try:
+                cur = conn.execute(
+                    "SELECT base_dir, target_dirs FROM sessions WHERE session_id = ?", (session_id,)
+                )
+                row = cur.fetchone()
+            except Exception:
+                cur = conn.execute(
+                    "SELECT base_dir FROM sessions WHERE session_id = ?", (session_id,)
+                )
+                row = cur.fetchone()
             if not row:
                 raise ValueError("Session not found")
             base_dir = row[0]
+            target_dirs_raw = row[1] if len(row) > 1 else None
+
+            target_dirs = []
+            if target_dirs_raw:
+                try:
+                    target_dirs = json.loads(target_dirs_raw)
+                except Exception:
+                    target_dirs = [target_dirs_raw]
 
             try:
                 cur = conn.execute(
@@ -360,38 +438,54 @@ class HistoryManager:
 
         from app.core.scanner import get_files_recursively
 
-        current_files = get_files_recursively(base_dir, include_hidden=True)
+        scanned_dirs = [base_dir]
+        for td in target_dirs:
+            if td and os.path.exists(td):
+                norm_td = os.path.normpath(td)
+                if norm_td not in [os.path.normpath(d) for d in scanned_dirs]:
+                    scanned_dirs.append(td)
 
         inode_counts = {}
         current_inodes = {}
         active_files_by_rel_path = {}
         active_files_by_sig = {}
+        active_files_by_size = {}
         inodes_reliable = True
 
-        for rel_path in current_files:
-            abs_path = os.path.join(base_dir, rel_path)
-            try:
-                st = os.lstat(abs_path)
-            except OSError:
-                continue
+        for scan_dir in scanned_dirs:
+            current_files = get_files_recursively(scan_dir, include_hidden=True)
+            for rel_path in current_files:
+                abs_path = os.path.join(scan_dir, rel_path)
+                try:
+                    st = os.lstat(abs_path)
+                except OSError:
+                    continue
 
-            ino = st.st_ino
-            size = st.st_size
-            mtime = st.st_mtime
-            is_symlink = 1 if os.path.islink(abs_path) else 0
-            symlink_target = os.readlink(abs_path) if is_symlink else None
+                ino = st.st_ino
+                size = st.st_size
+                mtime = st.st_mtime
+                is_symlink = 1 if os.path.islink(abs_path) else 0
+                symlink_target = os.readlink(abs_path) if is_symlink else None
 
-            inode_counts[ino] = inode_counts.get(ino, 0) + 1
-            if ino == 0 or inode_counts[ino] > 1:
-                inodes_reliable = False
+                inode_counts[ino] = inode_counts.get(ino, 0) + 1
+                if ino == 0 or inode_counts[ino] > 1:
+                    inodes_reliable = False
 
-            sig = (size, mtime, is_symlink, symlink_target)
-            current_inodes[ino] = (abs_path, sig)
-            active_files_by_rel_path[rel_path.lower().replace("\\", "/")] = sig
+                sig = (size, mtime, is_symlink, symlink_target)
+                current_inodes[ino] = (abs_path, sig)
 
-            if sig not in active_files_by_sig:
-                active_files_by_sig[sig] = []
-            active_files_by_sig[sig].append(abs_path)
+                rel_key = safe_relpath(abs_path, base_dir).lower().replace("\\", "/")
+                active_files_by_rel_path[rel_key] = sig
+                abs_key = os.path.normpath(abs_path).lower().replace("\\", "/")
+                active_files_by_rel_path[abs_key] = sig
+
+                if sig not in active_files_by_sig:
+                    active_files_by_sig[sig] = []
+                active_files_by_sig[sig].append(abs_path)
+
+                if size not in active_files_by_size:
+                    active_files_by_size[size] = []
+                active_files_by_size[size].append(abs_path)
 
         def verify_hash(abs_path, expected_hash, expected_size=0):
             if not expected_hash:
@@ -509,13 +603,28 @@ class HistoryManager:
 
             conn = get_db_connection(self.db_path)
             with conn:
-                cur = conn.execute(
-                    "SELECT base_dir FROM sessions WHERE session_id = ?", (session_id,)
-                )
-                row = cur.fetchone()
+                try:
+                    cur = conn.execute(
+                        "SELECT base_dir, target_dirs FROM sessions WHERE session_id = ?", (session_id,)
+                    )
+                    row = cur.fetchone()
+                except Exception:
+                    cur = conn.execute(
+                        "SELECT base_dir FROM sessions WHERE session_id = ?", (session_id,)
+                    )
+                    row = cur.fetchone()
                 if not row:
                     raise ValueError("Session not found")
                 base_dir = row[0]
+                target_dirs_raw = row[1] if len(row) > 1 else None
+
+                target_dirs = []
+                if target_dirs_raw:
+                    try:
+                        import json
+                        target_dirs = json.loads(target_dirs_raw)
+                    except Exception:
+                        target_dirs = [target_dirs_raw]
 
             # Generate safety backup snapshot before proceeding
             safety_session_id = self._create_snapshot_internal(base_dir)
@@ -553,7 +662,12 @@ class HistoryManager:
 
                 from app.core.scanner import get_files_recursively
 
-                current_files = get_files_recursively(base_dir, include_hidden=True)
+                scanned_dirs = [base_dir]
+                for td in target_dirs:
+                    if td and os.path.exists(td):
+                        norm_td = os.path.normpath(td)
+                        if norm_td not in [os.path.normpath(d) for d in scanned_dirs]:
+                            scanned_dirs.append(td)
 
                 inode_counts = {}
                 current_inodes = {}
@@ -562,52 +676,39 @@ class HistoryManager:
                 active_files_by_size = {}
                 inodes_reliable = True
 
-                for rel_path in current_files:
-                    abs_path = os.path.join(base_dir, rel_path)
-                    try:
-                        st = os.lstat(abs_path)
-                    except OSError:
-                        continue
+                for scan_dir in scanned_dirs:
+                    current_files = get_files_recursively(scan_dir, include_hidden=True)
+                    for rel_path in current_files:
+                        abs_path = os.path.join(scan_dir, rel_path)
+                        try:
+                            st = os.lstat(abs_path)
+                        except OSError:
+                            continue
 
-                    ino = st.st_ino
-                    size = st.st_size
-                    mtime = st.st_mtime
-                    is_symlink = 1 if os.path.islink(abs_path) else 0
-                    symlink_target = os.readlink(abs_path) if is_symlink else None
+                        ino = st.st_ino
+                        size = st.st_size
+                        mtime = st.st_mtime
+                        is_symlink = 1 if os.path.islink(abs_path) else 0
+                        symlink_target = os.readlink(abs_path) if is_symlink else None
 
-                    inode_counts[ino] = inode_counts.get(ino, 0) + 1
-                    if ino == 0 or inode_counts[ino] > 1:
-                        inodes_reliable = False
+                        inode_counts[ino] = inode_counts.get(ino, 0) + 1
+                        if ino == 0 or inode_counts[ino] > 1:
+                            inodes_reliable = False
 
-                    sig = (size, mtime, is_symlink, symlink_target)
-                    current_inodes[ino] = (abs_path, sig)
-                    active_files_by_rel_path[rel_path.lower().replace("\\", "/")] = sig
+                        sig = (size, mtime, is_symlink, symlink_target)
+                        current_inodes[ino] = (abs_path, sig)
+                        rel_key = safe_relpath(abs_path, base_dir).lower().replace("\\", "/")
+                        active_files_by_rel_path[rel_key] = sig
+                        abs_key = os.path.normpath(abs_path).lower().replace("\\", "/")
+                        active_files_by_rel_path[abs_key] = sig
 
-                    if sig not in active_files_by_sig:
-                        active_files_by_sig[sig] = []
-                    active_files_by_sig[sig].append(abs_path)
+                        if sig not in active_files_by_sig:
+                            active_files_by_sig[sig] = []
+                        active_files_by_sig[sig].append(abs_path)
 
-                    if size not in active_files_by_size:
-                        active_files_by_size[size] = []
-                    active_files_by_size[size].append(abs_path)
-
-                print("DEBUG ROLLBACK: inodes_reliable =", inodes_reliable, flush=True)
-                print("DEBUG ROLLBACK: current_files =", current_files, flush=True)
-                print(
-                    "DEBUG ROLLBACK: snapshot_files =",
-                    [(r[0], r[1], r[2], r[3], r[6]) for r in snapshot_files],
-                    flush=True,
-                )
-                print(
-                    "DEBUG ROLLBACK: active_files_by_size =",
-                    active_files_by_size,
-                    flush=True,
-                )
-                print(
-                    "DEBUG ROLLBACK: active_files_by_sig =",
-                    active_files_by_sig,
-                    flush=True,
-                )
+                        if size not in active_files_by_size:
+                            active_files_by_size[size] = []
+                        active_files_by_size[size].append(abs_path)
 
                 # First compute all intended moves
                 moves = []
@@ -618,8 +719,6 @@ class HistoryManager:
                     EMPTY_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
                     import sys
 
-                    # On Windows, we allow up to 30 attempts (with 0.1s sleep, up to 3 seconds total)
-                    # to let NTFS flushes, sharing violations, and anti-virus locks settle.
                     max_attempts = 30 if sys.platform == "win32" else 10
                     sleep_time = 0.1 if sys.platform == "win32" else 0.05
 
@@ -631,7 +730,6 @@ class HistoryManager:
                             if h == expected_hash:
                                 return True
 
-                            # On Windows, always retry if the hash doesn't match yet
                             if sys.platform == "win32":
                                 import gc
 
@@ -745,10 +843,6 @@ class HistoryManager:
                                                 ].pop(idx)
                                                 break
 
-                    print(
-                        f"DEBUG ROLLBACK FILE {rel_path}: current_abs resolved to = {current_abs}",
-                        flush=True,
-                    )
                     if not current_abs:
                         if not is_link_entity and not ignore_missing:
                             raise ValueError(
@@ -795,7 +889,7 @@ class HistoryManager:
                                     moves.append((current_abs, target_abs))
 
                 planned_target_rels = {
-                    os.path.relpath(m[1], base_dir).lower().replace("\\", "/")
+                    safe_relpath(m[1], base_dir).lower().replace("\\", "/")
                     for m in moves
                 }
 
@@ -838,24 +932,23 @@ class HistoryManager:
                         db_conn.executemany(
                             """
                             INSERT INTO documents (base_dir, filepath, file_hash, extracted_text)
-                        VALUES (?, ?, ?, ?)
-                        ON CONFLICT(base_dir, filepath) DO UPDATE SET
-                             file_hash=excluded.file_hash,
-                             extracted_text=excluded.extracted_text
+                            VALUES (?, ?, ?, ?)
+                            ON CONFLICT(base_dir, filepath) DO UPDATE SET
+                                 file_hash=excluded.file_hash,
+                                 extracted_text=excluded.extracted_text
                             """,
                             docs_to_upsert,
                         )
 
-                # Execute moves safely to avoid overwriting during cyclic renames
+                # Execute moves safely using resilient ops
                 try:
                     for src, dst in moves:
                         from app.core.mover import get_safe_path
 
                         db_conn = get_db_connection(self.db.db_path)
 
-                        # Fix parent directory collisions
                         parts = (
-                            os.path.relpath(dst, base_dir).replace("\\", "/").split("/")
+                            safe_relpath(dst, base_dir).replace("\\", "/").split("/")
                         )
                         current = base_dir
                         for part in parts[:-1]:
@@ -865,10 +958,10 @@ class HistoryManager:
                                     os.path.dirname(current), os.path.basename(current)
                                 )
                                 _robust_move(current, safe_current)
-                                rel_current = os.path.relpath(
+                                rel_current = safe_relpath(
                                     current, base_dir
                                 ).replace("\\", "/")
-                                rel_safe = os.path.relpath(
+                                rel_safe = safe_relpath(
                                     safe_current, base_dir
                                 ).replace("\\", "/")
                                 with db_conn:
@@ -896,8 +989,8 @@ class HistoryManager:
                             except OSError:
                                 pass
 
-                        rel_src = os.path.relpath(src, base_dir).replace("\\", "/")
-                        rel_dst = os.path.relpath(dst, base_dir).replace("\\", "/")
+                        rel_src = safe_relpath(src, base_dir).replace("\\", "/")
+                        rel_dst = safe_relpath(dst, base_dir).replace("\\", "/")
 
                         if os.path.exists(dst) and not os.path.samefile(src, dst):
                             is_cyclic = False
@@ -907,7 +1000,6 @@ class HistoryManager:
                                     break
 
                             if is_cyclic:
-                                # Cyclic rename conflict -> isolate to safe transient path
                                 branch_rel_temp = os.path.join(
                                     ".branches", safety_session_id, rel_dst
                                 ).replace("\\", "/")
@@ -925,13 +1017,12 @@ class HistoryManager:
                                     if m_src == dst:
                                         moves[i] = (temp_dst, m_dst)
                             else:
-                                # Non-cyclic inline rename (Requirement 2)
                                 safe_dst = get_safe_path(
                                     os.path.dirname(dst), os.path.basename(dst)
                                 )
                                 _robust_move(dst, safe_dst)
 
-                                safe_rel = os.path.relpath(safe_dst, base_dir).replace(
+                                safe_rel = safe_relpath(safe_dst, base_dir).replace(
                                     "\\", "/"
                                 )
                                 with db_conn:
@@ -955,6 +1046,7 @@ class HistoryManager:
                             if not os.path.exists(dst):
                                 _robust_move(src, dst)
 
+                        # Commit DB update ONLY after physical file move is confirmed
                         with db_conn:
                             db_conn.execute(
                                 "DELETE FROM documents WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
@@ -965,10 +1057,10 @@ class HistoryManager:
                                 db_conn.execute(
                                     """
                                     INSERT INTO documents (base_dir, filepath, file_hash, extracted_text)
-                        VALUES (?, ?, ?, ?)
-                        ON CONFLICT(base_dir, filepath) DO UPDATE SET
-                            file_hash=excluded.file_hash,
-                            extracted_text=excluded.extracted_text
+                                    VALUES (?, ?, ?, ?)
+                                    ON CONFLICT(base_dir, filepath) DO UPDATE SET
+                                        file_hash=excluded.file_hash,
+                                        extracted_text=excluded.extracted_text
                                     """,
                                     (
                                         base_dir,
@@ -999,10 +1091,10 @@ class HistoryManager:
                                 )
                                 _robust_move(target_abs, safe_path)
 
-                                rel_target = os.path.relpath(
+                                rel_target = safe_relpath(
                                     target_abs, base_dir
                                 ).replace("\\", "/")
-                                rel_safe = os.path.relpath(safe_path, base_dir).replace(
+                                rel_safe = safe_relpath(safe_path, base_dir).replace(
                                     "\\", "/"
                                 )
                                 db_conn = get_db_connection(self.db.db_path)
@@ -1068,10 +1160,10 @@ class HistoryManager:
                                 )
                                 _robust_move(target_abs, safe_path)
 
-                                rel_target = os.path.relpath(
+                                rel_target = safe_relpath(
                                     target_abs, base_dir
                                 ).replace("\\", "/")
-                                rel_safe = os.path.relpath(safe_path, base_dir).replace(
+                                rel_safe = safe_relpath(safe_path, base_dir).replace(
                                     "\\", "/"
                                 )
                                 db_conn = get_db_connection(self.db.db_path)

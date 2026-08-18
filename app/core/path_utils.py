@@ -35,6 +35,24 @@ ILLEGAL_PATH_CHARS_SET = set('<>:"|?*')
 ILLEGAL_NAME_CHARS_SET = ILLEGAL_PATH_CHARS_SET | set("/\\")
 
 
+def safe_relpath(path: str, start: str = None) -> str:
+    """Compute relative path safely across drive letters/mount points on Windows.
+
+    If path and start are on different drive letters or mounts, returns normalized absolute path.
+    """
+    if not path:
+        return path
+    try:
+        if start is not None:
+            p_drive = os.path.splitdrive(path)[0].lower()
+            s_drive = os.path.splitdrive(start)[0].lower()
+            if p_drive != s_drive and p_drive and s_drive:
+                return os.path.normpath(os.path.abspath(path))
+        return os.path.relpath(path, start)
+    except (ValueError, OSError):
+        return os.path.normpath(os.path.abspath(path))
+
+
 def is_packaged() -> bool:
     """Check if the application is running in a frozen/packaged bundle (e.g., PyInstaller)."""
     return getattr(sys, "frozen", False)
