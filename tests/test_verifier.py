@@ -88,7 +88,9 @@ def test_path_length_validation_and_simulation():
 def test_check_ai_status_florence2_integrity_failure(tmp_path, monkeypatch):
     """Verify check_ai_status detects Florence-2 integrity failures."""
     from unittest.mock import patch
+
     import pytest
+
     from app.config import AppSettings
     from app.core.shared_registry import SharedModelRegistry
     from app.core.verifier import check_ai_status
