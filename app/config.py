@@ -11,7 +11,7 @@ import threading
 from pathlib import Path
 from typing import Annotated, Literal
 
-from pydantic import Field, ValidationError, field_validator
+from pydantic import Field, ValidationError, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -79,6 +79,16 @@ class Settings(BaseSettings):
             if cleaned not in validated:
                 validated.append(cleaned)
         return validated
+
+    @model_validator(mode="after")
+    def validate_debounce_delays(self) -> "Settings":
+        """Validate that DEBOUNCE_DELAY does not exceed MAX_DEBOUNCE_DELAY."""
+        if self.DEBOUNCE_DELAY > self.MAX_DEBOUNCE_DELAY:
+            raise ValueError(
+                f"DEBOUNCE_DELAY ({self.DEBOUNCE_DELAY}) cannot be greater than "
+                f"MAX_DEBOUNCE_DELAY ({self.MAX_DEBOUNCE_DELAY})."
+            )
+        return self
 
     @field_validator("CONFLICT_POLICY")
     @classmethod
@@ -343,7 +353,13 @@ class AppSettings:
                         {"field": path, "message": error.message}
                     )
 
-            for key, value in data.items():
+            data_keys = list(data.keys())
+            if "MAX_DEBOUNCE_DELAY" in data_keys and "DEBOUNCE_DELAY" in data_keys:
+                data_keys.remove("MAX_DEBOUNCE_DELAY")
+                data_keys.insert(0, "MAX_DEBOUNCE_DELAY")
+
+            for key in data_keys:
+                value = data[key]
                 if hasattr(self._settings_model, key):
                     try:
                         setattr(self._settings_model, key, value)
@@ -414,6 +430,54 @@ class AppSettings:
         except Exception as e:
             logging.error(f"Failed to save settings: {e}")
 
+    def revalidate(self) -> bool:
+        """Re-check all current settings values against JSON schema and Pydantic validation.
+
+        If re-validation succeeds, unlocks background saving and triggers a save.
+        Returns True if valid, False if errors remain.
+        """
+        errors = []
+        data = self._settings_model.model_dump(mode="json")
+
+        # Validate against static schema file if it exists
+        schema_path = Path(__file__).parent / "config_schema.json"
+        if schema_path.exists():
+            import jsonschema
+
+            try:
+                with open(schema_path, "r", encoding="utf-8") as sf:
+                    schema = json.load(sf)
+                validator = jsonschema.Draft202012Validator(schema)
+                schema_errors = sorted(validator.iter_errors(data), key=lambda e: e.path)
+                for error in schema_errors:
+                    path = (
+                        ".".join([str(p) for p in error.path]) if error.path else "root"
+                    )
+                    errors.append({"field": path, "message": error.message})
+            except Exception as e:
+                errors.append({"field": "schema", "message": str(e)})
+
+        # Validate against Settings Pydantic model
+        try:
+            Settings(**data)
+        except ValidationError as e:
+            for err in e.errors():
+                loc = err.get("loc", [])
+                path = ".".join([str(p) for p in loc]) if loc else "root"
+                msg = err.get("msg", str(err))
+                if not any(item["field"] == path and item["message"] == msg for item in errors):
+                    errors.append({"field": path, "message": msg})
+
+        if not errors:
+            self._has_validation_errors = False
+            self._validation_errors = []
+            self._trigger_save()
+            return True
+        else:
+            self._has_validation_errors = True
+            self._validation_errors = errors
+            return False
+
     def __getattr__(self, name):
         """Get attribute dynamically from the settings model."""
         if hasattr(self._settings_model, name):
@@ -438,4 +502,4 @@ class AppSettings:
             if name == "PROXY" and value != "<DECRYPTION_FAILED>":
                 super().__setattr__("_raw_encrypted_proxy", None)
             setattr(self._settings_model, name, value)
-            self._trigger_save()
+            self.revalidate()
