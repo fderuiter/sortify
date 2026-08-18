@@ -591,6 +591,11 @@ def execute_moves(
         return summary
 
     except Exception as e:
+        try:
+            db.execute_batch_updates(db_updates_batch)
+        except Exception:
+            pass
+
         if session_id:
             logging.error(
                 f"Error during background sorting: {e}. Initiating automatic rollback for session {session_id}"

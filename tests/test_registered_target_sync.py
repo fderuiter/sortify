@@ -1,9 +1,6 @@
-import json
 import os
 import shutil
 from unittest.mock import patch
-
-import pytest
 
 from app.core.db_conn import get_db_connection
 from app.core.path_utils import safe_relpath
