@@ -878,14 +878,18 @@ body {
 
         detection = detect_offline_bundle("model")
 
-        if self.settings.AI_CONSENT_GRANTED is None:
-            if detection["bundle_found"]:
+        if detection["bundle_found"]:
+            if self.settings.AI_CONSENT_GRANTED is None:
                 self.settings.AI_CONSENT_GRANTED = True
-            from app.ui.wizard import show_wizard
-
-            show_wizard(self, self.settings)
-        elif self.settings.AI_CONSENT_GRANTED is True and detection["bundle_found"]:
             return
+
+        if self.settings.AI_CONSENT_GRANTED is not None:
+            return
+
+        # Run wizard dialog
+        from app.ui.wizard import show_wizard
+
+        show_wizard(self, self.settings)
 
     def show_settings_view(self):
         """Show the settings dialog."""
