@@ -8,6 +8,7 @@ from app.core.resilient_file_ops import (
     resilient_file_hash,
     resilient_move,
     resilient_remove,
+    resilient_rmtree,
 )
 
 
@@ -182,3 +183,43 @@ def test_resilient_file_hash_non_windows_no_retry(mock_sleep, mock_collect):
     assert len(calls) == 1
     assert mock_collect.call_count == 0
     assert mock_sleep.call_count == 0
+
+
+def test_resilient_rmtree_readonly_contents(tmp_path):
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    f = sub / "readonly.txt"
+    f.write_text("read only content")
+    f.chmod(stat.S_IREAD)
+
+    assert f.exists()
+    resilient_rmtree(str(tmp_path / "sub"))
+    assert not sub.exists()
+
+
+def test_resilient_rmtree_warning_logged_after_max_attempts(tmp_path, caplog):
+    import logging
+
+    d = tmp_path / "dummy_dir"
+    d.mkdir()
+
+    with caplog.at_level(logging.WARNING):
+        with patch("shutil.rmtree", side_effect=OSError("Access denied")):
+            with pytest.raises(OSError, match="Access denied"):
+                resilient_rmtree(str(d))
+
+    assert f"Failed to rmtree {d} after" in caplog.text
+
+
+def test_resilient_rmtree_ignore_errors(tmp_path, caplog):
+    import logging
+
+    d = tmp_path / "dummy_dir"
+    d.mkdir()
+
+    with caplog.at_level(logging.WARNING):
+        with patch("shutil.rmtree", side_effect=OSError("Access denied")):
+            resilient_rmtree(str(d), ignore_errors=True)
+
+    assert f"Failed to rmtree {d} after" in caplog.text
+
