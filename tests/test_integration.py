@@ -447,12 +447,13 @@ def test_advanced_settings_sliders():
     settings.IMAGE_SKIP_THRESHOLD = 3000
     settings.DEBOUNCE_DELAY = 0.6
     settings.MAX_DEBOUNCE_DELAY = 5.0
+    settings.COHERENCE_THRESHOLD = 0.5
 
     with patch("app.ui.settings.ui") as mock_ui:
         show_settings(parent_app, settings)
 
-        # We expect exactly 7 sliders
-        assert mock_ui.slider.call_count == 7
+        # We expect exactly 8 sliders
+        assert mock_ui.slider.call_count == 8
 
         # Locate sliders based on min/max bounds
         sliders_by_bounds = {}
@@ -510,6 +511,13 @@ def test_advanced_settings_sliders():
         on_max_debounce_change = max_debounce_kwargs.get("on_change")
         assert on_max_debounce_change is not None
 
+        # 8. COHERENCE_THRESHOLD: 0.0 to 1.0
+        assert (0.0, 1.0) in sliders_by_bounds
+        coherence_kwargs = sliders_by_bounds[(0.0, 1.0)]
+        assert coherence_kwargs.get("value") == 0.5
+        on_coherence_change = coherence_kwargs.get("on_change")
+        assert on_coherence_change is not None
+
         # Test valid changes
         # Max Workers change
         mock_event = MagicMock()
@@ -546,6 +554,11 @@ def test_advanced_settings_sliders():
         mock_event.value = 10.0
         on_max_debounce_change(mock_event)
         assert settings.MAX_DEBOUNCE_DELAY == 10.0
+
+        # Coherence Threshold change
+        mock_event.value = 0.75
+        on_coherence_change(mock_event)
+        assert settings.COHERENCE_THRESHOLD == 0.75
 
         # Test invalid values trigger revert-and-notify
         # Invalid Max Workers (e.g. 100 which is > 64)
@@ -615,3 +628,53 @@ def test_advanced_settings_sliders():
             "max debounce delay" in last_call_args[0].lower()
             or "validation" in last_call_args[0].lower()
         )
+
+
+def test_debounce_sliders_auto_adjustment():
+    """Test real-time slider auto-adjustment when slider values cross bounds."""
+    parent_app = MagicMock()
+    settings = AppSettings()
+    settings.DEBOUNCE_DELAY = 1.0
+    settings.MAX_DEBOUNCE_DELAY = 5.0
+
+    with patch("app.ui.settings.ui") as mock_ui:
+        show_settings(parent_app, settings)
+
+        sliders = {}
+        for call_args in mock_ui.slider.call_args_list:
+            _, kwargs = call_args
+            bounds = (kwargs.get("min"), kwargs.get("max"))
+            sliders[bounds] = kwargs
+
+        on_debounce_change = sliders[(0.1, 10.0)]["on_change"]
+        on_max_debounce_change = sliders[(0.5, 30.0)]["on_change"]
+
+        # 1. Slide MIN debounce delay above MAX debounce delay (e.g., 8.0 when MAX is 5.0)
+        mock_event = MagicMock()
+        mock_event.value = 8.0
+        mock_ui.notify.reset_mock()
+
+        on_debounce_change(mock_event)
+
+        assert settings.DEBOUNCE_DELAY == 8.0
+        assert settings.MAX_DEBOUNCE_DELAY == 8.0
+        for call in mock_ui.notify.call_args_list:
+            assert call.kwargs.get("type") != "negative"
+
+        # 2. Slide MAX debounce delay below MIN debounce delay (e.g., 2.0 when MIN is 8.0)
+        mock_event.value = 2.0
+        mock_ui.notify.reset_mock()
+
+        on_max_debounce_change(mock_event)
+
+        assert settings.DEBOUNCE_DELAY == 2.0
+        assert settings.MAX_DEBOUNCE_DELAY == 2.0
+        for call in mock_ui.notify.call_args_list:
+            assert call.kwargs.get("type") != "negative"
+
+        # 3. Non-overlapping update
+        mock_event.value = 1.0
+        on_debounce_change(mock_event)
+        assert settings.DEBOUNCE_DELAY == 1.0
+        assert settings.MAX_DEBOUNCE_DELAY == 2.0
+
