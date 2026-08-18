@@ -113,6 +113,7 @@ def test_multiprocess_few_shot_prefetch_flow(db, temp_dir):
 
     # Set up prompt dump file path
     prompt_dump_path = temp_dir / "prompt_dump.txt"
+    os.environ["DEBUG"] = "1"
     os.environ["PROMPT_DUMP_FILE"] = str(prompt_dump_path)
     os.environ["FORCE_MULTIPROCESSING_CLUSTERING"] = "1"
 
@@ -152,6 +153,7 @@ def test_multiprocess_few_shot_prefetch_flow(db, temp_dir):
     time.sleep(0.5)
 
     # Clean up environment variables
+    os.environ.pop("DEBUG", None)
     os.environ.pop("PROMPT_DUMP_FILE", None)
     os.environ.pop("FORCE_MULTIPROCESSING_CLUSTERING", None)
 

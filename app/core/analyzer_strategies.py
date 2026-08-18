@@ -10,7 +10,65 @@ import threading
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
+from pathlib import Path
 from typing import List, Protocol
+
+
+def is_debug_active() -> bool:
+    """Check if debug mode is active via the DEBUG environment variable."""
+    return os.environ.get("DEBUG", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def is_prompt_dump_enabled() -> bool:
+    """Check if prompt dumping is enabled (requires active debug mode and PROMPT_DUMP_FILE)."""
+    return is_debug_active() and bool(os.environ.get("PROMPT_DUMP_FILE"))
+
+
+ILLEGAL_DUMP_PATH_CHARS = set('<>?*|"\0')
+
+
+def validate_prompt_dump_path(dump_file: str) -> None:
+    """Validate requested dump path to prevent directory traversal and illegal characters.
+
+    Raises
+    ------
+        ValueError: If dump_file path contains relative traversal sequences or illegal characters.
+    """
+    if not isinstance(dump_file, str) or not dump_file.strip():
+        raise ValueError("Prompt dump target path must be a non-empty string.")
+
+    if any(c in ILLEGAL_DUMP_PATH_CHARS for c in dump_file):
+        raise ValueError(
+            f"Invalid prompt dump path '{dump_file}': contains illegal characters."
+        )
+
+    # Check for relative directory traversal segments ('..')
+    normalized_path = dump_file.replace("\\", "/")
+    segments = normalized_path.split("/")
+    if ".." in segments:
+        raise ValueError(
+            f"Invalid prompt dump path '{dump_file}': relative directory traversal ('..') is prohibited."
+        )
+
+
+def scrub_prompt_text(text: str) -> str:
+    """Scrub user home directory paths from prompt text prior to writing to disk."""
+    if not isinstance(text, str) or not text:
+        return text
+
+    try:
+        home_dir = str(Path.home())
+    except Exception:
+        home_dir = None
+
+    if home_dir and home_dir != "/":
+        home_dir_fwd = home_dir.replace("\\", "/")
+        home_dir_back = home_dir.replace("/", "\\")
+        text = text.replace(home_dir_fwd, "<USER_HOME>")
+        text = text.replace(home_dir_back, "<USER_HOME>")
+
+    return text
+
 
 _DECRYPTION_EXECUTOR = None
 _DECRYPTION_EXECUTOR_LOCK = threading.Lock()
@@ -1180,13 +1238,15 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
             self.generator = None
 
     def _run_prompt(self, prompt: str, max_tokens: int, grammar: str = None) -> str:
-        dump_file = os.environ.get("PROMPT_DUMP_FILE")
-        if dump_file:
-            try:
-                with open(dump_file, "a") as f:
-                    f.write(prompt + "\n===PROMPT_END===\n")
-            except Exception:
-                pass
+        if is_prompt_dump_enabled():
+            dump_file = os.environ.get("PROMPT_DUMP_FILE")
+            validate_prompt_dump_path(dump_file)
+            scrubbed_prompt = scrub_prompt_text(prompt)
+            parent_dir = os.path.dirname(dump_file)
+            if parent_dir:
+                os.makedirs(parent_dir, exist_ok=True)
+            with open(dump_file, "a", encoding="utf-8") as f:
+                f.write(scrubbed_prompt + "\n===PROMPT_END===\n")
             return "Mock Generated Folder Name"
 
         if self._gguf_active and not self._gguf_failed:
@@ -1684,7 +1744,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         if (
             self.generator is None
             and not (self._gguf_active and not self._gguf_failed)
-            and not os.environ.get("PROMPT_DUMP_FILE")
+            and not is_prompt_dump_enabled()
         ):
             return super()._get_cluster_keywords(documents)
 
