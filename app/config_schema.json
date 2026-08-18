@@ -133,6 +133,27 @@
       "title": "Conflict Policy",
       "type": "string"
     },
+    "SORTING_STRATEGY": {
+      "default": "default",
+      "enum": [
+        "default",
+        "generative",
+        "clinical_tmf",
+        "clinical_isf"
+      ],
+      "title": "Sorting Strategy",
+      "type": "string"
+    },
+    "CLINICAL_SMART_RENAMING": {
+      "default": false,
+      "title": "Clinical Smart Renaming",
+      "type": "boolean"
+    },
+    "CLINICAL_GENERATE_AUDIT_REPORT": {
+      "default": true,
+      "title": "Clinical Generate Audit Report",
+      "type": "boolean"
+    },
     "COHERENCE_THRESHOLD": {
       "default": 0.5,
       "maximum": 1.0,

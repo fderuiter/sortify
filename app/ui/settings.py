@@ -467,7 +467,9 @@ def show_settings(parent_app, settings):
                             .classes("flex-grow")
                         )
                         ui.label().bind_text_from(
-                            debounce_slider, "value", backward=lambda v: f"{float(v):.1f}"
+                            debounce_slider,
+                            "value",
+                            backward=lambda v: f"{float(v):.1f}",
                         )
 
                     def on_max_debounce_delay_change(e):
@@ -482,7 +484,9 @@ def show_settings(parent_app, settings):
                             settings.MAX_DEBOUNCE_DELAY = val
                         except Exception as ex:
                             e.sender.value = settings.MAX_DEBOUNCE_DELAY
-                            ui.notify(f"Invalid max debounce delay: {ex}", type="negative")
+                            ui.notify(
+                                f"Invalid max debounce delay: {ex}", type="negative"
+                            )
 
                     ui.label("Max Debounce Delay (seconds)").classes(
                         "text-sm text-gray-700 mt-4"
@@ -500,7 +504,9 @@ def show_settings(parent_app, settings):
                             .classes("flex-grow")
                         )
                         ui.label().bind_text_from(
-                            max_debounce_slider, "value", backward=lambda v: f"{float(v):.1f}"
+                            max_debounce_slider,
+                            "value",
+                            backward=lambda v: f"{float(v):.1f}",
                         )
 
             with ui.tab_panel("AI"):
@@ -541,23 +547,59 @@ def show_settings(parent_app, settings):
                         ).classes("text-green-900 text-sm mt-1")
 
                 def reset_model_cache():
+                    import asyncio
+
+                    from nicegui.slot import Slot
+
                     from app.config import get_app_dir
                     from app.core.downloader import DownloadManager
+
+                    try:
+                        loop = asyncio.get_running_loop()
+                    except RuntimeError:
+                        loop = None
+
+                    try:
+                        stack = Slot.get_stack()
+                    except Exception:
+                        stack = None
 
                     model_dir = str(get_app_dir() / "model")
                     ui.notify("Clearing model cache in background...")
 
                     def on_done(success, err):
-                        if success:
-                            ui.notify(
-                                "Model cache cleared successfully.", type="positive"
+                        def _notify():
+                            tid = (
+                                id(asyncio.current_task())
+                                if asyncio.current_task()
+                                else 0
                             )
-                            if hasattr(parent_app, "update_ai_warning"):
-                                parent_app.update_ai_warning()
+                            if stack is not None:
+                                Slot.stacks[tid] = stack
+                            try:
+                                if success:
+                                    ui.notify(
+                                        "Model cache cleared successfully.",
+                                        type="positive",
+                                    )
+                                    if hasattr(parent_app, "update_ai_warning"):
+                                        parent_app.update_ai_warning()
+                                else:
+                                    ui.notify(
+                                        f"Failed to clear model cache: {err}",
+                                        type="negative",
+                                    )
+                            finally:
+                                try:
+                                    if tid in Slot.stacks:
+                                        del Slot.stacks[tid]
+                                except Exception:
+                                    pass
+
+                        if loop:
+                            loop.call_soon_threadsafe(_notify)
                         else:
-                            ui.notify(
-                                f"Failed to clear model cache: {err}", type="negative"
-                            )
+                            _notify()
 
                     DownloadManager.get_instance().delete_model_async(
                         model_dir, on_done=on_done

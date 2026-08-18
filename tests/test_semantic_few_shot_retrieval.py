@@ -72,7 +72,7 @@ def test_generative_naming_uses_precomputed_vectors_and_zero_decryption(db, temp
 
     # Insert corresponding vectors (384 dimensions)
     vector_space = [1.0] + [0.0] * 383
-    vector_cooking = [0.0] + [1.0] * 383
+    vector_cooking = [0.0, 1.0] + [0.0] * 382
 
     db.upsert_document_vectors(
         base_dir,
@@ -98,8 +98,8 @@ def test_generative_naming_uses_precomputed_vectors_and_zero_decryption(db, temp
         is_valid=True,
     )
 
-    # We also mock generate_embedding to return a vector strongly aligned with space
-    target_vector = [0.9] + [0.0] * 383
+    # We also mock generate_embedding to return a vector strongly aligned with space, within standard generative range (0.3 to 0.85) to avoid high-confidence bypass
+    target_vector = [0.6, 0.0, 0.8] + [0.0] * 381
 
     # Set up generator mock on strategy
     strategy.generator = MagicMock()
@@ -133,7 +133,7 @@ def test_generative_naming_uses_precomputed_vectors_and_zero_decryption(db, temp
         assert name == "Space Mission Group"
 
         # 2. Verify that raw decryption is called only to populate the cache, but we don't query get_all_documents directly
-        assert spy_decrypt.call_count == 2
+        assert spy_decrypt.call_count == 1
         spy_get_all.assert_not_called()
 
         # 3. Verify exact cosine similarity picked the "Space" exemplar text over "Cooking"
@@ -284,7 +284,8 @@ def test_generative_naming_latency_performance_1000_docs(db, temp_dir):
         is_valid=True,
     )
 
-    target_vector = [1.0] + [0.0] * 383
+    # We set target_vector to have a similarity within standard generative range (0.3 to 0.85) to avoid high-confidence bypass
+    target_vector = [0.6, 0.4] + [0.0] * 382
 
     with (
         patch(

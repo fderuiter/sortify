@@ -111,9 +111,10 @@ def test_daemon_execution_flow(tmp_path):
             yield "invoice.txt", "extracted text", "hash123", False
 
         mock_app_session_inst.process_items_async = dummy_process_items
-        mock_app_session_inst.generate_sorting_plan.return_value = {
-            "invoice.txt": "dest/invoice.txt"
-        }
+        mock_app_session_inst.generate_sorting_plan.side_effect = [
+            {"invoice.txt": "dest/invoice.txt"},  # Phase 1: Fast-Path
+            {},  # Phase 2: Slow-Path
+        ]
         mock_app_session_inst.execute_moves.return_value = {"moved": 1}
 
         # Run the sorting sync manually
@@ -123,7 +124,10 @@ def test_daemon_execution_flow(tmp_path):
         # Verify AppSession was closed and moves were executed
         mock_app_session_class.assert_called_once_with(settings, str(src_dir))
         mock_app_session_inst.partial_fit.assert_called()
-        mock_app_session_inst.generate_sorting_plan.assert_called_once()
+        assert mock_app_session_inst.generate_sorting_plan.call_count == 2
+        call_args = mock_app_session_inst.generate_sorting_plan.call_args_list
+        assert call_args[0].kwargs.get("fast_path_only") is True
+        assert call_args[1].kwargs.get("fast_path_only") is False
         mock_app_session_inst.execute_moves.assert_called_once_with(
             {"invoice.txt": "dest/invoice.txt"}
         )

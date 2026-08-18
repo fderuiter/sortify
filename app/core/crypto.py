@@ -81,6 +81,8 @@ class SessionCrypto:
     """Manages encryption and decryption of data per session."""
 
     def __init__(self, key_path: Path, db_path: Path):
+        import threading
+
         self.db_path = Path(os.path.abspath(db_path))
         self.key_path = Path(os.path.abspath(key_path))
         self._cipher = None
@@ -88,6 +90,9 @@ class SessionCrypto:
         self.keyring_service = "AutoSorter"
         db_hash = hashlib.md5(str(self.db_path).encode("utf-8")).hexdigest()
         self.keyring_account = f"DatabaseDecryptionKey_{db_hash}"
+        self._vector_cache_max_entries = 10000
+        self._vector_parsed_cache = {}
+        self._vector_decrypt_lock = threading.Lock()
 
         # Centralized key store location under user's home directory / APPDATA
         self.isolated_dir = get_fallback_keys_dir()
@@ -343,10 +348,35 @@ class SessionCrypto:
         """Decrypt vector bytes and return the original string."""
         if cipher_bytes is None:
             return None
+        if isinstance(cipher_bytes, str):
+            cipher_bytes = cipher_bytes.encode("utf-8")
         cipher = self.get_cipher()
         try:
-            if isinstance(cipher_bytes, str):
-                cipher_bytes = cipher_bytes.encode("utf-8")
             return cipher.decrypt(cipher_bytes).decode("utf-8")
         except Exception as e:
             raise RuntimeError("Failed to decrypt vector") from e
+
+    def decrypt_and_parse_vector(self, cipher_bytes: bytes):
+        """Decrypt vector bytes, parse as JSON, and return list of floats."""
+        if cipher_bytes is None:
+            return None
+        if isinstance(cipher_bytes, str):
+            cipher_bytes = cipher_bytes.encode("utf-8")
+        with self._vector_decrypt_lock:
+            cached = self._vector_parsed_cache.get(cipher_bytes)
+        if cached is not None:
+            return cached
+
+        cipher = self.get_cipher()
+        try:
+            decrypted_str = cipher.decrypt(cipher_bytes).decode("utf-8")
+            import json
+
+            parsed = json.loads(decrypted_str)
+            with self._vector_decrypt_lock:
+                if len(self._vector_parsed_cache) >= self._vector_cache_max_entries:
+                    self._vector_parsed_cache.pop(next(iter(self._vector_parsed_cache)))
+                self._vector_parsed_cache[cipher_bytes] = parsed
+            return parsed
+        except Exception:
+            return None

@@ -6,9 +6,27 @@ import logging
 import multiprocessing
 import os
 import sys
+import threading
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from typing import List, Protocol
+
+_DECRYPTION_EXECUTOR = None
+_DECRYPTION_EXECUTOR_LOCK = threading.Lock()
+
+
+def get_decryption_executor():
+    """Retrieve or initialize the global thread pool executor for parallel decryption."""
+    global _DECRYPTION_EXECUTOR
+    if _DECRYPTION_EXECUTOR is None:
+        with _DECRYPTION_EXECUTOR_LOCK:
+            if _DECRYPTION_EXECUTOR is None:
+                max_workers = min(32, (os.cpu_count() or 1) + 4)
+                _DECRYPTION_EXECUTOR = ThreadPoolExecutor(
+                    max_workers=max_workers, thread_name_prefix="decryption_worker"
+                )
+    return _DECRYPTION_EXECUTOR
 
 
 class IsolatedStrategyMixin:
@@ -870,7 +888,9 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                     not embedding_manager.is_mock
                     and not embedding_manager.is_reconstruction_active()
                 ):
-                    fetched = embedding_manager.get_vectors_batch(base_dir, filenames)
+                    fetched = embedding_manager.get_vectors_batch(
+                        base_dir, filenames, regenerate=False
+                    )
                     if fetched:
                         vector_dict = {
                             f: v for f, v in fetched.items() if v is not None
@@ -941,7 +961,9 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
             if files:
                 all_recursive_files = get_recursive_files(node)
                 vectors = [
-                    vector_dict[f] for f in all_recursive_files if f in vector_dict
+                    vector_dict[f]
+                    for f in all_recursive_files
+                    if f in vector_dict and vector_dict[f] is not None
                 ]
                 if vectors:
                     centroid = np.mean(vectors, axis=0)
@@ -1302,9 +1324,323 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
 
     def _get_cluster_keywords(self, documents: list) -> str:
         import os
+        from collections import defaultdict
+
+        import numpy as np
 
         if not documents:
             return "Miscellaneous"
+
+        # Coherence routing & Offline Similarity matching layer
+        cached_decrypted_db_rows = None
+        if getattr(self, "model_path", None):
+            db = getattr(self, "db", None)
+            base_dir = getattr(self, "base_dir", None)
+            embedding_manager = None
+            use_semantic = False
+
+            pre_fetched_corpus = getattr(self, "pre_fetched_corpus", None)
+            if pre_fetched_corpus is not None:
+                model_metadata = pre_fetched_corpus.get("model_metadata")
+                if model_metadata and getattr(self, "model_path", None):
+                    try:
+                        from app.core.semantic_embeddings import (
+                            SemanticEmbeddingManager,
+                        )
+
+                        class InMemoryDBMock:
+                            def __init__(self, meta):
+                                self._meta = meta or {}
+
+                            def get_model_metadata(self, key):
+                                return self._meta.get(key)
+
+                            def set_model_metadata(self, key, value):
+                                self._meta[key] = value
+
+                        dummy_db = InMemoryDBMock(model_metadata)
+                        embedding_manager = SemanticEmbeddingManager(
+                            dummy_db, model_path=self.model_path
+                        )
+                        if (
+                            not embedding_manager.is_mock
+                            and not embedding_manager.is_reconstruction_active()
+                        ):
+                            use_semantic = True
+                    except Exception as e:
+                        logging.error(
+                            f"Failed to initialize SemanticEmbeddingManager in child process: {e}"
+                        )
+            elif db:
+                try:
+                    from app.core.semantic_embeddings import SemanticEmbeddingManager
+
+                    embedding_manager = SemanticEmbeddingManager(
+                        db, model_path=getattr(self, "model_path", None)
+                    )
+                    if (
+                        not embedding_manager.is_mock
+                        and not embedding_manager.is_reconstruction_active()
+                    ):
+                        use_semantic = True
+                except Exception as e:
+                    logging.error(
+                        f"Failed to initialize SemanticEmbeddingManager for strategy: {e}"
+                    )
+
+            filtered_documents = [
+                doc
+                for doc in documents
+                if doc and not doc.startswith("[STATUS:") and doc.strip()
+            ]
+            if not filtered_documents:
+                filtered_documents = documents
+
+            cluster_vectors = []
+            if use_semantic and embedding_manager:
+                try:
+                    cluster_vectors = [
+                        embedding_manager.get_embedding(doc)
+                        for doc in filtered_documents
+                    ]
+                except Exception as e:
+                    logging.error(f"Failed to generate embeddings: {e}")
+                    cluster_vectors = []
+
+            if not use_semantic or not cluster_vectors:
+                try:
+                    from sklearn.feature_extraction.text import TfidfVectorizer
+
+                    vectorizer = TfidfVectorizer(
+                        stop_words=list(self.stop_words)
+                        if getattr(self, "stop_words", None)
+                        else "english",
+                        max_features=1000,
+                    )
+                    safe_docs = [doc or "" for doc in filtered_documents]
+                    X = vectorizer.fit_transform(safe_docs)
+                    cluster_vectors = [row.toarray()[0] for row in X]
+                except Exception as e:
+                    logging.error(
+                        f"Failed to generate TF-IDF vectors for coherence: {e}"
+                    )
+                    cluster_vectors = []
+
+            if cluster_vectors:
+                try:
+
+                    def cosine_sim(v1, v2):
+                        v1_arr = np.array(v1)
+                        v2_arr = np.array(v2)
+                        norm1 = np.linalg.norm(v1_arr)
+                        norm2 = np.linalg.norm(v2_arr)
+                        if norm1 == 0 or norm2 == 0:
+                            return 0.0
+                        return float(np.dot(v1_arr, v2_arr) / (norm1 * norm2))
+
+                    # Calculate cluster centroid
+                    cluster_centroid = np.mean(cluster_vectors, axis=0)
+
+                    # Calculate cohesion score: average cosine similarity of each doc to the centroid
+                    coherences = [
+                        cosine_sim(v, cluster_centroid) for v in cluster_vectors
+                    ]
+                    cohesion_score = np.mean(coherences) if coherences else 1.0
+
+                    # Check cohesion score threshold
+                    if cohesion_score < 0.3:
+                        logging.info(
+                            f"Cohesion score {cohesion_score:.4f} is below 0.3. Routing to 'Review Required' without initiating generative model."
+                        )
+                        return "Review Required"
+
+                    # Compare against a history of user-verified folder vectors to determine semantic similarity
+                    historical_folder_vectors = defaultdict(list)
+                    if pre_fetched_corpus is not None:
+                        for ex in pre_fetched_corpus.get("examples", []):
+                            folder = ex.get("user_verified_target_path")
+                            v = ex.get("vector")
+                            if use_semantic:
+                                if folder and v:
+                                    if embedding_manager.validate_vector_dimension(v):
+                                        historical_folder_vectors[folder].append(v)
+                    elif db and base_dir:
+                        try:
+                            from app.core.db_conn import get_db_connection
+
+                            conn = get_db_connection(db.db_path)
+                            with conn:
+                                cursor = conn.execute(
+                                    """
+                                    SELECT d.filepath, d.user_verified_target_path, v.vector
+                                    FROM documents d
+                                    JOIN document_vectors v ON d.base_dir = v.base_dir AND d.filepath = v.filepath
+                                    WHERE d.base_dir = ? AND d.user_verified_target_path IS NOT NULL AND d.user_verified_target_path != ''
+                                    """,
+                                    (base_dir,),
+                                )
+                                rows = cursor.fetchall()
+
+                            def decrypt_chunk(chunk):
+                                chunk_results = []
+                                for filepath, folder, vector_str in chunk:
+                                    if folder and vector_str:
+                                        try:
+                                            v = db.crypto.decrypt_and_parse_vector(
+                                                vector_str
+                                            )
+                                            chunk_results.append((filepath, folder, v))
+                                        except Exception:
+                                            chunk_results.append(
+                                                (filepath, folder, None)
+                                            )
+                                    else:
+                                        chunk_results.append((None, None, None))
+                                return chunk_results
+
+                            if len(rows) <= 32:
+                                decrypted_results = decrypt_chunk(rows)
+                            else:
+                                executor = get_decryption_executor()
+                                num_chunks = min(32, max(1, len(rows) // 32))
+                                step = (len(rows) + num_chunks - 1) // num_chunks
+                                chunks = [
+                                    rows[i : i + step]
+                                    for i in range(0, len(rows), step)
+                                ]
+                                chunk_res = list(executor.map(decrypt_chunk, chunks))
+                                decrypted_results = [
+                                    item for sub in chunk_res for item in sub
+                                ]
+
+                            cached_decrypted_db_rows = decrypted_results
+
+                            for filepath, folder, v in decrypted_results:
+                                if folder:
+                                    if v is not None:
+                                        if use_semantic:
+                                            if embedding_manager.validate_vector_dimension(
+                                                v
+                                            ):
+                                                historical_folder_vectors[
+                                                    folder
+                                                ].append(v)
+                                    else:
+                                        db.track_corrupted_vector(base_dir, filepath)
+                        except Exception as e:
+                            logging.error(
+                                f"Failed to query historical folder vectors: {e}"
+                            )
+
+                    # If TF-IDF mode, vectorize historical documents using TF-IDF
+                    if not use_semantic:
+                        historical_folder_texts = defaultdict(list)
+                        if pre_fetched_corpus is not None:
+                            for ex in pre_fetched_corpus.get("examples", []):
+                                folder = ex.get("user_verified_target_path")
+                                text = ex.get("text")
+                                if folder and text:
+                                    historical_folder_texts[folder].append(text)
+                        elif db and base_dir:
+                            try:
+                                all_docs = db.get_all_documents(base_dir)
+                                for doc in all_docs:
+                                    if len(doc) > 3 and doc[1] and doc[3]:
+                                        folder = doc[3]
+                                        text = doc[1]
+                                        if (
+                                            folder
+                                            and text
+                                            and not text.startswith("[STATUS:")
+                                        ):
+                                            historical_folder_texts[folder].append(text)
+                            except Exception as e:
+                                logging.error(
+                                    f"Failed to query historical docs for TF-IDF: {e}"
+                                )
+
+                        if historical_folder_texts:
+                            try:
+                                all_texts = []
+                                folder_indices = []
+                                for folder, texts in historical_folder_texts.items():
+                                    for text in texts:
+                                        all_texts.append(text)
+                                        folder_indices.append(folder)
+
+                                if all_texts:
+                                    from sklearn.feature_extraction.text import (
+                                        TfidfVectorizer,
+                                    )
+
+                                    hist_vectorizer = TfidfVectorizer(
+                                        stop_words=list(self.stop_words)
+                                        if getattr(self, "stop_words", None)
+                                        else "english",
+                                        max_features=1000,
+                                    )
+                                    hist_X = hist_vectorizer.fit_transform(all_texts)
+                                    curr_X = hist_vectorizer.transform(
+                                        filtered_documents
+                                    )
+                                    cluster_vectors_tfidf = [
+                                        row.toarray()[0] for row in curr_X
+                                    ]
+                                    cluster_centroid_tfidf = np.mean(
+                                        cluster_vectors_tfidf, axis=0
+                                    )
+
+                                    for idx, folder in enumerate(folder_indices):
+                                        vec = hist_X[idx].toarray()[0]
+                                        historical_folder_vectors[folder].append(vec)
+
+                                    cluster_centroid = cluster_centroid_tfidf
+                            except Exception as e:
+                                logging.error(
+                                    f"Failed to compute historical TF-IDF vectors: {e}"
+                                )
+
+                    # Calculate historical folder centroids and best match similarity
+                    historical_folder_centroids = {}
+                    for folder, vecs in historical_folder_vectors.items():
+                        if vecs:
+                            historical_folder_centroids[folder] = np.asarray(
+                                vecs, dtype=np.float32
+                            ).mean(axis=0)
+
+                    best_match_folder = None
+                    best_match_similarity = -1.0
+
+                    for folder, folder_centroid in historical_folder_centroids.items():
+                        sim = cosine_sim(cluster_centroid, folder_centroid)
+                        if sim > best_match_similarity:
+                            best_match_similarity = sim
+                            best_match_folder = folder
+
+                    # Apply thresholds to routing
+                    if historical_folder_centroids:
+                        if best_match_similarity >= 0.85:
+                            logging.info(
+                                f"High-confidence match: {best_match_folder} (similarity {best_match_similarity:.4f} >= 0.85). Bypassing generative."
+                            )
+                            return best_match_folder
+
+                        if best_match_similarity < 0.3:
+                            logging.info(
+                                f"Similarity match {best_match_similarity:.4f} is below 0.3. Bypassing generative and fallback to TF-IDF naming."
+                            )
+                            return super()._get_cluster_keywords(documents)
+
+                        logging.info(
+                            f"Similarity match {best_match_similarity:.4f} falls between 0.3 and 0.85. Proceeding with generative model naming."
+                        )
+                    else:
+                        logging.info("Proceeding with generative model naming.")
+                except Exception as e:
+                    logging.error(
+                        f"Error in coherence/similarity routing layer: {e}",
+                        exc_info=True,
+                    )
 
         if not getattr(self, "_model_initialized", False):
             self._init_model()
@@ -1561,56 +1897,92 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                     if target_vector and embedding_manager.validate_vector_dimension(
                         target_vector
                     ):
-                        # 2. Query Pre-computed Historical Vectors directly from DB
-                        from app.core.db_conn import get_db_connection
+                        hist_vectors = []
+                        hist_meta = []
+                        supported_exts_set = {
+                            ".txt",
+                            ".docx",
+                            ".csv",
+                            ".xlsx",
+                            ".xls",
+                            ".pdf",
+                        }
 
-                        conn = get_db_connection(db.db_path)
-                        with conn:
-                            cursor = conn.execute(
-                                """
-                                SELECT d.filepath, d.user_verified_target_path, v.vector
-                                FROM documents d
-                                JOIN document_vectors v ON d.base_dir = v.base_dir AND d.filepath = v.filepath
-                                WHERE d.base_dir = ? AND d.user_verified_target_path IS NOT NULL AND d.user_verified_target_path != ''
-                            """,
-                                (base_dir,),
-                            )
-                            rows = cursor.fetchall()
+                        if cached_decrypted_db_rows is not None:
+                            decrypted_hist_results = cached_decrypted_db_rows
+                        else:
+                            # 2. Query Pre-computed Historical Vectors directly from DB
+                            from app.core.db_conn import get_db_connection
 
-                        if rows:
-                            import json
+                            conn = get_db_connection(db.db_path)
+                            with conn:
+                                cursor = conn.execute(
+                                    """
+                                    SELECT d.filepath, d.user_verified_target_path, v.vector
+                                    FROM documents d
+                                    JOIN document_vectors v ON d.base_dir = v.base_dir AND d.filepath = v.filepath
+                                    WHERE d.base_dir = ? AND d.user_verified_target_path IS NOT NULL AND d.user_verified_target_path != ''
+                                """,
+                                    (base_dir,),
+                                )
+                                rows = cursor.fetchall()
 
+                            if rows:
+
+                                def decrypt_historical_item(row):
+                                    filepath, user_verified_target, vector_str = row
+                                    dot_idx = filepath.rfind(".")
+                                    ext = (
+                                        filepath[dot_idx:].lower()
+                                        if dot_idx != -1
+                                        else ""
+                                    )
+                                    # Exclude non-textual attachments and image files from semantic similarity
+                                    if (
+                                        ext in {".png", ".jpg", ".jpeg"}
+                                        or ext not in supported_exts_set
+                                    ):
+                                        return None, None, None
+
+                                    if vector_str:
+                                        try:
+                                            v = db.crypto.decrypt_and_parse_vector(
+                                                vector_str
+                                            )
+                                            return filepath, user_verified_target, v
+                                        except Exception:
+                                            return filepath, user_verified_target, None
+                                    return None, None, None
+
+                                executor = get_decryption_executor()
+                                decrypted_hist_results = list(
+                                    executor.map(decrypt_historical_item, rows)
+                                )
+                            else:
+                                decrypted_hist_results = []
+
+                        if decrypted_hist_results:
                             import numpy as np
                             from sklearn.metrics.pairwise import cosine_similarity
 
-                            hist_vectors = []
-                            hist_meta = []
-                            supported_exts_set = {
-                                ".txt",
-                                ".docx",
-                                ".csv",
-                                ".xlsx",
-                                ".xls",
-                                ".pdf",
-                            }
-                            for filepath, user_verified_target, vector_str in rows:
-                                dot_idx = filepath.rfind(".")
-                                ext = (
-                                    filepath[dot_idx:].lower() if dot_idx != -1 else ""
-                                )
-                                # Exclude non-textual attachments and image files from semantic similarity
-                                if (
-                                    ext in {".png", ".jpg", ".jpeg"}
-                                    or ext not in supported_exts_set
-                                ):
-                                    continue
-
-                                if vector_str:
-                                    try:
-                                        decrypted_vector_str = db.crypto.decrypt_vector(
-                                            vector_str
-                                        )
-                                        v = json.loads(decrypted_vector_str)
+                            for (
+                                filepath,
+                                user_verified_target,
+                                v,
+                            ) in decrypted_hist_results:
+                                if filepath:
+                                    dot_idx = filepath.rfind(".")
+                                    ext = (
+                                        filepath[dot_idx:].lower()
+                                        if dot_idx != -1
+                                        else ""
+                                    )
+                                    if (
+                                        ext in {".png", ".jpg", ".jpeg"}
+                                        or ext not in supported_exts_set
+                                    ):
+                                        continue
+                                    if v is not None:
                                         if embedding_manager.validate_vector_dimension(
                                             v
                                         ):
@@ -1621,24 +1993,31 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                                                     "user_verified_target_path": user_verified_target,
                                                 }
                                             )
-                                    except Exception:
+                                    else:
                                         db.track_corrupted_vector(base_dir, filepath)
-                                        continue
 
                             if hist_vectors:
                                 # 3. Cosine Similarity Calculation
-                                target_vector_arr = np.array([target_vector])
-                                hist_vectors_arr = np.array(hist_vectors)
-                                similarities = cosine_similarity(
-                                    target_vector_arr, hist_vectors_arr
-                                ).flatten()
+                                hist_vectors_arr = np.asarray(
+                                    hist_vectors, dtype=np.float32
+                                )
+                                target_vector_arr = np.asarray(
+                                    target_vector, dtype=np.float32
+                                )
+                                target_norm = np.linalg.norm(target_vector_arr)
+                                hist_norms = np.linalg.norm(hist_vectors_arr, axis=1)
+                                denom = hist_norms * target_norm
+                                denom[denom == 0] = 1e-9
+                                similarities = (
+                                    hist_vectors_arr @ target_vector_arr
+                                ) / denom
 
                                 sorted_indices = similarities.argsort()[::-1]
 
                                 for idx in sorted_indices:
                                     if similarities[idx] >= 0.1:
                                         top_examples.append(
-                                            (hist_meta[idx], similarities[idx])
+                                            (hist_meta[idx], float(similarities[idx]))
                                         )
                                         if len(top_examples) >= 3:
                                             break
@@ -1648,28 +2027,73 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                                     few_shot_lines.append(
                                         "Here are some historical examples of documents and their corresponding user-corrected folder names:"
                                     )
+                                    # Fetch top exemplar texts efficiently in batch
+                                    doc_snippets = {}
+                                    if db and base_dir and top_examples:
+                                        try:
+                                            target_fps = [
+                                                ex["filepath"].replace("\\", "/")
+                                                for ex, _ in top_examples
+                                            ]
+                                            # Check cache first
+                                            with db._cache_lock:
+                                                if (
+                                                    db._cached_base_dir == base_dir
+                                                    and db._cached_documents is not None
+                                                ):
+                                                    for row in db._cached_documents:
+                                                        if row[0] in target_fps:
+                                                            doc_snippets[row[0]] = row[
+                                                                1
+                                                            ]
+
+                                            # Fetch any remaining from DB in a single query
+                                            missing_fps = [
+                                                fp
+                                                for fp in target_fps
+                                                if fp not in doc_snippets
+                                            ]
+                                            if missing_fps:
+                                                from app.core.db_conn import (
+                                                    get_db_connection,
+                                                )
+
+                                                conn = get_db_connection(db.db_path)
+                                                with conn:
+                                                    placeholders = ",".join(
+                                                        ["?"] * len(missing_fps)
+                                                    )
+                                                    cursor = conn.execute(
+                                                        f"SELECT filepath, extracted_text FROM documents WHERE base_dir = ? AND filepath IN ({placeholders})",
+                                                        [base_dir] + missing_fps,
+                                                    )
+                                                    for row in cursor.fetchall():
+                                                        raw_text = row[1]
+                                                        if raw_text is not None:
+                                                            try:
+                                                                decrypted = db.crypto.decrypt_text(
+                                                                    raw_text
+                                                                )
+                                                            except Exception:
+                                                                decrypted = raw_text
+                                                            doc_snippets[row[0]] = (
+                                                                decrypted
+                                                            )
+                                        except Exception as e:
+                                            logging.error(
+                                                f"Failed to fetch decrypted document snippets for semantic exemplars: {e}"
+                                            )
+
                                     for ex_idx, (ex, sim) in enumerate(top_examples):
                                         import os
 
-                                        snippet = None
-                                        if db and base_dir:
-                                            try:
-                                                ex_doc = db.get_document(
-                                                    base_dir, ex["filepath"]
-                                                )
-                                                if ex_doc and ex_doc.get(
-                                                    "extracted_text"
-                                                ):
-                                                    snippet = (
-                                                        ex_doc["extracted_text"][:500]
-                                                        .replace("\n", " ")
-                                                        .strip()
-                                                    )
-                                            except Exception as e:
-                                                logging.error(
-                                                    f"Failed to fetch decrypted document snippet for semantic exemplar: {e}"
-                                                )
-
+                                        fp = ex["filepath"].replace("\\", "/")
+                                        raw_snippet = doc_snippets.get(fp)
+                                        snippet = (
+                                            raw_snippet[:500].replace("\n", " ").strip()
+                                            if raw_snippet
+                                            else None
+                                        )
                                         if not snippet:
                                             snippet = os.path.basename(ex["filepath"])
 
@@ -2058,6 +2482,15 @@ class ClusteringRegistry:
 
     def get_strategy(self, name: str) -> ClusteringStrategy:
         """Retrieve a clustering strategy by name."""
+        if name not in self._strategies:
+            if name == "clinical_tmf":
+                from app.core.clinical_strategy import ClinicalTMFStrategy
+
+                self._strategies["clinical_tmf"] = ClinicalTMFStrategy(mode="tmf")
+            elif name == "clinical_isf":
+                from app.core.clinical_strategy import ClinicalTMFStrategy
+
+                self._strategies["clinical_isf"] = ClinicalTMFStrategy(mode="isf")
         return self._strategies.get(name)
 
 

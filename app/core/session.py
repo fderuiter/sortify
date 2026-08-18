@@ -161,11 +161,26 @@ class AppSession:
                 active_model_path = user_model_path
 
         model_path = active_model_path if self.settings.AI_CONSENT_GRANTED else None
-        strategy_name = (
-            "generative"
-            if getattr(self.settings, "AI_ASSISTED_NAMING", False)
-            else "default"
-        )
+        configured_strat = getattr(self.settings, "SORTING_STRATEGY", "default")
+        if configured_strat in ("clinical_tmf", "clinical_isf"):
+            strategy_name = configured_strat
+            from app.core.analyzer_strategies import clustering_registry
+
+            strat = clustering_registry.get_strategy(strategy_name)
+            if strat and hasattr(strat, "smart_renaming"):
+                strat.smart_renaming = getattr(
+                    self.settings, "CLINICAL_SMART_RENAMING", False
+                )
+                strat.generate_audit_report = getattr(
+                    self.settings, "CLINICAL_GENERATE_AUDIT_REPORT", True
+                )
+                strat.base_dir = self.base_dir
+        else:
+            strategy_name = (
+                "generative"
+                if getattr(self.settings, "AI_ASSISTED_NAMING", False)
+                else "default"
+            )
 
         self.analyzer = IncrementalAnalyzer(
             self.settings.MAX_FOLDERS,
@@ -199,13 +214,16 @@ class AppSession:
             return
         self.analyzer.partial_fit(self.base_dir, chunk, self.settings)
 
-    def generate_sorting_plan(self):
+    def generate_sorting_plan(self, fast_path_only: bool = False):
         """Generate sorting plan from analyzer."""
         if not self.base_dir:
             return {}
         _, locked, _, _ = self.cache_manager.load_cache(self.base_dir)
         return self.analyzer.generate_sorting_plan(
-            self.base_dir, self.settings, locked_files=locked
+            self.base_dir,
+            self.settings,
+            locked_files=locked,
+            fast_path_only=fast_path_only,
         )
 
     def rollback(self, session_id, ignore_missing=False):

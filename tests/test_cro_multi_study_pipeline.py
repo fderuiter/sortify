@@ -1,0 +1,81 @@
+"""Tests for CROMultiStudyPipeline: end-to-end multi-study ingestion, folder structure, and chain of custody."""
+
+import json
+import os
+import tempfile
+import zipfile
+
+from app.core.cro_multi_study_pipeline import CROMultiStudyPipeline
+
+
+def test_cro_pipeline_end_to_end():
+    with (
+        tempfile.TemporaryDirectory() as source_dir,
+        tempfile.TemporaryDirectory() as target_dir,
+    ):
+        # 1. Setup synthetic multi-study source files
+        # Study 1 (PROTO-101)
+        study1_dir = os.path.join(source_dir, "historical_dump_2022")
+        os.makedirs(study1_dir, exist_ok=True)
+        with open(os.path.join(study1_dir, "form1572.txt"), "w") as f:
+            f.write(
+                "DEPARTMENT OF HEALTH AND HUMAN SERVICES FOOD AND DRUG ADMINISTRATION STATEMENT OF INVESTIGATOR Form FDA 1572 Protocol ID: PROTO-101 Principal Investigator: Dr. John Smith"
+            )
+
+        with open(os.path.join(study1_dir, "protocol_v1.txt"), "w") as f:
+            f.write(
+                "Clinical Study Protocol Version 1.0 Protocol ID: PROTO-101 Inclusion and exclusion criteria Schedule of assessments"
+            )
+
+        # Study 2 (ONCO-500) inside a ZIP archive
+        zip_path = os.path.join(source_dir, "study2_archive.zip")
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            zf.writestr(
+                "irb_approval.txt",
+                "Advarra Institutional Review Board IRB Approval Letter Protocol ID: ONCO-500 Effective Date of Approval FWA00001234",
+            )
+            zf.writestr(
+                "icf_master.txt",
+                "Informed Consent Form Subject Consent Protocol ID: ONCO-500 Voluntary participation signature of subject",
+            )
+
+        # Unassociated PI CV for Dr. John Smith (should be linked to PROTO-101)
+        with open(os.path.join(source_dir, "cv_smith.txt"), "w") as f:
+            f.write(
+                "Curriculum Vitae of Investigator Dr. John Smith, MD Medical License Number 88921"
+            )
+
+        # 2. Run CRO Pipeline
+        pipeline = CROMultiStudyPipeline(mode="tmf", smart_renaming=True)
+        result = pipeline.run_pipeline(
+            source_root=source_dir,
+            target_root=target_dir,
+        )
+
+        # 3. Assert Master Pipeline Results
+        assert result.total_scanned_files == 5
+        assert result.discovered_studies_count == 2
+        assert os.path.exists(result.chain_of_custody_manifest_path)
+
+        # Check Chain of Custody Manifest file
+        with open(result.chain_of_custody_manifest_path, "r") as f:
+            manifest = json.load(f)
+            assert manifest["summary_metrics"]["total_documents_scanned"] == 5
+            assert manifest["summary_metrics"]["total_studies_discovered"] == 2
+            assert len(manifest["document_manifest"]) == 5
+
+        # Check Target Directory Structure
+        assert os.path.exists(os.path.join(target_dir, "PROTO_101"))
+        assert os.path.exists(os.path.join(target_dir, "ONCO_500"))
+
+        # Verify PROTO-101 has its own HTML compliance audit report
+        assert os.path.exists(
+            os.path.join(target_dir, "PROTO_101", "compliance_audit_report.html")
+        )
+        assert os.path.exists(
+            os.path.join(target_dir, "ONCO_500", "compliance_audit_report.html")
+        )
+
+        # Verify source directory was NOT modified (Non-Destructive Safe Ingest)
+        assert os.path.exists(os.path.join(study1_dir, "form1572.txt"))
+        assert os.path.exists(zip_path)
