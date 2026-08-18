@@ -187,11 +187,29 @@ class VerificationEngine:
     """Engine to verify file operations before execution."""
 
     @staticmethod
+    def sanitize_plan(plan: dict) -> tuple[dict, list[str]]:
+        """Sanitize plan folder keys and file targets, returning (sanitized_plan, warnings)."""
+        from app.core.path_utils import sanitize_plan as _sp
+
+        return _sp(plan)
+
+    @staticmethod
     def verify_plan_integrity(base_dir: str, plan: dict) -> dict:
         """Run complete virtual filesystem simulation and integrity check."""
         try:
+            from app.core.path_utils import sanitize_plan as _sp
+
+            sanitized_plan, sanitization_warnings = _sp(plan)
+            plan.clear()
+            plan.update(sanitized_plan)
+
             tracker = VirtualFilesystemTracker()
-            return tracker.verify_integrity(base_dir, plan)
+            result = tracker.verify_integrity(base_dir, plan)
+
+            all_warnings = sanitization_warnings + result.get("warnings", [])
+            result["warnings"] = list(dict.fromkeys(all_warnings))
+            result["plan"] = plan
+            return result
         except ValueError as e:
             return {
                 "success": False,

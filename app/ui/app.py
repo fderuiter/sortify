@@ -2067,14 +2067,19 @@ body {
                     self.plan_errors[rel_dst] = item["message"]
                     self.plan_errors[os.path.basename(dst_abs)] = item["message"]
 
-            warnings_text = "\n".join(integrity_result["warnings"])
+            warnings_text = "\n".join(integrity_result.get("warnings", []))
             if hasattr(self, "warnings_label"):
                 self.warnings_label.set_text(warnings_text)
                 self.warnings_label.set_visibility(True)
         else:
+            warnings_text = "\n".join(integrity_result.get("warnings", []))
             if hasattr(self, "warnings_label"):
-                self.warnings_label.set_text("")
-                self.warnings_label.set_visibility(False)
+                if warnings_text:
+                    self.warnings_label.set_text(warnings_text)
+                    self.warnings_label.set_visibility(True)
+                else:
+                    self.warnings_label.set_text("")
+                    self.warnings_label.set_visibility(False)
 
     def update_ai_warning(self):
         """Update the UI with any AI status warnings."""
