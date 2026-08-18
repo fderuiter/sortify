@@ -467,7 +467,7 @@ def zero_vector_buffer(target: Any) -> None:
             target[i] = 0
     elif isinstance(target, np.ndarray):
         target.fill(0)
-    elif isinstance(target, list):
+    elif isinstance(target, (list, tuple, set)):
         for item in target:
             zero_vector_buffer(item)
     elif isinstance(target, dict):
@@ -489,11 +489,15 @@ class EphemeralSessionCrypto:
 
     def encrypt_payload(self, payload: Any) -> bytes:
         """Serialize and encrypt a data payload."""
+        if self._cipher is None:
+            raise ValueError("Ephemeral session key has been purged")
         serialized = pickle.dumps(payload, protocol=pickle.HIGHEST_PROTOCOL)
         return self._cipher.encrypt(serialized)
 
     def decrypt_payload(self, encrypted_bytes: bytes) -> Any:
         """Decrypt and deserialize a data payload."""
+        if self._cipher is None:
+            raise ValueError("Ephemeral session key has been purged")
         decrypted = self._cipher.decrypt(encrypted_bytes)
         return pickle.loads(decrypted)
 
@@ -505,6 +509,8 @@ class EphemeralSessionCrypto:
 
 def encrypt_ipc_payload(payload: Any, session_key: bytes | str) -> bytes:
     """Helper to encrypt IPC queue payloads with an ephemeral session key."""
+    if session_key is None:
+        raise ValueError("Session key cannot be None")
     if isinstance(session_key, str):
         session_key = session_key.encode("utf-8")
     cipher = Fernet(session_key)
@@ -514,6 +520,8 @@ def encrypt_ipc_payload(payload: Any, session_key: bytes | str) -> bytes:
 
 def decrypt_ipc_payload(encrypted_bytes: bytes, session_key: bytes | str) -> Any:
     """Helper to decrypt IPC queue payloads with an ephemeral session key."""
+    if session_key is None:
+        raise ValueError("Session key cannot be None")
     if isinstance(session_key, str):
         session_key = session_key.encode("utf-8")
     cipher = Fernet(session_key)

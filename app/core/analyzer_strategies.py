@@ -388,10 +388,16 @@ def recursive_kmeans_worker_main(
             "worker_niceness": worker_niceness,
             "worker_thread_limit": thread_limit,
         }
-        if key is not None:
+        if key is not None and out_q is not None:
             out_q.put(encrypt_ipc_payload(res_data, key))
-        else:
+        elif out_q is not None:
             out_q.put(res_data)
+        if out_q is not None:
+            try:
+                out_q.close()
+                out_q.join_thread()
+            except Exception:
+                pass
     except Exception as e:
         import traceback
 
@@ -403,6 +409,12 @@ def recursive_kmeans_worker_main(
             out_q.put(encrypt_ipc_payload(err_data, key))
         elif out_q is not None:
             out_q.put(err_data)
+        if out_q is not None:
+            try:
+                out_q.close()
+                out_q.join_thread()
+            except Exception:
+                pass
     finally:
         # Guarantee memory zeroing of vector byte buffers on completion or failure
         zero_vector_buffer(vector_buffers)
@@ -587,7 +599,7 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
 
                 if not process.is_alive():
                     try:
-                        raw_result = output_queue.get_nowait()
+                        raw_result = output_queue.get(timeout=1.0)
                     except queue.Empty:
                         pass
                     break
@@ -604,11 +616,6 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
                 result = raw_result
         except Exception as e:
             logging.error(f"Error while waiting for clustering child process: {e}")
-            if process.is_alive():
-                process.terminate()
-                process.join(timeout=2.0)
-                if process.is_alive():
-                    process.kill()
             raise e
         finally:
             zero_vector_buffer(vector_buffers)
@@ -617,16 +624,21 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
                 self._vector_map.clear()
             session_crypto.purge()
 
-        if process.is_alive():
-            process.terminate()
-            process.join(timeout=2.0)
             if process.is_alive():
-                process.kill()
+                process.terminate()
+                process.join(timeout=2.0)
+                if process.is_alive():
+                    process.kill()
 
-        try:
-            process.close()
-        except Exception:
-            pass
+            try:
+                output_queue.close()
+            except Exception:
+                pass
+
+            try:
+                process.close()
+            except Exception:
+                pass
 
         if result is None and raw_result is None:
             logging.warning(
