@@ -90,6 +90,10 @@ The following parameters are extracted directly from the application's configura
 - **Default**: `en`
 - **Required**: `False`
 
+### `VISION_ENGINE`
+- **Default**: `easyocr`
+- **Required**: `False`
+
 ### `CONFLICT_POLICY`
 - **Default**: `rename`
 - **Required**: `False`

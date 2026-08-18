@@ -46,6 +46,7 @@ class Settings(BaseSettings):
     OCR_GPU_ENABLED: bool = Field(default=False)
     AUDIO_GPU_ENABLED: bool = Field(default=False)
     OCR_LANGUAGES: str = Field(default="en")
+    VISION_ENGINE: Literal["easyocr", "florence-2"] = Field(default="easyocr")
     CONFLICT_POLICY: Literal["skip", "rename"] = Field(default="rename")
     SORTING_STRATEGY: Literal[
         "default", "generative", "clinical_tmf", "clinical_isf"
@@ -118,6 +119,17 @@ class Settings(BaseSettings):
         if v not in ("skip", "rename"):
             raise ValueError("CONFLICT_POLICY must be either 'skip' or 'rename'.")
         return v
+
+    @field_validator("VISION_ENGINE", mode="before")
+    @classmethod
+    def validate_vision_engine(cls, v: str) -> str:
+        """Validate that VISION_ENGINE is either 'easyocr' or 'florence-2'."""
+        if not isinstance(v, str):
+            raise ValueError("VISION_ENGINE must be a string.")
+        v_clean = v.strip().lower()
+        if v_clean not in ("easyocr", "florence-2"):
+            raise ValueError("VISION_ENGINE must be either 'easyocr' or 'florence-2'.")
+        return v_clean
 
     @field_validator("OCR_LANGUAGES")
     @classmethod
