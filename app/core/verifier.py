@@ -192,14 +192,50 @@ class VerificationEngine:
         """Get a flat list of moves from the plan."""
         base_dir = os.path.normpath(base_dir)
         moves = []
+        dir_metadata_keys = {
+            "__type__",
+            "source_path",
+            "status",
+            "protected",
+        }
         for key, content in plan.items():
-            if content is None or (
-                isinstance(content, dict)
-                and content.get("__type__") in ("file", "directory")
+            if key in dir_metadata_keys:
+                continue
+            if key in ("relative_source", "target_filename") and not isinstance(
+                content, dict
             ):
-                if isinstance(content, dict) and content.get("__type__") == "directory":
-                    continue
+                continue
 
+            is_file = False
+            if content is None:
+                is_file = True
+            elif isinstance(content, dict):
+                content_type = content.get("__type__")
+                if content_type == "file":
+                    is_file = True
+                elif content_type != "directory":
+                    if "relative_source" in content or "target_filename" in content:
+                        is_file = True
+                    elif not any(
+                        isinstance(v, dict)
+                        for k, v in content.items()
+                        if k not in dir_metadata_keys
+                    ):
+                        if all(
+                            k
+                            in (
+                                "__type__",
+                                "source_path",
+                                "status",
+                                "protected",
+                                "relative_source",
+                                "target_filename",
+                            )
+                            for k in content.keys()
+                        ):
+                            is_file = True
+
+            if is_file:
                 if depth > 0:
                     if (
                         not isinstance(content, dict)
@@ -232,7 +268,7 @@ class VerificationEngine:
                 dest_dir = os.path.join(base_dir, current_dest)
                 dest_path = os.path.normpath(os.path.join(dest_dir, filename))
                 moves.append((key, source_path, dest_path))
-            else:
+            elif isinstance(content, dict):
                 moves.extend(
                     VerificationEngine.get_moves(
                         base_dir,
