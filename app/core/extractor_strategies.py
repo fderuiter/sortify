@@ -481,6 +481,21 @@ class AudioExtractor:
             if settings and hasattr(settings, "WHISPER_CMD"):
                 whisper_cmd = settings.WHISPER_CMD
 
+            model_size = "base"
+            if settings and hasattr(settings, "WHISPER_MODEL_SIZE"):
+                raw_size = getattr(settings, "WHISPER_MODEL_SIZE", "base")
+                if isinstance(raw_size, str) and raw_size.strip():
+                    model_size = raw_size.strip().lower()
+
+            from app.core.verifier import verify_whisper_dual
+
+            verified, verif_msg = verify_whisper_dual(whisper_cmd, model_size)
+            if not verified:
+                logging.error(
+                    f"Whisper cryptographic dual verification failed: {verif_msg}"
+                )
+                return f"[STATUS:ERROR: Whisper verification failed: {verif_msg}]"
+
             from app.core.env_helper import is_cuda_available, is_mps_available
 
             audio_gpu = (
@@ -506,6 +521,8 @@ class AudioExtractor:
                 if isinstance(whisper_cmd, list):
                     cmd = list(whisper_cmd) + [
                         target_file_path,
+                        "--model",
+                        model_size,
                         "--output_format",
                         "txt",
                         "--device",
@@ -515,6 +532,8 @@ class AudioExtractor:
                     cmd = [
                         whisper_cmd,
                         target_file_path,
+                        "--model",
+                        model_size,
                         "--output_format",
                         "txt",
                         "--device",

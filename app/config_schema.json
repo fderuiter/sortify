@@ -119,6 +119,33 @@
       "title": "Audio Gpu Enabled",
       "type": "boolean"
     },
+    "WHISPER_MODEL_SIZE": {
+      "default": "base",
+      "enum": [
+        "tiny",
+        "base",
+        "small",
+        "medium",
+        "large"
+      ],
+      "title": "Whisper Model Size",
+      "type": "string"
+    },
+    "WHISPER_CMD": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      ],
+      "default": "whisper",
+      "title": "Whisper Command"
+    },
     "OCR_LANGUAGES": {
       "default": "en",
       "title": "Ocr Languages",
