@@ -336,6 +336,113 @@ def show_settings(parent_app, settings):
                         "Clear All", on_click=clear_all_protected, color="red"
                     ).props('aria-label="Clear All Protected Paths Button"')
 
+                ui.label("Ignored File Extensions").classes(
+                    "text-md font-bold mt-4 mb-1"
+                )
+                ui.label(
+                    "Transient download file extensions ignored during auto-sorting:"
+                ).classes("text-sm text-gray-500 mb-2")
+
+                ignored_ext_container = ui.row().classes(
+                    "flex-wrap gap-2 w-full max-h-60 overflow-y-auto border p-2 rounded mb-4"
+                )
+
+                def render_ignored_extensions():
+                    ignored_ext_container.clear()
+                    exts = getattr(settings, "IGNORED_EXTENSIONS", [])
+                    with ignored_ext_container:
+                        if not exts:
+                            ui.label("No ignored file extensions configured.").classes(
+                                "text-sm text-gray-400 italic"
+                            )
+                        else:
+                            for ext in exts:
+                                with ui.row().classes(
+                                    "items-center gap-1 bg-gray-100 dark:bg-gray-800 px-3 py-1 rounded-full border border-gray-200 dark:border-gray-700"
+                                ):
+                                    ui.label(ext).classes(
+                                        "text-sm text-gray-800 dark:text-gray-200 font-medium"
+                                    )
+
+                                    def make_delete_handler(e_to_del=ext):
+                                        return lambda: delete_ignored_extension(
+                                            e_to_del
+                                        )
+
+                                    ui.button(
+                                        icon="close", on_click=make_delete_handler()
+                                    ).props(
+                                        "flat round dense size=xs color=grey"
+                                    ).classes("hover:text-red-500").props(
+                                        f'aria-label="Remove extension {ext}"'
+                                    )
+
+                def delete_ignored_extension(ext_to_del: str):
+                    current_exts = list(getattr(settings, "IGNORED_EXTENSIONS", []))
+                    new_exts = [
+                        x for x in current_exts if x.lower() != ext_to_del.lower()
+                    ]
+                    try:
+                        settings.IGNORED_EXTENSIONS = new_exts
+                        ui.notify(
+                            f"Removed ignored extension: {ext_to_del}",
+                            type="positive",
+                        )
+                        render_ignored_extensions()
+                    except Exception as ex:
+                        ui.notify(f"Failed to remove extension: {ex}", type="negative")
+
+                render_ignored_extensions()
+
+                with ui.row().classes("w-full items-center gap-4 mt-2 flex-wrap"):
+                    new_ext_input = ui.input("Add Ignored Extension").props(
+                        'placeholder="e.g. .part" aria-label="Add Ignored Extension input" class="w-2/3"'
+                    )
+
+                    def add_ignored_extension():
+                        val = new_ext_input.value
+                        if not val or not val.strip():
+                            ui.notify("Extension cannot be empty.", type="warning")
+                            return
+
+                        raw_val = val.strip().lower().rstrip(".")
+                        content = raw_val.lstrip(".")
+
+                        if not content or any(
+                            c in content
+                            for c in ("/", "\\", " ", "*", "?", ":", "<", ">", "|", '"')
+                        ):
+                            ui.notify("Invalid extension format.", type="warning")
+                            return
+
+                        norm_ext = f".{content}"
+
+                        current_exts = list(getattr(settings, "IGNORED_EXTENSIONS", []))
+                        if any(x.lower() == norm_ext for x in current_exts):
+                            ui.notify(
+                                f"Extension '{norm_ext}' is already ignored.",
+                                type="warning",
+                            )
+                            return
+
+                        updated_exts = current_exts + [norm_ext]
+                        try:
+                            settings.IGNORED_EXTENSIONS = updated_exts
+                            ui.notify(
+                                f"Added ignored extension: {norm_ext}",
+                                type="positive",
+                            )
+                            new_ext_input.value = ""
+                            render_ignored_extensions()
+                        except Exception as ex:
+                            ui.notify(f"Failed to add extension: {ex}", type="negative")
+
+                    new_ext_input.on("keydown.enter", add_ignored_extension)
+
+                    ui.button("Add", on_click=add_ignored_extension).props(
+                        'aria-label="Add Ignored Extension Button"'
+                    )
+
                 ui.label("Processing Limits").classes("text-lg font-bold mt-4 mb-2")
 
                 def on_max_depth_change(e):
