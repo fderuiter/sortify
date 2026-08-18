@@ -81,21 +81,30 @@ def resolve_new_target(abs_target: str, path_map: dict) -> str:
     if not abs_target or not path_map:
         return abs_target
 
+    if abs_target.startswith(("\\\\?\\", "\\??\\")):
+        abs_target = abs_target[4:]
+
     norm_target = os.path.normcase(os.path.abspath(abs_target))
 
     if norm_target in path_map:
         return path_map[norm_target]
 
     for src_path, dst_path in path_map.items():
-        src_norm = os.path.normcase(os.path.abspath(src_path))
+        src_clean = (
+            src_path[4:] if src_path.startswith(("\\\\?\\", "\\??\\")) else src_path
+        )
+        src_norm = os.path.normcase(os.path.abspath(src_clean))
         if norm_target.startswith(src_norm + os.sep):
-            rel = os.path.relpath(abs_target, src_path)
+            rel = os.path.relpath(abs_target, src_clean)
             return os.path.normpath(os.path.join(dst_path, rel))
 
     for src_file, dst_file in path_map.items():
-        src_file_norm = os.path.normcase(os.path.abspath(src_file))
+        src_file_clean = (
+            src_file[4:] if src_file.startswith(("\\\\?\\", "\\??\\")) else src_file
+        )
+        src_file_norm = os.path.normcase(os.path.abspath(src_file_clean))
         if src_file_norm.startswith(norm_target + os.sep):
-            rel = os.path.relpath(src_file, abs_target)
+            rel = os.path.relpath(src_file_clean, abs_target)
             dst_file_str = str(dst_file)
             if dst_file_str.replace("\\", "/").endswith(rel.replace("\\", "/")):
                 inferred = dst_file_str[: -len(rel)].rstrip("\\/")
@@ -226,12 +235,18 @@ def _execute_moves_recursive(
             if not link_info:
                 if is_junction_path(source_path):
                     try:
-                        link_info = {"type": "junction", "target": os.readlink(source_path)}
+                        target = os.readlink(source_path)
+                        if target.startswith(("\\\\?\\", "\\??\\")):
+                            target = target[4:]
+                        link_info = {"type": "junction", "target": target}
                     except OSError:
                         pass
                 elif os.path.islink(source_path):
                     try:
-                        link_info = {"type": "symlink", "target": os.readlink(source_path)}
+                        target = os.readlink(source_path)
+                        if target.startswith(("\\\\?\\", "\\??\\")):
+                            target = target[4:]
+                        link_info = {"type": "symlink", "target": target}
                     except OSError:
                         pass
 
@@ -524,12 +539,18 @@ def execute_moves(
                 elif node.get("status") == "To Be Deleted":
                     try:
                         src_path = node.get("source_path")
-                        if src_path and (is_junction_path(src_path) or os.path.islink(src_path)):
+                        if src_path and (
+                            is_junction_path(src_path) or os.path.islink(src_path)
+                        ):
                             from app.core.resilient_file_ops import resilient_remove
 
                             resilient_remove(src_path)
                             summary["deleted_folders"] += 1
-                        elif src_path and os.path.isdir(src_path) and not os.listdir(src_path):
+                        elif (
+                            src_path
+                            and os.path.isdir(src_path)
+                            and not os.listdir(src_path)
+                        ):
                             from app.core.resilient_file_ops import resilient_remove
 
                             resilient_remove(src_path)

@@ -23,10 +23,13 @@ class LinkManager:
         if is_junction_path(full_path):
             try:
                 target = os.readlink(full_path)
+                if target.startswith(("\\\\?\\", "\\??\\")):
+                    target = target[4:]
                 cls._registry[full_path] = {"type": "junction", "target": target}
             except OSError as e:
                 logging.error(
-                    f"Failed to read junction target for {full_path}: {e}", exc_info=True
+                    f"Failed to read junction target for {full_path}: {e}",
+                    exc_info=True,
                 )
         elif os.path.islink(full_path):
             try:

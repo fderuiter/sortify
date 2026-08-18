@@ -51,9 +51,15 @@ def test_is_junction_utilities(tmp_path):
     junc = tmp_path / "junc_folder"
     _create_junction(str(target), str(junc))
 
+    orig_isjunction = os.path.isjunction
     # On non-Windows, _create_junction creates a directory symlink.
     # We patch os.path.isjunction to simulate junction behavior if running on Linux.
-    with patch("os.path.isjunction", side_effect=lambda p: str(p) == str(junc) or (sys.platform == "win32" and os.path.isjunction(p))):
+    with patch(
+        "os.path.isjunction",
+        side_effect=lambda p: (
+            str(p) == str(junc) or (sys.platform == "win32" and orig_isjunction(p))
+        ),
+    ):
         assert is_junction_path(str(junc))
         assert not is_junction_path(str(target))
 
@@ -78,9 +84,13 @@ def test_scanner_detects_junction_without_recursing(tmp_path):
     def mock_isjunction(path):
         return os.path.abspath(path) == os.path.abspath(junc_path)
 
-    with patch("app.core.scanner.is_junction_entry", side_effect=lambda e: getattr(e, "name", "") == "junc_dir"), \
-         patch("app.core.link_manager.is_junction_path", side_effect=mock_isjunction):
-
+    with (
+        patch(
+            "app.core.scanner.is_junction_entry",
+            side_effect=lambda e: getattr(e, "name", "") == "junc_dir",
+        ),
+        patch("app.core.link_manager.is_junction_path", side_effect=mock_isjunction),
+    ):
         files = get_files_recursively(base_dir)
 
         # Scanner should find target_dir/doc1.txt and junc_dir (link entry), but NOT junc_dir/doc1.txt
@@ -108,12 +118,19 @@ def test_relocate_target_directory_updates_junction(tmp_path):
 
     def mock_isjunction(path):
         p = os.path.abspath(path)
-        return p in (os.path.abspath(junc_path), os.path.abspath(os.path.join(base_dir, "sorted", "target_dir")))
+        return p in (
+            os.path.abspath(junc_path),
+            os.path.abspath(os.path.join(base_dir, "sorted", "target_dir")),
+        )
 
-    with patch("app.core.scanner.is_junction_entry", side_effect=lambda e: getattr(e, "name", "") == "junc_dir"), \
-         patch("app.core.link_manager.is_junction_path", side_effect=mock_isjunction), \
-         patch("app.core.mover.is_junction_path", side_effect=mock_isjunction):
-
+    with (
+        patch(
+            "app.core.scanner.is_junction_entry",
+            side_effect=lambda e: getattr(e, "name", "") == "junc_dir",
+        ),
+        patch("app.core.link_manager.is_junction_path", side_effect=mock_isjunction),
+        patch("app.core.mover.is_junction_path", side_effect=mock_isjunction),
+    ):
         get_files_recursively(base_dir)
 
         plan = {
@@ -131,7 +148,7 @@ def test_relocate_target_directory_updates_junction(tmp_path):
             "junc_dir": {
                 "__type__": "file",
                 "relative_source": "junc_dir",
-            }
+            },
         }
 
         execute_moves(base_dir, plan, db, history_manager)
@@ -142,6 +159,8 @@ def test_relocate_target_directory_updates_junction(tmp_path):
         # Check junction was updated to point to new_target_dir
         if sys.platform == "win32":
             read_target = os.readlink(junc_path)
+            if read_target.startswith(("\\\\?\\", "\\??\\")):
+                read_target = read_target[4:]
             assert os.path.normpath(read_target) == os.path.normpath(new_target_dir)
 
 
@@ -163,9 +182,12 @@ def test_directory_cleanup_deletes_junction_without_modifying_target_files(tmp_p
     def mock_isjunction(path):
         return os.path.abspath(path) == os.path.abspath(junc_path)
 
-    with patch("app.core.mover.is_junction_path", side_effect=mock_isjunction), \
-         patch("app.core.resilient_file_ops.is_junction_path", side_effect=mock_isjunction):
-
+    with (
+        patch("app.core.mover.is_junction_path", side_effect=mock_isjunction),
+        patch(
+            "app.core.resilient_file_ops.is_junction_path", side_effect=mock_isjunction
+        ),
+    ):
         # Delete the junction directly
         resilient_remove(junc_path)
 
@@ -192,7 +214,9 @@ def test_resilient_rmtree_on_junction_removes_link_only(tmp_path):
     def mock_isjunction(path):
         return os.path.abspath(path) == os.path.abspath(junc_path)
 
-    with patch("app.core.resilient_file_ops.is_junction_path", side_effect=mock_isjunction):
+    with patch(
+        "app.core.resilient_file_ops.is_junction_path", side_effect=mock_isjunction
+    ):
         resilient_rmtree(junc_path)
 
         assert not os.path.lexists(junc_path)
@@ -201,8 +225,12 @@ def test_resilient_rmtree_on_junction_removes_link_only(tmp_path):
 
 def test_resolve_new_target_logic():
     path_map = {
-        os.path.normcase(os.path.abspath("/base/target_dir/file1.txt")): os.path.abspath("/base/sorted/target_dir/file1.txt")
+        os.path.normcase(
+            os.path.abspath("/base/target_dir/file1.txt")
+        ): os.path.abspath("/base/sorted/target_dir/file1.txt")
     }
 
     resolved = resolve_new_target("/base/target_dir", path_map)
-    assert os.path.normpath(resolved) == os.path.normpath("/base/sorted/target_dir")
+    assert os.path.normpath(resolved) == os.path.normpath(
+        os.path.abspath("/base/sorted/target_dir")
+    )
