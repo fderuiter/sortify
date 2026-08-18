@@ -14,8 +14,9 @@ os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", "0")
 try:
     from playwright.sync_api import sync_playwright
 
-    PLAYWRIGHT_AVAILABLE = True
-except ImportError:
+    with sync_playwright() as p:
+        PLAYWRIGHT_AVAILABLE = os.path.exists(p.chromium.executable_path)
+except Exception:
     PLAYWRIGHT_AVAILABLE = False
 
 SNAPSHOT_DIR = os.path.join(os.path.dirname(__file__), "snapshots")
