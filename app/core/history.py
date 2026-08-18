@@ -496,18 +496,253 @@ class HistoryManager:
 
         return missing
 
-    def rollback(self, session_id: str, ignore_missing: bool = False):
-        """Revert directory and metadata state to the snapshot."""
-        self.db.invalidate_cache()
+    def _rollback_from_steps(
+        self,
+        session_id: str,
+        steps: list,
+        base_dir: str,
+        safety_session_id: str,
+        ignore_missing: bool = False,
+    ):
+        """Replay recorded transaction ledger step entries in reverse order."""
+        import json
+        import logging
+        import sys
+        from pathlib import Path
+        from app.core.extractor import get_file_hash
+        from app.core.resilient_file_ops import resilient_remove
 
-        def _write():
-            missing = self.check_missing_files(session_id)
-            if missing and not ignore_missing:
-                raise ValueError(
-                    f"Cannot rollback: {len(missing)} files from the snapshot are missing from the disk (e.g., {missing[0]})."
+        def verify_hash(abs_path, expected_hash, expected_size=0):
+            if not expected_hash:
+                return True
+            EMPTY_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            max_attempts = 30 if sys.platform == "win32" else 10
+            sleep_time = 0.1 if sys.platform == "win32" else 0.05
+
+            for attempt in range(max_attempts):
+                try:
+                    h = get_file_hash(abs_path)
+                    if h == expected_hash:
+                        return True
+                    if sys.platform == "win32":
+                        import gc
+                        gc.collect()
+                        time.sleep(sleep_time)
+                        continue
+                    if (
+                        h == EMPTY_SHA256
+                        and expected_hash != EMPTY_SHA256
+                        and expected_size > 0
+                    ):
+                        import gc
+                        gc.collect()
+                        time.sleep(sleep_time)
+                        continue
+                    return False
+                except Exception:
+                    import gc
+                    gc.collect()
+                    time.sleep(sleep_time)
+            return False
+
+        reverse_steps = sorted(steps, key=lambda s: s["step_number"], reverse=True)
+
+        # Write rollback journal before executing file reversals
+        try:
+            journal_path = Path(self.db_path).parent / "rollback_journal.json"
+            journal_data = {
+                "session_id": session_id,
+                "safety_session_id": safety_session_id,
+                "base_dir": base_dir,
+                "steps": reverse_steps,
+            }
+            with open(journal_path, "w") as f:
+                json.dump(journal_data, f, indent=2)
+        except Exception as ex:
+            logging.warning(f"Failed to write rollback journal: {ex}")
+
+        db_conn = get_db_connection(self.db.db_path)
+
+        for step in reverse_steps:
+            source_path = step["source_path"]
+            destination_path = step["destination_path"]
+            file_hash = step["file_hash"]
+            item_type = step.get("item_type") or "file"
+            meta = json.loads(step["metadata"]) if step.get("metadata") else {}
+
+            curr_abs = os.path.normpath(os.path.join(base_dir, destination_path))
+            orig_abs = os.path.normpath(os.path.join(base_dir, source_path))
+
+            # Pre-step content integrity check
+            if item_type == "file" and file_hash:
+                if os.path.exists(curr_abs):
+                    if not verify_hash(curr_abs, file_hash):
+                        logging.error(
+                            f"Pre-step file hash mismatch for {destination_path}. Halting step replay and restoring state from safety snapshot."
+                        )
+                        self._rollback_from_snapshot_internal(
+                            safety_session_id, ignore_missing=True
+                        )
+                        raise ValueError(
+                            f"Rollback halted: file hash mismatch detected for {destination_path}. Disk state restored from safety snapshot."
+                        )
+                elif not ignore_missing:
+                    logging.error(
+                        f"Pre-step file missing at {destination_path}. Halting step replay and restoring state from safety snapshot."
+                    )
+                    self._rollback_from_snapshot_internal(
+                        safety_session_id, ignore_missing=True
+                    )
+                    raise ValueError(
+                        f"Rollback halted: file missing at {destination_path}. Disk state restored from safety snapshot."
+                    )
+
+            # Replay step reversal
+            if item_type == "file":
+                if curr_abs != orig_abs and os.path.exists(curr_abs):
+                    os.makedirs(os.path.dirname(orig_abs), exist_ok=True)
+                    if os.path.exists(orig_abs) and not os.path.samefile(
+                        curr_abs, orig_abs
+                    ):
+                        from app.core.mover import get_safe_path
+
+                        safe_orig = get_safe_path(
+                            os.path.dirname(orig_abs), os.path.basename(orig_abs)
+                        )
+                        _robust_move(orig_abs, safe_orig)
+                    _robust_move(curr_abs, orig_abs)
+
+            elif item_type in ("symlink", "junction"):
+                if os.path.lexists(curr_abs) or is_junction_path(curr_abs):
+                    try:
+                        resilient_remove(curr_abs)
+                    except OSError:
+                        pass
+                target_link = meta.get("target") if meta else None
+                if target_link:
+                    os.makedirs(os.path.dirname(orig_abs), exist_ok=True)
+                    if item_type == "junction":
+                        from app.core.mover import _create_junction
+
+                        _create_junction(target_link, orig_abs)
+                    else:
+                        os.symlink(target_link, orig_abs)
+
+            elif item_type == "lnk":
+                if os.path.lexists(curr_abs):
+                    try:
+                        resilient_remove(curr_abs)
+                    except OSError:
+                        pass
+                os.makedirs(os.path.dirname(orig_abs), exist_ok=True)
+                target_link = meta.get("target") if meta else None
+                if pylnk3 and target_link:
+                    kwargs = {
+                        k: v
+                        for k, v in meta.items()
+                        if k
+                        in (
+                            "arguments",
+                            "description",
+                            "icon_file",
+                            "icon_index",
+                            "work_dir",
+                            "window_mode",
+                        )
+                    }
+                    pylnk3.for_file(target_link, lnk_name=orig_abs, **kwargs)
+
+            # Post-step content integrity check
+            if item_type == "file" and file_hash:
+                if not verify_hash(orig_abs, file_hash):
+                    logging.error(
+                        f"Post-step file hash mismatch for {source_path}. Halting step replay and restoring state from safety snapshot."
+                    )
+                    self._rollback_from_snapshot_internal(
+                        safety_session_id, ignore_missing=True
+                    )
+                    raise ValueError(
+                        f"Rollback halted: post-step file hash mismatch for {source_path}. Disk state restored from safety snapshot."
+                    )
+
+            # Update core database
+            with db_conn:
+                db_conn.execute(
+                    "UPDATE documents SET filepath = ? WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
+                    (source_path, base_dir, destination_path, destination_path),
                 )
 
-            conn = get_db_connection(self.db_path)
+        # Clean up any leftover/orphaned files created during a failed transfer
+        # but not present in the original snapshot files.
+        conn = get_db_connection(self.db_path)
+        try:
+            with conn:
+                cur = conn.execute(
+                    "SELECT original_rel_path FROM snapshot_files WHERE session_id = ?",
+                    (session_id,),
+                )
+                snapshot_rel_paths = {
+                    r[0].lower().replace("\\", "/") for r in cur.fetchall()
+                }
+            if snapshot_rel_paths:
+                from app.core.scanner import get_files_recursively
+                from app.core.resilient_file_ops import resilient_remove
+
+                current_files = get_files_recursively(base_dir, include_hidden=True)
+                for rel_path in current_files:
+                    norm_rel_path = rel_path.lower().replace("\\", "/")
+                    if norm_rel_path not in snapshot_rel_paths:
+                        abs_path = os.path.normpath(os.path.join(base_dir, rel_path))
+                        if os.path.lexists(abs_path) and not os.path.isdir(abs_path):
+                            try:
+                                resilient_remove(abs_path)
+                            except OSError:
+                                pass
+        except Exception as ex:
+            logging.warning(f"Failed cleaning leftover orphan files during step rollback: {ex}")
+
+        # Clean empty directories
+        try:
+            from app.config import AppSettings
+            from app.core.mover import _remove_empty_dirs
+
+            app_settings = AppSettings()
+            protected_paths = getattr(app_settings, "PROTECTED_PATHS", [])
+            protected_paths = [os.path.normpath(p) for p in protected_paths] if protected_paths else None
+            for entry in os.listdir(base_dir):
+                entry_path = os.path.join(base_dir, entry)
+                if os.path.isdir(entry_path):
+                    try:
+                        _remove_empty_dirs(entry_path, protected_paths)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+        # Mark session as rolled_back and clean up
+        with conn:
+            conn.execute(
+                "UPDATE sessions SET status = 'rolled_back' WHERE session_id = ?",
+                (session_id,),
+            )
+        self.db.invalidate_cache()
+
+        try:
+            journal_path = Path(self.db_path).parent / "rollback_journal.json"
+            if journal_path.exists():
+                journal_path.unlink()
+        except Exception as ex:
+            logging.warning(f"Failed to delete rollback journal: {ex}")
+
+    def _rollback_from_snapshot_internal(
+        self,
+        session_id: str,
+        base_dir: str = None,
+        safety_session_id: str = None,
+        ignore_missing: bool = False,
+    ):
+        conn = get_db_connection(self.db_path)
+        if not base_dir:
             with conn:
                 cur = conn.execute(
                     "SELECT base_dir FROM sessions WHERE session_id = ?", (session_id,)
@@ -517,44 +752,45 @@ class HistoryManager:
                     raise ValueError("Session not found")
                 base_dir = row[0]
 
-            # Generate safety backup snapshot before proceeding
+        if not safety_session_id:
             safety_session_id = self._create_snapshot_internal(base_dir)
 
-            with conn:
+        with conn:
+            try:
+                cur = conn.execute(
+                    """
+                    SELECT original_rel_path, inode, size, mtime, is_symlink, symlink_target, file_hash,
+                           link_type, arguments, description, icon_file, icon_index, work_dir, window_mode
+                    FROM snapshot_files WHERE session_id = ?
+                    """,
+                    (session_id,),
+                )
+                snapshot_files = cur.fetchall()
+            except Exception:
                 try:
                     cur = conn.execute(
-                        """
-                        SELECT original_rel_path, inode, size, mtime, is_symlink, symlink_target, file_hash,
-                               link_type, arguments, description, icon_file, icon_index, work_dir, window_mode
-                        FROM snapshot_files WHERE session_id = ?
-                        """,
+                        "SELECT original_rel_path, inode, size, mtime, is_symlink, symlink_target, file_hash FROM snapshot_files WHERE session_id = ?",
                         (session_id,),
                     )
-                    snapshot_files = cur.fetchall()
+                    snapshot_files = [
+                        (*row, None, None, None, None, 0, None, None)
+                        for row in cur.fetchall()
+                    ]
                 except Exception:
-                    try:
-                        cur = conn.execute(
-                            "SELECT original_rel_path, inode, size, mtime, is_symlink, symlink_target, file_hash FROM snapshot_files WHERE session_id = ?",
-                            (session_id,),
-                        )
-                        snapshot_files = [
-                            (*row, None, None, None, None, 0, None, None)
-                            for row in cur.fetchall()
-                        ]
-                    except Exception:
-                        cur = conn.execute(
-                            "SELECT original_rel_path, inode, size, mtime, is_symlink, symlink_target FROM snapshot_files WHERE session_id = ?",
-                            (session_id,),
-                        )
-                        snapshot_files = [
-                            (*row, None, None, None, None, None, 0, None, None)
-                            for row in cur.fetchall()
-                        ]
+                    cur = conn.execute(
+                        "SELECT original_rel_path, inode, size, mtime, is_symlink, symlink_target FROM snapshot_files WHERE session_id = ?",
+                        (session_id,),
+                    )
+                    snapshot_files = [
+                        (*row, None, None, None, None, None, 0, None, None)
+                        for row in cur.fetchall()
+                    ]
 
-                from app.core.scanner import get_files_recursively
+            from app.core.scanner import get_files_recursively
 
-                current_files = get_files_recursively(base_dir, include_hidden=True)
+            current_files = get_files_recursively(base_dir, include_hidden=True)
 
+            with conn:
                 inode_counts = {}
                 current_inodes = {}
                 active_files_by_rel_path = {}
@@ -1221,7 +1457,7 @@ class HistoryManager:
 
                     logging.warning(f"Failed to delete rollback journal: {ex}")
 
-        return self.db.worker.execute_write(_write)
+        return
 
     def resume_rollback(self, session_id: str):
         """Resume and complete an interrupted rollback session."""
@@ -1230,3 +1466,46 @@ class HistoryManager:
     def revert_rollback(self, safety_session_id: str):
         """Revert an interrupted rollback session back to its original state using the safety snapshot."""
         self.rollback(safety_session_id, ignore_missing=True)
+
+    def rollback(self, session_id: str, ignore_missing: bool = False):
+        """Revert directory and metadata state using recorded transaction ledger steps or snapshot."""
+        self.db.invalidate_cache()
+
+        def _write():
+            conn = get_db_connection(self.db_path)
+            with conn:
+                cur = conn.execute(
+                    "SELECT base_dir FROM sessions WHERE session_id = ?", (session_id,)
+                )
+                row = cur.fetchone()
+                if not row:
+                    raise ValueError("Session not found")
+                base_dir = row[0]
+
+            # Pre-rollback safety snapshot created BEFORE any file system write operation
+            safety_session_id = self._create_snapshot_internal(base_dir)
+
+            steps = self.db.get_transaction_steps(session_id)
+            if steps:
+                return self._rollback_from_steps(
+                    session_id,
+                    steps,
+                    base_dir,
+                    safety_session_id,
+                    ignore_missing=ignore_missing,
+                )
+
+            missing = self.check_missing_files(session_id)
+            if missing and not ignore_missing:
+                raise ValueError(
+                    f"Cannot rollback: {len(missing)} files from the snapshot are missing from the disk (e.g., {missing[0]})."
+                )
+
+            return self._rollback_from_snapshot_internal(
+                session_id,
+                base_dir=base_dir,
+                safety_session_id=safety_session_id,
+                ignore_missing=ignore_missing,
+            )
+
+        return self.db.worker.execute_write(_write)

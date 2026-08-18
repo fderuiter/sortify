@@ -164,6 +164,8 @@ def _execute_moves_recursive(
     runtime_settings=None,
     moved_counter: list = None,
     batch_size: int = 50,
+    session_id: str = None,
+    step_counter: list = None,
 ) -> None:
     """Recursively move files according to the plan."""
     base_dir = os.path.normpath(base_dir)
@@ -171,6 +173,8 @@ def _execute_moves_recursive(
         path_map = {}
     if moved_counter is None:
         moved_counter = [0]
+    if step_counter is None:
+        step_counter = [1]
 
     if not isinstance(plan, dict) or plan.get("__type__") in ("file", "directory"):
         return
@@ -443,6 +447,49 @@ def _execute_moves_recursive(
             else:
                 db.update_document_path(base_dir, source_rel_path, rel_dest)
 
+            # Record atomic transaction step entry into the core transaction ledger
+            if session_id:
+                step_num = step_counter[0]
+                step_counter[0] += 1
+                item_type = link_info["type"] if link_info else "file"
+                link_meta = None
+                if link_info:
+                    link_meta = {
+                        "target": new_abs_target if "new_abs_target" in locals() else link_info.get("target"),
+                        "type": link_info["type"],
+                    }
+                    if link_info["type"] == "lnk" and "kwargs" in locals():
+                        link_meta.update(kwargs)
+                import json
+                step_hash = None
+                if item_type == "file" and os.path.exists(dest_path):
+                    try:
+                        from app.core.extractor import get_file_hash
+
+                        step_hash = get_file_hash(dest_path)
+                    except Exception:
+                        pass
+                if not step_hash and doc:
+                    step_hash = doc.get("file_hash")
+
+                step_entry = {
+                    "type": "transaction_step",
+                    "args": (
+                        session_id,
+                        step_num,
+                        base_dir,
+                        source_rel_path,
+                        rel_dest,
+                        step_hash,
+                        item_type,
+                        json.dumps(link_meta) if link_meta else None,
+                    ),
+                }
+                if db_updates_batch is not None:
+                    db_updates_batch.append(step_entry)
+                else:
+                    db.record_transaction_step(*step_entry["args"])
+
             moved_counter[0] += 1
             if moved_counter[0] >= batch_size:
                 if db_updates_batch:
@@ -463,6 +510,8 @@ def _execute_moves_recursive(
                 runtime_settings,
                 moved_counter,
                 batch_size,
+                session_id,
+                step_counter,
             )
 
 
@@ -513,6 +562,7 @@ def execute_moves(
     # Execute all moves first
     db_updates_batch = []
     moved_counter = [0]
+    step_counter = [1]
     try:
         _execute_moves_recursive(
             base_dir,
@@ -524,6 +574,8 @@ def execute_moves(
             runtime_settings=runtime_settings,
             moved_counter=moved_counter,
             batch_size=batch_size,
+            session_id=session_id,
+            step_counter=step_counter,
         )
 
         summary = {"deleted_folders": 0, "protected_folders": 0}
