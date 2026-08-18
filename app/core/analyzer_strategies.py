@@ -1034,6 +1034,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
 
     @property
     def generator(self):
+        """Get or lazily initialize the generative text model generator."""
         if self._generator is not None:
             return self._generator
         from app.core.shared_registry import SharedModelRegistry
