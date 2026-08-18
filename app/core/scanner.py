@@ -5,6 +5,7 @@ import os
 
 from app.core.extractor_strategies import registry
 from app.core.link_manager import LinkManager
+from app.core.path_utils import is_junction_entry
 
 
 def get_files_recursively(
@@ -26,8 +27,12 @@ def get_files_recursively(
                     os.path.join(rel_path, entry.name) if rel_path else entry.name
                 )
 
-                # Check for symlink or .lnk file
-                if entry.is_symlink() or entry.name.lower().endswith(".lnk"):
+                # Check for junction, symlink, or .lnk file
+                if (
+                    is_junction_entry(entry)
+                    or entry.is_symlink()
+                    or entry.name.lower().endswith(".lnk")
+                ):
                     LinkManager.register_link(base, entry_rel_path)
                     files.append(entry_rel_path)
                 elif entry.is_dir(follow_symlinks=False):

@@ -383,7 +383,7 @@ class VirtualFilesystemTracker:
                 # Retrieve registered link info if available
                 link_info = LinkManager.get_link_info(abs_src)
                 if link_info:
-                    if link_info.get("type") == "symlink":
+                    if link_info.get("type") in ("symlink", "junction"):
                         symlink_target = link_info.get("target")
                     elif link_info.get("type") == "lnk":
                         shortcut_target = link_info.get("target")

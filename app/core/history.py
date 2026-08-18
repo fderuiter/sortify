@@ -6,6 +6,7 @@ import uuid
 from typing import Any, Dict, List
 
 from app.core.db_conn import get_db_connection
+from app.core.path_utils import is_junction_path
 
 try:
     import pylnk3
@@ -151,8 +152,9 @@ class HistoryManager:
                 try:
                     st = os.lstat(abs_path)
                     is_symlink = 1 if os.path.islink(abs_path) else 0
+                    is_junc = 1 if is_junction_path(abs_path) else 0
                     is_lnk = 1 if abs_path.lower().endswith(".lnk") else 0
-                    is_link_entity = bool(is_symlink or is_lnk)
+                    is_link_entity = bool(is_symlink or is_junc or is_lnk)
 
                     link_type = None
                     link_target = None
@@ -163,7 +165,15 @@ class HistoryManager:
                     work_dir = None
                     window_mode = None
 
-                    if is_symlink:
+                    if is_junc:
+                        link_type = "junction"
+                        try:
+                            link_target = os.readlink(abs_path)
+                        except OSError:
+                            info = LinkManager.get_link_info(abs_path)
+                            if info:
+                                link_target = info.get("target")
+                    elif is_symlink:
                         link_type = "symlink"
                         try:
                             link_target = os.readlink(abs_path)
@@ -753,8 +763,8 @@ class HistoryManager:
                                 resilient_remove(current_abs)
                             except OSError:
                                 pass
-                        if is_symlink:
-                            symlinks_to_restore.append((target_abs, symlink_target))
+                        if is_symlink or link_type == "junction":
+                            symlinks_to_restore.append((target_abs, symlink_target, link_type))
                         elif is_lnk:
                             shortcuts_to_restore.append(
                                 (
@@ -968,10 +978,10 @@ class HistoryManager:
                                     ),
                                 )
 
-                    # Restore symlinks after standard files
-                    for target_abs, symlink_target in symlinks_to_restore:
-                        if os.path.exists(target_abs) or os.path.islink(target_abs):
-                            if os.path.islink(target_abs):
+                    # Restore symlinks and junctions after standard files
+                    for target_abs, symlink_target, l_type in symlinks_to_restore:
+                        if os.path.exists(target_abs) or os.path.islink(target_abs) or is_junction_path(target_abs):
+                            if os.path.islink(target_abs) or is_junction_path(target_abs):
                                 try:
                                     from app.core.resilient_file_ops import (
                                         resilient_remove,
@@ -1013,12 +1023,17 @@ class HistoryManager:
                                     )
                         try:
                             os.makedirs(os.path.dirname(target_abs), exist_ok=True)
-                            os.symlink(symlink_target, target_abs)
+                            if l_type == "junction":
+                                from app.core.mover import _create_junction
+
+                                _create_junction(symlink_target, target_abs)
+                            else:
+                                os.symlink(symlink_target, target_abs)
                         except OSError as e:
                             import logging
 
                             logging.warning(
-                                f"Failed to recreate symbolic link at {target_abs}: {e}"
+                                f"Failed to recreate link at {target_abs}: {e}"
                             )
 
                     # Restore Windows shortcuts after standard files and symlinks

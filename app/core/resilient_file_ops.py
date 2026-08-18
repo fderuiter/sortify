@@ -12,6 +12,8 @@ import stat
 import sys
 import time
 
+from app.core.path_utils import is_junction_path
+
 # Load the original shutil.move to detect if it has been mocked or monkeypatched in tests.
 _ORIGINAL_SHUTIL_MOVE = None
 try:
@@ -84,14 +86,19 @@ def resilient_move(src, dst):
 
 
 def resilient_remove(path):
-    """Resiliently delete a file or empty directory.
+    """Resiliently delete a file, symlink, junction, or empty directory.
 
     During deletion failures caused by read-only permission locks, the system
     must dynamically adjust file permission attributes to allow successful cleanup.
     """
     for attempt in range(MAX_ATTEMPTS):
         try:
-            if os.path.isdir(path) and not os.path.islink(path):
+            if is_junction_path(path) or os.path.islink(path):
+                try:
+                    os.unlink(path)
+                except OSError:
+                    os.rmdir(path)
+            elif os.path.isdir(path):
                 os.rmdir(path)
             else:
                 os.remove(path)
@@ -106,7 +113,12 @@ def resilient_remove(path):
 
             try:
                 # Try again immediately after chmod within the same attempt
-                if os.path.isdir(path) and not os.path.islink(path):
+                if is_junction_path(path) or os.path.islink(path):
+                    try:
+                        os.unlink(path)
+                    except OSError:
+                        os.rmdir(path)
+                elif os.path.isdir(path):
                     os.rmdir(path)
                 else:
                     os.remove(path)
@@ -128,6 +140,9 @@ def resilient_remove(path):
 
 def resilient_rmtree(path, ignore_errors=False):
     """Resiliently delete a directory tree, adjusting permissions on write-permission locks."""
+    if is_junction_path(path) or os.path.islink(path):
+        resilient_remove(path)
+        return
 
     def _handle_error(func, p, exc_info):
         try:

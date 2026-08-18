@@ -8,6 +8,7 @@ import os
 import shutil  # noqa: F401
 
 from app.core.link_manager import LinkManager
+from app.core.path_utils import is_junction_path
 from app.core.verifier import VerificationEngine
 
 try:
@@ -59,6 +60,51 @@ def get_safe_path(dest_dir: str, filename: str, source_path: str = None) -> str:
     return safe_path
 
 
+def _create_junction(target_path: str, junction_path: str):
+    """Create an NTFS directory junction (or fallback symlink on non-Windows/test environments)."""
+    abs_target = os.path.abspath(target_path)
+    abs_junction = os.path.abspath(junction_path)
+    try:
+        import _winapi
+
+        if hasattr(_winapi, "CreateJunction"):
+            _winapi.CreateJunction(abs_target, abs_junction)
+            return
+    except (ImportError, AttributeError, OSError):
+        pass
+
+    os.symlink(target_path, junction_path, target_is_directory=True)
+
+
+def resolve_new_target(abs_target: str, path_map: dict) -> str:
+    """Resolve the updated target path if the target file or directory moved."""
+    if not abs_target or not path_map:
+        return abs_target
+
+    norm_target = os.path.normcase(os.path.abspath(abs_target))
+
+    if norm_target in path_map:
+        return path_map[norm_target]
+
+    for src_path, dst_path in path_map.items():
+        src_norm = os.path.normcase(os.path.abspath(src_path))
+        if norm_target.startswith(src_norm + os.sep):
+            rel = os.path.relpath(abs_target, src_path)
+            return os.path.normpath(os.path.join(dst_path, rel))
+
+    for src_file, dst_file in path_map.items():
+        src_file_norm = os.path.normcase(os.path.abspath(src_file))
+        if src_file_norm.startswith(norm_target + os.sep):
+            rel = os.path.relpath(src_file, abs_target)
+            dst_file_str = str(dst_file)
+            if dst_file_str.replace("\\", "/").endswith(rel.replace("\\", "/")):
+                inferred = dst_file_str[: -len(rel)].rstrip("\\/")
+                if inferred:
+                    return os.path.normpath(inferred)
+
+    return abs_target
+
+
 def _remove_empty_dirs(path: str, protected_paths: list[str] = None):
     """Recursively remove empty directories, respecting protected paths."""
     if protected_paths:
@@ -66,11 +112,13 @@ def _remove_empty_dirs(path: str, protected_paths: list[str] = None):
             if is_subpath_or_equal(path, p):
                 return
 
-    if not os.path.isdir(path):
+    if not os.path.isdir(path) or is_junction_path(path) or os.path.islink(path):
         return
 
     for entry in os.listdir(path):
         entry_path = os.path.join(path, entry)
+        if is_junction_path(entry_path) or os.path.islink(entry_path):
+            continue
         if os.path.isdir(entry_path):
             _remove_empty_dirs(entry_path, protected_paths)
 
@@ -175,6 +223,18 @@ def _execute_moves_recursive(
             dest_path = unicodedata.normalize("NFC", dest_path)
 
             link_info = LinkManager.get_link_info(source_path)
+            if not link_info:
+                if is_junction_path(source_path):
+                    try:
+                        link_info = {"type": "junction", "target": os.readlink(source_path)}
+                    except OSError:
+                        pass
+                elif os.path.islink(source_path):
+                    try:
+                        link_info = {"type": "symlink", "target": os.readlink(source_path)}
+                    except OSError:
+                        pass
+
             moved_as_link = False
 
             if link_info:
@@ -185,12 +245,7 @@ def _execute_moves_recursive(
                         os.path.join(os.path.dirname(source_path), original_target)
                     )
 
-                new_abs_target = path_map.get(
-                    os.path.normcase(os.path.abspath(abs_target))
-                    if abs_target
-                    else abs_target,
-                    abs_target,
-                )
+                new_abs_target = resolve_new_target(abs_target, path_map)
 
                 # Check if we need to update the link
                 needs_update = not _is_same_path(
@@ -228,6 +283,41 @@ def _execute_moves_recursive(
                                 resilient_remove(shadow_name)
                             logging.error(
                                 f"Failed to atomically update symlink {source_path}: {e}",
+                                exc_info=True,
+                            )
+                            raise
+
+                    elif link_info["type"] == "junction":
+                        if not os.path.isabs(original_target):
+                            final_target = os.path.relpath(new_abs_target, dest_dir)
+                        else:
+                            final_target = new_abs_target
+
+                        try:
+                            _create_junction(final_target, shadow_name)
+                            if not (
+                                os.path.lexists(shadow_name)
+                                or is_junction_path(shadow_name)
+                            ):
+                                raise RuntimeError(
+                                    "Shadow junction creation failed validation."
+                                )
+
+                            os.replace(shadow_name, dest_path)
+                            if not _is_same_path(dest_path, source_path):
+                                from app.core.resilient_file_ops import resilient_remove
+
+                                resilient_remove(source_path)
+                            moved_as_link = True
+                        except Exception as e:
+                            if os.path.lexists(shadow_name) or is_junction_path(
+                                shadow_name
+                            ):
+                                from app.core.resilient_file_ops import resilient_remove
+
+                                resilient_remove(shadow_name)
+                            logging.error(
+                                f"Failed to atomically update junction {source_path}: {e}",
                                 exc_info=True,
                             )
                             raise
@@ -433,12 +523,16 @@ def execute_moves(
                     summary["protected_folders"] += 1
                 elif node.get("status") == "To Be Deleted":
                     try:
-                        if os.path.isdir(node["source_path"]) and not os.listdir(
-                            node["source_path"]
-                        ):
+                        src_path = node.get("source_path")
+                        if src_path and (is_junction_path(src_path) or os.path.islink(src_path)):
                             from app.core.resilient_file_ops import resilient_remove
 
-                            resilient_remove(node["source_path"])
+                            resilient_remove(src_path)
+                            summary["deleted_folders"] += 1
+                        elif src_path and os.path.isdir(src_path) and not os.listdir(src_path):
+                            from app.core.resilient_file_ops import resilient_remove
+
+                            resilient_remove(src_path)
                             summary["deleted_folders"] += 1
                     except OSError:
                         pass
