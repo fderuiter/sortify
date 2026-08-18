@@ -1485,7 +1485,9 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                             )
                 elif db:
                     try:
-                        from app.core.semantic_embeddings import SemanticEmbeddingManager
+                        from app.core.semantic_embeddings import (
+                            SemanticEmbeddingManager,
+                        )
 
                         embedding_manager = SemanticEmbeddingManager(
                             db, model_path=getattr(self, "model_path", None)
@@ -1639,17 +1641,17 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                                 curr_X = hist_vectorizer.transform(
                                     filtered_documents
                                 )
-                                cluster_vectors = [
-                                    row.toarray()[0] for row in curr_X
-                                ]
+                                cluster_vectors = list(curr_X.toarray())
 
                                 hist_vectorizer_cached = hist_vectorizer
                                 hist_vectors_cached = hist_X
                                 hist_texts_cached = all_texts
 
+                                hist_X_dense = hist_X.toarray()
                                 for idx, folder in enumerate(folder_indices):
-                                    vec = hist_X[idx].toarray()[0]
-                                    historical_folder_vectors[folder].append(vec)
+                                    historical_folder_vectors[folder].append(
+                                        hist_X_dense[idx]
+                                    )
                         except Exception as e:
                             logging.error(
                                 f"Failed to compute historical TF-IDF vectors: {e}"
@@ -1664,7 +1666,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                             )
                             safe_docs = [doc or "" for doc in filtered_documents]
                             X = vectorizer.fit_transform(safe_docs)
-                            cluster_vectors = [row.toarray()[0] for row in X]
+                            cluster_vectors = list(X.toarray())
                         except Exception as e:
                             logging.error(
                                 f"Failed to generate TF-IDF vectors for coherence: {e}"
@@ -1672,23 +1674,17 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                             cluster_vectors = []
 
                 if cluster_vectors:
-                    def cosine_sim(v1, v2):
-                        v1_arr = np.array(v1)
-                        v2_arr = np.array(v2)
-                        norm1 = np.linalg.norm(v1_arr)
-                        norm2 = np.linalg.norm(v2_arr)
-                        if norm1 == 0 or norm2 == 0:
-                            return 0.0
-                        return float(np.dot(v1_arr, v2_arr) / (norm1 * norm2))
-
-                    # Calculate cluster centroid
-                    cluster_centroid = np.mean(cluster_vectors, axis=0)
-
-                    # Calculate cohesion score: average cosine similarity of each doc to the centroid
-                    coherences = [
-                        cosine_sim(v, cluster_centroid) for v in cluster_vectors
-                    ]
-                    cohesion_score = np.mean(coherences) if coherences else 1.0
+                    cluster_vectors_arr = np.asarray(cluster_vectors, dtype=np.float32)
+                    cluster_centroid_arr = np.mean(cluster_vectors_arr, axis=0)
+                    c_norm = float(np.linalg.norm(cluster_centroid_arr))
+                    v_norms = np.linalg.norm(cluster_vectors_arr, axis=1)
+                    denom = v_norms * c_norm
+                    denom[denom == 0] = 1e-9
+                    coherences = (cluster_vectors_arr @ cluster_centroid_arr) / denom
+                    cohesion_score = (
+                        float(np.mean(coherences)) if len(coherences) > 0 else 1.0
+                    )
+                    cluster_centroid = cluster_centroid_arr
 
                     # Check cohesion score threshold
                     if cohesion_score < 0.3:
@@ -1698,24 +1694,31 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                         return "Review Required"
 
                     # Calculate historical folder centroids and best match similarity
-                    historical_folder_centroids = {}
-                    for folder, vecs in historical_folder_vectors.items():
-                        if vecs:
-                            historical_folder_centroids[folder] = np.asarray(
-                                vecs, dtype=np.float32
-                            ).mean(axis=0)
-
                     best_match_folder = None
                     best_match_similarity = -1.0
 
-                    for folder, folder_centroid in historical_folder_centroids.items():
-                        sim = cosine_sim(cluster_centroid, folder_centroid)
-                        if sim > best_match_similarity:
-                            best_match_similarity = sim
-                            best_match_folder = folder
+                    if historical_folder_vectors and c_norm > 0:
+                        for folder, vecs in historical_folder_vectors.items():
+                            if vecs:
+                                folder_centroid_arr = np.mean(
+                                    np.asarray(vecs, dtype=np.float32), axis=0
+                                )
+                                fc_norm = float(np.linalg.norm(folder_centroid_arr))
+                                if fc_norm == 0:
+                                    sim = 0.0
+                                else:
+                                    sim = float(
+                                        np.dot(
+                                            cluster_centroid_arr, folder_centroid_arr
+                                        )
+                                        / (c_norm * fc_norm)
+                                    )
+                                if sim > best_match_similarity:
+                                    best_match_similarity = sim
+                                    best_match_folder = folder
 
                     # Apply thresholds to routing
-                    if historical_folder_centroids and np.linalg.norm(cluster_centroid) > 0:
+                    if historical_folder_vectors and c_norm > 0:
                         if best_match_similarity >= 0.85:
                             logging.info(
                                 f"High-confidence match: {best_match_folder} (similarity {best_match_similarity:.4f} >= 0.85). Bypassing generative."
@@ -2470,17 +2473,22 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                     cluster_centroid = None
 
             if cluster_vectors and cluster_centroid is not None:
-                def _cos_sim(v1, v2):
-                    v1_arr = np.asarray(v1, dtype=np.float32)
-                    v2_arr = np.asarray(v2, dtype=np.float32)
-                    norm1 = np.linalg.norm(v1_arr)
-                    norm2 = np.linalg.norm(v2_arr)
-                    if norm1 == 0 or norm2 == 0:
-                        return 0.0
-                    return float(np.dot(v1_arr, v2_arr) / (norm1 * norm2))
+                if (
+                    "coherences" in locals()
+                    and coherences is not None
+                    and len(coherences) == len(filtered_documents)
+                ):
+                    sims = coherences
+                else:
+                    vecs_arr = np.asarray(cluster_vectors, dtype=np.float32)
+                    c_arr = np.asarray(cluster_centroid, dtype=np.float32)
+                    c_norm = float(np.linalg.norm(c_arr))
+                    v_norms = np.linalg.norm(vecs_arr, axis=1)
+                    denom = v_norms * c_norm
+                    denom[denom == 0] = 1e-9
+                    sims = (vecs_arr @ c_arr) / denom
 
-                sims = [_cos_sim(v, cluster_centroid) for v in cluster_vectors]
-                ranked_indices = sorted(range(len(filtered_documents)), key=lambda i: sims[i], reverse=True)
+                ranked_indices = np.argsort(-sims)
                 selected_indices = ranked_indices[:3]
                 selected_documents = [filtered_documents[i] for i in selected_indices]
             else:
