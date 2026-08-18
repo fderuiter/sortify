@@ -1481,15 +1481,14 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                                 )
                                 rows = cursor.fetchall()
 
-                            cipher = db.crypto.get_cipher()
-                            import json
-
                             def decrypt_chunk(chunk):
                                 chunk_results = []
                                 for filepath, folder, vector_str in chunk:
                                     if folder and vector_str:
                                         try:
-                                            v = json.loads(cipher.decrypt(vector_str))
+                                            v = db.crypto.decrypt_and_parse_vector(
+                                                vector_str
+                                            )
                                             chunk_results.append((filepath, folder, v))
                                         except Exception:
                                             chunk_results.append(
@@ -1619,7 +1618,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                             best_match_folder = folder
 
                     # Apply thresholds to routing
-                    if use_semantic and historical_folder_centroids:
+                    if historical_folder_centroids:
                         if best_match_similarity >= 0.85:
                             logging.info(
                                 f"High-confidence match: {best_match_folder} (similarity {best_match_similarity:.4f} >= 0.85). Bypassing generative."
@@ -2483,6 +2482,15 @@ class ClusteringRegistry:
 
     def get_strategy(self, name: str) -> ClusteringStrategy:
         """Retrieve a clustering strategy by name."""
+        if name not in self._strategies:
+            if name == "clinical_tmf":
+                from app.core.clinical_strategy import ClinicalTMFStrategy
+
+                self._strategies["clinical_tmf"] = ClinicalTMFStrategy(mode="tmf")
+            elif name == "clinical_isf":
+                from app.core.clinical_strategy import ClinicalTMFStrategy
+
+                self._strategies["clinical_isf"] = ClinicalTMFStrategy(mode="isf")
         return self._strategies.get(name)
 
 

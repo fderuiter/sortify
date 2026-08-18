@@ -47,6 +47,11 @@ class Settings(BaseSettings):
     AUDIO_GPU_ENABLED: bool = Field(default=False)
     OCR_LANGUAGES: str = Field(default="en")
     CONFLICT_POLICY: Literal["skip", "rename"] = Field(default="rename")
+    SORTING_STRATEGY: Literal[
+        "default", "generative", "clinical_tmf", "clinical_isf"
+    ] = Field(default="default")
+    CLINICAL_SMART_RENAMING: bool = Field(default=False)
+    CLINICAL_GENERATE_AUDIT_REPORT: bool = Field(default=True)
     COHERENCE_THRESHOLD: float = Field(default=0.5, ge=0.0, le=1.0)
     DEBOUNCE_DELAY: float = Field(default=0.6, gt=0.0)
     MAX_DEBOUNCE_DELAY: float = Field(default=5.0, gt=0.0)

@@ -161,11 +161,26 @@ class AppSession:
                 active_model_path = user_model_path
 
         model_path = active_model_path if self.settings.AI_CONSENT_GRANTED else None
-        strategy_name = (
-            "generative"
-            if getattr(self.settings, "AI_ASSISTED_NAMING", False)
-            else "default"
-        )
+        configured_strat = getattr(self.settings, "SORTING_STRATEGY", "default")
+        if configured_strat in ("clinical_tmf", "clinical_isf"):
+            strategy_name = configured_strat
+            from app.core.analyzer_strategies import clustering_registry
+
+            strat = clustering_registry.get_strategy(strategy_name)
+            if strat and hasattr(strat, "smart_renaming"):
+                strat.smart_renaming = getattr(
+                    self.settings, "CLINICAL_SMART_RENAMING", False
+                )
+                strat.generate_audit_report = getattr(
+                    self.settings, "CLINICAL_GENERATE_AUDIT_REPORT", True
+                )
+                strat.base_dir = self.base_dir
+        else:
+            strategy_name = (
+                "generative"
+                if getattr(self.settings, "AI_ASSISTED_NAMING", False)
+                else "default"
+            )
 
         self.analyzer = IncrementalAnalyzer(
             self.settings.MAX_FOLDERS,

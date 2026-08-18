@@ -690,6 +690,8 @@ class SemanticEmbeddingManager:
             return retrieved_vectors
 
         if not regenerate:
+            for fp in missing_or_invalid:
+                retrieved_vectors.pop(fp, None)
             return retrieved_vectors
 
         # 3. For missing/invalid, prioritize reading from the local thread-locked decrypted cache in self.db

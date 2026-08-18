@@ -143,6 +143,7 @@ def test_holistic_two_phase_and_hybrid_routing_workflow(db, temp_workspace):
     )
 
     settings = AppSettings()
+    settings.POLICIES = []
     settings.KEYWORD_RULES = {"invoice": "Finances/Invoices"}
 
     with (
@@ -262,18 +263,14 @@ def test_holistic_onnx_coherence_routing_thresholds(db, temp_workspace):
 
 def test_holistic_resiliency_guards_and_rollback(db, temp_workspace):
     """Test targeted resiliency guards: symlink safety, collision limit, and transactional rollback."""
-    # 1. Test get_safe_path collision ceiling limit (1,000 max attempts)
+    # 1. Test get_safe_path collision resolution with existing files
     target_folder = temp_workspace / "collision_test"
     target_folder.mkdir(parents=True, exist_ok=True)
     (target_folder / "file.txt").write_text("existing", encoding="utf-8")
+    (target_folder / "file_1.txt").write_text("existing 1", encoding="utf-8")
 
-    with (
-        patch("os.path.lexists", side_effect=[True, True, False]),
-        patch("os.path.samefile", return_value=False),
-        patch("app.core.mover._is_same_path", return_value=False),
-    ):
-        safe_res = get_safe_path(str(target_folder), "file.txt")
-        assert safe_res.endswith("file_2.txt")
+    safe_res = get_safe_path(str(target_folder), "file.txt")
+    assert safe_res.endswith("file_2.txt")
 
     # 2. Test corrupted media extraction handling
     corrupt_mp3 = temp_workspace / "bad_header.mp3"

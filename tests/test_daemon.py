@@ -125,6 +125,9 @@ def test_daemon_execution_flow(tmp_path):
         mock_app_session_class.assert_called_once_with(settings, str(src_dir))
         mock_app_session_inst.partial_fit.assert_called()
         assert mock_app_session_inst.generate_sorting_plan.call_count == 2
+        call_args = mock_app_session_inst.generate_sorting_plan.call_args_list
+        assert call_args[0].kwargs.get("fast_path_only") is True
+        assert call_args[1].kwargs.get("fast_path_only") is False
         mock_app_session_inst.execute_moves.assert_called_once_with(
             {"invoice.txt": "dest/invoice.txt"}
         )

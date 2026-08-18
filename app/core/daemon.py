@@ -17,6 +17,38 @@ from app.core.session import AppSession
 logger = logging.getLogger("app.daemon")
 
 
+def _extract_plan_destinations(plan, base_dir=None, current_dest="", dests_set=None):
+    if dests_set is None:
+        dests_set = set()
+    if not isinstance(plan, dict):
+        return dests_set
+    if plan.get("__type__") in ("file", "directory"):
+        return dests_set
+    for key, content in plan.items():
+        if isinstance(content, dict):
+            if content.get("__type__") == "file":
+                filename = content.get("target_filename") or os.path.basename(key)
+                rel_dst = os.path.join(current_dest, filename).replace("\\", "/")
+                dests_set.add(rel_dst)
+            elif content.get("__type__") == "directory":
+                continue
+            else:
+                _extract_plan_destinations(
+                    content,
+                    base_dir=base_dir,
+                    current_dest=os.path.join(current_dest, key),
+                    dests_set=dests_set,
+                )
+        elif isinstance(content, str):
+            rel_dst = (
+                os.path.relpath(content, base_dir).replace("\\", "/")
+                if base_dir and os.path.isabs(content)
+                else content.replace("\\", "/")
+            )
+            dests_set.add(rel_dst)
+    return dests_set
+
+
 class DaemonFolderHandler(FileSystemEventHandler):
     """Handler for file system events inside monitored directory."""
 
@@ -242,45 +274,13 @@ class ContinuousWatchdogDaemon:
             fast_path_plan = app_session.generate_sorting_plan(fast_path_only=True)
             fast_path_moved_destinations = set()
 
-            def _extract_plan_destinations(plan, current_dest="", dests_set=None):
-                if dests_set is None:
-                    dests_set = set()
-                if not isinstance(plan, dict):
-                    return dests_set
-                if plan.get("__type__") in ("file", "directory"):
-                    return dests_set
-                for key, content in plan.items():
-                    if isinstance(content, dict):
-                        if content.get("__type__") == "file":
-                            filename = content.get(
-                                "target_filename"
-                            ) or os.path.basename(key)
-                            rel_dst = os.path.join(current_dest, filename).replace(
-                                "\\", "/"
-                            )
-                            dests_set.add(rel_dst)
-                        elif content.get("__type__") == "directory":
-                            continue
-                        else:
-                            _extract_plan_destinations(
-                                content, os.path.join(current_dest, key), dests_set
-                            )
-                    elif isinstance(content, str):
-                        rel_dst = (
-                            os.path.relpath(content, self.base_dir).replace("\\", "/")
-                            if os.path.isabs(content)
-                            else content.replace("\\", "/")
-                        )
-                        dests_set.add(rel_dst)
-                return dests_set
-
             if fast_path_plan:
                 fast_path_summary = app_session.execute_moves(fast_path_plan)
                 logger.info(f"Phase 1 (Fast-Path) completed: {fast_path_summary}")
 
                 # Retrieve destination paths from the fast_path_plan to bypass them in Phase 2
                 fast_path_moved_destinations = _extract_plan_destinations(
-                    fast_path_plan
+                    fast_path_plan, base_dir=self.base_dir
                 )
 
             if cancel_check():
@@ -300,8 +300,12 @@ class ContinuousWatchdogDaemon:
             bypassed_files_2 = MetadataPass.run(
                 self.base_dir, files, self.settings, app_session.db, None, cancel_check
             )
-            bypassed_set = set(bypassed_files_2).union(fast_path_moved_destinations)
-            items_to_sort = [f for f in files if f not in bypassed_set]
+            bypassed_set = {f.replace("\\", "/") for f in bypassed_files_2}.union(
+                {d.replace("\\", "/") for d in fast_path_moved_destinations}
+            )
+            items_to_sort = [
+                f for f in files if f.replace("\\", "/") not in bypassed_set
+            ]
 
             if cancel_check():
                 return

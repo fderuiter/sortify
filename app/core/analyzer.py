@@ -534,6 +534,7 @@ class IncrementalAnalyzer:
                     ai_vectors_list = []
                     is_ai_vector_valid = []
                     any_invalid_or_missing = False
+                    corrupted_vector_paths = []
 
                     for f_name in ai_filenames:
                         v = ai_vectors_dict.get(f_name.replace("\\", "/"))
@@ -548,19 +549,8 @@ class IncrementalAnalyzer:
                             is_ai_vector_valid.append(False)
                             if use_semantic:
                                 any_invalid_or_missing = True
-
-                                # Label and persist failure as candidate for background reconstruction
                                 self.db.track_corrupted_vector(base_dir, f_name)
-
-                                def _delete_active(fp=f_name):
-                                    conn = get_db_connection(self.db.db_path)
-                                    with conn:
-                                        conn.execute(
-                                            "DELETE FROM document_vectors WHERE base_dir = ? AND filepath = ?",
-                                            (base_dir, fp.replace("\\", "/")),
-                                        )
-
-                                self.db.worker.execute_write(_delete_active)
+                                corrupted_vector_paths.append(f_name.replace("\\", "/"))
 
                     hist_vectors_list = []
                     is_hist_vector_valid = []
@@ -578,19 +568,20 @@ class IncrementalAnalyzer:
                             is_hist_vector_valid.append(False)
                             if use_semantic:
                                 any_invalid_or_missing = True
-
-                                # Label and persist failure as candidate for background reconstruction
                                 self.db.track_corrupted_vector(base_dir, fp)
+                                corrupted_vector_paths.append(fp.replace("\\", "/"))
 
-                                def _delete_hist(fp=fp):
-                                    conn = get_db_connection(self.db.db_path)
-                                    with conn:
-                                        conn.execute(
-                                            "DELETE FROM document_vectors WHERE base_dir = ? AND filepath = ?",
-                                            (base_dir, fp.replace("\\", "/")),
-                                        )
+                    if use_semantic and corrupted_vector_paths:
 
-                                self.db.worker.execute_write(_delete_hist)
+                        def _delete_corrupted(paths=list(corrupted_vector_paths)):
+                            conn = get_db_connection(self.db.db_path)
+                            with conn:
+                                conn.executemany(
+                                    "DELETE FROM document_vectors WHERE base_dir = ? AND filepath = ?",
+                                    [(base_dir, p) for p in paths],
+                                )
+
+                        self.db.worker.execute_write(_delete_corrupted)
 
                     # Queue missing/invalid vectors for background reconstruction asynchronously without blocking
                     if use_semantic and any_invalid_or_missing:
@@ -601,8 +592,8 @@ class IncrementalAnalyzer:
 
                     from scipy.sparse import csr_matrix
                     from sklearn.feature_extraction.text import (
+                        CountVectorizer,
                         TfidfTransformer,
-                        TfidfVectorizer,
                     )
                     from sklearn.preprocessing import normalize
 
@@ -631,19 +622,13 @@ class IncrementalAnalyzer:
                             [idf_weights[term] for term, df in top_terms]
                         )
 
-                        # Configure a TfidfVectorizer
-                        vectorizer = TfidfVectorizer(
+                        # Configure CountVectorizer and TfidfTransformer
+                        count_vectorizer = CountVectorizer(
                             stop_words=list(self.stop_words),
                             vocabulary=vocab,
-                            sublinear_tf=True,
                         )
-                        vectorizer.vocabulary_ = vocab
-                        vectorizer.fixed_vocabulary_ = True
-                        vectorizer.idf_ = idf_values
-
                         transformer = TfidfTransformer(sublinear_tf=True)
                         transformer.idf_ = idf_values
-                        vectorizer._tfidf = transformer
 
                         # Historical Sparse Matrix Reconstruction
                         # Represent historical document vectors by constructing a standard scipy.sparse.csr_matrix directly from database term statistics.
@@ -665,7 +650,7 @@ class IncrementalAnalyzer:
                                 row_idx = filepath_to_row_idx[norm_fp]
                                 if term in vocab:
                                     col_idx = vocab[term]
-                                    tf_weight = 1.0 + math.log(tf)
+                                    tf_weight = 1.0 + math.log(max(1, tf))
                                     weight = tf_weight * idf_weights[term]
                                     rows.append(row_idx)
                                     cols.append(col_idx)
@@ -684,30 +669,35 @@ class IncrementalAnalyzer:
 
                         # Vectorizing Active Candidate Documents
                         safe_ai_documents = [d or "" for d in ai_documents]
-                        new_docs_vectors = vectorizer.transform(safe_ai_documents)
+                        counts = count_vectorizer.transform(safe_ai_documents)
+                        new_docs_vectors = transformer.transform(counts)
 
                         # Dot Product Similarity Calculation
                         keyword_similarities = new_docs_vectors.dot(
                             historical_vectors.T
                         ).toarray()
 
-                    # 4. Compute semantic (cosine) similarity matrix
-                    semantic_similarities = cosine_similarity(
-                        np.array(ai_vectors_list), np.array(hist_vectors_list)
-                    )
-                    # Handle NaNs (e.g., division by zero if all-zero vector is used)
-                    semantic_similarities = np.nan_to_num(
-                        semantic_similarities, nan=0.0
-                    )
+                    # 4. Compute semantic (cosine) similarity matrix & merge scores
+                    if (
+                        use_semantic
+                        and len(ai_vectors_list) > 0
+                        and len(hist_vectors_list) > 0
+                    ):
+                        semantic_similarities = cosine_similarity(
+                            np.array(ai_vectors_list), np.array(hist_vectors_list)
+                        )
+                        semantic_similarities = np.nan_to_num(
+                            semantic_similarities, nan=0.0
+                        )
 
-                    # 5. Merge scores on a per-comparison basis: cosine similarity for healthy pairs, TF-IDF for fallback pairs
-                    similarities = np.zeros((len(ai_filenames), len(historical_docs)))
-                    for i in range(len(ai_filenames)):
-                        for j in range(len(historical_docs)):
-                            if is_ai_vector_valid[i] and is_hist_vector_valid[j]:
-                                similarities[i, j] = semantic_similarities[i, j]
-                            else:
-                                similarities[i, j] = keyword_similarities[i, j]
+                        ai_mask = np.array(is_ai_vector_valid)[:, None]
+                        hist_mask = np.array(is_hist_vector_valid)[None, :]
+                        valid_mask = ai_mask & hist_mask
+                        similarities = np.where(
+                            valid_mask, semantic_similarities, keyword_similarities
+                        )
+                    else:
+                        similarities = keyword_similarities.copy()
 
                     # Ensure merged scores stay within 0.0 - 1.0 range
                     similarities = np.clip(similarities, 0.0, 1.0)
@@ -863,6 +853,7 @@ class IncrementalAnalyzer:
                         current[part] = {"_original": current[part]}
                     if i == len(parts) - 1:
                         current[part][f] = {
+                            "__type__": "file",
                             "routed_by": rule_type,
                             "keyword": expression,
                             "extraction_status": ext_status,
@@ -883,6 +874,7 @@ class IncrementalAnalyzer:
                         current[part] = {"_original": current[part]}
                     if i == len(parts) - 1:
                         current[part][f] = {
+                            "__type__": "file",
                             "routed_by": routed_by,
                             "keyword": keyword,
                             "extraction_status": ext_status,
@@ -896,7 +888,10 @@ class IncrementalAnalyzer:
                 elif not isinstance(plan["Miscellaneous"], dict):
                     plan["Miscellaneous"] = {"_original": plan["Miscellaneous"]}
                 for f, ext_status in unsupported_files:
-                    plan["Miscellaneous"][f] = {"extraction_status": ext_status}
+                    plan["Miscellaneous"][f] = {
+                        "__type__": "file",
+                        "extraction_status": ext_status,
+                    }
 
             def remove_from_plan(node, target_f):
                 for k, v in list(node.items()):

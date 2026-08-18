@@ -161,16 +161,38 @@ def test_similarity_score_merging_range(mocker):
     # Assert correct semantic routing and score values
     assert "Finance" in plan
     assert "active_1.txt" in plan["Finance"]
+    active_entry = plan["Finance"]["active_1.txt"]
+    assert active_entry.get("routed_by") == "similarity"
+    keyword_str = active_entry.get("keyword", "")
+    import re
+
+    match = re.search(r"\(([0-9.]+)\)", keyword_str)
+    assert match is not None
+    score = float(match.group(1))
+    assert 0.0 <= score <= 1.0
 
 
 def test_cache_integrity_unencrypted_security():
     """
     Ensure no unencrypted vector data is persisted to the database.
     """
+    base_dir = "test_unencrypted_security_base"
+    db.clear(base_dir)
+    dim = 384
+    vec = [0.1] * dim
+    db.upsert_document_vectors(
+        base_dir,
+        [("doc_secure.txt", vec)],
+        model_signature="active_sig",
+    )
+
     conn = get_db_connection(db.db_path)
     with conn:
-        cursor = conn.execute("SELECT vector FROM document_vectors")
+        cursor = conn.execute(
+            "SELECT vector FROM document_vectors WHERE base_dir = ?", (base_dir,)
+        )
         rows = cursor.fetchall()
+        assert len(rows) > 0
         for row in rows:
             if row[0]:
                 vector_str = row[0]
