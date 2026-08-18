@@ -162,6 +162,8 @@ def _execute_moves_recursive(
     active_parent_path: str = "",
     depth: int = 0,
     runtime_settings=None,
+    session_id: str = None,
+    ledger=None,
 ) -> None:
     """Recursively move files according to the plan."""
     base_dir = os.path.normpath(base_dir)
@@ -242,6 +244,28 @@ def _execute_moves_recursive(
 
             dest_path = os.path.normpath(get_safe_path(dest_dir, filename, source_path))
             dest_path = unicodedata.normalize("NFC", dest_path)
+
+            source_rel_path = os.path.relpath(source_path, base_dir).replace("\\", "/")
+            rel_dest = os.path.relpath(dest_path, base_dir).replace("\\", "/")
+            doc = db.get_document(base_dir, source_rel_path) if hasattr(db, "get_document") else None
+            file_hash = doc.get("file_hash") if (doc and isinstance(doc, dict)) else ""
+
+            entry_id = f"{session_id}:{source_rel_path}" if session_id else None
+            if ledger and session_id:
+                try:
+                    ledger.log_intent(
+                        session_id=session_id,
+                        base_dir=base_dir,
+                        source_path=source_path,
+                        dest_path=dest_path,
+                        source_rel_path=source_rel_path,
+                        dest_rel_path=rel_dest,
+                        current_dest=current_dest,
+                        file_hash=file_hash or "",
+                        entry_id=entry_id,
+                    )
+                except Exception as exc:
+                    logging.warning(f"Failed to log move intent to transaction ledger: {exc}")
 
             link_info = LinkManager.get_link_info(source_path)
             if not link_info:
@@ -386,9 +410,6 @@ def _execute_moves_recursive(
                             )
                             raise
 
-            source_rel_path = os.path.relpath(source_path, base_dir).replace("\\", "/")
-            doc = db.get_document(base_dir, source_rel_path)
-
             if dest_path == source_path:
                 # Still record user verified target if needed even if not moving
                 if doc and doc.get("file_hash"):
@@ -407,12 +428,23 @@ def _execute_moves_recursive(
                         db.set_user_verified_target(
                             base_dir, doc["file_hash"], current_dest.replace("\\", "/")
                         )
+                if ledger and entry_id:
+                    try:
+                        ledger.update_status(entry_id, "COMPLETED")
+                    except Exception:
+                        pass
                 continue
 
             if not moved_as_link:
                 from app.core.resilient_file_ops import resilient_move
 
                 resilient_move(source_path, dest_path)
+
+            if ledger and entry_id:
+                try:
+                    ledger.update_status(entry_id, "MOVED_PHYSICAL")
+                except Exception as exc:
+                    logging.warning(f"Failed to update transaction ledger status: {exc}")
 
             # Record user verified target and update filepath only after successful move
             if doc and doc.get("file_hash"):
@@ -433,7 +465,6 @@ def _execute_moves_recursive(
                     )
 
             # Update filepath in database
-            rel_dest = os.path.relpath(dest_path, base_dir).replace("\\", "/")
             if db_updates_batch is not None:
                 db_updates_batch.append(
                     {
@@ -443,6 +474,12 @@ def _execute_moves_recursive(
                 )
             else:
                 db.update_document_path(base_dir, source_rel_path, rel_dest)
+
+            if ledger and entry_id:
+                try:
+                    ledger.update_status(entry_id, "COMPLETED")
+                except Exception as exc:
+                    logging.warning(f"Failed to update transaction ledger completion: {exc}")
         else:
             # It's a folder
             _execute_moves_recursive(
@@ -455,6 +492,8 @@ def _execute_moves_recursive(
                 os.path.join(active_parent_path, key),
                 depth + 1,
                 runtime_settings,
+                session_id=session_id,
+                ledger=ledger,
             )
 
 
@@ -469,11 +508,14 @@ def execute_moves(
     """Create directories and safely move files, tracking file-system errors."""
     base_dir = os.path.normpath(base_dir)
     session_id = None
-    if not resume:
+    if not resume and history_manager:
         # Create a full snapshot of the directory tree and metadata before moving files
-        session_id = history_manager.create_snapshot(base_dir)
-        logging.info(f"Created snapshot session {session_id} for {base_dir}")
-    else:
+        try:
+            session_id = history_manager.create_snapshot(base_dir)
+            logging.info(f"Created snapshot session {session_id} for {base_dir}")
+        except Exception as snap_err:
+            logging.warning(f"Failed to create snapshot: {snap_err}")
+    elif history_manager:
         logging.info(f"Resuming snapshot session for {base_dir}")
         try:
             sessions = history_manager.get_sessions()
@@ -483,6 +525,21 @@ def execute_moves(
                     break
         except Exception:
             pass
+
+    if not session_id:
+        import uuid
+
+        session_id = str(uuid.uuid4())
+
+    ledger = getattr(runtime_settings, "transaction_ledger", None)
+    if ledger is None:
+        try:
+            from app.core.ledger import TransactionLedger
+
+            ledger = TransactionLedger()
+        except Exception as ledger_err:
+            logging.warning(f"Could not initialize TransactionLedger: {ledger_err}")
+            ledger = None
 
     # Build path mapping to track where targets move
     moves_list = VerificationEngine.get_moves(base_dir, plan)
@@ -501,6 +558,8 @@ def execute_moves(
             path_map,
             db_updates_batch,
             runtime_settings=runtime_settings,
+            session_id=session_id,
+            ledger=ledger,
         )
 
         summary = {"deleted_folders": 0, "protected_folders": 0}
@@ -580,6 +639,11 @@ def execute_moves(
                 summary["protected_folders"] += 1
 
         db.execute_batch_updates(db_updates_batch)
+        if ledger and session_id:
+            try:
+                ledger.purge_session(session_id)
+            except Exception as purge_err:
+                logging.warning(f"Failed to purge finalized session ledger: {purge_err}")
         return summary
 
     except Exception as e:
@@ -588,7 +652,7 @@ def execute_moves(
         except Exception:
             pass
 
-        if session_id:
+        if session_id and history_manager:
             logging.error(
                 f"Error during background sorting: {e}. Initiating automatic rollback for session {session_id}"
             )
