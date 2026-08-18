@@ -18,6 +18,26 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.core.cache
 
+## `app.core.clinical_compliance`
+
+::: app.core.clinical_compliance
+
+## `app.core.clinical_renamer`
+
+::: app.core.clinical_renamer
+
+## `app.core.clinical_strategy`
+
+::: app.core.clinical_strategy
+
+## `app.core.clinical_taxonomy`
+
+::: app.core.clinical_taxonomy
+
+## `app.core.cro_multi_study_pipeline`
+
+::: app.core.cro_multi_study_pipeline
+
 ## `app.core.crypto`
 
 ::: app.core.crypto
@@ -46,6 +66,10 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.core.env_helper
 
+## `app.core.event_handler`
+
+::: app.core.event_handler
+
 ## `app.core.extractor`
 
 ::: app.core.extractor
@@ -53,6 +77,10 @@ This document is automatically generated. Do not edit manually.
 ## `app.core.extractor_strategies`
 
 ::: app.core.extractor_strategies
+
+## `app.core.forensic_scanner`
+
+::: app.core.forensic_scanner
 
 ## `app.core.hashes_registry`
 
@@ -109,6 +137,10 @@ This document is automatically generated. Do not edit manually.
 ## `app.core.shared_registry`
 
 ::: app.core.shared_registry
+
+## `app.core.study_disambiguator`
+
+::: app.core.study_disambiguator
 
 ## `app.core.text_utils`
 

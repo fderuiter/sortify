@@ -3,6 +3,7 @@
 import logging
 import os
 import time
+
 from watchdog.events import FileSystemEventHandler
 
 logger = logging.getLogger("app.events")
@@ -66,7 +67,8 @@ class DebounceTracker:
     def record_event(self, now=None) -> tuple[float, bool]:
         """Record a file system event and calculate debounce timing.
 
-        Returns:
+        Returns
+        -------
             tuple[float, bool]: (calculated_delay, is_starved)
                 - calculated_delay: Delay in seconds to sleep/schedule before execution.
                 - is_starved: True if elapsed >= MAX_DEBOUNCE_DELAY. If True, existing

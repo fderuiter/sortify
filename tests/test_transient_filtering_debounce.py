@@ -182,7 +182,7 @@ def test_scanning_stage_filters_out_transient_files(tmp_path):
 
 def test_ui_folder_change_handler_filtering(tmp_path):
     """Verify that FolderChangeHandler ignores transient, database, and session files in UI mode."""
-    from app.ui.app import FolderChangeHandler, AutoSorterApp
+    from app.ui.app import AutoSorterApp, FolderChangeHandler
 
     settings = DummySettings()
     mock_app = mock.MagicMock(spec=AutoSorterApp)
