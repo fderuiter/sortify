@@ -184,7 +184,7 @@ def test_mathematical_equivalence():
             # We will patch self._run_prompt to inspect the prompt generated
             captured_prompts = []
 
-            def mock_run_prompt(prompt, max_tokens, grammar=None):
+            def mock_run_prompt(prompt, max_tokens, grammar=None, **kwargs):
                 captured_prompts.append(prompt)
                 return "Mock Folder"
 
