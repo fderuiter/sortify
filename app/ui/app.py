@@ -967,6 +967,12 @@ body {
         self._ratings_cache = {}
         if hasattr(self, "undo_btn"):
             self.undo_btn.set_visibility(False)
+        if self.app_session:
+            try:
+                self.app_session.close()
+            except Exception as e:
+                logger.warning(f"Error closing previous session: {e}")
+            self.app_session = None
         self.app_session = AppSession(self.settings, self.base_dir)
         self.status_label.set_text("Scanning directory...")
         self.cancel_btn.set_visibility(True)
@@ -1901,29 +1907,51 @@ body {
                         )
                     except Exception as train_err:
                         logger.error(f"Error during incremental training: {train_err}")
-                    self.app_session.close()
-                    self.app_session = None
                     self.status_label.set_text("Sorting complete.")
 
         asyncio.create_task(run())
 
     def undo_last_sort(self):
         """Roll back the last sorting operation and restore all files."""
-        if not self.base_dir:
+        if not self.base_dir or not os.path.exists(self.base_dir):
+            ui.notify("No valid base directory selected for rollback.", type="warning")
             return
 
         async def run_undo():
+            self.status_label.set_text("Evaluating sort history...")
+
+            if (
+                not self.app_session
+                or not hasattr(self.app_session, "history_manager")
+                or not self.app_session.history_manager
+            ):
+                ui.notify("No sort history available to undo.", type="info")
+                self.status_label.set_text("No sort history available.")
+                if hasattr(self, "undo_btn"):
+                    self.undo_btn.set_visibility(False)
+                return
+
+            try:
+                sessions = self.app_session.history_manager.get_sessions()
+            except Exception as ex:
+                logger.error(f"Failed to retrieve history sessions: {ex}")
+                sessions = []
+
+            if not sessions:
+                ui.notify("No sort history available to undo.", type="info")
+                self.status_label.set_text("No sort history available.")
+                if hasattr(self, "undo_btn"):
+                    self.undo_btn.set_visibility(False)
+                return
+
+            latest_session = sessions[0]
+            session_id = latest_session["session_id"]
+
             self.status_label.set_text("Rolling back files to previous locations...")
             self.progress_bar.set_value(0.5)
-            try:
-                from app.core.db import DocumentDB
-                from app.core.session import auto_rollback_sync
 
-                db = DocumentDB(self.base_dir)
-                try:
-                    await asyncio.to_thread(auto_rollback_sync, db, self.base_dir)
-                finally:
-                    db.close()
+            try:
+                await asyncio.to_thread(self.app_session.rollback, session_id)
 
                 if hasattr(self, "undo_btn"):
                     self.undo_btn.set_visibility(False)
@@ -1939,7 +1967,7 @@ body {
                 ui.notify(f"Rollback failed: {e}", type="negative")
                 self.status_label.set_text("Rollback failed.")
 
-        asyncio.create_task(run_undo())
+        return asyncio.create_task(run_undo())
 
     def start_watcher(self):
         """Start the watchdog folder observer to monitor base_dir."""
