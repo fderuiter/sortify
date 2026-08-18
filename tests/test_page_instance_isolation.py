@@ -1,10 +1,7 @@
 """Unit tests for Page-Scoped Instance Isolation in AutoSorterApp and run_app."""
 
 import os
-import tempfile
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 from app.config import AppSettings
 from app.core.session import AppSession
