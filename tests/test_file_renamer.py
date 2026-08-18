@@ -1,8 +1,6 @@
 """Tests for Modular Heuristic & Context-Aware File Renaming Engine."""
 
 import gc
-import os
-import pytest
 from unittest.mock import MagicMock
 
 from app.config import Settings
