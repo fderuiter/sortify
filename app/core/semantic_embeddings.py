@@ -659,7 +659,7 @@ class SemanticEmbeddingManager:
         return self.db.get_document_vector(base_dir, filepath)
 
     def get_vectors_batch(
-        self, base_dir: str, filepaths: list[str]
+        self, base_dir: str, filepaths: list[str], regenerate: bool = True
     ) -> dict[str, list[float]]:
         """Retrieve decoupled vectors for a list of document filepaths in batched format.
 
@@ -687,6 +687,9 @@ class SemanticEmbeddingManager:
                 missing_or_invalid.append(fp)
 
         if not missing_or_invalid:
+            return retrieved_vectors
+
+        if not regenerate:
             return retrieved_vectors
 
         # 3. For missing/invalid, prioritize reading from the local thread-locked decrypted cache in self.db
@@ -724,9 +727,12 @@ class SemanticEmbeddingManager:
         # 6. Securely upsert newly generated embeddings back to the database in chunks of 50
         new_vectors_to_upsert = []
         for fp, text in resolved_texts.items():
-            vec = self.generate_embedding(text)
-            retrieved_vectors[fp] = vec
-            new_vectors_to_upsert.append((fp, vec))
+            try:
+                vec = self.generate_embedding(text)
+                retrieved_vectors[fp] = vec
+                new_vectors_to_upsert.append((fp, vec))
+            except Exception as e:
+                logging.error(f"Failed to generate embedding for {fp}: {e}")
 
         if new_vectors_to_upsert:
             for i in range(0, len(new_vectors_to_upsert), chunk_size):
