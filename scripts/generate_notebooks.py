@@ -593,7 +593,7 @@ def create_virtual_sorting_verification_notebook():
 
 
 def main():
-    notebooks_dir = Path("/app/notebooks")
+    notebooks_dir = Path("notebooks")
     notebooks_dir.mkdir(parents=True, exist_ok=True)
 
     # 1. Stateful ML analyzer clustering
