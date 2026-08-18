@@ -509,6 +509,7 @@ class HistoryManager:
         import logging
         import sys
         from pathlib import Path
+
         from app.core.extractor import get_file_hash
         from app.core.resilient_file_ops import resilient_remove
 
@@ -685,8 +686,8 @@ class HistoryManager:
                     r[0].lower().replace("\\", "/") for r in cur.fetchall()
                 }
             if snapshot_rel_paths:
-                from app.core.scanner import get_files_recursively
                 from app.core.resilient_file_ops import resilient_remove
+                from app.core.scanner import get_files_recursively
 
                 current_files = get_files_recursively(base_dir, include_hidden=True)
                 for rel_path in current_files:
