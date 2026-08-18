@@ -121,8 +121,12 @@ class ContinuousWatchdogDaemon:
         )
         lower_path = norm_path.lower()
         for ext in ignored_exts:
-            if lower_path.endswith(ext.lower()):
-                return True
+            if ext and isinstance(ext, str) and ext.strip():
+                ext_clean = ext.strip().lower()
+                if not ext_clean.startswith("."):
+                    ext_clean = f".{ext_clean}"
+                if lower_path.endswith(ext_clean):
+                    return True
 
         return False
 

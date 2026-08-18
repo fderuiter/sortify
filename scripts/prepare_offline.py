@@ -44,6 +44,7 @@ def main():
             "pip",
             "compile",
             "pyproject.toml",
+            "--generate-hashes",
             "--extra-index-url",
             "https://download.pytorch.org/whl/cpu",
             "-o",

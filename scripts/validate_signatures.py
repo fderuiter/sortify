@@ -8,6 +8,7 @@ backwards compatibility against a checked-in API/CLI snapshot file.
 import argparse
 import ast
 import difflib
+import hashlib
 import json
 import os
 import sys
@@ -240,6 +241,75 @@ def collect_current_definitions():
     }
 
 
+def compute_payload_checksum(payload: dict) -> str:
+    """Compute SHA-256 checksum of canonical JSON payload definitions."""
+    canonical_json = json.dumps(payload, indent=2, sort_keys=True)
+    return hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()
+
+
+def extract_metadata_and_payload(snapshot_data: dict) -> tuple[dict | None, dict]:
+    """Separate metadata header from the definitions payload dictionary."""
+    metadata = None
+    if isinstance(snapshot_data, dict):
+        if "_metadata" in snapshot_data and isinstance(snapshot_data["_metadata"], dict):
+            metadata = snapshot_data["_metadata"]
+        elif "metadata" in snapshot_data and isinstance(snapshot_data["metadata"], dict):
+            metadata = snapshot_data["metadata"]
+
+    payload = {
+        k: v
+        for k, v in snapshot_data.items()
+        if k not in ("_metadata", "metadata")
+    }
+    return metadata, payload
+
+
+def verify_snapshot_integrity(
+    snapshot_data: dict, snapshot_path: str = None
+) -> tuple[bool, str, dict]:
+    """Verify inline checksum header of a snapshot data dictionary.
+
+    Returns (is_valid, error_message, payload_definitions).
+    """
+    if not isinstance(snapshot_data, dict):
+        path_str = f" in {snapshot_path}" if snapshot_path else ""
+        return (
+            False,
+            f"Error: Invalid snapshot format (expected JSON object){path_str}.",
+            {},
+        )
+
+    metadata, payload = extract_metadata_and_payload(snapshot_data)
+    if not metadata:
+        path_str = f" in {snapshot_path}" if snapshot_path else ""
+        return (
+            False,
+            f"Error: Snapshot file integrity check failed: missing embedded metadata header{path_str}.",
+            payload,
+        )
+
+    embedded_checksum = metadata.get("checksum") or metadata.get("sha256")
+    if not embedded_checksum:
+        path_str = f" in {snapshot_path}" if snapshot_path else ""
+        return (
+            False,
+            f"Error: Snapshot file integrity check failed: missing checksum in metadata header{path_str}.",
+            payload,
+        )
+
+    computed_checksum = compute_payload_checksum(payload)
+    if embedded_checksum != computed_checksum:
+        path_str = f" in {snapshot_path}" if snapshot_path else ""
+        err = (
+            f"Error: Snapshot file integrity verification failed! Checksum mismatch{path_str}.\n"
+            f"  Embedded checksum: {embedded_checksum}\n"
+            f"  Computed checksum: {computed_checksum}"
+        )
+        return False, err, payload
+
+    return True, "", payload
+
+
 def main():
     """Run CLI snapshot validation engine."""
     parser = argparse.ArgumentParser(
@@ -266,10 +336,19 @@ def main():
                 file=sys.stderr,
             )
             sys.exit(1)
+
+        checksum = compute_payload_checksum(current_definitions)
+        snapshot_data = {
+            "_metadata": {
+                "checksum": checksum,
+            },
+            **current_definitions,
+        }
+
         # Create directory if missing
         os.makedirs(os.path.dirname(SNAPSHOT_PATH), exist_ok=True)
         with open(SNAPSHOT_PATH, "w", encoding="utf-8") as f:
-            json.dump(current_definitions, f, indent=2, sort_keys=True)
+            json.dump(snapshot_data, f, indent=2, sort_keys=True)
             f.write("\n")
         print(f"Successfully generated new baseline snapshot at {SNAPSHOT_PATH}")
         sys.exit(0)
@@ -286,7 +365,7 @@ def main():
     # Load checked-in baseline snapshot
     with open(SNAPSHOT_PATH, "r", encoding="utf-8") as f:
         try:
-            snapshot_definitions = json.load(f)
+            snapshot_data = json.load(f)
         except Exception as e:
             print(
                 f"Error: Failed to parse checked-in baseline snapshot JSON: {e}",
@@ -294,7 +373,15 @@ def main():
             )
             sys.exit(1)
 
-    # Compare current against snapshot
+    # Verify snapshot integrity prior to evaluating interface definitions
+    is_valid, err_msg, snapshot_definitions = verify_snapshot_integrity(
+        snapshot_data, SNAPSHOT_PATH
+    )
+    if not is_valid:
+        print(err_msg, file=sys.stderr)
+        sys.exit(1)
+
+    # Compare current against snapshot payload definitions
     current_json = json.dumps(current_definitions, indent=2, sort_keys=True)
     snapshot_json = json.dumps(snapshot_definitions, indent=2, sort_keys=True)
 

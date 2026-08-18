@@ -8,6 +8,7 @@ def test_main_strict_flag():
     """Verify that --strict (default) and --no-strict set mkdocs arguments correctly."""
     with patch("sys.argv", ["generate_docs.py", "--no-strict"]):
         with (
+            patch("scripts.generate_docs.generate_tutorial_docs") as mock_tut,
             patch("scripts.generate_docs.generate_api_docs") as mock_api,
             patch("scripts.generate_docs.generate_ui_docs") as mock_ui,
             patch("scripts.generate_docs.generate_admin_guide") as mock_admin,
@@ -19,6 +20,7 @@ def test_main_strict_flag():
             main()
 
             # Verify generators are called
+            mock_tut.assert_called_once()
             mock_api.assert_called_once()
             mock_ui.assert_called_once()
             mock_admin.assert_called_once()
@@ -35,6 +37,7 @@ def test_main_default_strict():
     """Verify that by default mkdocs is run with --strict."""
     with patch("sys.argv", ["generate_docs.py"]):
         with (
+            patch("scripts.generate_docs.generate_tutorial_docs") as mock_tut,
             patch("scripts.generate_docs.generate_api_docs") as mock_api,
             patch("scripts.generate_docs.generate_ui_docs") as mock_ui,
             patch("scripts.generate_docs.generate_admin_guide") as mock_admin,
@@ -45,6 +48,7 @@ def test_main_default_strict():
 
             main()
 
+            mock_tut.assert_called_once()
             mock_run.assert_called_once()
             args, kwargs = mock_run.call_args
             cmd = args[0]
@@ -56,6 +60,7 @@ def test_main_detects_unsynced_files_on_check():
     original_open = open
     with patch("sys.argv", ["generate_docs.py", "--check"]):
         with (
+            patch("scripts.generate_docs.generate_tutorial_docs"),
             patch("scripts.generate_docs.generate_api_docs"),
             patch("scripts.generate_docs.generate_ui_docs"),
             patch("scripts.generate_docs.generate_admin_guide"),
@@ -67,10 +72,29 @@ def test_main_detects_unsynced_files_on_check():
         ):
             mock_run.return_value = MagicMock(returncode=0)
 
-            # Mock read contents to change before/after
-            # We have 4 files, we read them initially, and then read them again after generation.
-            # Let's make the second file return different content on second read (after generation)
             file_contents = {
+                os.path.join("notebooks", "01_ml_analyzer_clustering.ipynb"): [
+                    "nb1",
+                    "nb1",
+                ],
+                os.path.join("notebooks", "02_multi_format_text_extraction.ipynb"): [
+                    "nb2",
+                    "nb2",
+                ],
+                os.path.join("notebooks", "03_virtual_sorting_verification.ipynb"): [
+                    "nb3",
+                    "nb3",
+                ],
+                os.path.join("docs", "tutorials", "01_ml_analyzer_clustering.md"): [
+                    "tut1",
+                    "tut1",
+                ],
+                os.path.join(
+                    "docs", "tutorials", "02_multi_format_text_extraction.md"
+                ): ["tut2", "tut2"],
+                os.path.join(
+                    "docs", "tutorials", "03_virtual_sorting_verification.md"
+                ): ["tut3", "tut3"],
                 os.path.join("docs", "api_reference.md"): ["content1", "content1"],
                 os.path.join("docs", "ui.md"): ["content2", "different_content2"],
                 os.path.join("docs", "admin_guide.md"): ["content3", "content3"],
@@ -90,7 +114,6 @@ def test_main_detects_unsynced_files_on_check():
                     pass
 
                 def read(self):
-                    # Return next item in list
                     idx = counters[self.filepath]
                     counters[self.filepath] = min(
                         idx + 1, len(file_contents[self.filepath]) - 1
@@ -106,7 +129,6 @@ def test_main_detects_unsynced_files_on_check():
 
             main()
 
-            # Verify exit was called with 1 because ui.md changed
             mock_exit.assert_called_once_with(1)
 
 
@@ -115,6 +137,7 @@ def test_main_clean_on_check():
     original_open = open
     with patch("sys.argv", ["generate_docs.py", "--check"]):
         with (
+            patch("scripts.generate_docs.generate_tutorial_docs"),
             patch("scripts.generate_docs.generate_api_docs"),
             patch("scripts.generate_docs.generate_ui_docs"),
             patch("scripts.generate_docs.generate_admin_guide"),
@@ -126,8 +149,29 @@ def test_main_clean_on_check():
         ):
             mock_run.return_value = MagicMock(returncode=0)
 
-            # Mock read contents to be the same before and after
             file_contents = {
+                os.path.join("notebooks", "01_ml_analyzer_clustering.ipynb"): [
+                    "nb1",
+                    "nb1",
+                ],
+                os.path.join("notebooks", "02_multi_format_text_extraction.ipynb"): [
+                    "nb2",
+                    "nb2",
+                ],
+                os.path.join("notebooks", "03_virtual_sorting_verification.ipynb"): [
+                    "nb3",
+                    "nb3",
+                ],
+                os.path.join("docs", "tutorials", "01_ml_analyzer_clustering.md"): [
+                    "tut1",
+                    "tut1",
+                ],
+                os.path.join(
+                    "docs", "tutorials", "02_multi_format_text_extraction.md"
+                ): ["tut2", "tut2"],
+                os.path.join(
+                    "docs", "tutorials", "03_virtual_sorting_verification.md"
+                ): ["tut3", "tut3"],
                 os.path.join("docs", "api_reference.md"): ["content1", "content1"],
                 os.path.join("docs", "ui.md"): ["content2", "content2"],
                 os.path.join("docs", "admin_guide.md"): ["content3", "content3"],
@@ -162,5 +206,4 @@ def test_main_clean_on_check():
 
             main()
 
-            # sys.exit should not be called (clean exit)
             mock_exit.assert_not_called()
