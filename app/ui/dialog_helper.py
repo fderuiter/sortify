@@ -303,3 +303,255 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {{
     from app.core.shared_registry import ContextPropagatingThread
 
     ContextPropagatingThread(target=_run_dialog, daemon=True).start()
+
+
+def ask_file_async(
+    parent,
+    title,
+    file_filter,
+    callback,
+    disable_ui_callback=None,
+    enable_ui_callback=None,
+):
+    """Launch native OS file selector asynchronously to prevent blocking the web UI execution thread."""
+    if disable_ui_callback:
+        disable_ui_callback()
+
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    try:
+        from nicegui.slot import Slot
+
+        stack = Slot.get_stack()
+    except Exception:
+        stack = None
+
+    def _run_dialog():
+        path = ""
+        success = False
+
+        try:
+            if sys.platform == "darwin":
+                cmd = [
+                    "osascript",
+                    "-e",
+                    "try",
+                    "-e",
+                    f'set f to choose file with prompt "{title}"',
+                    "-e",
+                    '"SUCCESS:" & POSIX path of f',
+                    "-e",
+                    "on error",
+                    "-e",
+                    '"CANCEL:"',
+                    "-e",
+                    "end try",
+                ]
+                result = run_background_process(
+                    cmd, sandbox=False, capture_output=True, text=True, check=True
+                )
+                output = result.stdout.strip()
+                if output.startswith("SUCCESS:"):
+                    path = output[8:]
+                    success = True
+                elif output.startswith("CANCEL:"):
+                    path = ""
+                    success = True
+                else:
+                    success = False
+            elif sys.platform == "win32":
+                filter_str = file_filter or "Zip Archives (*.zip)|*.zip|All Files (*.*)|*.*"
+                script = f"""
+[System.Reflection.Assembly]::LoadWithPartialName('System.windows.forms') | Out-Null;
+$objForm = New-Object System.Windows.Forms.OpenFileDialog;
+$objForm.Title = '{title}';
+$objForm.Filter = '{filter_str}';
+$result = $objForm.ShowDialog();
+if ($result -eq [System.Windows.Forms.DialogResult]::OK) {{
+    Write-Output "SUCCESS:$($objForm.FileName)"
+}} else {{
+    Write-Output "CANCEL:"
+}}
+"""
+                cmd = ["powershell", "-Command", script]
+                result = run_background_process(
+                    cmd, sandbox=False, capture_output=True, text=True
+                )
+                output = result.stdout.strip()
+                if output.startswith("SUCCESS:"):
+                    path = output[8:]
+                    success = True
+                elif output.startswith("CANCEL:"):
+                    path = ""
+                    success = True
+                else:
+                    success = False
+            elif sys.platform.startswith("linux"):
+                import shutil
+
+                zenity_path = shutil.which("zenity")
+                kdialog_path = shutil.which("kdialog")
+
+                if zenity_path:
+                    cmd = [
+                        "zenity",
+                        "--file-selection",
+                        f"--title={title}",
+                    ]
+                    if file_filter:
+                        cmd.append(f"--file-filter={file_filter}")
+                    result = run_background_process(
+                        cmd, sandbox=False, capture_output=True, text=True
+                    )
+                    output = result.stdout.strip()
+                    if result.returncode == 0:
+                        path = output
+                        success = True
+                    elif result.returncode == 1:
+                        path = ""
+                        success = True
+                    else:
+                        success = False
+                elif kdialog_path:
+                    cmd = ["kdialog", "--getopenfilename", ".", f"*.zip", "--title", title]
+                    result = run_background_process(
+                        cmd, sandbox=False, capture_output=True, text=True
+                    )
+                    output = result.stdout.strip()
+                    if result.returncode == 0:
+                        path = output
+                        success = True
+                    elif result.returncode == 1:
+                        path = ""
+                        success = True
+                    else:
+                        success = False
+                else:
+                    success = False
+            else:
+                success = False
+        except Exception as e:
+            logger.error(f"Error executing native file dialog: {e}")
+            success = False
+
+        if not success:
+            def _fallback():
+                try:
+                    from nicegui import ui
+
+                    def show_dialog():
+                        tid = None
+                        try:
+                            from nicegui.slot import Slot
+
+                            tid = (
+                                id(asyncio.current_task())
+                                if asyncio.current_task()
+                                else 0
+                            )
+                            if stack is not None:
+                                Slot.stacks[tid] = stack
+                        except Exception:
+                            tid = None
+
+                        try:
+                            with (
+                                ui.dialog() as dialog,
+                                ui.card().classes(get_dialog_card_classes("md")),
+                            ):
+                                ui.label(title).classes("text-lg font-bold mb-4")
+                                path_input = ui.input(
+                                    label="File Path", placeholder="/path/to/file.zip"
+                                ).classes("w-full mb-4")
+
+                                def on_confirm():
+                                    p = path_input.value.strip()
+                                    if p and os.path.isfile(p):
+                                        dialog.close()
+                                        if enable_ui_callback:
+                                            enable_ui_callback()
+                                        if callback:
+                                            callback(p)
+                                    else:
+                                        ui.notify(
+                                            "Invalid file path. Please check if the file exists.",
+                                            type="negative",
+                                        )
+
+                                def on_cancel():
+                                    dialog.close()
+                                    if enable_ui_callback:
+                                        enable_ui_callback()
+                                    if callback:
+                                        callback("")
+
+                                with ui.row().classes(
+                                    "w-full justify-end gap-2 flex-wrap"
+                                ):
+                                    ui.button("Cancel", on_click=on_cancel).classes(
+                                        "bg-gray-200 text-black"
+                                    )
+                                    ui.button("OK", on_click=on_confirm).classes(
+                                        "bg-blue-500 text-white"
+                                    )
+
+                            dialog.open()
+                        finally:
+                            try:
+                                if tid and tid in Slot.stacks:
+                                    del Slot.stacks[tid]
+                            except Exception:
+                                pass
+
+                    if loop:
+                        loop.call_soon_threadsafe(show_dialog)
+                    else:
+                        if enable_ui_callback:
+                            enable_ui_callback()
+                        if callback:
+                            callback("")
+                except Exception as ex:
+                    logger.error(f"Failed to show manual file path dialog: {ex}")
+                    if enable_ui_callback:
+                        enable_ui_callback()
+                    if callback:
+                        callback("")
+
+            _fallback()
+            return
+
+        def _on_complete():
+            tid = None
+            try:
+                from nicegui.slot import Slot
+
+                tid = id(asyncio.current_task()) if asyncio.current_task() else 0
+                if stack is not None:
+                    Slot.stacks[tid] = stack
+            except Exception:
+                tid = None
+
+            try:
+                if enable_ui_callback:
+                    enable_ui_callback()
+                if callback:
+                    callback(path)
+            finally:
+                try:
+                    if tid and tid in Slot.stacks:
+                        del Slot.stacks[tid]
+                except Exception:
+                    pass
+
+        if loop:
+            loop.call_soon_threadsafe(_on_complete)
+        else:
+            _on_complete()
+
+    from app.core.shared_registry import ContextPropagatingThread
+
+    ContextPropagatingThread(target=_run_dialog, daemon=True).start()
+

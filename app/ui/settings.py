@@ -633,8 +633,117 @@ def show_settings(parent_app, settings):
                     'aria-label="Save Proxy Settings Button"'
                 )
 
-                # AI Model Acquisition Section
-                ui.label("AI Model Acquisition").classes("text-lg font-bold mt-4 mb-2")
+                # AI Model Acquisition & Offline Import Section
+                ui.label("AI Model Acquisition & Offline Import").classes(
+                    "text-lg font-bold mt-4 mb-2"
+                )
+
+                from app.config import get_app_dir
+                from app.core.downloader import DEFAULT_MODEL_URL, DownloadManager
+                from app.core.offline_importer import OfflineBundleImporter
+                from app.ui.dialog_helper import ask_directory_async, ask_file_async
+
+                with ui.card().classes(
+                    "w-full p-4 mb-4 border border-gray-200 bg-gray-50 rounded-lg"
+                ):
+                    ui.label("Offline Model Bundle Importer").classes(
+                        "font-bold text-md mb-1"
+                    )
+                    ui.label(
+                        "Import a pre-packaged .zip bundle or link an existing uncompressed model directory for air-gapped environments."
+                    ).classes("text-sm text-gray-600 mb-3")
+
+                    # Zip Archive Import controls
+                    with ui.row().classes("w-full items-center gap-2 mb-3 flex-wrap"):
+                        zip_input = ui.input("Archive Path (.zip)").props(
+                            'placeholder="e.g. /path/to/model.zip" aria-label="Archive Path input" class="flex-grow"'
+                        )
+
+                        def browse_zip():
+                            def on_selected(path):
+                                if path:
+                                    zip_input.value = path
+
+                            ask_file_async(
+                                parent=parent_app,
+                                title="Select Offline Model Zip Archive",
+                                file_filter="Zip Archives (*.zip)|*.zip",
+                                callback=on_selected,
+                            )
+
+                        browse_zip_btn = ui.button(
+                            "Browse Zip...", on_click=browse_zip
+                        ).props('size=sm aria-label="Browse Zip Archive Button"')
+
+                        def trigger_zip_import():
+                            path = zip_input.value.strip() if zip_input.value else ""
+                            if not path:
+                                ui.notify(
+                                    "Please enter or select a .zip archive path.",
+                                    type="warning",
+                                )
+                                return
+                            model_target = str(get_app_dir() / "model")
+                            try:
+                                OfflineBundleImporter.get_instance().import_archive_async(
+                                    zip_path=path,
+                                    target_model_dir=model_target,
+                                    settings=settings,
+                                )
+                            except Exception as ex:
+                                ui.notify(f"Cannot start import: {ex}", type="negative")
+
+                        import_zip_btn = ui.button(
+                            "Import Zip", on_click=trigger_zip_import
+                        ).props('size=sm aria-label="Import Zip Button" color=primary')
+
+                    # Uncompressed Directory Import controls
+                    with ui.row().classes("w-full items-center gap-2 flex-wrap"):
+                        dir_input = ui.input("Folder Path").props(
+                            'placeholder="e.g. /path/to/model_directory" aria-label="Folder Path input" class="flex-grow"'
+                        )
+
+                        def browse_dir():
+                            def on_selected(path):
+                                if path:
+                                    dir_input.value = path
+
+                            ask_directory_async(
+                                parent=parent_app,
+                                title="Select Model Directory",
+                                callback=on_selected,
+                                disable_ui_callback=None,
+                                enable_ui_callback=None,
+                            )
+
+                        browse_dir_btn = ui.button(
+                            "Browse Folder...", on_click=browse_dir
+                        ).props('size=sm aria-label="Browse Folder Button"')
+
+                        def trigger_dir_import():
+                            path = dir_input.value.strip() if dir_input.value else ""
+                            if not path:
+                                ui.notify(
+                                    "Please enter or select a model folder path.",
+                                    type="warning",
+                                )
+                                return
+                            model_target = str(get_app_dir() / "model")
+                            try:
+                                OfflineBundleImporter.get_instance().import_directory_async(
+                                    dir_path=path,
+                                    target_model_dir=model_target,
+                                    settings=settings,
+                                )
+                            except Exception as ex:
+                                ui.notify(
+                                    f"Cannot start directory import: {ex}",
+                                    type="negative",
+                                )
+
+                        import_dir_btn = ui.button(
+                            "Link Folder", on_click=trigger_dir_import
+                        ).props('size=sm aria-label="Link Folder Button" color=primary')
 
                 progress_container = ui.column().classes("w-full mt-2")
                 progress_container.set_visibility(False)
@@ -642,20 +751,25 @@ def show_settings(parent_app, settings):
                     settings_progress_bar = ui.linear_progress(value=0).classes(
                         "w-full mb-1"
                     )
-                    settings_status_label = ui.label("").classes(
-                        "text-sm text-gray-500 mb-2"
-                    )
+                    with ui.row().classes("w-full items-center justify-between"):
+                        settings_status_label = ui.label("").classes(
+                            "text-sm text-gray-600 mb-2"
+                        )
+
+                        def cancel_active_operation():
+                            dm = DownloadManager.get_instance()
+                            if dm.state["is_downloading"]:
+                                dm.cancel_download()
+                            importer = OfflineBundleImporter.get_instance()
+                            if importer.state["is_importing"]:
+                                importer.cancel_import()
+
+                        cancel_op_btn = ui.button(
+                            "Cancel", on_click=cancel_active_operation
+                        ).props('size=sm color=red aria-label="Cancel Operation Button"')
 
                 def trigger_on_demand_download():
-                    # Save proxy setting first
                     settings.PROXY = proxy_input.value
-
-                    from app.config import get_app_dir
-                    from app.core.downloader import (
-                        DEFAULT_MODEL_URL,
-                        DownloadManager,
-                    )
-
                     model_dir = str(get_app_dir() / "model")
                     proxy_val = getattr(settings, "PROXY", "")
 
@@ -672,20 +786,33 @@ def show_settings(parent_app, settings):
                     "Download AI Model", on_click=trigger_on_demand_download
                 ).props('aria-label="Download AI Model Button"')
 
-                from app.core.downloader import DownloadManager
-
                 def sync_settings_ui():
                     dm = DownloadManager.get_instance()
+                    importer = OfflineBundleImporter.get_instance()
+
                     is_dl = dm.state["is_downloading"]
+                    is_imp = importer.state["is_importing"]
 
                     if is_dl:
                         download_button.disable()
+                        import_zip_btn.disable()
+                        import_dir_btn.disable()
+                        browse_zip_btn.disable()
+                        browse_dir_btn.disable()
                         progress_container.set_visibility(True)
                         settings_progress_bar.set_value(dm.state["progress"])
                         settings_status_label.set_text(dm.state["status_text"])
+                    elif is_imp:
+                        download_button.disable()
+                        import_zip_btn.disable()
+                        import_dir_btn.disable()
+                        browse_zip_btn.disable()
+                        browse_dir_btn.disable()
+                        progress_container.set_visibility(True)
+                        settings_progress_bar.set_value(importer.state["progress"])
+                        settings_status_label.set_text(importer.state["status_text"])
                     else:
                         if progress_container.visible:
-                            # Download finished
                             if dm.state["success"]:
                                 progress_container.set_visibility(False)
                                 settings.AI_CONSENT_GRANTED = True
@@ -695,7 +822,6 @@ def show_settings(parent_app, settings):
                                 )
                                 if hasattr(parent_app, "update_ai_warning"):
                                     parent_app.update_ai_warning()
-                                # Close setting dialog to refresh the parent UI
                                 dialog.close()
                             elif dm.state["error"]:
                                 progress_container.set_visibility(False)
@@ -704,6 +830,24 @@ def show_settings(parent_app, settings):
                                     type="negative",
                                 )
                                 dm.state["error"] = None
+
+                            if importer.state["success"]:
+                                progress_container.set_visibility(False)
+                                settings.AI_CONSENT_GRANTED = True
+                                ui.notify(
+                                    "Offline model bundle imported successfully!",
+                                    type="positive",
+                                )
+                                if hasattr(parent_app, "update_ai_warning"):
+                                    parent_app.update_ai_warning()
+                                dialog.close()
+                            elif importer.state["error"]:
+                                progress_container.set_visibility(False)
+                                ui.notify(
+                                    f"Import failed: {str(importer.state['error'])}",
+                                    type="negative",
+                                )
+                                importer.state["error"] = None
 
                         from app.core.verifier import check_ai_status
 
@@ -714,6 +858,11 @@ def show_settings(parent_app, settings):
                         else:
                             download_button.enable()
                             download_button.set_text("Download AI Model")
+
+                        import_zip_btn.enable()
+                        import_dir_btn.enable()
+                        browse_zip_btn.enable()
+                        browse_dir_btn.enable()
 
                 sync_timer = ui.timer(0.1, sync_settings_ui)
 

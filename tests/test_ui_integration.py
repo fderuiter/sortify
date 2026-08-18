@@ -320,3 +320,41 @@ def test_settings_timer_and_thread_cleanup():
         Timer.__init__ = original_timer_init
         Button.__init__ = original_btn_init
         Dialog.__init__ = original_dialog_init
+
+
+def test_settings_offline_importer_ui():
+    buttons = []
+    dialogs = []
+
+    original_btn_init = Button.__init__
+    original_dialog_init = Dialog.__init__
+
+    def tracking_btn_init(self, *args, **kwargs):
+        buttons.append(self)
+        original_btn_init(self, *args, **kwargs)
+
+    def tracking_dialog_init(self, *args, **kwargs):
+        dialogs.append(self)
+        original_dialog_init(self, *args, **kwargs)
+
+    Button.__init__ = tracking_btn_init
+    Dialog.__init__ = tracking_dialog_init
+
+    try:
+        with Client(None):
+            settings = AppSettings()
+            parent_app = MagicMock()
+
+            show_settings(parent_app, settings)
+
+            assert len(dialogs) == 1
+
+            btn_texts = [b.text for b in buttons]
+            assert "Browse Zip..." in btn_texts
+            assert "Import Zip" in btn_texts
+            assert "Browse Folder..." in btn_texts
+            assert "Link Folder" in btn_texts
+    finally:
+        Button.__init__ = original_btn_init
+        Dialog.__init__ = original_dialog_init
+
