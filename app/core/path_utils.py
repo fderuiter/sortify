@@ -94,14 +94,30 @@ def validate_target_path(target_path: str, keyword: str = None) -> None:
 
     # Check for absolute path roots (/ or \)
     if target_path.startswith("/") or target_path.startswith("\\"):
-        raise ValueError(f"Target path '{target_path}' is an absolute path.")
+        raise ValueError(f"Target path '{target_path}' cannot be an absolute path.")
 
     # Check for directory traversal segments (..)
     segments = target_path.replace("\\", "/").split("/")
     if ".." in segments:
         raise ValueError(
-            f"Target path '{target_path}' contains directory traversal segments."
+            f"Target path '{target_path}' cannot contain directory traversal segments."
         )
+
+    # Validate each individual segment against platform naming rules
+    for segment in segments:
+        if not segment:
+            continue
+
+        if segment.endswith(" ") or segment.endswith("."):
+            raise ValueError(
+                f"Target path '{target_path}' contains segment '{segment}' with trailing space or period."
+            )
+
+        base_name = segment.upper().split(".")[0]
+        if base_name in RESERVED_NAMES:
+            raise ValueError(
+                f"Target path '{target_path}' contains reserved device name '{segment}'."
+            )
 
 
 def sanitize_name(name: str) -> str:
