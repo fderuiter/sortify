@@ -287,6 +287,22 @@ class Florence2VisualProcessor:
             )
             raise OfflineModelLoadError(f"Florence-2 model load failed: {e}") from e
 
+    def unload(self) -> None:
+        """Explicitly unload Florence-2 model and processor instances from memory."""
+        self.model = None
+        self.processor = None
+        import gc
+        gc.collect()
+        try:
+            import torch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+                if hasattr(torch.mps, "empty_cache"):
+                    torch.mps.empty_cache()
+        except Exception:
+            pass
+
     def process_image(
         self,
         image_path: str,

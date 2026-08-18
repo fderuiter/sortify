@@ -1814,6 +1814,12 @@ body {
                     "Phase 1 complete. Initiating AI classification..."
                 )
 
+                # Explicitly unload extraction OCR models before AI phase
+                from app.core.shared_registry import SharedModelRegistry
+                registry = SharedModelRegistry.get_instance()
+                registry.unload_model("easyocr")
+                registry.unload_model("florence-2")
+
                 # Refresh DB cache states before initiating AI phase
                 if hasattr(self.app_session, "db"):
                     self.app_session.db.invalidate_cache()
@@ -1830,6 +1836,9 @@ body {
                     slow_path_summary = await asyncio.to_thread(
                         self.app_session.execute_moves, slow_path_plan
                     )
+
+                # Explicitly unload all models at the end of sorting execution
+                registry.unload_all_models()
 
                 self.progress_bar.set_value(0.9)
 
