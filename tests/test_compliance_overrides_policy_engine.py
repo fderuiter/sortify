@@ -109,6 +109,20 @@ def test_policy_engine_lock_path_validation():
     with pytest.raises(ValueError):
         PolicyEngine.validate_lock_path("Some/../../Traversal")
 
+    # Segment reserved device names
+    with pytest.raises(ValueError):
+        PolicyEngine.validate_lock_path("Valid/CON/Path")
+
+    with pytest.raises(ValueError):
+        PolicyEngine.validate_lock_path("Valid/AUX.txt/Path")
+
+    # Segment trailing spaces or dots
+    with pytest.raises(ValueError):
+        PolicyEngine.validate_lock_path("Valid/Folder /Path")
+
+    with pytest.raises(ValueError):
+        PolicyEngine.validate_lock_path("Valid/Folder./Path")
+
 
 def test_compliance_overrides_manual_lock():
     """Test that a matching high-priority policy overrides manual folder locks and flags it as corrected in the plan."""

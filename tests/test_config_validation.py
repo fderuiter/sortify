@@ -725,3 +725,62 @@ def test_app_settings_inverted_debounce_load_prevention(tmp_path):
     saved_content = json.loads(mock_filepath.read_text())
     assert saved_content["DEBOUNCE_DELAY"] == 8.0
     assert saved_content["MAX_DEBOUNCE_DELAY"] == 2.0
+
+
+def test_reject_reserved_device_names_in_segments():
+    """Multi-segment target paths containing reserved device names in any segment should be rejected."""
+    reserved_samples = ["sub/CON/path", "nested/AUX.txt/data", "folder/COM1/sub", "prn/files", "data/LPT9/out"]
+    for path in reserved_samples:
+        with pytest.raises(ValidationError) as exc_info:
+            Settings(KEYWORD_RULES={"rule": path})
+        assert "reserved device name" in str(exc_info.value).lower()
+
+
+def test_reject_trailing_spaces_or_dots_in_segments():
+    """Multi-segment target paths containing trailing dots or spaces in any segment should be rejected."""
+    invalid_paths = ["nested/folder /target", "nested/folder./target", "folder/sub. /target", "trailing.dot."]
+    for path in invalid_paths:
+        with pytest.raises(ValidationError) as exc_info:
+            Settings(KEYWORD_RULES={"rule": path})
+        assert "trailing space or period" in str(exc_info.value).lower()
+
+
+def test_accept_valid_multisegment_paths():
+    """Valid multi-segment paths without reserved names or trailing whitespace pass validation."""
+    valid_paths = [
+        "valid/relative/nested/path",
+        "documents/reports/2026/Q1",
+        "folder_a/folder_b/folder_c",
+    ]
+    for path in valid_paths:
+        s = Settings(KEYWORD_RULES={"rule": path})
+        assert s.KEYWORD_RULES["rule"] == path
+
+
+def test_policy_loading_rejects_invalid_path_segments():
+    """Configuration loading for policies rejects reserved names or trailing dots/spaces in lock paths."""
+    with pytest.raises(ValidationError) as exc_info:
+        Settings(
+            POLICIES=[
+                {
+                    "type": "keyword",
+                    "expression": "test",
+                    "target_path": "finance/CON/lock",
+                    "priority": 10,
+                }
+            ]
+        )
+    assert "reserved device name" in str(exc_info.value).lower()
+
+    with pytest.raises(ValidationError) as exc_info2:
+        Settings(
+            POLICIES=[
+                {
+                    "type": "pattern",
+                    "expression": "test",
+                    "target_path": "finance/lock. /sub",
+                    "priority": 10,
+                }
+            ]
+        )
+    assert "trailing space or period" in str(exc_info2.value).lower()
