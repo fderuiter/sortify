@@ -537,14 +537,18 @@ class Database:
             if stop_words_list is None:
                 stop_words_list = "english"
 
+            from app.core.text_utils import sanitize_text
+
+            clean_text = sanitize_text(text or "")
+
             try:
                 vectorizer = TfidfVectorizer(stop_words=stop_words_list)
                 analyzer = vectorizer.build_analyzer()
-                tokens = analyzer(text)
+                tokens = analyzer(clean_text)
             except Exception:
                 import re
 
-                tokens = re.findall(r"\b\w\w+\b", text.lower())
+                tokens = re.findall(r"\b\w\w+\b", clean_text.lower())
                 from sklearn.feature_extraction import text as sklearn_text
 
                 stops = set(sklearn_text.ENGLISH_STOP_WORDS)
