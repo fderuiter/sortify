@@ -285,7 +285,19 @@ def _execute_moves_recursive(
                                     "Shadow link creation failed validation."
                                 )
 
-                            os.replace(shadow_name, dest_path)
+                            try:
+                                os.replace(shadow_name, dest_path)
+                            except OSError:
+                                if os.path.lexists(dest_path) or is_junction_path(
+                                    dest_path
+                                ):
+                                    from app.core.resilient_file_ops import (
+                                        resilient_remove,
+                                    )
+
+                                    resilient_remove(dest_path)
+                                os.replace(shadow_name, dest_path)
+
                             if not _is_same_path(dest_path, source_path):
                                 from app.core.resilient_file_ops import resilient_remove
 
@@ -303,13 +315,8 @@ def _execute_moves_recursive(
                             raise
 
                     elif link_info["type"] == "junction":
-                        if not os.path.isabs(original_target):
-                            final_target = os.path.relpath(new_abs_target, dest_dir)
-                        else:
-                            final_target = new_abs_target
-
                         try:
-                            _create_junction(final_target, shadow_name)
+                            _create_junction(new_abs_target, shadow_name)
                             if not (
                                 os.path.lexists(shadow_name)
                                 or is_junction_path(shadow_name)
@@ -318,7 +325,19 @@ def _execute_moves_recursive(
                                     "Shadow junction creation failed validation."
                                 )
 
-                            os.replace(shadow_name, dest_path)
+                            try:
+                                os.replace(shadow_name, dest_path)
+                            except OSError:
+                                if os.path.lexists(dest_path) or is_junction_path(
+                                    dest_path
+                                ):
+                                    from app.core.resilient_file_ops import (
+                                        resilient_remove,
+                                    )
+
+                                    resilient_remove(dest_path)
+                                os.replace(shadow_name, dest_path)
+
                             if not _is_same_path(dest_path, source_path):
                                 from app.core.resilient_file_ops import resilient_remove
 
@@ -357,7 +376,19 @@ def _execute_moves_recursive(
                                     "Shadow link creation failed validation."
                                 )
 
-                            os.replace(shadow_name, dest_path)
+                            try:
+                                os.replace(shadow_name, dest_path)
+                            except OSError:
+                                if os.path.lexists(dest_path) or is_junction_path(
+                                    dest_path
+                                ):
+                                    from app.core.resilient_file_ops import (
+                                        resilient_remove,
+                                    )
+
+                                    resilient_remove(dest_path)
+                                os.replace(shadow_name, dest_path)
+
                             if not _is_same_path(dest_path, source_path):
                                 from app.core.resilient_file_ops import resilient_remove
 
