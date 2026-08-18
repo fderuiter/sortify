@@ -564,6 +564,40 @@ def show_settings(parent_app, settings):
                             worker_slider, "value", backward=lambda v: f"{int(v)}"
                         )
 
+                    def on_audio_worker_change(e):
+                        val = (
+                            int(e.value)
+                            if e.value is not None
+                            else getattr(settings, "AUDIO_MAX_WORKERS", 2)
+                        )
+                        curr = getattr(settings, "AUDIO_MAX_WORKERS", 2)
+                        if val == curr:
+                            return
+                        try:
+                            settings.AUDIO_MAX_WORKERS = val
+                        except Exception as ex:
+                            e.sender.value = getattr(settings, "AUDIO_MAX_WORKERS", 2)
+                            ui.notify(f"Invalid audio workers: {ex}", type="negative")
+
+                    ui.label("Audio Worker Concurrency Limit").classes(
+                        "text-sm text-gray-700 mt-2"
+                    )
+                    with ui.row().classes("w-full items-center gap-4"):
+                        audio_worker_slider = (
+                            ui.slider(
+                                min=1,
+                                max=64,
+                                value=getattr(settings, "AUDIO_MAX_WORKERS", 2),
+                                step=1,
+                                on_change=on_audio_worker_change,
+                            )
+                            .props('aria-label="Audio Worker Concurrency Limit" label')
+                            .classes("flex-grow")
+                        )
+                        ui.label().bind_text_from(
+                            audio_worker_slider, "value", backward=lambda v: f"{int(v)}"
+                        )
+
                     def on_timeout_change(e):
                         val = (
                             int(e.value)

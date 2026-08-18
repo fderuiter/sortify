@@ -86,6 +86,10 @@ The following parameters are extracted directly from the application's configura
 - **Default**: `False`
 - **Required**: `False`
 
+### `AUDIO_MAX_WORKERS`
+- **Default**: `2`
+- **Required**: `False`
+
 ### `OCR_LANGUAGES`
 - **Default**: `en`
 - **Required**: `False`

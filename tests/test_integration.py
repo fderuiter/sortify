@@ -441,6 +441,7 @@ def test_advanced_settings_sliders():
 
     # Set known values
     settings.MAX_WORKERS = 4
+    settings.AUDIO_MAX_WORKERS = 2
     settings.VISUAL_TIMEOUT = 30
     settings.MODEL_THREADS = 2
     settings.IMAGE_MAX_DIMENSION = 1000
@@ -452,68 +453,75 @@ def test_advanced_settings_sliders():
     with patch("app.ui.settings.ui") as mock_ui:
         show_settings(parent_app, settings)
 
-        # We expect exactly 8 sliders
-        assert mock_ui.slider.call_count == 8
+        # We expect exactly 9 sliders
+        assert mock_ui.slider.call_count == 9
 
-        # Locate sliders based on min/max bounds
+        # Locate sliders based on (min, max, value)
         sliders_by_bounds = {}
         for call_args in mock_ui.slider.call_args_list:
             args, kwargs = call_args
-            bounds = (kwargs.get("min"), kwargs.get("max"))
-            sliders_by_bounds[bounds] = kwargs
+            key = (kwargs.get("min"), kwargs.get("max"), kwargs.get("value"))
+            sliders_by_bounds[key] = kwargs
 
         # 1. MAX_WORKERS: 1 to 64
-        assert (1, 64) in sliders_by_bounds
-        worker_kwargs = sliders_by_bounds[(1, 64)]
+        assert (1, 64, 4) in sliders_by_bounds
+        worker_kwargs = sliders_by_bounds[(1, 64, 4)]
         assert worker_kwargs.get("value") == 4
         on_worker_change = worker_kwargs.get("on_change")
         assert on_worker_change is not None
 
-        # 2. MODEL_THREADS: 1 to 32
-        assert (1, 32) in sliders_by_bounds
-        threads_kwargs = sliders_by_bounds[(1, 32)]
+        # 2. AUDIO_MAX_WORKERS: 1 to 64
+        assert (1, 64, 2) in sliders_by_bounds
+        audio_worker_kwargs = sliders_by_bounds[(1, 64, 2)]
+        assert audio_worker_kwargs.get("value") == 2
+        on_audio_worker_change = audio_worker_kwargs.get("on_change")
+        assert on_audio_worker_change is not None
+
+        # 3. MODEL_THREADS: 1 to 32
+        assert (1, 32, 2) in sliders_by_bounds
+        threads_kwargs = sliders_by_bounds[(1, 32, 2)]
         assert threads_kwargs.get("value") == 2
         on_threads_change = threads_kwargs.get("on_change")
         assert on_threads_change is not None
 
-        # 3. VISUAL_TIMEOUT: 1 to 300
-        assert (1, 300) in sliders_by_bounds
-        timeout_kwargs = sliders_by_bounds[(1, 300)]
+        # 4. VISUAL_TIMEOUT: 1 to 300
+        assert (1, 300, 30) in sliders_by_bounds
+        timeout_kwargs = sliders_by_bounds[(1, 300, 30)]
         assert timeout_kwargs.get("value") == 30
         on_timeout_change = timeout_kwargs.get("on_change")
         assert on_timeout_change is not None
 
-        # 4. IMAGE_MAX_DIMENSION: 1 to 5000
-        assert (1, 5000) in sliders_by_bounds
-        dim_kwargs = sliders_by_bounds[(1, 5000)]
+        # 5. IMAGE_MAX_DIMENSION: 1 to 5000
+        assert (1, 5000, 1000) in sliders_by_bounds
+        dim_kwargs = sliders_by_bounds[(1, 5000, 1000)]
         assert dim_kwargs.get("value") == 1000
         on_dim_change = dim_kwargs.get("on_change")
         assert on_dim_change is not None
 
-        # 5. IMAGE_SKIP_THRESHOLD: 1 to 10000
-        assert (1, 10000) in sliders_by_bounds
-        skip_kwargs = sliders_by_bounds[(1, 10000)]
+        # 6. IMAGE_SKIP_THRESHOLD: 1 to 10000
+        assert (1, 10000, 3000) in sliders_by_bounds
+        skip_kwargs = sliders_by_bounds[(1, 10000, 3000)]
         assert skip_kwargs.get("value") == 3000
         on_skip_change = skip_kwargs.get("on_change")
         assert on_skip_change is not None
 
-        # 6. DEBOUNCE_DELAY: 0.1 to 10.0
-        assert (0.1, 10.0) in sliders_by_bounds
-        debounce_kwargs = sliders_by_bounds[(0.1, 10.0)]
+        # 7. DEBOUNCE_DELAY: 0.1 to 10.0
+        assert (0.1, 10.0, 0.6) in sliders_by_bounds
+        debounce_kwargs = sliders_by_bounds[(0.1, 10.0, 0.6)]
         assert debounce_kwargs.get("value") == 0.6
         on_debounce_change = debounce_kwargs.get("on_change")
         assert on_debounce_change is not None
 
-        # 7. MAX_DEBOUNCE_DELAY: 0.5 to 30.0
-        assert (0.5, 30.0) in sliders_by_bounds
-        max_debounce_kwargs = sliders_by_bounds[(0.5, 30.0)]
+        # 8. MAX_DEBOUNCE_DELAY: 0.5 to 30.0
+        assert (0.5, 30.0, 5.0) in sliders_by_bounds
+        max_debounce_kwargs = sliders_by_bounds[(0.5, 30.0, 5.0)]
         assert max_debounce_kwargs.get("value") == 5.0
         on_max_debounce_change = max_debounce_kwargs.get("on_change")
         assert on_max_debounce_change is not None
 
-        # 8. COHERENCE_THRESHOLD: 0.0 to 1.0
-        assert (0.0, 1.0) in sliders_by_bounds
-        coherence_kwargs = sliders_by_bounds[(0.0, 1.0)]
+        # 9. COHERENCE_THRESHOLD: 0.0 to 1.0
+        assert (0.0, 1.0, 0.5) in sliders_by_bounds
+        coherence_kwargs = sliders_by_bounds[(0.0, 1.0, 0.5)]
         assert coherence_kwargs.get("value") == 0.5
         on_coherence_change = coherence_kwargs.get("on_change")
         assert on_coherence_change is not None
@@ -524,6 +532,11 @@ def test_advanced_settings_sliders():
         mock_event.value = 16
         on_worker_change(mock_event)
         assert settings.MAX_WORKERS == 16
+
+        # Audio Max Workers change
+        mock_event.value = 8
+        on_audio_worker_change(mock_event)
+        assert settings.AUDIO_MAX_WORKERS == 8
 
         # ML Threads change
         mock_event.value = 8
@@ -575,6 +588,23 @@ def test_advanced_settings_sliders():
         assert last_call_kwargs.get("type") == "negative"
         assert (
             "workers" in last_call_args[0].lower()
+            or "validation" in last_call_args[0].lower()
+        )
+
+        # Invalid Audio Workers (e.g. 100 which is > 64)
+        mock_sender = MagicMock()
+        mock_event.sender = mock_sender
+        mock_event.value = 100
+        mock_ui.notify.reset_mock()
+        on_audio_worker_change(mock_event)
+        # Should be reverted to 8
+        assert settings.AUDIO_MAX_WORKERS == 8
+        assert mock_sender.value == 8
+        assert mock_ui.notify.call_count >= 1
+        last_call_args, last_call_kwargs = mock_ui.notify.call_args
+        assert last_call_kwargs.get("type") == "negative"
+        assert (
+            "audio workers" in last_call_args[0].lower()
             or "validation" in last_call_args[0].lower()
         )
 
