@@ -249,42 +249,44 @@ def scan_catalog_component(
     state: str = "default",
 ) -> List[A11yViolation]:
     """Render a catalog component in a isolated slot context and scan for accessibility rule failures."""
+    from nicegui import Client
     from nicegui.element import Element
 
     component_id = component_entry["id"]
     component_name = component_entry["name"]
     render_func = component_entry["render_func"]
 
-    # Create an isolated container element for rendering
-    container = Element("div").classes("w-full h-full p-2")
-    with container:
-        try:
-            render_func(container, state=state, viewport_width=viewport_width)
-        except Exception as err:
-            return [
-                A11yViolation(
-                    rule_id="A11Y999_RENDER_ERROR",
-                    component_id=component_id,
-                    component_name=component_name,
-                    viewport_name=viewport_name,
-                    viewport_width=viewport_width,
-                    locator=f"ComponentCatalog > {component_id}",
-                    message=f"Component rendering raised exception: {err}",
-                )
-            ]
+    with Client(None):
+        # Create an isolated container element for rendering
+        container = Element("div").classes("w-full h-full p-2")
+        with container:
+            try:
+                render_func(container, state=state, viewport_width=viewport_width)
+            except Exception as err:
+                return [
+                    A11yViolation(
+                        rule_id="A11Y999_RENDER_ERROR",
+                        component_id=component_id,
+                        component_name=component_name,
+                        viewport_name=viewport_name,
+                        viewport_width=viewport_width,
+                        locator=f"ComponentCatalog > {component_id}",
+                        message=f"Component rendering raised exception: {err}",
+                    )
+                ]
 
-    # Inspect element tree of the container
-    ancestor = [f"ComponentCatalog[{component_id}]"]
-    violations = inspect_element_tree(
-        container,
-        ancestor,
-        component_id,
-        component_name,
-        viewport_name,
-        viewport_width,
-    )
+        # Inspect element tree of the container
+        ancestor = [f"ComponentCatalog[{component_id}]"]
+        violations = inspect_element_tree(
+            container,
+            ancestor,
+            component_id,
+            component_name,
+            viewport_name,
+            viewport_width,
+        )
 
-    return violations
+        return violations
 
 
 def run_all_catalog_scans(
