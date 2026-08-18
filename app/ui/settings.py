@@ -6,6 +6,7 @@ from nicegui import ui
 
 from app.core.path_utils import validate_target_path
 from app.ui.dialog_helper import get_dialog_card_classes
+from app.ui.tokens import TOKENS
 
 
 class ThreadSafeState:
@@ -67,7 +68,7 @@ def get_shadowed_policies(policies: list[dict]) -> list[bool]:
 
 def render_validation_warning_banner(settings):
     """Render an interactive configuration warning banner with contextual tooltips and recovery links."""
-    banner_card = ui.card().classes("bg-red-50 border-red-200 border p-4 mb-4 w-full")
+    banner_card = ui.card().classes(TOKENS.COMPONENTS.PANEL_ERROR)
     banner_timer = None
 
     def refresh():
@@ -190,7 +191,7 @@ def render_validation_warning_banner(settings):
 
                     with ui.dialog() as d:
                         with ui.card().classes(
-                            get_dialog_card_classes("xl", "h-[80vh] flex flex-col")
+                            get_dialog_card_classes("xl", f"{TOKENS.SIZING.VIEWPORT_DIALOG_HEIGHT} flex flex-col")
                         ):
                             with ui.row().classes(
                                 "w-full justify-between items-center mb-4"
@@ -694,31 +695,27 @@ def show_settings(parent_app, settings):
 
                 is_healthy, warn_msg = check_ai_status(settings)
                 if not is_healthy:
-                    with ui.card().classes(
-                        "bg-amber-50 border-amber-200 border p-4 mb-4 w-full"
-                    ):
+                    with ui.card().classes(TOKENS.COMPONENTS.PANEL_WARNING):
                         with ui.row().classes(
-                            "items-center gap-2 text-amber-800 flex-wrap"
+                            f"items-center {TOKENS.SPACING.GAP_SM} {TOKENS.COLORS.WARNING_TEXT} flex-wrap"
                         ):
                             ui.icon("warning", size="sm")
                             ui.label("AI System Warning").classes("font-bold")
                         ui.label(
                             warn_msg or "AI models are corrupt or missing."
-                        ).classes("text-amber-900 text-sm mt-1").props(
+                        ).classes(f"{TOKENS.COLORS.WARNING_TEXT} text-sm mt-1").props(
                             'aria-label="AI Offline Warning Label"'
                         )
                 else:
-                    with ui.card().classes(
-                        "bg-green-50 border-green-200 border p-4 mb-4 w-full"
-                    ):
+                    with ui.card().classes(TOKENS.COMPONENTS.PANEL_SUCCESS):
                         with ui.row().classes(
-                            "items-center gap-2 text-green-800 flex-wrap"
+                            f"items-center {TOKENS.SPACING.GAP_SM} {TOKENS.COLORS.SUCCESS_TEXT} flex-wrap"
                         ):
                             ui.icon("check_circle", size="sm")
                             ui.label("AI System Status").classes("font-bold")
                         ui.label(
                             "AI models are loaded and healthy (Offline mode)."
-                        ).classes("text-green-900 text-sm mt-1")
+                        ).classes(f"{TOKENS.COLORS.SUCCESS_TEXT} text-sm mt-1")
 
                 def reset_model_cache():
                     import asyncio
