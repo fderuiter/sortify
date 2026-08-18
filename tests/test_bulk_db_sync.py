@@ -76,11 +76,12 @@ def test_successful_folder_relocation(tmp_path, db, history_manager, monkeypatch
     # execute_batch_updates should be called exactly once
     assert db.execute_batch_updates_called == 1
 
-    # Should have 4 updates (verified_target + document_path for each file)
-    assert len(db.last_batch) == 4
+    # Should have 6 updates (verified_target + document_path + transaction_step for each file)
+    assert len(db.last_batch) == 6
     types = [u["type"] for u in db.last_batch]
     assert types.count("verified_target") == 2
     assert types.count("document_path") == 2
+    assert types.count("transaction_step") == 2
 
 
 def test_interrupted_folder_relocation(tmp_path, db, history_manager, monkeypatch):
@@ -130,9 +131,9 @@ def test_interrupted_folder_relocation(tmp_path, db, history_manager, monkeypatc
     # execute_batch_updates should be called exactly once in the exception handler
     assert db.execute_batch_updates_called == 1
 
-    # Since file2 failed, its document_path AND verified_target updates will NOT be in the batch.
+    # Since file2 failed, its document_path, verified_target, and transaction_step updates will NOT be in the batch.
     # The batch should only contain updates for file1 (which succeeded).
-    assert len(db.last_batch) == 2
+    assert len(db.last_batch) == 3
     for item in db.last_batch:
         assert "file1.txt" in str(item["args"])
         assert "file2.txt" not in str(item["args"])
