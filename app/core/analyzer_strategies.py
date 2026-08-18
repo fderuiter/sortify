@@ -998,7 +998,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         return new_plan, error
 
     def __init__(self, model_path: str = None):
-        self.generator = None
+        self._generator = None
         self.task = None
         self.token_biases = {}
 
@@ -1035,6 +1035,38 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         self._gguf_process = None
         self._gguf_input_queue = None
         self._gguf_output_queue = None
+
+    @property
+    def generator(self):
+        """Get or lazily initialize the generative text model generator."""
+        if self._generator is not None:
+            return self._generator
+        from app.core.shared_registry import SharedModelRegistry
+        registry = SharedModelRegistry.get_instance()
+        if not registry.is_model_loaded("generative_naming"):
+            if getattr(self, "_model_initialized", False) and getattr(self, "model_path", None):
+                gen, task, tok = registry.get_generative_model(self.model_path)
+                self.task = task
+                if tok:
+                    self.token_biases = self._build_logit_biases(tok)
+                self._generator = gen
+                return gen
+            return None
+        gen, task, tok = registry.get_generative_model(self.model_path)
+        self.task = task
+        if tok:
+            self.token_biases = self._build_logit_biases(tok)
+        self._generator = gen
+        return gen
+
+    @generator.setter
+    def generator(self, value):
+        self._generator = value
+
+    def unload(self):
+        """Unload generative naming strategy model references."""
+        self._generator = None
+        self._model_initialized = False
 
     def _init_model(self):
         self._model_initialized = True

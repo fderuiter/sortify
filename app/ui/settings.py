@@ -727,6 +727,12 @@ def show_settings(parent_app, settings):
 
                     from app.config import get_app_dir
                     from app.core.downloader import DownloadManager
+                    from app.core.shared_registry import SharedModelRegistry
+
+                    try:
+                        SharedModelRegistry.get_instance().unload_all_models()
+                    except Exception:
+                        pass
 
                     try:
                         loop = asyncio.get_running_loop()
