@@ -45,6 +45,10 @@ class Settings(BaseSettings):
     PROXY: str = Field(default="")
     OCR_GPU_ENABLED: bool = Field(default=False)
     AUDIO_GPU_ENABLED: bool = Field(default=False)
+    WHISPER_MODEL_SIZE: Literal["tiny", "base", "small", "medium", "large"] = Field(
+        default="base"
+    )
+    WHISPER_CMD: str | list[str] = Field(default="whisper")
     OCR_LANGUAGES: str = Field(default="en")
     CONFLICT_POLICY: Literal["skip", "rename"] = Field(default="rename")
     SORTING_STRATEGY: Literal[
@@ -89,6 +93,32 @@ class Settings(BaseSettings):
                 f"MAX_DEBOUNCE_DELAY ({self.MAX_DEBOUNCE_DELAY})."
             )
         return self
+
+    @field_validator("WHISPER_MODEL_SIZE")
+    @classmethod
+    def validate_whisper_model_size(cls, v: str) -> str:
+        """Validate that WHISPER_MODEL_SIZE is a supported model size."""
+        if not isinstance(v, str) or not v.strip():
+            raise ValueError("WHISPER_MODEL_SIZE must be a non-empty string.")
+        valid_sizes = {"tiny", "base", "small", "medium", "large"}
+        v_clean = v.strip().lower()
+        if v_clean not in valid_sizes:
+            raise ValueError(
+                f"WHISPER_MODEL_SIZE must be one of {sorted(list(valid_sizes))}."
+            )
+        return v_clean
+
+    @field_validator("WHISPER_CMD")
+    @classmethod
+    def validate_whisper_cmd(cls, v: str | list) -> str | list:
+        """Validate that WHISPER_CMD is a non-empty string or list of non-empty strings."""
+        if isinstance(v, list):
+            if not v or not all(isinstance(x, str) and x.strip() for x in v):
+                raise ValueError("WHISPER_CMD list must contain non-empty strings.")
+            return v
+        if not isinstance(v, str) or not v.strip():
+            raise ValueError("WHISPER_CMD must be a non-empty string or list of strings.")
+        return v.strip()
 
     @field_validator("CONFLICT_POLICY")
     @classmethod

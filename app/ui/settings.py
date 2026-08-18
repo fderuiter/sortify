@@ -896,6 +896,196 @@ def show_settings(parent_app, settings):
 
                 sync_timer = ui.timer(0.1, sync_settings_ui)
 
+                # Whisper Audio Transcription & Dual Verification Section
+                ui.label("Whisper Audio Transcription & Verification").classes(
+                    "text-lg font-bold mt-6 mb-2"
+                )
+
+                whisper_status_card = ui.card().classes(
+                    "p-4 mb-4 w-full border bg-gray-50 dark:bg-gray-800"
+                )
+
+                def refresh_whisper_status():
+                    whisper_status_card.clear()
+                    from app.core.verifier import (
+                        verify_whisper_binary,
+                        verify_whisper_model_weight,
+                    )
+
+                    cmd_val = getattr(settings, "WHISPER_CMD", "whisper")
+                    size_val = getattr(settings, "WHISPER_MODEL_SIZE", "base")
+
+                    bin_ok, bin_msg = verify_whisper_binary(cmd_val)
+                    model_ok, model_msg = verify_whisper_model_weight(size_val)
+
+                    with whisper_status_card:
+                        ui.label("Cryptographic Verification Status").classes(
+                            "text-md font-bold mb-2"
+                        )
+
+                        with ui.row().classes("items-center gap-2 mb-1"):
+                            ui.icon(
+                                "check_circle" if bin_ok else "cancel",
+                                color="green" if bin_ok else "red",
+                                size="sm",
+                            )
+                            ui.label(
+                                f"Executable Binary Status: {'Verified (SHA-256 Valid)' if bin_ok else 'Unverified / Error'}"
+                            ).classes(
+                                "text-sm font-semibold "
+                                + ("text-green-700" if bin_ok else "text-red-700")
+                            )
+                        ui.label(bin_msg).classes(
+                            "text-xs text-gray-600 dark:text-gray-400 ml-6 mb-2"
+                        )
+
+                        with ui.row().classes("items-center gap-2 mb-1"):
+                            ui.icon(
+                                "check_circle" if model_ok else "cancel",
+                                color="green" if model_ok else "red",
+                                size="sm",
+                            )
+                            ui.label(
+                                f"Model Weight Status ('{size_val}'): {'Verified (SHA-256 Valid)' if model_ok else 'Missing / Unverified'}"
+                            ).classes(
+                                "text-sm font-semibold "
+                                + ("text-green-700" if model_ok else "text-red-700")
+                            )
+                        ui.label(model_msg).classes(
+                            "text-xs text-gray-600 dark:text-gray-400 ml-6"
+                        )
+
+                ui.label("Whisper Model Size").classes(
+                    "text-sm font-semibold text-gray-700 dark:text-gray-300 mt-2"
+                )
+
+                def on_whisper_model_size_change(e):
+                    try:
+                        settings.WHISPER_MODEL_SIZE = e.value
+                        ui.notify(
+                            f"Whisper model size set to '{e.value}'.", type="positive"
+                        )
+                        refresh_whisper_status()
+                    except Exception as ex:
+                        e.sender.value = getattr(settings, "WHISPER_MODEL_SIZE", "base")
+                        ui.notify(
+                            f"Failed to update Whisper model size: {ex}",
+                            type="negative",
+                        )
+
+                ui.select(
+                    options=["tiny", "base", "small", "medium", "large"],
+                    value=getattr(settings, "WHISPER_MODEL_SIZE", "base"),
+                    on_change=on_whisper_model_size_change,
+                ).classes("w-full mb-3").props(
+                    'aria-label="Whisper Model Size Select"'
+                )
+
+                whisper_cmd_val = getattr(settings, "WHISPER_CMD", "whisper")
+                if isinstance(whisper_cmd_val, list):
+                    whisper_cmd_str = " ".join(whisper_cmd_val)
+                else:
+                    whisper_cmd_str = str(whisper_cmd_val)
+
+                whisper_cmd_input = (
+                    ui.input(
+                        "Custom Whisper Executable Path",
+                        value=whisper_cmd_str,
+                    )
+                    .classes("w-full mb-2")
+                    .props(
+                        'aria-label="Custom Whisper Executable Path Input" placeholder="e.g. whisper or /usr/local/bin/whisper"'
+                    )
+                )
+
+                def save_whisper_cmd_settings():
+                    val = whisper_cmd_input.value
+                    if val is not None:
+                        try:
+                            settings.WHISPER_CMD = val.strip()
+                            ui.notify(
+                                "Whisper executable path updated successfully.",
+                                type="positive",
+                            )
+                            refresh_whisper_status()
+                        except Exception as ex:
+                            ui.notify(
+                                f"Failed to update executable path: {ex}",
+                                type="negative",
+                            )
+
+                ui.button(
+                    "Save Binary Path", on_click=save_whisper_cmd_settings
+                ).props('aria-label="Save Binary Path Button"').classes("mb-4")
+
+                whisper_download_container = ui.column().classes("w-full mt-2")
+                with whisper_download_container:
+                    whisper_progress_bar = ui.linear_progress(value=0).classes(
+                        "w-full mb-1"
+                    )
+                    whisper_status_label = ui.label("").classes(
+                        "text-sm text-gray-500 mb-2"
+                    )
+                whisper_download_container.set_visibility(False)
+
+                def trigger_whisper_model_download():
+                    from app.core.downloader import DownloadManager
+
+                    size_val = getattr(settings, "WHISPER_MODEL_SIZE", "base")
+                    proxy_val = getattr(settings, "PROXY", "")
+
+                    try:
+                        DownloadManager.get_instance().start_whisper_download(
+                            model_size=size_val,
+                            proxy=proxy_val,
+                        )
+                        ui.notify(
+                            f"Started background download for Whisper '{size_val}' model weights...",
+                            type="info",
+                        )
+                    except Exception as e:
+                        ui.notify(f"Cannot start download: {e}", type="negative")
+
+                whisper_download_button = (
+                    ui.button(
+                        "Download Whisper Model Weights",
+                        on_click=trigger_whisper_model_download,
+                    )
+                    .props('aria-label="Download Whisper Model Weights Button"')
+                    .classes("mb-4")
+                )
+
+                def sync_whisper_download_ui():
+                    from app.core.downloader import DownloadManager
+
+                    dm = DownloadManager.get_instance()
+                    is_dl = dm.state["is_downloading"]
+
+                    if is_dl:
+                        whisper_download_button.disable()
+                        whisper_download_container.set_visibility(True)
+                        whisper_progress_bar.set_value(dm.state["progress"])
+                        whisper_status_label.set_text(dm.state["status_text"])
+                    else:
+                        if whisper_download_container.visible:
+                            whisper_download_container.set_visibility(False)
+                            if dm.state["success"]:
+                                ui.notify(
+                                    "Whisper model weight download completed and verified successfully!",
+                                    type="positive",
+                                )
+                                refresh_whisper_status()
+                            elif dm.state["error"]:
+                                ui.notify(
+                                    f"Whisper model download failed: {dm.state['error']}",
+                                    type="negative",
+                                )
+                                dm.state["error"] = None
+                        whisper_download_button.enable()
+
+                whisper_timer = ui.timer(0.2, sync_whisper_download_ui)
+                refresh_whisper_status()
+
                 with ui.expansion("Advanced AI Settings", icon="psychology").classes(
                     "w-full mt-4"
                 ):

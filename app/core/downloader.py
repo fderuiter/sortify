@@ -145,6 +145,73 @@ class DownloadManager:
             )
             return self.current_thread
 
+    def start_whisper_download(
+        self, model_size: str, model_dir: str = None, proxy: str = "", url: str = None
+    ):
+        """Initiate Whisper model weight download thread-safely in background."""
+        from app.core.verifier import get_whisper_model_path
+
+        clean_size = (model_size or "base").strip().lower()
+        if not model_dir:
+            target_file_path = get_whisper_model_path(clean_size)
+            model_dir = os.path.dirname(target_file_path)
+            target_filename = os.path.basename(target_file_path)
+        else:
+            target_filename = f"{clean_size}.pt"
+
+        if not url:
+            url = f"https://openaipublic.azureedge.net/main/whisper/models/{clean_size}.pt"
+
+        with self._manager_lock:
+            if self.state["is_downloading"]:
+                raise DownloadError("A model download is already underway.")
+
+            self.state["progress"] = 0.0
+            self.state["status_text"] = (
+                f"Starting background download for Whisper '{clean_size}' model..."
+            )
+            self.state["error"] = None
+            self.state["success"] = False
+            self.state["is_downloading"] = True
+            self.cancel_event.clear()
+
+            def on_success_wrapper():
+                with self._manager_lock:
+                    self.state["success"] = True
+                    self.state["is_downloading"] = False
+                    self.current_thread = None
+
+            def on_failure_wrapper(err):
+                with self._manager_lock:
+                    self.state["error"] = err
+                    self.state["is_downloading"] = False
+                    self.current_thread = None
+
+            def progress_callback_wrapper(downloaded, total):
+                if total > 0:
+                    pct = (downloaded / total) * 100
+                    self.state["progress"] = downloaded / total
+                    self.state["status_text"] = (
+                        f"Downloading Whisper '{clean_size}': {downloaded / (1024 * 1024):.2f}MB of {total / (1024 * 1024):.2f}MB ({pct:.1f}%)"
+                    )
+                else:
+                    self.state["progress"] = 0.0
+                    self.state["status_text"] = (
+                        f"Downloading Whisper '{clean_size}': {downloaded / (1024 * 1024):.2f}MB..."
+                    )
+
+            self.current_thread = run_background_download(
+                url=url,
+                model_dir=model_dir,
+                proxy=proxy,
+                progress_callback=progress_callback_wrapper,
+                on_success=on_success_wrapper,
+                on_failure=on_failure_wrapper,
+                cancel_event=self.cancel_event,
+                target_filename=target_filename,
+            )
+            return self.current_thread
+
     def cancel_download(self):
         """Cancel the active background download process."""
         with self._manager_lock:
@@ -235,6 +302,18 @@ def verify_temp_file_hash(temp_path: str, target_path: str) -> bool:
         expected_hash = registry._expected_hashes["model_download"].get(filename)
     if not expected_hash and "generative_naming" in registry._expected_hashes:
         expected_hash = registry._expected_hashes["generative_naming"].get(filename)
+    if not expected_hash and "whisper_models" in registry._expected_hashes:
+        clean_name = os.path.splitext(filename)[0]
+        expected_hash = (
+            registry._expected_hashes["whisper_models"].get(clean_name)
+            or registry._expected_hashes["whisper_models"].get(filename)
+        )
+    if not expected_hash and "whisper" in registry._expected_hashes:
+        clean_name = os.path.splitext(filename)[0]
+        expected_hash = (
+            registry._expected_hashes["whisper"].get(clean_name)
+            or registry._expected_hashes["whisper"].get(filename)
+        )
 
     if not expected_hash:
         raise ModelVerificationError(
@@ -289,6 +368,7 @@ def run_background_download(
     on_success=None,
     on_failure=None,
     cancel_event=None,
+    target_filename: str = "model.onnx",
 ):
     """Run model download in a dedicated background thread that bypasses sandboxing."""
     if cancel_event is None:
@@ -307,7 +387,7 @@ def run_background_download(
         try:
             # Create model directory
             os.makedirs(model_dir, exist_ok=True)
-            target_path = os.path.join(model_dir, "model.onnx")
+            target_path = os.path.join(model_dir, target_filename)
 
             # Setup urllib opener with proxy support if specified
             handlers = []
@@ -385,16 +465,22 @@ def run_background_download(
                         os.remove(target_path)
                     os.rename(temp_path, target_path)
 
-                # Write a placeholder config.json next to it
-                config_path = os.path.join(model_dir, "config.json")
-                with open(config_path, "w", encoding="utf-8") as cf:
-                    json.dump({"model_type": "onnx", "dimensions": 384}, cf)
+                if target_filename == "model.onnx":
+                    # Write a placeholder config.json next to it
+                    config_path = os.path.join(model_dir, "config.json")
+                    with open(config_path, "w", encoding="utf-8") as cf:
+                        json.dump({"model_type": "onnx", "dimensions": 384}, cf)
 
-                # Requirement 6: Run integrity verification on completed download
-                if not verify_downloaded_model(model_dir):
-                    raise DownloadError(
-                        "Integrity verification failed for the downloaded model."
-                    )
+                    # Requirement 6: Run integrity verification on completed download
+                    if not verify_downloaded_model(model_dir):
+                        raise DownloadError(
+                            "Integrity verification failed for the downloaded model."
+                        )
+                else:
+                    if not os.path.exists(target_path) or os.path.getsize(target_path) == 0:
+                        raise DownloadError(
+                            "Integrity verification failed: downloaded file is missing or empty."
+                        )
 
                 if on_success:
                     on_success()

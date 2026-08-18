@@ -183,6 +183,175 @@ def check_ai_status(settings) -> tuple[bool, str | None]:
     return True, None
 
 
+def get_whisper_model_path(model_size: str) -> str:
+    """Get expected local path for a Whisper model weight file."""
+    from app.config import get_app_dir
+
+    clean_size = (model_size or "base").strip().lower()
+    model_dir = get_app_dir() / "whisper"
+    model_dir.mkdir(parents=True, exist_ok=True)
+    return str(model_dir / f"{clean_size}.pt")
+
+
+def verify_whisper_binary(whisper_cmd) -> tuple[bool, str]:
+    """Verify SHA-256 hash of the Whisper executable binary against the central registry."""
+    import hashlib
+    import logging
+    import shutil
+    from app.core.path_utils import is_packaged
+    from app.core.shared_registry import SharedModelRegistry, _thread_local
+
+    if isinstance(whisper_cmd, list):
+        target_path = (
+            whisper_cmd[-1]
+            if (len(whisper_cmd) > 0 and os.path.exists(whisper_cmd[-1]))
+            else (whisper_cmd[0] if len(whisper_cmd) > 0 else "")
+        )
+    else:
+        target_path = str(whisper_cmd or "whisper")
+
+    is_sandboxed = is_packaged() or getattr(_thread_local, "sandboxed", False)
+
+    if target_path == "whisper" and not os.path.exists("whisper"):
+        if not is_sandboxed:
+            logging.warning(
+                "Whisper command 'whisper' checked in non-packaged mode."
+            )
+            return True, "Whisper command 'whisper' checked in non-packaged mode."
+
+    resolved_path = None
+    if target_path and os.path.exists(target_path):
+        resolved_path = target_path
+    elif target_path:
+        resolved_path = shutil.which(target_path)
+
+    if not resolved_path or not os.path.exists(resolved_path):
+        if is_sandboxed:
+            return False, f"Whisper binary executable '{target_path}' not found."
+        logging.warning(
+            f"Whisper binary executable '{target_path}' not found on PATH. Skipping binary check in non-packaged mode."
+        )
+        return True, f"Whisper binary '{target_path}' not installed (non-packaged mode)."
+
+    hasher = hashlib.sha256()
+    try:
+        with open(resolved_path, "rb") as f:
+            for chunk in iter(lambda: f.read(65536), b""):
+                hasher.update(chunk)
+    except Exception as e:
+        return False, f"Failed to read Whisper binary executable '{resolved_path}': {e}"
+
+    actual_hash = hasher.hexdigest()
+    registry = SharedModelRegistry.get_instance()
+    filename = os.path.basename(resolved_path)
+
+    expected_hashes = {}
+    if "whisper_binaries" in registry._expected_hashes:
+        expected_hashes.update(registry._expected_hashes["whisper_binaries"])
+    if "whisper" in registry._expected_hashes:
+        expected_hashes.update(registry._expected_hashes["whisper"])
+
+    expected_hash = expected_hashes.get(filename) or expected_hashes.get(target_path)
+
+    if expected_hash:
+        if actual_hash != expected_hash:
+            return (
+                False,
+                f"Cryptographic verification failed for Whisper binary '{filename}'. Expected {expected_hash}, got {actual_hash}.",
+            )
+    else:
+        if is_sandboxed:
+            return (
+                False,
+                f"Whisper binary '{filename}' is unverified in central registry.",
+            )
+        logging.warning(
+            f"Whisper binary '{filename}' not registered in central registry. Proceeding in non-packaged mode."
+        )
+
+    return True, f"Whisper binary '{filename}' verified."
+
+
+def verify_whisper_model_weight(
+    model_size: str, custom_path: str = None
+) -> tuple[bool, str]:
+    """Verify SHA-256 hash of selected Whisper model weight variant against central registry."""
+    import hashlib
+    from app.core.shared_registry import SharedModelRegistry, _thread_local
+
+    clean_size = (model_size or "base").strip().lower()
+    target_path = custom_path or get_whisper_model_path(clean_size)
+
+    if not os.path.exists(target_path):
+        from app.core.path_utils import is_packaged
+
+        is_sandboxed = is_packaged() or getattr(_thread_local, "sandboxed", False)
+        if is_sandboxed:
+            return (
+                False,
+                f"Whisper model weight for '{clean_size}' not found at '{target_path}'.",
+            )
+        return True, f"Whisper model weight path checked for '{clean_size}'."
+
+    hasher = hashlib.sha256()
+    try:
+        with open(target_path, "rb") as f:
+            for chunk in iter(lambda: f.read(65536), b""):
+                hasher.update(chunk)
+    except Exception as e:
+        return False, f"Failed to read Whisper model weight '{target_path}': {e}"
+
+    actual_hash = hasher.hexdigest()
+    registry = SharedModelRegistry.get_instance()
+    filename = os.path.basename(target_path)
+
+    expected_hashes = {}
+    if "whisper_models" in registry._expected_hashes:
+        expected_hashes.update(registry._expected_hashes["whisper_models"])
+    if "whisper" in registry._expected_hashes:
+        expected_hashes.update(registry._expected_hashes["whisper"])
+
+    expected_hash = (
+        expected_hashes.get(clean_size)
+        or expected_hashes.get(f"{clean_size}.pt")
+        or expected_hashes.get(filename)
+    )
+
+    if expected_hash:
+        if actual_hash != expected_hash:
+            return (
+                False,
+                f"Cryptographic verification failed for Whisper model weight '{clean_size}'. Expected {expected_hash}, got {actual_hash}.",
+            )
+    else:
+        from app.core.path_utils import is_packaged
+
+        is_sandboxed = is_packaged() or getattr(_thread_local, "sandboxed", False)
+        if is_sandboxed:
+            return (
+                False,
+                f"Whisper model weight '{clean_size}' is unverified in central registry.",
+            )
+        logging.warning(
+            f"Whisper model weight '{clean_size}' not registered in central registry. Proceeding in non-packaged mode."
+        )
+
+    return True, f"Whisper model weight '{clean_size}' verified."
+
+
+def verify_whisper_dual(whisper_cmd, model_size: str) -> tuple[bool, str]:
+    """Verify both Whisper executable binary and selected model weight file."""
+    bin_ok, bin_msg = verify_whisper_binary(whisper_cmd)
+    if not bin_ok:
+        return False, f"Binary verification failed: {bin_msg}"
+
+    model_ok, model_msg = verify_whisper_model_weight(model_size)
+    if not model_ok:
+        return False, f"Model weight verification failed: {model_msg}"
+
+    return True, "Whisper dual verification passed."
+
+
 class VerificationEngine:
     """Engine to verify file operations before execution."""
 
