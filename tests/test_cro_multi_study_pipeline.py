@@ -79,3 +79,79 @@ def test_cro_pipeline_end_to_end():
         # Verify source directory was NOT modified (Non-Destructive Safe Ingest)
         assert os.path.exists(os.path.join(study1_dir, "form1572.txt"))
         assert os.path.exists(zip_path)
+
+
+def test_cro_pipeline_single_study_unassigned_routing():
+    """Verify single-study ingestion routes non-matching files to Unassigned_Study_Documents and excludes them from study compliance metrics."""
+    with (
+        tempfile.TemporaryDirectory() as source_dir,
+        tempfile.TemporaryDirectory() as target_dir,
+    ):
+        # 1. Setup synthetic single-study volume with matching and non-matching files
+        study_dir = os.path.join(source_dir, "single_study_volume")
+        os.makedirs(study_dir, exist_ok=True)
+
+        # Matching clinical documents for PROTO-101
+        with open(os.path.join(study_dir, "form1572.txt"), "w") as f:
+            f.write(
+                "STATEMENT OF INVESTIGATOR Form FDA 1572 Protocol ID: PROTO-101 Principal Investigator: Dr. Jane Doe"
+            )
+
+        with open(os.path.join(study_dir, "protocol.txt"), "w") as f:
+            f.write(
+                "Clinical Study Protocol Version 1.0 Protocol ID: PROTO-101 Inclusion and exclusion criteria"
+            )
+
+        # Non-matching administrative / operational files
+        with open(os.path.join(study_dir, "taxi_receipt.txt"), "w") as f:
+            f.write("Taxi Receipt $18.50 Expense reimbursement claim for travel")
+
+        with open(os.path.join(study_dir, "operational_script.txt"), "w") as f:
+            f.write("#!/bin/bash\necho 'Running server backup...'")
+
+        # 2. Run CRO Pipeline
+        pipeline = CROMultiStudyPipeline(mode="tmf", smart_renaming=False)
+        result = pipeline.run_pipeline(
+            source_root=source_dir,
+            target_root=target_dir,
+        )
+
+        # 3. Verify single study discovered
+        assert result.discovered_studies_count == 1
+        assert result.total_scanned_files == 4
+
+        # Verify PROTO_101 folder exists and contains ONLY clinical documents
+        proto101_dir = os.path.join(target_dir, "PROTO_101")
+        assert os.path.exists(proto101_dir)
+
+        proto101_files = []
+        for root, _, files in os.walk(proto101_dir):
+            for file in files:
+                proto101_files.append(file)
+
+        assert "form1572.txt" in proto101_files
+        assert "protocol.txt" in proto101_files
+        assert "taxi_receipt.txt" not in proto101_files
+        assert "operational_script.txt" not in proto101_files
+
+        # Verify Unassigned_Study_Documents folder exists and contains non-matching files
+        unassigned_dir = os.path.join(target_dir, "Unassigned_Study_Documents")
+        assert os.path.exists(unassigned_dir)
+
+        unassigned_files = []
+        for root, _, files in os.walk(unassigned_dir):
+            for file in files:
+                unassigned_files.append(file)
+
+        assert "taxi_receipt.txt" in unassigned_files
+        assert "operational_script.txt" in unassigned_files
+        assert "form1572.txt" not in unassigned_files
+
+        # Verify study compliance report excludes unassigned files
+        comp_json_path = os.path.join(proto101_dir, "compliance_audit_report.json")
+        assert os.path.exists(comp_json_path)
+        with open(comp_json_path, "r") as f:
+            comp_data = json.load(f)
+            # Only 2 clinical files assigned to PROTO_101 evaluated
+            assert comp_data["total_files_scanned"] == 2
+
