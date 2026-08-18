@@ -11,7 +11,7 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, List, Protocol
+from typing import List, Protocol
 
 
 def is_debug_active() -> bool:
@@ -1022,6 +1022,7 @@ class PairedConstraintAdapter:
         return f'root ::= word (" " word)? (" " word)? (" " word)?\nword ::= [{combined_chars}]+'
 
     def should_bias_token(self, token_str: str) -> bool:
+        """Determine whether a token should be penalized based on characters or fluff words."""
         clean_str = (
             token_str.replace("Ġ", "").replace(" ", "").replace("<unk>", "").strip()
         )
@@ -1043,6 +1044,7 @@ class PairedConstraintAdapter:
         return False
 
     def build_logit_biases(self, tokenizer) -> dict:
+        """Build logit bias dictionary mapping penalized token IDs to negative weights."""
         token_biases = {}
         try:
             vocab = tokenizer.get_vocab()
@@ -1066,9 +1068,11 @@ class PairedConstraintAdapter:
         return token_biases
 
     def get_logits_processor(self) -> NegativeLogitBiasProcessor:
+        """Get a NegativeLogitBiasProcessor configured with built token biases."""
         return NegativeLogitBiasProcessor(self.token_biases)
 
     def clean_and_truncate_name(self, name: str) -> str:
+        """Clean and truncate name string to max 4 words and NFC normalization."""
         if not name:
             return ""
         name = name.replace('"', "").replace("-", " ").strip()
