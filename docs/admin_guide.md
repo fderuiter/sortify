@@ -119,7 +119,7 @@ The following parameters are extracted directly from the application's configura
 - **Required**: `False`
 
 ### `IGNORED_EXTENSIONS`
-- **Default**: `['.crdownload', '.tmp', '.download']`
+- **Default**: `['.crdownload', '.tmp', '.download', '.part', '.partial', '.aria2', '.fdmdownload', '.opdownload']`
 - **Required**: `False`
 
 ### `AI_CONSENT_GRANTED`
