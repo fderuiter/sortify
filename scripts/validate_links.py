@@ -14,6 +14,7 @@ URL_REGEX = re.compile(r'https?://[^\s\'"<>]+')
 TIMEOUT = 3.0
 DEFAULT_BYPASS_DOMAINS = {
     "example.com",
+    "proxy.example.com",
     "test-proxy",
     "bypassed.com",
     "smartautosorter.com",
@@ -25,6 +26,8 @@ DEFAULT_BYPASS_DOMAINS = {
     "huggingface.co",
     "google.com",
     "www.google.com",
+    "fonts.googleapis.com",
+    "fonts.gstatic.com",
     "localhost",
     "127.0.0.1",
     "host",
@@ -37,7 +40,14 @@ def validate_url(url: str, bypass_domains: set = None):
     parsed = urlparse(url)
     bypass_set = bypass_domains or set()
     hostname = parsed.hostname or parsed.netloc
-    if parsed.netloc in bypass_set or hostname in bypass_set:
+    if (
+        parsed.netloc in bypass_set
+        or hostname in bypass_set
+        or any(
+            hostname and (hostname == domain or hostname.endswith("." + domain))
+            for domain in bypass_set
+        )
+    ):
         return True, f"Bypassed ({parsed.netloc})", False
 
     # Using a common user agent to avoid being blocked immediately

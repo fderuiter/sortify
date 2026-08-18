@@ -1,11 +1,7 @@
 import json
-import logging
-import os
-import time
 from unittest.mock import MagicMock, patch
 
-import pytest
-from app.config import AppSettings, Settings
+from app.config import AppSettings
 
 
 def test_revalidate_unlocks_auto_save_and_persists(tmp_path):
