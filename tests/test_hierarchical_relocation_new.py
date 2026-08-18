@@ -86,6 +86,7 @@ def test_deeply_nested_physical_execution_relocates_identically(test_environment
                         "__type__": "file",
                         "relative_source": "file.txt",
                         "target_filename": "moved.txt",
+                        "confirmed": True,
                     }
                 }
             }
@@ -128,6 +129,7 @@ def test_manually_drafted_json_plan_validates_and_executes(test_environment):
                 "__type__": "file",
                 "relative_source": "document.pdf",
                 "target_filename": "final.pdf",
+                "confirmed": True,
             }
         }
     }
@@ -198,6 +200,7 @@ def test_db_updates_use_forward_slashes_consistently(test_environment):
                 "__type__": "file",
                 "relative_source": "item.txt",
                 "target_filename": "moved_item.txt",
+                "confirmed": True,
             }
         }
     }
