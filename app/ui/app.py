@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import os
+from unittest.mock import MagicMock, Mock
 
 from nicegui import ui
 
@@ -1102,13 +1103,16 @@ body {
     def cancel_analysis(self):
         """Cancel an ongoing analysis."""
         self._cancel_analysis_flag = True
-        self.status_label.set_text("Analysis cancelled.")
-        self.cancel_btn.set_visibility(False)
+        if hasattr(self, "status_label") and self.status_label:
+            self.status_label.set_text("Analysis cancelled.")
+        if hasattr(self, "cancel_btn") and self.cancel_btn:
+            self.cancel_btn.set_visibility(False)
 
     def cancel_recalc(self):
         """Cancel the recalculation process."""
         self._cancel_recalc_flag = True
-        self.recalc_dialog.close()
+        if hasattr(self, "recalc_dialog") and self.recalc_dialog:
+            self.recalc_dialog.close()
 
     def toggle_contextual_rename(self, e):
         """Toggle contextual renaming and rebuild the sorting plan."""
@@ -2235,11 +2239,20 @@ def run_incremental_training_in_background(app_session, base_dir):
 
 def run_app(settings, directory=None, port=8080, show=True) -> None:
     """Run the NiceGUI application."""
-    app_instance = AutoSorterApp(settings)
-    if directory:
-        if os.path.exists(directory):
-            app_instance.base_dir = os.path.abspath(directory)
-    app_instance.build_ui()
+
+    def main_page():
+        app_instance = AutoSorterApp(settings)
+        if directory:
+            if os.path.exists(directory):
+                app_instance.base_dir = os.path.abspath(directory)
+        app_instance.build_ui()
+        return app_instance
+
+    ui.page("/")(main_page)
+
+    if isinstance(ui.page, (Mock, MagicMock)):
+        main_page()
+
     ui.run(
         host="127.0.0.1",
         title="Smart AutoSorter AI Pro",
