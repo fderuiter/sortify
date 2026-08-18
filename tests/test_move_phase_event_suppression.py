@@ -174,3 +174,67 @@ def test_end_to_end_move_execution_suppresses_cancellation(tmp_path):
         assert mock_app_session_inst.execute_moves.call_count == 1
 
     daemon.stop()
+
+
+def test_external_event_during_move_sets_pending_dirty(tmp_path):
+    settings = DummySettings()
+    daemon = ContinuousWatchdogDaemon(settings, str(tmp_path))
+    daemon._is_running = True
+    handler = DaemonFolderHandler(daemon)
+
+    plan = {"a.txt": "sorted/a.txt"}
+    with daemon.scoped_move_phase(plan=plan):
+        assert daemon.pending_dirty is False
+        # External event occurs during move phase
+        event = FileModifiedEvent(str(tmp_path / "external.txt"))
+        handler.on_any_event(event)
+        # Pending dirty flag must be set
+        assert daemon.pending_dirty is True
+        # Debounce timer should not be set yet while move is active
+        assert daemon._debounce_timer is None
+
+    # Exiting move phase must trigger recalculation and clear pending dirty flag
+    assert daemon.pending_dirty is False
+    assert daemon._debounce_timer is not None
+
+    daemon.stop()
+
+
+def test_self_generated_move_event_does_not_set_pending_dirty(tmp_path):
+    settings = DummySettings()
+    daemon = ContinuousWatchdogDaemon(settings, str(tmp_path))
+    daemon._is_running = True
+    handler = DaemonFolderHandler(daemon)
+
+    plan = {"doc.pdf": "sorted/doc.pdf"}
+    with daemon.scoped_move_phase(plan=plan):
+        assert daemon.pending_dirty is False
+        # Internal self-generated event for source
+        event_src = FileModifiedEvent(str(tmp_path / "doc.pdf"))
+        handler.on_any_event(event_src)
+        # Internal self-generated event for target
+        event_dst = FileModifiedEvent(str(tmp_path / "sorted" / "doc.pdf"))
+        handler.on_any_event(event_dst)
+
+        # Pending dirty flag must remain False
+        assert daemon.pending_dirty is False
+
+    # Exiting move phase without external events must not trigger recalculation
+    assert daemon.pending_dirty is False
+    assert daemon._debounce_timer is None
+
+    daemon.stop()
+
+
+def test_exit_move_phase_without_external_events_no_recalculation(tmp_path):
+    settings = DummySettings()
+    daemon = ContinuousWatchdogDaemon(settings, str(tmp_path))
+    daemon._is_running = True
+
+    with daemon.scoped_move_phase(plan={"doc.pdf": "sorted/doc.pdf"}):
+        pass
+
+    assert daemon.pending_dirty is False
+    assert daemon._debounce_timer is None
+
+    daemon.stop()
