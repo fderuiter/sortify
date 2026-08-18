@@ -170,3 +170,30 @@ def is_path_too_long(path: str, limit: int = 260) -> bool:
         return False
     normalized_path = os.path.abspath(path)
     return len(normalized_path) >= limit
+
+
+def is_junction_path(path: str) -> bool:
+    """Check if a path is an NTFS directory junction."""
+    if not path:
+        return False
+    try:
+        return os.path.isjunction(path)
+    except (AttributeError, OSError):
+        return False
+
+
+def is_junction_entry(entry) -> bool:
+    """Check if a DirEntry or path is an NTFS directory junction."""
+    if entry is None:
+        return False
+    try:
+        if hasattr(entry, "is_junction") and entry.is_junction():
+            return True
+    except (AttributeError, OSError):
+        pass
+    try:
+        path = entry.path if hasattr(entry, "path") else str(entry)
+        return os.path.isjunction(path)
+    except (AttributeError, OSError):
+        return False
+

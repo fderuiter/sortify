@@ -3,6 +3,8 @@
 import logging
 import os
 
+from app.core.path_utils import is_junction_path
+
 try:
     import pylnk3
 except ImportError:
@@ -10,15 +12,26 @@ except ImportError:
 
 
 class LinkManager:
-    """Manager for symbolic and shortcut links."""
+    """Manager for symbolic, junction, and shortcut links."""
 
     _registry = {}
 
     @classmethod
     def register_link(cls, base_dir: str, rel_path: str):
-        """Identify and store the link's target if it's a symlink or .lnk file."""
+        """Identify and store the link's target if it's a junction, symlink, or .lnk file."""
         full_path = os.path.join(base_dir, rel_path)
-        if os.path.islink(full_path):
+        if is_junction_path(full_path):
+            try:
+                target = os.readlink(full_path)
+                if target.startswith(("\\\\?\\", "\\??\\")):
+                    target = target[4:]
+                cls._registry[full_path] = {"type": "junction", "target": target}
+            except OSError as e:
+                logging.error(
+                    f"Failed to read junction target for {full_path}: {e}",
+                    exc_info=True,
+                )
+        elif os.path.islink(full_path):
             try:
                 target = os.readlink(full_path)
                 cls._registry[full_path] = {"type": "symlink", "target": target}
