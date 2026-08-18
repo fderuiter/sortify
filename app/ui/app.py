@@ -1938,6 +1938,61 @@ body {
                 )
         return folder_count, file_count
 
+    @staticmethod
+    def split_plan_phases(plan):
+        """Split sorting plan into Phase 1 deterministic fast path and Phase 2 slow path.
+
+        Parameters
+        ----------
+        plan : dict
+            The complete sorting plan.
+
+        Returns
+        -------
+        tuple[dict, dict]
+            A tuple of (fast_path_plan, slow_path_plan).
+        """
+        fast_plan = {}
+        slow_plan = {}
+
+        def _split_node(src_node, fast_node, slow_node):
+            if not isinstance(src_node, dict) or src_node.get("__type__") in (
+                "file",
+                "directory",
+            ):
+                return
+            for k, v in src_node.items():
+                if isinstance(v, dict):
+                    if v.get("__type__") == "file":
+                        routed_by = v.get("routed_by")
+                        if routed_by in (
+                            "keyword",
+                            "override",
+                            "learned",
+                            "policy",
+                            "pattern",
+                            "historical",
+                        ):
+                            fast_node[k] = v
+                        else:
+                            slow_node[k] = v
+                    elif v.get("__type__") == "directory":
+                        fast_node[k] = v
+                        slow_node[k] = v
+                    else:
+                        sub_fast = {}
+                        sub_slow = {}
+                        _split_node(v, sub_fast, sub_slow)
+                        if sub_fast:
+                            fast_node[k] = sub_fast
+                        if sub_slow:
+                            slow_node[k] = sub_slow
+                else:
+                    slow_node[k] = v
+
+        _split_node(plan, fast_plan, slow_plan)
+        return fast_plan, slow_plan
+
     def execute_sort(self):
         """Execute the sorting plan with real-time two-phase progress and rollback availability."""
         if not self.app_session or not self.plan:
@@ -1985,46 +2040,11 @@ body {
         self.progress_bar.set_value(0)
         self.stop_watcher()
 
-        def _split_plan_phases(plan):
-            fast_plan = {}
-            slow_plan = {}
-
-            def _split_node(src_node, fast_node, slow_node):
-                if not isinstance(src_node, dict) or src_node.get("__type__") in (
-                    "file",
-                    "directory",
-                ):
-                    return
-                for k, v in src_node.items():
-                    if isinstance(v, dict):
-                        if v.get("__type__") == "file":
-                            routed_by = v.get("routed_by")
-                            if routed_by in ("keyword", "override", "learned"):
-                                fast_node[k] = v
-                            else:
-                                slow_node[k] = v
-                        elif v.get("__type__") == "directory":
-                            fast_node[k] = v
-                            slow_node[k] = v
-                        else:
-                            sub_fast = {}
-                            sub_slow = {}
-                            _split_node(v, sub_fast, sub_slow)
-                            if sub_fast:
-                                fast_node[k] = sub_fast
-                            if sub_slow:
-                                slow_node[k] = sub_slow
-                    else:
-                        fast_node[k] = v
-
-            _split_node(plan, fast_plan, slow_plan)
-            return fast_plan, slow_plan
-
         async def run():
             success = False
             try:
                 # Derive fast-path and slow-path phases from the approved plan (self.plan)
-                fast_path_plan, slow_path_plan = _split_plan_phases(self.plan)
+                fast_path_plan, slow_path_plan = self.split_plan_phases(self.plan)
 
                 fast_path_summary = None
                 if fast_path_plan:
