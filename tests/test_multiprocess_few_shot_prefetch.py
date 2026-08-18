@@ -111,10 +111,11 @@ def test_multiprocess_few_shot_prefetch_flow(db, temp_dir):
         ],
     )
 
-    # Set up prompt dump file path
-    prompt_dump_path = temp_dir / "prompt_dump.txt"
+    # Set up prompt dump file path inside sandboxed debug directory
+    from app.config import get_debug_log_dir
+    prompt_dump_path = get_debug_log_dir() / "prefetch_prompt_dump.txt"
     os.environ["DEBUG"] = "1"
-    os.environ["PROMPT_DUMP_FILE"] = str(prompt_dump_path)
+    os.environ["PROMPT_DUMP_FILE"] = "prefetch_prompt_dump.txt"
     os.environ["FORCE_MULTIPROCESSING_CLUSTERING"] = "1"
 
     # Instantiate Analyzer which runs clustering and generative folder naming
@@ -164,6 +165,8 @@ def test_multiprocess_few_shot_prefetch_flow(db, temp_dir):
     with open(prompt_dump_path, "r") as f:
         prompts_text = f.read()
 
-    # Verify that the pre-fetched historical examples are successfully injected into the prompts!
-    assert "Mars rocket space exploration NASA" in prompts_text
+    # Verify that pre-fetched historical examples are represented as redacted placeholders and folder names are injected
+    assert "Mars rocket space exploration NASA" not in prompts_text
+    assert "[REDACTED_HISTORICAL_SNIPPET:" in prompts_text
     assert "Space" in prompts_text
+    prompt_dump_path.unlink(missing_ok=True)

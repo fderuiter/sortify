@@ -187,6 +187,7 @@ def reset_shared_registry():
 @pytest.fixture(scope="session", autouse=True)
 def isolate_test_environment(monkeypatch_session):
     temp_dir = tempfile.mkdtemp(prefix="test_autosorter_appdir_")
+    monkeypatch_session.setenv("AUTOSORTER_APP_DIR", temp_dir)
 
     def mock_get_app_dir():
         return Path(temp_dir)
