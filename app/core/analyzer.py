@@ -1106,6 +1106,36 @@ class IncrementalAnalyzer:
 
             _ensure_relative_source(clean_plan)
 
+            if runtime_settings and (
+                getattr(runtime_settings, "CONTEXTUAL_RENAMING", False)
+                or getattr(runtime_settings, "CLINICAL_SMART_RENAMING", False)
+            ):
+                try:
+                    import gc
+
+                    from app.core.file_renamer import FileRenamerEngine
+
+                    renamer = FileRenamerEngine(
+                        runtime_settings=runtime_settings,
+                        db=self.db,
+                        embedding_manager=getattr(self, "embedding_manager", None),
+                    )
+                    docs_map = {d[0]: d[1] for d in docs if len(d) > 1 and d[1]} if docs else {}
+                    renamer.process_sorting_plan(
+                        clean_plan,
+                        documents_map=docs_map,
+                        base_dir=base_dir,
+                        locked_files=locked_files,
+                        stop_words=self.stop_words,
+                    )
+                    docs_map.clear()
+                    del docs_map
+                    gc.collect()
+                except Exception as e:
+                    logging.error(
+                        f"Contextual file renaming phase failed: {e}", exc_info=True
+                    )
+
             return self._inject_hierarchy(clean_plan)
 
         except Exception as e:

@@ -11,7 +11,7 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from pathlib import Path
-from typing import List, Protocol
+from typing import List, Optional, Protocol, Union
 
 from app.core.crypto import (
     EphemeralSessionCrypto,
@@ -702,7 +702,12 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
 
         if depth >= self.max_depth or len(documents) < 3:
             for f in filenames:
-                plan[f] = None
+                plan[f] = {
+                    "__type__": "file",
+                    "relative_source": f,
+                    "source_path": f,
+                    "routed_by": "clustering",
+                }
             return {"Miscellaneous": plan} if depth == 1 else plan
 
         use_dense_vectors = False
@@ -752,7 +757,12 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
                 X = vectorizer.fit_transform(documents)
             except Exception:
                 for f in filenames:
-                    plan[f] = None
+                    plan[f] = {
+                        "__type__": "file",
+                        "relative_source": f,
+                        "source_path": f,
+                        "routed_by": "clustering",
+                    }
                 return {"Miscellaneous": plan} if depth == 1 else plan
 
         actual_k = min(self.max_folders, len(documents) // 2)
@@ -783,7 +793,12 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
                 for f in sub_filenames:
                     if folder_name not in plan:
                         plan[folder_name] = {}
-                    plan[folder_name][f] = None
+                    plan[folder_name][f] = {
+                        "__type__": "file",
+                        "relative_source": f,
+                        "source_path": f,
+                        "routed_by": "clustering",
+                    }
             else:
                 sub_plan = self._cluster_recursive(
                     sub_filenames, sub_documents, depth + 1
@@ -897,6 +912,9 @@ def gguf_worker_main(
             prompt = task.get("prompt", "")
             max_tokens = task.get("max_tokens", 15)
             grammar_str = task.get("grammar")
+            stop_seqs = task.get("stop")
+            if stop_seqs is None:
+                stop_seqs = task.get("stop_sequences")
 
             grammar = None
             if grammar_str:
@@ -921,18 +939,20 @@ def gguf_worker_main(
                         )
                         grammar = None
 
+            gen_kwargs = {"max_tokens": max_tokens, "echo": False}
+            if stop_seqs is not None:
+                gen_kwargs["stop"] = stop_seqs
+
             if grammar:
                 try:
-                    res = llm(
-                        prompt, max_tokens=max_tokens, echo=False, grammar=grammar
-                    )
+                    res = llm(prompt, grammar=grammar, **gen_kwargs)
                 except Exception as e:
                     import logging
 
                     logging.error(f"Generation with grammar failed: {e}")
-                    res = llm(prompt, max_tokens=max_tokens, echo=False)
+                    res = llm(prompt, **gen_kwargs)
             else:
-                res = llm(prompt, max_tokens=max_tokens, echo=False)
+                res = llm(prompt, **gen_kwargs)
 
             generated_text = res["choices"][0]["text"].strip()
             res_obj = {"text": generated_text}
@@ -1122,7 +1142,11 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         def get_recursive_files(n):
             res = []
             for key, val in n.items():
-                if val is None or not isinstance(val, dict):
+                if (
+                    val is None
+                    or not isinstance(val, dict)
+                    or val.get("__type__") == "file"
+                ):
                     res.append(key)
                 else:
                     res.extend(get_recursive_files(val))
@@ -1136,8 +1160,12 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
             files = []
             subfolders = {}
             for k, v in node.items():
-                if v is None or not isinstance(v, dict):
-                    files.append(k)
+                if (
+                    v is None
+                    or not isinstance(v, dict)
+                    or (isinstance(v, dict) and v.get("__type__") == "file")
+                ):
+                    files.append((k, v))
                 else:
                     subfolders[k] = v
 
@@ -1157,20 +1185,49 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                     if f in vector_dict and vector_dict[f] is not None
                 ]
                 if vectors:
-                    centroid = np.mean(vectors, axis=0)
-                    for f in files:
+                    centroid = np.array(np.mean(vectors, axis=0), dtype=np.float64)
+                    centroid_norm = float(np.linalg.norm(centroid))
+                    for f, f_val in files:
+                        leaf_info = (
+                            f_val
+                            if isinstance(f_val, dict) and f_val.get("__type__") == "file"
+                            else {
+                                "__type__": "file",
+                                "relative_source": f,
+                                "source_path": f,
+                                "routed_by": "clustering",
+                            }
+                        )
                         f_vec = vector_dict.get(f)
                         if f_vec is not None:
-                            sim = get_cosine_similarity(f_vec, centroid)
-                            if sim < threshold:
-                                low_confidence_files[f] = None
+                            if centroid_norm == 0:
+                                sim = 0.0
                             else:
-                                new_node[f] = None
+                                f_arr = np.array(f_vec, dtype=np.float64)
+                                f_norm = float(np.linalg.norm(f_arr))
+                                if f_norm == 0:
+                                    sim = 0.0
+                                else:
+                                    sim = float(np.dot(f_arr, centroid) / (f_norm * centroid_norm))
+                            if sim < threshold:
+                                low_confidence_files[f] = leaf_info
+                            else:
+                                new_node[f] = leaf_info
                         else:
-                            new_node[f] = None
+                            new_node[f] = leaf_info
                 else:
-                    for f in files:
-                        new_node[f] = None
+                    for f, f_val in files:
+                        leaf_info = (
+                            f_val
+                            if isinstance(f_val, dict) and f_val.get("__type__") == "file"
+                            else {
+                                "__type__": "file",
+                                "relative_source": f,
+                                "source_path": f,
+                                "routed_by": "clustering",
+                            }
+                        )
+                        new_node[f] = leaf_info
 
             return new_node, low_confidence_files
 
@@ -1373,17 +1430,31 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
             logging.error(f"Failed to load generative model via shared registry: {e}")
             self.generator = None
 
-    def _run_prompt(self, prompt: str, max_tokens: int, grammar: str = None) -> str:
+    def _run_prompt(
+        self,
+        prompt: str,
+        max_tokens: int,
+        grammar: str = None,
+        stop: Optional[Union[List[str], str]] = None,
+        stop_sequences: Optional[Union[List[str], str]] = None,
+    ) -> str:
+        stop_seqs = stop if stop is not None else stop_sequences
+
         if is_prompt_dump_enabled():
             dump_file = os.environ.get("PROMPT_DUMP_FILE")
-            validate_prompt_dump_path(dump_file)
-            scrubbed_prompt = scrub_prompt_text(prompt)
-            parent_dir = os.path.dirname(dump_file)
-            if parent_dir:
-                os.makedirs(parent_dir, exist_ok=True)
-            with open(dump_file, "a", encoding="utf-8") as f:
-                f.write(scrubbed_prompt + "\n===PROMPT_END===\n")
-            return "Mock Generated Folder Name"
+            try:
+                validate_prompt_dump_path(dump_file)
+                scrubbed_prompt = scrub_prompt_text(prompt)
+                parent_dir = os.path.dirname(dump_file)
+                if parent_dir:
+                    os.makedirs(parent_dir, exist_ok=True)
+                with open(dump_file, "a", encoding="utf-8") as f:
+                    f.write(scrubbed_prompt + "\n===PROMPT_END===\n")
+                return "Mock Generated Folder Name"
+            except Exception as e:
+                logging.warning(
+                    f"Failed to write prompt dump to '{dump_file}': {e}"
+                )
 
         if self._gguf_active and not self._gguf_failed:
             if not self._gguf_process or not self._gguf_process.is_alive():
@@ -1391,7 +1462,13 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                 self._fallback_to_pytorch()
             else:
                 try:
-                    task_data = {"prompt": prompt, "max_tokens": max_tokens, "grammar": grammar}
+                    task_data = {
+                        "prompt": prompt,
+                        "max_tokens": max_tokens,
+                        "grammar": grammar,
+                    }
+                    if stop_seqs is not None:
+                        task_data["stop"] = stop_seqs
                     if getattr(self, "_gguf_session_key", None):
                         task_data = encrypt_ipc_payload(task_data, self._gguf_session_key)
                     self._gguf_input_queue.put(task_data)
@@ -1848,11 +1925,27 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                     best_match_folder = None
                     best_match_similarity = -1.0
 
-                    for folder, folder_centroid in historical_folder_centroids.items():
-                        sim = cosine_sim(cluster_centroid, folder_centroid)
-                        if sim > best_match_similarity:
-                            best_match_similarity = sim
-                            best_match_folder = folder
+                    if historical_folder_centroids:
+                        folders = list(historical_folder_centroids.keys())
+                        centroids_matrix = np.array(
+                            [historical_folder_centroids[f] for f in folders],
+                            dtype=np.float32,
+                        )
+                        centroids_norms = np.linalg.norm(centroids_matrix, axis=1)
+                        c_norm = float(np.linalg.norm(cluster_centroid))
+
+                        if c_norm > 0:
+                            dot_products = centroids_matrix @ np.asarray(
+                                cluster_centroid, dtype=np.float32
+                            )
+                            denom = centroids_norms * c_norm
+                            denom = np.where(denom == 0, 1.0, denom)
+                            sims = dot_products / denom
+                            sims = np.where(centroids_norms == 0, 0.0, sims)
+
+                            best_idx = int(np.argmax(sims))
+                            best_match_similarity = float(sims[best_idx])
+                            best_match_folder = folders[best_idx]
 
                     # Apply thresholds to routing
                     if historical_folder_centroids:
@@ -2671,7 +2764,9 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                 naming_grammar = 'root ::= word (" " word)? (" " word)? (" " word)?\nword ::= [a-zA-Z0-9]+'
 
             with block_external_network():
-                name = self._run_prompt(prompt, 15, grammar=naming_grammar).strip()
+                name = self._run_prompt(
+                    prompt, 15, grammar=naming_grammar, stop=["\n", "\n\n"]
+                ).strip()
 
                 # Cleanup the generated name
                 name = name.replace('"', "").replace("-", " ").strip()

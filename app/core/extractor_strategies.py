@@ -106,23 +106,165 @@ class CsvExtractor:
     """Extractor for comma-separated values files."""
 
     def extract(self, file_path: str, settings=None) -> str:
-        """Extract text from a .csv file."""
+        """Extract text from a .csv file using row-by-row streaming up to row and character limits."""
+        if settings is None:
+            from app.config import AppSettings
+
+            try:
+                settings = AppSettings()
+            except Exception:
+                pass
+
+        max_rows = getattr(
+            settings,
+            "TABULAR_MAX_ROWS",
+            getattr(settings, "MAX_SPREADSHEET_ROWS", 10000),
+        )
+        max_chars = getattr(
+            settings,
+            "TABULAR_MAX_CHARACTERS",
+            getattr(
+                settings,
+                "MAX_SPREADSHEET_CHARACTERS",
+                getattr(settings, "MAX_TABULAR_CHARACTERS", 50000),
+            ),
+        )
+
+        extracted_rows = []
+        total_chars = 0
+        row_count = 0
+
         with open(file_path, newline="", encoding="utf-8", errors="ignore") as f:
             reader = csv.reader(f)
-            return " ".join([" ".join(row) for row in reader])
+            for row in reader:
+                if row_count >= max_rows:
+                    break
+                row_str = " ".join(str(cell) for cell in row if cell is not None)
+
+                added_len = len(row_str) + (1 if extracted_rows else 0)
+                if total_chars + added_len > max_chars:
+                    remaining = max_chars - total_chars - (1 if extracted_rows else 0)
+                    if remaining > 0:
+                        extracted_rows.append(row_str[:remaining])
+                    break
+
+                extracted_rows.append(row_str)
+                total_chars += added_len
+                row_count += 1
+
+        return " ".join(extracted_rows)
 
 
 class XlsxExtractor:
     """Extractor for Excel spreadsheets."""
 
     def extract(self, file_path: str, settings=None) -> str:
-        """Extract text from an Excel file."""
-        import pandas as pd
+        """Extract text from an Excel file using read-only streaming mode across sheets."""
+        if settings is None:
+            from app.config import AppSettings
 
-        dfs = pd.read_excel(file_path, sheet_name=None)
-        if isinstance(dfs, dict):
-            return "\n".join(df.to_string() for df in dfs.values())
-        return dfs.to_string()
+            try:
+                settings = AppSettings()
+            except Exception:
+                pass
+
+        max_sheets = getattr(
+            settings,
+            "TABULAR_MAX_SHEETS",
+            getattr(settings, "MAX_SPREADSHEET_SHEETS", 10),
+        )
+        max_rows = getattr(
+            settings,
+            "TABULAR_MAX_ROWS",
+            getattr(settings, "MAX_SPREADSHEET_ROWS", 10000),
+        )
+        max_chars = getattr(
+            settings,
+            "TABULAR_MAX_CHARACTERS",
+            getattr(
+                settings,
+                "MAX_SPREADSHEET_CHARACTERS",
+                getattr(settings, "MAX_TABULAR_CHARACTERS", 50000),
+            ),
+        )
+
+        extracted_lines = []
+        total_chars = 0
+
+        # Primary method: openpyxl in read_only streaming mode
+        try:
+            import openpyxl
+
+            wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
+            try:
+                sheet_names = wb.sheetnames[:max_sheets]
+                for sheet_name in sheet_names:
+                    if total_chars >= max_chars:
+                        break
+                    sheet = wb[sheet_name]
+                    row_count = 0
+                    for row in sheet.iter_rows(values_only=True):
+                        if row_count >= max_rows:
+                            break
+                        row_str = " ".join(
+                            str(cell) for cell in row if cell is not None
+                        ).strip()
+
+                        added_len = len(row_str) + (1 if extracted_lines else 0)
+                        if total_chars + added_len > max_chars:
+                            remaining = max_chars - total_chars - (1 if extracted_lines else 0)
+                            if remaining > 0:
+                                extracted_lines.append(row_str[:remaining])
+                            total_chars = max_chars
+                            break
+
+                        extracted_lines.append(row_str)
+                        total_chars += added_len
+                        row_count += 1
+            finally:
+                wb.close()
+
+            return "\n".join(extracted_lines) if extracted_lines else ""
+
+        except Exception as e:
+            logging.debug(
+                f"openpyxl read-only streaming extraction failed or non-xlsx format for {file_path}: {e}. Falling back to pandas."
+            )
+
+        # Fallback method: pandas.read_excel with nrows
+        try:
+            import pandas as pd
+
+            try:
+                xl = pd.ExcelFile(file_path)
+                sheet_names = xl.sheet_names[:max_sheets]
+                xl.close()
+            except Exception:
+                sheet_names = [0]
+
+            for sheet_name in sheet_names:
+                if total_chars >= max_chars:
+                    break
+                df = pd.read_excel(file_path, sheet_name=sheet_name, nrows=max_rows)
+                df_str = df.to_string()
+                if not df_str.strip():
+                    continue
+
+                added_len = len(df_str) + (1 if extracted_lines else 0)
+                if total_chars + added_len > max_chars:
+                    remaining = max_chars - total_chars - (1 if extracted_lines else 0)
+                    if remaining > 0:
+                        extracted_lines.append(df_str[:remaining])
+                    break
+
+                extracted_lines.append(df_str)
+                total_chars += added_len
+
+            return "\n".join(extracted_lines) if extracted_lines else ""
+
+        except Exception as e:
+            logging.error(f"Excel extraction failed for {file_path}: {e}")
+            raise
 
 
 class PdfExtractor:

@@ -14,7 +14,7 @@ def test_dynamic_gbnf_german():
 
     captured_calls = []
 
-    def mock_run_prompt(prompt, max_tokens, grammar=None):
+    def mock_run_prompt(prompt, max_tokens, grammar=None, **kwargs):
         captured_calls.append((prompt, max_tokens, grammar))
         return "Einkäufe"
 
@@ -46,7 +46,7 @@ def test_dynamic_gbnf_french():
 
     captured_calls = []
 
-    def mock_run_prompt(prompt, max_tokens, grammar=None):
+    def mock_run_prompt(prompt, max_tokens, grammar=None, **kwargs):
         captured_calls.append((prompt, max_tokens, grammar))
         return "Impôts"
 
@@ -76,7 +76,7 @@ def test_dynamic_gbnf_unsupported_language_fallback():
 
     captured_calls = []
 
-    def mock_run_prompt(prompt, max_tokens, grammar=None):
+    def mock_run_prompt(prompt, max_tokens, grammar=None, **kwargs):
         captured_calls.append((prompt, max_tokens, grammar))
         return "FallbackName"
 
@@ -167,7 +167,7 @@ def test_word_boundary_preservation():
     strategy._model_initialized = True
     strategy.generator = MagicMock()
 
-    def mock_run_prompt(prompt, max_tokens, grammar=None):
+    def mock_run_prompt(prompt, max_tokens, grammar=None, **kwargs):
         return "This Is A Very Long Five Word Name"
 
     strategy._run_prompt = mock_run_prompt

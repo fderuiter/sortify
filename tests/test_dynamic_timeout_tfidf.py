@@ -134,7 +134,7 @@ def test_sqlite_tfidf_few_shot_retrieval_and_injection(tmp_path):
         # Mock prompt execution to inspect the prompt generated
         captured_prompts = []
 
-        def mock_run_prompt(prompt, max_tokens, grammar=None):
+        def mock_run_prompt(prompt, max_tokens, grammar=None, **kwargs):
             captured_prompts.append((prompt, grammar))
             return "Mocked Folder Name"
 
