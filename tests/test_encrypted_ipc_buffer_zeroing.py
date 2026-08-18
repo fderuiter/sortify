@@ -11,21 +11,19 @@ Verifies:
 
 import multiprocessing
 import os
-import queue
-import time
-import pytest
-import numpy as np
 
+import numpy as np
+import pytest
+
+from app.core.analyzer_strategies import (
+    RecursiveKMeansStrategy,
+    recursive_kmeans_worker_main,
+)
 from app.core.crypto import (
     EphemeralSessionCrypto,
     VectorBuffer,
     decrypt_ipc_payload,
-    encrypt_ipc_payload,
     zero_vector_buffer,
-)
-from app.core.analyzer_strategies import (
-    RecursiveKMeansStrategy,
-    recursive_kmeans_worker_main,
 )
 
 

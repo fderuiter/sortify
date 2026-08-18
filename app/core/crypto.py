@@ -417,9 +417,11 @@ class VectorBuffer:
                 self._dim = len(vector) // 4
 
     def __len__(self) -> int:
+        """Return vector dimension count."""
         return self._dim
 
     def __getitem__(self, idx: Any) -> Any:
+        """Retrieve element or slice from vector buffer."""
         if self._buffer is None:
             raise IndexError("Vector buffer has been zeroed/cleared")
         if isinstance(idx, slice):
@@ -432,14 +434,17 @@ class VectorBuffer:
         return struct.unpack_from("f", self._buffer, idx * 4)[0]
 
     def __iter__(self):
+        """Iterate over vector float values."""
         return iter(self.to_list())
 
     def to_list(self) -> list[float]:
+        """Convert byte buffer to list of float values."""
         if self._buffer is None or len(self._buffer) == 0:
             return []
         return list(struct.unpack(f"{self._dim}f", self._buffer))
 
     def to_numpy(self) -> np.ndarray:
+        """Convert byte buffer to NumPy float32 array."""
         if self._buffer is None or len(self._buffer) == 0:
             return np.array([], dtype=np.float32)
         return np.frombuffer(bytes(self._buffer), dtype=np.float32)
@@ -453,6 +458,7 @@ class VectorBuffer:
             self._dim = 0
 
     def is_zeroed(self) -> bool:
+        """Return True if backing buffer has been zeroed and cleared."""
         return self._buffer is None
 
 
@@ -508,7 +514,7 @@ class EphemeralSessionCrypto:
 
 
 def encrypt_ipc_payload(payload: Any, session_key: bytes | str) -> bytes:
-    """Helper to encrypt IPC queue payloads with an ephemeral session key."""
+    """Encrypt an IPC queue payload with an ephemeral session key."""
     if session_key is None:
         raise ValueError("Session key cannot be None")
     if isinstance(session_key, str):
@@ -519,7 +525,7 @@ def encrypt_ipc_payload(payload: Any, session_key: bytes | str) -> bytes:
 
 
 def decrypt_ipc_payload(encrypted_bytes: bytes, session_key: bytes | str) -> Any:
-    """Helper to decrypt IPC queue payloads with an ephemeral session key."""
+    """Decrypt an IPC queue payload with an ephemeral session key."""
     if session_key is None:
         raise ValueError("Session key cannot be None")
     if isinstance(session_key, str):
