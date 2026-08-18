@@ -1,7 +1,8 @@
 """Unit tests for the Unified Priority Overflow Toolbar System."""
 
 from unittest.mock import MagicMock
-from nicegui import Client, ui
+
+from nicegui import Client
 from nicegui.elements.button import Button
 
 from app.ui.toolbar import OverflowToolbar, ToolbarAction
