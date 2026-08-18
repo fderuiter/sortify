@@ -81,6 +81,80 @@ def test_cro_pipeline_end_to_end():
         assert os.path.exists(zip_path)
 
 
+def test_cro_pipeline_cleanup_on_exception(mocker):
+    with (
+        tempfile.TemporaryDirectory() as source_dir,
+        tempfile.TemporaryDirectory() as target_dir,
+    ):
+        zip_path = os.path.join(source_dir, "archive.zip")
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            zf.writestr("doc1.txt", "FDA Form 1572 Protocol ID: PROTO-999")
+
+        pipeline = CROMultiStudyPipeline()
+        mocker.patch.object(
+            pipeline.disambiguator,
+            "discover_and_partition_studies",
+            side_effect=RuntimeError("Parsing crash"),
+        )
+
+        staging_dir = pipeline.scanner.staging_dir
+
+        import pytest
+
+        with pytest.raises(RuntimeError, match="Parsing crash"):
+            pipeline.run_pipeline(source_dir, target_dir)
+
+        assert not os.path.exists(staging_dir)
+
+
+def test_cro_pipeline_cleanup_on_cancellation():
+    with (
+        tempfile.TemporaryDirectory() as source_dir,
+        tempfile.TemporaryDirectory() as target_dir,
+    ):
+        zip_path = os.path.join(source_dir, "archive.zip")
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            zf.writestr("doc1.txt", "FDA Form 1572 Protocol ID: PROTO-999")
+
+        pipeline = CROMultiStudyPipeline()
+        staging_dir = pipeline.scanner.staging_dir
+
+        result = pipeline.run_pipeline(
+            source_dir, target_dir, cancel_check=lambda: True
+        )
+
+        assert result is not None
+        assert not os.path.exists(staging_dir)
+
+
+def test_cro_pipeline_archive_readonly_files_cleanup():
+    import stat
+
+    with (
+        tempfile.TemporaryDirectory() as source_dir,
+        tempfile.TemporaryDirectory() as target_dir,
+    ):
+        zip_path = os.path.join(source_dir, "readonly_archive.zip")
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            zf.writestr("readonly_doc.txt", "Clinical Protocol PROTO-888")
+
+        pipeline = CROMultiStudyPipeline()
+
+        # Unpack first to make extracted file read-only on disk before run
+        staging_dir = pipeline.scanner.staging_dir
+        extracted = pipeline.scanner.unpack_archive(
+            zip_path, os.path.join(staging_dir, "test_unpack")
+        )
+
+        for path in extracted:
+            os.chmod(path, stat.S_IREAD)
+
+        result = pipeline.run_pipeline(source_dir, target_dir)
+
+        assert result.total_scanned_files > 0
+        assert not os.path.exists(staging_dir)
+
+
 def test_cro_pipeline_single_study_unassigned_routing():
     """Verify single-study ingestion routes non-matching files to Unassigned_Study_Documents and excludes them from study compliance metrics."""
     with (

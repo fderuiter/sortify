@@ -272,9 +272,6 @@ class CROMultiStudyPipeline:
             if progress_callback:
                 progress_callback(100, "CRO Multi-Study Ingestion complete!")
 
-            # Clean up temporary scan sandbox
-            self.scanner.cleanup()
-
             return MasterPipelineResult(
                 source_root=source_root,
                 target_root=target_root,
@@ -288,4 +285,8 @@ class CROMultiStudyPipeline:
             )
         finally:
             # Stage 4 transition: Guarantee full cleanup at pipeline end
+            try:
+                self.scanner.cleanup()
+            except Exception as e:
+                logger.warning(f"Error cleaning up scanner staging directory: {e}")
             registry.unload_all_models()
