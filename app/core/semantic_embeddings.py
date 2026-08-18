@@ -496,6 +496,22 @@ class SemanticEmbeddingManager:
             except Exception:
                 pass
 
+    def _generate_fallback_embedding(self, text: str | None) -> list[float]:
+        """Generate deterministic, unit L2-normalized fallback vector embedding."""
+        text_cleaned = "".join((text or "").split())
+        h = hashlib.sha256(text_cleaned.encode("utf-8")).digest()
+        rng = random.Random(h)
+        raw_vec = np.array(
+            [rng.uniform(-1.0, 1.0) for _ in range(self.dimensions)],
+            dtype=np.float32,
+        )
+        norm = np.linalg.norm(raw_vec)
+        if norm > 0:
+            normalized_vec = raw_vec / norm
+        else:
+            normalized_vec = raw_vec
+        return normalized_vec.tolist()
+
     def get_embedding(self, text: str | None) -> list[float]:
         """Generate vector embedding of active model dimensions (alias for generate_embedding)."""
         return self.generate_embedding(text)
@@ -503,10 +519,7 @@ class SemanticEmbeddingManager:
     def generate_embedding(self, text: str | None) -> list[float]:
         """Generate vector embedding of active model dimensions."""
         if not text or not text.strip():
-            text_cleaned = text or ""
-            h = hashlib.sha256(text_cleaned.encode("utf-8")).digest()
-            rng = random.Random(h)
-            return [rng.uniform(-1.0, 1.0) for _ in range(self.dimensions)]
+            return self._generate_fallback_embedding(text)
 
         # Clean the text or default to empty
         text = text or ""
@@ -649,10 +662,7 @@ class SemanticEmbeddingManager:
                 raise ModelValidationError(msg) from e
 
         # If model_path is None, we run standard deterministic dummy generator (mock/test mode)
-        h = hashlib.sha256(text.encode("utf-8")).digest()
-        rng = random.Random(h)
-        # Generate standard normalized floats
-        return [rng.uniform(-1.0, 1.0) for _ in range(self.dimensions)]
+        return self._generate_fallback_embedding(text)
 
     def get_vector(self, base_dir: str, filepath: str) -> list[float] | None:
         """Retrieve decoupled vector from child store."""
