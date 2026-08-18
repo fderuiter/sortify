@@ -76,6 +76,18 @@ def _create_junction(target_path: str, junction_path: str):
     os.symlink(target_path, junction_path, target_is_directory=True)
 
 
+def _safe_replace_link(shadow_name: str, dest_path: str):
+    """Safely replace dest_path with shadow_name, falling back to resilient deletion of dest_path if os.replace fails on Windows directory junctions/links."""
+    try:
+        os.replace(shadow_name, dest_path)
+    except OSError:
+        if os.path.lexists(dest_path) or is_junction_path(dest_path):
+            from app.core.resilient_file_ops import resilient_remove
+
+            resilient_remove(dest_path)
+        os.replace(shadow_name, dest_path)
+
+
 def resolve_new_target(abs_target: str, path_map: dict) -> str:
     """Resolve the updated target path if the target file or directory moved."""
     if not abs_target or not path_map:
@@ -285,7 +297,7 @@ def _execute_moves_recursive(
                                     "Shadow link creation failed validation."
                                 )
 
-                            os.replace(shadow_name, dest_path)
+                            _safe_replace_link(shadow_name, dest_path)
                             if not _is_same_path(dest_path, source_path):
                                 from app.core.resilient_file_ops import resilient_remove
 
@@ -318,7 +330,7 @@ def _execute_moves_recursive(
                                     "Shadow junction creation failed validation."
                                 )
 
-                            os.replace(shadow_name, dest_path)
+                            _safe_replace_link(shadow_name, dest_path)
                             if not _is_same_path(dest_path, source_path):
                                 from app.core.resilient_file_ops import resilient_remove
 
@@ -357,7 +369,7 @@ def _execute_moves_recursive(
                                     "Shadow link creation failed validation."
                                 )
 
-                            os.replace(shadow_name, dest_path)
+                            _safe_replace_link(shadow_name, dest_path)
                             if not _is_same_path(dest_path, source_path):
                                 from app.core.resilient_file_ops import resilient_remove
 
