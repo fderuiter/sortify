@@ -128,6 +128,15 @@ def test_config_parameter_bounds():
     assert Settings(MODEL_THREADS=32).MODEL_THREADS == 32
     assert Settings().MODEL_THREADS == 2
 
+    # COHERENCE_THRESHOLD: 0.0 to 1.0
+    with pytest.raises(ValidationError):
+        Settings(COHERENCE_THRESHOLD=-0.1)
+    with pytest.raises(ValidationError):
+        Settings(COHERENCE_THRESHOLD=1.1)
+    assert Settings(COHERENCE_THRESHOLD=0.0).COHERENCE_THRESHOLD == 0.0
+    assert Settings(COHERENCE_THRESHOLD=1.0).COHERENCE_THRESHOLD == 1.0
+    assert Settings().COHERENCE_THRESHOLD == 0.5
+
 
 def test_config_invalid_structures():
     """Test that invalid types/structures are rejected."""
