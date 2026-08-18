@@ -367,16 +367,17 @@ class SessionCrypto:
         if cipher_bytes is None:
             return None
         with self._vector_decrypt_lock:
-            if cipher_bytes in self._vector_parsed_cache:
-                return self._vector_parsed_cache[cipher_bytes]
+            cached = self._vector_parsed_cache.get(cipher_bytes)
+        if cached is not None:
+            return cached
 
-        decrypted_str = self.decrypt_vector(cipher_bytes)
-        if decrypted_str is None:
-            return None
-
-        import json
-
+        cipher = self.get_cipher()
         try:
+            if isinstance(cipher_bytes, str):
+                cipher_bytes = cipher_bytes.encode("utf-8")
+            decrypted_str = cipher.decrypt(cipher_bytes).decode("utf-8")
+            import json
+
             parsed = json.loads(decrypted_str)
             with self._vector_decrypt_lock:
                 self._vector_parsed_cache[cipher_bytes] = parsed

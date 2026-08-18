@@ -1328,6 +1328,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
             return "Miscellaneous"
 
         # Coherence routing & Offline Similarity matching layer
+        cached_decrypted_db_rows = None
         if getattr(self, "model_path", None):
             db = getattr(self, "db", None)
             base_dir = getattr(self, "base_dir", None)
@@ -1476,20 +1477,40 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                                 )
                                 rows = cursor.fetchall()
 
-                            def decrypt_item(row):
-                                filepath, folder, vector_str = row
-                                if folder and vector_str:
-                                    try:
-                                        v = db.crypto.decrypt_and_parse_vector(
-                                            vector_str
-                                        )
-                                        return filepath, folder, v
-                                    except Exception:
-                                        return filepath, folder, None
-                                return None, None, None
+                            cipher = db.crypto.get_cipher()
+                            import json
 
-                            executor = get_decryption_executor()
-                            decrypted_results = list(executor.map(decrypt_item, rows))
+                            def decrypt_chunk(chunk):
+                                chunk_results = []
+                                for filepath, folder, vector_str in chunk:
+                                    if folder and vector_str:
+                                        try:
+                                            v = json.loads(cipher.decrypt(vector_str))
+                                            chunk_results.append((filepath, folder, v))
+                                        except Exception:
+                                            chunk_results.append(
+                                                (filepath, folder, None)
+                                            )
+                                    else:
+                                        chunk_results.append((None, None, None))
+                                return chunk_results
+
+                            if len(rows) <= 32:
+                                decrypted_results = decrypt_chunk(rows)
+                            else:
+                                executor = get_decryption_executor()
+                                num_chunks = min(32, max(1, len(rows) // 32))
+                                step = (len(rows) + num_chunks - 1) // num_chunks
+                                chunks = [
+                                    rows[i : i + step]
+                                    for i in range(0, len(rows), step)
+                                ]
+                                chunk_res = list(executor.map(decrypt_chunk, chunks))
+                                decrypted_results = [
+                                    item for sub in chunk_res for item in sub
+                                ]
+
+                            cached_decrypted_db_rows = decrypted_results
 
                             for filepath, folder, v in decrypted_results:
                                 if folder:
@@ -1580,7 +1601,9 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                     historical_folder_centroids = {}
                     for folder, vecs in historical_folder_vectors.items():
                         if vecs:
-                            historical_folder_centroids[folder] = np.mean(vecs, axis=0)
+                            historical_folder_centroids[folder] = np.asarray(
+                                vecs, dtype=np.float32
+                            ).mean(axis=0)
 
                     best_match_folder = None
                     best_match_similarity = -1.0
@@ -1871,64 +1894,73 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                     if target_vector and embedding_manager.validate_vector_dimension(
                         target_vector
                     ):
-                        # 2. Query Pre-computed Historical Vectors directly from DB
-                        from app.core.db_conn import get_db_connection
+                        hist_vectors = []
+                        hist_meta = []
+                        supported_exts_set = {
+                            ".txt",
+                            ".docx",
+                            ".csv",
+                            ".xlsx",
+                            ".xls",
+                            ".pdf",
+                        }
 
-                        conn = get_db_connection(db.db_path)
-                        with conn:
-                            cursor = conn.execute(
-                                """
-                                SELECT d.filepath, d.user_verified_target_path, v.vector
-                                FROM documents d
-                                JOIN document_vectors v ON d.base_dir = v.base_dir AND d.filepath = v.filepath
-                                WHERE d.base_dir = ? AND d.user_verified_target_path IS NOT NULL AND d.user_verified_target_path != ''
-                            """,
-                                (base_dir,),
-                            )
-                            rows = cursor.fetchall()
+                        if cached_decrypted_db_rows is not None:
+                            decrypted_hist_results = cached_decrypted_db_rows
+                        else:
+                            # 2. Query Pre-computed Historical Vectors directly from DB
+                            from app.core.db_conn import get_db_connection
 
-                        if rows:
-                            import numpy as np
-                            from sklearn.metrics.pairwise import cosine_similarity
-
-                            hist_vectors = []
-                            hist_meta = []
-                            supported_exts_set = {
-                                ".txt",
-                                ".docx",
-                                ".csv",
-                                ".xlsx",
-                                ".xls",
-                                ".pdf",
-                            }
-
-                            def decrypt_historical_item(row):
-                                filepath, user_verified_target, vector_str = row
-                                dot_idx = filepath.rfind(".")
-                                ext = (
-                                    filepath[dot_idx:].lower() if dot_idx != -1 else ""
+                            conn = get_db_connection(db.db_path)
+                            with conn:
+                                cursor = conn.execute(
+                                    """
+                                    SELECT d.filepath, d.user_verified_target_path, v.vector
+                                    FROM documents d
+                                    JOIN document_vectors v ON d.base_dir = v.base_dir AND d.filepath = v.filepath
+                                    WHERE d.base_dir = ? AND d.user_verified_target_path IS NOT NULL AND d.user_verified_target_path != ''
+                                """,
+                                    (base_dir,),
                                 )
-                                # Exclude non-textual attachments and image files from semantic similarity
-                                if (
-                                    ext in {".png", ".jpg", ".jpeg"}
-                                    or ext not in supported_exts_set
-                                ):
+                                rows = cursor.fetchall()
+
+                            if rows:
+
+                                def decrypt_historical_item(row):
+                                    filepath, user_verified_target, vector_str = row
+                                    dot_idx = filepath.rfind(".")
+                                    ext = (
+                                        filepath[dot_idx:].lower()
+                                        if dot_idx != -1
+                                        else ""
+                                    )
+                                    # Exclude non-textual attachments and image files from semantic similarity
+                                    if (
+                                        ext in {".png", ".jpg", ".jpeg"}
+                                        or ext not in supported_exts_set
+                                    ):
+                                        return None, None, None
+
+                                    if vector_str:
+                                        try:
+                                            v = db.crypto.decrypt_and_parse_vector(
+                                                vector_str
+                                            )
+                                            return filepath, user_verified_target, v
+                                        except Exception:
+                                            return filepath, user_verified_target, None
                                     return None, None, None
 
-                                if vector_str:
-                                    try:
-                                        v = db.crypto.decrypt_and_parse_vector(
-                                            vector_str
-                                        )
-                                        return filepath, user_verified_target, v
-                                    except Exception:
-                                        return filepath, user_verified_target, None
-                                return None, None, None
+                                executor = get_decryption_executor()
+                                decrypted_hist_results = list(
+                                    executor.map(decrypt_historical_item, rows)
+                                )
+                            else:
+                                decrypted_hist_results = []
 
-                            executor = get_decryption_executor()
-                            decrypted_hist_results = list(
-                                executor.map(decrypt_historical_item, rows)
-                            )
+                        if decrypted_hist_results:
+                            import numpy as np
+                            from sklearn.metrics.pairwise import cosine_similarity
 
                             for (
                                 filepath,
@@ -1936,6 +1968,17 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                                 v,
                             ) in decrypted_hist_results:
                                 if filepath:
+                                    dot_idx = filepath.rfind(".")
+                                    ext = (
+                                        filepath[dot_idx:].lower()
+                                        if dot_idx != -1
+                                        else ""
+                                    )
+                                    if (
+                                        ext in {".png", ".jpg", ".jpeg"}
+                                        or ext not in supported_exts_set
+                                    ):
+                                        continue
                                     if v is not None:
                                         if embedding_manager.validate_vector_dimension(
                                             v
@@ -1952,18 +1995,26 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
 
                             if hist_vectors:
                                 # 3. Cosine Similarity Calculation
-                                target_vector_arr = np.array([target_vector])
-                                hist_vectors_arr = np.array(hist_vectors)
-                                similarities = cosine_similarity(
-                                    target_vector_arr, hist_vectors_arr
-                                ).flatten()
+                                hist_vectors_arr = np.asarray(
+                                    hist_vectors, dtype=np.float32
+                                )
+                                target_vector_arr = np.asarray(
+                                    target_vector, dtype=np.float32
+                                )
+                                target_norm = np.linalg.norm(target_vector_arr)
+                                hist_norms = np.linalg.norm(hist_vectors_arr, axis=1)
+                                denom = hist_norms * target_norm
+                                denom[denom == 0] = 1e-9
+                                similarities = (
+                                    hist_vectors_arr @ target_vector_arr
+                                ) / denom
 
                                 sorted_indices = similarities.argsort()[::-1]
 
                                 for idx in sorted_indices:
                                     if similarities[idx] >= 0.1:
                                         top_examples.append(
-                                            (hist_meta[idx], similarities[idx])
+                                            (hist_meta[idx], float(similarities[idx]))
                                         )
                                         if len(top_examples) >= 3:
                                             break
@@ -1973,80 +2024,73 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                                     few_shot_lines.append(
                                         "Here are some historical examples of documents and their corresponding user-corrected folder names:"
                                     )
+                                    # Fetch top exemplar texts efficiently in batch
+                                    doc_snippets = {}
+                                    if db and base_dir and top_examples:
+                                        try:
+                                            target_fps = [
+                                                ex["filepath"].replace("\\", "/")
+                                                for ex, _ in top_examples
+                                            ]
+                                            # Check cache first
+                                            with db._cache_lock:
+                                                if (
+                                                    db._cached_base_dir == base_dir
+                                                    and db._cached_documents is not None
+                                                ):
+                                                    for row in db._cached_documents:
+                                                        if row[0] in target_fps:
+                                                            doc_snippets[row[0]] = row[
+                                                                1
+                                                            ]
+
+                                            # Fetch any remaining from DB in a single query
+                                            missing_fps = [
+                                                fp
+                                                for fp in target_fps
+                                                if fp not in doc_snippets
+                                            ]
+                                            if missing_fps:
+                                                from app.core.db_conn import (
+                                                    get_db_connection,
+                                                )
+
+                                                conn = get_db_connection(db.db_path)
+                                                with conn:
+                                                    placeholders = ",".join(
+                                                        ["?"] * len(missing_fps)
+                                                    )
+                                                    cursor = conn.execute(
+                                                        f"SELECT filepath, extracted_text FROM documents WHERE base_dir = ? AND filepath IN ({placeholders})",
+                                                        [base_dir] + missing_fps,
+                                                    )
+                                                    for row in cursor.fetchall():
+                                                        raw_text = row[1]
+                                                        if raw_text is not None:
+                                                            try:
+                                                                decrypted = db.crypto.decrypt_text(
+                                                                    raw_text
+                                                                )
+                                                            except Exception:
+                                                                decrypted = raw_text
+                                                            doc_snippets[row[0]] = (
+                                                                decrypted
+                                                            )
+                                        except Exception as e:
+                                            logging.error(
+                                                f"Failed to fetch decrypted document snippets for semantic exemplars: {e}"
+                                            )
+
                                     for ex_idx, (ex, sim) in enumerate(top_examples):
                                         import os
 
-                                        snippet = None
-                                        if db and base_dir:
-                                            try:
-                                                cached_doc = None
-                                                with db._cache_lock:
-                                                    if (
-                                                        db._cached_base_dir == base_dir
-                                                        and db._cached_documents
-                                                        is not None
-                                                    ):
-                                                        for row in db._cached_documents:
-                                                            if row[0] == ex[
-                                                                "filepath"
-                                                            ].replace("\\", "/"):
-                                                                cached_doc = {
-                                                                    "file_hash": row[2],
-                                                                    "extracted_text": row[
-                                                                        1
-                                                                    ],
-                                                                }
-                                                                break
-                                                if cached_doc:
-                                                    ex_doc = cached_doc
-                                                elif len(rows) <= 50:
-                                                    ex_doc = db.get_document(
-                                                        base_dir, ex["filepath"]
-                                                    )
-                                                else:
-                                                    from app.core.db_conn import (
-                                                        get_db_connection,
-                                                    )
-
-                                                    conn = get_db_connection(db.db_path)
-                                                    with conn:
-                                                        cursor = conn.execute(
-                                                            "SELECT file_hash, extracted_text FROM documents WHERE base_dir = ? AND filepath = ?",
-                                                            (
-                                                                base_dir,
-                                                                ex["filepath"].replace(
-                                                                    "\\", "/"
-                                                                ),
-                                                            ),
-                                                        )
-                                                        row = cursor.fetchone()
-                                                        if row:
-                                                            decrypted_text = (
-                                                                db.crypto.decrypt_text(
-                                                                    row[1]
-                                                                )
-                                                                if row[1] is not None
-                                                                else None
-                                                            )
-                                                            ex_doc = {
-                                                                "file_hash": row[0],
-                                                                "extracted_text": decrypted_text,
-                                                            }
-                                                        else:
-                                                            ex_doc = None
-                                                if ex_doc and ex_doc.get(
-                                                    "extracted_text"
-                                                ):
-                                                    snippet = (
-                                                        ex_doc["extracted_text"][:500]
-                                                        .replace("\n", " ")
-                                                        .strip()
-                                                    )
-                                            except Exception as e:
-                                                logging.error(
-                                                    f"Failed to fetch decrypted document snippet for semantic exemplar: {e}"
-                                                )
-
+                                        fp = ex["filepath"].replace("\\", "/")
+                                        raw_snippet = doc_snippets.get(fp)
+                                        snippet = (
+                                            raw_snippet[:500].replace("\n", " ").strip()
+                                            if raw_snippet
+                                            else None
+                                        )
                                         if not snippet:
                                             snippet = os.path.basename(ex["filepath"])
 
