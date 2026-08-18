@@ -178,3 +178,154 @@ def test_cleanup_ordering(tmp_path, db, history_manager, monkeypatch):
 
     # ensure order is rmdir followed by db_update
     assert call_order == ["rmdir", "db_update"]
+
+
+def test_chunked_batching_120_files(tmp_path, db, history_manager, monkeypatch):
+    """
+    Scenario: Moving 120 files triggers chunked DB flushes
+    Moving 120 files should trigger execute_batch_updates 3 times:
+    - 50 files (100 update items)
+    - 50 files (100 update items)
+    - 20 files (40 update items)
+    """
+    base_dir = str(tmp_path)
+    target_dir_dict = {}
+
+    for i in range(120):
+        fname = f"file_{i:03d}.txt"
+        fpath = tmp_path / fname
+        fpath.write_text(f"content_{i}")
+        target_dir_dict[fname] = {
+            "__type__": "file",
+            "relative_source": f"../{fname}",
+            "target_filename": fname,
+        }
+
+    plan = {"target_dir": target_dir_dict}
+
+    batch_history = []
+
+    original_execute = db.execute_batch_updates
+
+    def mock_execute(updates):
+        batch_history.append(list(updates))
+        original_execute(updates)
+
+    db.execute_batch_updates = mock_execute
+
+    move_mock = MagicMock()
+    monkeypatch.setattr("app.core.mover.shutil.move", move_mock)
+
+    execute_moves(base_dir, plan, db, history_manager)
+
+    assert move_mock.call_count == 120
+    assert db.execute_batch_updates_called == 3
+    assert len(batch_history) == 3
+
+    # Check batch sizes in terms of items (2 items per file: verified_target + document_path)
+    assert len(batch_history[0]) == 100
+    assert len(batch_history[1]) == 100
+    assert len(batch_history[2]) == 40
+    assert len(db.updates) == 240
+
+
+def test_interrupted_large_move_preserves_committed_chunks(
+    tmp_path, db, history_manager, monkeypatch
+):
+    """
+    Scenario: Interrupted large move preserves committed chunks and pre-failure files.
+    When moving 60 files and file 55 fails:
+    - Chunk 1 (50 files) was committed during traversal.
+    - Files 51-54 are committed in exception handler.
+    - File 55 is excluded.
+    """
+    base_dir = str(tmp_path)
+    target_dir_dict = {}
+
+    # Sort keys numerically so iteration order is predictable file_000 to file_059
+    for i in range(60):
+        fname = f"file_{i:03d}.txt"
+        fpath = tmp_path / fname
+        fpath.write_text(f"content_{i}")
+        target_dir_dict[fname] = {
+            "__type__": "file",
+            "relative_source": f"../{fname}",
+            "target_filename": fname,
+        }
+
+    plan = {"target_dir": target_dir_dict}
+
+    def mock_move(src, dst):
+        if "file_055.txt" in src:
+            raise OSError("Disk failure mid-operation")
+
+    monkeypatch.setattr("app.core.mover.shutil.move", mock_move)
+
+    with pytest.raises(OSError, match="Disk failure mid-operation"):
+        execute_moves(base_dir, plan, db, history_manager)
+
+    # execute_batch_updates called twice: once for chunk 1 (50 files) and once in exception handler (4 files)
+    assert db.execute_batch_updates_called == 2
+
+    # Check committed updates
+    committed_args = [str(u["args"]) for u in db.updates]
+    # Check that file_000 to file_054 are in committed updates
+    for i in range(55):
+        fname = f"file_{i:03d}.txt"
+        assert any(fname in args for args in committed_args)
+
+    # Check that file_055.txt is NOT in committed updates
+    assert not any("file_055.txt" in args for args in committed_args)
+
+
+def test_cache_invalidation_on_chunk_flush(
+    tmp_path, history_manager, monkeypatch
+):
+    """
+    Scenario: Document path cache clears immediately following each completed database commit chunk.
+    Verify that Database.invalidate_cache is called during each chunk flush.
+    """
+    from app.core.db import Database
+    from app.core.db_worker import DBWorker
+
+    db_file = tmp_path / "test.db"
+    worker = DBWorker()
+    db = Database(db_file, worker)
+
+    # Populate dummy documents
+    target_dir_dict = {}
+    docs_to_insert = []
+    for i in range(60):
+        fname = f"file_{i:03d}.txt"
+        fpath = tmp_path / fname
+        fpath.write_text(f"content_{i}")
+        docs_to_insert.append((str(tmp_path), fname, f"hash_{i}", f"content_{i}"))
+        target_dir_dict[fname] = {
+            "__type__": "file",
+            "relative_source": f"../{fname}",
+            "target_filename": fname,
+        }
+
+    db.upsert_documents(docs_to_insert)
+
+    plan = {"target_dir": target_dir_dict}
+
+    invalidate_calls = []
+    original_invalidate = db.invalidate_cache
+
+    def mock_invalidate():
+        invalidate_calls.append(True)
+        original_invalidate()
+
+    monkeypatch.setattr(db, "invalidate_cache", mock_invalidate)
+
+    move_mock = MagicMock()
+    monkeypatch.setattr("app.core.mover.shutil.move", move_mock)
+
+    execute_moves(str(tmp_path), plan, db, history_manager)
+
+    # invalidate_cache is called when execute_batch_updates is executed for chunk 1 (50 files) and chunk 2 (10 files)
+    assert len(invalidate_calls) >= 2
+    worker.stop()
+
+
