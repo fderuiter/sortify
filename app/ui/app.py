@@ -451,6 +451,22 @@ body {
 
             session_info = abandoned[0]
 
+            if session_info.get("has_step_ledger") or session_info.get("uncommitted_batch"):
+                self.base_dir = session_info["base_dir"]
+                self.app_session = AppSession(
+                    self.settings, self.base_dir, session_id=session_info["session_id"]
+                )
+                try:
+                    await asyncio.to_thread(
+                        self.app_session.history_manager.unwind_session,
+                        session_info["session_id"],
+                        self.app_session.db,
+                    )
+                    ui.notify("Automatic recovery completed: unwound interrupted batch move.")
+                except Exception as e:
+                    logger.error(f"Error during automatic recovery: {e}")
+                return
+
             if session_info.get("is_rollback_recovery"):
                 self.show_rollback_recovery_dialog(session_info)
                 return

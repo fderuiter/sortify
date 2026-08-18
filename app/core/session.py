@@ -61,17 +61,56 @@ async def scan_abandoned_sessions_async():
 
             try:
                 from contextlib import closing
+                from app.core.db_conn import get_db_connection
+                import sqlite3 as std_sqlite3
 
-                with closing(sqlite3.connect(history_db, timeout=30.0)) as conn:
-                    with closing(conn.cursor()) as cursor:
-                        cursor.execute(
-                            "SELECT session_id, base_dir, status FROM sessions ORDER BY timestamp DESC"
-                        )
-                        rows = cursor.fetchall()
+                conn = None
+                rows = []
+                try:
+                    conn = std_sqlite3.connect(str(history_db), timeout=30.0)
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT session_id, base_dir, status FROM sessions ORDER BY timestamp DESC")
+                    rows = cursor.fetchall()
+                except Exception:
+                    if conn:
+                        try:
+                            conn.close()
+                        except Exception:
+                            pass
+                    conn = get_db_connection(str(history_db))
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT session_id, base_dir, status FROM sessions ORDER BY timestamp DESC")
+                    rows = cursor.fetchall()
 
                 trapped_sessions = []
                 for row in rows:
                     sid, base_dir, status = row
+                    step_count = 0
+                    try:
+                        cursor.execute(
+                            "SELECT COUNT(*) FROM step_ledger WHERE session_id = ?",
+                            (sid,),
+                        )
+                        res = cursor.fetchone()
+                        step_count = res[0] if res else 0
+                    except Exception:
+                        step_count = 0
+
+                    if step_count > 0 and status in ("active", "uncommitted", "failed"):
+                        abandoned.append(
+                            {
+                                "session_id": sid,
+                                "base_dir": base_dir,
+                                "session_dir": str(session_dir),
+                                "status": status,
+                                "has_step_ledger": True,
+                                "step_count": step_count,
+                                "uncommitted_batch": True,
+                                "has_trapped_files": False,
+                            }
+                        )
+                        break
+
                     if status in ("active", "failed"):
                         branch_dir = os.path.join(base_dir, ".branches", sid)
                         has_files = False
@@ -94,7 +133,7 @@ async def scan_abandoned_sessions_async():
 
                 if trapped_sessions:
                     abandoned.extend(trapped_sessions)
-                else:
+                elif not abandoned:
                     plan_path = session_dir / "plan.json"
                     if plan_path.exists() and rows:
                         for row in rows:
@@ -111,6 +150,10 @@ async def scan_abandoned_sessions_async():
                                     }
                                 )
                                 break
+                try:
+                    cursor.close()
+                except Exception:
+                    pass
             except Exception:
                 pass
 

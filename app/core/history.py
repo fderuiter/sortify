@@ -128,6 +128,25 @@ class HistoryManager:
                     FOREIGN KEY(session_id) REFERENCES sessions(session_id)
                 )
             """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS step_ledger (
+                    step_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    session_id TEXT,
+                    source_path TEXT,
+                    target_path TEXT,
+                    original_path TEXT,
+                    original_filename TEXT,
+                    is_cross_volume INTEGER DEFAULT 0,
+                    is_collision_renamed INTEGER DEFAULT 0,
+                    file_hash TEXT,
+                    timestamp REAL,
+                    status TEXT DEFAULT 'completed',
+                    FOREIGN KEY(session_id) REFERENCES sessions(session_id)
+                )
+            """)
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_step_ledger_session ON step_ledger(session_id)"
+            )
 
     def _create_snapshot_internal(self, base_dir: str) -> str:
         session_id = str(uuid.uuid4())
@@ -307,6 +326,7 @@ class HistoryManager:
             conn.execute("DELETE FROM snapshot_files WHERE session_id = ?", (sid,))
             conn.execute("DELETE FROM snapshot_cache WHERE session_id = ?", (sid,))
             conn.execute("DELETE FROM snapshot_documents WHERE session_id = ?", (sid,))
+            conn.execute("DELETE FROM step_ledger WHERE session_id = ?", (sid,))
             conn.execute("DELETE FROM sessions WHERE session_id = ?", (sid,))
 
     def get_sessions(self) -> List[Dict[str, Any]]:
@@ -496,11 +516,208 @@ class HistoryManager:
 
         return missing
 
+    def log_step(
+        self,
+        session_id: str,
+        source_path: str,
+        target_path: str,
+        original_path: str = None,
+        original_filename: str = None,
+        is_cross_volume: bool = False,
+        is_collision_renamed: bool = False,
+        file_hash: str = None,
+    ) -> int:
+        """Log a single file relocation step in real time into the persistent history database."""
+        if not session_id:
+            return 0
+        norm_src = os.path.normpath(source_path)
+        norm_dst = os.path.normpath(target_path)
+        orig_path = os.path.normpath(original_path or source_path)
+        orig_name = original_filename or os.path.basename(orig_path)
+        ts = time.time()
+
+        conn = get_db_connection(self.db_path)
+        with conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO step_ledger (
+                    session_id, source_path, target_path, original_path,
+                    original_filename, is_cross_volume, is_collision_renamed,
+                    file_hash, timestamp, status
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed')
+                """,
+                (
+                    session_id,
+                    norm_src,
+                    norm_dst,
+                    orig_path,
+                    orig_name,
+                    1 if is_cross_volume else 0,
+                    1 if is_collision_renamed else 0,
+                    file_hash,
+                    ts,
+                ),
+            )
+            return cursor.lastrowid
+
+    def get_step_ledger(self, session_id: str) -> List[Dict[str, Any]]:
+        """Retrieve all recorded relocation steps for a session in chronological order."""
+        conn = get_db_connection(self.db_path)
+        with conn:
+            cursor = conn.execute(
+                """
+                SELECT step_id, session_id, source_path, target_path, original_path,
+                       original_filename, is_cross_volume, is_collision_renamed,
+                       file_hash, timestamp, status
+                FROM step_ledger
+                WHERE session_id = ?
+                ORDER BY step_id ASC
+                """,
+                (session_id,),
+            )
+            rows = cursor.fetchall()
+            return [
+                {
+                    "step_id": r[0],
+                    "session_id": r[1],
+                    "source_path": r[2],
+                    "target_path": r[3],
+                    "original_path": r[4],
+                    "original_filename": r[5],
+                    "is_cross_volume": bool(r[6]),
+                    "is_collision_renamed": bool(r[7]),
+                    "file_hash": r[8],
+                    "timestamp": r[9],
+                    "status": r[10],
+                }
+                for r in rows
+            ]
+
+    def get_bidirectional_path_map(self, session_id: str) -> Dict[str, Any]:
+        """Retrieve forward and reverse path maps for a session."""
+        steps = self.get_step_ledger(session_id)
+        forward = {}
+        reverse = {}
+        collisions = {}
+        for step in steps:
+            src = step["source_path"]
+            dst = step["target_path"]
+            forward[src] = dst
+            reverse[dst] = src
+            if step["is_collision_renamed"]:
+                collisions[dst] = {
+                    "source_path": src,
+                    "original_filename": step["original_filename"],
+                    "original_path": step["original_path"],
+                }
+        return {
+            "forward": forward,
+            "reverse": reverse,
+            "collisions": collisions,
+        }
+
+    def clear_step_ledger(self, session_id: str):
+        """Clean up temporary ledger records upon successful completion of a batch move operation."""
+        conn = get_db_connection(self.db_path)
+        with conn:
+            conn.execute("DELETE FROM step_ledger WHERE session_id = ?", (session_id,))
+            conn.execute(
+                "UPDATE sessions SET status = 'completed' WHERE session_id = ?",
+                (session_id,),
+            )
+
+    def unwind_session(self, session_id: str, db=None) -> int:
+        """Unwind completed relocation steps in exact reverse chronological order using step ledger."""
+        return self._unwind_session_internal(session_id, db=db)
+
+    def _unwind_session_internal(self, session_id: str, db=None) -> int:
+        if db:
+            db.invalidate_cache()
+        steps = self.get_step_ledger(session_id)
+        if not steps:
+            return 0
+
+        # Exact reverse chronological order
+        steps_reverse = sorted(steps, key=lambda s: s["step_id"], reverse=True)
+
+        conn = get_db_connection(self.db_path)
+        with conn:
+            cur = conn.execute(
+                "SELECT base_dir FROM sessions WHERE session_id = ?", (session_id,)
+            )
+            row = cur.fetchone()
+            base_dir = row[0] if row else None
+
+        unwound_count = 0
+        from app.core.resilient_file_ops import resilient_move
+
+        target_dirs_to_clean = set()
+
+        for step in steps_reverse:
+            target_path = step["target_path"]
+            source_path = step["source_path"]
+            file_hash = step["file_hash"]
+
+            if os.path.lexists(target_path):
+                target_dirs_to_clean.add(os.path.dirname(target_path))
+                os.makedirs(os.path.dirname(source_path), exist_ok=True)
+
+                resilient_move(target_path, source_path)
+                unwound_count += 1
+
+                if file_hash and os.path.exists(source_path):
+                    try:
+                        from app.core.extractor import get_file_hash
+                        _ = get_file_hash(source_path)
+                    except Exception:
+                        pass
+
+                if db and base_dir:
+                    try:
+                        rel_target = os.path.relpath(target_path, base_dir).replace("\\", "/")
+                        rel_source = os.path.relpath(source_path, base_dir).replace("\\", "/")
+                        db.update_document_path(base_dir, rel_target, rel_source)
+                    except Exception:
+                        pass
+
+        from app.core.mover import _remove_empty_dirs
+        for tdir in target_dirs_to_clean:
+            if os.path.exists(tdir) and os.path.isdir(tdir):
+                _remove_empty_dirs(tdir, protected_paths=[base_dir] if base_dir else None)
+
+        conn = get_db_connection(self.db_path)
+        with conn:
+            conn.execute(
+                "UPDATE sessions SET status = 'rolled_back' WHERE session_id = ?",
+                (session_id,),
+            )
+            conn.execute("DELETE FROM step_ledger WHERE session_id = ?", (session_id,))
+
+        if db:
+            db.invalidate_cache()
+
+        return unwound_count
+
     def rollback(self, session_id: str, ignore_missing: bool = False):
         """Revert directory and metadata state to the snapshot."""
         self.db.invalidate_cache()
 
         def _write():
+            conn = get_db_connection(self.db_path)
+            step_count = 0
+            with conn:
+                try:
+                    cur = conn.execute(
+                        "SELECT COUNT(*) FROM step_ledger WHERE session_id = ?",
+                        (session_id,),
+                    )
+                    step_count = cur.fetchone()[0]
+                except Exception:
+                    step_count = 0
+
+            if step_count > 0:
+                return self._unwind_session_internal(session_id, db=self.db)
+
             missing = self.check_missing_files(session_id)
             if missing and not ignore_missing:
                 raise ValueError(
