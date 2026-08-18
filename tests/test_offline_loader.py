@@ -9,9 +9,11 @@ import pytest
 
 from app.core.offline_loader import (
     Florence2VisualProcessor,
+    ModelIdentifierValidationError,
     ModelWeightsNotFoundError,
     OfflineModelLoader,
     OfflineModelLoadError,
+    validate_model_id,
 )
 from app.core.shared_registry import SharedModelRegistry
 
@@ -343,3 +345,82 @@ def test_shared_registry_get_florence_processor(mocker):
     assert proc1 is proc2
     assert isinstance(proc1, Florence2VisualProcessor)
     mock_load.assert_called_once()
+
+
+def test_model_identifier_validation_success():
+    """Verify standard kebab-case, snake-case, and alphanumeric model identifiers pass validation."""
+    valid_ids = [
+        "florence-2",
+        "easyocr",
+        "dummy_model_v1",
+        "Model-123_abc",
+        "model1",
+        "A_B-C",
+    ]
+    for m_id in valid_ids:
+        validate_model_id(m_id)
+        OfflineModelLoader.validate_model_id(m_id)
+
+
+def test_model_identifier_validation_failure_traversal():
+    """Verify model identifiers containing path traversal sequences, separators, or special characters fail fast."""
+    invalid_ids = [
+        "../",
+        "../../etc/passwd",
+        "../florence-2",
+        "florence-2/..",
+        "model/id",
+        "model\\id",
+        "/absolute/path",
+        "C:\\Windows\\System32",
+        "model.bin",
+        "model@1",
+        "model name",
+        "model$id",
+        "",
+        None,
+        123,
+    ]
+    for invalid_id in invalid_ids:
+        with pytest.raises(ModelIdentifierValidationError) as exc_info:
+            OfflineModelLoader.validate_model_id(invalid_id)
+        assert issubclass(ModelIdentifierValidationError, OfflineModelLoadError)
+        assert issubclass(ModelIdentifierValidationError, ValueError)
+        assert "Invalid model identifier" in str(exc_info.value)
+
+
+def test_resolution_halts_prior_to_filesystem_operations(mocker):
+    """Verify that path resolution halts immediately for invalid identifiers before filesystem or environment checks."""
+    mock_env_get = mocker.patch("os.environ.get")
+    mock_exists = mocker.patch("os.path.exists")
+    mock_isdir = mocker.patch("os.path.isdir")
+    mock_listdir = mocker.patch("os.listdir")
+
+    traversal_input = "../../secret/directory"
+
+    with pytest.raises(ModelIdentifierValidationError):
+        OfflineModelLoader.resolve_model_path(traversal_input)
+
+    # Confirm zero filesystem or environment lookup calls were made
+    mock_env_get.assert_not_called()
+    mock_exists.assert_not_called()
+    mock_isdir.assert_not_called()
+    mock_listdir.assert_not_called()
+
+
+def test_register_model_and_load_model_reject_invalid_identifiers():
+    """Verify that register_model and load_model reject invalid identifiers prior to execution."""
+    invalid_id = "bad/model/id"
+
+    with pytest.raises(ModelIdentifierValidationError):
+        OfflineModelLoader.register_model(invalid_id)
+
+    with pytest.raises(ModelIdentifierValidationError):
+        OfflineModelLoader.load_model(invalid_id, lambda path: path)
+
+
+def test_florence2_visual_processor_rejects_invalid_identifier():
+    """Verify Florence2VisualProcessor instantiation validates model_id."""
+    with pytest.raises(ModelIdentifierValidationError):
+        Florence2VisualProcessor(model_id="../florence-2")
+

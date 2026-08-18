@@ -24,11 +24,40 @@ LOC_BOX_PATTERN = re.compile(
     r"<loc_(\d{1,4})>\s*<loc_(\d{1,4})>\s*<loc_(\d{1,4})>\s*<loc_(\d{1,4})>"
 )
 
+# Strict regex allowing only alphanumeric characters, hyphens, and underscores
+MODEL_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]+$")
+
 
 class OfflineModelLoadError(Exception):
     """Base exception for all offline model loading errors."""
 
     pass
+
+
+class ModelIdentifierValidationError(OfflineModelLoadError, ValueError):
+    """Raised when a model identifier fails pattern or character validation checks."""
+
+    pass
+
+
+def validate_model_id(model_id: str) -> None:
+    """Validate that a model identifier contains only alphanumeric characters, hyphens, and underscores.
+
+    Parameters
+    ----------
+    model_id : str
+        The model identifier string to validate.
+
+    Raises
+    ------
+    ModelIdentifierValidationError
+        If model_id is not a string, is empty, or contains invalid characters (e.g., path separators, relative directory markers).
+    """
+    if not isinstance(model_id, str) or not model_id or not MODEL_ID_PATTERN.match(model_id):
+        raise ModelIdentifierValidationError(
+            f"Invalid model identifier '{model_id}'. "
+            f"Identifiers must contain only alphanumeric characters, hyphens, and underscores."
+        )
 
 
 class ModelWeightsNotFoundError(OfflineModelLoadError):
@@ -54,6 +83,11 @@ class OfflineModelLoader:
     _registered_models: Dict[str, Dict[str, Any]] = {}
 
     @classmethod
+    def validate_model_id(cls, model_id: str) -> None:
+        """Validate a model identifier string against allowed pattern prior to path lookup or registration."""
+        validate_model_id(model_id)
+
+    @classmethod
     def register_model(
         cls, model_id: str, expected_files: Optional[List[str]] = None
     ) -> None:
@@ -66,6 +100,7 @@ class OfflineModelLoader:
         expected_files : list of str, optional
             List of files that must exist in the model directory.
         """
+        cls.validate_model_id(model_id)
         cls._registered_models[model_id] = {"expected_files": expected_files or []}
 
     @classmethod
@@ -84,9 +119,12 @@ class OfflineModelLoader:
 
         Raises
         ------
+        ModelIdentifierValidationError
+            If the model_id format is invalid.
         ModelWeightsNotFoundError
             If the model cannot be resolved in any search paths.
         """
+        cls.validate_model_id(model_id)
         searched_paths = []
 
         # Precedence 1: Environment variable custom path
@@ -176,9 +214,13 @@ class OfflineModelLoader:
 
         Raises
         ------
+        ModelIdentifierValidationError
+            If the model_id format is invalid.
         OfflineModelLoadError
             If loading fails due to network sandboxing or errors during initialization.
         """
+        cls.validate_model_id(model_id)
+
         # 1. Resolve path first
         try:
             model_path = cls.resolve_model_path(model_id)
@@ -227,6 +269,7 @@ class Florence2VisualProcessor:
     """
 
     def __init__(self, model_id: str = "florence-2"):
+        OfflineModelLoader.validate_model_id(model_id)
         self.model_id = model_id
         self.model: Any = None
         self.processor: Any = None
