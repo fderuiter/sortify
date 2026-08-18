@@ -1,6 +1,7 @@
 """Continuous background watchdog service daemon."""
 
 import asyncio
+import contextlib
 import logging
 import os
 import threading
@@ -57,10 +58,14 @@ class DaemonFolderHandler(FileSystemEventHandler):
 
     def on_any_event(self, event):
         """Handle any file system event, trigger recalculation if valid."""
+        # Suppress recalculation triggers if file moves are actively running
+        if getattr(self.daemon, "is_moving", False):
+            return
+
         # We must ignore application metadata, local databases, and temporary cache folders to prevent infinite trigger loops
         if self.daemon.should_ignore_path(event.src_path):
             return
-        if hasattr(event, "dest_path") and self.daemon.should_ignore_path(
+        if getattr(event, "dest_path", None) and self.daemon.should_ignore_path(
             event.dest_path
         ):
             return
@@ -81,10 +86,28 @@ class ContinuousWatchdogDaemon:
         self._debounce_timer = None
         self._cancel_event = threading.Event()
         self._is_running = False
+        self._move_ref_count = 0
         self._first_event_time = None
 
         # We run the actual sorting loop on a dedicated background execution thread
         self._execution_thread = None
+
+    @property
+    def is_moving(self) -> bool:
+        """Thread-safe check if file relocation operations are actively executing."""
+        with self._lock:
+            return self._move_ref_count > 0
+
+    @contextlib.contextmanager
+    def scoped_move_phase(self):
+        """Context manager to scoped-suppress filesystem events during active file move execution."""
+        with self._lock:
+            self._move_ref_count += 1
+        try:
+            yield
+        finally:
+            with self._lock:
+                self._move_ref_count = max(0, self._move_ref_count - 1)
 
     def should_ignore_path(self, path: str) -> bool:
         """Check if path should be ignored to prevent infinite feedback loop."""
@@ -136,6 +159,7 @@ class ContinuousWatchdogDaemon:
             if self._is_running:
                 return
             self._is_running = True
+            self._move_ref_count = 0
             self._cancel_event.clear()
 
         logger.info(f"Starting continuous watchdog daemon for: {self.base_dir}")
@@ -156,6 +180,7 @@ class ContinuousWatchdogDaemon:
             if not self._is_running:
                 return
             self._is_running = False
+            self._move_ref_count = 0
             self._cancel_event.set()
             self._first_event_time = None
 
@@ -178,7 +203,7 @@ class ContinuousWatchdogDaemon:
     def trigger_recalculation(self):
         """Thread-safe and debounced trigger for sorting run."""
         with self._lock:
-            if not self._is_running:
+            if not self._is_running or self._move_ref_count > 0:
                 return
 
             # Track the start time of the first event in a sequence
@@ -279,7 +304,8 @@ class ContinuousWatchdogDaemon:
             fast_path_moved_destinations = set()
 
             if fast_path_plan:
-                fast_path_summary = app_session.execute_moves(fast_path_plan)
+                with self.scoped_move_phase():
+                    fast_path_summary = app_session.execute_moves(fast_path_plan)
                 logger.info(f"Phase 1 (Fast-Path) completed: {fast_path_summary}")
 
                 # Retrieve destination paths from the fast_path_plan to bypass them in Phase 2
@@ -345,7 +371,8 @@ class ContinuousWatchdogDaemon:
                 return
 
             # Execute Phase 2 moves (AI Classification)
-            summary = app_session.execute_moves(slow_path_plan)
+            with self.scoped_move_phase():
+                summary = app_session.execute_moves(slow_path_plan)
             logger.info(f"Phase 2 (Slow-Path AI) completed successfully: {summary}")
             print(f"Silent move execution completed successfully: {summary}")
 
