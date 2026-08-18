@@ -2,9 +2,17 @@
 
 This document is automatically generated. Do not edit manually.
 
+## `app.ui.a11y_runner`
+
+::: app.ui.a11y_runner
+
 ## `app.ui.app`
 
 ::: app.ui.app
+
+## `app.ui.catalog`
+
+::: app.ui.catalog
 
 ## `app.ui.cro_forensic_view`
 
