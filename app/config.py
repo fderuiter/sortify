@@ -9,7 +9,7 @@ import os
 import sys
 import threading
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import Field, ValidationError, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -55,7 +55,30 @@ class Settings(BaseSettings):
     COHERENCE_THRESHOLD: float = Field(default=0.5, ge=0.0, le=1.0)
     DEBOUNCE_DELAY: float = Field(default=0.6, gt=0.0)
     MAX_DEBOUNCE_DELAY: float = Field(default=5.0, gt=0.0)
-    IGNORED_EXTENSIONS: list[str] = Field(default=[".crdownload", ".tmp", ".download"])
+    IGNORED_EXTENSIONS: list[Annotated[str, Field(min_length=1, pattern=r"^\..+")]] = (
+        Field(default=[".crdownload", ".tmp", ".download"])
+    )
+
+    @field_validator("IGNORED_EXTENSIONS", mode="before")
+    @classmethod
+    def validate_ignored_extensions(cls, v: list[str]) -> list[str]:
+        """Validate that IGNORED_EXTENSIONS contains non-empty strings and format leading dots."""
+        if not isinstance(v, list):
+            raise ValueError("IGNORED_EXTENSIONS must be a list.")
+        validated = []
+        for ext in v:
+            if not isinstance(ext, str):
+                raise ValueError("Ignored extension entry must be a string.")
+            cleaned = ext.strip()
+            if not cleaned or cleaned == ".":
+                raise ValueError(
+                    "Ignored extension entry cannot be blank or whitespace-only."
+                )
+            if not cleaned.startswith("."):
+                cleaned = f".{cleaned}"
+            if cleaned not in validated:
+                validated.append(cleaned)
+        return validated
 
     @model_validator(mode="after")
     def validate_debounce_delays(self) -> "Settings":
