@@ -159,6 +159,24 @@ def check_ai_status(settings) -> tuple[bool, str | None]:
                 f"OCR vision model integrity check failed: {str(e)}. Visual text extraction is unavailable.",
             )
 
+    if "florence-2" in registry._expected_hashes:
+        from app.core.offline_loader import ModelWeightsNotFoundError, OfflineModelLoader
+
+        try:
+            florence_dir = OfflineModelLoader.resolve_model_path("florence-2")
+            registry.verify_integrity("florence-2", florence_dir)
+        except ModelWeightsNotFoundError:
+            pass
+        except Exception as e:
+            if is_sandboxed:
+                raise ValueError(
+                    f"Florence-2 vision model integrity check failed in sandboxed execution: {str(e)}"
+                )
+            return (
+                False,
+                f"Florence-2 vision model integrity check failed: {str(e)}.",
+            )
+
     return True, None
 
 
