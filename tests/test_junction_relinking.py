@@ -2,20 +2,17 @@ import os
 import sys
 import tempfile
 from pathlib import Path
-from unittest.mock import patch, MagicMock
-
-import pytest
+from unittest.mock import MagicMock, patch
 
 from app.core.cache import CacheManager
 from app.core.db import Database
 from app.core.db_worker import DBWorker
 from app.core.history import HistoryManager
 from app.core.link_manager import LinkManager
-from app.core.mover import execute_moves, _create_junction, resolve_new_target
-from app.core.path_utils import is_junction_path, is_junction_entry
+from app.core.mover import _create_junction, execute_moves, resolve_new_target
+from app.core.path_utils import is_junction_entry, is_junction_path
 from app.core.resilient_file_ops import resilient_remove, resilient_rmtree
 from app.core.scanner import get_files_recursively
-
 
 _test_dir = None
 db_worker = None
