@@ -128,6 +128,15 @@ def test_config_parameter_bounds():
     assert Settings(MODEL_THREADS=32).MODEL_THREADS == 32
     assert Settings().MODEL_THREADS == 2
 
+    # COHERENCE_THRESHOLD: 0.0 to 1.0
+    with pytest.raises(ValidationError):
+        Settings(COHERENCE_THRESHOLD=-0.1)
+    with pytest.raises(ValidationError):
+        Settings(COHERENCE_THRESHOLD=1.1)
+    assert Settings(COHERENCE_THRESHOLD=0.0).COHERENCE_THRESHOLD == 0.0
+    assert Settings(COHERENCE_THRESHOLD=1.0).COHERENCE_THRESHOLD == 1.0
+    assert Settings().COHERENCE_THRESHOLD == 0.5
+
 
 def test_config_invalid_structures():
     """Test that invalid types/structures are rejected."""
@@ -669,3 +678,50 @@ def test_proxy_decryption_failure_placeholder(tmp_path):
 
     if app_settings._save_timer:
         app_settings._save_timer.cancel()
+
+
+def test_debounce_delay_validation():
+    """Test model validation rules for DEBOUNCE_DELAY and MAX_DEBOUNCE_DELAY."""
+    # Valid ranges
+    s1 = Settings(DEBOUNCE_DELAY=0.5, MAX_DEBOUNCE_DELAY=5.0)
+    assert s1.DEBOUNCE_DELAY == 0.5
+    assert s1.MAX_DEBOUNCE_DELAY == 5.0
+
+    s2 = Settings(DEBOUNCE_DELAY=5.0, MAX_DEBOUNCE_DELAY=5.0)
+    assert s2.DEBOUNCE_DELAY == 5.0
+    assert s2.MAX_DEBOUNCE_DELAY == 5.0
+
+    # Inverted range (DEBOUNCE_DELAY > MAX_DEBOUNCE_DELAY)
+    with pytest.raises(ValidationError) as exc_info:
+        Settings(DEBOUNCE_DELAY=6.0, MAX_DEBOUNCE_DELAY=5.0)
+    assert "cannot be greater than" in str(exc_info.value)
+
+    # Non-positive values
+    with pytest.raises(ValidationError):
+        Settings(DEBOUNCE_DELAY=0.0)
+
+    with pytest.raises(ValidationError):
+        Settings(MAX_DEBOUNCE_DELAY=-1.0)
+
+
+def test_app_settings_inverted_debounce_load_prevention(tmp_path):
+    """Test that loading an inverted debounce setting sets validation error and prevents overwriting."""
+    mock_filepath = tmp_path / "settings.json"
+    invalid_data = {
+        "DEBOUNCE_DELAY": 8.0,
+        "MAX_DEBOUNCE_DELAY": 2.0,
+    }
+    mock_filepath.write_text(json.dumps(invalid_data, indent=4))
+
+    app_settings = AppSettings(filepath=str(mock_filepath))
+    assert app_settings._has_validation_errors is True
+    assert len(app_settings._validation_errors) > 0
+
+    # Ensure disk file content remains intact and is not overwritten with invalid values
+    app_settings._trigger_save()
+    if app_settings._save_timer:
+        app_settings._save_timer.cancel()
+
+    saved_content = json.loads(mock_filepath.read_text())
+    assert saved_content["DEBOUNCE_DELAY"] == 8.0
+    assert saved_content["MAX_DEBOUNCE_DELAY"] == 2.0
