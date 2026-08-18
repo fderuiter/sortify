@@ -1034,6 +1034,8 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
 
     @property
     def generator(self):
+        if self._generator is not None:
+            return self._generator
         from app.core.shared_registry import SharedModelRegistry
         registry = SharedModelRegistry.get_instance()
         if not registry.is_model_loaded("generative_naming"):
@@ -1042,9 +1044,14 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                 self.task = task
                 if tok:
                     self.token_biases = self._build_logit_biases(tok)
+                self._generator = gen
                 return gen
             return None
         gen, task, tok = registry.get_generative_model(self.model_path)
+        self.task = task
+        if tok:
+            self.token_biases = self._build_logit_biases(tok)
+        self._generator = gen
         return gen
 
     @generator.setter
