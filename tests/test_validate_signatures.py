@@ -88,7 +88,11 @@ def test_api_signature_snapshot_matches():
     import json
     import os
 
-    from scripts.validate_signatures import SNAPSHOT_PATH, collect_current_definitions
+    from scripts.validate_signatures import (
+        SNAPSHOT_PATH,
+        collect_current_definitions,
+        verify_snapshot_integrity,
+    )
 
     current_definitions = collect_current_definitions()
 
@@ -99,7 +103,13 @@ def test_api_signature_snapshot_matches():
         )
 
     with open(SNAPSHOT_PATH, "r", encoding="utf-8") as f:
-        snapshot_definitions = json.load(f)
+        snapshot_data = json.load(f)
+
+    is_valid, err_msg, snapshot_definitions = verify_snapshot_integrity(
+        snapshot_data, SNAPSHOT_PATH
+    )
+    if not is_valid:
+        raise AssertionError(err_msg)
 
     current_json = json.dumps(current_definitions, indent=2, sort_keys=True)
     snapshot_json = json.dumps(snapshot_definitions, indent=2, sort_keys=True)
@@ -257,7 +267,7 @@ def test_validation_runner_detects_mismatch(tmp_path, monkeypatch):
 
     fake_snapshot = tmp_path / "fake_snapshot.json"
 
-    # Pre-populate fake snapshot with one definition
+    # Pre-populate fake snapshot with one definition and valid checksum header
     initial_defs = {
         "protocols": {
             "MyProtocol": {
@@ -270,7 +280,13 @@ def test_validation_runner_detects_mismatch(tmp_path, monkeypatch):
         "cli": {},
     }
 
-    fake_snapshot.write_text(json.dumps(initial_defs, indent=2, sort_keys=True))
+    initial_data = {
+        "_metadata": {
+            "checksum": validate_signatures.compute_payload_checksum(initial_defs)
+        },
+        **initial_defs,
+    }
+    fake_snapshot.write_text(json.dumps(initial_data, indent=2, sort_keys=True))
 
     # Now simulate changed codebase definitions (e.g. async changed to false)
     changed_defs = {
@@ -353,7 +369,13 @@ def test_validation_local_fails_by_default_on_mismatch(tmp_path, monkeypatch):
         },
         "cli": {},
     }
-    fake_snapshot.write_text(json.dumps(initial_defs, indent=2, sort_keys=True))
+    initial_data = {
+        "_metadata": {
+            "checksum": validate_signatures.compute_payload_checksum(initial_defs)
+        },
+        **initial_defs,
+    }
+    fake_snapshot.write_text(json.dumps(initial_data, indent=2, sort_keys=True))
 
     changed_defs = {
         "protocols": {
@@ -414,7 +436,13 @@ def test_validation_local_success_on_regenerate(tmp_path, monkeypatch):
         },
         "cli": {},
     }
-    fake_snapshot.write_text(json.dumps(initial_defs, indent=2, sort_keys=True))
+    initial_data = {
+        "_metadata": {
+            "checksum": validate_signatures.compute_payload_checksum(initial_defs)
+        },
+        **initial_defs,
+    }
+    fake_snapshot.write_text(json.dumps(initial_data, indent=2, sort_keys=True))
 
     changed_defs = {
         "protocols": {
@@ -451,10 +479,14 @@ def test_validation_local_success_on_regenerate(tmp_path, monkeypatch):
     assert exc_info.value.code == 0
     assert exited_code == 0
 
-    # Ensure the baseline file WAS updated
+    # Ensure the baseline file WAS updated and contains valid checksum
     with open(fake_snapshot, "r") as f:
         data = json.load(f)
     assert data["protocols"]["MyProtocol"]["methods"][0]["async"] is False
+    assert "_metadata" in data
+    assert "checksum" in data["_metadata"]
+    expected_hash = validate_signatures.compute_payload_checksum(changed_defs)
+    assert data["_metadata"]["checksum"] == expected_hash
 
 
 def test_validation_ci_fails_on_regenerate(tmp_path, monkeypatch):
@@ -468,7 +500,13 @@ def test_validation_ci_fails_on_regenerate(tmp_path, monkeypatch):
         "protocols": {},
         "cli": {},
     }
-    fake_snapshot.write_text(json.dumps(initial_defs, indent=2, sort_keys=True))
+    initial_data = {
+        "_metadata": {
+            "checksum": validate_signatures.compute_payload_checksum(initial_defs)
+        },
+        **initial_defs,
+    }
+    fake_snapshot.write_text(json.dumps(initial_data, indent=2, sort_keys=True))
 
     changed_defs = {
         "protocols": {
@@ -540,5 +578,104 @@ def test_validation_fails_on_missing_snapshot(tmp_path, monkeypatch):
 
     with pytest.raises(SystemExit) as exc_info:
         validate_signatures.main()
+    assert exc_info.value.code == 1
+    assert exited_code == 1
+
+
+def test_snapshot_integrity_checksum_mismatch(tmp_path, monkeypatch):
+    """Verify that tampering with snapshot definitions without updating checksum fails validation."""
+    import json
+    import sys
+
+    from scripts import validate_signatures
+
+    fake_snapshot = tmp_path / "tampered_snapshot.json"
+    valid_defs = {
+        "protocols": {
+            "MyProtocol": {
+                "class_name": "MyProtocol",
+                "methods": [],
+            }
+        },
+        "cli": {},
+    }
+    # Calculate checksum for valid_defs
+    valid_checksum = validate_signatures.compute_payload_checksum(valid_defs)
+
+    # Now tamper with payload definitions in the file while keeping valid_checksum
+    tampered_data = {
+        "_metadata": {
+            "checksum": valid_checksum,
+        },
+        "protocols": {
+            "MyProtocol": {
+                "class_name": "MyProtocol",
+                "methods": [
+                    {"name": "tampered_method", "async": False, "parameters": [], "returns": "None"}
+                ],
+            }
+        },
+        "cli": {},
+    }
+    fake_snapshot.write_text(json.dumps(tampered_data, indent=2, sort_keys=True))
+
+    monkeypatch.setattr(validate_signatures, "SNAPSHOT_PATH", str(fake_snapshot))
+    monkeypatch.setattr(
+        validate_signatures, "collect_current_definitions", lambda: valid_defs
+    )
+
+    exited_code = None
+
+    def mock_exit(code):
+        nonlocal exited_code
+        exited_code = code
+        raise SystemExit(code)
+
+    monkeypatch.setattr(sys, "exit", mock_exit)
+    monkeypatch.setattr(sys, "argv", ["validate_signatures.py"])
+
+    import pytest
+
+    with pytest.raises(SystemExit) as exc_info:
+        validate_signatures.main()
+
+    assert exc_info.value.code == 1
+    assert exited_code == 1
+
+
+def test_snapshot_integrity_missing_metadata(tmp_path, monkeypatch):
+    """Verify that snapshot file missing metadata header fails validation."""
+    import json
+    import sys
+
+    from scripts import validate_signatures
+
+    fake_snapshot = tmp_path / "missing_meta_snapshot.json"
+    data_without_meta = {
+        "protocols": {},
+        "cli": {},
+    }
+    fake_snapshot.write_text(json.dumps(data_without_meta, indent=2, sort_keys=True))
+
+    monkeypatch.setattr(validate_signatures, "SNAPSHOT_PATH", str(fake_snapshot))
+    monkeypatch.setattr(
+        validate_signatures, "collect_current_definitions", lambda: data_without_meta
+    )
+
+    exited_code = None
+
+    def mock_exit(code):
+        nonlocal exited_code
+        exited_code = code
+        raise SystemExit(code)
+
+    monkeypatch.setattr(sys, "exit", mock_exit)
+    monkeypatch.setattr(sys, "argv", ["validate_signatures.py"])
+
+    import pytest
+
+    with pytest.raises(SystemExit) as exc_info:
+        validate_signatures.main()
+
     assert exc_info.value.code == 1
     assert exited_code == 1
