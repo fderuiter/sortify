@@ -27,6 +27,8 @@ DEFAULT_BYPASS_DOMAINS = {
     "www.google.com",
     "fonts.googleapis.com",
     "fonts.gstatic.com",
+    "googleapis.com",
+    "gstatic.com",
     "localhost",
     "127.0.0.1",
     "host",
