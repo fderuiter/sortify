@@ -4,6 +4,7 @@ import threading
 
 from nicegui import ui
 
+from app.core.path_utils import validate_target_path
 from app.ui.dialog_helper import get_dialog_card_classes
 
 
@@ -66,115 +67,168 @@ def get_shadowed_policies(policies: list[dict]) -> list[bool]:
 
 def render_validation_warning_banner(settings):
     """Render an interactive configuration warning banner with contextual tooltips and recovery links."""
-    with ui.card().classes("bg-red-50 border-red-200 border p-4 mb-4 w-full"):
-        with ui.row().classes("items-center gap-2 text-red-800"):
-            ui.icon("error", size="sm")
-            ui.label("Configuration Saves Suspended").classes("font-bold")
+    banner_card = ui.card().classes("bg-red-50 border-red-200 border p-4 mb-4 w-full")
+    banner_timer = None
 
-        ui.label(
-            "Automatic saving is locked because your settings file contains invalid values or errors. "
-            "The system is temporarily using healthy default values to keep the application running."
-        ).classes("text-red-900 text-sm mt-1").props(
-            'aria-label="Configuration Warning Label"'
-        )
-
-        # Display specific errors and add a tooltip to each
-        errs = getattr(settings, "_validation_errors", [])
-        if errs:
-            ui.label("Validation Errors Found:").classes(
-                "text-xs font-bold text-red-800 mt-2"
-            )
-            for err in errs:
-                err_row = ui.row().classes(
-                    "items-center gap-1 text-xs text-red-700 ml-4"
-                )
-                with err_row:
-                    ui.icon("arrow_right", size="xs")
-                    lbl = ui.label(
-                        f"Field '{err.get('field', '')}': {err.get('message', '')}"
-                    ).classes("font-mono")
-
-                    # Tooltip in plain language explaining the error
-                    field_name = err.get("field", "").lower()
-                    msg = err.get("message", "").lower()
-                    tip = f"The value for '{err.get('field')}' is not allowed. "
-                    if (
-                        "path" in field_name
-                        or "directory" in field_name
-                        or "invalid path" in msg
-                    ):
-                        tip += "Make sure the directory path is relative, does not use '..', and has no invalid characters like :, *, ?, or |."
-                    elif "empty" in msg or "required" in msg:
-                        tip += (
-                            "This field cannot be left blank. Please specify a value."
-                        )
-                    else:
-                        tip += "Please ensure the value matches the requested format or number limits."
-                    lbl.tooltip(tip)
-
-        # Recovery/Troubleshooting links
-        with ui.row().classes("items-center gap-2 mt-3 flex-wrap"):
-            ui.icon("help", size="xs", color="primary")
-            ui.link(
-                "Open Troubleshooting Guide (Online)",
-                "https://docs.smartautosorter.com/admin_guide/#configuration-recovery-troubleshooting",
-                new_tab=True,
-            ).classes("text-blue-600 hover:underline text-sm").props(
-                'aria-label="Troubleshooting Guide Link"'
-            )
-
-            ui.label("|").classes("text-gray-300 text-sm")
-
-            def show_offline_admin_guide():
-                import sys
-                from pathlib import Path
-
-                from app.core.path_utils import get_base_path, is_packaged
-                from app.ui.dialog_helper import get_dialog_card_classes
-
-                if is_packaged() and hasattr(sys, "_MEIPASS"):
-                    base_dir = Path(sys._MEIPASS)
-                else:
-                    base_dir = Path(get_base_path(__file__)).parent.parent
-
-                path = base_dir / "docs" / "admin_guide.md"
+    def refresh():
+        if getattr(banner_card, "is_deleted", False) is True:
+            if banner_timer:
                 try:
-                    if path.exists():
-                        content = path.read_text(encoding="utf-8")
-                    else:
-                        content = f"Error: Admin guide not found at `{path}`."
-                except Exception as e:
-                    content = f"Error reading admin guide: {e}"
+                    banner_timer.cancel()
+                except Exception:
+                    pass
+            return
+        banner_card.clear()
+        has_errors = (
+            getattr(settings, "_has_validation_errors", False) is True
+            or bool(getattr(settings, "_validation_errors", None))
+        )
+        if not has_errors:
+            banner_card.set_visibility(False)
+            return
 
-                with ui.dialog() as d:
-                    with ui.card().classes(
-                        get_dialog_card_classes("xl", "h-[80vh] flex flex-col")
-                    ):
-                        with ui.row().classes(
-                            "w-full justify-between items-center mb-4"
-                        ):
-                            ui.label("Admin Guide & Troubleshooting").classes(
-                                "text-2xl font-bold"
-                            )
-                            ui.button("Close", on_click=d.close).classes(
-                                "bg-gray-200 text-black"
-                            )
-                        with ui.scroll_area().classes(
-                            "w-full flex-grow border rounded p-4 overflow-y-auto"
-                        ):
-                            ui.markdown(content).classes("w-full")
-                    d.open()
+        banner_card.set_visibility(True)
+        with banner_card:
+            with ui.row().classes("items-center justify-between w-full flex-wrap gap-2"):
+                with ui.row().classes("items-center gap-2 text-red-800"):
+                    ui.icon("error", size="sm")
+                    ui.label("Configuration Saves Suspended").classes("font-bold")
 
-            ui.button("View Guide (Offline)", on_click=show_offline_admin_guide).props(
-                "flat dense size=sm color=primary"
-            ).classes("hover:underline").props(
-                'aria-label="Offline Troubleshooting Guide Link"'
+                def on_revalidate():
+                    if hasattr(settings, "revalidate"):
+                        is_valid = settings.revalidate()
+                        if is_valid:
+                            ui.notify(
+                                "Configuration re-validated successfully! Auto-save unlocked.",
+                                type="positive",
+                            )
+                        else:
+                            ui.notify(
+                                "Validation errors remain in configuration.",
+                                type="warning",
+                            )
+                    refresh()
+
+                ui.button("Re-validate", on_click=on_revalidate).props(
+                    'size=sm color=negative aria-label="Re-validate Settings Button"'
+                ).classes("font-bold")
+
+            ui.label(
+                "Automatic saving is locked because your settings file contains invalid values or errors. "
+                "The system is temporarily using healthy default values to keep the application running."
+            ).classes("text-red-900 text-sm mt-1").props(
+                'aria-label="Configuration Warning Label"'
             )
+
+            # Display specific errors and add a tooltip to each
+            errs = getattr(settings, "_validation_errors", [])
+            if errs:
+                ui.label("Validation Errors Found:").classes(
+                    "text-xs font-bold text-red-800 mt-2"
+                )
+                for err in errs:
+                    err_row = ui.row().classes(
+                        "items-center gap-1 text-xs text-red-700 ml-4"
+                    )
+                    with err_row:
+                        ui.icon("arrow_right", size="xs")
+                        lbl = ui.label(
+                            f"Field '{err.get('field', '')}': {err.get('message', '')}"
+                        ).classes("font-mono")
+
+                        # Tooltip in plain language explaining the error
+                        field_name = str(err.get("field", "")).lower()
+                        msg = str(err.get("message", "")).lower()
+                        tip = f"The value for '{err.get('field')}' is not allowed. "
+                        if (
+                            "path" in field_name
+                            or "directory" in field_name
+                            or "invalid path" in msg
+                        ):
+                            tip += "Make sure the directory path is relative, does not use '..', and has no invalid characters like :, *, ?, or |."
+                        elif "empty" in msg or "required" in msg:
+                            tip += (
+                                "This field cannot be left blank. Please specify a value."
+                            )
+                        else:
+                            tip += "Please ensure the value matches the requested format or number limits."
+                        lbl.tooltip(tip)
+
+            # Recovery/Troubleshooting links
+            with ui.row().classes("items-center gap-2 mt-3 flex-wrap"):
+                ui.icon("help", size="xs", color="primary")
+                ui.link(
+                    "Open Troubleshooting Guide (Online)",
+                    "https://docs.smartautosorter.com/admin_guide/#configuration-recovery-troubleshooting",
+                    new_tab=True,
+                ).classes("text-blue-600 hover:underline text-sm").props(
+                    'aria-label="Troubleshooting Guide Link"'
+                )
+
+                ui.label("|").classes("text-gray-300 text-sm")
+
+                def show_offline_admin_guide():
+                    import sys
+                    from pathlib import Path
+
+                    from app.core.path_utils import get_base_path, is_packaged
+                    from app.ui.dialog_helper import get_dialog_card_classes
+
+                    if is_packaged() and hasattr(sys, "_MEIPASS"):
+                        base_dir = Path(sys._MEIPASS)
+                    else:
+                        base_dir = Path(get_base_path(__file__)).parent.parent
+
+                    path = base_dir / "docs" / "admin_guide.md"
+                    try:
+                        if path.exists():
+                            content = path.read_text(encoding="utf-8")
+                        else:
+                            content = f"Error: Admin guide not found at `{path}`."
+                    except Exception as e:
+                        content = f"Error reading admin guide: {e}"
+
+                    with ui.dialog() as d:
+                        with ui.card().classes(
+                            get_dialog_card_classes("xl", "h-[80vh] flex flex-col")
+                        ):
+                            with ui.row().classes(
+                                "w-full justify-between items-center mb-4"
+                            ):
+                                ui.label("Admin Guide & Troubleshooting").classes(
+                                    "text-2xl font-bold"
+                                )
+                                ui.button("Close", on_click=d.close).classes(
+                                    "bg-gray-200 text-black"
+                                )
+                            with ui.scroll_area().classes(
+                                "w-full flex-grow border rounded p-4 overflow-y-auto"
+                            ):
+                                ui.markdown(content).classes("w-full")
+                        d.open()
+
+                ui.button("View Guide (Offline)", on_click=show_offline_admin_guide).props(
+                    "flat dense size=sm color=primary"
+                ).classes("hover:underline").props(
+                    'aria-label="Offline Troubleshooting Guide Link"'
+                )
+
+    refresh()
+    try:
+        banner_timer = ui.timer(0.5, refresh)
+        banner_card.on(
+            "delete", lambda *_: banner_timer.cancel() if banner_timer else None
+        )
+        banner_card.timer = banner_timer
+    except Exception:
+        pass
+    return banner_card
 
 
 def show_settings(parent_app, settings):
     """Show the settings dialog."""
     timer_ref = [None]
+    banner_cards = []
 
     def on_explorer_integration_change(e):
         import sys
@@ -217,12 +271,16 @@ def show_settings(parent_app, settings):
             ui.tab("Rules", label="Routing Rules").props(
                 'aria-label="Routing Rules Tab"'
             )
+            ui.tab("Learned Rules", label="Learned Rules").props(
+                'aria-label="Learned Rules Tab"'
+            )
             ui.tab("Policies", label="Policies").props('aria-label="Policies Tab"')
 
         with ui.tab_panels(tabs, value="General").classes("w-full mt-4"):
             with ui.tab_panel("General"):
-                if getattr(settings, "_has_validation_errors", False):
-                    render_validation_warning_banner(settings)
+                b1 = render_validation_warning_banner(settings)
+                if b1:
+                    banner_cards.append(b1)
 
                 ui.label("System Integration").classes("text-lg font-bold mb-2")
                 ui.switch(
@@ -336,6 +394,108 @@ def show_settings(parent_app, settings):
                         "Clear All", on_click=clear_all_protected, color="red"
                     ).props('aria-label="Clear All Protected Paths Button"')
 
+                ui.label("Ignored File Extensions").classes(
+                    "text-md font-bold mt-4 mb-1"
+                )
+                ui.label(
+                    "Files matching these extensions will be skipped during scanning and file watching:"
+                ).classes("text-sm text-gray-500 mb-2")
+
+                ignored_exts_container = ui.column().classes("w-full mb-4")
+
+                def render_ignored_extensions():
+                    ignored_exts_container.clear()
+                    exts = getattr(
+                        settings,
+                        "IGNORED_EXTENSIONS",
+                        [".crdownload", ".tmp", ".download"],
+                    )
+                    with ignored_exts_container:
+                        if not exts:
+                            ui.label("No ignored extensions configured.").classes(
+                                "text-sm text-gray-400 italic"
+                            )
+                        else:
+                            for idx, ext in enumerate(exts):
+                                with ui.row().classes(
+                                    "w-full items-center justify-between border-b pb-2 mb-2"
+                                ):
+                                    ui.label(ext).classes("font-mono text-sm")
+
+                                    def delete_ext(idx_to_del=idx):
+                                        current_exts = list(
+                                            getattr(settings, "IGNORED_EXTENSIONS", [])
+                                        )
+                                        if 0 <= idx_to_del < len(current_exts):
+                                            removed = current_exts.pop(idx_to_del)
+                                            try:
+                                                settings.IGNORED_EXTENSIONS = (
+                                                    current_exts
+                                                )
+                                                ui.notify(
+                                                    f"Removed ignored extension '{removed}'.",
+                                                    type="positive",
+                                                )
+                                                render_ignored_extensions()
+                                            except Exception as ex:
+                                                ui.notify(
+                                                    f"Failed to remove extension: {ex}",
+                                                    type="negative",
+                                                )
+
+                                    ui.button(
+                                        "Remove", on_click=delete_ext, color="red"
+                                    ).props("size=sm")
+
+                render_ignored_extensions()
+
+                with ui.row().classes("w-full items-center gap-4 mt-2 flex-wrap"):
+                    new_ext_input = ui.input("Add Ignored Extension").props(
+                        'placeholder="e.g. .tmp or tmp" aria-label="Add Ignored Extension input" class="w-2/3"'
+                    )
+
+                    def add_ignored_extension():
+                        val = new_ext_input.value
+                        if val is None or not str(val).strip():
+                            ui.notify(
+                                "Extension cannot be empty or whitespace-only.",
+                                type="negative",
+                            )
+                            return
+                        val_str = str(val).strip()
+                        if not val_str or val_str == ".":
+                            ui.notify(
+                                "Extension cannot be empty or whitespace-only.",
+                                type="negative",
+                            )
+                            return
+                        if not val_str.startswith("."):
+                            val_str = f".{val_str}"
+
+                        current_exts = list(getattr(settings, "IGNORED_EXTENSIONS", []))
+                        if val_str in current_exts:
+                            ui.notify("Extension is already ignored.", type="warning")
+                            return
+
+                        updated_exts = current_exts + [val_str]
+                        try:
+                            settings.IGNORED_EXTENSIONS = updated_exts
+                            ui.notify(
+                                f"Ignored extension added: {val_str}",
+                                type="positive",
+                            )
+                            new_ext_input.value = ""
+                            render_ignored_extensions()
+                        except Exception as ex:
+                            ui.notify(
+                                f"Failed to add extension: {ex}",
+                                type="negative",
+                            )
+
+                    ui.button("Add", on_click=add_ignored_extension).props(
+                        'aria-label="Add Ignored Extension Button"'
+                    )
+
                 ui.label("Processing Limits").classes("text-lg font-bold mt-4 mb-2")
 
                 def on_max_depth_change(e):
@@ -443,9 +603,16 @@ def show_settings(parent_app, settings):
                             if e.value is not None
                             else settings.DEBOUNCE_DELAY
                         )
+                        val = round(val, 2)
                         if val == settings.DEBOUNCE_DELAY:
                             return
                         try:
+                            if val > settings.MAX_DEBOUNCE_DELAY:
+                                settings.MAX_DEBOUNCE_DELAY = val
+                                try:
+                                    max_debounce_slider.value = val
+                                except NameError:
+                                    pass
                             settings.DEBOUNCE_DELAY = val
                         except Exception as ex:
                             e.sender.value = settings.DEBOUNCE_DELAY
@@ -478,9 +645,16 @@ def show_settings(parent_app, settings):
                             if e.value is not None
                             else settings.MAX_DEBOUNCE_DELAY
                         )
+                        val = round(val, 2)
                         if val == settings.MAX_DEBOUNCE_DELAY:
                             return
                         try:
+                            if val < settings.DEBOUNCE_DELAY:
+                                settings.DEBOUNCE_DELAY = val
+                                try:
+                                    debounce_slider.value = val
+                                except NameError:
+                                    pass
                             settings.MAX_DEBOUNCE_DELAY = val
                         except Exception as ex:
                             e.sender.value = settings.MAX_DEBOUNCE_DELAY
@@ -617,7 +791,6 @@ def show_settings(parent_app, settings):
                         "Proxy Server (e.g. http://127.0.0.1:8080)",
                         value=getattr(settings, "PROXY", ""),
                         password=True,
-                        password_toggle_button=True,
                     )
                     .classes("w-full mb-2")
                     .props(
@@ -822,6 +995,55 @@ def show_settings(parent_app, settings):
                         ui.label().bind_text_from(
                             img_skip_slider, "value", backward=lambda v: f"{int(v)}"
                         )
+
+                    def on_coherence_change(e):
+                        val = (
+                            float(e.value)
+                            if e.value is not None
+                            else getattr(settings, "COHERENCE_THRESHOLD", 0.5)
+                        )
+                        current = getattr(settings, "COHERENCE_THRESHOLD", 0.5)
+                        if abs(val - current) < 1e-6:
+                            return
+                        try:
+                            settings.COHERENCE_THRESHOLD = val
+                        except Exception as ex:
+                            e.sender.value = getattr(settings, "COHERENCE_THRESHOLD", 0.5)
+                            ui.notify(
+                                f"Invalid coherence threshold: {ex}", type="negative"
+                            )
+
+                    coherence_tooltip = (
+                        "Adjust semantic clustering sensitivity. Higher values increase grouping strictness "
+                        "(flagging loosely related documents for review), while lower values relax grouping strictness."
+                    )
+
+                    coherence_lbl = ui.label("Coherence Threshold").classes(
+                        "text-sm text-gray-700 mt-4"
+                    )
+                    coherence_lbl.tooltip(coherence_tooltip)
+
+                    with ui.row().classes("w-full items-center gap-4"):
+                        coherence_slider = (
+                            ui.slider(
+                                min=0.0,
+                                max=1.0,
+                                value=getattr(settings, "COHERENCE_THRESHOLD", 0.5),
+                                step=0.01,
+                                on_change=on_coherence_change,
+                            )
+                            .props('aria-label="Coherence Threshold" label')
+                            .classes("flex-grow")
+                        )
+                        coherence_slider.tooltip(coherence_tooltip)
+                        coherence_val_lbl = ui.label().bind_text_from(
+                            coherence_slider,
+                            "value",
+                            backward=lambda v: f"{float(v):.2f}"
+                            if v is not None
+                            else "0.50",
+                        )
+                        coherence_val_lbl.tooltip(coherence_tooltip)
 
                     ui.label("Hardware Acceleration & Language Support").classes(
                         "text-md font-bold mt-4 mb-2"
@@ -1210,9 +1432,201 @@ def show_settings(parent_app, settings):
                         'aria-label="Add Rule Button"'
                     )
 
-            with ui.tab_panel("Policies"):
+            with ui.tab_panel("Learned Rules"):
                 if getattr(settings, "_has_validation_errors", False):
                     render_validation_warning_banner(settings)
+
+                ui.label("Learned Rules").classes("text-lg font-bold mb-1").props(
+                    'aria-label="Learned Rules Section Title"'
+                )
+                ui.label(
+                    "Inspect, search, edit, or delete automatically learned keyword-to-path associations."
+                ).classes("text-sm text-gray-500 mb-4")
+
+                search_input = (
+                    ui.input(
+                        "Search learned rules",
+                        placeholder="Filter by keyword or path...",
+                        on_change=lambda _: render_learned_rules(),
+                    )
+                    .classes("w-full mb-4")
+                    .props('aria-label="Search learned rules" clearable dense icon="search"')
+                )
+
+                learned_rules_container = ui.column().classes("w-full mb-4")
+
+                def render_learned_rules():
+                    learned_rules_container.clear()
+                    current_rules = dict(getattr(settings, "LEARNED_RULES", {}))
+                    raw_query = getattr(search_input, "value", "") or ""
+                    if not isinstance(raw_query, str):
+                        raw_query = ""
+                    query = raw_query.strip().lower()
+
+                    if query:
+                        filtered_rules = {
+                            k: v
+                            for k, v in current_rules.items()
+                            if query in k.lower() or query in v.lower()
+                        }
+                    else:
+                        filtered_rules = current_rules
+
+                    with learned_rules_container:
+                        if not current_rules:
+                            ui.label("No active learned rules.").classes(
+                                "text-sm text-gray-400 italic py-2"
+                            )
+                        elif not filtered_rules:
+                            ui.label("No matching learned rules found.").classes(
+                                "text-sm text-gray-400 italic py-2"
+                            )
+                        else:
+                            with ui.row().classes(
+                                "w-full items-center font-bold border-b pb-2 mb-2 text-sm text-gray-700 gap-2 flex-nowrap"
+                            ):
+                                ui.label("Keyword Pattern").classes("w-5/12")
+                                ui.label("Destination Path").classes("w-5/12")
+                                ui.label("Actions").classes("w-2/12 text-right")
+
+                            for kw, target_path in list(filtered_rules.items()):
+                                with ui.row().classes(
+                                    "w-full items-center border-b pb-2 mb-2 gap-2 flex-nowrap"
+                                ):
+                                    kw_input = (
+                                        ui.input(value=kw)
+                                        .classes("w-5/12 font-mono text-sm")
+                                        .props(
+                                            f'aria-label="Keyword pattern input for {kw}" dense outline'
+                                        )
+                                    )
+                                    path_input = (
+                                        ui.input(value=target_path)
+                                        .classes("w-5/12 font-mono text-sm text-gray-700")
+                                        .props(
+                                            f'aria-label="Destination path input for {kw}" dense outline'
+                                        )
+                                    )
+
+                                    def make_kw_handler(old_k=kw, p_inp=path_input, k_inp=kw_input):
+                                        def on_kw_change(e=None):
+                                            val = k_inp.value if k_inp else (e.value if hasattr(e, "value") else None)
+                                            new_k = (val or "").strip()
+                                            if new_k == old_k:
+                                                return
+                                            if not new_k:
+                                                ui.notify(
+                                                    "Keyword pattern cannot be empty.",
+                                                    type="negative",
+                                                )
+                                                k_inp.value = old_k
+                                                return
+                                            rules_copy = dict(getattr(settings, "LEARNED_RULES", {}))
+                                            rules_copy.pop(old_k, None)
+                                            rules_copy[new_k] = (p_inp.value or "").strip()
+                                            try:
+                                                settings.LEARNED_RULES = rules_copy
+                                                ui.notify(
+                                                    f"Updated keyword pattern to '{new_k}'.",
+                                                    type="positive",
+                                                )
+                                                render_learned_rules()
+                                            except Exception as ex:
+                                                error_msg = str(ex)
+                                                if "Value error," in error_msg:
+                                                    error_msg = error_msg.split("Value error,")[-1].strip()
+                                                ui.notify(
+                                                    f"Invalid keyword update: {error_msg}",
+                                                    type="negative",
+                                                )
+                                                k_inp.value = old_k
+                                        return on_kw_change
+
+                                    def make_path_handler(k=kw, old_p=target_path, p_inp=path_input):
+                                        def on_path_change(e=None):
+                                            val = p_inp.value if p_inp else (e.value if hasattr(e, "value") else None)
+                                            new_p = (val or "").strip()
+                                            current_rules_dict = dict(getattr(settings, "LEARNED_RULES", {}))
+                                            actual_old_p = current_rules_dict.get(k, old_p)
+                                            if new_p == actual_old_p:
+                                                return
+                                            if not new_p:
+                                                ui.notify(
+                                                    "Destination path cannot be empty.",
+                                                    type="negative",
+                                                )
+                                                p_inp.value = actual_old_p
+                                                return
+                                            try:
+                                                validate_target_path(new_p, keyword=k)
+                                            except ValueError as ve:
+                                                ui.notify(
+                                                    f"Invalid target path: {ve}",
+                                                    type="negative",
+                                                )
+                                                p_inp.value = actual_old_p
+                                                return
+                                            rules_copy = dict(current_rules_dict)
+                                            rules_copy[k] = new_p
+                                            try:
+                                                settings.LEARNED_RULES = rules_copy
+                                                ui.notify(
+                                                    f"Updated destination path for '{k}'.",
+                                                    type="positive",
+                                                )
+                                                render_learned_rules()
+                                            except Exception as ex:
+                                                error_msg = str(ex)
+                                                if "Value error," in error_msg:
+                                                    error_msg = error_msg.split("Value error,")[-1].strip()
+                                                ui.notify(
+                                                    f"Invalid destination path: {error_msg}",
+                                                    type="negative",
+                                                )
+                                                p_inp.value = actual_old_p
+                                        return on_path_change
+
+                                    def make_delete_rule(k=kw):
+                                        def delete_rule():
+                                            rules_copy = dict(getattr(settings, "LEARNED_RULES", {}))
+                                            if k in rules_copy:
+                                                del rules_copy[k]
+                                                try:
+                                                    settings.LEARNED_RULES = rules_copy
+                                                    ui.notify(
+                                                        f"Learned rule for '{k}' deleted.",
+                                                        type="positive",
+                                                    )
+                                                    render_learned_rules()
+                                                except Exception as ex:
+                                                    ui.notify(
+                                                        f"Failed to delete rule: {ex}",
+                                                        type="negative",
+                                                    )
+                                        return delete_rule
+
+                                    kw_handler = make_kw_handler(kw, path_input, kw_input)
+                                    path_handler = make_path_handler(kw, target_path, path_input)
+
+                                    kw_input.on_value_change(kw_handler)
+                                    kw_input.on("change", kw_handler)
+                                    path_input.on_value_change(path_handler)
+                                    path_input.on("change", path_handler)
+
+                                    with ui.row().classes("w-2/12 justify-end"):
+                                        ui.button(
+                                            "Delete",
+                                            on_click=make_delete_rule(kw),
+                                            color="red",
+                                            icon="delete",
+                                        ).props(f'size=sm aria-label="Delete learned rule for {kw}"')
+
+                render_learned_rules()
+
+            with ui.tab_panel("Policies"):
+                b2 = render_validation_warning_banner(settings)
+                if b2:
+                    banner_cards.append(b2)
 
                 ui.label("Unified Policies").classes("text-lg font-bold mb-2")
 
@@ -1608,6 +2022,12 @@ def show_settings(parent_app, settings):
                 timer_ref[0].cancel()
             except Exception:
                 pass
+        for b in banner_cards:
+            if hasattr(b, "timer") and b.timer:
+                try:
+                    b.timer.cancel()
+                except Exception:
+                    pass
 
     dialog.on("dismiss", handle_dismiss)
 

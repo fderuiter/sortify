@@ -723,11 +723,14 @@ def test_fast_path_bypass_verification(db, temp_dir):
             assert len(vector) == 128
             # Check no NaN or Inf values
             assert all(math.isfinite(x) for x in vector)
+            # Check L2 norm equals 1.0
+            norm = math.sqrt(sum(x * x for x in vector))
+            assert math.isclose(norm, 1.0, abs_tol=1e-5)
             # Check deterministic behavior
             vector_again = manager.generate_embedding(inp)
             assert vector == vector_again
 
-        # Test that different whitespace inputs also return a valid vector of 128 dimensions
+        # Test that different whitespace inputs return identical unit-normalized vectors
         v_empty = manager.generate_embedding("")
         v_space = manager.generate_embedding("   ")
         v_newline = manager.generate_embedding("\n")
@@ -735,6 +738,36 @@ def test_fast_path_bypass_verification(db, temp_dir):
         assert len(v_empty) == 128
         assert len(v_space) == 128
         assert len(v_newline) == 128
+        assert v_empty == v_space == v_newline
+
+
+def test_unit_normalization_and_whitespace_equivalence_for_fallback_embeddings(db):
+    """Verify that fallback vectors for empty/whitespace inputs are unit-normalized (L2 norm = 1.0) and produce identical representations."""
+    import math
+
+    from app.core.semantic_embeddings import SemanticEmbeddingManager
+
+    manager = SemanticEmbeddingManager(db, model_path=None)
+
+    whitespace_variants = ["", "   ", "\t\n\r", " \t \n ", None]
+    vectors = [manager.generate_embedding(inp) for inp in whitespace_variants]
+
+    # 1. Verify 100% vector magnitude parity (L2 norm = 1.0)
+    for vec in vectors:
+        assert len(vec) == manager.dimensions
+        norm = math.sqrt(sum(x * x for x in vec))
+        assert math.isclose(norm, 1.0, abs_tol=1e-5)
+
+    # 2. Verify 100% vector equivalence across varying whitespace-only input strings
+    first_vec = vectors[0]
+    for vec in vectors[1:]:
+        assert vec == first_vec
+
+    # 3. Verify whitespace cleaning on non-empty inputs
+    v1 = manager.generate_embedding("hello world")
+    v2 = manager.generate_embedding(" hello   \n\t world ")
+    assert v1 == v2
+    assert math.isclose(math.sqrt(sum(x * x for x in v1)), 1.0, abs_tol=1e-5)
 
 
 def test_fully_masked_inputs_safety(db, temp_dir):

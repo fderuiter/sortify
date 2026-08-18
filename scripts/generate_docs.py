@@ -14,6 +14,58 @@ def get_python_executable():
     return sys.executable
 
 
+def convert_notebook_to_markdown(notebook_path: Path, output_path: Path) -> None:
+    """Convert an ipynb notebook to a rendered markdown tutorial page."""
+    import json
+
+    with open(notebook_path, "r", encoding="utf-8") as f:
+        nb = json.load(f)
+
+    rel_path = Path(notebook_path).as_posix()
+    md_lines = [
+        f"<!-- This document is automatically generated from {rel_path}. Do not edit manually. -->\n\n"
+    ]
+
+    for cell in nb.get("cells", []):
+        cell_type = cell.get("cell_type")
+        source = cell.get("source", [])
+        if isinstance(source, list):
+            text = "".join(source)
+        else:
+            text = str(source)
+
+        text = text.strip()
+        if not text:
+            continue
+
+        if cell_type == "markdown":
+            md_lines.append(f"{text}\n\n")
+        elif cell_type == "code":
+            md_lines.append(f"```python\n{text}\n```\n\n")
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(output_path, "w", encoding="utf-8", newline="\n") as f:
+        f.write("".join(md_lines))
+
+
+def generate_tutorial_docs():
+    """Generate notebooks and convert them to markdown documentation tutorials."""
+    import scripts.generate_notebooks as gen_nb
+
+    # 1. Regenerate notebook .ipynb files
+    gen_nb.main()
+
+    # 2. Convert each notebook in notebooks/ to docs/tutorials/
+    notebooks_dir = Path("notebooks")
+    tutorials_dir = Path("docs") / "tutorials"
+    tutorials_dir.mkdir(parents=True, exist_ok=True)
+
+    if notebooks_dir.exists():
+        for nb_file in sorted(notebooks_dir.glob("*.ipynb")):
+            md_file = tutorials_dir / f"{nb_file.stem}.md"
+            convert_notebook_to_markdown(nb_file, md_file)
+
+
 def generate_api_docs():
     """Generate API reference markdown from python modules."""
     app_dir = "app"
@@ -414,12 +466,26 @@ def main():
     args = parser.parse_args()
 
     # 1. Identify files to check
-    generated_files = [
-        os.path.join("docs", "api_reference.md"),
-        os.path.join("docs", "ui.md"),
-        os.path.join("docs", "admin_guide.md"),
-        "SECURITY.md",
+    notebook_files = [
+        os.path.join("notebooks", "01_ml_analyzer_clustering.ipynb"),
+        os.path.join("notebooks", "02_multi_format_text_extraction.ipynb"),
+        os.path.join("notebooks", "03_virtual_sorting_verification.ipynb"),
     ]
+    tutorial_files = [
+        os.path.join("docs", "tutorials", "01_ml_analyzer_clustering.md"),
+        os.path.join("docs", "tutorials", "02_multi_format_text_extraction.md"),
+        os.path.join("docs", "tutorials", "03_virtual_sorting_verification.md"),
+    ]
+    generated_files = (
+        notebook_files
+        + tutorial_files
+        + [
+            os.path.join("docs", "api_reference.md"),
+            os.path.join("docs", "ui.md"),
+            os.path.join("docs", "admin_guide.md"),
+            "SECURITY.md",
+        ]
+    )
 
     initial_contents = {}
     if args.check:
@@ -435,6 +501,7 @@ def main():
 
     # 2. Run documentation generation
     tasks = [
+        ("generate_tutorial_docs", generate_tutorial_docs),
         ("generate_api_docs", generate_api_docs),
         ("generate_ui_docs", generate_ui_docs),
         ("generate_admin_guide", generate_admin_guide),

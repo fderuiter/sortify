@@ -1,4 +1,7 @@
 {
+  "_metadata": {
+    "checksum": "d5a98d567df15d623d2d7d3673b13bdf43a6c9adc4e6c669a8894add66c21312"
+  },
   "cli": {
     "app/main.py": [
       {

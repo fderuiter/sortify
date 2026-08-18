@@ -3,10 +3,62 @@
 
 import argparse
 import os
+import re
 import shutil
 import subprocess
 import sys
 import zipfile
+from pathlib import Path
+
+
+def safe_extract_zip(zip_path, extract_to):
+    """Safely extract a ZIP archive while enforcing restricted permissions and validating member paths."""
+    resolved_extract_to = Path(extract_to).resolve()
+
+    # Enforce restricted host directory access permissions (0o700) on target directory
+    os.makedirs(resolved_extract_to, mode=0o700, exist_ok=True)
+    if sys.platform != "win32":
+        os.chmod(resolved_extract_to, 0o700)
+
+    with zipfile.ZipFile(zip_path, "r") as zip_ref:
+        for member in zip_ref.infolist():
+            member_path = member.filename
+            normalized_path = member_path.replace("\\", "/")
+
+            # Inspect archive paths inline for absolute paths or relative directory traversal
+            if (
+                os.path.isabs(member_path)
+                or normalized_path.startswith("/")
+                or bool(re.match(r"^[a-zA-Z]:", member_path))
+            ):
+                raise ValueError(
+                    f"Directory traversal or absolute path detected in archive member: '{member_path}'"
+                )
+
+            parts = Path(normalized_path).parts
+            if ".." in parts:
+                raise ValueError(
+                    f"Directory traversal detected in archive member: '{member_path}'"
+                )
+
+            # Resolve target path and verify it stays strictly inside resolved_extract_to
+            target_path = (resolved_extract_to / normalized_path).resolve()
+            try:
+                target_path.relative_to(resolved_extract_to)
+            except ValueError:
+                raise ValueError(
+                    f"Directory traversal attempt detected: member path '{member_path}' resolves outside target directory"
+                )
+
+        # Extract all members safely once validated
+        for member in zip_ref.infolist():
+            zip_ref.extract(member, resolved_extract_to)
+            target_file = resolved_extract_to / member.filename
+            if member.is_dir() and sys.platform != "win32":
+                try:
+                    os.chmod(target_file, 0o700)
+                except OSError:
+                    pass
 
 
 def get_uv_cmd():
@@ -37,8 +89,7 @@ def _extract_and_install_offline(uv_cmd):
     if os.path.exists("offline_bundle.zip"):
         print("Detected offline_bundle.zip. Extracting...")
         try:
-            with zipfile.ZipFile("offline_bundle.zip", "r") as zip_ref:
-                zip_ref.extractall("offline_bundle")
+            safe_extract_zip("offline_bundle.zip", "offline_bundle")
         except Exception as e:
             print(f"Error extracting bundle: {e}")
             sys.exit(1)
@@ -59,6 +110,7 @@ def _extract_and_install_offline(uv_cmd):
                 "--no-index",
                 "--find-links",
                 "offline_bundle/wheels",
+                "--require-hashes",
                 "-r",
                 "offline_bundle/requirements.txt",
             ],

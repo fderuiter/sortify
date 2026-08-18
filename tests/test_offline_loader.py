@@ -343,3 +343,141 @@ def test_shared_registry_get_florence_processor(mocker):
     assert proc1 is proc2
     assert isinstance(proc1, Florence2VisualProcessor)
     mock_load.assert_called_once()
+
+
+def test_florence2_hashes_registry_registration():
+    """Verify that required Florence-2 model files are registered in HASHES dictionary."""
+    from app.core.hashes_registry import HASHES
+
+    assert "florence-2" in HASHES
+    florence_hashes = HASHES["florence-2"]
+    assert "config.json" in florence_hashes
+    assert "processing_florence2.py" in florence_hashes
+    assert "modeling_florence2.py" in florence_hashes
+    assert "model.safetensors" in florence_hashes
+
+
+def test_florence2_pre_execution_integrity_valid_bundle(tmp_path, mocker):
+    """Verify that loading an unmodified Florence-2 bundle passes integrity checks and loads the model."""
+    import hashlib
+
+    f1_content = b'{"model_type": "florence2"}'
+    f2_content = b"# processing_florence2.py"
+    f3_content = b"# modeling_florence2.py"
+    f4_content = b"model_weights"
+
+    (tmp_path / "config.json").write_bytes(f1_content)
+    (tmp_path / "processing_florence2.py").write_bytes(f2_content)
+    (tmp_path / "modeling_florence2.py").write_bytes(f3_content)
+    (tmp_path / "model.safetensors").write_bytes(f4_content)
+
+    h1 = hashlib.sha256(f1_content).hexdigest()
+    h2 = hashlib.sha256(f2_content).hexdigest()
+    h3 = hashlib.sha256(f3_content).hexdigest()
+    h4 = hashlib.sha256(f4_content).hexdigest()
+
+    SharedModelRegistry._instance = None
+    registry = SharedModelRegistry.get_instance()
+    registry.register_expected_hashes(
+        "florence-2",
+        {
+            "config.json": h1,
+            "processing_florence2.py": h2,
+            "modeling_florence2.py": h3,
+            "model.safetensors": h4,
+        },
+    )
+
+    mocker.patch(
+        "app.core.offline_loader.OfflineModelLoader.resolve_model_path",
+        return_value=str(tmp_path),
+    )
+    mock_model = MagicMock()
+    mock_processor = MagicMock()
+    mock_from_model = mocker.patch(
+        "transformers.AutoModelForCausalLM.from_pretrained", return_value=mock_model
+    )
+    mock_from_processor = mocker.patch(
+        "transformers.AutoProcessor.from_pretrained", return_value=mock_processor
+    )
+
+    processor = Florence2VisualProcessor()
+    processor.load()
+
+    assert processor.model == mock_model
+    assert processor.processor == mock_processor
+    mock_from_model.assert_called_once()
+    mock_from_processor.assert_called_once()
+
+
+def test_florence2_pre_execution_integrity_tampered_bundle_aborts(tmp_path, mocker):
+    """Verify that a tampered Florence-2 bundle fails integrity check before code execution."""
+    import hashlib
+
+    f1_content = b'{"model_type": "florence2"}'
+    f2_content = b"# processing_florence2.py - original"
+    f3_content = b"# modeling_florence2.py"
+
+    (tmp_path / "config.json").write_bytes(f1_content)
+    # Tampered file content!
+    (tmp_path / "processing_florence2.py").write_bytes(b"# TAMPERED CODE EXPLOIT")
+    (tmp_path / "modeling_florence2.py").write_bytes(f3_content)
+
+    h1 = hashlib.sha256(f1_content).hexdigest()
+    h2_expected = hashlib.sha256(f2_content).hexdigest()
+    h3 = hashlib.sha256(f3_content).hexdigest()
+
+    SharedModelRegistry._instance = None
+    registry = SharedModelRegistry.get_instance()
+    registry.register_expected_hashes(
+        "florence-2",
+        {
+            "config.json": h1,
+            "processing_florence2.py": h2_expected,
+            "modeling_florence2.py": h3,
+        },
+    )
+
+    mocker.patch(
+        "app.core.offline_loader.OfflineModelLoader.resolve_model_path",
+        return_value=str(tmp_path),
+    )
+    mock_from_model = mocker.patch("transformers.AutoModelForCausalLM.from_pretrained")
+    mock_from_processor = mocker.patch("transformers.AutoProcessor.from_pretrained")
+
+    processor = Florence2VisualProcessor()
+
+    with pytest.raises(
+        OfflineModelLoadError, match="Integrity check failed for processing_florence2.py"
+    ):
+        processor.load()
+
+    # Crucial security assertion: Code execution / model loading was NEVER called
+    mock_from_model.assert_not_called()
+    mock_from_processor.assert_not_called()
+
+
+def test_florence2_chunked_hash_verification(tmp_path):
+    """Verify that verify_integrity computes 64KB chunked SHA-256 digests accurately."""
+    import hashlib
+
+    # Create a file larger than 64KB (128KB)
+    large_data = b"X" * (128 * 1024)
+    file_path = tmp_path / "modeling_florence2.py"
+    file_path.write_bytes(large_data)
+
+    expected_hash = hashlib.sha256(large_data).hexdigest()
+
+    SharedModelRegistry._instance = None
+    registry = SharedModelRegistry.get_instance()
+    registry.register_expected_hashes(
+        "florence-2", {"modeling_florence2.py": expected_hash}
+    )
+
+    # Valid check
+    assert registry.verify_integrity("florence-2", str(tmp_path)) is True
+
+    # Tamper check
+    file_path.write_bytes(large_data + b"TAMPERED")
+    with pytest.raises(ValueError, match="Integrity check failed"):
+        registry.verify_integrity("florence-2", str(tmp_path))
