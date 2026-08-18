@@ -10,8 +10,8 @@ import threading
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
-from typing import List, Protocol
 from pathlib import Path
+from typing import List, Protocol
 
 
 def is_debug_active() -> bool:
@@ -30,7 +30,8 @@ ILLEGAL_DUMP_PATH_CHARS = set('<>?*|"\0')
 def validate_prompt_dump_path(dump_file: str) -> None:
     """Validate requested dump path to prevent directory traversal and illegal characters.
 
-    Raises:
+    Raises
+    ------
         ValueError: If dump_file path contains relative traversal sequences or illegal characters.
     """
     if not isinstance(dump_file, str) or not dump_file.strip():
