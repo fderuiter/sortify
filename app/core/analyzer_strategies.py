@@ -913,13 +913,17 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         # Retrieve configurable similarity threshold
         threshold = getattr(self, "threshold", None)
         if threshold is None:
-            try:
-                from app.config import AppSettings
+            settings_obj = getattr(self, "settings", None)
+            if settings_obj is not None:
+                threshold = getattr(settings_obj, "COHERENCE_THRESHOLD", 0.5)
+            else:
+                try:
+                    from app.config import AppSettings
 
-                settings = AppSettings()
-                threshold = getattr(settings, "COHERENCE_THRESHOLD", 0.5)
-            except Exception:
-                threshold = 0.5
+                    settings = AppSettings()
+                    threshold = getattr(settings, "COHERENCE_THRESHOLD", 0.5)
+                except Exception:
+                    threshold = 0.5
 
         # 1. Gather all document vectors in filenames
         import numpy as np
