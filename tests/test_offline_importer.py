@@ -8,18 +8,13 @@ import socket
 import tempfile
 import threading
 import zipfile
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
 from app.config import AppSettings
-from app.core.offline_importer import (
-    ImportCancelledError,
-    InvalidArchiveError,
-    ModelVerificationError,
-    OfflineBundleImporter,
-)
-from app.core.shared_registry import SharedModelRegistry, _thread_local
+from app.core.offline_importer import OfflineBundleImporter
+from app.core.shared_registry import SharedModelRegistry
 
 
 @pytest.fixture

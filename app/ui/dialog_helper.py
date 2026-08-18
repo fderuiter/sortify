@@ -416,7 +416,7 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {{
                     else:
                         success = False
                 elif kdialog_path:
-                    cmd = ["kdialog", "--getopenfilename", ".", f"*.zip", "--title", title]
+                    cmd = ["kdialog", "--getopenfilename", ".", "*.zip", "--title", title]
                     result = run_background_process(
                         cmd, sandbox=False, capture_output=True, text=True
                     )

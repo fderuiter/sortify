@@ -25,6 +25,8 @@ DEFAULT_BYPASS_DOMAINS = {
     "huggingface.co",
     "google.com",
     "www.google.com",
+    "fonts.googleapis.com",
+    "fonts.gstatic.com",
     "localhost",
     "127.0.0.1",
     "host",

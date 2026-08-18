@@ -764,7 +764,7 @@ def show_settings(parent_app, settings):
                             if importer.state["is_importing"]:
                                 importer.cancel_import()
 
-                        cancel_op_btn = ui.button(
+                        ui.button(
                             "Cancel", on_click=cancel_active_operation
                         ).props('size=sm color=red aria-label="Cancel Operation Button"')
 

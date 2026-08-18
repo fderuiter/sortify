@@ -51,6 +51,7 @@ class OfflineBundleImporter:
 
     @classmethod
     def get_instance(cls):
+        """Get or create singleton OfflineBundleImporter instance."""
         with cls._lock:
             if cls._instance is None:
                 cls._instance = cls()
@@ -71,6 +72,7 @@ class OfflineBundleImporter:
         }
 
     def reset_state(self):
+        """Reset internal importer state to initial defaults."""
         with self._state_lock:
             self.state["is_importing"] = False
             self.state["progress"] = 0.0
@@ -82,11 +84,13 @@ class OfflineBundleImporter:
             self._cancel_event.clear()
 
     def update_state(self, **kwargs):
+        """Update key-value pairs in state dictionary safely under state lock."""
         with self._state_lock:
             for k, v in kwargs.items():
                 self.state[k] = v
 
     def cancel_import(self):
+        """Set cancellation flag to abort active import process."""
         self._cancel_event.set()
         self.update_state(status_text="Canceling import...")
 
