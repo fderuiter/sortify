@@ -447,9 +447,16 @@ def show_settings(parent_app, settings):
                             if e.value is not None
                             else settings.DEBOUNCE_DELAY
                         )
+                        val = round(val, 2)
                         if val == settings.DEBOUNCE_DELAY:
                             return
                         try:
+                            if val > settings.MAX_DEBOUNCE_DELAY:
+                                settings.MAX_DEBOUNCE_DELAY = val
+                                try:
+                                    max_debounce_slider.value = val
+                                except NameError:
+                                    pass
                             settings.DEBOUNCE_DELAY = val
                         except Exception as ex:
                             e.sender.value = settings.DEBOUNCE_DELAY
@@ -482,9 +489,16 @@ def show_settings(parent_app, settings):
                             if e.value is not None
                             else settings.MAX_DEBOUNCE_DELAY
                         )
+                        val = round(val, 2)
                         if val == settings.MAX_DEBOUNCE_DELAY:
                             return
                         try:
+                            if val < settings.DEBOUNCE_DELAY:
+                                settings.DEBOUNCE_DELAY = val
+                                try:
+                                    debounce_slider.value = val
+                                except NameError:
+                                    pass
                             settings.MAX_DEBOUNCE_DELAY = val
                         except Exception as ex:
                             e.sender.value = settings.MAX_DEBOUNCE_DELAY
@@ -621,7 +635,6 @@ def show_settings(parent_app, settings):
                         "Proxy Server (e.g. http://127.0.0.1:8080)",
                         value=getattr(settings, "PROXY", ""),
                         password=True,
-                        password_toggle_button=True,
                     )
                     .classes("w-full mb-2")
                     .props(
