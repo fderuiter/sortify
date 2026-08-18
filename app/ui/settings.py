@@ -4,6 +4,7 @@ import threading
 
 from nicegui import ui
 
+from app.core.path_utils import validate_target_path
 from app.ui.dialog_helper import get_dialog_card_classes
 
 
@@ -216,6 +217,9 @@ def show_settings(parent_app, settings):
             )
             ui.tab("Rules", label="Routing Rules").props(
                 'aria-label="Routing Rules Tab"'
+            )
+            ui.tab("Learned Rules", label="Learned Rules").props(
+                'aria-label="Learned Rules Tab"'
             )
             ui.tab("Policies", label="Policies").props('aria-label="Policies Tab"')
 
@@ -1222,6 +1226,197 @@ def show_settings(parent_app, settings):
                     ui.button("Add Rule", on_click=add_rule).props(
                         'aria-label="Add Rule Button"'
                     )
+
+            with ui.tab_panel("Learned Rules"):
+                if getattr(settings, "_has_validation_errors", False):
+                    render_validation_warning_banner(settings)
+
+                ui.label("Learned Rules").classes("text-lg font-bold mb-1").props(
+                    'aria-label="Learned Rules Section Title"'
+                )
+                ui.label(
+                    "Inspect, search, edit, or delete automatically learned keyword-to-path associations."
+                ).classes("text-sm text-gray-500 mb-4")
+
+                search_input = (
+                    ui.input(
+                        "Search learned rules",
+                        placeholder="Filter by keyword or path...",
+                        on_change=lambda _: render_learned_rules(),
+                    )
+                    .classes("w-full mb-4")
+                    .props('aria-label="Search learned rules" clearable dense icon="search"')
+                )
+
+                learned_rules_container = ui.column().classes("w-full mb-4")
+
+                def render_learned_rules():
+                    learned_rules_container.clear()
+                    current_rules = dict(getattr(settings, "LEARNED_RULES", {}))
+                    raw_query = getattr(search_input, "value", "") or ""
+                    if not isinstance(raw_query, str):
+                        raw_query = ""
+                    query = raw_query.strip().lower()
+
+                    if query:
+                        filtered_rules = {
+                            k: v
+                            for k, v in current_rules.items()
+                            if query in k.lower() or query in v.lower()
+                        }
+                    else:
+                        filtered_rules = current_rules
+
+                    with learned_rules_container:
+                        if not current_rules:
+                            ui.label("No active learned rules.").classes(
+                                "text-sm text-gray-400 italic py-2"
+                            )
+                        elif not filtered_rules:
+                            ui.label("No matching learned rules found.").classes(
+                                "text-sm text-gray-400 italic py-2"
+                            )
+                        else:
+                            with ui.row().classes(
+                                "w-full items-center font-bold border-b pb-2 mb-2 text-sm text-gray-700 gap-2 flex-nowrap"
+                            ):
+                                ui.label("Keyword Pattern").classes("w-5/12")
+                                ui.label("Destination Path").classes("w-5/12")
+                                ui.label("Actions").classes("w-2/12 text-right")
+
+                            for kw, target_path in list(filtered_rules.items()):
+                                with ui.row().classes(
+                                    "w-full items-center border-b pb-2 mb-2 gap-2 flex-nowrap"
+                                ):
+                                    kw_input = (
+                                        ui.input(value=kw)
+                                        .classes("w-5/12 font-mono text-sm")
+                                        .props(
+                                            f'aria-label="Keyword pattern input for {kw}" dense outline'
+                                        )
+                                    )
+                                    path_input = (
+                                        ui.input(value=target_path)
+                                        .classes("w-5/12 font-mono text-sm text-gray-700")
+                                        .props(
+                                            f'aria-label="Destination path input for {kw}" dense outline'
+                                        )
+                                    )
+
+                                    def make_kw_handler(old_k=kw, p_inp=path_input, k_inp=kw_input):
+                                        def on_kw_change(e=None):
+                                            val = k_inp.value if k_inp else (e.value if hasattr(e, "value") else None)
+                                            new_k = (val or "").strip()
+                                            if new_k == old_k:
+                                                return
+                                            if not new_k:
+                                                ui.notify(
+                                                    "Keyword pattern cannot be empty.",
+                                                    type="negative",
+                                                )
+                                                k_inp.value = old_k
+                                                return
+                                            rules_copy = dict(getattr(settings, "LEARNED_RULES", {}))
+                                            rules_copy.pop(old_k, None)
+                                            rules_copy[new_k] = (p_inp.value or "").strip()
+                                            try:
+                                                settings.LEARNED_RULES = rules_copy
+                                                ui.notify(
+                                                    f"Updated keyword pattern to '{new_k}'.",
+                                                    type="positive",
+                                                )
+                                                render_learned_rules()
+                                            except Exception as ex:
+                                                error_msg = str(ex)
+                                                if "Value error," in error_msg:
+                                                    error_msg = error_msg.split("Value error,")[-1].strip()
+                                                ui.notify(
+                                                    f"Invalid keyword update: {error_msg}",
+                                                    type="negative",
+                                                )
+                                                k_inp.value = old_k
+                                        return on_kw_change
+
+                                    def make_path_handler(k=kw, old_p=target_path, p_inp=path_input):
+                                        def on_path_change(e=None):
+                                            val = p_inp.value if p_inp else (e.value if hasattr(e, "value") else None)
+                                            new_p = (val or "").strip()
+                                            current_rules_dict = dict(getattr(settings, "LEARNED_RULES", {}))
+                                            actual_old_p = current_rules_dict.get(k, old_p)
+                                            if new_p == actual_old_p:
+                                                return
+                                            if not new_p:
+                                                ui.notify(
+                                                    "Destination path cannot be empty.",
+                                                    type="negative",
+                                                )
+                                                p_inp.value = actual_old_p
+                                                return
+                                            try:
+                                                validate_target_path(new_p, keyword=k)
+                                            except ValueError as ve:
+                                                ui.notify(
+                                                    f"Invalid target path: {ve}",
+                                                    type="negative",
+                                                )
+                                                p_inp.value = actual_old_p
+                                                return
+                                            rules_copy = dict(current_rules_dict)
+                                            rules_copy[k] = new_p
+                                            try:
+                                                settings.LEARNED_RULES = rules_copy
+                                                ui.notify(
+                                                    f"Updated destination path for '{k}'.",
+                                                    type="positive",
+                                                )
+                                                render_learned_rules()
+                                            except Exception as ex:
+                                                error_msg = str(ex)
+                                                if "Value error," in error_msg:
+                                                    error_msg = error_msg.split("Value error,")[-1].strip()
+                                                ui.notify(
+                                                    f"Invalid destination path: {error_msg}",
+                                                    type="negative",
+                                                )
+                                                p_inp.value = actual_old_p
+                                        return on_path_change
+
+                                    def make_delete_rule(k=kw):
+                                        def delete_rule():
+                                            rules_copy = dict(getattr(settings, "LEARNED_RULES", {}))
+                                            if k in rules_copy:
+                                                del rules_copy[k]
+                                                try:
+                                                    settings.LEARNED_RULES = rules_copy
+                                                    ui.notify(
+                                                        f"Learned rule for '{k}' deleted.",
+                                                        type="positive",
+                                                    )
+                                                    render_learned_rules()
+                                                except Exception as ex:
+                                                    ui.notify(
+                                                        f"Failed to delete rule: {ex}",
+                                                        type="negative",
+                                                    )
+                                        return delete_rule
+
+                                    kw_handler = make_kw_handler(kw, path_input, kw_input)
+                                    path_handler = make_path_handler(kw, target_path, path_input)
+
+                                    kw_input.on_value_change(kw_handler)
+                                    kw_input.on("change", kw_handler)
+                                    path_input.on_value_change(path_handler)
+                                    path_input.on("change", path_handler)
+
+                                    with ui.row().classes("w-2/12 justify-end"):
+                                        ui.button(
+                                            "Delete",
+                                            on_click=make_delete_rule(kw),
+                                            color="red",
+                                            icon="delete",
+                                        ).props(f'size=sm aria-label="Delete learned rule for {kw}"')
+
+                render_learned_rules()
 
             with ui.tab_panel("Policies"):
                 if getattr(settings, "_has_validation_errors", False):

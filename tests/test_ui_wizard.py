@@ -32,6 +32,9 @@ def mock_nicegui():
         mock_slider = stack.enter_context(patch("nicegui.ui.slider"))
         mock_select = stack.enter_context(patch("nicegui.ui.select"))
         mock_checkbox = stack.enter_context(patch("nicegui.ui.checkbox"))
+        mock_link = stack.enter_context(patch("nicegui.ui.link"))
+        mock_scroll_area = stack.enter_context(patch("nicegui.ui.scroll_area"))
+        mock_markdown = stack.enter_context(patch("nicegui.ui.markdown"))
 
         yield {
             "dialog": mock_dialog,
@@ -50,11 +53,14 @@ def mock_nicegui():
             "slider": mock_slider,
             "select": mock_select,
             "checkbox": mock_checkbox,
+            "link": mock_link,
+            "scroll_area": mock_scroll_area,
+            "markdown": mock_markdown,
         }
 
 
-def test_show_wizard_renders_with_mocked_ui(mock_nicegui):
-    settings = AppSettings()
+def test_show_wizard_renders_with_mocked_ui(mock_nicegui, tmp_path):
+    settings = AppSettings(filepath=str(tmp_path / "settings.json"))
     # Ensure PROXY is initially empty
     settings.PROXY = ""
     settings.AI_CONSENT_GRANTED = None
@@ -69,8 +75,8 @@ def test_show_wizard_renders_with_mocked_ui(mock_nicegui):
     mock_nicegui["label"].assert_any_call("AI Features Setup")
 
 
-def test_check_setup_wizard_triggers_when_model_missing(mock_nicegui):
-    settings = AppSettings()
+def test_check_setup_wizard_triggers_when_model_missing(mock_nicegui, tmp_path):
+    settings = AppSettings(filepath=str(tmp_path / "settings.json"))
     settings.AI_CONSENT_GRANTED = None
 
     app = AutoSorterApp(settings)
@@ -85,8 +91,8 @@ def test_check_setup_wizard_triggers_when_model_missing(mock_nicegui):
         mock_show_wizard.assert_called_once_with(app, settings)
 
 
-def test_settings_panel_contains_proxy_and_download(mock_nicegui):
-    settings = AppSettings()
+def test_settings_panel_contains_proxy_and_download(mock_nicegui, tmp_path):
+    settings = AppSettings(filepath=str(tmp_path / "settings.json"))
     settings.PROXY = "http://test-proxy:8080"
 
     app = AutoSorterApp(settings)
