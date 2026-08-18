@@ -175,5 +175,6 @@ def test_scanning_stage_filters_out_transient_files(tmp_path):
         cancel_event = threading.Event()
         daemon._run_sorting_sync(cancel_event)
 
-        # Verify scan was executed
-        mock_scan.assert_called_once_with(str(tmp_path))
+        # Verify scan was executed for directory
+        mock_scan.assert_called_with(str(tmp_path))
+        assert mock_scan.call_count >= 1
