@@ -32,6 +32,12 @@ def mock_nicegui():
         mock_slider = stack.enter_context(patch("nicegui.ui.slider"))
         mock_select = stack.enter_context(patch("nicegui.ui.select"))
         mock_checkbox = stack.enter_context(patch("nicegui.ui.checkbox"))
+        mock_link = stack.enter_context(patch("nicegui.ui.link"))
+        mock_badge = stack.enter_context(patch("nicegui.ui.badge"))
+        mock_spinner = stack.enter_context(patch("nicegui.ui.spinner"))
+        mock_markdown = stack.enter_context(patch("nicegui.ui.markdown"))
+        mock_scroll_area = stack.enter_context(patch("nicegui.ui.scroll_area"))
+        mock_tree = stack.enter_context(patch("nicegui.ui.tree"))
 
         yield {
             "dialog": mock_dialog,
@@ -50,6 +56,12 @@ def mock_nicegui():
             "slider": mock_slider,
             "select": mock_select,
             "checkbox": mock_checkbox,
+            "link": mock_link,
+            "badge": mock_badge,
+            "spinner": mock_spinner,
+            "markdown": mock_markdown,
+            "scroll_area": mock_scroll_area,
+            "tree": mock_tree,
         }
 
 
