@@ -130,14 +130,43 @@ def test_prompt_dump_success_under_debug(tmp_path, monkeypatch):
     assert "===PROMPT_END===" in file_content
 
 
-def test_prompt_dump_traversal_rejection_under_debug(tmp_path, monkeypatch):
+def test_prompt_dump_traversal_rejection_under_debug(tmp_path, monkeypatch, caplog):
+    import logging
+
     monkeypatch.setenv("DEBUG", "1")
     traversal_path = str(tmp_path / "../dump.txt")
     monkeypatch.setenv("PROMPT_DUMP_FILE", traversal_path)
 
     strategy = GenerativeNamingStrategy()
-    with pytest.raises(ValueError, match="relative directory traversal"):
-        strategy._run_prompt("Test prompt body", 15)
+    strategy.generator = None
+    strategy._gguf_active = False
+
+    with caplog.at_level(logging.WARNING):
+        res = strategy._run_prompt("Test prompt body", 15)
+
+    assert not Path(traversal_path).exists()
+    assert "Failed to write prompt dump" in caplog.text
+    # Should not raise exception, falls through gracefully
+    assert res == ""
+
+
+def test_get_cluster_keywords_succeeds_with_invalid_dump_path(tmp_path, monkeypatch, caplog):
+    import logging
+
+    monkeypatch.setenv("DEBUG", "1")
+    invalid_path = str(tmp_path / "invalid_path<?>|dump.txt")
+    monkeypatch.setenv("PROMPT_DUMP_FILE", invalid_path)
+
+    strategy = GenerativeNamingStrategy()
+    strategy.generator = None
+    strategy._gguf_active = False
+
+    with caplog.at_level(logging.WARNING):
+        keywords = strategy._get_cluster_keywords(["doc1.txt", "doc2.txt"])
+
+    assert keywords is not None
+    assert keywords != "Mock Generated Folder Name"
+    assert "Failed to write prompt dump" in caplog.text
 
 
 def test_get_cluster_keywords_fallback_when_dump_disabled(monkeypatch):

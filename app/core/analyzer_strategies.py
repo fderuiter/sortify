@@ -1292,14 +1292,19 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
     def _run_prompt(self, prompt: str, max_tokens: int, grammar: str = None) -> str:
         if is_prompt_dump_enabled():
             dump_file = os.environ.get("PROMPT_DUMP_FILE")
-            validate_prompt_dump_path(dump_file)
-            scrubbed_prompt = scrub_prompt_text(prompt)
-            parent_dir = os.path.dirname(dump_file)
-            if parent_dir:
-                os.makedirs(parent_dir, exist_ok=True)
-            with open(dump_file, "a", encoding="utf-8") as f:
-                f.write(scrubbed_prompt + "\n===PROMPT_END===\n")
-            return "Mock Generated Folder Name"
+            try:
+                validate_prompt_dump_path(dump_file)
+                scrubbed_prompt = scrub_prompt_text(prompt)
+                parent_dir = os.path.dirname(dump_file)
+                if parent_dir:
+                    os.makedirs(parent_dir, exist_ok=True)
+                with open(dump_file, "a", encoding="utf-8") as f:
+                    f.write(scrubbed_prompt + "\n===PROMPT_END===\n")
+                return "Mock Generated Folder Name"
+            except Exception as e:
+                logging.warning(
+                    f"Failed to write prompt dump to '{dump_file}': {e}"
+                )
 
         if self._gguf_active and not self._gguf_failed:
             if not self._gguf_process or not self._gguf_process.is_alive():
