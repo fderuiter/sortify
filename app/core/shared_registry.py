@@ -1064,9 +1064,9 @@ class AudioConcurrencyGuard:
         Returns True if acquired, or False if cancellation was requested before acquisition.
         """
         with self._lock:
+            if cancel_check and cancel_check():
+                return False
             while self._active_count >= self._limit:
-                if cancel_check and cancel_check():
-                    return False
                 self._cond.wait(timeout=poll_interval)
                 if cancel_check and cancel_check():
                     return False

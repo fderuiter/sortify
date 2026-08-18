@@ -251,21 +251,26 @@ class AudioExtractor:
         Reads the output stream in real time, parses timestamps/percentages for
         intra-file progress, and allows immediate thread-safe cancellation.
         """
-        limit = 2
+        if cancel_check and cancel_check():
+            return "[STATUS:CANCELLED]"
+
+        limit = None
         if settings:
             limit = getattr(
                 settings,
                 "AUDIO_MAX_WORKERS",
-                getattr(settings, "MAX_AUDIO_WORKERS", 2),
+                getattr(settings, "MAX_AUDIO_WORKERS", None),
             )
             if not isinstance(limit, int) or limit < 1:
-                limit = 2
+                limit = None
 
         from app.core.shared_registry import AudioConcurrencyGuard
 
         guard_obj = AudioConcurrencyGuard.get_instance(limit=limit)
         with guard_obj.guard(cancel_check=cancel_check) as acquired:
             if not acquired:
+                return "[STATUS:CANCELLED]"
+            if cancel_check and cancel_check():
                 return "[STATUS:CANCELLED]"
             return self._do_extract(
                 file_path=file_path,
