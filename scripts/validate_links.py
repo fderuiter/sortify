@@ -25,6 +25,10 @@ DEFAULT_BYPASS_DOMAINS = {
     "huggingface.co",
     "google.com",
     "www.google.com",
+    "fonts.googleapis.com",
+    "fonts.gstatic.com",
+    "googleapis.com",
+    "gstatic.com",
     "localhost",
     "127.0.0.1",
     "host",
@@ -36,8 +40,12 @@ def validate_url(url: str, bypass_domains: set = None):
     """Validate a single URL using HEAD with a fallback to GET."""
     parsed = urlparse(url)
     bypass_set = bypass_domains or set()
-    hostname = parsed.hostname or parsed.netloc
-    if parsed.netloc in bypass_set or hostname in bypass_set:
+    hostname = parsed.hostname or parsed.netloc or ""
+    if (
+        parsed.netloc in bypass_set
+        or hostname in bypass_set
+        or any(hostname.endswith("." + domain) for domain in bypass_set)
+    ):
         return True, f"Bypassed ({parsed.netloc})", False
 
     # Using a common user agent to avoid being blocked immediately
