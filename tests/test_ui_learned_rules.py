@@ -8,7 +8,7 @@ from app.config import AppSettings
 from app.ui.settings import show_settings
 
 
-def test_learned_rules_tab_rendering_and_search():
+def test_learned_rules_tab_rendering_and_search(tmp_path):
     """Verify that the Learned Rules tab is created, displays active learned rules, and filters by search query."""
     created_tabs = []
     created_tab_panels = []
@@ -60,7 +60,7 @@ def test_learned_rules_tab_rendering_and_search():
         buttons.append(btn)
         return btn
 
-    settings = AppSettings()
+    settings = AppSettings(filepath=str(tmp_path / "settings.json"))
     settings.LEARNED_RULES = {
         "invoice": "Financial/Invoices",
         "receipt": "Financial/Receipts",
@@ -82,6 +82,7 @@ def test_learned_rules_tab_rendering_and_search():
         patch("nicegui.ui.column", return_value=MagicMock()),
         patch("nicegui.ui.label", return_value=MagicMock()),
         patch("nicegui.ui.icon", return_value=MagicMock()),
+        patch("nicegui.ui.link", return_value=MagicMock()),
     ):
         show_settings(parent_app, settings)
 
@@ -101,7 +102,7 @@ def test_learned_rules_tab_rendering_and_search():
         assert search_inp.value == "receipt"
 
 
-def test_learned_rules_inline_editing_and_validation():
+def test_learned_rules_inline_editing_and_validation(tmp_path):
     """Verify editing keyword and destination path, including validation error handling."""
     notifications = []
     created_inputs = []
@@ -145,7 +146,7 @@ def test_learned_rules_inline_editing_and_validation():
         buttons.append(btn)
         return btn
 
-    settings = AppSettings()
+    settings = AppSettings(filepath=str(tmp_path / "settings.json"))
     settings.LEARNED_RULES = {
         "invoice": "Invoices/2026",
     }
@@ -165,6 +166,7 @@ def test_learned_rules_inline_editing_and_validation():
         patch("nicegui.ui.column", return_value=MagicMock()),
         patch("nicegui.ui.label", return_value=MagicMock()),
         patch("nicegui.ui.icon", return_value=MagicMock()),
+        patch("nicegui.ui.link", return_value=MagicMock()),
     ):
         show_settings(parent_app, settings)
 
@@ -222,7 +224,7 @@ def test_learned_rules_inline_editing_and_validation():
         assert settings.LEARNED_RULES["tax_invoice"] == "Invoices/Archived"
 
 
-def test_learned_rules_row_deletion():
+def test_learned_rules_row_deletion(tmp_path):
     """Verify that clicking the row deletion button removes the rule from settings."""
     notifications = []
     buttons = []
@@ -240,7 +242,7 @@ def test_learned_rules_row_deletion():
         buttons.append(btn)
         return btn
 
-    settings = AppSettings()
+    settings = AppSettings(filepath=str(tmp_path / "settings.json"))
     settings.LEARNED_RULES = {
         "temp_rule": "Temporary/Path",
     }
@@ -260,6 +262,7 @@ def test_learned_rules_row_deletion():
         patch("nicegui.ui.column", return_value=MagicMock()),
         patch("nicegui.ui.label", return_value=MagicMock()),
         patch("nicegui.ui.icon", return_value=MagicMock()),
+        patch("nicegui.ui.link", return_value=MagicMock()),
     ):
         show_settings(parent_app, settings)
 
