@@ -108,6 +108,59 @@ def generate_admin_guide():
             "3. **Default Parameters:** Base defaults are used as fallbacks if a setting is not explicitly defined in the local file or environment.\n\n"
         )
 
+        f.write("## Offline Model Path Search Precedence Hierarchy\n\n")
+        f.write(
+            "In network-isolated enterprise deployments, the application uses a strict 4-step search precedence hierarchy to resolve offline machine learning model weight bundles (`OfflineModelLoader.resolve_model_path`). Resolution checks candidate directories in the following exact order, returning the first location containing valid model files:\n\n"
+        )
+        f.write(
+            "1. **Step 1: Custom Environment Variables / Configuration Overrides**\n"
+            "   Explicit model directory path overrides configured via environment variables or the `.env` template file take highest precedence:\n"
+            "   - `MODEL_PATH`: Primary semantic embedding model bundle (e.g., all-MiniLM-L6-v2 ONNX bundle).\n"
+            "   - `FLORENCE_2_PATH`: Florence-2 vision processing model bundle.\n"
+            "   - `EASYOCR_PATH` / `EASYOCR_MODULE_PATH`: EasyOCR text detection and recognition model bundle.\n\n"
+        )
+        f.write(
+            "2. **Step 2: PyInstaller Executable Bundle Directory**\n"
+            "   For compiled binary deployments, the application searches the temporary execution path extracted by PyInstaller:\n"
+            "   - Location: `sys._MEIPASS/offline_bundle/<model_id>`\n\n"
+        )
+        f.write(
+            "3. **Step 3: Local Workspace Bundle Directory**\n"
+            "   The application checks the local workspace directory relative to current working directory or application base directory:\n"
+            "   - Location: `<working_directory>/offline_bundle/<model_id>` or `<base_dir>/offline_bundle/<model_id>`\n\n"
+        )
+        f.write(
+            "4. **Step 4: User Home Directory Fallback**\n"
+            "   If no custom overrides or local workspace bundles are found, the system falls back to standard user profile storage:\n"
+            "   - Location: `~/.smart-autosorter/offline_bundle/<model_id>` (also `~/.smart-autosorter/model`, `~/.autosorter/model`, or `~/.EasyOCR/model`).\n\n"
+        )
+
+        f.write("## Offline Model Bundle Layouts & Manifest Specifications\n\n")
+        f.write(
+            "To successfully resolve and load models offline, each model bundle directory must follow a designated folder structure and contain all required manifest and weight files:\n\n"
+        )
+        f.write("### 1. Primary Semantic Model Bundle (`model`)\n")
+        f.write("Used for document vector embeddings and semantic clustering.\n\n")
+        f.write("```text\noffline_bundle/\n└── model/\n    ├── config.json\n    ├── model.onnx (or pytorch_model.bin / model.safetensors / GGUF model)\n    ├── tokenizer.json\n    ├── tokenizer_config.json\n    └── special_tokens_map.json\n```\n\n")
+        f.write("**Required Manifest Files:**\n")
+        f.write("- `config.json`: Model architecture and configuration metadata.\n")
+        f.write("- Model weights binary (`model.onnx` or equivalent weight file).\n\n")
+
+        f.write("### 2. Florence-2 Vision Processor Bundle (`florence-2`)\n")
+        f.write("Used for visual layout analysis, document OCR bounding box detection, and image analysis.\n\n")
+        f.write("```text\noffline_bundle/\n└── florence-2/\n    ├── config.json\n    ├── model.safetensors (or pytorch_model.bin)\n    ├── processor_config.json\n    ├── preprocessor_config.json\n    └── tokenizer.json\n```\n\n")
+        f.write("**Required Manifest Files:**\n")
+        f.write("- `config.json`: Vision model configuration file.\n")
+        f.write("- `processor_config.json`: Multimodal preprocessor settings.\n")
+        f.write("- Model weight files (`model.safetensors` or `pytorch_model.bin`).\n\n")
+
+        f.write("### 3. EasyOCR Text Recognition Bundle (`easyocr`)\n")
+        f.write("Used for optical character recognition on scanned documents and image files.\n\n")
+        f.write("```text\noffline_bundle/\n└── easyocr/\n    └── model/\n        ├── craft_mlt_25k.pth\n        └── english_g2.pth\n```\n\n")
+        f.write("**Required Files:**\n")
+        f.write("- `craft_mlt_25k.pth`: CRAFT text detection neural network weights.\n")
+        f.write("- Language recognition weights file (e.g., `english_g2.pth` matching `OCR_LANGUAGES`).\n\n")
+
         f.write("## Dynamic Configuration Saves\n\n")
         f.write(
             "System settings modified during runtime are dynamically saved to the local JSON configuration file (`~/.autosorter/settings.json`) located in the user's home directory. To ensure stability and prevent excessive disk writes, these dynamic changes are saved with a short debounced delay of 0.5 seconds.\n\n"

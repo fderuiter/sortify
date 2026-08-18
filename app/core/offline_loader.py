@@ -89,9 +89,23 @@ class OfflineModelLoader:
         """
         searched_paths = []
 
-        # Precedence 1: Environment variable custom path
+        # Precedence 1: Environment variable / configuration custom path override
         env_var_name = f"{model_id.upper().replace('-', '_')}_PATH"
         env_path = os.environ.get(env_var_name)
+        if not env_path and model_id.lower() == "easyocr":
+            env_path = os.environ.get("EASYOCR_MODULE_PATH")
+        if not env_path:
+            try:
+                from app.config import Settings
+
+                settings = Settings()
+                setting_val = getattr(settings, env_var_name, None)
+                if not setting_val and model_id.lower() == "easyocr":
+                    setting_val = getattr(settings, "EASYOCR_MODULE_PATH", None)
+                if setting_val:
+                    env_path = str(setting_val)
+            except Exception:
+                pass
         if env_path:
             searched_paths.append(env_path)
 
@@ -118,6 +132,11 @@ class OfflineModelLoader:
         # Precedence 4: User home directory fallback
         home_path = os.path.expanduser(f"~/.smart-autosorter/offline_bundle/{model_id}")
         searched_paths.append(home_path)
+        if model_id.lower() == "model":
+            searched_paths.append(os.path.expanduser("~/.smart-autosorter/model"))
+            searched_paths.append(os.path.expanduser("~/.autosorter/model"))
+        elif model_id.lower() == "easyocr":
+            searched_paths.append(os.path.expanduser("~/.EasyOCR/model"))
 
         # Deduplicate paths while preserving order
         unique_paths = []

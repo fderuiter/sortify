@@ -669,3 +669,47 @@ def test_proxy_decryption_failure_placeholder(tmp_path):
 
     if app_settings._save_timer:
         app_settings._save_timer.cancel()
+
+
+def test_model_path_overrides_in_schema():
+    """Verify that model path override environment variables are present in Settings and config schema."""
+    settings = Settings()
+    assert hasattr(settings, "MODEL_PATH")
+    assert hasattr(settings, "FLORENCE_2_PATH")
+    assert hasattr(settings, "EASYOCR_PATH")
+    assert hasattr(settings, "EASYOCR_MODULE_PATH")
+
+    assert settings.MODEL_PATH == ""
+    assert settings.FLORENCE_2_PATH == ""
+    assert settings.EASYOCR_PATH == ""
+    assert settings.EASYOCR_MODULE_PATH == ""
+
+    # Check exported JSON schema
+    schema_path = os.path.join(
+        os.path.dirname(os.path.dirname(__file__)), "app", "config_schema.json"
+    )
+    assert os.path.exists(schema_path)
+    with open(schema_path, "r", encoding="utf-8") as f:
+        schema = json.load(f)
+
+    properties = schema.get("properties", {})
+    assert "MODEL_PATH" in properties
+    assert "FLORENCE_2_PATH" in properties
+    assert "EASYOCR_PATH" in properties
+    assert "EASYOCR_MODULE_PATH" in properties
+
+
+def test_env_example_template_exists():
+    """Verify that root .env.example file exists and contains documented model path placeholders."""
+    env_example_path = os.path.join(
+        os.path.dirname(os.path.dirname(__file__)), ".env.example"
+    )
+    assert os.path.exists(env_example_path)
+    with open(env_example_path, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    assert "MODEL_PATH=" in content
+    assert "FLORENCE_2_PATH=" in content
+    assert "EASYOCR_PATH=" in content
+    assert "EASYOCR_MODULE_PATH=" in content
+

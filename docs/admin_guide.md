@@ -70,6 +70,22 @@ The following parameters are extracted directly from the application's configura
 - **Default**: `2`
 - **Required**: `False`
 
+### `MODEL_PATH`
+- **Default**: ``
+- **Required**: `False`
+
+### `FLORENCE_2_PATH`
+- **Default**: ``
+- **Required**: `False`
+
+### `EASYOCR_PATH`
+- **Default**: ``
+- **Required**: `False`
+
+### `EASYOCR_MODULE_PATH`
+- **Default**: ``
+- **Required**: `False`
+
 ### `PROTECTED_PATHS`
 - **Default**: `PydanticUndefined`
 - **Required**: `False`
@@ -92,6 +108,18 @@ The following parameters are extracted directly from the application's configura
 
 ### `CONFLICT_POLICY`
 - **Default**: `rename`
+- **Required**: `False`
+
+### `SORTING_STRATEGY`
+- **Default**: `default`
+- **Required**: `False`
+
+### `CLINICAL_SMART_RENAMING`
+- **Default**: `False`
+- **Required**: `False`
+
+### `CLINICAL_GENERATE_AUDIT_REPORT`
+- **Default**: `True`
 - **Required**: `False`
 
 ### `COHERENCE_THRESHOLD`
@@ -129,6 +157,82 @@ The application evaluates configuration parameters using a strict precedence hie
 1. **Local Settings File (`~/.autosorter/settings.json`):** This local configuration file takes absolute priority. Any parameters defined here will override environment variables and default properties.
 2. **Environment Variables (or `.env` file):** Variables configured in the environment take precedence over default parameters.
 3. **Default Parameters:** Base defaults are used as fallbacks if a setting is not explicitly defined in the local file or environment.
+
+## Offline Model Path Search Precedence Hierarchy
+
+In network-isolated enterprise deployments, the application uses a strict 4-step search precedence hierarchy to resolve offline machine learning model weight bundles (`OfflineModelLoader.resolve_model_path`). Resolution checks candidate directories in the following exact order, returning the first location containing valid model files:
+
+1. **Step 1: Custom Environment Variables / Configuration Overrides**
+   Explicit model directory path overrides configured via environment variables or the `.env` template file take highest precedence:
+   - `MODEL_PATH`: Primary semantic embedding model bundle (e.g., all-MiniLM-L6-v2 ONNX bundle).
+   - `FLORENCE_2_PATH`: Florence-2 vision processing model bundle.
+   - `EASYOCR_PATH` / `EASYOCR_MODULE_PATH`: EasyOCR text detection and recognition model bundle.
+
+2. **Step 2: PyInstaller Executable Bundle Directory**
+   For compiled binary deployments, the application searches the temporary execution path extracted by PyInstaller:
+   - Location: `sys._MEIPASS/offline_bundle/<model_id>`
+
+3. **Step 3: Local Workspace Bundle Directory**
+   The application checks the local workspace directory relative to current working directory or application base directory:
+   - Location: `<working_directory>/offline_bundle/<model_id>` or `<base_dir>/offline_bundle/<model_id>`
+
+4. **Step 4: User Home Directory Fallback**
+   If no custom overrides or local workspace bundles are found, the system falls back to standard user profile storage:
+   - Location: `~/.smart-autosorter/offline_bundle/<model_id>` (also `~/.smart-autosorter/model`, `~/.autosorter/model`, or `~/.EasyOCR/model`).
+
+## Offline Model Bundle Layouts & Manifest Specifications
+
+To successfully resolve and load models offline, each model bundle directory must follow a designated folder structure and contain all required manifest and weight files:
+
+### 1. Primary Semantic Model Bundle (`model`)
+Used for document vector embeddings and semantic clustering.
+
+```text
+offline_bundle/
+└── model/
+    ├── config.json
+    ├── model.onnx (or pytorch_model.bin / model.safetensors / GGUF model)
+    ├── tokenizer.json
+    ├── tokenizer_config.json
+    └── special_tokens_map.json
+```
+
+**Required Manifest Files:**
+- `config.json`: Model architecture and configuration metadata.
+- Model weights binary (`model.onnx` or equivalent weight file).
+
+### 2. Florence-2 Vision Processor Bundle (`florence-2`)
+Used for visual layout analysis, document OCR bounding box detection, and image analysis.
+
+```text
+offline_bundle/
+└── florence-2/
+    ├── config.json
+    ├── model.safetensors (or pytorch_model.bin)
+    ├── processor_config.json
+    ├── preprocessor_config.json
+    └── tokenizer.json
+```
+
+**Required Manifest Files:**
+- `config.json`: Vision model configuration file.
+- `processor_config.json`: Multimodal preprocessor settings.
+- Model weight files (`model.safetensors` or `pytorch_model.bin`).
+
+### 3. EasyOCR Text Recognition Bundle (`easyocr`)
+Used for optical character recognition on scanned documents and image files.
+
+```text
+offline_bundle/
+└── easyocr/
+    └── model/
+        ├── craft_mlt_25k.pth
+        └── english_g2.pth
+```
+
+**Required Files:**
+- `craft_mlt_25k.pth`: CRAFT text detection neural network weights.
+- Language recognition weights file (e.g., `english_g2.pth` matching `OCR_LANGUAGES`).
 
 ## Dynamic Configuration Saves
 

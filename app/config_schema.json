@@ -97,6 +97,26 @@
       "title": "Model Threads",
       "type": "integer"
     },
+    "MODEL_PATH": {
+      "default": "",
+      "title": "Model Path",
+      "type": "string"
+    },
+    "FLORENCE_2_PATH": {
+      "default": "",
+      "title": "Florence 2 Path",
+      "type": "string"
+    },
+    "EASYOCR_PATH": {
+      "default": "",
+      "title": "Easyocr Path",
+      "type": "string"
+    },
+    "EASYOCR_MODULE_PATH": {
+      "default": "",
+      "title": "Easyocr Module Path",
+      "type": "string"
+    },
     "PROTECTED_PATHS": {
       "items": {
         "type": "string"
