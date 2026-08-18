@@ -220,34 +220,82 @@ class ContinuousWatchdogDaemon:
         try:
             app_session = AppSession(self.settings, self.base_dir)
 
-            # 1. Scan directory recursively
+            # PHASE 1: Fast-Path (Deterministic Rules)
             if cancel_check():
                 return
             files = get_files_recursively(self.base_dir)
-
-            # Filter out ignored/metadata paths from the scanned files list
             files = [f for f in files if not self.should_ignore_path(f)]
 
             if not files:
                 logger.info("No files found to organize.")
                 return
 
-            # 2. Metadata pass to skip already processed, unchanged files
-            if cancel_check():
-                return
-            bypassed_files = MetadataPass.run(
+            # Run MetadataPass to identify deterministic rule-matched files and mark them as BYPASSED
+            MetadataPass.run(
                 self.base_dir, files, self.settings, app_session.db, None, cancel_check
             )
 
-            bypassed_set = set(bypassed_files)
+            if cancel_check():
+                return
+
+            # Generate and execute fast-path plan
+            fast_path_plan = app_session.generate_sorting_plan(fast_path_only=True)
+            fast_path_moved_destinations = set()
+
+            def _extract_plan_destinations(plan, current_dest="", dests_set=None):
+                if dests_set is None:
+                    dests_set = set()
+                if not isinstance(plan, dict):
+                    return dests_set
+                if plan.get("__type__") in ("file", "directory"):
+                    return dests_set
+                for key, content in plan.items():
+                    if isinstance(content, dict):
+                        if content.get("__type__") == "file":
+                            filename = content.get("target_filename") or os.path.basename(key)
+                            rel_dst = os.path.join(current_dest, filename).replace("\\", "/")
+                            dests_set.add(rel_dst)
+                        elif content.get("__type__") == "directory":
+                            continue
+                        else:
+                            _extract_plan_destinations(content, os.path.join(current_dest, key), dests_set)
+                    elif isinstance(content, str):
+                        rel_dst = os.path.relpath(content, self.base_dir).replace("\\", "/") if os.path.isabs(content) else content.replace("\\", "/")
+                        dests_set.add(rel_dst)
+                return dests_set
+
+            if fast_path_plan:
+                fast_path_summary = app_session.execute_moves(fast_path_plan)
+                logger.info(f"Phase 1 (Fast-Path) completed: {fast_path_summary}")
+                
+                # Retrieve destination paths from the fast_path_plan to bypass them in Phase 2
+                fast_path_moved_destinations = _extract_plan_destinations(fast_path_plan)
+
+            if cancel_check():
+                return
+
+            # REFRESH STATE: Refresh scanned directory state & update file paths in memory to prevent path corruption
+            app_session.db.invalidate_cache()
+            files = get_files_recursively(self.base_dir)
+            files = [f for f in files if not self.should_ignore_path(f)]
+
+            if not files:
+                logger.info("No remaining files to organize.")
+                return
+
+            # PHASE 2: Slow-Path (AI Classification & Clustering)
+            # Run MetadataPass on remaining files, unioned with fast-path moved files to ensure they are bypassed!
+            bypassed_files_2 = MetadataPass.run(
+                self.base_dir, files, self.settings, app_session.db, None, cancel_check
+            )
+            bypassed_set = set(bypassed_files_2).union(fast_path_moved_destinations)
             items_to_sort = [f for f in files if f not in bypassed_set]
 
             if cancel_check():
                 return
 
-            # 3. Process new/changed files and partial fit analyzer
+            # Process remaining unorganized files (Heavy Text Extraction & OCR)
             if items_to_sort:
-
                 async def process_and_fit():
                     async for (
                         item,
@@ -266,18 +314,18 @@ class ContinuousWatchdogDaemon:
             if cancel_check():
                 return
 
-            # 4. Generate sorting plan
-            plan = app_session.generate_sorting_plan()
-            if not plan:
-                logger.info("No sorting actions needed.")
+            # Generate slow-path AI plan (full plan, which naturally filters already moved files)
+            slow_path_plan = app_session.generate_sorting_plan(fast_path_only=False)
+            if not slow_path_plan:
+                logger.info("No AI sorting actions needed.")
                 return
 
             if cancel_check():
                 return
 
-            # 5. Execute silent moves
-            summary = app_session.execute_moves(plan)
-            logger.info(f"Silent move execution completed successfully: {summary}")
+            # Execute Phase 2 moves (AI Classification)
+            summary = app_session.execute_moves(slow_path_plan)
+            logger.info(f"Phase 2 (Slow-Path AI) completed successfully: {summary}")
             print(f"Silent move execution completed successfully: {summary}")
 
         except Exception as e:

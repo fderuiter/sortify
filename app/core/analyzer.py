@@ -321,6 +321,7 @@ class IncrementalAnalyzer:
         runtime_settings=None,
         locked_files: dict = None,
         cancel_check=None,
+        fast_path_only: bool = False,
     ) -> dict:
         """Generate a sorting plan based on the current model state."""
         if locked_files:
@@ -469,6 +470,11 @@ class IncrementalAnalyzer:
                     else:
                         ai_filenames.append(f)
                         ai_documents.append(doc)
+
+            if fast_path_only:
+                ai_filenames = []
+                ai_documents = []
+                unsupported_files = []
 
             # Document-to-Document Content Similarity Matching Phase
             historical_docs = []
@@ -745,8 +751,8 @@ class IncrementalAnalyzer:
 
             self._last_reconstruction_error = 0.0
 
-            active_strategy_name = self.strategy_name
-            if self.strategy_name and self.embedding_manager.is_mock:
+            active_strategy_name = self.strategy_name if not fast_path_only else None
+            if active_strategy_name and self.embedding_manager.is_mock:
                 active_strategy_name = "default"
 
             if active_strategy_name:
@@ -1061,6 +1067,37 @@ class IncrementalAnalyzer:
                             current[part][f] = info
                     else:
                         current = current[part]
+
+            # Post-process: ensure every file node in the plan has relative_source
+            def _ensure_relative_source(node, current_path=""):
+                for k, v in list(node.items()):
+                    if v is None:
+                        # Convert None to a standard file dictionary with relative_source
+                        rel_src = os.path.relpath(
+                            os.path.join(base_dir, k),
+                            os.path.join(base_dir, current_path) if current_path else base_dir
+                        ).replace("\\", "/")
+                        node[k] = {
+                            "__type__": "file",
+                            "relative_source": rel_src,
+                            "status": None
+                        }
+                    elif isinstance(v, dict):
+                        if v.get("__type__") == "file":
+                            if "relative_source" not in v:
+                                # k is the relative path of the file from base_dir (e.g. invoice_12345.txt)
+                                # current_path is the destination folder path (e.g. Invoices)
+                                # We need relative_source of k relative to current_path
+                                rel_src = os.path.relpath(
+                                    os.path.join(base_dir, k),
+                                    os.path.join(base_dir, current_path) if current_path else base_dir
+                                ).replace("\\", "/")
+                                v["relative_source"] = rel_src
+                        else:
+                            # It's a directory, recurse
+                            _ensure_relative_source(v, os.path.join(current_path, k) if current_path else k)
+
+            _ensure_relative_source(clean_plan)
 
             return self._inject_hierarchy(clean_plan)
 
