@@ -3,6 +3,7 @@
 import os
 
 from app.core.link_manager import LinkManager
+from app.core.path_utils import fallback_parse_lnk, resolve_mapped_path
 
 try:
     import pylnk3
@@ -188,41 +189,52 @@ class VerificationEngine:
         current_dest: str = "",
         active_parent_path: str = "",
         depth: int = 0,
+        seen_sources: set = None,
     ) -> list:
-        """Get a flat list of moves from the plan."""
+        """Get a flat list of moves from the plan, expanding directory relocations into explicit file and subfolder entries."""
         base_dir = os.path.normpath(base_dir)
+        if seen_sources is None:
+            seen_sources = set()
+
         moves = []
         for key, content in plan.items():
             if content is None or (
                 isinstance(content, dict)
                 and content.get("__type__") in ("file", "directory")
             ):
-                if isinstance(content, dict) and content.get("__type__") == "directory":
-                    continue
+                is_dir = (
+                    isinstance(content, dict)
+                    and content.get("__type__") == "directory"
+                )
 
-                if depth > 0:
-                    if (
-                        not isinstance(content, dict)
-                        or "relative_source" not in content
-                    ):
+                if depth > 0 and not is_dir and isinstance(content, dict):
+                    if "relative_source" not in content and "source_path" not in content:
                         raise ValueError(
                             f"Missing required relative source metadata field for nested item '{key}'"
                         )
-                    relative_source = content["relative_source"]
-                    rel_src_with_parent = os.path.join(
-                        active_parent_path, relative_source
-                    )
-                    source_path = os.path.normpath(
-                        os.path.join(base_dir, rel_src_with_parent)
-                    )
-                else:
-                    if isinstance(content, dict) and "relative_source" in content:
-                        relative_source = content["relative_source"]
-                        source_path = os.path.normpath(
-                            os.path.join(base_dir, relative_source)
-                        )
+
+                if isinstance(content, dict) and "source_path" in content:
+                    src_p = content["source_path"]
+                    source_path = os.path.normpath(src_p if os.path.isabs(src_p) else os.path.join(base_dir, src_p))
+                elif isinstance(content, dict) and "relative_source" in content:
+                    rel_src = content["relative_source"]
+                    cand1 = os.path.normpath(os.path.join(base_dir, active_parent_path, rel_src))
+                    cand2 = os.path.normpath(os.path.join(base_dir, rel_src))
+                    if os.path.lexists(cand1):
+                        source_path = cand1
+                    elif os.path.lexists(cand2):
+                        source_path = cand2
                     else:
-                        source_path = os.path.normpath(os.path.join(base_dir, key))
+                        source_path = cand1 if depth > 0 else cand2
+                else:
+                    cand1 = os.path.normpath(os.path.join(base_dir, active_parent_path, key))
+                    cand2 = os.path.normpath(os.path.join(base_dir, key))
+                    if os.path.lexists(cand1):
+                        source_path = cand1
+                    elif os.path.lexists(cand2):
+                        source_path = cand2
+                    else:
+                        source_path = cand1 if depth > 0 else cand2
 
                 if isinstance(content, dict) and "target_filename" in content:
                     filename = content["target_filename"]
@@ -231,17 +243,92 @@ class VerificationEngine:
 
                 dest_dir = os.path.join(base_dir, current_dest)
                 dest_path = os.path.normpath(os.path.join(dest_dir, filename))
-                moves.append((key, source_path, dest_path))
+
+                if is_dir:
+                    if source_path not in seen_sources and (
+                        source_path != dest_path or os.path.exists(source_path)
+                    ):
+                        if source_path != dest_path or (
+                            os.path.exists(source_path)
+                            and not os.path.isdir(source_path)
+                        ):
+                            moves.append((key, source_path, dest_path))
+                            seen_sources.add(source_path)
+
+                    if os.path.exists(source_path) and os.path.isdir(source_path):
+                        for root, dirs, files in os.walk(source_path):
+                            for d in dirs:
+                                dir_abs_src = os.path.normpath(os.path.join(root, d))
+                                if dir_abs_src not in seen_sources:
+                                    rel_child = os.path.relpath(
+                                        dir_abs_src, source_path
+                                    )
+                                    dir_abs_dst = os.path.normpath(
+                                        os.path.join(dest_path, rel_child)
+                                    )
+                                    moves.append(
+                                        (rel_child, dir_abs_src, dir_abs_dst)
+                                    )
+                                    seen_sources.add(dir_abs_src)
+                            for f in files:
+                                file_abs_src = os.path.normpath(
+                                    os.path.join(root, f)
+                                )
+                                if file_abs_src not in seen_sources:
+                                    rel_child = os.path.relpath(
+                                        file_abs_src, source_path
+                                    )
+                                    file_abs_dst = os.path.normpath(
+                                        os.path.join(dest_path, rel_child)
+                                    )
+                                    moves.append(
+                                        (rel_child, file_abs_src, file_abs_dst)
+                                    )
+                                    seen_sources.add(file_abs_src)
+                else:
+                    if source_path not in seen_sources:
+                        moves.append((key, source_path, dest_path))
+                        seen_sources.add(source_path)
             else:
+                nested_dest = os.path.join(current_dest, key)
+                nested_parent = os.path.join(active_parent_path, key)
                 moves.extend(
                     VerificationEngine.get_moves(
                         base_dir,
                         content,
-                        os.path.join(current_dest, key),
-                        os.path.join(active_parent_path, key),
+                        nested_dest,
+                        nested_parent,
                         depth + 1,
+                        seen_sources,
                     )
                 )
+
+                source_dir = os.path.normpath(os.path.join(base_dir, nested_parent))
+                dest_dir_target = os.path.normpath(os.path.join(base_dir, nested_dest))
+                if (
+                    os.path.exists(source_dir)
+                    and os.path.isdir(source_dir)
+                    and source_dir != dest_dir_target
+                ):
+                    for root, dirs, files in os.walk(source_dir):
+                        for d in dirs:
+                            dir_abs_src = os.path.normpath(os.path.join(root, d))
+                            if dir_abs_src not in seen_sources:
+                                rel_child = os.path.relpath(dir_abs_src, source_dir)
+                                dir_abs_dst = os.path.normpath(
+                                    os.path.join(dest_dir_target, rel_child)
+                                )
+                                moves.append((rel_child, dir_abs_src, dir_abs_dst))
+                                seen_sources.add(dir_abs_src)
+                        for f in files:
+                            file_abs_src = os.path.normpath(os.path.join(root, f))
+                            if file_abs_src not in seen_sources:
+                                rel_child = os.path.relpath(file_abs_src, source_dir)
+                                file_abs_dst = os.path.normpath(
+                                    os.path.join(dest_dir_target, rel_child)
+                                )
+                                moves.append((rel_child, file_abs_src, file_abs_dst))
+                                seen_sources.add(file_abs_src)
         return moves
 
 
@@ -327,7 +414,11 @@ class VirtualFilesystemTracker:
                             lnk = pylnk3.parse(abs_file_path)
                             shortcut_target = lnk.path
                         except Exception:
-                            pass
+                            shortcut_target = "__UNRESOLVABLE__"
+                    if not shortcut_target:
+                        shortcut_target = fallback_parse_lnk(abs_file_path)
+                    if not shortcut_target:
+                        shortcut_target = "__UNRESOLVABLE__"
 
                 try:
                     st = (
@@ -367,8 +458,22 @@ class VirtualFilesystemTracker:
                     elif link_info.get("type") == "lnk":
                         shortcut_target = link_info.get("target")
                 else:
-                    if abs_src.lower().endswith(".lnk"):
-                        shortcut_target = "mock_target.exe"
+                    if os.path.islink(abs_src):
+                        try:
+                            symlink_target = os.readlink(abs_src)
+                        except OSError:
+                            pass
+                    elif abs_src.lower().endswith(".lnk"):
+                        if pylnk3:
+                            try:
+                                lnk = pylnk3.parse(abs_src)
+                                shortcut_target = lnk.path
+                            except Exception:
+                                shortcut_target = "__UNRESOLVABLE__"
+                        if not shortcut_target:
+                            shortcut_target = fallback_parse_lnk(abs_src)
+                        if not shortcut_target:
+                            shortcut_target = "__UNRESOLVABLE__"
 
                 self.nodes[abs_src] = VirtualNode(
                     abs_src,
@@ -556,7 +661,8 @@ class VirtualFilesystemTracker:
         base_dir_abs = os.path.abspath(base_dir) if base_dir else ""
 
         path_map = {
-            os.path.abspath(src): os.path.abspath(dst) for _, src, dst in moves_list
+            os.path.normcase(os.path.abspath(src)): os.path.abspath(dst)
+            for _, src, dst in moves_list
         }
 
         for abs_path, node in final_nodes.items():
@@ -571,6 +677,28 @@ class VirtualFilesystemTracker:
                 link_type = "shortcut"
 
             if not target_path:
+                if abs_path.lower().endswith(".lnk"):
+                    message = f"Broken shortcut target: '{abs_path}' points to an unresolvable or missing target."
+                    broken_links.append(
+                        {
+                            "path": abs_path,
+                            "type": "broken_shortcut",
+                            "target": "unresolvable",
+                            "message": message,
+                        }
+                    )
+                continue
+
+            if target_path == "__UNRESOLVABLE__":
+                message = f"Broken {link_type or 'shortcut'} target: '{abs_path}' points to an unresolvable or missing target."
+                broken_links.append(
+                    {
+                        "path": abs_path,
+                        "type": f"broken_{link_type or 'shortcut'}",
+                        "target": "unresolvable",
+                        "message": message,
+                    }
+                )
                 continue
 
             # Determine original absolute target path before moves
@@ -591,7 +719,7 @@ class VirtualFilesystemTracker:
                 )
 
             # Final absolute target path after moves
-            abs_target_final = path_map.get(abs_target_orig, abs_target_orig)
+            abs_target_final = resolve_mapped_path(path_map, abs_target_orig)
 
             # Verify target existence
             is_inside_base = (

@@ -8,6 +8,7 @@ import os
 import shutil  # noqa: F401
 
 from app.core.link_manager import LinkManager
+from app.core.path_utils import fallback_parse_lnk, resolve_mapped_path
 from app.core.verifier import VerificationEngine
 
 try:
@@ -107,39 +108,71 @@ def _execute_moves_recursive(
             isinstance(content, dict)
             and content.get("__type__") in ("file", "directory")
         ):
-            if isinstance(content, dict) and content.get("__type__") == "directory":
-                continue
+            is_dir = isinstance(content, dict) and content.get("__type__") == "directory"
 
-            if isinstance(content, dict) and content.get("status") == "Already Sorted":
-                # Even if already sorted, the target might have moved, so we still process links
-                pass
-
-            if depth > 0:
-                if not isinstance(content, dict) or "relative_source" not in content:
+            if depth > 0 and not is_dir and isinstance(content, dict):
+                if "relative_source" not in content and "source_path" not in content:
                     raise ValueError(
                         f"Missing required relative source metadata field for nested item '{key}'"
                     )
-                relative_source = content["relative_source"]
-                rel_src_with_parent = os.path.join(active_parent_path, relative_source)
-                source_path = os.path.normpath(
-                    os.path.join(base_dir, rel_src_with_parent)
-                )
-            else:
-                if isinstance(content, dict) and "relative_source" in content:
-                    relative_source = content["relative_source"]
-                    source_path = os.path.normpath(
-                        os.path.join(base_dir, relative_source)
-                    )
-                else:
-                    source_path = os.path.normpath(os.path.join(base_dir, key))
 
-            if not os.path.lexists(source_path):
-                continue
+            if isinstance(content, dict) and "source_path" in content:
+                src_p = content["source_path"]
+                source_path = os.path.normpath(src_p if os.path.isabs(src_p) else os.path.join(base_dir, src_p))
+            elif isinstance(content, dict) and "relative_source" in content:
+                rel_src = content["relative_source"]
+                cand1 = os.path.normpath(os.path.join(base_dir, active_parent_path, rel_src))
+                cand2 = os.path.normpath(os.path.join(base_dir, rel_src))
+                if os.path.lexists(cand1):
+                    source_path = cand1
+                elif os.path.lexists(cand2):
+                    source_path = cand2
+                else:
+                    source_path = cand1 if depth > 0 else cand2
+            else:
+                cand1 = os.path.normpath(os.path.join(base_dir, active_parent_path, key))
+                cand2 = os.path.normpath(os.path.join(base_dir, key))
+                if os.path.lexists(cand1):
+                    source_path = cand1
+                elif os.path.lexists(cand2):
+                    source_path = cand2
+                else:
+                    source_path = cand1 if depth > 0 else cand2
 
             if isinstance(content, dict) and "target_filename" in content:
                 filename = content["target_filename"]
             else:
                 filename = os.path.basename(key)
+
+            if is_dir:
+                if os.path.exists(source_path) and os.path.isdir(source_path):
+                    sub_plan = {}
+                    for item in os.listdir(source_path):
+                        item_abs = os.path.join(source_path, item)
+                        if os.path.isdir(item_abs):
+                            sub_plan[item] = {
+                                "__type__": "directory",
+                                "relative_source": item,
+                                "source_path": item_abs,
+                            }
+                        else:
+                            sub_plan[item] = {
+                                "__type__": "file",
+                                "relative_source": item,
+                                "source_path": item_abs,
+                            }
+                    _execute_moves_recursive(
+                        base_dir,
+                        sub_plan,
+                        db,
+                        os.path.join(current_dest, filename),
+                        path_map,
+                        db_updates_batch,
+                        os.path.join(active_parent_path, key),
+                        depth + 1,
+                        runtime_settings,
+                    )
+                continue
 
             import unicodedata
 
@@ -175,6 +208,26 @@ def _execute_moves_recursive(
             dest_path = unicodedata.normalize("NFC", dest_path)
 
             link_info = LinkManager.get_link_info(source_path)
+            if not link_info:
+                if os.path.islink(source_path):
+                    try:
+                        target = os.readlink(source_path)
+                        link_info = {"type": "symlink", "target": target}
+                    except OSError:
+                        pass
+                elif source_path.lower().endswith(".lnk"):
+                    if pylnk3:
+                        try:
+                            lnk = pylnk3.parse(source_path)
+                            if lnk and getattr(lnk, "path", None):
+                                link_info = {"type": "lnk", "target": lnk.path}
+                        except Exception:
+                            pass
+                    if not link_info:
+                        target = fallback_parse_lnk(source_path)
+                        if target:
+                            link_info = {"type": "lnk", "target": target}
+
             moved_as_link = False
 
             if link_info:
@@ -185,12 +238,7 @@ def _execute_moves_recursive(
                         os.path.join(os.path.dirname(source_path), original_target)
                     )
 
-                new_abs_target = path_map.get(
-                    os.path.normcase(os.path.abspath(abs_target))
-                    if abs_target
-                    else abs_target,
-                    abs_target,
-                )
+                new_abs_target = resolve_mapped_path(path_map, abs_target)
 
                 # Check if we need to update the link
                 needs_update = not _is_same_path(
@@ -232,42 +280,63 @@ def _execute_moves_recursive(
                             )
                             raise
 
-                    elif link_info["type"] == "lnk" and pylnk3:
-                        try:
-                            parsed = pylnk3.parse(source_path)
-                            kwargs = {
-                                "arguments": parsed.arguments,
-                                "description": parsed.description,
-                                "icon_file": parsed.icon,
-                                "icon_index": getattr(parsed, "icon_index", 0),
-                                "work_dir": parsed.work_dir,
-                                "window_mode": parsed.window_mode,
-                            }
+                    elif link_info["type"] == "lnk":
+                        if pylnk3:
+                            try:
+                                parsed = pylnk3.parse(source_path)
+                                kwargs = {
+                                    "arguments": getattr(parsed, "arguments", None),
+                                    "description": getattr(parsed, "description", None),
+                                    "icon_file": getattr(parsed, "icon", None),
+                                    "icon_index": getattr(parsed, "icon_index", 0),
+                                    "work_dir": getattr(parsed, "work_dir", None),
+                                    "window_mode": getattr(parsed, "window_mode", None),
+                                }
 
-                            pylnk3.for_file(
-                                new_abs_target, lnk_name=shadow_name, **kwargs
-                            )
-                            if not os.path.lexists(shadow_name):
-                                raise RuntimeError(
-                                    "Shadow link creation failed validation."
+                                pylnk3.for_file(
+                                    new_abs_target, lnk_name=shadow_name, **kwargs
                                 )
+                                if not os.path.lexists(shadow_name):
+                                    raise RuntimeError(
+                                        "Shadow link creation failed validation."
+                                    )
 
-                            os.replace(shadow_name, dest_path)
-                            if not _is_same_path(dest_path, source_path):
-                                from app.core.resilient_file_ops import resilient_remove
+                                os.replace(shadow_name, dest_path)
+                                if not _is_same_path(dest_path, source_path):
+                                    from app.core.resilient_file_ops import resilient_remove
 
-                                resilient_remove(source_path)
-                            moved_as_link = True
-                        except Exception as e:
-                            if os.path.lexists(shadow_name):
-                                from app.core.resilient_file_ops import resilient_remove
+                                    resilient_remove(source_path)
+                                moved_as_link = True
+                            except Exception as e:
+                                if os.path.lexists(shadow_name):
+                                    from app.core.resilient_file_ops import resilient_remove
 
-                                resilient_remove(shadow_name)
-                            logging.error(
-                                f"Failed to atomically update Windows shortcut {source_path}: {e}",
-                                exc_info=True,
-                            )
-                            raise
+                                    resilient_remove(shadow_name)
+                                logging.error(
+                                    f"Failed to atomically update Windows shortcut {source_path}: {e}",
+                                    exc_info=True,
+                                )
+                                raise
+                        else:
+                            try:
+                                with open(shadow_name, "w", encoding="utf-8") as f:
+                                    f.write(new_abs_target)
+                                os.replace(shadow_name, dest_path)
+                                if not _is_same_path(dest_path, source_path):
+                                    from app.core.resilient_file_ops import resilient_remove
+
+                                    resilient_remove(source_path)
+                                moved_as_link = True
+                            except Exception as e:
+                                if os.path.lexists(shadow_name):
+                                    from app.core.resilient_file_ops import resilient_remove
+
+                                    resilient_remove(shadow_name)
+                                logging.error(
+                                    f"Failed to atomically update Windows shortcut fallback {source_path}: {e}",
+                                    exc_info=True,
+                                )
+                                raise
 
             source_rel_path = os.path.relpath(source_path, base_dir).replace("\\", "/")
             doc = db.get_document(base_dir, source_rel_path)
@@ -412,7 +481,7 @@ def execute_moves(
 
         # Sort by descending depth to delete subdirectories before parents
         dirs_to_process.sort(
-            key=lambda x: len(x["source_path"].replace("\\", "/").split("/")),
+            key=lambda x: len((x.get("source_path") or x.get("relative_source") or "").replace("\\", "/").split("/")),
             reverse=True,
         )
 

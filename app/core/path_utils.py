@@ -170,3 +170,73 @@ def is_path_too_long(path: str, limit: int = 260) -> bool:
         return False
     normalized_path = os.path.abspath(path)
     return len(normalized_path) >= limit
+
+
+def resolve_mapped_path(path_map: dict, abs_path: str) -> str:
+    """Resolve an absolute path against a path_map including direct matches and directory prefix matches."""
+    if not abs_path or not path_map:
+        return abs_path
+    abs_norm = os.path.normpath(os.path.abspath(abs_path))
+    abs_case = os.path.normcase(abs_norm)
+    if abs_case in path_map:
+        return path_map[abs_case]
+    # Check directory prefix
+    for src_case, dst_path in path_map.items():
+        src_norm = os.path.normpath(src_case)
+        src_dir = src_norm if src_norm.endswith(os.sep) else src_norm + os.sep
+        if abs_case.startswith(os.path.normcase(src_dir)):
+            rel = os.path.relpath(abs_norm, src_norm)
+            return os.path.normpath(os.path.join(dst_path, rel))
+    return abs_norm
+
+
+def fallback_parse_lnk(file_path: str) -> str | None:
+    """Attempt fallback parsing of a .lnk or shortcut file when primary libraries are unavailable."""
+    if not file_path or not os.path.exists(file_path):
+        return None
+    try:
+        with open(file_path, "rb") as f:
+            data = f.read()
+    except Exception:
+        return None
+
+    # Check for text content first
+    try:
+        text = data.decode("utf-8", errors="ignore").strip()
+        if text and (os.path.isabs(text) or text.startswith(".") or "/" in text or "\\" in text):
+            lines = [line.strip() for line in text.splitlines() if line.strip()]
+            if lines:
+                candidate = lines[0]
+                if any(c in candidate for c in [":\\", ":/", "/", "\\"]):
+                    return candidate
+    except Exception:
+        pass
+
+    # Extract printable ASCII strings
+    ascii_strings = re.findall(rb"[\x20-\x7e]{3,}", data)
+    for s in ascii_strings:
+        try:
+            decoded = s.decode("ascii")
+            if re.match(r"^[A-Za-z]:\\[^:\*\?\"<>\|]+$", decoded) or re.match(
+                r"^[A-Za-z]:/[^:\*\?\"<>\|]+$", decoded
+            ):
+                return decoded
+            if decoded.startswith(("\\\\", "./", "../", ".\\", "..\\")):
+                return decoded
+        except Exception:
+            pass
+
+    # Extract UTF-16LE strings
+    try:
+        utf16_text = data.decode("utf-16le", errors="ignore")
+        matches = re.findall(r"[A-Za-z]:\\[^:\*\?\"<>\|]+", utf16_text)
+        if matches:
+            return matches[0]
+        rel_matches = re.findall(r"\.\.?[/\\][^:\*\?\"<>\|]+", utf16_text)
+        if rel_matches:
+            return rel_matches[0]
+    except Exception:
+        pass
+
+    return None
+
