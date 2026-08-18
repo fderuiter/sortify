@@ -102,8 +102,9 @@ async def build_corpus_generator_async(
     cancel_check: Callable | None = None,
     settings=None,
     progress_callback: Callable | None = None,
+    batch_size: int = 50,
 ):
-    """Asynchronously map every item to its text payload sequentially and yield file-by-file.
+    """Asynchronously map every item to its text payload sequentially in fixed batches and yield file-by-file.
 
     Parameters
     ----------
@@ -119,6 +120,8 @@ async def build_corpus_generator_async(
         Optional settings object.
     progress_callback : Callable | None
         Optional callback for intra-file progress updates.
+    batch_size : int
+        Fixed batch size for ingestion (default 50).
 
     Yields
     ------
@@ -137,34 +140,40 @@ async def build_corpus_generator_async(
 
     items_to_sort = sorted(items_to_sort)
     try:
-        for item in items_to_sort:
+        for i in range(0, len(items_to_sort), batch_size):
             if cancel_check and cancel_check():
                 break
 
-            item_path = os.path.join(base_dir, item)
+            batch = items_to_sort[i : i + batch_size]
+            for item in batch:
+                if cancel_check and cancel_check():
+                    break
 
-            # 1. Run file hashing in background thread to protect event loop
-            file_hash = await asyncio.to_thread(get_file_hash, item_path)
+                item_path = os.path.join(base_dir, item)
 
-            # 2. Check cache database
-            doc = await asyncio.to_thread(db.get_document, base_dir, item)
-            if doc and doc["file_hash"] == file_hash:
-                # Skip extraction and yield immediately
-                yield item, doc["extracted_text"], file_hash, True
-                continue
+                # 1. Run file hashing in background thread to protect event loop
+                file_hash = await asyncio.to_thread(get_file_hash, item_path)
 
-            # 3. Process/extract file content in background thread
-            text = await asyncio.to_thread(
-                extract_file_text,
-                item_path,
-                settings=settings,
-                progress_callback=progress_callback,
-                cancel_check=cancel_check,
-            )
+                # 2. Check cache database
+                doc = await asyncio.to_thread(db.get_document, base_dir, item)
+                if doc and doc["file_hash"] == file_hash:
+                    # Skip extraction and yield immediately
+                    yield item, doc["extracted_text"], file_hash, True
+                    continue
 
-            yield item, text, file_hash, False
+                # 3. Process/extract file content in background thread
+                text = await asyncio.to_thread(
+                    extract_file_text,
+                    item_path,
+                    settings=settings,
+                    progress_callback=progress_callback,
+                    cancel_check=cancel_check,
+                )
+
+                yield item, text, file_hash, False
     finally:
         from app.core.shared_registry import SharedModelRegistry
+
         registry = SharedModelRegistry.get_instance()
         registry.unload_model("easyocr")
         registry.unload_model("florence-2")
@@ -181,7 +190,7 @@ def build_corpus_generator(
     cancel_check: Callable | None = None,
     settings=None,
 ):
-    """Map every item to its text payload asynchronously and yield chunks.
+    """Map every item to its text payload asynchronously in fixed batches and yield chunks.
 
     Parameters
     ----------
@@ -196,7 +205,7 @@ def build_corpus_generator(
     db : Any
         Database connection or instance used for document lookups.
     chunk_size : int
-        The number of items to yield in each chunk.
+        The number of items to yield in each chunk (defaults to fixed 50).
     sequential : bool
         If True, items are processed iteratively in exact order to eliminate ingestion noise.
     cancel_check : Callable | None
@@ -218,79 +227,92 @@ def build_corpus_generator(
             pass
 
     items_to_sort = sorted(items_to_sort)
-    chunk = {}
     try:
-        if sequential:
-            for item in items_to_sort:
-                if cancel_check and cancel_check():
-                    break
-                item_name, item_text, file_hash = process_item_worker(
-                    base_dir, item, progress_callback, db, settings=settings
-                )
+        for i in range(0, len(items_to_sort), chunk_size):
+            if cancel_check and cancel_check():
+                break
 
-                doc = db.get_document(base_dir, item_name)
-                if doc and doc["file_hash"] == file_hash:
-                    # Already processed and unchanged, no need to yield to analyzer
-                    continue
+            batch = items_to_sort[i : i + chunk_size]
+            chunk = {}
 
-                chunk[item_name] = {
-                    "text": item_text
-                    if item_text.startswith("[STATUS:")
-                    else item_name + " " + item_text,
-                    "hash": file_hash,
-                }
-                if len(chunk) >= chunk_size:
-                    yield chunk
-                    chunk = {}
-            if chunk:
-                yield chunk
-        else:
-            from app.core.shared_registry import SharedWorkerPool
-
-            pool = SharedWorkerPool.get_instance(max_workers=max_workers)
-            item_to_future = {
-                item: pool.submit(
-                    process_item_worker, base_dir, item, progress_callback, db, settings
-                )
-                for item in items_to_sort
-            }
-            timeout = settings.VISUAL_TIMEOUT if settings else None
-            for item in items_to_sort:
-                if cancel_check and cancel_check():
-                    # Attempt to cancel remaining futures
-                    for fut in item_to_future.values():
-                        fut.cancel()
-                    break
-                future = item_to_future[item]
-                try:
-                    item_name, item_text, file_hash = future.result(timeout=timeout)
-                except concurrent.futures.TimeoutError:
-                    logging.warning(
-                        f"Extraction of '{item}' timed out after {timeout} seconds."
+            if sequential:
+                for item in batch:
+                    if cancel_check and cancel_check():
+                        break
+                    item_name, item_text, file_hash = process_item_worker(
+                        base_dir, item, progress_callback, db, settings=settings
                     )
-                    item_name = item
-                    item_text = "[STATUS:TIMEOUT]"
-                    file_hash = ""
-                    # Cancel the future if possible
-                    future.cancel()
 
-                doc = db.get_document(base_dir, item_name)
-                if doc and doc["file_hash"] == file_hash:
-                    continue
+                    doc = db.get_document(base_dir, item_name)
+                    if doc and doc["file_hash"] == file_hash:
+                        # Already processed and unchanged, no need to yield to analyzer
+                        continue
 
-                chunk[item_name] = {
-                    "text": item_text
-                    if item_text.startswith("[STATUS:")
-                    else item_name + " " + item_text,
-                    "hash": file_hash,
-                }
-                if len(chunk) >= chunk_size:
+                    chunk[item_name] = {
+                        "text": item_text
+                        if item_text.startswith("[STATUS:")
+                        else item_name + " " + item_text,
+                        "hash": file_hash,
+                    }
+                if chunk:
                     yield chunk
                     chunk = {}
-            if chunk:
-                yield chunk
+            else:
+                from app.core.shared_registry import SharedWorkerPool
+
+                pool = SharedWorkerPool.get_instance(max_workers=max_workers)
+                item_to_future = {
+                    item: pool.submit(
+                        process_item_worker,
+                        base_dir,
+                        item,
+                        progress_callback,
+                        db,
+                        settings,
+                    )
+                    for item in batch
+                }
+                timeout = settings.VISUAL_TIMEOUT if settings else None
+                for item in batch:
+                    if cancel_check and cancel_check():
+                        # Attempt to cancel remaining futures in this batch
+                        for fut in item_to_future.values():
+                            fut.cancel()
+                        break
+                    future = item_to_future[item]
+                    try:
+                        item_name, item_text, file_hash = future.result(
+                            timeout=timeout
+                        )
+                    except concurrent.futures.TimeoutError:
+                        logging.warning(
+                            f"Extraction of '{item}' timed out after {timeout} seconds."
+                        )
+                        item_name = item
+                        item_text = "[STATUS:TIMEOUT]"
+                        file_hash = ""
+                        future.cancel()
+
+                    doc = db.get_document(base_dir, item_name)
+                    if doc and doc["file_hash"] == file_hash:
+                        continue
+
+                    chunk[item_name] = {
+                        "text": item_text
+                        if item_text.startswith("[STATUS:")
+                        else item_name + " " + item_text,
+                        "hash": file_hash,
+                    }
+
+                item_to_future.clear()
+                del item_to_future
+
+                if chunk:
+                    yield chunk
+                    chunk = {}
     finally:
         from app.core.shared_registry import SharedModelRegistry
+
         registry = SharedModelRegistry.get_instance()
         registry.unload_model("easyocr")
         registry.unload_model("florence-2")

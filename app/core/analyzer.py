@@ -254,7 +254,8 @@ class IncrementalAnalyzer:
                     texts.append(data)
                     hashes.append("")
                 filepaths.append(filepath)
-                self.corpus[filepath] = texts[-1]
+                # Store key without retaining raw text string in memory post-extraction
+                self.corpus[filepath] = None
 
             if not texts:
                 return
@@ -277,6 +278,11 @@ class IncrementalAnalyzer:
                 )
 
             self.db.upsert_documents(documents_to_upsert)
+
+            # Immediately purge raw text string payloads post-extraction and DB persistence
+            texts.clear()
+            documents_to_upsert.clear()
+            del texts, documents_to_upsert
 
         except Exception as e:
             logging.error(f"Failed during partial_fit. Error: {str(e)}", exc_info=True)
