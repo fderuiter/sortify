@@ -866,6 +866,247 @@ class NegativeLogitBiasProcessor(LogitsProcessor):
         return scores
 
 
+class PairedConstraintAdapter:
+    """Shared constraint structure encapsulating dynamic GBNF grammar strings and PyTorch logit bias rules for generative naming."""
+
+    FLUFF_WORDS = {
+        "sure",
+        "here",
+        "is",
+        "a",
+        "an",
+        "the",
+        "this",
+        "these",
+        "it",
+        "they",
+        "them",
+        "there",
+        "are",
+        "of",
+        "some",
+        "document",
+        "documents",
+        "file",
+        "files",
+        "folder",
+        "folders",
+        "containing",
+        "about",
+        "for",
+        "named",
+        "associated",
+        "with",
+        "relating",
+        "to",
+        "and",
+        "in",
+        "at",
+        "by",
+        "from",
+        "or",
+        "as",
+        "but",
+        "so",
+        "if",
+        "then",
+        "else",
+        "under",
+        "below",
+        "above",
+        "following",
+        "list",
+        "items",
+        "content",
+        "contents",
+        "yes",
+        "no",
+        "ok",
+        "okay",
+        "hello",
+        "hi",
+        "hey",
+        "please",
+        "find",
+        "attached",
+        "generated",
+        "name",
+        "names",
+        "title",
+        "titles",
+    }
+
+    def __init__(self, ocr_languages: str = "en", tokenizer=None):
+        self.ocr_languages = ocr_languages
+        self.allowed_char_regex = self._build_allowed_char_regex(ocr_languages)
+        self.gbnf_grammar = self._build_gbnf_grammar(ocr_languages)
+        self.token_biases = {}
+        if tokenizer is not None:
+            self.build_logit_biases(tokenizer)
+
+    def _build_allowed_char_regex(self, ocr_languages: str):
+        import re
+
+        lang_codes = [
+            lang.strip().lower()
+            for lang in (ocr_languages or "en").split(",")
+            if lang.strip()
+        ]
+        if not lang_codes:
+            lang_codes = ["en"]
+
+        parts = []
+        for lang in lang_codes:
+            chars_str = LANGUAGE_CHAR_MAP.get(
+                lang, LANGUAGE_CHAR_MAP.get("en", "a-zA-Z0-9")
+            )
+            parts.append(chars_str)
+
+        combined_pattern = "".join(parts)
+        if not combined_pattern:
+            combined_pattern = "a-zA-Z0-9"
+
+        try:
+            return re.compile(rf"^[{combined_pattern}]+$")
+        except Exception:
+            return re.compile(r"^[a-zA-Z0-9]+$")
+
+    def _build_gbnf_grammar(self, ocr_languages: str) -> str:
+        lang_codes = [
+            lang.strip().lower()
+            for lang in (ocr_languages or "en").split(",")
+            if lang.strip()
+        ]
+        if not lang_codes:
+            lang_codes = ["en"]
+
+        has_en_ranges = False
+        has_cjk = False
+        has_kana = False
+        has_hiragana = False
+        has_hangul = False
+        other_chars = set()
+
+        for lang in lang_codes:
+            if lang not in LANGUAGE_CHAR_MAP:
+                return 'root ::= word (" " word)? (" " word)? (" " word)?\nword ::= [a-zA-Z0-9]+'
+
+            chars_str = LANGUAGE_CHAR_MAP[lang]
+            if "a-z" in chars_str or "A-Z" in chars_str or "0-9" in chars_str:
+                has_en_ranges = True
+            if "\u4e00-\u9fff" in chars_str:
+                has_cjk = True
+            if "\u3040-\u309f" in chars_str:
+                has_hiragana = True
+            if "\u30a0-\u30ff" in chars_str:
+                has_kana = True
+            if "\uac00-\ud7af" in chars_str:
+                has_hangul = True
+
+            cleaned = (
+                chars_str.replace("a-z", "")
+                .replace("A-Z", "")
+                .replace("0-9", "")
+                .replace("\u4e00-\u9fff", "")
+                .replace("\u3040-\u309f", "")
+                .replace("\u30a0-\u30ff", "")
+                .replace("\uac00-\ud7af", "")
+            )
+            for char in cleaned:
+                other_chars.add(char)
+
+        parts = []
+        if has_en_ranges:
+            parts.append("a-zA-Z0-9")
+        if has_hiragana:
+            parts.append("\u3040-\u309f")
+        if has_kana:
+            parts.append("\u30a0-\u30ff")
+        if has_hangul:
+            parts.append("\uac00-\ud7af")
+        if has_cjk:
+            parts.append("\u4e00-\u9fff")
+
+        sorted_others = "".join(sorted(list(other_chars)))
+        parts.append(sorted_others)
+
+        combined_chars = "".join(parts)
+        if not combined_chars:
+            combined_chars = "a-zA-Z0-9"
+
+        return f'root ::= word (" " word)? (" " word)? (" " word)?\nword ::= [{combined_chars}]+'
+
+    def should_bias_token(self, token_str: str) -> bool:
+        """Determine whether a token should be penalized based on characters or fluff words."""
+        clean_str = (
+            token_str.replace("Ġ", "").replace(" ", "").replace("<unk>", "").strip()
+        )
+        if not clean_str:
+            return False
+
+        import string
+
+        if any(c in string.punctuation for c in clean_str):
+            return True
+
+        lower_str = clean_str.lower()
+        if lower_str in self.FLUFF_WORDS:
+            return True
+
+        if self.allowed_char_regex and not self.allowed_char_regex.match(clean_str):
+            return True
+
+        return False
+
+    def build_logit_biases(self, tokenizer) -> dict:
+        """Build logit bias dictionary mapping penalized token IDs to negative weights."""
+        token_biases = {}
+        try:
+            vocab = tokenizer.get_vocab()
+            for token_str, token_id in vocab.items():
+                if self.should_bias_token(token_str):
+                    token_biases[token_id] = -100.0
+        except Exception:
+            try:
+                vocab_size = getattr(tokenizer, "vocab_size", None)
+                if vocab_size is None:
+                    vocab_size = len(tokenizer)
+                for token_id in range(vocab_size):
+                    token_str = tokenizer.convert_ids_to_tokens(token_id)
+                    if isinstance(token_str, str) and self.should_bias_token(
+                        token_str
+                    ):
+                        token_biases[token_id] = -100.0
+            except Exception as e:
+                logging.error(f"Failed to build logit biases: {e}")
+        self.token_biases = token_biases
+        return token_biases
+
+    def get_logits_processor(self) -> NegativeLogitBiasProcessor:
+        """Get a NegativeLogitBiasProcessor configured with built token biases."""
+        return NegativeLogitBiasProcessor(self.token_biases)
+
+    def clean_and_truncate_name(self, name: str) -> str:
+        """Clean and truncate name string to max 4 words and NFC normalization."""
+        if not name:
+            return ""
+        name = name.replace('"', "").replace("-", " ").strip()
+        name = " ".join(name.split())
+        words = name.split()
+        if len(words) > 4:
+            name = " ".join(words[:4])
+        import string
+
+        name = name.strip(string.punctuation).strip()
+        from app.core.path_utils import sanitize_name
+
+        name = sanitize_name(name)
+        return name
+
+
+NamingConstraint = PairedConstraintAdapter
+
+
 def cooperative_queue_get(q, timeout=8.0):
     """Retrieve an item from a queue using a non-blocking cooperative polling loop."""
     import queue
@@ -1111,6 +1352,8 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         self._generator = None
         self.task = None
         self.token_biases = {}
+        self.active_constraint = None
+        self.tokenizer = None
 
         from app.core.path_utils import get_base_path
 
@@ -1146,17 +1389,30 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         self._gguf_input_queue = None
         self._gguf_output_queue = None
 
+    def _get_active_ocr_languages(self) -> str:
+        try:
+            from app.config import AppSettings
+
+            settings = AppSettings()
+            return getattr(settings, "OCR_LANGUAGES", "en")
+        except Exception:
+            return "en"
+
     @property
     def generator(self):
         """Get or lazily initialize the generative text model generator."""
         if self._generator is not None:
             return self._generator
         from app.core.shared_registry import SharedModelRegistry
+
         registry = SharedModelRegistry.get_instance()
         if not registry.is_model_loaded("generative_naming"):
-            if getattr(self, "_model_initialized", False) and getattr(self, "model_path", None):
+            if getattr(self, "_model_initialized", False) and getattr(
+                self, "model_path", None
+            ):
                 gen, task, tok = registry.get_generative_model(self.model_path)
                 self.task = task
+                self.tokenizer = tok
                 if tok:
                     self.token_biases = self._build_logit_biases(tok)
                 self._generator = gen
@@ -1164,6 +1420,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
             return None
         gen, task, tok = registry.get_generative_model(self.model_path)
         self.task = task
+        self.tokenizer = tok
         if tok:
             self.token_biases = self._build_logit_biases(tok)
         self._generator = gen
@@ -1283,8 +1540,13 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
             generator, task, tokenizer = registry.get_generative_model(self.model_path)
             self.generator = generator
             self.task = task
+            self.tokenizer = tokenizer
             if tokenizer:
-                self.token_biases = self._build_logit_biases(tokenizer)
+                if getattr(self, "active_constraint", None) is not None:
+                    self.active_constraint.build_logit_biases(tokenizer)
+                    self.token_biases = self.active_constraint.token_biases
+                else:
+                    self.token_biases = self._build_logit_biases(tokenizer)
         except Exception as e:
             logging.error(f"Failed to load generative model via shared registry: {e}")
             self.generator = None
@@ -1301,6 +1563,14 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                 f.write(scrubbed_prompt + "\n===PROMPT_END===\n")
             return "Mock Generated Folder Name"
 
+        constraint = getattr(self, "active_constraint", None)
+        if constraint is None:
+            ocr_langs = self._get_active_ocr_languages()
+            constraint = PairedConstraintAdapter(ocr_languages=ocr_langs)
+            self.active_constraint = constraint
+
+        effective_grammar = grammar or (constraint.gbnf_grammar if constraint else None)
+
         if self._gguf_active and not self._gguf_failed:
             if not self._gguf_process or not self._gguf_process.is_alive():
                 logging.error("GGUF process died unexpectedly")
@@ -1308,7 +1578,11 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
             else:
                 try:
                     self._gguf_input_queue.put(
-                        {"prompt": prompt, "max_tokens": max_tokens, "grammar": grammar}
+                        {
+                            "prompt": prompt,
+                            "max_tokens": max_tokens,
+                            "grammar": effective_grammar,
+                        }
                     )
                     estimated_tokens = len(prompt) // 4
                     timeout = max(8.0, min(60.0, 8.0 + (estimated_tokens / 20.0)))
@@ -1336,9 +1610,19 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
 
         torch.set_num_threads(SharedModelRegistry.get_instance().get_thread_limit())
 
+        tokenizer = getattr(self, "tokenizer", None)
+        if constraint and tokenizer and not constraint.token_biases:
+            constraint.build_logit_biases(tokenizer)
+
+        token_biases = (
+            constraint.token_biases
+            if constraint
+            else getattr(self, "token_biases", {})
+        )
+
         logits_processor = LogitsProcessorList()
-        if getattr(self, "token_biases", None):
-            logits_processor.append(NegativeLogitBiasProcessor(self.token_biases))
+        if token_biases:
+            logits_processor.append(NegativeLogitBiasProcessor(token_biases))
 
         if self.task == "text-generation":
             res = self.generator(
@@ -1358,112 +1642,16 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         return res[0]["generated_text"]
 
     def _should_bias_token(self, token_str: str) -> bool:
-        # Clean token of special tokenizer characters representing spaces or unk
-        clean_str = (
-            token_str.replace("Ġ", "").replace(" ", "").replace("<unk>", "").strip()
-        )
-        if not clean_str:
-            return False
-
-        # Hyphen and punctuation check
-        import string
-
-        if any(c in string.punctuation for c in clean_str):
-            return True
-
-        # Conversational filler words
-        lower_str = clean_str.lower()
-        if lower_str in {
-            "sure",
-            "here",
-            "is",
-            "a",
-            "an",
-            "the",
-            "this",
-            "these",
-            "it",
-            "they",
-            "them",
-            "there",
-            "are",
-            "of",
-            "some",
-            "document",
-            "documents",
-            "file",
-            "files",
-            "folder",
-            "folders",
-            "containing",
-            "about",
-            "for",
-            "named",
-            "associated",
-            "with",
-            "relating",
-            "to",
-            "and",
-            "in",
-            "at",
-            "by",
-            "from",
-            "or",
-            "as",
-            "but",
-            "so",
-            "if",
-            "then",
-            "else",
-            "under",
-            "below",
-            "above",
-            "following",
-            "list",
-            "items",
-            "content",
-            "contents",
-            "yes",
-            "no",
-            "ok",
-            "okay",
-            "hello",
-            "hi",
-            "hey",
-            "please",
-            "find",
-            "attached",
-            "generated",
-            "name",
-            "names",
-            "title",
-            "titles",
-        }:
-            return True
-
-        return False
+        if getattr(self, "active_constraint", None) is None:
+            ocr_langs = self._get_active_ocr_languages()
+            self.active_constraint = PairedConstraintAdapter(ocr_languages=ocr_langs)
+        return self.active_constraint.should_bias_token(token_str)
 
     def _build_logit_biases(self, tokenizer):
-        token_biases = {}
-        try:
-            vocab = tokenizer.get_vocab()
-            for token_str, token_id in vocab.items():
-                if self._should_bias_token(token_str):
-                    token_biases[token_id] = -100.0
-        except Exception:
-            try:
-                vocab_size = getattr(tokenizer, "vocab_size", None)
-                if vocab_size is None:
-                    vocab_size = len(tokenizer)
-                for token_id in range(vocab_size):
-                    token_str = tokenizer.convert_ids_to_tokens(token_id)
-                    if isinstance(token_str, str) and self._should_bias_token(
-                        token_str
-                    ):
-                        token_biases[token_id] = -100.0
-            except Exception as e:
-                logging.error(f"Failed to build logit biases: {e}")
-        return token_biases
+        if getattr(self, "active_constraint", None) is None:
+            ocr_langs = self._get_active_ocr_languages()
+            self.active_constraint = PairedConstraintAdapter(ocr_languages=ocr_langs)
+        return self.active_constraint.build_logit_biases(tokenizer)
 
     def set_db_context(self, db, base_dir):
         """Set the database and base directory context for historical queries."""
@@ -1479,7 +1667,15 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         if not documents:
             return "Miscellaneous"
 
-        # Coherence routing & Offline Similarity matching layer
+        filtered_documents = [
+            doc
+            for doc in documents
+            if doc and not doc.startswith("[STATUS:") and doc.strip()
+        ]
+        if not filtered_documents:
+            filtered_documents = documents
+
+        few_shot_context = ""
         cached_decrypted_db_rows = None
         if getattr(self, "model_path", None):
             db = getattr(self, "db", None)
@@ -2517,112 +2713,34 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
             else:
                 prompt = f"Generate a short, descriptive natural language folder name (1 to 4 words) for a folder containing these documents. Do not use hyphens. Return only the name.\nDocuments: {doc_text}\nFolder Name:"
 
-            # Dynamic GBNF Grammar Generation
-            try:
-                from app.config import AppSettings
+            # Shared Constraint Adapter
+            ocr_langs = self._get_active_ocr_languages()
+            constraint = PairedConstraintAdapter(ocr_languages=ocr_langs)
+            self.active_constraint = constraint
 
-                settings = AppSettings()
-                ocr_langs = getattr(settings, "OCR_LANGUAGES", "en")
+            tokenizer = getattr(self, "tokenizer", None)
+            if not tokenizer:
+                try:
+                    from app.core.shared_registry import SharedModelRegistry
 
-                lang_codes = [
-                    lang.strip().lower()
-                    for lang in ocr_langs.split(",")
-                    if lang.strip()
-                ]
-                if not lang_codes:
-                    lang_codes = ["en"]
-
-                has_en_ranges = False
-                has_cjk = False
-                has_kana = False
-                has_hiragana = False
-                has_hangul = False
-                other_chars = set()
-
-                for lang in lang_codes:
-                    if lang not in LANGUAGE_CHAR_MAP:
-                        raise ValueError(
-                            f"Unsupported OCR language for grammar constraint: {lang}"
+                    registry = SharedModelRegistry.get_instance()
+                    if registry.is_model_loaded("generative_naming"):
+                        _, _, tokenizer = registry.get_generative_model(
+                            self.model_path
                         )
+                except Exception:
+                    tokenizer = None
 
-                    chars_str = LANGUAGE_CHAR_MAP[lang]
-                    if "a-z" in chars_str or "A-Z" in chars_str or "0-9" in chars_str:
-                        has_en_ranges = True
-                    if "\u4e00-\u9fff" in chars_str:
-                        has_cjk = True
-                    if "\u3040-\u309f" in chars_str:
-                        has_hiragana = True
-                    if "\u30a0-\u30ff" in chars_str:
-                        has_kana = True
-                    if "\uac00-\ud7af" in chars_str:
-                        has_hangul = True
-
-                    cleaned = (
-                        chars_str.replace("a-z", "")
-                        .replace("A-Z", "")
-                        .replace("0-9", "")
-                    )
-                    cleaned = (
-                        cleaned.replace("\u4e00-\u9fff", "")
-                        .replace("\u3040-\u309f", "")
-                        .replace("\u30a0-\u30ff", "")
-                        .replace("\uac00-\ud7af", "")
-                    )
-                    for char in cleaned:
-                        other_chars.add(char)
-
-                parts = []
-                if has_en_ranges:
-                    parts.append("a-zA-Z0-9")
-                if has_hiragana:
-                    parts.append("\u3040-\u309f")
-                if has_kana:
-                    parts.append("\u30a0-\u30ff")
-                if has_hangul:
-                    parts.append("\uac00-\ud7af")
-                if has_cjk:
-                    parts.append("\u4e00-\u9fff")
-
-                sorted_others = "".join(sorted(list(other_chars)))
-                parts.append(sorted_others)
-
-                combined_chars = "".join(parts)
-                if not combined_chars:
-                    combined_chars = "a-zA-Z0-9"
-
-                naming_grammar = f'root ::= word (" " word)? (" " word)? (" " word)?\nword ::= [{combined_chars}]+'
-            except Exception as e:
-                logging.error(
-                    f"Failed to generate dynamic GBNF grammar, falling back to English ASCII: {e}"
-                )
-                naming_grammar = 'root ::= word (" " word)? (" " word)? (" " word)?\nword ::= [a-zA-Z0-9]+'
+            if tokenizer:
+                constraint.build_logit_biases(tokenizer)
+                self.token_biases = constraint.token_biases
 
             with block_external_network():
-                name = self._run_prompt(prompt, 15, grammar=naming_grammar).strip()
+                name = self._run_prompt(
+                    prompt, 15, grammar=constraint.gbnf_grammar
+                ).strip()
 
-                # Cleanup the generated name
-                name = name.replace('"', "").replace("-", " ").strip()
-
-                # Replace duplicate whitespace
-                name = " ".join(name.split())
-
-                # Limit generated folder name to 1 to 4 words
-                words = name.split()
-                if len(words) > 4:
-                    name = " ".join(words[:4])
-
-                # Strip leading/trailing punctuation
-                import string
-
-                name = name.strip(string.punctuation).strip()
-
-                if not name or len(name) < 2:
-                    return super()._get_cluster_keywords(documents)
-
-                # Final OS-level path sanitization
-                from app.core.path_utils import sanitize_name
-
-                name = sanitize_name(name)
+                name = constraint.clean_and_truncate_name(name)
 
                 if not name or len(name) < 2:
                     return super()._get_cluster_keywords(documents)
