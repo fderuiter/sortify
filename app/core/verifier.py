@@ -160,7 +160,10 @@ def check_ai_status(settings) -> tuple[bool, str | None]:
             )
 
     if "florence-2" in registry._expected_hashes:
-        from app.core.offline_loader import ModelWeightsNotFoundError, OfflineModelLoader
+        from app.core.offline_loader import (
+            ModelWeightsNotFoundError,
+            OfflineModelLoader,
+        )
 
         try:
             florence_dir = OfflineModelLoader.resolve_model_path("florence-2")
