@@ -12,3 +12,10 @@ Please provide a summary of the changes in this pull request.
 
 - [ ] I have verified that database schema migrations execute sequentially and have been tested.
 - [ ] I have verified that configuration schema mutations, bounds, and validations have been tested.
+
+## UI, Accessibility & Responsive Layout Check
+
+- [ ] I have verified component rendering in the standalone component catalog across desktop and narrow mobile viewports (e.g. 320px/375px).
+- [ ] I have verified label overflow, wrapping, and text truncation handling on narrow viewports.
+- [ ] I have verified web accessibility standards compliance (ARIA labels, keyboard focusability, alt text) for new or updated interface elements.
+

@@ -44,7 +44,9 @@ class CROForensicView:
                     ui.label(
                         "Scan raw drives/archives, disambiguate multiple clinical trial protocols, and build verified TMF binders."
                     ).classes("text-xs text-gray-500")
-                ui.button(icon="close", on_click=dialog.close).props("flat round dense")
+                ui.button(icon="close", on_click=dialog.close).props(
+                    'flat round dense aria-label="Close CRO Forensic Dialog Button"'
+                )
 
             # Source & Target Paths
             with ui.column().classes("w-full gap-3 mt-4"):
