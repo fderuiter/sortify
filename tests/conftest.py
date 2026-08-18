@@ -190,7 +190,7 @@ def isolate_test_environment(monkeypatch_session):
     monkeypatch_session.setenv("AUTOSORTER_APP_DIR", temp_dir)
 
     def mock_get_app_dir():
-        return Path(temp_dir)
+        return Path(temp_dir).resolve()
 
     import app.config
 
