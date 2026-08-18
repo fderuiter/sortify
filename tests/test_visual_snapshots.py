@@ -65,11 +65,17 @@ run_app(s, port={port}, show=False)
     launcher_file.write(launcher_content)
     launcher_file.close()
 
+    isolated_tmp = tempfile.mkdtemp()
+
     cmd = [sys.executable, launcher_file.name]
 
     env = os.environ.copy()
     env["NICEGUI_SHOW_WELCOME"] = "False"
     env["PYTHONPATH"] = "/app"
+    env["TMPDIR"] = isolated_tmp
+    env["TEMP"] = isolated_tmp
+    env["TMP"] = isolated_tmp
+    env["AUTOSORTER_SESSION_BASE_DIR"] = os.path.join(isolated_tmp, "autosorter_sessions")
     # Remove PYTEST_CURRENT_TEST so NiceGUI doesn't think it is running within pytest in the subprocess
     if "PYTEST_CURRENT_TEST" in env:
         del env["PYTEST_CURRENT_TEST"]
@@ -119,6 +125,7 @@ run_app(s, port={port}, show=False)
                 os.remove(log_file.name)
             if os.path.exists(launcher_file.name):
                 os.remove(launcher_file.name)
+            shutil.rmtree(isolated_tmp, ignore_errors=True)
 
 
 @pytest.fixture(scope="module")
