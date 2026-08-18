@@ -136,9 +136,10 @@ def pre_fetch_historical_corpus(
         if not ranked:
             # Fallback: TF-IDF ranking
             try:
-                from app.core.text_utils import sanitize_text
                 from sklearn.feature_extraction.text import TfidfVectorizer
                 from sklearn.metrics.pairwise import cosine_similarity
+
+                from app.core.text_utils import sanitize_text
 
                 hist_texts = [sanitize_text(c["text"] or "") for c in candidates]
                 active_text = sanitize_text(" ".join(documents or []))
