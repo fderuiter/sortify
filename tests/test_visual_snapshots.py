@@ -9,6 +9,8 @@ import time
 import pytest
 from PIL import Image, ImageChops, ImageDraw
 
+os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", "0")
+
 try:
     from playwright.sync_api import sync_playwright
 
@@ -18,6 +20,12 @@ except ImportError:
 
 SNAPSHOT_DIR = os.path.join(os.path.dirname(__file__), "snapshots")
 
+VIEWPORTS = [
+    ("mobile", 320, 800),
+    ("tablet", 768, 800),
+    ("desktop", 1280, 800),
+]
+
 
 def find_free_port():
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -25,8 +33,7 @@ def find_free_port():
         return s.getsockname()[1]
 
 
-@pytest.fixture(scope="module")
-def nicegui_server():
+def _start_nicegui_server(enable_pseudoloc: bool = False):
     port = find_free_port()
 
     # Create a temporary script file to run as a real file
@@ -35,6 +42,10 @@ def nicegui_server():
     launcher_content = f"""import sys
 import os
 sys.path.insert(0, '/app')
+
+if {enable_pseudoloc}:
+    from tests.pseudoloc import apply_pseudolocalization
+    apply_pseudolocalization()
 
 from nicegui import ui
 ui.notify = lambda *args, **kwargs: None
@@ -90,22 +101,33 @@ run_app(s, port={port}, show=False)
             f"Failed to start NiceGUI server within 15 seconds. Subprocess logs:\n{logs}"
         )
 
-    yield f"http://127.0.0.1:{port}"
-
-    proc.terminate()
     try:
-        proc.wait(timeout=2)
-    except Exception:
-        try:
-            proc.kill()
-        except Exception:
-            pass
+        yield f"http://127.0.0.1:{port}"
     finally:
-        log_file.close()
-        if os.path.exists(log_file.name):
-            os.remove(log_file.name)
-        if os.path.exists(launcher_file.name):
-            os.remove(launcher_file.name)
+        proc.terminate()
+        try:
+            proc.wait(timeout=2)
+        except Exception:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+        finally:
+            log_file.close()
+            if os.path.exists(log_file.name):
+                os.remove(log_file.name)
+            if os.path.exists(launcher_file.name):
+                os.remove(launcher_file.name)
+
+
+@pytest.fixture(scope="module")
+def nicegui_server():
+    yield from _start_nicegui_server(enable_pseudoloc=False)
+
+
+@pytest.fixture(scope="module")
+def nicegui_server_pseudoloc():
+    yield from _start_nicegui_server(enable_pseudoloc=True)
 
 
 def assert_visual_snapshot(snapshot_name, actual_image_path):
@@ -118,6 +140,14 @@ def assert_visual_snapshot(snapshot_name, actual_image_path):
     shutil.copy(actual_image_path, actual_path)
 
     update_snapshots = os.environ.get("UPDATE_SNAPSHOTS") == "1"
+
+    # Preserving existing desktop baseline comparisons
+    if not os.path.exists(baseline_path):
+        if snapshot_name.startswith("desktop_"):
+            legacy_name = snapshot_name[len("desktop_"):]
+            legacy_baseline = os.path.join(SNAPSHOT_DIR, f"{legacy_name}_baseline.png")
+            if os.path.exists(legacy_baseline):
+                shutil.copy(legacy_baseline, baseline_path)
 
     if not os.path.exists(baseline_path) or update_snapshots:
         shutil.copy(actual_image_path, baseline_path)
@@ -170,18 +200,17 @@ def assert_visual_snapshot(snapshot_name, actual_image_path):
             os.remove(diff_path)
 
 
-@pytest.mark.skipif(not PLAYWRIGHT_AVAILABLE, reason="playwright is not installed")
-def test_visual_snapshots(nicegui_server):
+def run_visual_snapshot_pass(
+    server_url: str, viewport_name: str, width: int, height: int, pseudoloc: bool = False
+):
+    suffix = "_pseudoloc" if pseudoloc else ""
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
-        # Set standard screen size as 1280x800
-        page = browser.new_page(viewport={"width": 1280, "height": 800})
+        page = browser.new_page(viewport={"width": width, "height": height})
 
-        # Navigate to NiceGUI local server
-        page.goto(nicegui_server)
+        page.goto(server_url)
 
         # 1. Wizard View Snapshot
-        # Wait for wizard dialog elements to appear on startup
         page.wait_for_selector('[aria-label="Setup Wizard Title"]', timeout=8000)
         page.wait_for_timeout(1500)  # wait for animations to settle
 
@@ -189,28 +218,26 @@ def test_visual_snapshots(nicegui_server):
             temp_path = f.name
         try:
             page.screenshot(path=temp_path)
-            assert_visual_snapshot("wizard_view", temp_path)
+            assert_visual_snapshot(f"{viewport_name}_wizard_view{suffix}", temp_path)
         finally:
             if os.path.exists(temp_path):
                 os.remove(temp_path)
 
         # 2. Main View Snapshot
-        # Click decline button in wizard to get to main view
-        page.locator('[aria-label="Decline Button"]').click()
-        page.wait_for_selector('[aria-label="Application Title"]', timeout=5000)
+        page.locator('[aria-label="Decline Button"]').first.click()
+        page.wait_for_selector('[aria-label="Settings Button"]', timeout=5000)
         page.wait_for_timeout(1500)  # wait for animations to settle
 
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
             temp_path = f.name
         try:
             page.screenshot(path=temp_path)
-            assert_visual_snapshot("main_view", temp_path)
+            assert_visual_snapshot(f"{viewport_name}_main_view{suffix}", temp_path)
         finally:
             if os.path.exists(temp_path):
                 os.remove(temp_path)
 
         # 3. Settings View Snapshot
-        # Click settings button in header to open settings view
         page.locator('[aria-label="Settings Button"]').click()
         page.wait_for_selector('[aria-label="Settings Dialog Title"]', timeout=5000)
         page.wait_for_timeout(1500)  # wait for animations to settle
@@ -219,9 +246,24 @@ def test_visual_snapshots(nicegui_server):
             temp_path = f.name
         try:
             page.screenshot(path=temp_path)
-            assert_visual_snapshot("settings_view", temp_path)
+            assert_visual_snapshot(f"{viewport_name}_settings_view{suffix}", temp_path)
         finally:
             if os.path.exists(temp_path):
                 os.remove(temp_path)
 
         browser.close()
+
+
+@pytest.mark.skipif(not PLAYWRIGHT_AVAILABLE, reason="playwright is not installed")
+@pytest.mark.parametrize("viewport_name,width,height", VIEWPORTS)
+def test_visual_snapshots(nicegui_server, viewport_name, width, height):
+    run_visual_snapshot_pass(nicegui_server, viewport_name, width, height, pseudoloc=False)
+
+
+@pytest.mark.skipif(not PLAYWRIGHT_AVAILABLE, reason="playwright is not installed")
+@pytest.mark.parametrize("viewport_name,width,height", VIEWPORTS)
+def test_visual_snapshots_pseudoloc(nicegui_server_pseudoloc, viewport_name, width, height):
+    run_visual_snapshot_pass(
+        nicegui_server_pseudoloc, viewport_name, width, height, pseudoloc=True
+    )
+

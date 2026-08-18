@@ -63,9 +63,15 @@ jobs:
       run: |
         uv run python scripts/test_cli.py
         
+    - name: Install Playwright Browsers
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        PLAYWRIGHT_BROWSERS_PATH=0 uv run playwright install chromium
+        
     - name: Test with pytest
       env:
         SMOKE_TEST: "0"
+        PLAYWRIGHT_BROWSERS_PATH: "0"
       shell: bash
       run: |
         if [[ "${{ matrix.os }}" == "ubuntu-latest" ]]; then
