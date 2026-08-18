@@ -17,8 +17,6 @@ def get_ocr_reader():
 
 def extract_text_from_image(image, settings=None, file_path=None) -> str:
     """Extract character-level text from an image using configured vision engine with dynamic OCR fallback."""
-    import os
-
     if settings is None:
         from app.config import AppSettings
 

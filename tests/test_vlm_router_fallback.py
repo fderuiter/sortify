@@ -1,8 +1,13 @@
 from unittest.mock import MagicMock, call
+
 import pytest
 
 from app.config import AppSettings, Settings
-from app.core.extractor import extract_file_text, build_corpus_generator_async, build_corpus_generator
+from app.core.extractor import (
+    build_corpus_generator,
+    build_corpus_generator_async,
+    extract_file_text,
+)
 from app.core.offline_loader import OfflineModelLoadError
 
 
@@ -28,6 +33,10 @@ def test_settings_vision_engine_default_and_validation(tmp_path):
     app_settings = AppSettings(filepath=settings_file)
     app_settings.VISION_ENGINE = "florence-2"
     assert app_settings.revalidate() is True
+
+    if app_settings._save_timer:
+        app_settings._save_timer.cancel()
+    app_settings._save()
 
     # Reload from disk
     reloaded = AppSettings(filepath=settings_file)
