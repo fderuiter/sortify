@@ -255,7 +255,12 @@ def run_visual_snapshot_pass(
         except Exception:
             pass
         page.wait_for_selector('[aria-label="Settings Button"]', timeout=5000)
-        page.wait_for_timeout(2500)  # wait for animations and fade transitions to settle
+        page.wait_for_selector(
+            '[aria-label="AI Offline Warning Label"]',
+            state="visible",
+            timeout=15000,
+        )
+        page.wait_for_timeout(1500)  # wait for animations and fade transitions to settle
 
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
             temp_path = f.name
