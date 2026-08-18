@@ -1222,7 +1222,9 @@ body {
                 ui.label("ICH-GCP Regulatory Compliance Checklist").classes(
                     "text-h6 font-bold text-gray-800"
                 )
-                ui.button(icon="close", on_click=dialog.close).props("flat round dense")
+                ui.button(icon="close", on_click=dialog.close).props(
+                    'flat round dense aria-label="Close Compliance Checklist Button"'
+                )
 
             if not comp_data:
                 ui.label(

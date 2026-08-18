@@ -49,6 +49,11 @@ jobs:
       if: matrix.os == 'ubuntu-latest'
       run: |
         uv run python scripts/validate_architecture.py
+
+    - name: Continuous Integration Accessibility Gate
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        uv run python scripts/run_a11y_gate.py
         
     - name: Validate Agent Prompts Manifest
       if: matrix.os == 'ubuntu-latest'
