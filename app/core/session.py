@@ -141,24 +141,27 @@ class AppSession:
             self.db, self.cache_manager, str(self.session_dir / "history.db")
         )
 
-        base_path = get_base_path(__file__)
-
-        local_model_path = os.path.join(base_path, "offline_bundle", "model")
-        user_model_path = str(get_app_dir() / "model")
-
         active_model_path = None
-        import sys
+        if self.settings.AI_CONSENT_GRANTED:
+            base_path = get_base_path(__file__)
+            local_model_path = os.path.join(base_path, "offline_bundle", "model")
+            try:
+                user_model_path = str(get_app_dir() / "model")
+            except Exception:
+                user_model_path = None
 
-        if hasattr(sys, "_MEIPASS"):
-            mei_bundle_path = os.path.join(sys._MEIPASS, "offline_bundle", "model")
-            if os.path.exists(mei_bundle_path):
-                active_model_path = mei_bundle_path
+            try:
+                from app.core.offline_loader import OfflineModelLoader
 
-        if not active_model_path:
-            if os.path.exists(local_model_path):
-                active_model_path = local_model_path
-            elif os.path.exists(user_model_path):
-                active_model_path = user_model_path
+                active_model_path = OfflineModelLoader.resolve_model_path("model")
+            except Exception:
+                active_model_path = None
+
+            if not active_model_path:
+                if os.path.exists(local_model_path):
+                    active_model_path = local_model_path
+                elif user_model_path and os.path.exists(user_model_path):
+                    active_model_path = user_model_path
 
         model_path = active_model_path if self.settings.AI_CONSENT_GRANTED else None
         configured_strat = getattr(self.settings, "SORTING_STRATEGY", "default")

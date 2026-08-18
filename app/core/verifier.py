@@ -71,22 +71,12 @@ def check_ai_status(settings) -> tuple[bool, str | None]:
     except Exception:
         base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-    local_bundle_path = os.path.join(base_path, "offline_bundle", "model")
     try:
-        user_bundle_path = str(get_app_dir() / "model")
-    except Exception:
-        user_bundle_path = os.path.expanduser("~/.smart-autosorter/model")
+        from app.core.offline_loader import OfflineModelLoader
 
-    model_dir = None
-    if hasattr(sys, "_MEIPASS"):
-        mei_bundle_path = os.path.join(sys._MEIPASS, "offline_bundle", "model")
-        if os.path.exists(mei_bundle_path):
-            model_dir = mei_bundle_path
-    if not model_dir:
-        if os.path.exists(local_bundle_path):
-            model_dir = local_bundle_path
-        elif os.path.exists(user_bundle_path):
-            model_dir = user_bundle_path
+        model_dir = OfflineModelLoader.resolve_model_path("model")
+    except Exception:
+        model_dir = None
 
     if hasattr(sys, "_MEIPASS"):
         easyocr_dir = os.path.join(sys._MEIPASS, "offline_bundle", "easyocr")

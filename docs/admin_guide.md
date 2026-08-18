@@ -94,6 +94,18 @@ The following parameters are extracted directly from the application's configura
 - **Default**: `rename`
 - **Required**: `False`
 
+### `SORTING_STRATEGY`
+- **Default**: `default`
+- **Required**: `False`
+
+### `CLINICAL_SMART_RENAMING`
+- **Default**: `False`
+- **Required**: `False`
+
+### `CLINICAL_GENERATE_AUDIT_REPORT`
+- **Default**: `True`
+- **Required**: `False`
+
 ### `COHERENCE_THRESHOLD`
 - **Default**: `0.5`
 - **Required**: `False`
@@ -133,6 +145,25 @@ The application evaluates configuration parameters using a strict precedence hie
 ## Dynamic Configuration Saves
 
 System settings modified during runtime are dynamically saved to the local JSON configuration file (`~/.autosorter/settings.json`) located in the user's home directory. To ensure stability and prevent excessive disk writes, these dynamic changes are saved with a short debounced delay of 0.5 seconds.
+
+## Air-Gapped Local AI Deployment & Offline Model Bundles
+
+Smart AutoSorter supports air-gapped enterprise deployments without requiring internet access or manual setup UI configuration.
+
+### Automated Bundle Detection
+Upon launch, the application performs dynamic system checks (<500ms) to scan local filesystem paths for pre-installed model weight bundles and PyTorch dependencies. If a valid offline model bundle is detected, air-gapped local AI categorization is automatically activated with `AI_CONSENT_GRANTED = True`.
+
+### Offline Model Bundle Directory Locations
+Administrators can deploy model weight files into any of the following resolved search directories (evaluated in order of precedence):
+
+1. **Environment Variable**: Path defined in `${MODEL_ID}_PATH` (e.g., `MODEL_PATH`).
+2. **Packaged Execution Bundle**: `offline_bundle/{model_id}` within PyInstaller executable context (`_MEIPASS`).
+3. **Workspace Path**: `offline_bundle/{model_id}` relative to working directory or application base path.
+4. **Application Settings Path**: `~/.autosorter/{model_id}` or `~/.autosorter/offline_bundle/{model_id}`.
+5. **User Home Fallback**: `~/.smart-autosorter/offline_bundle/{model_id}`.
+
+### Dependency Expectations & Network Sandboxing
+Air-gapped AI categorization expects local PyTorch dependencies (`import torch`). All local inference tasks execute within a strict socket-level network sandbox that blocks outgoing connections, ensuring 100% offline data privacy.
 
 ## Compliance Policies & Routing Rules
 

@@ -106,3 +106,52 @@ def test_settings_panel_contains_proxy_and_download(mock_nicegui):
 
         # Let's verify the Download button exists
         mock_nicegui["button"].assert_any_call("Download AI Model", on_click=ANY)
+
+
+def test_wizard_auto_detects_offline_bundle(mock_nicegui):
+    """Verify that wizard automatically selects air-gapped AI mode when offline model bundle is detected."""
+    settings = AppSettings()
+    settings.AI_CONSENT_GRANTED = None
+    parent_app = MagicMock()
+
+    mock_detection = {
+        "available": True,
+        "bundle_found": True,
+        "has_pytorch": True,
+        "model_path": "/app/offline_bundle/model",
+        "searched_paths": ["/app/offline_bundle/model"],
+        "elapsed_ms": 1.5,
+    }
+
+    with patch("app.ui.wizard.detect_offline_bundle", return_value=mock_detection):
+        show_wizard(parent_app, settings)
+
+        assert settings.AI_CONSENT_GRANTED is True
+        mock_nicegui["label"].assert_any_call("Air-Gapped Local AI Available")
+        mock_nicegui["button"].assert_any_call("Complete Setup", on_click=ANY)
+
+
+def test_wizard_defaults_to_extension_sorting_when_no_bundle(mock_nicegui):
+    """Verify that wizard defaults to extension sorting mode with messaging when offline model bundle is missing."""
+    settings = AppSettings()
+    settings.AI_CONSENT_GRANTED = None
+    parent_app = MagicMock()
+
+    mock_detection = {
+        "available": False,
+        "bundle_found": False,
+        "has_pytorch": False,
+        "model_path": None,
+        "searched_paths": ["/app/offline_bundle/model"],
+        "elapsed_ms": 1.2,
+    }
+
+    with patch("app.ui.wizard.detect_offline_bundle", return_value=mock_detection):
+        show_wizard(parent_app, settings)
+
+        assert settings.AI_CONSENT_GRANTED is False
+        mock_nicegui["label"].assert_any_call("No Offline Model Bundle Detected")
+        mock_nicegui["button"].assert_any_call(
+            "Continue with Extension Sorting", on_click=ANY
+        )
+

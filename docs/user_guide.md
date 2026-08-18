@@ -4,18 +4,37 @@ Welcome to the User Guides for Smart AutoSorter AI Pro.
 
 ## First-Run Steps & Setup Wizard
 
-When you launch Smart AutoSorter AI Pro for the first time, you will be presented with the **Privacy & Data Setup Wizard**. The AI features require a small, one-time 80MB model download from Hugging Face.
+When you launch Smart AutoSorter AI Pro for the first time, the **Setup Wizard** automatically runs dynamic system checks (<500ms) to scan for local PyTorch dependencies and pre-installed model weight bundles.
 
-1. **Accept & Download:** Click this to download the 80MB model and enable Smart AutoSorter's semantic sorting. This connects to Hugging Face only once.
-2. **Decline (Offline Mode):** Skip the download and run the application entirely offline in flat non-semantic sorting mode.
-3. **Help:** View this user guide to learn more about the implications of your choice.
+### Setup Scenarios
+
+1. **Air-Gapped Enterprise Deployment (Pre-Installed Bundles):**
+   - If pre-packaged model weights are detected in system paths (e.g. `offline_bundle/model/`, `~/.smart-autosorter/offline_bundle/model/`, or `~/.autosorter/model/`), the wizard confirms that **Air-Gapped Local AI** is available.
+   - Smart AutoSorter automatically configures local semantic AI categorization.
+   - All AI categorization and text analysis run 100% locally on your machine with **zero network calls** generated.
+
+2. **Offline Setup Without Local Bundles:**
+   - If no pre-installed offline model bundle is detected, the setup wizard defaults to non-semantic **extension-based sorting**.
+   - No internet connection or model download is required.
+   - If internet connectivity is available, you may optionally click **Accept & Download** to fetch model weights from Hugging Face.
+
+## Air-Gapped Local AI & Offline Bundle Directory Locations
+
+Smart AutoSorter AI Pro supports complete offline, air-gapped semantic AI sorting when model weights are placed in any of the following local directory paths:
+
+- **Local Workspace Bundle Path:** `offline_bundle/model/` (relative to application execution root)
+- **User Home Bundle Path:** `~/.smart-autosorter/offline_bundle/model/`
+- **Application Configuration Path:** `~/.autosorter/model/`
+- **Custom Environment Variable Path:** Path specified by `MODEL_PATH` environment variable.
+
+When model weights are placed in any of these locations, the application detects them on launch and enables local AI features without requiring internet access.
 
 ## Privacy Configurations
 
 Your privacy is our priority.
-- **Local Processing:** If you download the model, all semantic analysis occurs strictly on your machine.
-- **No External Communication:** We never send your files or personal data to any external server. 
-- **Privacy Settings:** You can always verify if the model is downloaded and change your preferences in the Settings panel.
+- **Air-Gapped Local Processing:** All semantic vector calculations, TF-IDF analysis, and OCR occur strictly on your local machine.
+- **No External Communication:** When offline model bundles are active or network sandboxing is enforced, zero external network calls are made. 
+- **Privacy & AI Settings:** You can verify local AI status and model directory paths anytime in the Settings panel.
 
 ## Exclusion List Configuration
 

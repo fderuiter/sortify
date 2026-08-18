@@ -113,6 +113,28 @@ def generate_admin_guide():
             "System settings modified during runtime are dynamically saved to the local JSON configuration file (`~/.autosorter/settings.json`) located in the user's home directory. To ensure stability and prevent excessive disk writes, these dynamic changes are saved with a short debounced delay of 0.5 seconds.\n\n"
         )
 
+        f.write("## Air-Gapped Local AI Deployment & Offline Model Bundles\n\n")
+        f.write(
+            "Smart AutoSorter supports air-gapped enterprise deployments without requiring internet access or manual setup UI configuration.\n\n"
+        )
+        f.write("### Automated Bundle Detection\n")
+        f.write(
+            "Upon launch, the application performs dynamic system checks (<500ms) to scan local filesystem paths for pre-installed model weight bundles and PyTorch dependencies. If a valid offline model bundle is detected, air-gapped local AI categorization is automatically activated with `AI_CONSENT_GRANTED = True`.\n\n"
+        )
+        f.write("### Offline Model Bundle Directory Locations\n")
+        f.write(
+            "Administrators can deploy model weight files into any of the following resolved search directories (evaluated in order of precedence):\n\n"
+        )
+        f.write("1. **Environment Variable**: Path defined in `${MODEL_ID}_PATH` (e.g., `MODEL_PATH`).\n")
+        f.write("2. **Packaged Execution Bundle**: `offline_bundle/{model_id}` within PyInstaller executable context (`_MEIPASS`).\n")
+        f.write("3. **Workspace Path**: `offline_bundle/{model_id}` relative to working directory or application base path.\n")
+        f.write("4. **Application Settings Path**: `~/.autosorter/{model_id}` or `~/.autosorter/offline_bundle/{model_id}`.\n")
+        f.write("5. **User Home Fallback**: `~/.smart-autosorter/offline_bundle/{model_id}`.\n\n")
+        f.write("### Dependency Expectations & Network Sandboxing\n")
+        f.write(
+            "Air-gapped AI categorization expects local PyTorch dependencies (`import torch`). All local inference tasks execute within a strict socket-level network sandbox that blocks outgoing connections, ensuring 100% offline data privacy.\n\n"
+        )
+
         f.write("## Compliance Policies & Routing Rules\n\n")
         f.write("### Rule Syntax & Types\n\n")
         f.write(

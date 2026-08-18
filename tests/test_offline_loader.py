@@ -343,3 +343,23 @@ def test_shared_registry_get_florence_processor(mocker):
     assert proc1 is proc2
     assert isinstance(proc1, Florence2VisualProcessor)
     mock_load.assert_called_once()
+
+
+def test_detect_offline_bundle_performance_and_detection(tmp_path, monkeypatch):
+    """Verify detect_offline_bundle completes within 500ms and correctly reports bundle and PyTorch status."""
+    from app.core.offline_loader import detect_offline_bundle
+
+    # Setup temporary offline bundle directory
+    bundle_dir = tmp_path / "offline_bundle" / "model"
+    bundle_dir.mkdir(parents=True)
+    (bundle_dir / "config.json").write_text("{}", encoding="utf-8")
+
+    monkeypatch.setattr(os, "getcwd", lambda: str(tmp_path))
+
+    detection = detect_offline_bundle("model")
+
+    assert detection["elapsed_ms"] < 500.0
+    assert detection["bundle_found"] is True
+    assert detection["model_path"] == str(bundle_dir)
+    assert isinstance(detection["has_pytorch"], bool)
+

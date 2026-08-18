@@ -11,8 +11,10 @@ import os
 import re
 import socket
 import sys
+import time
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from app.config import get_app_dir
 from app.core.shared_registry import block_external_network
 from app.core.text_utils import sanitize_text
 
@@ -115,7 +117,16 @@ class OfflineModelLoader:
         except Exception:
             pass
 
-        # Precedence 4: User home directory fallback
+        # Precedence 4: App settings directory (~/.autosorter/model)
+        try:
+            app_model_path = str(get_app_dir() / model_id)
+            searched_paths.append(app_model_path)
+            app_bundle_path = str(get_app_dir() / "offline_bundle" / model_id)
+            searched_paths.append(app_bundle_path)
+        except Exception:
+            pass
+
+        # Precedence 5: User home directory fallback
         home_path = os.path.expanduser(f"~/.smart-autosorter/offline_bundle/{model_id}")
         searched_paths.append(home_path)
 
@@ -141,12 +152,7 @@ class OfflineModelLoader:
                     if all_exist:
                         return path
                 else:
-                    # If no specific expected files registered, ensure the directory has content
-                    try:
-                        if os.listdir(path):
-                            return path
-                    except Exception:
-                        pass
+                    return path
 
         raise ModelWeightsNotFoundError(model_id, unique_paths)
 
@@ -442,3 +448,54 @@ class Florence2VisualProcessor:
             "sanitized_text": sanitized_text,
             "coordinates": coordinates,
         }
+
+
+def detect_offline_bundle(model_id: str = "model") -> Dict[str, Any]:
+    """Dynamically scan system paths for pre-installed offline model bundles and PyTorch dependencies.
+
+    Must complete within 500ms without network calls.
+
+    Parameters
+    ----------
+    model_id : str
+        Model bundle identifier to scan for (default 'model').
+
+    Returns
+    -------
+    dict
+        Dictionary containing bundle resolution status, model path, PyTorch status, and timing.
+    """
+    start_time = time.perf_counter()
+
+    # 1. Detect local PyTorch dependency
+    has_pytorch = False
+    try:
+        import torch  # noqa: F401
+
+        has_pytorch = True
+    except ImportError:
+        has_pytorch = False
+
+    # 2. Detect local model bundle weight path
+    model_path = None
+    searched_paths = []
+    bundle_found = False
+
+    try:
+        model_path = OfflineModelLoader.resolve_model_path(model_id)
+        bundle_found = True
+    except ModelWeightsNotFoundError as e:
+        searched_paths = e.searched_paths
+        bundle_found = False
+
+    elapsed_ms = (time.perf_counter() - start_time) * 1000.0
+
+    return {
+        "available": bundle_found and has_pytorch,
+        "bundle_found": bundle_found,
+        "has_pytorch": has_pytorch,
+        "model_path": model_path,
+        "searched_paths": searched_paths,
+        "elapsed_ms": elapsed_ms,
+    }
+

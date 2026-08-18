@@ -874,37 +874,18 @@ body {
 
     def check_setup_wizard(self):
         """Check if the setup wizard needs to be shown on startup."""
-        from app.config import get_app_dir
-        from app.core.path_utils import get_base_path
+        from app.core.offline_loader import detect_offline_bundle
 
-        base_path = get_base_path(__file__)
+        detection = detect_offline_bundle("model")
 
-        local_model_dir = os.path.join(base_path, "offline_bundle", "model")
-        user_model_dir = get_app_dir() / "model"
-
-        import sys
-
-        has_mei_model = False
-        if hasattr(sys, "_MEIPASS"):
-            mei_model_dir = os.path.join(sys._MEIPASS, "offline_bundle", "model")
-            if os.path.exists(os.path.join(mei_model_dir, "config.json")):
-                has_mei_model = True
-
-        if (
-            has_mei_model
-            or os.path.exists(os.path.join(local_model_dir, "config.json"))
-            or (user_model_dir / "config.json").exists()
-        ):
-            if self.settings.AI_CONSENT_GRANTED is None:
+        if self.settings.AI_CONSENT_GRANTED is None:
+            if detection["bundle_found"]:
                 self.settings.AI_CONSENT_GRANTED = True
-            return
-        if self.settings.AI_CONSENT_GRANTED is False:
-            return
+            from app.ui.wizard import show_wizard
 
-        # Run wizard dialog
-        from app.ui.wizard import show_wizard
-
-        show_wizard(self, self.settings)
+            show_wizard(self, self.settings)
+        elif self.settings.AI_CONSENT_GRANTED is True and detection["bundle_found"]:
+            return
 
     def show_settings_view(self):
         """Show the settings dialog."""

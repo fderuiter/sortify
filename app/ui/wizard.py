@@ -11,6 +11,7 @@ from app.core.downloader import (
     DownloadManager,
     ModelVerificationError,
 )
+from app.core.offline_loader import detect_offline_bundle
 from app.ui.dialog_helper import get_dialog_card_classes
 
 
@@ -37,20 +38,65 @@ class ThreadSafeState:
 
 def show_wizard(parent_app, settings):
     """Show the initial setup wizard."""
+    # Run dynamic system check for local model bundles and PyTorch dependencies (<500ms)
+    detection = detect_offline_bundle("model")
+    bundle_found = detection["bundle_found"]
+    has_pytorch = detection["has_pytorch"]
+    model_path = detection["model_path"]
+
     with ui.dialog() as dialog, ui.card().classes(get_dialog_card_classes("md")):
         ui.label("AI Features Setup").classes("text-xl font-bold mb-4").props(
             'aria-label="Setup Wizard Title"'
         )
 
-        # Welcome View
+        # Welcome / Detection View
         welcome_container = ui.column().classes("w-full")
         with welcome_container:
-            ui.label(
-                "To use the Smart AutoSorter AI features, the application needs to initialize the local keyword clustering engine (TF-IDF & NMF)."
-            ).classes("mb-2").props('aria-label="Setup Description"')
-            ui.label(
-                "Your privacy is important to us. All processing will happen entirely offline."
-            ).classes("mb-4").props('aria-label="Privacy Description"')
+            if bundle_found:
+                # Local offline bundle detected: Auto-select air-gapped local AI
+                settings.AI_CONSENT_GRANTED = True
+                with ui.card().classes(
+                    "bg-green-50 border-green-200 border p-4 mb-4 w-full"
+                ):
+                    with ui.row().classes("items-center gap-2 text-green-800"):
+                        ui.icon("verified", size="sm")
+                        ui.label("Air-Gapped Local AI Available").classes("font-bold")
+                    ui.label(
+                        f"Pre-installed model weights detected at: {model_path}"
+                    ).classes("text-green-900 text-xs mt-1 font-mono")
+                    pytorch_status = (
+                        "PyTorch Acceleration Engine: Ready"
+                        if has_pytorch
+                        else "PyTorch: Not installed (running in standard mode)"
+                    )
+                    ui.label(pytorch_status).classes("text-green-800 text-xs mt-1")
+
+                ui.label(
+                    "Air-gapped local AI categorization is enabled. All semantic sorting will operate entirely offline with zero network calls."
+                ).classes("mb-4 text-sm text-gray-700").props(
+                    'aria-label="Air Gapped Privacy Description"'
+                )
+            else:
+                # No local model bundle detected: Default to extension-based non-semantic sorting
+                settings.AI_CONSENT_GRANTED = False
+                with ui.card().classes(
+                    "bg-amber-50 border-amber-200 border p-4 mb-4 w-full"
+                ):
+                    with ui.row().classes("items-center gap-2 text-amber-800"):
+                        ui.icon("info", size="sm")
+                        ui.label("No Offline Model Bundle Detected").classes("font-bold")
+                    ui.label(
+                        "No pre-installed AI model weights were found in local system paths."
+                    ).classes("text-amber-900 text-sm mt-1")
+                    ui.label(
+                        "The system will default to non-semantic extension-based sorting. No internet connection is required."
+                    ).classes("text-amber-900 text-xs mt-1 font-semibold")
+
+                ui.label(
+                    "To enable air-gapped local AI categorization later, place model bundles in offline_bundle/model/ or ~/.smart-autosorter/offline_bundle/model/."
+                ).classes("mb-4 text-xs text-gray-500").props(
+                    'aria-label="Bundle Location Description"'
+                )
 
         # Downloading View
         download_container = ui.column().classes("w-full")
@@ -92,8 +138,6 @@ def show_wizard(parent_app, settings):
                 .classes("w-full mb-4")
                 .props('aria-label="Wizard Proxy Input"')
             )
-
-        # State Variables
 
         # Periodic sync timer for wizard UI
         def sync_wizard_ui():
@@ -173,7 +217,6 @@ def show_wizard(parent_app, settings):
                 pass
 
         def retry_download():
-            # Apply edited proxy configuration back to active settings
             settings.PROXY = proxy_input.value
             start_download()
 
@@ -184,25 +227,41 @@ def show_wizard(parent_app, settings):
             action_row_download.set_visibility(False)
             action_row_welcome.set_visibility(True)
 
-        def accept():
-            start_download()
-
-        def decline():
-            settings.AI_CONSENT_GRANTED = False
-            ui.notify("Offline mode enabled.", type="info")
+        def complete_air_gapped_setup():
+            settings.AI_CONSENT_GRANTED = True
+            ui.notify("Air-gapped local AI enabled.", type="positive")
             if hasattr(parent_app, "update_ai_warning"):
                 parent_app.update_ai_warning()
             dialog.close()
 
-        # Welcome Buttons Layout
+        def continue_extension_sorting():
+            settings.AI_CONSENT_GRANTED = False
+            ui.notify("Extension-based non-semantic sorting enabled.", type="info")
+            if hasattr(parent_app, "update_ai_warning"):
+                parent_app.update_ai_warning()
+            dialog.close()
+
+        # Welcome / Setup Action Buttons
         action_row_welcome = ui.row().classes("w-full justify-between flex-wrap gap-2")
         with action_row_welcome:
-            ui.button("Accept & Download", on_click=accept).classes(
-                "bg-green-500 text-white"
-            ).props('aria-label="Accept and Download Button"')
-            ui.button("Decline", on_click=decline).classes(
-                "bg-gray-500 text-white"
-            ).props('aria-label="Decline Button"')
+            if bundle_found:
+                ui.button("Complete Setup", on_click=complete_air_gapped_setup).classes(
+                    "bg-green-500 text-white"
+                ).props('aria-label="Complete Setup Button"')
+                ui.button(
+                    "Decline (Use Extension Sorting)", on_click=continue_extension_sorting
+                ).classes("bg-gray-500 text-white").props(
+                    'aria-label="Decline Button"'
+                )
+            else:
+                ui.button(
+                    "Continue with Extension Sorting", on_click=continue_extension_sorting
+                ).classes("bg-gray-600 text-white").props(
+                    'aria-label="Continue with Extension Sorting Button"'
+                )
+                ui.button("Accept & Download", on_click=start_download).classes(
+                    "bg-green-500 text-white"
+                ).props('aria-label="Accept and Download Button"')
 
         # Downloading Buttons Layout
         action_row_download = ui.row().classes("w-full justify-end flex-wrap gap-2")
@@ -219,9 +278,11 @@ def show_wizard(parent_app, settings):
             ui.button("Retry", on_click=retry_download).classes(
                 "bg-green-500 text-white"
             ).props('aria-label="Retry Download Button"')
-            ui.button("Decline", on_click=decline).classes(
-                "bg-gray-500 text-white"
-            ).props('aria-label="Decline Button"')
+            ui.button(
+                "Decline (Use Extension Sorting)", on_click=continue_extension_sorting
+            ).classes("bg-gray-500 text-white").props(
+                'aria-label="Decline Button"'
+            )
 
         def handle_dismiss():
             sync_timer.cancel()
@@ -229,3 +290,4 @@ def show_wizard(parent_app, settings):
         dialog.on("dismiss", handle_dismiss)
 
     dialog.open()
+
