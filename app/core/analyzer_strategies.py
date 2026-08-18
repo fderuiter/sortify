@@ -597,7 +597,12 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
 
         if depth >= self.max_depth or len(documents) < 3:
             for f in filenames:
-                plan[f] = None
+                plan[f] = {
+                    "__type__": "file",
+                    "relative_source": f,
+                    "source_path": f,
+                    "routed_by": "clustering",
+                }
             return {"Miscellaneous": plan} if depth == 1 else plan
 
         use_dense_vectors = False
@@ -643,7 +648,12 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
                 X = vectorizer.fit_transform(documents)
             except Exception:
                 for f in filenames:
-                    plan[f] = None
+                    plan[f] = {
+                        "__type__": "file",
+                        "relative_source": f,
+                        "source_path": f,
+                        "routed_by": "clustering",
+                    }
                 return {"Miscellaneous": plan} if depth == 1 else plan
 
         actual_k = min(self.max_folders, len(documents) // 2)
@@ -674,7 +684,12 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
                 for f in sub_filenames:
                     if folder_name not in plan:
                         plan[folder_name] = {}
-                    plan[folder_name][f] = None
+                    plan[folder_name][f] = {
+                        "__type__": "file",
+                        "relative_source": f,
+                        "source_path": f,
+                        "routed_by": "clustering",
+                    }
             else:
                 sub_plan = self._cluster_recursive(
                     sub_filenames, sub_documents, depth + 1
@@ -993,7 +1008,11 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         def get_recursive_files(n):
             res = []
             for key, val in n.items():
-                if val is None or not isinstance(val, dict):
+                if (
+                    val is None
+                    or not isinstance(val, dict)
+                    or val.get("__type__") == "file"
+                ):
                     res.append(key)
                 else:
                     res.extend(get_recursive_files(val))
@@ -1007,8 +1026,12 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
             files = []
             subfolders = {}
             for k, v in node.items():
-                if v is None or not isinstance(v, dict):
-                    files.append(k)
+                if (
+                    v is None
+                    or not isinstance(v, dict)
+                    or (isinstance(v, dict) and v.get("__type__") == "file")
+                ):
+                    files.append((k, v))
                 else:
                     subfolders[k] = v
 
@@ -1029,19 +1052,39 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                 ]
                 if vectors:
                     centroid = np.mean(vectors, axis=0)
-                    for f in files:
+                    for f, f_val in files:
+                        leaf_info = (
+                            f_val
+                            if isinstance(f_val, dict) and f_val.get("__type__") == "file"
+                            else {
+                                "__type__": "file",
+                                "relative_source": f,
+                                "source_path": f,
+                                "routed_by": "clustering",
+                            }
+                        )
                         f_vec = vector_dict.get(f)
                         if f_vec is not None:
                             sim = get_cosine_similarity(f_vec, centroid)
                             if sim < threshold:
-                                low_confidence_files[f] = None
+                                low_confidence_files[f] = leaf_info
                             else:
-                                new_node[f] = None
+                                new_node[f] = leaf_info
                         else:
-                            new_node[f] = None
+                            new_node[f] = leaf_info
                 else:
-                    for f in files:
-                        new_node[f] = None
+                    for f, f_val in files:
+                        leaf_info = (
+                            f_val
+                            if isinstance(f_val, dict) and f_val.get("__type__") == "file"
+                            else {
+                                "__type__": "file",
+                                "relative_source": f,
+                                "source_path": f,
+                                "routed_by": "clustering",
+                            }
+                        )
+                        new_node[f] = leaf_info
 
             return new_node, low_confidence_files
 
