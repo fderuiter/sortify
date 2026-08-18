@@ -669,6 +669,9 @@ class VirtualFilesystemTracker:
                     }
                 )
 
+        # Check rename proposals
+        invalid_renames, unconfirmed_renames = self.check_rename_proposals(base_dir, plan)
+
         # Consolidate all warnings
         warnings = []
         for c in collisions:
@@ -679,6 +682,10 @@ class VirtualFilesystemTracker:
             warnings.append(link["message"])
         for lp in long_paths:
             warnings.append(lp["message"])
+        for inv in invalid_renames:
+            warnings.append(inv["message"])
+        for unc in unconfirmed_renames:
+            warnings.append(unc["message"])
 
         # Eliminate duplicate messages in warnings
         unique_warnings = list(dict.fromkeys(warnings))
@@ -688,6 +695,8 @@ class VirtualFilesystemTracker:
             and len(circular_renames) == 0
             and len(broken_links) == 0
             and len(long_paths) == 0
+            and len(invalid_renames) == 0
+            and len(unconfirmed_renames) == 0
         )
 
         return {
@@ -696,5 +705,105 @@ class VirtualFilesystemTracker:
             "circular_renames": circular_renames,
             "broken_links": broken_links,
             "long_paths": long_paths,
+            "invalid_renames": invalid_renames,
+            "unconfirmed_renames": unconfirmed_renames,
             "warnings": unique_warnings,
         }
+
+    def check_rename_proposals(self, base_dir: str, plan: dict) -> tuple[list, list]:
+        """Check all rename proposals in plan for OS character safety, extension preservation, and user confirmation."""
+        from app.core.path_utils import is_valid_name
+
+        invalid_renames = []
+        unconfirmed_renames = []
+
+        def _inspect_node(node, current_dest=""):
+            if not isinstance(node, dict) or node.get("__type__") in (
+                "file",
+                "directory",
+            ):
+                return
+            for key, content in node.items():
+                if content is None or (
+                    isinstance(content, dict)
+                    and content.get("__type__") in ("file", "directory")
+                ):
+                    if (
+                        isinstance(content, dict)
+                        and content.get("__type__") == "directory"
+                    ):
+                        continue
+
+                    if isinstance(content, dict) and "relative_source" in content:
+                        rel_src = content["relative_source"]
+                    else:
+                        rel_src = key
+
+                    src_filename = os.path.basename(rel_src)
+
+                    if isinstance(content, dict) and "target_filename" in content:
+                        target_filename = content["target_filename"]
+                    else:
+                        target_filename = os.path.basename(key)
+
+                    # Check if target_filename differs from src_filename (rename proposal)
+                    if target_filename != src_filename:
+                        src_stem, src_ext = os.path.splitext(src_filename)
+                        tgt_stem, tgt_ext = os.path.splitext(target_filename)
+
+                        source_path = os.path.normpath(
+                            os.path.join(base_dir, rel_src)
+                        )
+                        dest_dir = os.path.normpath(
+                            os.path.join(base_dir, current_dest)
+                        )
+                        dest_path = os.path.normpath(
+                            os.path.join(dest_dir, target_filename)
+                        )
+
+                        # 1. Extension preservation check
+                        if src_ext.lower() != tgt_ext.lower():
+                            invalid_renames.append(
+                                {
+                                    "source": source_path,
+                                    "path": dest_path,
+                                    "type": "modified_extension",
+                                    "message": f"Proposed file rename '{src_filename}' -> '{target_filename}' modifies or deletes original file extension ('{src_ext}').",
+                                }
+                            )
+                        # 2. OS character / structure safety check
+                        elif not is_valid_name(target_filename):
+                            invalid_renames.append(
+                                {
+                                    "source": source_path,
+                                    "path": dest_path,
+                                    "type": "illegal_os_characters",
+                                    "message": f"Proposed filename '{target_filename}' contains illegal OS characters or invalid path structures.",
+                                }
+                            )
+                        # 3. Explicit user confirmation check
+                        else:
+                            is_confirmed = False
+                            if isinstance(content, dict):
+                                is_confirmed = bool(
+                                    content.get("confirmed")
+                                    or content.get("is_confirmed")
+                                    or content.get("user_confirmed")
+                                    or content.get("is_locked")
+                                    or content.get("status") in ("Confirmed", "Locked")
+                                )
+
+                            if not is_confirmed:
+                                unconfirmed_renames.append(
+                                    {
+                                        "source": source_path,
+                                        "path": dest_path,
+                                        "type": "unconfirmed_rename",
+                                        "message": f"Proposed file rename '{src_filename}' -> '{target_filename}' lacks explicit user confirmation.",
+                                    }
+                                )
+                else:
+                    _inspect_node(content, os.path.join(current_dest, key))
+
+        _inspect_node(plan)
+        return invalid_renames, unconfirmed_renames

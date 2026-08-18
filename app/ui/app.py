@@ -357,6 +357,15 @@ body {
                             </div>
                             <!-- Action buttons -->
                             <div v-if="prop.node.is_file" class="action-buttons row items-center q-gutter-xs">
+                                <q-btn v-if="prop.node.has_rename_proposal && !prop.node.is_confirmed" flat round dense
+                                       icon="check_circle" size="xs" color="emerald-6"
+                                       @click.stop="$parent.$emit('node-confirm-rename', { file_id: prop.node.id })">
+                                    <q-tooltip>Confirm proposed file rename</q-tooltip>
+                                </q-btn>
+                                <q-btn flat round dense icon="edit" size="xs" color="grey-6"
+                                       @click.stop="$parent.$emit('file-rename', { file_id: prop.node.id })">
+                                    <q-tooltip>Rename file</q-tooltip>
+                                </q-btn>
                                 <q-btn flat round dense 
                                        :icon="prop.node.is_locked ? 'lock' : 'lock_open'" 
                                        size="xs" 
@@ -392,6 +401,8 @@ body {
                     self.tree_view.on("node-rate", self.handle_node_rate)
                     self.tree_view.on("node-toggle-lock", self.handle_node_toggle_lock)
                     self.tree_view.on("folder-rename", self.show_rename_folder_dialog)
+                    self.tree_view.on("file-rename", self.show_rename_file_dialog)
+                    self.tree_view.on("node-confirm-rename", self.handle_node_confirm_rename)
 
             # 5. Execution Action Bar & Post-Sort Undo Rollback
             with ui.row().classes("w-full justify-center items-center gap-3 mt-2"):
@@ -1500,6 +1511,146 @@ body {
                 ).props("unelevated")
         dialog.open()
 
+    def handle_node_confirm_rename(self, e):
+        """Explicitly confirm a proposed file rename in the plan."""
+        file_id = e.args.get("file_id")
+        if not file_id:
+            return
+        file_key = file_id.replace("\\", "/").split("/")[-1]
+        file_info = find_and_remove_file(self.plan, file_id) or find_and_remove_file(
+            self.plan, file_key
+        )
+        if file_info is not None:
+            file_info["confirmed"] = True
+            file_info["is_confirmed"] = True
+            target_folder = ""
+            if "/" in file_id:
+                target_folder = file_id.rsplit("/", 1)[0]
+            insert_file_into_plan(self.plan, target_folder, file_key, file_info)
+            self.render_tree()
+            asyncio.create_task(self.verify_current_plan())
+            ui.notify(
+                f"Confirmed proposed rename for '{file_key}'", type="positive"
+            )
+
+    def show_rename_file_dialog(self, e):
+        """Display dialog to manually rename a target file, locking the extension and validating OS rules."""
+        from app.core.path_utils import is_valid_name
+
+        file_id = e.args.get("file_id", "")
+        if not file_id:
+            return
+
+        file_key = file_id.replace("\\", "/").split("/")[-1]
+
+        file_info = None
+
+        def _find(node):
+            nonlocal file_info
+            if not isinstance(node, dict) or node.get("__type__") in (
+                "file",
+                "directory",
+            ):
+                return
+            for k, v in node.items():
+                if k == file_key or k == file_id:
+                    if isinstance(v, dict) and v.get("__type__") == "file":
+                        file_info = v
+                        return
+                    elif v is None:
+                        file_info = {"__type__": "file"}
+                        node[k] = file_info
+                        return
+                if isinstance(v, dict) and v.get("__type__") != "file":
+                    _find(v)
+
+        _find(self.plan)
+        if file_info is None:
+            file_info = {"__type__": "file"}
+
+        current_target = file_info.get("target_filename") or file_key
+        orig_stem, orig_ext = os.path.splitext(file_key)
+        curr_stem, _ = os.path.splitext(current_target)
+
+        with ui.dialog() as dialog, ui.card().classes(get_dialog_card_classes("md")):
+            ui.label(f"Rename File: {file_key}").classes(
+                "text-lg font-bold text-slate-800"
+            )
+            ui.label(
+                f"Original Extension: '{orig_ext if orig_ext else '(None)'}' (Locked)"
+            ).classes("text-xs text-slate-500 font-mono mb-2")
+
+            with ui.row().classes("w-full items-center gap-2"):
+                name_input = ui.input(
+                    label="New File Name", value=curr_stem
+                ).classes("flex-1")
+                if orig_ext:
+                    ui.label(orig_ext).classes(
+                        "text-sm font-bold text-slate-600 bg-slate-100 px-2 py-1 rounded"
+                    )
+
+            error_label = ui.label("").classes("text-red-500 text-xs mt-1")
+            error_label.set_visibility(False)
+
+            def on_confirm_rename():
+                new_val = name_input.value.strip()
+                if not validate_input(new_val):
+                    return
+
+                if orig_ext and new_val.lower().endswith(orig_ext.lower()):
+                    new_val = new_val[:-len(orig_ext)]
+                final_target = new_val + orig_ext
+
+                file_info["target_filename"] = final_target
+                file_info["confirmed"] = True
+                file_info["is_confirmed"] = True
+                file_info["is_locked"] = True
+                file_info["status"] = "Locked"
+
+                self.render_tree()
+                dialog.close()
+                asyncio.create_task(self.verify_current_plan())
+                ui.notify(
+                    f"Renamed and confirmed '{file_key}' -> '{final_target}'.",
+                    type="positive",
+                )
+
+            confirm_btn = (
+                ui.button("Rename & Confirm", on_click=on_confirm_rename)
+                .classes("bg-blue-600 text-white")
+                .props("unelevated")
+            )
+
+            def validate_input(val):
+                stem = val.strip()
+                if orig_ext and stem.lower().endswith(orig_ext.lower()):
+                    stem = stem[:-len(orig_ext)]
+                proposed_filename = stem + orig_ext
+
+                if not stem:
+                    error_label.set_text("File name cannot be empty.")
+                    error_label.set_visibility(True)
+                    confirm_btn.disable()
+                    return False
+
+                if not is_valid_name(proposed_filename):
+                    error_label.set_text(
+                        "Invalid file name: contains illegal OS characters, trailing spaces/dots, or reserved name."
+                    )
+                    error_label.set_visibility(True)
+                    confirm_btn.disable()
+                    return False
+
+                error_label.set_text("")
+                error_label.set_visibility(False)
+                confirm_btn.enable()
+                return True
+
+            name_input.on_value_change(lambda e: validate_input(e.value))
+            name_input.on("keydown.enter", on_confirm_rename)
+
+        dialog.open()
+
     def handle_node_toggle_lock(self, e):
         """Toggle the lock status of a file node."""
         file_id = e.args.get("file_id")
@@ -1701,6 +1852,39 @@ body {
                         badge = "AI Semantic"
                         badge_color = "emerald-8"
 
+                rel_src = (
+                    v.get("relative_source")
+                    if isinstance(v, dict) and "relative_source" in v
+                    else k
+                )
+                src_fn = os.path.basename(rel_src)
+                tgt_fn = (
+                    v.get("target_filename")
+                    if isinstance(v, dict) and "target_filename" in v
+                    else k
+                )
+                has_rename_proposal = bool(tgt_fn != src_fn)
+                is_confirmed = bool(
+                    isinstance(v, dict)
+                    and (
+                        v.get("confirmed")
+                        or v.get("is_confirmed")
+                        or v.get("user_confirmed")
+                        or v.get("is_locked")
+                        or v.get("status") in ("Confirmed", "Locked")
+                    )
+                )
+
+                if has_rename_proposal:
+                    if tgt_fn != k:
+                        text = f"{k} -> {tgt_fn}"
+                    if is_confirmed and not badge:
+                        badge = "Confirmed Rename"
+                        badge_color = "emerald-8"
+                    elif not is_confirmed and not badge:
+                        badge = "Unconfirmed Rename"
+                        badge_color = "amber-9"
+
                 if isinstance(v, dict):
                     status = v.get("status", "")
                     if status and not is_locked:
@@ -1709,10 +1893,32 @@ body {
                         "error" in status.lower() or "locked" in status.lower()
                     ):
                         icon = "error"
-                if k in self.plan_errors or node_id in self.plan_errors:
-                    err_msg = self.plan_errors.get(node_id) or self.plan_errors.get(k)
+
+                if (
+                    k in self.plan_errors
+                    or node_id in self.plan_errors
+                    or tgt_fn in self.plan_errors
+                ):
+                    err_msg = (
+                        self.plan_errors.get(node_id)
+                        or self.plan_errors.get(k)
+                        or self.plan_errors.get(tgt_fn)
+                    )
                     text += f" (Error: {err_msg})"
                     icon = "error"
+                    if has_rename_proposal:
+                        badge = (
+                            "Invalid Rename"
+                            if "modifies or deletes" in err_msg
+                            or "illegal OS characters" in err_msg
+                            else "Unconfirmed Rename"
+                        )
+                        badge_color = (
+                            "red-8"
+                            if "modifies or deletes" in err_msg
+                            or "illegal OS characters" in err_msg
+                            else "amber-9"
+                        )
 
                 rating = self._ratings_cache.get(node_id) or self._ratings_cache.get(k)
                 nodes_list.append(
@@ -1723,6 +1929,8 @@ body {
                         "is_file": True,
                         "filepath": node_id,
                         "is_locked": bool(is_locked),
+                        "has_rename_proposal": has_rename_proposal,
+                        "is_confirmed": is_confirmed,
                         "badge": badge,
                         "badge_color": badge_color,
                         "rating": rating,
@@ -1736,6 +1944,23 @@ body {
             return
 
         if getattr(self, "_sorting_in_progress", False):
+            return
+
+        from app.core.verifier import VerificationEngine
+
+        integrity_result = VerificationEngine.verify_plan_integrity(
+            self.base_dir, self.plan
+        )
+        if not integrity_result["success"]:
+            warn_msg = "\n".join(integrity_result.get("warnings", []))
+            ui.notify(
+                "Execution stopped: Unconfirmed or invalid file rename proposals exist.",
+                type="negative",
+            )
+            if hasattr(self, "warnings_label"):
+                self.warnings_label.set_text(warn_msg)
+                self.warnings_label.set_visibility(True)
+            asyncio.create_task(self.verify_current_plan())
             return
 
         self._sorting_in_progress = True
@@ -2067,6 +2292,30 @@ body {
                     self.plan_errors[rel_dst] = item["message"]
                     self.plan_errors[os.path.basename(dst_abs)] = item["message"]
 
+            for item in integrity_result.get("invalid_renames", []):
+                src_abs = item.get("source")
+                if src_abs:
+                    rel_src = os.path.relpath(src_abs, self.base_dir).replace("\\", "/")
+                    self.plan_errors[rel_src] = item["message"]
+                    self.plan_errors[os.path.basename(src_abs)] = item["message"]
+                dst_abs = item.get("path")
+                if dst_abs:
+                    rel_dst = os.path.relpath(dst_abs, self.base_dir).replace("\\", "/")
+                    self.plan_errors[rel_dst] = item["message"]
+                    self.plan_errors[os.path.basename(dst_abs)] = item["message"]
+
+            for item in integrity_result.get("unconfirmed_renames", []):
+                src_abs = item.get("source")
+                if src_abs:
+                    rel_src = os.path.relpath(src_abs, self.base_dir).replace("\\", "/")
+                    self.plan_errors[rel_src] = item["message"]
+                    self.plan_errors[os.path.basename(src_abs)] = item["message"]
+                dst_abs = item.get("path")
+                if dst_abs:
+                    rel_dst = os.path.relpath(dst_abs, self.base_dir).replace("\\", "/")
+                    self.plan_errors[rel_dst] = item["message"]
+                    self.plan_errors[os.path.basename(dst_abs)] = item["message"]
+
             warnings_text = "\n".join(integrity_result["warnings"])
             if hasattr(self, "warnings_label"):
                 self.warnings_label.set_text(warnings_text)
@@ -2075,6 +2324,8 @@ body {
             if hasattr(self, "warnings_label"):
                 self.warnings_label.set_text("")
                 self.warnings_label.set_visibility(False)
+
+        self.render_tree()
 
     def update_ai_warning(self):
         """Update the UI with any AI status warnings."""

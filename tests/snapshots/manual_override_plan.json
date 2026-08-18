@@ -11,7 +11,7 @@
       },
       {
         "iid": "Documents/secret.txt",
-        "text": "secret.txt [Already Sorted]",
+        "text": "secret.txt -> secret_override.txt [Already Sorted]",
         "children": [],
         "open": false
       }
