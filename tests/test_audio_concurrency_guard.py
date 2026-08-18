@@ -4,11 +4,12 @@
 import concurrent.futures
 import time
 from unittest.mock import MagicMock, patch
+
 import pytest
 from pydantic import ValidationError
 
 from app.config import AppSettings, Settings
-from app.core.extractor import extract_file_text, build_corpus_generator
+from app.core.extractor import extract_file_text
 from app.core.extractor_strategies import AudioExtractor
 from app.core.shared_registry import AudioConcurrencyGuard
 
@@ -92,7 +93,10 @@ def test_audio_concurrency_guard_restricts_active_tasks():
 
     def simulate_audio_task(task_id: int):
         nonlocal peak_active
-        cancel_check = lambda: False
+
+        def cancel_check():
+            return False
+
         with guard.guard(cancel_check=cancel_check) as acquired:
             assert acquired is True
             with lock:

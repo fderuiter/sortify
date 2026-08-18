@@ -49,6 +49,7 @@ class Settings(BaseSettings):
 
     @property
     def MAX_AUDIO_WORKERS(self) -> int:
+        """Alias property getter for AUDIO_MAX_WORKERS."""
         return self.AUDIO_MAX_WORKERS
 
     @MAX_AUDIO_WORKERS.setter

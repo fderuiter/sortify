@@ -1043,15 +1043,18 @@ class AudioConcurrencyGuard:
 
     @property
     def limit(self) -> int:
+        """Get the configured maximum concurrent audio tasks limit."""
         with self._lock:
             return self._limit
 
     @property
     def active_count(self) -> int:
+        """Get the current count of active audio tasks."""
         with self._lock:
             return self._active_count
 
     def set_limit(self, new_limit: int):
+        """Update the maximum concurrent audio tasks limit and notify waiting threads."""
         with self._lock:
             self._limit = max(1, int(new_limit))
             self._cond.notify_all()
