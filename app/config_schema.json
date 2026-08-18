@@ -132,8 +132,6 @@
       "type": "string"
     },
     "WHISPER_CMD": {
-      "default": "whisper",
-      "title": "Whisper Command",
       "anyOf": [
         {
           "type": "string"
@@ -144,7 +142,9 @@
           },
           "type": "array"
         }
-      ]
+      ],
+      "default": "whisper",
+      "title": "Whisper Command"
     },
     "OCR_LANGUAGES": {
       "default": "en",

@@ -2,20 +2,17 @@
 
 import hashlib
 import os
-import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.config import AppSettings, Settings
-from app.core.downloader import DownloadManager, ModelVerificationError
+from app.config import Settings
+from app.core.downloader import DownloadManager
 from app.core.extractor_strategies import AudioExtractor
 from app.core.hashes_registry import HASHES
 from app.core.shared_registry import SharedModelRegistry
 from app.core.verifier import (
-    get_whisper_model_path,
     verify_whisper_binary,
-    verify_whisper_dual,
     verify_whisper_model_weight,
 )
 

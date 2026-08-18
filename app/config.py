@@ -48,7 +48,9 @@ class Settings(BaseSettings):
     WHISPER_MODEL_SIZE: Literal["tiny", "base", "small", "medium", "large"] = Field(
         default="base"
     )
-    WHISPER_CMD: str | list[str] = Field(default="whisper")
+    WHISPER_CMD: str | list[str] = Field(
+        default="whisper", title="Whisper Command"
+    )
     OCR_LANGUAGES: str = Field(default="en")
     CONFLICT_POLICY: Literal["skip", "rename"] = Field(default="rename")
     SORTING_STRATEGY: Literal[

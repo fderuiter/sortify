@@ -198,6 +198,7 @@ def verify_whisper_binary(whisper_cmd) -> tuple[bool, str]:
     import hashlib
     import logging
     import shutil
+
     from app.core.path_utils import is_packaged
     from app.core.shared_registry import SharedModelRegistry, _thread_local
 
@@ -277,6 +278,8 @@ def verify_whisper_model_weight(
 ) -> tuple[bool, str]:
     """Verify SHA-256 hash of selected Whisper model weight variant against central registry."""
     import hashlib
+    import logging
+
     from app.core.shared_registry import SharedModelRegistry, _thread_local
 
     clean_size = (model_size or "base").strip().lower()

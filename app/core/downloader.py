@@ -459,11 +459,9 @@ def run_background_download(
                 # Requirement 3 & Zero-Trust File Finalization: Calculate and verify cryptographic hash before moving to final destination
                 verify_temp_file_hash(temp_path, target_path)
 
-                # If verification passes, finalize and rename it and write config
+                # If verification passes, finalize and replace target file and write config
                 if os.path.exists(temp_path):
-                    if os.path.exists(target_path):
-                        os.remove(target_path)
-                    os.rename(temp_path, target_path)
+                    os.replace(temp_path, target_path)
 
                 if target_filename == "model.onnx":
                     # Write a placeholder config.json next to it
@@ -487,8 +485,7 @@ def run_background_download(
 
         except DownloadCancelledError as e:
             # Clean up temp files
-            temp_path = os.path.join(model_dir, "model.onnx.tmp")
-            if os.path.exists(temp_path):
+            if "temp_path" in locals() and os.path.exists(temp_path):
                 try:
                     os.remove(temp_path)
                 except Exception:
@@ -498,8 +495,7 @@ def run_background_download(
 
         except DiskSpaceError as e:
             # Clean up temp files
-            temp_path = os.path.join(model_dir, "model.onnx.tmp")
-            if os.path.exists(temp_path):
+            if "temp_path" in locals() and os.path.exists(temp_path):
                 try:
                     os.remove(temp_path)
                 except Exception:
@@ -509,8 +505,7 @@ def run_background_download(
 
         except Exception as e:
             # Clean up temp files
-            temp_path = os.path.join(model_dir, "model.onnx.tmp")
-            if os.path.exists(temp_path):
+            if "temp_path" in locals() and os.path.exists(temp_path):
                 try:
                     os.remove(temp_path)
                 except Exception:

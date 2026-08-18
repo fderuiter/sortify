@@ -1083,7 +1083,7 @@ def show_settings(parent_app, settings):
                                 dm.state["error"] = None
                         whisper_download_button.enable()
 
-                whisper_timer = ui.timer(0.2, sync_whisper_download_ui)
+                ui.timer(0.2, sync_whisper_download_ui)
                 refresh_whisper_status()
 
                 with ui.expansion("Advanced AI Settings", icon="psychology").classes(
