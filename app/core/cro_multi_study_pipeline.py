@@ -16,6 +16,7 @@ from app.core.clinical_compliance import ClinicalComplianceEngine
 from app.core.clinical_renamer import ClinicalRenamer
 from app.core.clinical_strategy import ClinicalTMFStrategy
 from app.core.forensic_scanner import ForensicScanner
+from app.core.mover import get_safe_path
 from app.core.path_utils import sanitize_name
 from app.core.study_disambiguator import StudyDisambiguator
 
@@ -186,17 +187,31 @@ class CROMultiStudyPipeline:
                     else:
                         target_fn = doc.file_name
 
-                    dest_file_path = os.path.join(dest_dir, target_fn)
+                    src_to_copy = doc.staging_file_path or doc.source_path
+                    dest_file_path = get_safe_path(
+                        dest_dir, target_fn, source_path=src_to_copy
+                    )
 
                     # Non-destructive copy from actual staging/source file
-                    src_to_copy = doc.staging_file_path or doc.source_path
                     if os.path.isfile(src_to_copy):
-                        try:
-                            shutil.copy2(src_to_copy, dest_file_path)
-                        except Exception as e:
-                            logger.warning(
-                                f"Failed to copy {src_to_copy} to {dest_file_path}: {e}"
-                            )
+                        is_same = False
+                        if os.path.lexists(dest_file_path):
+                            try:
+                                is_same = os.path.samefile(src_to_copy, dest_file_path)
+                            except OSError:
+                                from app.core.mover import _is_same_path
+
+                                is_same = _is_same_path(src_to_copy, dest_file_path)
+
+                        if not is_same:
+                            try:
+                                shutil.copy2(src_to_copy, dest_file_path)
+                            except shutil.SameFileError:
+                                pass
+                            except Exception as e:
+                                logger.warning(
+                                    f"Failed to copy {src_to_copy} to {dest_file_path}: {e}"
+                                )
 
                     manifest_records.append(
                         {
