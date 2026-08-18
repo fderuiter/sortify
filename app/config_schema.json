@@ -173,6 +173,42 @@
       "title": "Max Debounce Delay",
       "type": "number"
     },
+    "TABULAR_MAX_SHEETS": {
+      "default": 10,
+      "exclusiveMinimum": 0,
+      "title": "Tabular Max Sheets",
+      "type": "integer"
+    },
+    "TABULAR_MAX_ROWS": {
+      "default": 10000,
+      "exclusiveMinimum": 0,
+      "title": "Tabular Max Rows",
+      "type": "integer"
+    },
+    "TABULAR_MAX_CHARACTERS": {
+      "default": 50000,
+      "exclusiveMinimum": 0,
+      "title": "Tabular Max Characters",
+      "type": "integer"
+    },
+    "MAX_SPREADSHEET_SHEETS": {
+      "default": 10,
+      "exclusiveMinimum": 0,
+      "title": "Max Spreadsheet Sheets",
+      "type": "integer"
+    },
+    "MAX_SPREADSHEET_ROWS": {
+      "default": 10000,
+      "exclusiveMinimum": 0,
+      "title": "Max Spreadsheet Rows",
+      "type": "integer"
+    },
+    "MAX_SPREADSHEET_CHARACTERS": {
+      "default": 50000,
+      "exclusiveMinimum": 0,
+      "title": "Max Spreadsheet Characters",
+      "type": "integer"
+    },
     "IGNORED_EXTENSIONS": {
       "default": [
         ".crdownload",
