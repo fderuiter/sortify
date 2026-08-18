@@ -319,13 +319,8 @@ def _execute_moves_recursive(
                             raise
 
                     elif link_info["type"] == "junction":
-                        if not os.path.isabs(original_target):
-                            final_target = os.path.relpath(new_abs_target, dest_dir)
-                        else:
-                            final_target = new_abs_target
-
                         try:
-                            _create_junction(final_target, shadow_name)
+                            _create_junction(new_abs_target, shadow_name)
                             if not (
                                 os.path.lexists(shadow_name)
                                 or is_junction_path(shadow_name)

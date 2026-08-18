@@ -55,6 +55,25 @@ class Settings(BaseSettings):
     COHERENCE_THRESHOLD: float = Field(default=0.5, ge=0.0, le=1.0)
     DEBOUNCE_DELAY: float = Field(default=0.6, gt=0.0)
     MAX_DEBOUNCE_DELAY: float = Field(default=5.0, gt=0.0)
+    TABULAR_MAX_SHEETS: int = Field(default=10, gt=0)
+    TABULAR_MAX_ROWS: int = Field(default=10000, gt=0)
+    TABULAR_MAX_CHARACTERS: int = Field(default=50000, gt=0)
+
+    @property
+    def MAX_SPREADSHEET_SHEETS(self) -> int:
+        """Alias for TABULAR_MAX_SHEETS."""
+        return self.TABULAR_MAX_SHEETS
+
+    @property
+    def MAX_SPREADSHEET_ROWS(self) -> int:
+        """Alias for TABULAR_MAX_ROWS."""
+        return self.TABULAR_MAX_ROWS
+
+    @property
+    def MAX_SPREADSHEET_CHARACTERS(self) -> int:
+        """Alias for TABULAR_MAX_CHARACTERS."""
+        return self.TABULAR_MAX_CHARACTERS
+
     IGNORED_EXTENSIONS: list[Annotated[str, Field(min_length=1, pattern=r"^\..+")]] = (
         Field(default=[".crdownload", ".tmp", ".download"])
     )
