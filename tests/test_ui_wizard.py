@@ -32,6 +32,7 @@ def mock_nicegui():
         mock_slider = stack.enter_context(patch("nicegui.ui.slider"))
         mock_select = stack.enter_context(patch("nicegui.ui.select"))
         mock_checkbox = stack.enter_context(patch("nicegui.ui.checkbox"))
+        mock_link = stack.enter_context(patch("nicegui.ui.link"))
 
         yield {
             "dialog": mock_dialog,
@@ -50,6 +51,7 @@ def mock_nicegui():
             "slider": mock_slider,
             "select": mock_select,
             "checkbox": mock_checkbox,
+            "link": mock_link,
         }
 
 

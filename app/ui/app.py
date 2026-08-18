@@ -6,7 +6,7 @@ import os
 
 from nicegui import ui
 
-from app.core.event_handler import CoreEventHandler, DebounceTracker, should_ignore_path
+from app.core.event_handler import CoreEventHandler, DebounceTracker
 from app.core.session import AppSession
 from app.ui.dialog_helper import ask_directory_async, get_dialog_card_classes
 
@@ -54,16 +54,8 @@ class AutoSorterApp:
         self.loop = None
         self.debounce_tracker = DebounceTracker(self.settings)
 
-    @property
-    def _first_event_time(self):
-        return self.debounce_tracker.first_event_time
-
-    @_first_event_time.setter
-    def _first_event_time(self, val):
-        self.debounce_tracker.first_event_time = val
-
-        self.contextual_rename = self.settings.CONTEXTUAL_RENAMING
-        self.preserve_hierarchy = self.settings.PRESERVE_HIERARCHY
+        self.contextual_rename = getattr(self.settings, "CONTEXTUAL_RENAMING", True)
+        self.preserve_hierarchy = getattr(self.settings, "PRESERVE_HIERARCHY", True)
         self.sorting_strategy = getattr(self.settings, "SORTING_STRATEGY", "default")
         self.clinical_smart_renaming = getattr(
             self.settings, "CLINICAL_SMART_RENAMING", False
@@ -71,6 +63,14 @@ class AutoSorterApp:
         self.clinical_generate_audit_report = getattr(
             self.settings, "CLINICAL_GENERATE_AUDIT_REPORT", True
         )
+
+    @property
+    def _first_event_time(self):
+        return self.debounce_tracker.first_event_time
+
+    @_first_event_time.setter
+    def _first_event_time(self, val):
+        self.debounce_tracker.first_event_time = val
 
     def build_ui(self):
         """Build the main user interface with modern styling, presets, and interactive controls."""
