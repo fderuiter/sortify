@@ -355,6 +355,9 @@ class ContinuousWatchdogDaemon:
                         if not was_skipped:
                             chunk = {item: {"text": text, "hash": file_hash}}
                             await asyncio.to_thread(app_session.partial_fit, chunk)
+                            chunk.clear()
+                            del chunk
+                        del text
 
                 loop.run_until_complete(process_and_fit())
 
