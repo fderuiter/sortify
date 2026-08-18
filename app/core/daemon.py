@@ -181,12 +181,6 @@ class ContinuousWatchdogDaemon:
             if not self._is_running:
                 return
 
-            # Interrupt current run immediately by setting the cancel event
-            self._cancel_event.set()
-
-            # Reset cancel event for the upcoming run
-            self._cancel_event = threading.Event()
-
             # Track the start time of the first event in a sequence
             now = time.time()
             if getattr(self, "_first_event_time", None) is None:
@@ -201,6 +195,12 @@ class ContinuousWatchdogDaemon:
                 # we let the already scheduled timer execute rather than canceling and rescheduling it.
                 # This guarantees that the run initiates and doesn't get starved by rapid events.
                 return
+
+            # Interrupt current run immediately by setting the cancel event
+            self._cancel_event.set()
+
+            # Reset cancel event for the upcoming run
+            self._cancel_event = threading.Event()
 
             max_delay = max(0.0, max_debounce_delay - elapsed)
             delay = min(debounce_delay, max_delay)
@@ -217,9 +217,9 @@ class ContinuousWatchdogDaemon:
     def _schedule_run(self, cancel_event):
         """Timer callback that executes the run on a background thread."""
         with self._lock:
-            self._first_event_time = None
             if not self._is_running or cancel_event.is_set():
                 return
+            self._first_event_time = None
 
             # Start a background execution thread for sorting
             # (Ensures we don't block the timer thread or watchdog event handling)
