@@ -5,6 +5,22 @@ from pathlib import Path
 from app.core.db_conn import get_db_connection
 from app.core.db_worker import DBWorker
 
+AUDIO_EXTENSIONS = (
+    ".mp3",
+    ".wav",
+    ".m4a",
+    ".aac",
+    ".flac",
+    ".ogg",
+    ".wma",
+    ".aiff",
+    ".alac",
+    ".opus",
+    ".mp2",
+    ".amr",
+    ".3gp",
+)
+
 
 class Database:
     """SQLite database abstraction for persistent storage of document state."""
@@ -87,6 +103,34 @@ class Database:
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_tfidf_doc_terms_path ON tfidf_doc_terms (base_dir, filepath)"
             )
+
+            # Purge existing audio-derived or non-eligible index terms from legacy databases
+            try:
+                purge_cursor = conn.cursor()
+                purge_cursor.execute(
+                    "SELECT DISTINCT base_dir, filepath FROM tfidf_doc_terms"
+                )
+                indexed_docs = purge_cursor.fetchall()
+                for b_dir, f_path in indexed_docs:
+                    cursor2 = conn.execute(
+                        "SELECT extracted_text FROM documents WHERE base_dir = ? AND filepath = ?",
+                        (b_dir, f_path),
+                    )
+                    row = cursor2.fetchone()
+                    decrypted_text = None
+                    if row and row[0]:
+                        try:
+                            decrypted_text = self.crypto.decrypt_text(row[0])
+                        except Exception:
+                            decrypted_text = None
+
+                    if not self._is_tfidf_eligible(f_path, decrypted_text):
+                        self._update_tfidf_for_document_conn(
+                            conn, b_dir, f_path, None, False
+                        )
+                conn.execute("DELETE FROM tfidf_vocab WHERE df <= 0")
+            except Exception:
+                pass
 
             # Initialize decoupled vector and metadata tables unconditionally
             conn.execute("""
@@ -413,10 +457,26 @@ class Database:
                 )
                 was_in = cursor.fetchone() is not None
                 if was_in:
-                    conn.execute(
-                        "UPDATE tfidf_doc_terms SET filepath = ? WHERE base_dir = ? AND filepath = ?",
-                        (new_filepath, base_dir, old_filepath),
+                    cursor = conn.execute(
+                        "SELECT extracted_text FROM documents WHERE base_dir = ? AND filepath = ?",
+                        (base_dir, new_filepath),
                     )
+                    row = cursor.fetchone()
+                    decrypted_text = None
+                    if row and row[0]:
+                        try:
+                            decrypted_text = self.crypto.decrypt_text(row[0])
+                        except Exception:
+                            decrypted_text = None
+                    if self._is_tfidf_eligible(new_filepath, decrypted_text):
+                        conn.execute(
+                            "UPDATE tfidf_doc_terms SET filepath = ? WHERE base_dir = ? AND filepath = ?",
+                            (new_filepath, base_dir, old_filepath),
+                        )
+                    else:
+                        self._update_tfidf_for_document_conn(
+                            conn, base_dir, old_filepath, None, False
+                        )
                 else:
                     if new_dir:
                         cursor = conn.execute(
@@ -467,9 +527,10 @@ class Database:
     def _is_tfidf_eligible(self, filepath: str, extracted_text: str | None) -> bool:
         if not filepath or not extracted_text:
             return False
-        if not filepath.lower().endswith(
-            (".txt", ".docx", ".csv", ".xlsx", ".xls", ".pdf")
-        ):
+        fp_lower = filepath.lower()
+        if any(fp_lower.endswith(ext) for ext in AUDIO_EXTENSIONS):
+            return False
+        if not fp_lower.endswith((".txt", ".docx", ".csv", ".xlsx", ".xls", ".pdf")):
             return False
         if extracted_text.startswith("[STATUS:"):
             return False
@@ -720,10 +781,26 @@ class Database:
                         )
                         was_in = cursor.fetchone() is not None
                         if was_in:
-                            conn.execute(
-                                "UPDATE tfidf_doc_terms SET filepath = ? WHERE base_dir = ? AND filepath = ?",
-                                (new_filepath, base_dir, old_filepath),
+                            cursor = conn.execute(
+                                "SELECT extracted_text FROM documents WHERE base_dir = ? AND filepath = ?",
+                                (base_dir, new_filepath),
                             )
+                            row = cursor.fetchone()
+                            decrypted_text = None
+                            if row and row[0]:
+                                try:
+                                    decrypted_text = self.crypto.decrypt_text(row[0])
+                                except Exception:
+                                    decrypted_text = None
+                            if self._is_tfidf_eligible(new_filepath, decrypted_text):
+                                conn.execute(
+                                    "UPDATE tfidf_doc_terms SET filepath = ? WHERE base_dir = ? AND filepath = ?",
+                                    (new_filepath, base_dir, old_filepath),
+                                )
+                            else:
+                                self._update_tfidf_for_document_conn(
+                                    conn, base_dir, old_filepath, None, False
+                                )
                         else:
                             if new_dir:
                                 cursor = conn.execute(
