@@ -4,6 +4,7 @@ import threading
 
 from nicegui import ui
 
+from app.config import DEFAULT_IGNORED_EXTENSIONS
 from app.ui.dialog_helper import get_dialog_card_classes
 
 
@@ -335,6 +336,163 @@ def show_settings(parent_app, settings):
                     ui.button(
                         "Clear All", on_click=clear_all_protected, color="red"
                     ).props('aria-label="Clear All Protected Paths Button"')
+
+                ui.label("Ignored File Extensions").classes("text-lg font-bold mt-4 mb-1")
+                ui.label(
+                    "Files matching these extensions (e.g. active temporary downloads) will be ignored during background sorting:"
+                ).classes("text-sm text-gray-500 mb-2")
+
+                ignored_exts_container = ui.row().classes(
+                    "w-full flex-wrap gap-2 mb-3 items-center"
+                )
+
+                def render_ignored_extensions():
+                    ignored_exts_container.clear()
+                    current_exts = list(
+                        getattr(settings, "IGNORED_EXTENSIONS", DEFAULT_IGNORED_EXTENSIONS)
+                    )
+                    with ignored_exts_container:
+                        if not current_exts:
+                            ui.label("No ignored file extensions configured.").classes(
+                                "text-sm text-gray-400 italic"
+                            )
+                        else:
+                            for ext in current_exts:
+                                with ui.card().classes(
+                                    "px-3 py-1 bg-gray-100 hover:bg-gray-200 border rounded-full flex flex-row items-center gap-1 shadow-none"
+                                ):
+                                    ui.label(ext).classes("font-mono text-sm text-gray-800")
+
+                                    def delete_ext(e_to_del=ext):
+                                        latest_exts = list(
+                                            getattr(
+                                                settings,
+                                                "IGNORED_EXTENSIONS",
+                                                DEFAULT_IGNORED_EXTENSIONS,
+                                            )
+                                        )
+                                        if e_to_del in latest_exts:
+                                            latest_exts.remove(e_to_del)
+                                            try:
+                                                settings.IGNORED_EXTENSIONS = latest_exts
+                                                ui.notify(
+                                                    f"Removed '{e_to_del}' from ignored extensions.",
+                                                    type="positive",
+                                                )
+                                                render_ignored_extensions()
+                                            except Exception as ex:
+                                                ui.notify(
+                                                    f"Failed to remove extension: {ex}",
+                                                    type="negative",
+                                                )
+
+                                    ui.button(icon="close", on_click=delete_ext).props(
+                                        "flat round dense size=xs color=grey-7"
+                                    ).props(f'aria-label="Delete extension {ext}"')
+
+                render_ignored_extensions()
+
+                ext_error_label = ui.label("").classes(
+                    "text-xs text-red-600 font-semibold mb-1 hidden"
+                )
+
+                with ui.row().classes("w-full items-center gap-2 flex-wrap mb-4"):
+                    new_ext_input = ui.input("Add Ignored Extension").props(
+                        'placeholder="e.g. .part or tmp" aria-label="Add Ignored Extension input" class="w-64"'
+                    )
+
+                    def add_ignored_ext():
+                        raw_val = new_ext_input.value or ""
+                        val = raw_val.strip().lower()
+                        if not val:
+                            ext_error_label.text = "Extension cannot be empty."
+                            ext_error_label.classes(remove="hidden")
+                            ui.notify("Extension cannot be empty.", type="warning")
+                            return
+
+                        if not val.startswith("."):
+                            val = f".{val}"
+
+                        if val == ".":
+                            ext_error_label.text = (
+                                "Bare dot '.' is not a valid file extension."
+                            )
+                            ext_error_label.classes(remove="hidden")
+                            ui.notify(
+                                "Bare dot '.' is not a valid file extension.",
+                                type="warning",
+                            )
+                            return
+
+                        import re
+
+                        if not re.match(r"^\.[a-zA-Z0-9_-]+$", val):
+                            ext_error_label.text = f"Invalid extension format: '{raw_val.strip()}'. Only alphanumeric characters, dashes, and underscores allowed."
+                            ext_error_label.classes(remove="hidden")
+                            ui.notify(
+                                f"Invalid extension format: '{raw_val.strip()}'",
+                                type="negative",
+                            )
+                            return
+
+                        current_exts = list(
+                            getattr(
+                                settings, "IGNORED_EXTENSIONS", DEFAULT_IGNORED_EXTENSIONS
+                            )
+                        )
+                        if val in current_exts:
+                            ext_error_label.text = (
+                                f"Extension '{val}' is already in the ignored list."
+                            )
+                            ext_error_label.classes(remove="hidden")
+                            ui.notify(
+                                f"Extension '{val}' is already in the ignored list.",
+                                type="warning",
+                            )
+                            return
+
+                        ext_error_label.text = ""
+                        ext_error_label.classes(add="hidden")
+
+                        updated_exts = current_exts + [val]
+                        try:
+                            settings.IGNORED_EXTENSIONS = updated_exts
+                            ui.notify(
+                                f"Added '{val}' to ignored extensions.", type="positive"
+                            )
+                            new_ext_input.value = ""
+                            render_ignored_extensions()
+                        except Exception as ex:
+                            ext_error_label.text = f"Failed to save extension: {ex}"
+                            ext_error_label.classes(remove="hidden")
+                            ui.notify(f"Failed to save extension: {ex}", type="negative")
+
+                    new_ext_input.on("keydown.enter", add_ignored_ext)
+
+                    ui.button("Add Extension", on_click=add_ignored_ext).props(
+                        'aria-label="Add Ignored Extension Button"'
+                    )
+
+                    def reset_ignored_exts():
+                        try:
+                            settings.IGNORED_EXTENSIONS = list(
+                                DEFAULT_IGNORED_EXTENSIONS
+                            )
+                            ext_error_label.text = ""
+                            ext_error_label.classes(add="hidden")
+                            ui.notify(
+                                "Restored ignored extensions to factory defaults.",
+                                type="positive",
+                            )
+                            render_ignored_extensions()
+                        except Exception as ex:
+                            ui.notify(
+                                f"Failed to reset extensions: {ex}", type="negative"
+                            )
+
+                    ui.button(
+                        "Reset to Defaults", on_click=reset_ignored_exts, color="grey-7"
+                    ).props('aria-label="Reset Ignored Extensions Button" outline')
 
                 ui.label("Processing Limits").classes("text-lg font-bold mt-4 mb-2")
 

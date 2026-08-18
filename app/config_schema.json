@@ -177,7 +177,12 @@
       "default": [
         ".crdownload",
         ".tmp",
-        ".download"
+        ".download",
+        ".part",
+        ".partial",
+        ".aria2",
+        ".fdmdownload",
+        ".opdownload"
       ],
       "items": {
         "type": "string"

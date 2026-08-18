@@ -22,6 +22,18 @@ def get_app_dir() -> Path:
     return app_dir
 
 
+DEFAULT_IGNORED_EXTENSIONS: list[str] = [
+    ".crdownload",
+    ".tmp",
+    ".download",
+    ".part",
+    ".partial",
+    ".aria2",
+    ".fdmdownload",
+    ".opdownload",
+]
+
+
 class Settings(BaseSettings):
     """Application settings schema."""
 
@@ -55,7 +67,43 @@ class Settings(BaseSettings):
     COHERENCE_THRESHOLD: float = Field(default=0.5, ge=0.0, le=1.0)
     DEBOUNCE_DELAY: float = Field(default=0.6, gt=0.0)
     MAX_DEBOUNCE_DELAY: float = Field(default=5.0, gt=0.0)
-    IGNORED_EXTENSIONS: list[str] = Field(default=[".crdownload", ".tmp", ".download"])
+    IGNORED_EXTENSIONS: list[str] = Field(
+        default_factory=lambda: list(DEFAULT_IGNORED_EXTENSIONS)
+    )
+
+    @field_validator("IGNORED_EXTENSIONS")
+    @classmethod
+    def validate_ignored_extensions(cls, v: list[str]) -> list[str]:
+        """Validate, normalize, and deduplicate ignored file extensions."""
+        if not isinstance(v, list):
+            raise ValueError("IGNORED_EXTENSIONS must be a list of strings.")
+
+        import re
+
+        valid_ext_pattern = re.compile(r"^\.[a-zA-Z0-9_-]+$")
+        normalized: list[str] = []
+
+        for ext in v:
+            if not isinstance(ext, str):
+                raise ValueError("Each ignored extension must be a string.")
+            item = ext.strip().lower()
+            if not item:
+                raise ValueError("Extension string cannot be empty or whitespace.")
+            if not item.startswith("."):
+                item = f".{item}"
+            if item == ".":
+                raise ValueError("Bare dot '.' is not a valid file extension.")
+            if not valid_ext_pattern.match(item):
+                raise ValueError(
+                    f"Invalid extension format: '{ext}'. Extension must contain valid characters without spaces or illegal path symbols."
+                )
+            if item not in normalized:
+                normalized.append(item)
+
+        if not normalized:
+            raise ValueError("IGNORED_EXTENSIONS cannot be empty.")
+
+        return normalized
 
     @field_validator("CONFLICT_POLICY")
     @classmethod

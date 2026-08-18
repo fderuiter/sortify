@@ -3,7 +3,7 @@ from unittest import mock
 
 import pytest
 
-from app.config import AppSettings, Settings
+from app.config import DEFAULT_IGNORED_EXTENSIONS, AppSettings, Settings
 from app.core.daemon import ContinuousWatchdogDaemon
 
 
@@ -13,7 +13,7 @@ class DummySettings:
     def __init__(self):
         self.DEBOUNCE_DELAY = 0.6
         self.MAX_DEBOUNCE_DELAY = 5.0
-        self.IGNORED_EXTENSIONS = [".crdownload", ".tmp", ".download"]
+        self.IGNORED_EXTENSIONS = list(DEFAULT_IGNORED_EXTENSIONS)
         self.LOG_FILE = "test.log"
         self.CONFLICT_POLICY = "rename"
         self.MAX_FOLDERS = 10
@@ -28,7 +28,7 @@ def test_settings_debounce_and_ignored_extensions_defaults():
     settings = Settings()
     assert settings.DEBOUNCE_DELAY == 0.6
     assert settings.MAX_DEBOUNCE_DELAY == 5.0
-    assert settings.IGNORED_EXTENSIONS == [".crdownload", ".tmp", ".download"]
+    assert settings.IGNORED_EXTENSIONS == DEFAULT_IGNORED_EXTENSIONS
 
 
 def test_settings_debounce_configurability(tmp_path):
@@ -57,10 +57,15 @@ def test_watchdog_filters_out_transient_files(tmp_path):
     settings = DummySettings()
     daemon = ContinuousWatchdogDaemon(settings, str(tmp_path))
 
-    # Basic defaults
+    # Basic defaults & expanded browser extensions
     assert daemon.should_ignore_path("file.tmp") is True
     assert daemon.should_ignore_path("document.crdownload") is True
     assert daemon.should_ignore_path("archive.download") is True
+    assert daemon.should_ignore_path("video.part") is True
+    assert daemon.should_ignore_path("movie.partial") is True
+    assert daemon.should_ignore_path("file.aria2") is True
+    assert daemon.should_ignore_path("data.fdmdownload") is True
+    assert daemon.should_ignore_path("bundle.opdownload") is True
     assert daemon.should_ignore_path("valid_file.txt") is False
 
     # Check case-insensitivity

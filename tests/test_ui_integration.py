@@ -320,3 +320,30 @@ def test_settings_timer_and_thread_cleanup():
         Timer.__init__ = original_timer_init
         Button.__init__ = original_btn_init
         Dialog.__init__ = original_dialog_init
+
+
+def test_settings_ignored_extensions_ui_actions(tmp_path):
+    """Test displaying settings dialog and verifying ignored extensions state and reset behavior."""
+    filepath = tmp_path / "settings.json"
+    settings = AppSettings(filepath=str(filepath))
+    parent_app = MagicMock()
+
+    with Client(None):
+        show_settings(parent_app, settings)
+
+        # Initially contains expanded defaults
+        from app.config import DEFAULT_IGNORED_EXTENSIONS
+
+        assert settings.IGNORED_EXTENSIONS == DEFAULT_IGNORED_EXTENSIONS
+
+        # Update extensions and verify persistence state
+        settings.IGNORED_EXTENSIONS = [".part", ".custom_tmp"]
+        assert settings.IGNORED_EXTENSIONS == [".part", ".custom_tmp"]
+
+        # Restore default extensions
+        settings.IGNORED_EXTENSIONS = list(DEFAULT_IGNORED_EXTENSIONS)
+        assert settings.IGNORED_EXTENSIONS == DEFAULT_IGNORED_EXTENSIONS
+
+    if settings._save_timer:
+        settings._save_timer.cancel()
+

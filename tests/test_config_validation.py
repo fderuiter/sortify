@@ -669,3 +669,46 @@ def test_proxy_decryption_failure_placeholder(tmp_path):
 
     if app_settings._save_timer:
         app_settings._save_timer.cancel()
+
+
+def test_ignored_extensions_validation():
+    """Test validation, normalization, and deduplication of IGNORED_EXTENSIONS."""
+    # Test normalization: missing dot, uppercase, whitespace
+    settings = Settings(IGNORED_EXTENSIONS=["part", "  .TMP  ", "download"])
+    assert settings.IGNORED_EXTENSIONS == [".part", ".tmp", ".download"]
+
+    # Test deduplication
+    settings_dedup = Settings(IGNORED_EXTENSIONS=[".tmp", ".PART", "part", ".tmp"])
+    assert settings_dedup.IGNORED_EXTENSIONS == [".tmp", ".part"]
+
+    # Reject bare dot
+    with pytest.raises(ValidationError) as exc_info:
+        Settings(IGNORED_EXTENSIONS=["."])
+    assert "Bare dot" in str(exc_info.value)
+
+    # Reject empty or whitespace string
+    with pytest.raises(ValidationError) as exc_info:
+        Settings(IGNORED_EXTENSIONS=["   "])
+    assert "empty or whitespace" in str(exc_info.value)
+
+    # Reject non-string items
+    with pytest.raises(ValidationError) as exc_info:
+        Settings(IGNORED_EXTENSIONS=[123])
+    assert "string" in str(exc_info.value).lower()
+
+    # Reject illegal characters / spaces
+    for invalid in ["bad/ext", "ext with space", "bad*ext", ".bad?ext"]:
+        with pytest.raises(ValidationError) as exc_info:
+            Settings(IGNORED_EXTENSIONS=[invalid])
+        assert "Invalid extension format" in str(exc_info.value)
+
+    # Reject empty list
+    with pytest.raises(ValidationError) as exc_info:
+        Settings(IGNORED_EXTENSIONS=[])
+    assert "cannot be empty" in str(exc_info.value)
+
+    # Reject non-list type
+    with pytest.raises(ValidationError) as exc_info:
+        Settings(IGNORED_EXTENSIONS="not_a_list")
+    assert "list" in str(exc_info.value).lower()
+

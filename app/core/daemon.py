@@ -9,7 +9,7 @@ import time
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
-from app.config import AppSettings
+from app.config import DEFAULT_IGNORED_EXTENSIONS, AppSettings
 from app.core.metadata import MetadataPass
 from app.core.scanner import get_files_recursively
 from app.core.session import AppSession
@@ -117,7 +117,7 @@ class ContinuousWatchdogDaemon:
 
         # Suffix matching on lowercase file extensions using IGNORED_EXTENSIONS configuration
         ignored_exts = getattr(
-            self.settings, "IGNORED_EXTENSIONS", [".crdownload", ".tmp", ".download"]
+            self.settings, "IGNORED_EXTENSIONS", DEFAULT_IGNORED_EXTENSIONS
         )
         lower_path = norm_path.lower()
         for ext in ignored_exts:
