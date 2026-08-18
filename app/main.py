@@ -363,6 +363,15 @@ def main():
         format="%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s",
     )
 
+    # Automated headless startup reconciliation scan for incomplete file relocations
+    try:
+        from app.core.ledger import TransactionLedger
+
+        ledger = TransactionLedger()
+        ledger.reconcile_incomplete_transactions()
+    except Exception as exc:
+        logging.warning(f"Headless transaction ledger reconciliation on startup failed: {exc}")
+
     # Create and add the log scrubbing filter to the root logger
     root_logger = logging.getLogger()
 
