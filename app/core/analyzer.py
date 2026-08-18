@@ -139,8 +139,10 @@ def pre_fetch_historical_corpus(
                 from sklearn.feature_extraction.text import TfidfVectorizer
                 from sklearn.metrics.pairwise import cosine_similarity
 
-                hist_texts = [c["text"] or "" for c in candidates]
-                active_text = " ".join(documents or [])
+                from app.core.text_utils import sanitize_text
+
+                hist_texts = [sanitize_text(c["text"] or "") for c in candidates]
+                active_text = sanitize_text(" ".join(documents or []))
 
                 vectorizer = TfidfVectorizer(max_features=1000, stop_words="english")
                 hist_vectors = vectorizer.fit_transform(hist_texts)
@@ -674,7 +676,9 @@ class IncrementalAnalyzer:
                         )
 
                         # Vectorizing Active Candidate Documents
-                        safe_ai_documents = [d or "" for d in ai_documents]
+                        from app.core.text_utils import sanitize_text
+
+                        safe_ai_documents = [sanitize_text(d or "") for d in ai_documents]
                         counts = count_vectorizer.transform(safe_ai_documents)
                         new_docs_vectors = transformer.transform(counts)
 
