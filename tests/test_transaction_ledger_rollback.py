@@ -1,16 +1,15 @@
-import json
 import os
-import shutil
 from contextlib import closing
+
 import pytest
 
 from app.core.cache import CacheManager
 from app.core.db import Database
 from app.core.db_conn import clear_connection_cache, get_db_connection
 from app.core.db_worker import DBWorker
+from app.core.extractor import get_file_hash
 from app.core.history import HistoryManager
 from app.core.mover import execute_moves
-from app.core.extractor import get_file_hash
 
 
 @pytest.fixture
