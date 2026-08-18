@@ -894,6 +894,55 @@ def show_settings(parent_app, settings):
                             img_skip_slider, "value", backward=lambda v: f"{int(v)}"
                         )
 
+                    def on_coherence_change(e):
+                        val = (
+                            float(e.value)
+                            if e.value is not None
+                            else getattr(settings, "COHERENCE_THRESHOLD", 0.5)
+                        )
+                        current = getattr(settings, "COHERENCE_THRESHOLD", 0.5)
+                        if abs(val - current) < 1e-6:
+                            return
+                        try:
+                            settings.COHERENCE_THRESHOLD = val
+                        except Exception as ex:
+                            e.sender.value = getattr(settings, "COHERENCE_THRESHOLD", 0.5)
+                            ui.notify(
+                                f"Invalid coherence threshold: {ex}", type="negative"
+                            )
+
+                    coherence_tooltip = (
+                        "Adjust semantic clustering sensitivity. Higher values increase grouping strictness "
+                        "(flagging loosely related documents for review), while lower values relax grouping strictness."
+                    )
+
+                    coherence_lbl = ui.label("Coherence Threshold").classes(
+                        "text-sm text-gray-700 mt-4"
+                    )
+                    coherence_lbl.tooltip(coherence_tooltip)
+
+                    with ui.row().classes("w-full items-center gap-4"):
+                        coherence_slider = (
+                            ui.slider(
+                                min=0.0,
+                                max=1.0,
+                                value=getattr(settings, "COHERENCE_THRESHOLD", 0.5),
+                                step=0.01,
+                                on_change=on_coherence_change,
+                            )
+                            .props('aria-label="Coherence Threshold" label')
+                            .classes("flex-grow")
+                        )
+                        coherence_slider.tooltip(coherence_tooltip)
+                        coherence_val_lbl = ui.label().bind_text_from(
+                            coherence_slider,
+                            "value",
+                            backward=lambda v: f"{float(v):.2f}"
+                            if v is not None
+                            else "0.50",
+                        )
+                        coherence_val_lbl.tooltip(coherence_tooltip)
+
                     ui.label("Hardware Acceleration & Language Support").classes(
                         "text-md font-bold mt-4 mb-2"
                     )

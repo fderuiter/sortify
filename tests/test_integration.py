@@ -447,12 +447,13 @@ def test_advanced_settings_sliders():
     settings.IMAGE_SKIP_THRESHOLD = 3000
     settings.DEBOUNCE_DELAY = 0.6
     settings.MAX_DEBOUNCE_DELAY = 5.0
+    settings.COHERENCE_THRESHOLD = 0.5
 
     with patch("app.ui.settings.ui") as mock_ui:
         show_settings(parent_app, settings)
 
-        # We expect exactly 7 sliders
-        assert mock_ui.slider.call_count == 7
+        # We expect exactly 8 sliders
+        assert mock_ui.slider.call_count == 8
 
         # Locate sliders based on min/max bounds
         sliders_by_bounds = {}
@@ -510,6 +511,13 @@ def test_advanced_settings_sliders():
         on_max_debounce_change = max_debounce_kwargs.get("on_change")
         assert on_max_debounce_change is not None
 
+        # 8. COHERENCE_THRESHOLD: 0.0 to 1.0
+        assert (0.0, 1.0) in sliders_by_bounds
+        coherence_kwargs = sliders_by_bounds[(0.0, 1.0)]
+        assert coherence_kwargs.get("value") == 0.5
+        on_coherence_change = coherence_kwargs.get("on_change")
+        assert on_coherence_change is not None
+
         # Test valid changes
         # Max Workers change
         mock_event = MagicMock()
@@ -546,6 +554,11 @@ def test_advanced_settings_sliders():
         mock_event.value = 10.0
         on_max_debounce_change(mock_event)
         assert settings.MAX_DEBOUNCE_DELAY == 10.0
+
+        # Coherence Threshold change
+        mock_event.value = 0.75
+        on_coherence_change(mock_event)
+        assert settings.COHERENCE_THRESHOLD == 0.75
 
         # Test invalid values trigger revert-and-notify
         # Invalid Max Workers (e.g. 100 which is > 64)
