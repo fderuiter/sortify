@@ -87,7 +87,6 @@ def show_wizard(parent_app, settings):
                     "Proxy Server (e.g. http://127.0.0.1:8080)",
                     value=getattr(settings, "PROXY", ""),
                     password=True,
-                    password_toggle_button=True,
                 )
                 .classes("w-full mb-4")
                 .props('aria-label="Wizard Proxy Input"')

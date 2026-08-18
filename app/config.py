@@ -11,7 +11,7 @@ import threading
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, ValidationError, field_validator
+from pydantic import Field, ValidationError, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -56,6 +56,16 @@ class Settings(BaseSettings):
     DEBOUNCE_DELAY: float = Field(default=0.6, gt=0.0)
     MAX_DEBOUNCE_DELAY: float = Field(default=5.0, gt=0.0)
     IGNORED_EXTENSIONS: list[str] = Field(default=[".crdownload", ".tmp", ".download"])
+
+    @model_validator(mode="after")
+    def validate_debounce_delays(self) -> "Settings":
+        """Validate that DEBOUNCE_DELAY does not exceed MAX_DEBOUNCE_DELAY."""
+        if self.DEBOUNCE_DELAY > self.MAX_DEBOUNCE_DELAY:
+            raise ValueError(
+                f"DEBOUNCE_DELAY ({self.DEBOUNCE_DELAY}) cannot be greater than "
+                f"MAX_DEBOUNCE_DELAY ({self.MAX_DEBOUNCE_DELAY})."
+            )
+        return self
 
     @field_validator("CONFLICT_POLICY")
     @classmethod
@@ -320,7 +330,13 @@ class AppSettings:
                         {"field": path, "message": error.message}
                     )
 
-            for key, value in data.items():
+            data_keys = list(data.keys())
+            if "MAX_DEBOUNCE_DELAY" in data_keys and "DEBOUNCE_DELAY" in data_keys:
+                data_keys.remove("MAX_DEBOUNCE_DELAY")
+                data_keys.insert(0, "MAX_DEBOUNCE_DELAY")
+
+            for key in data_keys:
+                value = data[key]
                 if hasattr(self._settings_model, key):
                     try:
                         setattr(self._settings_model, key, value)

@@ -243,13 +243,31 @@ class Florence2VisualProcessor:
         if self.model is not None and self.processor is not None:
             return
 
-        # Register Florence-2 standard configuration files
-        OfflineModelLoader.register_model(self.model_id, ["config.json"])
+        # Register Florence-2 standard configuration files and architecture scripts
+        OfflineModelLoader.register_model(
+            self.model_id,
+            ["config.json", "processing_florence2.py", "modeling_florence2.py"],
+        )
 
         try:
             self._model_path = OfflineModelLoader.resolve_model_path(self.model_id)
         except ModelWeightsNotFoundError as e:
             logger.error(f"Florence-2 resolution failed: {e}")
+            raise
+
+        # Enforce pre-execution cryptographic integrity check before code execution or model loading
+        from app.core.shared_registry import SharedModelRegistry
+
+        try:
+            SharedModelRegistry.get_instance().verify_integrity(
+                self.model_id, self._model_path
+            )
+        except Exception as e:
+            logger.error(f"Florence-2 integrity check failed for '{self.model_id}': {e}")
+            if not isinstance(e, OfflineModelLoadError):
+                raise OfflineModelLoadError(
+                    f"Florence-2 model load failed: Integrity check failed for '{self.model_id}': {e}"
+                ) from e
             raise
 
         def load_florence_model(path: str, **kwargs: Any) -> Any:
