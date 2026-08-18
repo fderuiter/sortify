@@ -140,13 +140,25 @@ def resilient_remove(path):
 
 def resilient_rmtree(path, ignore_errors=False):
     """Resiliently delete a directory tree, adjusting permissions on write-permission locks."""
+    if not os.path.lexists(path):
+        return
+
     if is_junction_path(path) or os.path.islink(path):
         resilient_remove(path)
         return
 
     def _handle_error(func, p, exc_info):
         try:
-            os.chmod(p, stat.S_IWRITE)
+            os.chmod(p, stat.S_IWRITE | stat.S_IREAD | stat.S_IEXEC)
+        except Exception:
+            pass
+        parent = os.path.dirname(p)
+        if parent and os.path.exists(parent):
+            try:
+                os.chmod(parent, stat.S_IWRITE | stat.S_IREAD | stat.S_IEXEC)
+            except Exception:
+                pass
+        try:
             func(p)
         except Exception:
             pass
@@ -157,13 +169,12 @@ def resilient_rmtree(path, ignore_errors=False):
             shutil.rmtree(path, onerror=_handle_error, onexc=_handle_error)
             return
         except (OSError, PermissionError) as e:
-            if ignore_errors:
-                return
-
             if attempt == MAX_ATTEMPTS - 1:
-                logging.error(
+                logging.warning(
                     f"Failed to rmtree {path} after {MAX_ATTEMPTS} attempts: {e}"
                 )
+                if ignore_errors:
+                    return
                 raise e
 
             gc.collect()

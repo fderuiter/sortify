@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from typing import Callable, Dict, List, Optional
 
 from app.core.extractor import extract_file_text
+from app.core.resilient_file_ops import resilient_rmtree
 
 logger = logging.getLogger(__name__)
 
@@ -298,8 +299,8 @@ class ForensicScanner:
 
     def cleanup(self):
         """Clean up temporary staging directories."""
-        if self._is_owned_staging_dir and os.path.exists(self.staging_dir):
+        if self._is_owned_staging_dir and os.path.lexists(self.staging_dir):
             try:
-                shutil.rmtree(self.staging_dir)
+                resilient_rmtree(self.staging_dir)
             except Exception as e:
                 logger.warning(f"Error cleaning staging dir {self.staging_dir}: {e}")

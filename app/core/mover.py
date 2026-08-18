@@ -319,13 +319,8 @@ def _execute_moves_recursive(
                             raise
 
                     elif link_info["type"] == "junction":
-                        if not os.path.isabs(original_target):
-                            final_target = os.path.relpath(new_abs_target, dest_dir)
-                        else:
-                            final_target = new_abs_target
-
                         try:
-                            _create_junction(final_target, shadow_name)
+                            _create_junction(new_abs_target, shadow_name)
                             if not (
                                 os.path.lexists(shadow_name)
                                 or is_junction_path(shadow_name)
@@ -482,6 +477,17 @@ def execute_moves(
 ) -> dict:
     """Create directories and safely move files, tracking file-system errors."""
     base_dir = os.path.normpath(base_dir)
+
+    # Validate plan integrity and confirmation flags prior to execution
+    integrity_result = VerificationEngine.verify_plan_integrity(base_dir, plan)
+    if (
+        integrity_result.get("invalid_renames")
+        or integrity_result.get("unconfirmed_renames")
+        or integrity_result.get("circular_renames")
+    ):
+        warn_text = "; ".join(integrity_result.get("warnings", [])) or "Plan validation failed."
+        raise ValueError(f"Plan validation or confirmation failed: {warn_text}")
+
     session_id = None
     if not resume:
         # Create a full snapshot of the directory tree and metadata before moving files

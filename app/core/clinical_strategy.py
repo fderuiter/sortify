@@ -121,6 +121,7 @@ class ClinicalTMFStrategy(IsolatedStrategyMixin):
                     target_folder_path = [zone_name, sec_name]
 
                 # Determine target filename
+                routed_by_val = f"clinical_{self.mode}"
                 if self.smart_renaming:
                     target_fn = ClinicalRenamer.generate_standard_filename(
                         fn, artifact.name, doc_text
@@ -128,16 +129,29 @@ class ClinicalTMFStrategy(IsolatedStrategyMixin):
                     leaf_node = {
                         "__type__": "file",
                         "relative_source": fn,
+                        "source_path": fn,
+                        "routed_by": routed_by_val,
                         "target_filename": target_fn,
                     }
                 else:
-                    leaf_node = None
+                    leaf_node = {
+                        "__type__": "file",
+                        "relative_source": fn,
+                        "source_path": fn,
+                        "routed_by": routed_by_val,
+                    }
 
                 self._insert_into_plan(plan, target_folder_path, fn, leaf_node)
             else:
                 # Unclassified / Review Required
                 classified_map[fn] = "unclassified"
-                self._insert_into_plan(plan, ["Unclassified_Review"], fn, None)
+                leaf_node = {
+                    "__type__": "file",
+                    "relative_source": fn,
+                    "source_path": fn,
+                    "routed_by": f"clinical_{self.mode}",
+                }
+                self._insert_into_plan(plan, ["Unclassified_Review"], fn, leaf_node)
 
         # Evaluate compliance gap analysis
         base_dir_val = getattr(self, "base_dir", "") or ""
