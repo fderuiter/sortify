@@ -303,13 +303,17 @@ def _execute_moves_recursive(
 
                                 os.replace(shadow_name, dest_path)
                                 if not _is_same_path(dest_path, source_path):
-                                    from app.core.resilient_file_ops import resilient_remove
+                                    from app.core.resilient_file_ops import (
+                                        resilient_remove,
+                                    )
 
                                     resilient_remove(source_path)
                                 moved_as_link = True
                             except Exception as e:
                                 if os.path.lexists(shadow_name):
-                                    from app.core.resilient_file_ops import resilient_remove
+                                    from app.core.resilient_file_ops import (
+                                        resilient_remove,
+                                    )
 
                                     resilient_remove(shadow_name)
                                 logging.error(
@@ -323,13 +327,17 @@ def _execute_moves_recursive(
                                     f.write(new_abs_target)
                                 os.replace(shadow_name, dest_path)
                                 if not _is_same_path(dest_path, source_path):
-                                    from app.core.resilient_file_ops import resilient_remove
+                                    from app.core.resilient_file_ops import (
+                                        resilient_remove,
+                                    )
 
                                     resilient_remove(source_path)
                                 moved_as_link = True
                             except Exception as e:
                                 if os.path.lexists(shadow_name):
-                                    from app.core.resilient_file_ops import resilient_remove
+                                    from app.core.resilient_file_ops import (
+                                        resilient_remove,
+                                    )
 
                                     resilient_remove(shadow_name)
                                 logging.error(
