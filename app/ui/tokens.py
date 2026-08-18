@@ -45,7 +45,7 @@ class SizingTokens:
     TOUCH_TARGET_MIN: str = "min-h-[36px]"
 
     MAX_HEIGHT_DIALOG: str = "max-h-[85vh]"
-    VIEWPORT_DIALOG_HEIGHT: str = "h-[80vh]"
+    VIEWPORT_DIALOG_HEIGHT: str = "max-h-[80vh]"
     TREE_CONTAINER_CLASSES: str = "w-full flex-1 min-h-[200px] max-h-[60vh] p-2"
 
 

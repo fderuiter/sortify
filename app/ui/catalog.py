@@ -81,7 +81,7 @@ def render_directory_selection_card(container, state="default", viewport_width=1
                     ],
                     value="Standard AutoSorter",
                     label="Preset Strategy",
-                ).classes("w-64 min-w-[180px]").props(
+                ).classes("w-full max-w-xs min-w-[180px]").props(
                     'outlined dense aria-label="Preset Strategy Select"'
                 )
 
@@ -281,7 +281,7 @@ def render_help_modal_card(container, state="default", viewport_width=1280):
                 "bg-gray-200 text-black shrink-0"
             ).props('aria-label="Close Help Dialog Button"')
 
-        with ui.scroll_area().classes("w-full h-48 border rounded p-4 overflow-y-auto"):
+        with ui.scroll_area().classes("w-full max-h-48 border rounded p-4 overflow-y-auto"):
             ui.markdown(
                 "# Smart AutoSorter Guide\n\n- Select target directory\n- Choose classification preset\n- Review reorganization plan before applying."
             ).classes("w-full break-words")
@@ -409,7 +409,7 @@ body { font-family: 'Inter', sans-serif; background-color: #f8fafc; color: #0f17
                     options={c["id"]: c["name"] for c in CATALOG_REGISTRY},
                     value=selected_comp_id,
                     label="Select UI Component",
-                ).classes("w-72").props('outlined dense aria-label="Component Selector"')
+                ).classes("w-full max-w-xs").props('outlined dense aria-label="Component Selector"')
 
                 ui.select(
                     options={
@@ -420,13 +420,13 @@ body { font-family: 'Inter', sans-serif; background-color: #f8fafc; color: #0f17
                     },
                     value=selected_viewport_width,
                     label="Viewport Size",
-                ).classes("w-56").props('outlined dense aria-label="Viewport Selector"')
+                ).classes("w-full max-w-xs").props('outlined dense aria-label="Viewport Selector"')
 
                 ui.select(
                     options=["default", "overflow", "loading", "error"],
                     value=selected_state,
                     label="State Variant",
-                ).classes("w-40").props('outlined dense aria-label="State Selector"')
+                ).classes("w-full max-w-xs").props('outlined dense aria-label="State Selector"')
 
         # Preview Container
         with ui.column().classes("w-full items-center justify-center p-4 bg-slate-100 rounded-xl min-h-[400px]"):
