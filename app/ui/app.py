@@ -1801,7 +1801,9 @@ body {
                 fast_path_summary = None
                 if fast_path_plan:
                     # Phase 1: Fast-path deterministic moves
-                    self.status_label.set_text("Phase 1/2: Executing fast-path rules...")
+                    self.status_label.set_text(
+                        "Phase 1/2: Executing fast-path rules..."
+                    )
                     self.progress_bar.set_value(0.1)
                     fast_path_summary = await asyncio.to_thread(
                         self.app_session.execute_moves, fast_path_plan
@@ -1822,7 +1824,9 @@ body {
 
                 slow_path_summary = None
                 if slow_path_plan:
-                    self.status_label.set_text("Phase 2/2: Executing AI classification...")
+                    self.status_label.set_text(
+                        "Phase 2/2: Executing AI classification..."
+                    )
                     slow_path_summary = await asyncio.to_thread(
                         self.app_session.execute_moves, slow_path_plan
                     )
