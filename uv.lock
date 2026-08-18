@@ -4353,6 +4353,7 @@ source = { editable = "." }
 dependencies = [
     { name = "cryptography" },
     { name = "easyocr" },
+    { name = "filelock" },
     { name = "jsonschema" },
     { name = "keyring" },
     { name = "llama-cpp-python" },
@@ -4397,6 +4398,7 @@ dev = [
 requires-dist = [
     { name = "cryptography", specifier = ">=41.0.0" },
     { name = "easyocr", specifier = ">=1.7.0" },
+    { name = "filelock", specifier = ">=3.0.0" },
     { name = "jsonschema", specifier = ">=4.25.1" },
     { name = "keyring", specifier = ">=24.0.0" },
     { name = "llama-cpp-python", specifier = ">=0.3.34" },

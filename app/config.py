@@ -3,6 +3,7 @@
 This module contains the AppSettings for managing dynamic configuration.
 """
 
+import atexit
 import json
 import logging
 import os
@@ -11,6 +12,7 @@ import threading
 from pathlib import Path
 from typing import Literal
 
+from filelock import FileLock
 from pydantic import Field, ValidationError, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -20,6 +22,48 @@ def get_app_dir() -> Path:
     app_dir = Path.home() / ".autosorter"
     app_dir.mkdir(parents=True, exist_ok=True)
     return app_dir
+
+
+_active_instances = set()
+_instances_lock = threading.Lock()
+_disk_locks = {}
+_disk_locks_guard = threading.Lock()
+
+
+def _get_disk_lock(filepath: str):
+    """Get cross-process/cross-thread FileLock for the given config filepath."""
+    abs_path = os.path.abspath(filepath)
+    with _disk_locks_guard:
+        if abs_path not in _disk_locks:
+            lock_path = f"{abs_path}.lock"
+            _disk_locks[abs_path] = FileLock(lock_path)
+        return _disk_locks[abs_path]
+
+
+def _register_instance(instance):
+    """Register active AppSettings instance."""
+    with _instances_lock:
+        _active_instances.add(instance)
+
+
+def _unregister_instance(instance):
+    """Unregister active AppSettings instance."""
+    with _instances_lock:
+        _active_instances.discard(instance)
+
+
+def _flush_all_on_exit():
+    """Flush all pending save operations across active instances before shutdown."""
+    with _instances_lock:
+        instances = list(_active_instances)
+    for inst in instances:
+        try:
+            inst.flush()
+        except Exception:
+            pass
+
+
+atexit.register(_flush_all_on_exit)
 
 
 class Settings(BaseSettings):
@@ -251,10 +295,23 @@ class Settings(BaseSettings):
 class AppSettings:
     """A registry for application settings that provides persistence and validation."""
 
+    @classmethod
+    def flush_all(cls, filepath=None):
+        """Flush pending saves for all active AppSettings instances matching filepath (or all if filepath is None)."""
+        with _instances_lock:
+            instances = list(_active_instances)
+        for inst in instances:
+            if filepath is None or os.path.abspath(inst._filepath) == os.path.abspath(filepath):
+                try:
+                    inst.flush()
+                except Exception as e:
+                    logging.error(f"Error flushing settings instance: {e}")
+
     def __init__(self, filepath=None):
         self._filepath = filepath or str(get_app_dir() / "settings.json")
         self._save_timer = None
         self._lock = threading.Lock()
+        self._save_lock = threading.Lock()
         self._raw_encrypted_proxy = None
         self._validation_errors = []
 
@@ -264,66 +321,93 @@ class AppSettings:
             print(f"Configuration error: {e}", file=sys.stderr)
             sys.exit(1)
 
+        _register_instance(self)
         self.load()
+
+    def flush(self):
+        """Flush pending save operations synchronously."""
+        with self._lock:
+            timer = self._save_timer
+            self._save_timer = None
+
+        if timer is not None:
+            timer.cancel()
+            self._save()
 
     def load(self):
         """Load settings from the configuration file."""
+        AppSettings.flush_all(self._filepath)
+
         self._validation_errors = []
         if not os.path.exists(self._filepath):
             self._trigger_save()
             return
 
-        has_validation_errors = False
-        needs_migration = False
-        try:
-            with open(self._filepath, "r", encoding="utf-8") as f:
-                data = json.load(f)
+        lock = _get_disk_lock(self._filepath)
+        with lock:
+            if not os.path.exists(self._filepath):
+                return
 
-            # Decrypt PROXY setting if encrypted, or mark for migration if legacy plaintext
-            if isinstance(data, dict) and "PROXY" in data:
-                proxy_val = data["PROXY"]
-                if proxy_val:
-                    if proxy_val.startswith("enc:"):
-                        self._raw_encrypted_proxy = proxy_val
-                        try:
-                            from app.core.path_utils import resolve_db_crypto
+            has_validation_errors = False
+            needs_migration = False
+            try:
+                with open(self._filepath, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+            except Exception as e:
+                logging.warning(f"Failed to load settings, using defaults: {e}")
+                self._has_validation_errors = True
+                self._validation_errors.append(
+                    {"field": "json", "message": f"Failed to load settings file: {e}"}
+                )
+                return
 
-                            crypto = resolve_db_crypto(self._filepath)
-                            decrypted_val = crypto.decrypt_text(proxy_val[4:])
-                            data["PROXY"] = decrypted_val
-                        except Exception as e:
-                            logging.warning(
-                                f"Failed to decrypt proxy settings, replacing with placeholder: {e}"
-                            )
-                            data["PROXY"] = "<DECRYPTION_FAILED>"
-                    else:
-                        needs_migration = True
-
-            # Validate against static schema file if it exists
-            schema_path = Path(__file__).parent / "config_schema.json"
-            if schema_path.exists():
-                import jsonschema
-
-                with open(schema_path, "r", encoding="utf-8") as sf:
-                    schema = json.load(sf)
-                validator = jsonschema.Draft202012Validator(schema)
-                errors = sorted(validator.iter_errors(data), key=lambda e: e.path)
-                for error in errors:
-                    has_validation_errors = True
-                    path = (
-                        ".".join([str(p) for p in error.path]) if error.path else "root"
-                    )
-                    logging.warning(
-                        f"Configuration validation failed for field '{path}': {error.message}. Using default value."
-                    )
-                    self._validation_errors.append(
-                        {"field": path, "message": error.message}
-                    )
-
-            for key, value in data.items():
-                if hasattr(self._settings_model, key):
+        # Decrypt PROXY setting if encrypted, or mark for migration if legacy plaintext
+        if isinstance(data, dict) and "PROXY" in data:
+            proxy_val = data["PROXY"]
+            if proxy_val:
+                if proxy_val.startswith("enc:"):
+                    self._raw_encrypted_proxy = proxy_val
                     try:
-                        setattr(self._settings_model, key, value)
+                        from app.core.path_utils import resolve_db_crypto
+
+                        crypto = resolve_db_crypto(self._filepath)
+                        decrypted_val = crypto.decrypt_text(proxy_val[4:])
+                        data["PROXY"] = decrypted_val
+                    except Exception as e:
+                        logging.warning(
+                            f"Failed to decrypt proxy settings, replacing with placeholder: {e}"
+                        )
+                        data["PROXY"] = "<DECRYPTION_FAILED>"
+                else:
+                    needs_migration = True
+
+        # Validate against static schema file if it exists
+        schema_path = Path(__file__).parent / "config_schema.json"
+        if schema_path.exists():
+            import jsonschema
+
+            with open(schema_path, "r", encoding="utf-8") as sf:
+                schema = json.load(sf)
+            validator = jsonschema.Draft202012Validator(schema)
+            errors = sorted(validator.iter_errors(data), key=lambda e: e.path)
+            for error in errors:
+                has_validation_errors = True
+                path = (
+                    ".".join([str(p) for p in error.path]) if error.path else "root"
+                )
+                logging.warning(
+                    f"Configuration validation failed for field '{path}': {error.message}. Using default value."
+                )
+                self._validation_errors.append(
+                    {"field": path, "message": error.message}
+                )
+
+        candidate_model = self._settings_model.model_copy(deep=True)
+        if isinstance(data, dict):
+            for key, value in data.items():
+                if hasattr(candidate_model, key):
+                    try:
+                        setattr(candidate_model, key, value)
                     except (ValueError, ValidationError) as e:
                         if not has_validation_errors:
                             logging.warning(
@@ -334,22 +418,15 @@ class AppSettings:
                             {"field": key, "message": str(e)}
                         )
 
-            if has_validation_errors:
-                # Do not allow saving to overwrite the invalid user settings
-                self._has_validation_errors = True
-            else:
-                self._has_validation_errors = False
-
-            if needs_migration and not has_validation_errors:
-                self._trigger_save()
-
-        except Exception as e:
-            logging.warning(f"Failed to load settings, using defaults: {e}")
-            # If JSON is corrupted, we don't want to overwrite either
+        if has_validation_errors:
+            # Do not allow saving to overwrite the invalid user settings
             self._has_validation_errors = True
-            self._validation_errors.append(
-                {"field": "json", "message": f"Failed to load settings file: {e}"}
-            )
+        else:
+            self._has_validation_errors = False
+            self._settings_model = candidate_model
+
+        if needs_migration and not has_validation_errors:
+            self._trigger_save()
 
     def _trigger_save(self):
         if getattr(self, "_has_validation_errors", False):
@@ -360,36 +437,51 @@ class AppSettings:
         with self._lock:
             if self._save_timer is not None:
                 self._save_timer.cancel()
-            self._save_timer = threading.Timer(0.5, self._save)
+            delay = getattr(self._settings_model, "DEBOUNCE_DELAY", 0.5)
+            self._save_timer = threading.Timer(delay, self._save_from_timer)
             # Ensure background thread doesn't block app exit
             self._save_timer.daemon = True
             self._save_timer.start()
 
-    def _save(self):
+    def _save_from_timer(self):
         with self._lock:
-            data = self._settings_model.model_dump(mode="json")
-        try:
-            # Encrypt PROXY setting if present and not already encrypted
-            proxy_val = data.get("PROXY", "")
-            if proxy_val == "<DECRYPTION_FAILED>":
-                if self._raw_encrypted_proxy:
-                    data["PROXY"] = self._raw_encrypted_proxy
-            elif proxy_val and not proxy_val.startswith("enc:"):
-                try:
-                    from app.core.path_utils import resolve_db_crypto
+            self._save_timer = None
+        self._save()
 
-                    crypto = resolve_db_crypto(self._filepath)
-                    encrypted_val = crypto.encrypt_text(proxy_val)
-                    if isinstance(encrypted_val, bytes):
-                        encrypted_val = encrypted_val.decode("utf-8")
-                    data["PROXY"] = f"enc:{encrypted_val}"
-                except Exception as e:
-                    logging.error(f"Failed to encrypt proxy string during save: {e}")
+    def _save(self):
+        if getattr(self, "_has_validation_errors", False):
+            logging.warning(
+                "Skipping save to prevent overwriting invalid user configuration."
+            )
+            return
 
-            with open(self._filepath, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=4)
-        except Exception as e:
-            logging.error(f"Failed to save settings: {e}")
+        with self._save_lock:
+            with self._lock:
+                data = self._settings_model.model_dump(mode="json")
+            try:
+                # Encrypt PROXY setting if present and not already encrypted
+                proxy_val = data.get("PROXY", "")
+                if proxy_val == "<DECRYPTION_FAILED>":
+                    if self._raw_encrypted_proxy:
+                        data["PROXY"] = self._raw_encrypted_proxy
+                elif proxy_val and not proxy_val.startswith("enc:"):
+                    try:
+                        from app.core.path_utils import resolve_db_crypto
+
+                        crypto = resolve_db_crypto(self._filepath)
+                        encrypted_val = crypto.encrypt_text(proxy_val)
+                        if isinstance(encrypted_val, bytes):
+                            encrypted_val = encrypted_val.decode("utf-8")
+                        data["PROXY"] = f"enc:{encrypted_val}"
+                    except Exception as e:
+                        logging.error(f"Failed to encrypt proxy string during save: {e}")
+
+                lock = _get_disk_lock(self._filepath)
+                with lock:
+                    with open(self._filepath, "w", encoding="utf-8") as f:
+                        json.dump(data, f, indent=4)
+            except Exception as e:
+                logging.error(f"Failed to save settings: {e}")
 
     def __getattr__(self, name):
         """Get attribute dynamically from the settings model."""
@@ -404,6 +496,7 @@ class AppSettings:
         if name in (
             "_filepath",
             "_lock",
+            "_save_lock",
             "_save_timer",
             "_settings_model",
             "_raw_encrypted_proxy",

@@ -240,6 +240,7 @@ class ContinuousWatchdogDaemon:
 
         # Dynamic reload of settings
         try:
+            self.settings.flush()
             self.settings.load()
         except Exception as e:
             logger.error(f"Error loading settings dynamically: {e}")
