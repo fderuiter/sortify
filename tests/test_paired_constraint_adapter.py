@@ -144,7 +144,7 @@ def test_gguf_and_pytorch_constraint_consistency():
 
         captured_grammar = []
 
-        def mock_run_prompt(prompt, max_tokens, grammar=None):
+        def mock_run_prompt(prompt, max_tokens, grammar=None, **kwargs):
             captured_grammar.append(grammar)
             return "Einkäufe Liste"
 
