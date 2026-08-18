@@ -118,6 +118,18 @@ The following parameters are extracted directly from the application's configura
 - **Default**: `5.0`
 - **Required**: `False`
 
+### `TABULAR_MAX_SHEETS`
+- **Default**: `10`
+- **Required**: `False`
+
+### `TABULAR_MAX_ROWS`
+- **Default**: `10000`
+- **Required**: `False`
+
+### `TABULAR_MAX_CHARACTERS`
+- **Default**: `50000`
+- **Required**: `False`
+
 ### `IGNORED_EXTENSIONS`
 - **Default**: `['.crdownload', '.tmp', '.download']`
 - **Required**: `False`

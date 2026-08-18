@@ -266,3 +266,66 @@ def test_resolve_new_target_logic():
     assert os.path.normpath(resolved) == os.path.normpath(
         os.path.abspath("/base/sorted/target_dir")
     )
+
+
+def test_relocate_target_directory_handles_osreplace_error(tmp_path):
+    base_dir = str(tmp_path)
+    target_dir = os.path.join(base_dir, "target_dir")
+    os.makedirs(target_dir, exist_ok=True)
+
+    target_file = os.path.join(target_dir, "data.txt")
+    with open(target_file, "w") as f:
+        f.write("junction data")
+
+    junc_path = os.path.join(base_dir, "junc_dir")
+    _create_junction(target_dir, junc_path)
+
+    orig_replace = os.replace
+    replace_calls = 0
+
+    def mock_replace(src, dst):
+        nonlocal replace_calls
+        replace_calls += 1
+        if replace_calls == 1:
+            raise OSError("WinError 5 Access Denied")
+        return orig_replace(src, dst)
+
+    def mock_isjunction(path):
+        p = os.path.abspath(path)
+        return p in (
+            os.path.abspath(junc_path),
+            os.path.abspath(os.path.join(base_dir, "sorted", "target_dir")),
+        )
+
+    with (
+        patch(
+            "app.core.scanner.is_junction_entry",
+            side_effect=lambda e: getattr(e, "name", "") == "junc_dir",
+        ),
+        patch("app.core.link_manager.is_junction_path", side_effect=mock_isjunction),
+        patch("app.core.mover.is_junction_path", side_effect=mock_isjunction),
+        patch("os.replace", side_effect=mock_replace),
+    ):
+        get_files_recursively(base_dir)
+
+        plan = {
+            "sorted": {
+                "target_dir": {
+                    "data.txt": {
+                        "__type__": "file",
+                        "relative_source": "../../target_dir/data.txt",
+                        "status": "Pending Move",
+                        "source_path": "target_dir/data.txt",
+                        "target_filename": "data.txt",
+                    }
+                }
+            },
+            "junc_dir": {
+                "__type__": "file",
+                "relative_source": "junc_dir",
+            },
+        }
+
+        execute_moves(base_dir, plan, db, history_manager)
+        assert replace_calls >= 2
+
