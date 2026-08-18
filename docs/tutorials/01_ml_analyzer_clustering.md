@@ -28,6 +28,7 @@ from pathlib import Path
 
 from app.core.analyzer import IncrementalAnalyzer
 from app.core.db import Database
+from app.core.db_conn import clear_connection_cache
 
 # Core imports from Smart AutoSorter AI Pro
 from app.core.db_worker import DBWorker
@@ -102,6 +103,7 @@ Lastly, we ensure all background workers and temporary resources are terminated 
 print("[*] Terminating analyzer and database background threads...")
 analyzer.terminate()
 db_worker.stop()
+clear_connection_cache(only_current_and_inactive=False)
 sandbox_dir.cleanup()
 print("[+] Sandbox environment cleaned up successfully. Bye!")
 ```

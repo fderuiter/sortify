@@ -20,7 +20,7 @@ import openpyxl
 
 # Core Smart AutoSorter imports
 from app.config import Settings
-from app.core.db_conn import get_db_connection
+from app.core.db_conn import clear_connection_cache, get_db_connection
 from app.core.extractor import build_corpus_generator
 from app.core.session import AppSession
 ```
@@ -136,6 +136,7 @@ Finally, close the session to release file locks on databases, and safely delete
 ```python
 print("[*] Closing session and cleaning up directories...")
 session.close()
+clear_connection_cache(only_current_and_inactive=False)
 sandbox_dir.cleanup()
 print("[+] Environment cleaned up. Extraction workflow complete!")
 ```

@@ -25,7 +25,12 @@ def test_all_notebooks_execution():
                     code_cells.append(cell_code)
 
         full_code = "\n\n".join(code_cells)
-        exec(compile(full_code, str(nb_path), "exec"), global_env)
+        try:
+            exec(compile(full_code, str(nb_path), "exec"), global_env)
+        finally:
+            from app.core.db_conn import clear_connection_cache
+
+            clear_connection_cache(only_current_and_inactive=False)
 
 
 def test_convert_notebook_to_markdown(tmp_path):
@@ -62,6 +67,10 @@ def test_notebook_drift_detection_fails_on_drift(tmp_path):
     # Run generate_docs with --check and verify sys.exit(1) when a generated notebook file is unsynced
     with patch("sys.argv", ["generate_docs.py", "--check"]):
         with (
+            patch("scripts.generate_docs.generate_api_docs"),
+            patch("scripts.generate_docs.generate_ui_docs"),
+            patch("scripts.generate_docs.generate_admin_guide"),
+            patch("scripts.generate_docs.update_security_md"),
             patch("subprocess.run") as mock_run,
             patch("sys.exit") as mock_exit,
         ):
