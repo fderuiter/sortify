@@ -74,6 +74,10 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.core.extractor_strategies
 
+## `app.core.file_renamer`
+
+::: app.core.file_renamer
+
 ## `app.core.forensic_scanner`
 
 ::: app.core.forensic_scanner

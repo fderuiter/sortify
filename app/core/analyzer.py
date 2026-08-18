@@ -1112,6 +1112,7 @@ class IncrementalAnalyzer:
             ):
                 try:
                     import gc
+
                     from app.core.file_renamer import FileRenamerEngine
 
                     renamer = FileRenamerEngine(
