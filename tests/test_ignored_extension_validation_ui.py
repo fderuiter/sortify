@@ -1,7 +1,6 @@
-import json
-from nicegui import Client, context, ui
-from pydantic import ValidationError
 import pytest
+from nicegui import Client, context
+from pydantic import ValidationError
 
 from app.config import AppSettings, Settings
 from app.core.daemon import ContinuousWatchdogDaemon
@@ -105,7 +104,8 @@ def test_ui_ignored_extensions_rendering_and_actions():
 
         # Find labels matching ignored extensions
         labels = [
-            e for e in elements
+            e
+            for e in elements
             if getattr(e, "text", "") in [".crdownload", ".tmp", ".download"]
             or getattr(e, "_text", "") in [".crdownload", ".tmp", ".download"]
         ]
@@ -113,15 +113,19 @@ def test_ui_ignored_extensions_rendering_and_actions():
 
         # Find the Add button for Ignored Extension
         add_buttons = [
-            e for e in elements
-            if getattr(e, "_props", {}).get("aria-label") == "Add Ignored Extension Button"
+            e
+            for e in elements
+            if getattr(e, "_props", {}).get("aria-label")
+            == "Add Ignored Extension Button"
         ]
         assert len(add_buttons) == 1
 
         # Find input for Add Ignored Extension
         input_elements = [
-            e for e in elements
-            if "Add Ignored Extension input" in str(getattr(e, "_props", {}).get("aria-label", ""))
+            e
+            for e in elements
+            if "Add Ignored Extension input"
+            in str(getattr(e, "_props", {}).get("aria-label", ""))
         ]
         assert len(input_elements) == 1
         ext_input = input_elements[0]
@@ -142,8 +146,10 @@ def test_ui_ignored_extensions_rendering_and_actions():
 
         # 3. Test removing extension via UI button click
         remove_buttons = [
-            e for e in list(context.client.elements.values())
-            if getattr(e, "text", "") == "Remove" or getattr(e, "_props", {}).get("label") == "Remove"
+            e
+            for e in list(context.client.elements.values())
+            if getattr(e, "text", "") == "Remove"
+            or getattr(e, "_props", {}).get("label") == "Remove"
         ]
         assert len(remove_buttons) >= 4
         _click_button(remove_buttons[-1])

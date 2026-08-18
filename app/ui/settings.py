@@ -366,9 +366,7 @@ def show_settings(parent_app, settings):
 
                                     def delete_ext(idx_to_del=idx):
                                         current_exts = list(
-                                            getattr(
-                                                settings, "IGNORED_EXTENSIONS", []
-                                            )
+                                            getattr(settings, "IGNORED_EXTENSIONS", [])
                                         )
                                         if 0 <= idx_to_del < len(current_exts):
                                             removed = current_exts.pop(idx_to_del)
@@ -416,13 +414,9 @@ def show_settings(parent_app, settings):
                         if not val_str.startswith("."):
                             val_str = f".{val_str}"
 
-                        current_exts = list(
-                            getattr(settings, "IGNORED_EXTENSIONS", [])
-                        )
+                        current_exts = list(getattr(settings, "IGNORED_EXTENSIONS", []))
                         if val_str in current_exts:
-                            ui.notify(
-                                "Extension is already ignored.", type="warning"
-                            )
+                            ui.notify("Extension is already ignored.", type="warning")
                             return
 
                         updated_exts = current_exts + [val_str]
