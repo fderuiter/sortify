@@ -4,6 +4,7 @@ import threading
 
 from nicegui import ui
 
+from app.core.path_utils import validate_target_path
 from app.ui.dialog_helper import get_dialog_card_classes
 
 
@@ -1338,7 +1339,6 @@ def show_settings(parent_app, settings):
                                                 )
                                                 p_inp.value = actual_old_p
                                                 return
-                                            from app.core.path_utils import validate_target_path
                                             try:
                                                 validate_target_path(new_p, keyword=k)
                                             except ValueError as ve:
