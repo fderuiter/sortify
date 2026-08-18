@@ -1784,9 +1784,9 @@ body {
 
     def render_tree(self):
         """Render the tree view of the sorting plan and update folder/file badges."""
-        if not self._ratings_cache and self.app_session and self.base_dir:
+        if not getattr(self, "_ratings_cache", None) and getattr(self, "app_session", None) and getattr(self, "base_dir", None):
             self.load_ratings_from_db()
-        if not self.locked_files and self.app_session and self.base_dir:
+        if not getattr(self, "locked_files", None) and getattr(self, "app_session", None) and getattr(self, "base_dir", None):
             self.load_locked_files_from_db()
         self.tree_nodes = []
         folder_count, file_count = self._flatten(self.plan, "", self.tree_nodes)
@@ -1832,9 +1832,10 @@ body {
                 file_count += 1
                 text = k
                 icon = "insert_drive_file"
+                locked_files = getattr(self, "locked_files", {})
                 is_locked = (
-                    k in self.locked_files
-                    or node_id in self.locked_files
+                    k in locked_files
+                    or node_id in locked_files
                     or (isinstance(v, dict) and v.get("is_locked"))
                 )
                 if is_locked:
@@ -1903,15 +1904,16 @@ body {
                     ):
                         icon = "error"
 
+                plan_errors = getattr(self, "plan_errors", {})
                 if (
-                    k in self.plan_errors
-                    or node_id in self.plan_errors
-                    or tgt_fn in self.plan_errors
+                    k in plan_errors
+                    or node_id in plan_errors
+                    or tgt_fn in plan_errors
                 ):
                     err_msg = (
-                        self.plan_errors.get(node_id)
-                        or self.plan_errors.get(k)
-                        or self.plan_errors.get(tgt_fn)
+                        plan_errors.get(node_id)
+                        or plan_errors.get(k)
+                        or plan_errors.get(tgt_fn)
                     )
                     text += f" (Error: {err_msg})"
                     icon = "error"
@@ -1929,7 +1931,8 @@ body {
                             else "amber-9"
                         )
 
-                rating = self._ratings_cache.get(node_id) or self._ratings_cache.get(k)
+                ratings_cache = getattr(self, "_ratings_cache", {})
+                rating = ratings_cache.get(node_id) or ratings_cache.get(k)
                 nodes_list.append(
                     {
                         "id": node_id,
@@ -2367,14 +2370,19 @@ body {
                     self.plan_errors[rel_dst] = item["message"]
                     self.plan_errors[os.path.basename(dst_abs)] = item["message"]
 
-            warnings_text = "\n".join(integrity_result["warnings"])
+            warnings_text = "\n".join(integrity_result.get("warnings", []))
             if hasattr(self, "warnings_label"):
                 self.warnings_label.set_text(warnings_text)
                 self.warnings_label.set_visibility(True)
         else:
+            warnings_text = "\n".join(integrity_result.get("warnings", []))
             if hasattr(self, "warnings_label"):
-                self.warnings_label.set_text("")
-                self.warnings_label.set_visibility(False)
+                if warnings_text:
+                    self.warnings_label.set_text(warnings_text)
+                    self.warnings_label.set_visibility(True)
+                else:
+                    self.warnings_label.set_text("")
+                    self.warnings_label.set_visibility(False)
 
         self.render_tree()
 
