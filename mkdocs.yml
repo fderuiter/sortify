@@ -25,6 +25,10 @@ plugins:
 nav:
   - User Guides: user_guide.md
   - Administrator Guide: admin_guide.md
+  - Interactive Tutorials:
+    - Stateful ML Analyzer Clustering: tutorials/01_ml_analyzer_clustering.md
+    - Multi-Format Text Extraction: tutorials/02_multi_format_text_extraction.md
+    - Virtual Sorting Verification: tutorials/03_virtual_sorting_verification.md
   - Troubleshooting: troubleshooting.md
   - Developer Reference:
     - API Reference: api_reference.md
