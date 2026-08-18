@@ -11,7 +11,7 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from pathlib import Path
-from typing import List, Protocol
+from typing import List, Optional, Protocol, Union
 
 
 def is_debug_active() -> bool:
@@ -776,6 +776,9 @@ def gguf_worker_main(model_path, input_queue, output_queue, n_threads=None):
             prompt = task.get("prompt", "")
             max_tokens = task.get("max_tokens", 15)
             grammar_str = task.get("grammar")
+            stop_seqs = task.get("stop")
+            if stop_seqs is None:
+                stop_seqs = task.get("stop_sequences")
 
             grammar = None
             if grammar_str:
@@ -800,18 +803,20 @@ def gguf_worker_main(model_path, input_queue, output_queue, n_threads=None):
                         )
                         grammar = None
 
+            gen_kwargs = {"max_tokens": max_tokens, "echo": False}
+            if stop_seqs is not None:
+                gen_kwargs["stop"] = stop_seqs
+
             if grammar:
                 try:
-                    res = llm(
-                        prompt, max_tokens=max_tokens, echo=False, grammar=grammar
-                    )
+                    res = llm(prompt, grammar=grammar, **gen_kwargs)
                 except Exception as e:
                     import logging
 
                     logging.error(f"Generation with grammar failed: {e}")
-                    res = llm(prompt, max_tokens=max_tokens, echo=False)
+                    res = llm(prompt, **gen_kwargs)
             else:
-                res = llm(prompt, max_tokens=max_tokens, echo=False)
+                res = llm(prompt, **gen_kwargs)
 
             generated_text = res["choices"][0]["text"].strip()
             output_queue.put({"text": generated_text})
@@ -1237,7 +1242,16 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
             logging.error(f"Failed to load generative model via shared registry: {e}")
             self.generator = None
 
-    def _run_prompt(self, prompt: str, max_tokens: int, grammar: str = None) -> str:
+    def _run_prompt(
+        self,
+        prompt: str,
+        max_tokens: int,
+        grammar: str = None,
+        stop: Optional[Union[List[str], str]] = None,
+        stop_sequences: Optional[Union[List[str], str]] = None,
+    ) -> str:
+        stop_seqs = stop if stop is not None else stop_sequences
+
         if is_prompt_dump_enabled():
             dump_file = os.environ.get("PROMPT_DUMP_FILE")
             validate_prompt_dump_path(dump_file)
@@ -1255,9 +1269,14 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                 self._fallback_to_pytorch()
             else:
                 try:
-                    self._gguf_input_queue.put(
-                        {"prompt": prompt, "max_tokens": max_tokens, "grammar": grammar}
-                    )
+                    payload = {
+                        "prompt": prompt,
+                        "max_tokens": max_tokens,
+                        "grammar": grammar,
+                    }
+                    if stop_seqs is not None:
+                        payload["stop"] = stop_seqs
+                    self._gguf_input_queue.put(payload)
                     estimated_tokens = len(prompt) // 4
                     timeout = max(8.0, min(60.0, 8.0 + (estimated_tokens / 20.0)))
                     res = cooperative_queue_get(
@@ -2530,7 +2549,9 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                 naming_grammar = 'root ::= word (" " word)? (" " word)? (" " word)?\nword ::= [a-zA-Z0-9]+'
 
             with block_external_network():
-                name = self._run_prompt(prompt, 15, grammar=naming_grammar).strip()
+                name = self._run_prompt(
+                    prompt, 15, grammar=naming_grammar, stop=["\n", "\n\n"]
+                ).strip()
 
                 # Cleanup the generated name
                 name = name.replace('"', "").replace("-", " ").strip()

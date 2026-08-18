@@ -78,8 +78,8 @@ def test_generative_naming_strategy_passes_correct_grammars():
 
     captured_calls = []
 
-    def mock_run_prompt(prompt, max_tokens, grammar=None):
-        captured_calls.append((prompt, max_tokens, grammar))
+    def mock_run_prompt(prompt, max_tokens, grammar=None, **kwargs):
+        captured_calls.append((prompt, max_tokens, grammar, kwargs.get("stop")))
         if "YES or NO" in prompt:
             return "YES"
         return "Clean Folder Name"
@@ -91,7 +91,8 @@ def test_generative_naming_strategy_passes_correct_grammars():
     assert name == "Clean Folder Name"
 
     assert len(captured_calls) >= 1
-    prompt, max_tokens, grammar = captured_calls[0]
+    prompt, max_tokens, grammar, stop = captured_calls[0]
+    assert stop == ["\n", "\n\n"]
     assert "word" in grammar
     assert "[a-zA-Z0-9]+" in grammar
 
