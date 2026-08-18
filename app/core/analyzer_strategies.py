@@ -1051,7 +1051,8 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                     if f in vector_dict and vector_dict[f] is not None
                 ]
                 if vectors:
-                    centroid = np.mean(vectors, axis=0)
+                    centroid = np.array(np.mean(vectors, axis=0), dtype=np.float64)
+                    centroid_norm = float(np.linalg.norm(centroid))
                     for f, f_val in files:
                         leaf_info = (
                             f_val
@@ -1065,7 +1066,15 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                         )
                         f_vec = vector_dict.get(f)
                         if f_vec is not None:
-                            sim = get_cosine_similarity(f_vec, centroid)
+                            if centroid_norm == 0:
+                                sim = 0.0
+                            else:
+                                f_arr = np.array(f_vec, dtype=np.float64)
+                                f_norm = float(np.linalg.norm(f_arr))
+                                if f_norm == 0:
+                                    sim = 0.0
+                                else:
+                                    sim = float(np.dot(f_arr, centroid) / (f_norm * centroid_norm))
                             if sim < threshold:
                                 low_confidence_files[f] = leaf_info
                             else:
@@ -1750,11 +1759,27 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                     best_match_folder = None
                     best_match_similarity = -1.0
 
-                    for folder, folder_centroid in historical_folder_centroids.items():
-                        sim = cosine_sim(cluster_centroid, folder_centroid)
-                        if sim > best_match_similarity:
-                            best_match_similarity = sim
-                            best_match_folder = folder
+                    if historical_folder_centroids:
+                        folders = list(historical_folder_centroids.keys())
+                        centroids_matrix = np.array(
+                            [historical_folder_centroids[f] for f in folders],
+                            dtype=np.float32,
+                        )
+                        centroids_norms = np.linalg.norm(centroids_matrix, axis=1)
+                        c_norm = float(np.linalg.norm(cluster_centroid))
+
+                        if c_norm > 0:
+                            dot_products = centroids_matrix @ np.asarray(
+                                cluster_centroid, dtype=np.float32
+                            )
+                            denom = centroids_norms * c_norm
+                            denom = np.where(denom == 0, 1.0, denom)
+                            sims = dot_products / denom
+                            sims = np.where(centroids_norms == 0, 0.0, sims)
+
+                            best_idx = int(np.argmax(sims))
+                            best_match_similarity = float(sims[best_idx])
+                            best_match_folder = folders[best_idx]
 
                     # Apply thresholds to routing
                     if historical_folder_centroids:

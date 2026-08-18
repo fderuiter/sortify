@@ -1732,6 +1732,18 @@ body {
 
     @staticmethod
     def split_plan_phases(plan):
+        """Split sorting plan into Phase 1 deterministic fast path and Phase 2 slow path.
+
+        Parameters
+        ----------
+        plan : dict
+            The complete sorting plan.
+
+        Returns
+        -------
+        tuple[dict, dict]
+            A tuple of (fast_path_plan, slow_path_plan).
+        """
         fast_plan = {}
         slow_plan = {}
 
