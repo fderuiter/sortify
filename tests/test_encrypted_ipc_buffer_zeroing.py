@@ -139,18 +139,40 @@ def test_encrypted_ipc_queue_passing():
         target=recursive_kmeans_worker_main,
         args=(input_q, out_q, session_key),
     )
-    proc.start()
+    try:
+        proc.start()
 
-    raw_output = out_q.get(timeout=10.0)
-    proc.join(timeout=2.0)
+        raw_output = out_q.get(timeout=10.0)
+        proc.join(timeout=2.0)
 
-    # Output queue payload must also be encrypted bytes
-    assert isinstance(raw_output, bytes)
-    assert b"status" not in raw_output  # 'status' key is inside encrypted payload
+        # Output queue payload must also be encrypted bytes
+        assert isinstance(raw_output, bytes)
+        assert b"status" not in raw_output  # 'status' key is inside encrypted payload
 
-    decrypted_output = decrypt_ipc_payload(raw_output, session_key)
-    assert decrypted_output.get("status") == "success"
-    assert "plan" in decrypted_output
+        decrypted_output = decrypt_ipc_payload(raw_output, session_key)
+        assert decrypted_output.get("status") == "success"
+        assert "plan" in decrypted_output
+    finally:
+        if proc.is_alive():
+            proc.terminate()
+            proc.join(timeout=1.0)
+            if proc.is_alive():
+                proc.kill()
+                proc.join(timeout=0.1)
+        else:
+            proc.join(timeout=0.1)
+        try:
+            input_q.close()
+        except Exception:
+            pass
+        try:
+            out_q.close()
+        except Exception:
+            pass
+        try:
+            proc.close()
+        except Exception:
+            pass
 
 
 def test_worker_failure_triggers_buffer_zeroing():
@@ -183,14 +205,36 @@ def test_worker_failure_triggers_buffer_zeroing():
         target=recursive_kmeans_worker_main,
         args=(input_q, out_q, session_key),
     )
-    proc.start()
+    try:
+        proc.start()
 
-    raw_output = out_q.get(timeout=10.0)
-    proc.join(timeout=2.0)
+        raw_output = out_q.get(timeout=10.0)
+        proc.join(timeout=2.0)
 
-    assert isinstance(raw_output, bytes)
-    decrypted_output = decrypt_ipc_payload(raw_output, session_key)
-    assert decrypted_output.get("status") == "error" or decrypted_output.get("plan") is not None
+        assert isinstance(raw_output, bytes)
+        decrypted_output = decrypt_ipc_payload(raw_output, session_key)
+        assert decrypted_output.get("status") == "error" or decrypted_output.get("plan") is not None
+    finally:
+        if proc.is_alive():
+            proc.terminate()
+            proc.join(timeout=1.0)
+            if proc.is_alive():
+                proc.kill()
+                proc.join(timeout=0.1)
+        else:
+            proc.join(timeout=0.1)
+        try:
+            input_q.close()
+        except Exception:
+            pass
+        try:
+            out_q.close()
+        except Exception:
+            pass
+        try:
+            proc.close()
+        except Exception:
+            pass
 
 
 def test_parallel_vs_inline_clustering_identical_outputs():
