@@ -205,7 +205,10 @@ class AppSession:
             return {}
         _, locked, _, _ = self.cache_manager.load_cache(self.base_dir)
         return self.analyzer.generate_sorting_plan(
-            self.base_dir, self.settings, locked_files=locked, fast_path_only=fast_path_only
+            self.base_dir,
+            self.settings,
+            locked_files=locked,
+            fast_path_only=fast_path_only,
         )
 
     def rollback(self, session_id, ignore_missing=False):

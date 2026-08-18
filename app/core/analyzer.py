@@ -1075,12 +1075,14 @@ class IncrementalAnalyzer:
                         # Convert None to a standard file dictionary with relative_source
                         rel_src = os.path.relpath(
                             os.path.join(base_dir, k),
-                            os.path.join(base_dir, current_path) if current_path else base_dir
+                            os.path.join(base_dir, current_path)
+                            if current_path
+                            else base_dir,
                         ).replace("\\", "/")
                         node[k] = {
                             "__type__": "file",
                             "relative_source": rel_src,
-                            "status": None
+                            "status": None,
                         }
                     elif isinstance(v, dict):
                         if v.get("__type__") == "file":
@@ -1090,12 +1092,16 @@ class IncrementalAnalyzer:
                                 # We need relative_source of k relative to current_path
                                 rel_src = os.path.relpath(
                                     os.path.join(base_dir, k),
-                                    os.path.join(base_dir, current_path) if current_path else base_dir
+                                    os.path.join(base_dir, current_path)
+                                    if current_path
+                                    else base_dir,
                                 ).replace("\\", "/")
                                 v["relative_source"] = rel_src
                         else:
                             # It's a directory, recurse
-                            _ensure_relative_source(v, os.path.join(current_path, k) if current_path else k)
+                            _ensure_relative_source(
+                                v, os.path.join(current_path, k) if current_path else k
+                            )
 
             _ensure_relative_source(clean_plan)
 

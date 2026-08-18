@@ -113,7 +113,7 @@ def test_daemon_execution_flow(tmp_path):
         mock_app_session_inst.process_items_async = dummy_process_items
         mock_app_session_inst.generate_sorting_plan.side_effect = [
             {"invoice.txt": "dest/invoice.txt"},  # Phase 1: Fast-Path
-            {}  # Phase 2: Slow-Path
+            {},  # Phase 2: Slow-Path
         ]
         mock_app_session_inst.execute_moves.return_value = {"moved": 1}
 

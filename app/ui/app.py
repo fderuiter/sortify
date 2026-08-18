@@ -1172,7 +1172,9 @@ class AutoSorterApp:
                 self.progress_bar.set_value(0.4)
 
                 # After Phase 1: "Fast-path rules completed. Initiating AI classification..."
-                self.status_label.set_text("Fast-path rules completed. Initiating AI classification...")
+                self.status_label.set_text(
+                    "Fast-path rules completed. Initiating AI classification..."
+                )
                 await asyncio.sleep(0.5)
 
                 # Refresh in-memory DB and cache states before initiating AI phase to prevent path corruption
@@ -1201,11 +1203,19 @@ class AutoSorterApp:
                 # Combine summaries
                 summary = {"deleted_folders": 0, "protected_folders": 0}
                 if fast_path_summary:
-                    summary["deleted_folders"] += fast_path_summary.get("deleted_folders", 0)
-                    summary["protected_folders"] += fast_path_summary.get("protected_folders", 0)
+                    summary["deleted_folders"] += fast_path_summary.get(
+                        "deleted_folders", 0
+                    )
+                    summary["protected_folders"] += fast_path_summary.get(
+                        "protected_folders", 0
+                    )
                 if slow_path_summary:
-                    summary["deleted_folders"] += slow_path_summary.get("deleted_folders", 0)
-                    summary["protected_folders"] += slow_path_summary.get("protected_folders", 0)
+                    summary["deleted_folders"] += slow_path_summary.get(
+                        "deleted_folders", 0
+                    )
+                    summary["protected_folders"] += slow_path_summary.get(
+                        "protected_folders", 0
+                    )
 
                 ui.notify(f"Sorted successfully: {summary}")
                 self.status_label.set_text("Sorting complete.")

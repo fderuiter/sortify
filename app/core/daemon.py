@@ -252,24 +252,36 @@ class ContinuousWatchdogDaemon:
                 for key, content in plan.items():
                     if isinstance(content, dict):
                         if content.get("__type__") == "file":
-                            filename = content.get("target_filename") or os.path.basename(key)
-                            rel_dst = os.path.join(current_dest, filename).replace("\\", "/")
+                            filename = content.get(
+                                "target_filename"
+                            ) or os.path.basename(key)
+                            rel_dst = os.path.join(current_dest, filename).replace(
+                                "\\", "/"
+                            )
                             dests_set.add(rel_dst)
                         elif content.get("__type__") == "directory":
                             continue
                         else:
-                            _extract_plan_destinations(content, os.path.join(current_dest, key), dests_set)
+                            _extract_plan_destinations(
+                                content, os.path.join(current_dest, key), dests_set
+                            )
                     elif isinstance(content, str):
-                        rel_dst = os.path.relpath(content, self.base_dir).replace("\\", "/") if os.path.isabs(content) else content.replace("\\", "/")
+                        rel_dst = (
+                            os.path.relpath(content, self.base_dir).replace("\\", "/")
+                            if os.path.isabs(content)
+                            else content.replace("\\", "/")
+                        )
                         dests_set.add(rel_dst)
                 return dests_set
 
             if fast_path_plan:
                 fast_path_summary = app_session.execute_moves(fast_path_plan)
                 logger.info(f"Phase 1 (Fast-Path) completed: {fast_path_summary}")
-                
+
                 # Retrieve destination paths from the fast_path_plan to bypass them in Phase 2
-                fast_path_moved_destinations = _extract_plan_destinations(fast_path_plan)
+                fast_path_moved_destinations = _extract_plan_destinations(
+                    fast_path_plan
+                )
 
             if cancel_check():
                 return
@@ -296,6 +308,7 @@ class ContinuousWatchdogDaemon:
 
             # Process remaining unorganized files (Heavy Text Extraction & OCR)
             if items_to_sort:
+
                 async def process_and_fit():
                     async for (
                         item,
