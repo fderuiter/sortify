@@ -13,6 +13,14 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import List, Protocol
 
+from app.core.crypto import (
+    EphemeralSessionCrypto,
+    VectorBuffer,
+    decrypt_ipc_payload,
+    encrypt_ipc_payload,
+    zero_vector_buffer,
+)
+
 
 def is_debug_active() -> bool:
     """Check if debug mode is active via the DEBUG environment variable."""
@@ -241,22 +249,56 @@ def block_external_network():
 
 
 def recursive_kmeans_worker_main(
-    filenames: list,
-    documents: list,
-    max_folders: int,
-    stop_words: set,
-    max_depth: int,
-    max_features: int,
-    pre_fetched_vectors: list | None,
-    output_queue,
+    filenames_or_input_queue,
+    documents_or_output_queue=None,
+    max_folders_or_key=None,
+    stop_words=None,
+    max_depth=5,
+    max_features=3,
+    pre_fetched_vectors=None,
+    output_queue=None,
     strategy_class_name: str = "RecursiveKMeansStrategy",
     thread_limit: int | None = None,
     pre_fetched_corpus: list | dict | None = None,
+    session_key: bytes | str | None = None,
 ):
     """Worker process main loop that handles core recursive KMeans mathematical clustering calculations."""
     import logging
     import os
     import sys
+
+    is_ipc = hasattr(filenames_or_input_queue, "get")
+
+    out_q = None
+    key = None
+
+    if is_ipc:
+        input_q = filenames_or_input_queue
+        out_q = documents_or_output_queue
+        key = max_folders_or_key
+        raw_encrypted = input_q.get()
+        payload = decrypt_ipc_payload(raw_encrypted, key)
+
+        filenames = payload["filenames"]
+        documents = payload["documents"]
+        max_folders = payload["max_folders"]
+        stop_words_data = payload.get("stop_words")
+        if isinstance(stop_words_data, (list, tuple)):
+            stop_words = set(stop_words_data)
+        else:
+            stop_words = stop_words_data or set()
+        max_depth = payload.get("max_depth", 5)
+        max_features = payload.get("max_features", 3)
+        pre_fetched_vectors = payload.get("pre_fetched_vectors")
+        strategy_class_name = payload.get("strategy_class_name", "RecursiveKMeansStrategy")
+        thread_limit = payload.get("thread_limit")
+        pre_fetched_corpus = payload.get("pre_fetched_corpus")
+    else:
+        filenames = filenames_or_input_queue
+        documents = documents_or_output_queue
+        max_folders = max_folders_or_key
+        out_q = output_queue
+        key = session_key
 
     # 1. Respect configured CPU thread limits from global registry
     if thread_limit is None:
@@ -298,6 +340,7 @@ def recursive_kmeans_worker_main(
 
     # 3. Create the appropriate strategy instance and execute calculations
     strategy = None
+    vector_buffers = []
     try:
         strategy_cls = globals().get(strategy_class_name)
         if strategy_cls is not None:
@@ -317,8 +360,11 @@ def recursive_kmeans_worker_main(
         strategy._error = 0.0
 
         if pre_fetched_vectors is not None:
+            vector_buffers = [
+                VectorBuffer(v) if v is not None else None for v in pre_fetched_vectors
+            ]
             strategy._vector_map = {
-                f: v for f, v in zip(filenames, pre_fetched_vectors)
+                f: vb for f, vb in zip(filenames, vector_buffers)
             }
         else:
             strategy._vector_map = {}
@@ -334,28 +380,39 @@ def recursive_kmeans_worker_main(
             except Exception:
                 pass
 
-        output_queue.put(
-            {
-                "status": "success",
-                "plan": plan,
-                "error": strategy._error,
-                "worker_pid": worker_pid,
-                "worker_niceness": worker_niceness,
-                "worker_thread_limit": thread_limit,
-            }
-        )
+        res_data = {
+            "status": "success",
+            "plan": plan,
+            "error": strategy._error,
+            "worker_pid": worker_pid,
+            "worker_niceness": worker_niceness,
+            "worker_thread_limit": thread_limit,
+        }
+        if key is not None:
+            out_q.put(encrypt_ipc_payload(res_data, key))
+        else:
+            out_q.put(res_data)
     except Exception as e:
         import traceback
 
         logging.error(
             f"Error inside clustering child process: {e}\n{traceback.format_exc()}"
         )
-        output_queue.put({"status": "error", "message": str(e)})
+        err_data = {"status": "error", "message": str(e)}
+        if key is not None and out_q is not None:
+            out_q.put(encrypt_ipc_payload(err_data, key))
+        elif out_q is not None:
+            out_q.put(err_data)
     finally:
-        # Data Boundary Safeguard: clear decrypted data immediately after folder naming concludes
+        # Guarantee memory zeroing of vector byte buffers on completion or failure
+        zero_vector_buffer(vector_buffers)
         if strategy is not None:
             strategy.pre_fetched_corpus = None
+            if hasattr(strategy, "_vector_map") and strategy._vector_map:
+                zero_vector_buffer(strategy._vector_map)
+                strategy._vector_map.clear()
         pre_fetched_corpus = None
+        key = None
 
 
 class ClusteringStrategy(Protocol):
@@ -397,13 +454,23 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
         self.max_features = max_features
         self._error = 0.0
 
+        vector_buffers = []
         if pre_fetched_vectors is not None:
-            self._vector_map = {f: v for f, v in zip(filenames, pre_fetched_vectors)}
+            vector_buffers = [
+                VectorBuffer(v) if v is not None else None for v in pre_fetched_vectors
+            ]
+            self._vector_map = {f: vb for f, vb in zip(filenames, vector_buffers)}
         else:
             self._vector_map = {}
 
-        plan = self._cluster_recursive(filenames, documents, depth=1)
-        return plan, self._error
+        try:
+            plan = self._cluster_recursive(filenames, documents, depth=1)
+            return plan, self._error
+        finally:
+            zero_vector_buffer(vector_buffers)
+            if getattr(self, "_vector_map", None):
+                zero_vector_buffer(self._vector_map)
+                self._vector_map.clear()
 
     @thread_isolated_execution
     def generate_plan(
@@ -426,8 +493,15 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
         self._error = 0.0
         self.pre_fetched_corpus = pre_fetched_corpus
 
+        session_crypto = EphemeralSessionCrypto()
+        session_key = session_crypto.session_key
+
+        vector_buffers = []
         if pre_fetched_vectors is not None:
-            self._vector_map = {f: v for f, v in zip(filenames, pre_fetched_vectors)}
+            vector_buffers = [
+                VectorBuffer(v) if v is not None else None for v in pre_fetched_vectors
+            ]
+            self._vector_map = {f: vb for f, vb in zip(filenames, vector_buffers)}
         else:
             self._vector_map = {}
 
@@ -461,31 +535,34 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
             parent_thread_limit = None
 
         ctx = multiprocessing.get_context("spawn")
+        input_queue = ctx.Queue()
         output_queue = ctx.Queue()
 
         strategy_class_name = self.__class__.__name__
 
+        payload = {
+            "filenames": filenames,
+            "documents": documents,
+            "max_folders": max_folders,
+            "stop_words": list(stop_words) if isinstance(stop_words, set) else stop_words,
+            "max_depth": max_depth,
+            "max_features": max_features,
+            "pre_fetched_vectors": [vb.to_list() if vb else None for vb in vector_buffers] if vector_buffers else None,
+            "strategy_class_name": strategy_class_name,
+            "thread_limit": parent_thread_limit,
+            "pre_fetched_corpus": pre_fetched_corpus,
+        }
+
+        encrypted_input = session_crypto.encrypt_payload(payload)
+        input_queue.put(encrypted_input)
+
         process = ctx.Process(
             target=recursive_kmeans_worker_main,
-            args=(
-                filenames,
-                documents,
-                max_folders,
-                stop_words,
-                max_depth,
-                max_features,
-                pre_fetched_vectors,
-                output_queue,
-                strategy_class_name,
-            ),
-            kwargs={
-                "thread_limit": parent_thread_limit,
-                "pre_fetched_corpus": pre_fetched_corpus,
-            },
+            args=(input_queue, output_queue, session_key),
         )
         process.start()
 
-        result = None
+        raw_result = None
         poll_interval = 0.01
 
         try:
@@ -503,19 +580,28 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
                     return {}, 0.0
 
                 try:
-                    result = output_queue.get_nowait()
+                    raw_result = output_queue.get_nowait()
                     break
                 except queue.Empty:
                     pass
 
                 if not process.is_alive():
                     try:
-                        result = output_queue.get_nowait()
+                        raw_result = output_queue.get_nowait()
                     except queue.Empty:
                         pass
                     break
 
                 time.sleep(poll_interval)
+
+            if isinstance(raw_result, bytes):
+                try:
+                    result = session_crypto.decrypt_payload(raw_result)
+                except Exception as e:
+                    logging.error(f"Failed to decrypt worker response: {e}")
+                    result = None
+            else:
+                result = raw_result
         except Exception as e:
             logging.error(f"Error while waiting for clustering child process: {e}")
             if process.is_alive():
@@ -524,6 +610,12 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
                 if process.is_alive():
                     process.kill()
             raise e
+        finally:
+            zero_vector_buffer(vector_buffers)
+            if getattr(self, "_vector_map", None):
+                zero_vector_buffer(self._vector_map)
+                self._vector_map.clear()
+            session_crypto.purge()
 
         if process.is_alive():
             process.terminate()
@@ -536,7 +628,7 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
         except Exception:
             pass
 
-        if result is None:
+        if result is None and raw_result is None:
             logging.warning(
                 "Clustering child process did not return any result. Falling back to inline execution."
             )
@@ -550,14 +642,15 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
                 pre_fetched_vectors,
             )
 
-        if result.get("status") == "success":
+        if result and result.get("status") == "success":
             self._last_worker_pid = result.get("worker_pid")
             self._last_worker_niceness = result.get("worker_niceness")
             self._last_worker_thread_limit = result.get("worker_thread_limit")
             return result["plan"], result["error"]
         else:
+            err_msg = result.get("message") if isinstance(result, dict) else "Unknown error"
             logging.error(
-                f"Clustering child process failed: {result.get('message')}. Falling back to inline execution."
+                f"Clustering child process failed: {err_msg}. Falling back to inline execution."
             )
             return self._generate_plan_inline(
                 filenames,
@@ -619,7 +712,11 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
                     for f in filenames:
                         v = self._vector_map.get(f)
                         if v is not None:
-                            X_list.append(v)
+                            if isinstance(v, VectorBuffer):
+                                float_vec = v.to_list()
+                            else:
+                                float_vec = list(v)
+                            X_list.append(float_vec)
                         else:
                             # Generate a zero-filled vector of the exact matching dimension for any missing document embedding
                             zero_vector = [0.0] * dimension
@@ -717,7 +814,9 @@ def is_gguf_model_dir(model_path: str) -> bool:
     return False
 
 
-def gguf_worker_main(model_path, input_queue, output_queue, n_threads=None):
+def gguf_worker_main(
+    model_path, input_queue, output_queue, n_threads=None, session_key=None
+):
     """Worker process main loop that handles local GGUF model generation.
 
     Parameters
@@ -730,6 +829,8 @@ def gguf_worker_main(model_path, input_queue, output_queue, n_threads=None):
         Queue to send results back to the main process.
     n_threads : int, optional
         Number of CPU threads to allocate for the model. If None, resolves from the registry thread limit.
+    session_key : bytes | str, optional
+        Ephemeral session key for decrypting input task and encrypting output results.
     """
     import os
 
@@ -768,10 +869,18 @@ def gguf_worker_main(model_path, input_queue, output_queue, n_threads=None):
         return
 
     while True:
+        raw_task = None
         try:
-            task = input_queue.get()
-            if task is None:
+            raw_task = input_queue.get()
+            if raw_task is None:
                 break
+
+            if isinstance(raw_task, bytes) and session_key is not None:
+                task = decrypt_ipc_payload(raw_task, session_key)
+            elif isinstance(raw_task, dict):
+                task = raw_task
+            else:
+                task = {}
 
             prompt = task.get("prompt", "")
             max_tokens = task.get("max_tokens", 15)
@@ -814,9 +923,17 @@ def gguf_worker_main(model_path, input_queue, output_queue, n_threads=None):
                 res = llm(prompt, max_tokens=max_tokens, echo=False)
 
             generated_text = res["choices"][0]["text"].strip()
-            output_queue.put({"text": generated_text})
+            res_obj = {"text": generated_text}
+            if session_key is not None and isinstance(raw_task, bytes):
+                output_queue.put(encrypt_ipc_payload(res_obj, session_key))
+            else:
+                output_queue.put(res_obj)
         except Exception as e:
-            output_queue.put({"error": str(e)})
+            err_obj = {"error": str(e)}
+            if session_key is not None and isinstance(raw_task, bytes):
+                output_queue.put(encrypt_ipc_payload(err_obj, session_key))
+            else:
+                output_queue.put(err_obj)
 
 
 try:
@@ -1132,6 +1249,8 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         if not self._gguf_failed and is_gguf_model_dir(self.model_path):
             try:
                 self._gguf_active = True
+                self._gguf_session_crypto = EphemeralSessionCrypto()
+                self._gguf_session_key = self._gguf_session_crypto.session_key
                 self._gguf_input_queue = multiprocessing.Queue()
                 self._gguf_output_queue = multiprocessing.Queue()
 
@@ -1149,11 +1268,16 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                         self._gguf_input_queue,
                         self._gguf_output_queue,
                         n_threads,
+                        self._gguf_session_key,
                     ),
                 )
                 self._gguf_process.start()
 
-                res = cooperative_queue_get(self._gguf_output_queue, timeout=10.0)
+                raw_res = cooperative_queue_get(self._gguf_output_queue, timeout=10.0)
+                if isinstance(raw_res, bytes) and getattr(self, "_gguf_session_key", None):
+                    res = decrypt_ipc_payload(raw_res, self._gguf_session_key)
+                else:
+                    res = raw_res
                 if not isinstance(res, dict) or "error" in res:
                     raise Exception(
                         res.get("error")
@@ -1255,14 +1379,19 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                 self._fallback_to_pytorch()
             else:
                 try:
-                    self._gguf_input_queue.put(
-                        {"prompt": prompt, "max_tokens": max_tokens, "grammar": grammar}
-                    )
+                    task_data = {"prompt": prompt, "max_tokens": max_tokens, "grammar": grammar}
+                    if getattr(self, "_gguf_session_key", None):
+                        task_data = encrypt_ipc_payload(task_data, self._gguf_session_key)
+                    self._gguf_input_queue.put(task_data)
                     estimated_tokens = len(prompt) // 4
                     timeout = max(8.0, min(60.0, 8.0 + (estimated_tokens / 20.0)))
-                    res = cooperative_queue_get(
+                    raw_res = cooperative_queue_get(
                         self._gguf_output_queue, timeout=timeout
                     )
+                    if isinstance(raw_res, bytes) and getattr(self, "_gguf_session_key", None):
+                        res = decrypt_ipc_payload(raw_res, self._gguf_session_key)
+                    else:
+                        res = raw_res
                     if not isinstance(res, dict) or "error" in res or "text" not in res:
                         raise Exception(
                             res.get("error")

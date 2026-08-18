@@ -253,9 +253,9 @@ def test_dense_vector_calculations_in_hierarchical_clustering():
     )
 
     assert plan is not None
-    # Verify we clustered based on self._vector_map
+    # Verify vector map is present and cleared/zeroed after task completion
     assert hasattr(strategy, "_vector_map")
-    assert strategy._vector_map["doc1.txt"] == [0.1, 0.2, 0.3]
+    assert strategy._vector_map == {}
 
     # 2. Run without pre_fetched_vectors (falls back to TF-IDF)
     plan_tfidf, error_tfidf = strategy.generate_plan(

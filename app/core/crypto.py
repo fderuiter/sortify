@@ -2,6 +2,11 @@
 
 import hashlib
 import os
+import pickle
+import struct
+from typing import Any
+
+import numpy as np
 
 try:
     import sqlite3
@@ -380,3 +385,138 @@ class SessionCrypto:
             return parsed
         except Exception:
             return None
+
+
+class VectorBuffer:
+    """Mutable byte buffer wrapping floating-point vector arrays with zero-filling cleanup support."""
+
+    def __init__(self, vector: Any):
+        self._buffer: bytearray | None = None
+        self._dim: int = 0
+
+        if vector is not None:
+            if isinstance(vector, VectorBuffer):
+                if vector._buffer is not None:
+                    self._buffer = bytearray(vector._buffer)
+                    self._dim = vector._dim
+            elif isinstance(vector, np.ndarray):
+                arr = vector.astype(np.float32)
+                self._dim = len(arr)
+                self._buffer = bytearray(arr.tobytes())
+            elif isinstance(vector, (list, tuple)):
+                self._dim = len(vector)
+                if self._dim > 0:
+                    self._buffer = bytearray(struct.pack(f"{self._dim}f", *vector))
+                else:
+                    self._buffer = bytearray()
+            elif isinstance(vector, bytearray):
+                self._buffer = bytearray(vector)
+                self._dim = len(vector) // 4
+            elif isinstance(vector, bytes):
+                self._buffer = bytearray(vector)
+                self._dim = len(vector) // 4
+
+    def __len__(self) -> int:
+        return self._dim
+
+    def __getitem__(self, idx: Any) -> Any:
+        if self._buffer is None:
+            raise IndexError("Vector buffer has been zeroed/cleared")
+        if isinstance(idx, slice):
+            floats = self.to_list()
+            return floats[idx]
+        if idx < 0:
+            idx += self._dim
+        if idx < 0 or idx >= self._dim:
+            raise IndexError("Vector index out of range")
+        return struct.unpack_from("f", self._buffer, idx * 4)[0]
+
+    def __iter__(self):
+        return iter(self.to_list())
+
+    def to_list(self) -> list[float]:
+        if self._buffer is None or len(self._buffer) == 0:
+            return []
+        return list(struct.unpack(f"{self._dim}f", self._buffer))
+
+    def to_numpy(self) -> np.ndarray:
+        if self._buffer is None or len(self._buffer) == 0:
+            return np.array([], dtype=np.float32)
+        return np.frombuffer(bytes(self._buffer), dtype=np.float32)
+
+    def zero_fill(self) -> None:
+        """Overwrite the mutable byte buffer with null bytes before clearing reference."""
+        if self._buffer is not None:
+            for i in range(len(self._buffer)):
+                self._buffer[i] = 0
+            self._buffer = None
+            self._dim = 0
+
+    def is_zeroed(self) -> bool:
+        return self._buffer is None
+
+
+def zero_vector_buffer(target: Any) -> None:
+    """Recursively or directly zero-fill vector buffers or arrays."""
+    if target is None:
+        return
+    if isinstance(target, VectorBuffer):
+        target.zero_fill()
+    elif isinstance(target, bytearray):
+        for i in range(len(target)):
+            target[i] = 0
+    elif isinstance(target, np.ndarray):
+        target.fill(0)
+    elif isinstance(target, list):
+        for item in target:
+            zero_vector_buffer(item)
+    elif isinstance(target, dict):
+        for k, v in list(target.items()):
+            zero_vector_buffer(v)
+
+
+class EphemeralSessionCrypto:
+    """Manages ephemeral session encryption for inter-process communication (IPC)."""
+
+    def __init__(self, session_key: bytes | str | None = None):
+        if session_key is None:
+            self.session_key = Fernet.generate_key()
+        elif isinstance(session_key, str):
+            self.session_key = session_key.encode("utf-8")
+        else:
+            self.session_key = session_key
+        self._cipher = Fernet(self.session_key)
+
+    def encrypt_payload(self, payload: Any) -> bytes:
+        """Serialize and encrypt a data payload."""
+        serialized = pickle.dumps(payload, protocol=pickle.HIGHEST_PROTOCOL)
+        return self._cipher.encrypt(serialized)
+
+    def decrypt_payload(self, encrypted_bytes: bytes) -> Any:
+        """Decrypt and deserialize a data payload."""
+        decrypted = self._cipher.decrypt(encrypted_bytes)
+        return pickle.loads(decrypted)
+
+    def purge(self) -> None:
+        """Purge the session key."""
+        self.session_key = None
+        self._cipher = None
+
+
+def encrypt_ipc_payload(payload: Any, session_key: bytes | str) -> bytes:
+    """Helper to encrypt IPC queue payloads with an ephemeral session key."""
+    if isinstance(session_key, str):
+        session_key = session_key.encode("utf-8")
+    cipher = Fernet(session_key)
+    serialized = pickle.dumps(payload, protocol=pickle.HIGHEST_PROTOCOL)
+    return cipher.encrypt(serialized)
+
+
+def decrypt_ipc_payload(encrypted_bytes: bytes, session_key: bytes | str) -> Any:
+    """Helper to decrypt IPC queue payloads with an ephemeral session key."""
+    if isinstance(session_key, str):
+        session_key = session_key.encode("utf-8")
+    cipher = Fernet(session_key)
+    decrypted = cipher.decrypt(encrypted_bytes)
+    return pickle.loads(decrypted)
+
