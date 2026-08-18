@@ -32,6 +32,9 @@ def mock_nicegui():
         mock_slider = stack.enter_context(patch("nicegui.ui.slider"))
         mock_select = stack.enter_context(patch("nicegui.ui.select"))
         mock_checkbox = stack.enter_context(patch("nicegui.ui.checkbox"))
+        mock_link = stack.enter_context(patch("nicegui.ui.link"))
+        mock_scroll_area = stack.enter_context(patch("nicegui.ui.scroll_area"))
+        mock_markdown = stack.enter_context(patch("nicegui.ui.markdown"))
 
         yield {
             "dialog": mock_dialog,
@@ -50,6 +53,9 @@ def mock_nicegui():
             "slider": mock_slider,
             "select": mock_select,
             "checkbox": mock_checkbox,
+            "link": mock_link,
+            "scroll_area": mock_scroll_area,
+            "markdown": mock_markdown,
         }
 
 
@@ -106,3 +112,24 @@ def test_settings_panel_contains_proxy_and_download(mock_nicegui):
 
         # Let's verify the Download button exists
         mock_nicegui["button"].assert_any_call("Download AI Model", on_click=ANY)
+
+
+def test_settings_panel_with_validation_errors(mock_nicegui):
+    settings = AppSettings()
+    settings._has_validation_errors = True
+    settings._validation_errors = [{"field": "PROXY", "message": "Invalid proxy URL"}]
+
+    app = AutoSorterApp(settings)
+
+    with (
+        patch("app.core.verifier.check_ai_status", return_value=(False, "Warning")),
+    ):
+        app.show_settings_view()
+
+        # Should render warning banner including link and label
+        mock_nicegui["label"].assert_any_call("Configuration Saves Suspended")
+        mock_nicegui["link"].assert_any_call(
+            "Open Troubleshooting Guide (Online)",
+            "https://docs.smartautosorter.com/admin_guide/#configuration-recovery-troubleshooting",
+            new_tab=True,
+        )
