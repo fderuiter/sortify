@@ -17,9 +17,20 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 def get_app_dir() -> Path:
     """Get the app configuration directory path."""
-    app_dir = Path.home() / ".autosorter"
+    override = os.environ.get("AUTOSORTER_APP_DIR")
+    if override:
+        app_dir = Path(override)
+    else:
+        app_dir = Path.home() / ".autosorter"
     app_dir.mkdir(parents=True, exist_ok=True)
-    return app_dir
+    return app_dir.resolve()
+
+
+def get_debug_log_dir() -> Path:
+    """Get the dedicated sandboxed debug log directory."""
+    log_dir = get_app_dir() / "logs" / "debug"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    return log_dir.resolve()
 
 
 class Settings(BaseSettings):
