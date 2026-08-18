@@ -4,7 +4,7 @@ from unittest import mock
 import pytest
 
 from app.config import AppSettings, Settings
-from app.core.daemon import ContinuousWatchdogDaemon
+from app.core.daemon import ContinuousWatchdogDaemon, DaemonFolderHandler
 
 
 class DummySettings:
@@ -178,3 +178,82 @@ def test_scanning_stage_filters_out_transient_files(tmp_path):
         # Verify scan was executed for directory
         mock_scan.assert_called_with(str(tmp_path))
         assert mock_scan.call_count >= 1
+
+
+def test_direct_timer_callback_execution_at_max_debounce_limit(tmp_path):
+    """Verify timer callbacks execute directly when max debounce threshold is hit during continuous activity."""
+    settings = DummySettings()
+    daemon = ContinuousWatchdogDaemon(settings, str(tmp_path))
+    daemon._is_running = True
+
+    mock_time = 1000.0
+    timer_calls = []
+
+    def mock_timer_init(delay, target, args=None, kwargs=None):
+        timer_calls.append((delay, target, args))
+        m = mock.MagicMock()
+        return m
+
+    with (
+        mock.patch("time.time", return_value=mock_time) as patch_time,
+        mock.patch("threading.Timer", side_effect=mock_timer_init),
+        mock.patch.object(daemon, "_run_sorting_sync") as mock_run_sync,
+    ):
+        # 1. Start continuous event sequence
+        daemon.trigger_recalculation()  # t=0.0
+        assert len(timer_calls) == 1
+        first_token = timer_calls[0][2][0]
+
+        # 2. Intermediate event before max delay
+        patch_time.return_value = 1002.0
+        daemon.trigger_recalculation()
+        assert len(timer_calls) == 2
+        second_token = timer_calls[1][2][0]
+
+        # First token should be canceled
+        assert first_token.is_set() is True
+        assert second_token.is_set() is False
+
+        # If first_token callback is invoked directly, it should abort due to cancellation
+        daemon._schedule_run(first_token)
+        mock_run_sync.assert_not_called()
+
+        # 3. Reach max debounce delay at t=5.0
+        patch_time.return_value = 1005.0
+        daemon.trigger_recalculation()
+        assert len(timer_calls) == 2  # No new timer scheduled
+
+        # Second token should NOT be canceled!
+        assert second_token.is_set() is False
+
+        # Directly invoke the scheduled callback with second_token
+        daemon._schedule_run(second_token)
+
+        # Verify background sorting run was launched with second_token and _first_event_time was reset
+        assert mock_run_sync.called
+        assert daemon._first_event_time is None
+
+        # 4. Subsequent event after max delay limit triggers a fresh timer schedule
+        patch_time.return_value = 1006.0
+        daemon.trigger_recalculation()
+        assert len(timer_calls) == 3
+        third_token = timer_calls[2][2][0]
+        assert daemon._first_event_time == 1006.0
+        assert third_token.is_set() is False
+
+
+def test_observer_thread_non_blocking_during_events(tmp_path):
+    """Verify file system observer events process without acquiring blocking locks."""
+    settings = DummySettings()
+    daemon = ContinuousWatchdogDaemon(settings, str(tmp_path))
+    daemon._is_running = True
+
+    handler = DaemonFolderHandler(daemon)
+    event = mock.MagicMock()
+    event.src_path = str(tmp_path / "test.txt")
+
+    # Fire event through observer handler
+    handler.on_any_event(event)
+
+    assert daemon._debounce_timer is not None
+    daemon.stop()
