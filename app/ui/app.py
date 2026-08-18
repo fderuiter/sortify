@@ -1326,7 +1326,7 @@ body {
 
         async def delayed_run(token):
             try:
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(0)
             except asyncio.CancelledError:
                 token.set()
                 return
@@ -1930,7 +1930,7 @@ body {
         asyncio.create_task(run_undo())
 
     def start_watcher(self):
-        """Start the watchdog folder observer to monitor base_dir."""
+        """Start the watchdog folder daemon to monitor base_dir."""
         if not self.base_dir or not os.path.exists(self.base_dir):
             return
 
@@ -1941,34 +1941,30 @@ body {
         except RuntimeError:
             self.loop = None
 
-        from watchdog.events import FileSystemEventHandler
-        from watchdog.observers import Observer
+        def _on_recalculate(*args, **kwargs):
+            if self.loop and self.loop.is_running():
+                self.loop.call_soon_threadsafe(self._rebuild_plan_async)
 
-        class FolderChangeHandler(FileSystemEventHandler):
-            def __init__(self, app):
-                self.app = app
+        from app.core.daemon import ContinuousWatchdogDaemon
 
-            def on_any_event(self, event):
-                if (
-                    ".branches" in event.src_path
-                    or "autosorter.db" in event.src_path
-                    or "history.db" in event.src_path
-                    or "cache.db" in event.src_path
-                    or "plan.json" in event.src_path
-                ):
-                    return
-                if self.app.loop:
-                    self.app.loop.call_soon_threadsafe(self.app._rebuild_plan_async)
-
-        self.observer = Observer()
-        handler = FolderChangeHandler(self)
-        self.observer.schedule(handler, self.base_dir, recursive=True)
-        self.observer.start()
-        logger.info(f"Started folder observer for {self.base_dir}")
+        self.daemon = ContinuousWatchdogDaemon(
+            self.settings, self.base_dir, recalc_callback=_on_recalculate
+        )
+        self.daemon.start()
+        self.observer = self.daemon.observer
+        logger.info(f"Started folder watcher daemon for {self.base_dir}")
 
     def stop_watcher(self):
-        """Stop the watchdog folder observer."""
-        if self.observer:
+        """Stop the watchdog folder daemon."""
+        if hasattr(self, "daemon") and self.daemon:
+            try:
+                self.daemon.stop()
+            except Exception as e:
+                logger.error(f"Error stopping folder daemon: {e}")
+            finally:
+                self.daemon = None
+                self.observer = None
+        elif self.observer:
             try:
                 self.observer.stop()
                 self.observer.join()

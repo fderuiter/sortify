@@ -18,6 +18,12 @@ class DummySettings:
         self.CONFLICT_POLICY = "rename"
         self.MAX_FOLDERS = 10
         self.STOP_WORDS = set()
+        self.CONTEXTUAL_RENAMING = False
+        self.PRESERVE_HIERARCHY = False
+        self.SORTING_STRATEGY = "default"
+        self.CLINICAL_SMART_RENAMING = False
+        self.CLINICAL_GENERATE_AUDIT_REPORT = True
+        self.AI_ASSISTED_NAMING = False
 
     def load(self):
         pass
@@ -178,3 +184,139 @@ def test_scanning_stage_filters_out_transient_files(tmp_path):
         # Verify scan was executed for directory
         mock_scan.assert_called_with(str(tmp_path))
         assert mock_scan.call_count >= 1
+
+
+def test_pluggable_recalc_callback(tmp_path):
+    """Verify ContinuousWatchdogDaemon invokes pluggable recalc_callback when supplied."""
+    settings = DummySettings()
+    callback_mock = mock.MagicMock()
+
+    daemon = ContinuousWatchdogDaemon(
+        settings, str(tmp_path), recalc_callback=callback_mock
+    )
+    daemon._is_running = True
+
+    cancel_event = threading.Event()
+    daemon._schedule_run(cancel_event)
+
+    callback_mock.assert_called_once_with(cancel_event)
+
+
+def test_transient_download_files_ignored_by_handler(tmp_path):
+    """Verify DaemonFolderHandler ignores transient download files before triggering recalculation."""
+    settings = DummySettings()
+    daemon = ContinuousWatchdogDaemon(settings, str(tmp_path))
+    daemon.trigger_recalculation = mock.MagicMock()
+
+    from app.core.daemon import DaemonFolderHandler
+
+    handler = DaemonFolderHandler(daemon)
+
+    # Temporary download event
+    event_tmp = mock.MagicMock()
+    event_tmp.src_path = str(tmp_path / "downloading.crdownload")
+    handler.on_any_event(event_tmp)
+    daemon.trigger_recalculation.assert_not_called()
+
+    event_tmp2 = mock.MagicMock()
+    event_tmp2.src_path = str(tmp_path / "temp.tmp")
+    handler.on_any_event(event_tmp2)
+    daemon.trigger_recalculation.assert_not_called()
+
+    # Valid file event
+    event_valid = mock.MagicMock()
+    event_valid.src_path = str(tmp_path / "document.pdf")
+    handler.on_any_event(event_valid)
+    daemon.trigger_recalculation.assert_called_once()
+
+
+def test_desktop_watcher_rebuilds_plan_without_executing_moves(tmp_path):
+    """Verify desktop watcher triggers draft plan rebuilds without auto-executing file moves."""
+    from app.ui.app import AutoSorterApp
+
+    settings = DummySettings()
+    app = AutoSorterApp(settings)
+    app.base_dir = str(tmp_path)
+    app._rebuild_plan_async = mock.MagicMock()
+    app.execute_sort = mock.MagicMock()
+
+    mock_loop = mock.MagicMock()
+    mock_loop.is_running.return_value = True
+
+    def mock_call_soon(func, *args):
+        func(*args)
+
+    mock_loop.call_soon_threadsafe.side_effect = mock_call_soon
+    app.loop = mock_loop
+
+    with mock.patch("asyncio.get_running_loop", return_value=mock_loop):
+        app.start_watcher()
+
+    assert app.daemon is not None
+    assert app.observer is not None
+
+    # Simulate event triggering recalculation
+    app.daemon.trigger_recalculation()
+
+    # Schedule run
+    cancel_event = threading.Event()
+    app.daemon._schedule_run(cancel_event)
+
+    app._rebuild_plan_async.assert_called_once()
+    app.execute_sort.assert_not_called()
+
+    app.stop_watcher()
+    assert app.daemon is None
+
+
+def test_watcher_pauses_during_active_operations(tmp_path):
+    """Verify folder watcher pauses during active file organization/analysis and resumes after completion."""
+    from app.ui.app import AutoSorterApp
+
+    async def run_test():
+        settings = DummySettings()
+        app = AutoSorterApp(settings)
+        app.base_dir = str(tmp_path)
+        app.status_label = mock.MagicMock()
+        app.execute_btn = mock.MagicMock()
+        app.progress_bar = mock.MagicMock()
+        app.cancel_btn = mock.MagicMock()
+        app.file_progress_bar = mock.MagicMock()
+        app.file_progress_label = mock.MagicMock()
+        app.warnings_label = mock.MagicMock()
+        app.ai_warnings_label = mock.MagicMock()
+        app.meta_label = mock.MagicMock()
+
+        app.stop_watcher = mock.MagicMock()
+        app.start_watcher = mock.MagicMock()
+
+        # 1. start_analysis stops watcher
+        with (
+            mock.patch("app.ui.app.AppSession"),
+            mock.patch.object(app, "_scan_and_process_worker"),
+        ):
+            app.start_analysis()
+            app.stop_watcher.assert_called_once()
+
+        app.stop_watcher.reset_mock()
+        app.start_watcher.reset_mock()
+
+        # 2. execute_sort stops watcher during run and starts watcher when complete
+        app.plan = {"test.txt": "Target/test.txt"}
+        app.app_session = mock.MagicMock()
+        app.app_session.execute_moves.return_value = {"success": True}
+        app.app_session.history_manager.partial_fit_ratings_async = mock.AsyncMock()
+        app.load_locked_files_from_db = mock.MagicMock()
+        app.load_ratings_from_db = mock.MagicMock()
+        app.render_tree = mock.MagicMock()
+
+        app.execute_sort()
+        await asyncio.sleep(0.05)
+
+        assert app.stop_watcher.called
+        assert app.start_watcher.called
+
+    import asyncio
+
+    asyncio.run(run_test())
+

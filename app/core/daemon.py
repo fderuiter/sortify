@@ -72,9 +72,10 @@ class DaemonFolderHandler(FileSystemEventHandler):
 class ContinuousWatchdogDaemon:
     """Daemon that continuously monitors a folder and triggers silent sorting."""
 
-    def __init__(self, settings: AppSettings, base_dir: str):
+    def __init__(self, settings: AppSettings, base_dir: str, recalc_callback=None):
         self.settings = settings
         self.base_dir = os.path.abspath(base_dir)
+        self.recalc_callback = recalc_callback
         self.observer = None
 
         self._lock = threading.Lock()
@@ -217,13 +218,19 @@ class ContinuousWatchdogDaemon:
             if not self._is_running or cancel_event.is_set():
                 return
 
-            # Start a background execution thread for sorting
-            # (Ensures we don't block the timer thread or watchdog event handling)
-            thread = threading.Thread(
-                target=self._run_sorting_sync, args=(cancel_event,)
-            )
-            thread.daemon = True
-            thread.start()
+            if self.recalc_callback:
+                try:
+                    self.recalc_callback(cancel_event)
+                except TypeError:
+                    self.recalc_callback()
+            else:
+                # Start a background execution thread for sorting
+                # (Ensures we don't block the timer thread or watchdog event handling)
+                thread = threading.Thread(
+                    target=self._run_sorting_sync, args=(cancel_event,)
+                )
+                thread.daemon = True
+                thread.start()
 
     def _run_sorting_sync(self, cancel_event):
         """Run the core synchronous sorting runner."""
