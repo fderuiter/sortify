@@ -20,7 +20,6 @@ from app.core.crypto import (
     encrypt_ipc_payload,
     zero_vector_buffer,
 )
-
 from app.core.text_utils import sanitize_text
 
 
