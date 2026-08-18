@@ -67,11 +67,20 @@ def get_shadowed_policies(policies: list[dict]) -> list[bool]:
 def render_validation_warning_banner(settings):
     """Render an interactive configuration warning banner with contextual tooltips and recovery links."""
     banner_card = ui.card().classes("bg-red-50 border-red-200 border p-4 mb-4 w-full")
+    banner_timer = None
 
     def refresh():
+        if getattr(banner_card, "is_deleted", False) is True:
+            if banner_timer:
+                try:
+                    banner_timer.cancel()
+                except Exception:
+                    pass
+            return
         banner_card.clear()
-        has_errors = getattr(settings, "_has_validation_errors", False) or bool(
-            getattr(settings, "_validation_errors", [])
+        has_errors = (
+            getattr(settings, "_has_validation_errors", False) is True
+            or bool(getattr(settings, "_validation_errors", None))
         )
         if not has_errors:
             banner_card.set_visibility(False)
@@ -205,7 +214,11 @@ def render_validation_warning_banner(settings):
 
     refresh()
     try:
-        ui.timer(0.5, refresh)
+        banner_timer = ui.timer(0.5, refresh)
+        banner_card.on(
+            "delete", lambda *_: banner_timer.cancel() if banner_timer else None
+        )
+        banner_card.timer = banner_timer
     except Exception:
         pass
     return banner_card
@@ -214,6 +227,7 @@ def render_validation_warning_banner(settings):
 def show_settings(parent_app, settings):
     """Show the settings dialog."""
     timer_ref = [None]
+    banner_cards = []
 
     def on_explorer_integration_change(e):
         import sys
@@ -260,7 +274,9 @@ def show_settings(parent_app, settings):
 
         with ui.tab_panels(tabs, value="General").classes("w-full mt-4"):
             with ui.tab_panel("General"):
-                render_validation_warning_banner(settings)
+                b1 = render_validation_warning_banner(settings)
+                if b1:
+                    banner_cards.append(b1)
 
                 ui.label("System Integration").classes("text-lg font-bold mb-2")
                 ui.switch(
@@ -1249,8 +1265,9 @@ def show_settings(parent_app, settings):
                     )
 
             with ui.tab_panel("Policies"):
-                if getattr(settings, "_has_validation_errors", False):
-                    render_validation_warning_banner(settings)
+                b2 = render_validation_warning_banner(settings)
+                if b2:
+                    banner_cards.append(b2)
 
                 ui.label("Unified Policies").classes("text-lg font-bold mb-2")
 
@@ -1646,6 +1663,12 @@ def show_settings(parent_app, settings):
                 timer_ref[0].cancel()
             except Exception:
                 pass
+        for b in banner_cards:
+            if hasattr(b, "timer") and b.timer:
+                try:
+                    b.timer.cancel()
+                except Exception:
+                    pass
 
     dialog.on("dismiss", handle_dismiss)
 
