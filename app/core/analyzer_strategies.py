@@ -1427,36 +1427,68 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         if not documents:
             return "Miscellaneous"
 
+        filtered_documents = [
+            doc
+            for doc in documents
+            if doc and not doc.startswith("[STATUS:") and doc.strip()
+        ]
+        if not filtered_documents:
+            filtered_documents = documents
+
+        cluster_vectors = None
+        cluster_centroid = None
+
+        hist_vectorizer_cached = None
+        hist_vectors_cached = None
+        hist_texts_cached = None
+
         # Coherence routing & Offline Similarity matching layer
         cached_decrypted_db_rows = None
         if getattr(self, "model_path", None):
-            db = getattr(self, "db", None)
-            base_dir = getattr(self, "base_dir", None)
-            embedding_manager = None
-            use_semantic = False
+            try:
+                db = getattr(self, "db", None)
+                base_dir = getattr(self, "base_dir", None)
+                embedding_manager = None
+                use_semantic = False
 
-            pre_fetched_corpus = getattr(self, "pre_fetched_corpus", None)
-            if pre_fetched_corpus is not None:
-                model_metadata = pre_fetched_corpus.get("model_metadata")
-                if model_metadata and getattr(self, "model_path", None):
+                pre_fetched_corpus = getattr(self, "pre_fetched_corpus", None)
+                if pre_fetched_corpus is not None:
+                    model_metadata = pre_fetched_corpus.get("model_metadata")
+                    if model_metadata and getattr(self, "model_path", None):
+                        try:
+                            from app.core.semantic_embeddings import (
+                                SemanticEmbeddingManager,
+                            )
+
+                            class InMemoryDBMock:
+                                def __init__(self, meta):
+                                    self._meta = meta or {}
+
+                                def get_model_metadata(self, key):
+                                    return self._meta.get(key)
+
+                                def set_model_metadata(self, key, value):
+                                    self._meta[key] = value
+
+                            dummy_db = InMemoryDBMock(model_metadata)
+                            embedding_manager = SemanticEmbeddingManager(
+                                dummy_db, model_path=self.model_path
+                            )
+                            if (
+                                not embedding_manager.is_mock
+                                and not embedding_manager.is_reconstruction_active()
+                            ):
+                                use_semantic = True
+                        except Exception as e:
+                            logging.error(
+                                f"Failed to initialize SemanticEmbeddingManager in child process: {e}"
+                            )
+                elif db:
                     try:
-                        from app.core.semantic_embeddings import (
-                            SemanticEmbeddingManager,
-                        )
+                        from app.core.semantic_embeddings import SemanticEmbeddingManager
 
-                        class InMemoryDBMock:
-                            def __init__(self, meta):
-                                self._meta = meta or {}
-
-                            def get_model_metadata(self, key):
-                                return self._meta.get(key)
-
-                            def set_model_metadata(self, key, value):
-                                self._meta[key] = value
-
-                        dummy_db = InMemoryDBMock(model_metadata)
                         embedding_manager = SemanticEmbeddingManager(
-                            dummy_db, model_path=self.model_path
+                            db, model_path=getattr(self, "model_path", None)
                         )
                         if (
                             not embedding_manager.is_mock
@@ -1465,101 +1497,30 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                             use_semantic = True
                     except Exception as e:
                         logging.error(
-                            f"Failed to initialize SemanticEmbeddingManager in child process: {e}"
+                            f"Failed to initialize SemanticEmbeddingManager for strategy: {e}"
                         )
-            elif db:
-                try:
-                    from app.core.semantic_embeddings import SemanticEmbeddingManager
 
-                    embedding_manager = SemanticEmbeddingManager(
-                        db, model_path=getattr(self, "model_path", None)
-                    )
-                    if (
-                        not embedding_manager.is_mock
-                        and not embedding_manager.is_reconstruction_active()
-                    ):
-                        use_semantic = True
-                except Exception as e:
-                    logging.error(
-                        f"Failed to initialize SemanticEmbeddingManager for strategy: {e}"
-                    )
+                cluster_vectors = []
+                if use_semantic and embedding_manager:
+                    try:
+                        cluster_vectors = [
+                            embedding_manager.get_embedding(doc)
+                            for doc in filtered_documents
+                        ]
+                    except Exception as e:
+                        logging.error(f"Failed to generate embeddings: {e}")
+                        cluster_vectors = []
 
-            filtered_documents = [
-                doc
-                for doc in documents
-                if doc and not doc.startswith("[STATUS:") and doc.strip()
-            ]
-            if not filtered_documents:
-                filtered_documents = documents
+                historical_folder_vectors = defaultdict(list)
 
-            cluster_vectors = []
-            if use_semantic and embedding_manager:
-                try:
-                    cluster_vectors = [
-                        embedding_manager.get_embedding(doc)
-                        for doc in filtered_documents
-                    ]
-                except Exception as e:
-                    logging.error(f"Failed to generate embeddings: {e}")
-                    cluster_vectors = []
-
-            if not use_semantic or not cluster_vectors:
-                try:
-                    from sklearn.feature_extraction.text import TfidfVectorizer
-
-                    vectorizer = TfidfVectorizer(
-                        stop_words=list(self.stop_words)
-                        if getattr(self, "stop_words", None)
-                        else "english",
-                        max_features=1000,
-                    )
-                    safe_docs = [doc or "" for doc in filtered_documents]
-                    X = vectorizer.fit_transform(safe_docs)
-                    cluster_vectors = [row.toarray()[0] for row in X]
-                except Exception as e:
-                    logging.error(
-                        f"Failed to generate TF-IDF vectors for coherence: {e}"
-                    )
-                    cluster_vectors = []
-
-            if cluster_vectors:
-                try:
-
-                    def cosine_sim(v1, v2):
-                        v1_arr = np.array(v1)
-                        v2_arr = np.array(v2)
-                        norm1 = np.linalg.norm(v1_arr)
-                        norm2 = np.linalg.norm(v2_arr)
-                        if norm1 == 0 or norm2 == 0:
-                            return 0.0
-                        return float(np.dot(v1_arr, v2_arr) / (norm1 * norm2))
-
-                    # Calculate cluster centroid
-                    cluster_centroid = np.mean(cluster_vectors, axis=0)
-
-                    # Calculate cohesion score: average cosine similarity of each doc to the centroid
-                    coherences = [
-                        cosine_sim(v, cluster_centroid) for v in cluster_vectors
-                    ]
-                    cohesion_score = np.mean(coherences) if coherences else 1.0
-
-                    # Check cohesion score threshold
-                    if cohesion_score < 0.3:
-                        logging.info(
-                            f"Cohesion score {cohesion_score:.4f} is below 0.3. Routing to 'Review Required' without initiating generative model."
-                        )
-                        return "Review Required"
-
-                    # Compare against a history of user-verified folder vectors to determine semantic similarity
-                    historical_folder_vectors = defaultdict(list)
+                if use_semantic:
                     if pre_fetched_corpus is not None:
                         for ex in pre_fetched_corpus.get("examples", []):
                             folder = ex.get("user_verified_target_path")
                             v = ex.get("vector")
-                            if use_semantic:
-                                if folder and v:
-                                    if embedding_manager.validate_vector_dimension(v):
-                                        historical_folder_vectors[folder].append(v)
+                            if folder and v:
+                                if embedding_manager and embedding_manager.validate_vector_dimension(v):
+                                    historical_folder_vectors[folder].append(v)
                     elif db and base_dir:
                         try:
                             from app.core.db_conn import get_db_connection
@@ -1614,87 +1575,127 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                             for filepath, folder, v in decrypted_results:
                                 if folder:
                                     if v is not None:
-                                        if use_semantic:
-                                            if embedding_manager.validate_vector_dimension(
-                                                v
-                                            ):
-                                                historical_folder_vectors[
-                                                    folder
-                                                ].append(v)
+                                        if embedding_manager and embedding_manager.validate_vector_dimension(v):
+                                            historical_folder_vectors[
+                                                folder
+                                            ].append(v)
                                     else:
                                         db.track_corrupted_vector(base_dir, filepath)
                         except Exception as e:
                             logging.error(
                                 f"Failed to query historical folder vectors: {e}"
                             )
+                else:
+                    # TF-IDF mode
+                    historical_folder_texts = defaultdict(list)
+                    if pre_fetched_corpus is not None:
+                        for ex in pre_fetched_corpus.get("examples", []):
+                            folder = ex.get("user_verified_target_path")
+                            text = ex.get("text")
+                            if folder and text:
+                                historical_folder_texts[folder].append(text)
+                    elif db and base_dir:
+                        try:
+                            all_docs = db.get_all_documents(base_dir)
+                            for doc in all_docs:
+                                if len(doc) > 3 and doc[1] and doc[3]:
+                                    folder = doc[3]
+                                    text = doc[1]
+                                    if (
+                                        folder
+                                        and text
+                                        and not text.startswith("[STATUS:")
+                                    ):
+                                        historical_folder_texts[folder].append(text)
+                        except Exception as e:
+                            logging.error(
+                                f"Failed to query historical docs for TF-IDF: {e}"
+                            )
 
-                    # If TF-IDF mode, vectorize historical documents using TF-IDF
-                    if not use_semantic:
-                        historical_folder_texts = defaultdict(list)
-                        if pre_fetched_corpus is not None:
-                            for ex in pre_fetched_corpus.get("examples", []):
-                                folder = ex.get("user_verified_target_path")
-                                text = ex.get("text")
-                                if folder and text:
-                                    historical_folder_texts[folder].append(text)
-                        elif db and base_dir:
-                            try:
-                                all_docs = db.get_all_documents(base_dir)
-                                for doc in all_docs:
-                                    if len(doc) > 3 and doc[1] and doc[3]:
-                                        folder = doc[3]
-                                        text = doc[1]
-                                        if (
-                                            folder
-                                            and text
-                                            and not text.startswith("[STATUS:")
-                                        ):
-                                            historical_folder_texts[folder].append(text)
-                            except Exception as e:
-                                logging.error(
-                                    f"Failed to query historical docs for TF-IDF: {e}"
+                    from sklearn.feature_extraction.text import TfidfVectorizer
+
+                    stop_words_arg = (
+                        list(self.stop_words)
+                        if getattr(self, "stop_words", None)
+                        else "english"
+                    )
+
+                    if historical_folder_texts:
+                        try:
+                            all_texts = []
+                            folder_indices = []
+                            for folder, texts in historical_folder_texts.items():
+                                for text in texts:
+                                    all_texts.append(text)
+                                    folder_indices.append(folder)
+
+                            if all_texts:
+                                hist_vectorizer = TfidfVectorizer(
+                                    stop_words=stop_words_arg,
+                                    max_features=1000,
+                                    sublinear_tf=True,
                                 )
-
-                        if historical_folder_texts:
-                            try:
-                                all_texts = []
-                                folder_indices = []
-                                for folder, texts in historical_folder_texts.items():
-                                    for text in texts:
-                                        all_texts.append(text)
-                                        folder_indices.append(folder)
-
-                                if all_texts:
-                                    from sklearn.feature_extraction.text import (
-                                        TfidfVectorizer,
-                                    )
-
-                                    hist_vectorizer = TfidfVectorizer(
-                                        stop_words=list(self.stop_words)
-                                        if getattr(self, "stop_words", None)
-                                        else "english",
-                                        max_features=1000,
-                                    )
-                                    hist_X = hist_vectorizer.fit_transform(all_texts)
-                                    curr_X = hist_vectorizer.transform(
-                                        filtered_documents
-                                    )
-                                    cluster_vectors_tfidf = [
-                                        row.toarray()[0] for row in curr_X
-                                    ]
-                                    cluster_centroid_tfidf = np.mean(
-                                        cluster_vectors_tfidf, axis=0
-                                    )
-
-                                    for idx, folder in enumerate(folder_indices):
-                                        vec = hist_X[idx].toarray()[0]
-                                        historical_folder_vectors[folder].append(vec)
-
-                                    cluster_centroid = cluster_centroid_tfidf
-                            except Exception as e:
-                                logging.error(
-                                    f"Failed to compute historical TF-IDF vectors: {e}"
+                                hist_X = hist_vectorizer.fit_transform(all_texts)
+                                curr_X = hist_vectorizer.transform(
+                                    filtered_documents
                                 )
+                                cluster_vectors = [
+                                    row.toarray()[0] for row in curr_X
+                                ]
+
+                                hist_vectorizer_cached = hist_vectorizer
+                                hist_vectors_cached = hist_X
+                                hist_texts_cached = all_texts
+
+                                for idx, folder in enumerate(folder_indices):
+                                    vec = hist_X[idx].toarray()[0]
+                                    historical_folder_vectors[folder].append(vec)
+                        except Exception as e:
+                            logging.error(
+                                f"Failed to compute historical TF-IDF vectors: {e}"
+                            )
+
+                    if not cluster_vectors:
+                        try:
+                            vectorizer = TfidfVectorizer(
+                                stop_words=stop_words_arg,
+                                max_features=1000,
+                                sublinear_tf=True,
+                            )
+                            safe_docs = [doc or "" for doc in filtered_documents]
+                            X = vectorizer.fit_transform(safe_docs)
+                            cluster_vectors = [row.toarray()[0] for row in X]
+                        except Exception as e:
+                            logging.error(
+                                f"Failed to generate TF-IDF vectors for coherence: {e}"
+                            )
+                            cluster_vectors = []
+
+                if cluster_vectors:
+                    def cosine_sim(v1, v2):
+                        v1_arr = np.array(v1)
+                        v2_arr = np.array(v2)
+                        norm1 = np.linalg.norm(v1_arr)
+                        norm2 = np.linalg.norm(v2_arr)
+                        if norm1 == 0 or norm2 == 0:
+                            return 0.0
+                        return float(np.dot(v1_arr, v2_arr) / (norm1 * norm2))
+
+                    # Calculate cluster centroid
+                    cluster_centroid = np.mean(cluster_vectors, axis=0)
+
+                    # Calculate cohesion score: average cosine similarity of each doc to the centroid
+                    coherences = [
+                        cosine_sim(v, cluster_centroid) for v in cluster_vectors
+                    ]
+                    cohesion_score = np.mean(coherences) if coherences else 1.0
+
+                    # Check cohesion score threshold
+                    if cohesion_score < 0.3:
+                        logging.info(
+                            f"Cohesion score {cohesion_score:.4f} is below 0.3. Routing to 'Review Required' without initiating generative model."
+                        )
+                        return "Review Required"
 
                     # Calculate historical folder centroids and best match similarity
                     historical_folder_centroids = {}
@@ -1714,7 +1715,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                             best_match_folder = folder
 
                     # Apply thresholds to routing
-                    if historical_folder_centroids:
+                    if historical_folder_centroids and np.linalg.norm(cluster_centroid) > 0:
                         if best_match_similarity >= 0.85:
                             logging.info(
                                 f"High-confidence match: {best_match_folder} (similarity {best_match_similarity:.4f} >= 0.85). Bypassing generative."
@@ -1732,11 +1733,11 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                         )
                     else:
                         logging.info("Proceeding with generative model naming.")
-                except Exception as e:
-                    logging.error(
-                        f"Error in coherence/similarity routing layer: {e}",
-                        exc_info=True,
-                    )
+            except Exception as e:
+                logging.error(
+                    f"Error in coherence/similarity routing layer: {e}",
+                    exc_info=True,
+                )
 
         if not getattr(self, "_model_initialized", False):
             self._init_model()
@@ -2379,24 +2380,30 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                         from sklearn.feature_extraction.text import TfidfVectorizer
                         from sklearn.metrics.pairwise import cosine_similarity
 
-                        # Limit vocabulary features to 1,000 to keep CPU search speeds fast and minimize latency
-                        stop_words_list = (
-                            list(self.stop_words)
-                            if getattr(self, "stop_words", None)
-                            else "english"
-                        )
-                        # Apply sublinear (logarithmic) term-frequency scaling to dampen highly repetitive terms
-                        vectorizer = TfidfVectorizer(
-                            stop_words=stop_words_list,
-                            max_features=1000,
-                            sublinear_tf=True,
-                        )
-
                         hist_texts = [ex["text"] for ex in historical_examples]
                         target_text = " ".join(filtered_documents)
 
-                        # Fit vocabulary and IDF weights exclusively using historical document data to prevent target-driven weight warping
-                        hist_vectors = vectorizer.fit_transform(hist_texts)
+                        if (
+                            hist_vectorizer_cached is not None
+                            and hist_vectors_cached is not None
+                        ):
+                            vectorizer = hist_vectorizer_cached
+                            hist_vectors = hist_vectors_cached
+                        else:
+                            # Limit vocabulary features to 1,000 to keep CPU search speeds fast and minimize latency
+                            stop_words_list = (
+                                list(self.stop_words)
+                                if getattr(self, "stop_words", None)
+                                else "english"
+                            )
+                            # Apply sublinear (logarithmic) term-frequency scaling to dampen highly repetitive terms
+                            vectorizer = TfidfVectorizer(
+                                stop_words=stop_words_list,
+                                max_features=1000,
+                                sublinear_tf=True,
+                            )
+                            hist_vectors = vectorizer.fit_transform(hist_texts)
+
                         target_vector = vectorizer.transform([target_text])
 
                         similarities = cosine_similarity(
@@ -2437,7 +2444,59 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                     logging.error(f"Error formatting few_shot_context: {e}")
 
         try:
-            doc_text = " ".join(filtered_documents)[:1000]
+            if cluster_vectors is None or len(cluster_vectors) != len(filtered_documents) or cluster_centroid is None:
+                try:
+                    if 'vectorizer' in locals() and vectorizer is not None:
+                        curr_X = vectorizer.transform(filtered_documents)
+                        cluster_vectors = [row.toarray()[0] for row in curr_X]
+                        cluster_centroid = np.mean(cluster_vectors, axis=0)
+                    else:
+                        from sklearn.feature_extraction.text import TfidfVectorizer
+
+                        vectorizer = TfidfVectorizer(
+                            stop_words=list(self.stop_words)
+                            if getattr(self, "stop_words", None)
+                            else "english",
+                            max_features=1000,
+                            sublinear_tf=True,
+                        )
+                        safe_docs = [doc or "" for doc in filtered_documents]
+                        X = vectorizer.fit_transform(safe_docs)
+                        cluster_vectors = [row.toarray()[0] for row in X]
+                        cluster_centroid = np.mean(cluster_vectors, axis=0)
+                except Exception as e:
+                    logging.error(f"Failed to generate TF-IDF vectors for sampling: {e}")
+                    cluster_vectors = []
+                    cluster_centroid = None
+
+            if cluster_vectors and cluster_centroid is not None:
+                def _cos_sim(v1, v2):
+                    v1_arr = np.asarray(v1, dtype=np.float32)
+                    v2_arr = np.asarray(v2, dtype=np.float32)
+                    norm1 = np.linalg.norm(v1_arr)
+                    norm2 = np.linalg.norm(v2_arr)
+                    if norm1 == 0 or norm2 == 0:
+                        return 0.0
+                    return float(np.dot(v1_arr, v2_arr) / (norm1 * norm2))
+
+                sims = [_cos_sim(v, cluster_centroid) for v in cluster_vectors]
+                ranked_indices = sorted(range(len(filtered_documents)), key=lambda i: sims[i], reverse=True)
+                selected_indices = ranked_indices[:3]
+                selected_documents = [filtered_documents[i] for i in selected_indices]
+            else:
+                selected_documents = filtered_documents[:3]
+
+            from app.core.text_utils import sanitize_text
+
+            sanitized_samples = [sanitize_text(doc) for doc in selected_documents if doc]
+            sanitized_samples = [s for s in sanitized_samples if s]
+            if not sanitized_samples:
+                sanitized_samples = [sanitize_text(doc) for doc in filtered_documents[:3] if doc]
+
+            formatted_samples = [s[:500].strip() for s in sanitized_samples]
+            doc_text = " ".join(formatted_samples)
+            if len(doc_text) > 1000:
+                doc_text = doc_text[:1000].rsplit(" ", 1)[0]
             if few_shot_context:
                 prompt = (
                     f"{few_shot_context}"
