@@ -323,7 +323,7 @@ body {
                     self.tree_view.add_slot(
                         "default-header",
                         """
-                        <div class="row items-center justify-between w-full group tree-node-row py-1"
+                        <div class="row items-center justify-between w-full group tree-node-row py-1 min-w-0 flex-nowrap"
                              :draggable="prop.node.is_file"
                              @dragstart="(e) => { 
                                  if (prop.node.is_file) {
@@ -343,20 +343,21 @@ body {
                                      $parent.$emit('node-drop', { source: sourceId, target: prop.node.id });
                                  }
                              }">
-                            <div class="row items-center gap-2">
+                            <div class="row items-center gap-2 min-w-0 flex-1 mr-2 flex-nowrap overflow-hidden">
                                 <q-icon :name="prop.node.icon" 
                                         :color="prop.node.is_file ? (prop.node.is_locked ? 'amber-9' : 'primary') : 'amber-8'" 
-                                        size="xs" />
-                                <span class="font-medium text-sm text-slate-800">{{ prop.node.text }}</span>
+                                        size="xs"
+                                        class="shrink-0" />
+                                <span class="font-medium text-sm text-slate-800 truncate block min-w-0 flex-1">{{ prop.node.text }}<q-tooltip anchor="top middle" self="bottom middle" :offset="[0, 8]">{{ prop.node.filepath || prop.node.text }}</q-tooltip></span>
                                 <q-badge v-if="prop.node.badge" 
                                          :color="prop.node.badge_color || 'grey-7'" 
                                          text-color="white" 
-                                         class="text-xs" rounded>
+                                         class="text-xs shrink-0" rounded>
                                     {{ prop.node.badge }}
                                 </q-badge>
                             </div>
                             <!-- Action buttons -->
-                            <div v-if="prop.node.is_file" class="action-buttons row items-center q-gutter-xs">
+                            <div v-if="prop.node.is_file" class="action-buttons row items-center q-gutter-xs shrink-0 flex-nowrap">
                                 <q-btn flat round dense 
                                        :icon="prop.node.is_locked ? 'lock' : 'lock_open'" 
                                        size="xs" 
@@ -379,7 +380,7 @@ body {
                                     <q-tooltip>Incorrect folder placement</q-tooltip>
                                 </q-btn>
                             </div>
-                            <div v-else class="action-buttons row items-center q-gutter-xs">
+                            <div v-else class="action-buttons row items-center q-gutter-xs shrink-0 flex-nowrap">
                                 <q-btn flat round dense icon="edit" size="xs" color="grey-6"
                                        @click.stop="$parent.$emit('folder-rename', { folder_id: prop.node.id })">
                                     <q-tooltip>Rename folder</q-tooltip>
@@ -1663,6 +1664,7 @@ body {
                         "children": children,
                         "icon": "folder",
                         "is_file": False,
+                        "filepath": node_id,
                     }
                 )
                 sub_folders, sub_files = self._flatten(v, node_id, children)

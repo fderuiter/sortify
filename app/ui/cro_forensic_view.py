@@ -270,21 +270,22 @@ class CROForensicView:
                         if study.compliance_score_percent >= 60
                         else "negative"
                     )
-                    with ui.card().classes("w-full p-4 border rounded-lg"):
-                        with ui.row().classes("w-full justify-between items-center"):
-                            with ui.column().classes("gap-0"):
-                                ui.label(study.study_id).classes(
-                                    "text-lg font-bold text-blue-900"
+                    with ui.card().classes("w-full p-4 border rounded-lg overflow-hidden"):
+                        with ui.row().classes("w-full justify-between items-center min-w-0 flex-nowrap gap-2"):
+                            with ui.column().classes("gap-0 min-w-0 flex-1 mr-2 overflow-hidden"):
+                                study_lbl = ui.label(study.study_id).classes(
+                                    "text-lg font-bold text-blue-900 truncate block w-full"
                                 )
+                                study_lbl.tooltip(study.study_id)
                                 ui.label(
                                     f"{study.total_documents} documents organized into regulatory binder"
-                                ).classes("text-xs text-gray-500")
+                                ).classes("text-xs text-gray-500 truncate block w-full")
 
-                            with ui.row().classes("items-center gap-3"):
+                            with ui.row().classes("items-center gap-3 shrink-0 flex-nowrap"):
                                 ui.badge(
                                     f"{study.audit_readiness_status} ({study.compliance_score_percent}%)",
                                     color=badge_color,
-                                ).classes("text-sm p-2")
+                                ).classes("text-sm p-2 shrink-0")
 
                                 def open_html(path=study.audit_report_html_path):
                                     if os.path.exists(path):
@@ -294,7 +295,7 @@ class CROForensicView:
                                     "View Audit Dossier",
                                     on_click=open_html,
                                     icon="description",
-                                ).props('size="sm" outline')
+                                ).props('size="sm" outline').classes("shrink-0")
 
             # Actions Row
             with ui.row().classes(

@@ -11,9 +11,9 @@ logger = logging.getLogger(__name__)
 
 
 # Standardized responsive fluid layout helpers
-STANDARD_DIALOG_CARD_MD = "w-full min-w-[320px] max-w-md p-6"
-STANDARD_DIALOG_CARD_LG = "w-full min-w-[320px] max-w-lg p-6 gap-4"
-STANDARD_DIALOG_CARD_XL = "w-full min-w-[320px] max-w-4xl p-6"
+STANDARD_DIALOG_CARD_MD = "w-full min-w-[320px] max-w-md p-6 max-h-[90vh] overflow-y-auto overflow-x-hidden"
+STANDARD_DIALOG_CARD_LG = "w-full min-w-[320px] max-w-lg p-6 gap-4 max-h-[90vh] overflow-y-auto overflow-x-hidden"
+STANDARD_DIALOG_CARD_XL = "w-full min-w-[320px] max-w-4xl p-6 max-h-[90vh] overflow-y-auto overflow-x-hidden"
 
 
 def get_dialog_card_classes(size="md", extra=""):

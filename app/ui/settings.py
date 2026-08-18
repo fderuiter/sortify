@@ -324,9 +324,10 @@ def show_settings(parent_app, settings):
                         else:
                             for idx, path in enumerate(paths):
                                 with ui.row().classes(
-                                    "w-full items-center justify-between border-b pb-2 mb-2"
+                                    "w-full items-center justify-between border-b pb-2 mb-2 min-w-0 flex-nowrap gap-2"
                                 ):
-                                    ui.label(path).classes("font-mono text-sm")
+                                    p_lbl = ui.label(path).classes("font-mono text-sm truncate min-w-0 flex-1")
+                                    p_lbl.tooltip(path)
 
                                     def delete_path(idx_to_del=idx):
                                         current_paths = list(
@@ -418,9 +419,10 @@ def show_settings(parent_app, settings):
                         else:
                             for idx, ext in enumerate(exts):
                                 with ui.row().classes(
-                                    "w-full items-center justify-between border-b pb-2 mb-2"
+                                    "w-full items-center justify-between border-b pb-2 mb-2 min-w-0 flex-nowrap gap-2"
                                 ):
-                                    ui.label(ext).classes("font-mono text-sm")
+                                    e_lbl = ui.label(ext).classes("font-mono text-sm truncate min-w-0 flex-1")
+                                    e_lbl.tooltip(ext)
 
                                     def delete_ext(idx_to_del=idx):
                                         current_exts = list(
@@ -1381,12 +1383,14 @@ def show_settings(parent_app, settings):
                     with rules_container:
                         for kw, target in settings.KEYWORD_RULES.items():
                             with ui.row().classes(
-                                "w-full items-center justify-between border-b pb-2 mb-2"
+                                "w-full items-center justify-between border-b pb-2 mb-2 min-w-0 flex-nowrap gap-2"
                             ):
-                                ui.label(kw).classes("w-1/4 font-mono")
-                                ui.label(target).classes(
-                                    "w-1/2 font-mono text-gray-500"
+                                kw_lbl = ui.label(kw).classes("w-1/4 font-mono truncate min-w-0 shrink-0")
+                                kw_lbl.tooltip(kw)
+                                target_lbl = ui.label(target).classes(
+                                    "w-1/2 font-mono text-gray-500 truncate min-w-0 flex-1"
                                 )
+                                target_lbl.tooltip(target)
 
                                 def delete_rule(k=kw):
                                     updated_rules = dict(settings.KEYWORD_RULES)
@@ -1716,17 +1720,17 @@ def show_settings(parent_app, settings):
                             shadowed_statuses = get_shadowed_policies(policies_list)
                             for idx, policy in enumerate(policies_list):
                                 with ui.row().classes(
-                                    "w-full items-center justify-between border-b pb-2 mb-2 flex-wrap gap-2"
+                                    "w-full items-center justify-between border-b pb-2 mb-2 flex-nowrap gap-2 min-w-0"
                                 ):
                                     with ui.row().classes(
-                                        "items-center gap-2 flex-wrap"
+                                        "items-center gap-2 flex-nowrap min-w-0 flex-1"
                                     ):
                                         friendly_type = OPTIONS.get(
                                             policy.get("type", ""),
                                             policy.get("type", "").upper(),
                                         )
                                         type_lbl = ui.label(friendly_type).classes(
-                                            "w-36 font-bold"
+                                            "w-36 font-bold shrink-0"
                                         )
                                         p_type = policy.get("type", "").lower()
                                         if p_type == "keyword":
@@ -1746,12 +1750,17 @@ def show_settings(parent_app, settings):
                                                 "Sequential rules evaluate documents in order to determine compliance."
                                             )
 
-                                        ui.label(policy.get("expression", "")).classes(
-                                            "w-32 font-mono truncate"
+                                        expr_val = policy.get("expression", "")
+                                        expr_lbl = ui.label(expr_val).classes(
+                                            "w-32 font-mono truncate shrink-0 min-w-0"
                                         )
-                                        ui.label(policy.get("target_path", "")).classes(
-                                            "w-40 font-mono text-gray-500 truncate"
+                                        expr_lbl.tooltip(expr_val)
+
+                                        target_val = policy.get("target_path", "")
+                                        target_lbl = ui.label(target_val).classes(
+                                            "w-40 font-mono text-gray-500 truncate flex-1 min-w-0"
                                         )
+                                        target_lbl.tooltip(target_val)
 
                                         with ui.row().classes("items-center gap-1"):
 
