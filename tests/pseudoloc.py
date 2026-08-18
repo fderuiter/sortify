@@ -65,8 +65,23 @@ def pseudolocalize_text(text: Any) -> Any:
     return f"[{expanded}]"
 
 
+_ORIGINALS: dict[str, Any] = {}
+
+
 def apply_pseudolocalization() -> None:
     """Monkey-patch NiceGUI elements to automatically pseudolocalize display strings at runtime."""
+    if _ORIGINALS:
+        return
+
+    _ORIGINALS["label.__init__"] = ui.label.__init__
+    _ORIGINALS["label.set_text"] = ui.label.set_text
+    _ORIGINALS["button.__init__"] = ui.button.__init__
+    _ORIGINALS["markdown.__init__"] = ui.markdown.__init__
+    _ORIGINALS["checkbox.__init__"] = ui.checkbox.__init__
+    _ORIGINALS["switch.__init__"] = ui.switch.__init__
+    _ORIGINALS["badge.__init__"] = ui.badge.__init__
+    _ORIGINALS["tab.__init__"] = ui.tab.__init__
+    _ORIGINALS["input.__init__"] = ui.input.__init__
 
     # Patch ui.label
     orig_label_init = ui.label.__init__
@@ -157,3 +172,20 @@ def apply_pseudolocalization() -> None:
         orig_input_init(self, label=label, placeholder=placeholder, *args, **kwargs)
 
     ui.input.__init__ = patched_input_init
+
+
+def remove_pseudolocalization() -> None:
+    """Restore original NiceGUI methods patched by apply_pseudolocalization."""
+    if not _ORIGINALS:
+        return
+
+    ui.label.__init__ = _ORIGINALS.pop("label.__init__")
+    ui.label.set_text = _ORIGINALS.pop("label.set_text")
+    ui.button.__init__ = _ORIGINALS.pop("button.__init__")
+    ui.markdown.__init__ = _ORIGINALS.pop("markdown.__init__")
+    ui.checkbox.__init__ = _ORIGINALS.pop("checkbox.__init__")
+    ui.switch.__init__ = _ORIGINALS.pop("switch.__init__")
+    ui.badge.__init__ = _ORIGINALS.pop("badge.__init__")
+    ui.tab.__init__ = _ORIGINALS.pop("tab.__init__")
+    ui.input.__init__ = _ORIGINALS.pop("input.__init__")
+

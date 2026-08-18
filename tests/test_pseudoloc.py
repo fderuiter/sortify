@@ -1,8 +1,12 @@
 """Unit tests for pseudolocalization logic and monkey-patching."""
 
-from nicegui import ui
+from nicegui import Client, ui
 
-from tests.pseudoloc import apply_pseudolocalization, pseudolocalize_text
+from tests.pseudoloc import (
+    apply_pseudolocalization,
+    pseudolocalize_text,
+    remove_pseudolocalization,
+)
 
 
 def test_pseudolocalize_text_basic():
@@ -30,13 +34,16 @@ def test_pseudolocalize_text_edge_cases():
 
 def test_apply_pseudolocalization_nicegui():
     apply_pseudolocalization()
+    try:
+        with Client(None):
+            label = ui.label("Application Settings")
+            assert label._text.startswith("[")
+            assert label._text.endswith("]")
 
-    label = ui.label("Application Settings")
-    assert label._text.startswith("[")
-    assert label._text.endswith("]")
+            btn = ui.button("Decline")
+            assert btn._props.get("label", "").startswith("[")
 
-    btn = ui.button("Decline")
-    assert btn._props.get("label", "").startswith("[")
-
-    mk = ui.markdown("User Guide")
-    assert mk.___content.startswith("[")
+            mk = ui.markdown("User Guide")
+            assert mk.___content.startswith("[")
+    finally:
+        remove_pseudolocalization()
