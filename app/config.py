@@ -391,6 +391,54 @@ class AppSettings:
         except Exception as e:
             logging.error(f"Failed to save settings: {e}")
 
+    def revalidate(self) -> bool:
+        """Re-check all current settings values against JSON schema and Pydantic validation.
+
+        If re-validation succeeds, unlocks background saving and triggers a save.
+        Returns True if valid, False if errors remain.
+        """
+        errors = []
+        data = self._settings_model.model_dump(mode="json")
+
+        # Validate against static schema file if it exists
+        schema_path = Path(__file__).parent / "config_schema.json"
+        if schema_path.exists():
+            import jsonschema
+
+            try:
+                with open(schema_path, "r", encoding="utf-8") as sf:
+                    schema = json.load(sf)
+                validator = jsonschema.Draft202012Validator(schema)
+                schema_errors = sorted(validator.iter_errors(data), key=lambda e: e.path)
+                for error in schema_errors:
+                    path = (
+                        ".".join([str(p) for p in error.path]) if error.path else "root"
+                    )
+                    errors.append({"field": path, "message": error.message})
+            except Exception as e:
+                errors.append({"field": "schema", "message": str(e)})
+
+        # Validate against Settings Pydantic model
+        try:
+            Settings(**data)
+        except ValidationError as e:
+            for err in e.errors():
+                loc = err.get("loc", [])
+                path = ".".join([str(p) for p in loc]) if loc else "root"
+                msg = err.get("msg", str(err))
+                if not any(item["field"] == path and item["message"] == msg for item in errors):
+                    errors.append({"field": path, "message": msg})
+
+        if not errors:
+            self._has_validation_errors = False
+            self._validation_errors = []
+            self._trigger_save()
+            return True
+        else:
+            self._has_validation_errors = True
+            self._validation_errors = errors
+            return False
+
     def __getattr__(self, name):
         """Get attribute dynamically from the settings model."""
         if hasattr(self._settings_model, name):
@@ -415,4 +463,4 @@ class AppSettings:
             if name == "PROXY" and value != "<DECRYPTION_FAILED>":
                 super().__setattr__("_raw_encrypted_proxy", None)
             setattr(self._settings_model, name, value)
-            self._trigger_save()
+            self.revalidate()

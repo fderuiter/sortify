@@ -66,110 +66,149 @@ def get_shadowed_policies(policies: list[dict]) -> list[bool]:
 
 def render_validation_warning_banner(settings):
     """Render an interactive configuration warning banner with contextual tooltips and recovery links."""
-    with ui.card().classes("bg-red-50 border-red-200 border p-4 mb-4 w-full"):
-        with ui.row().classes("items-center gap-2 text-red-800"):
-            ui.icon("error", size="sm")
-            ui.label("Configuration Saves Suspended").classes("font-bold")
+    banner_card = ui.card().classes("bg-red-50 border-red-200 border p-4 mb-4 w-full")
 
-        ui.label(
-            "Automatic saving is locked because your settings file contains invalid values or errors. "
-            "The system is temporarily using healthy default values to keep the application running."
-        ).classes("text-red-900 text-sm mt-1").props(
-            'aria-label="Configuration Warning Label"'
+    def refresh():
+        banner_card.clear()
+        has_errors = getattr(settings, "_has_validation_errors", False) or bool(
+            getattr(settings, "_validation_errors", [])
         )
+        if not has_errors:
+            banner_card.set_visibility(False)
+            return
 
-        # Display specific errors and add a tooltip to each
-        errs = getattr(settings, "_validation_errors", [])
-        if errs:
-            ui.label("Validation Errors Found:").classes(
-                "text-xs font-bold text-red-800 mt-2"
+        banner_card.set_visibility(True)
+        with banner_card:
+            with ui.row().classes("items-center justify-between w-full flex-wrap gap-2"):
+                with ui.row().classes("items-center gap-2 text-red-800"):
+                    ui.icon("error", size="sm")
+                    ui.label("Configuration Saves Suspended").classes("font-bold")
+
+                def on_revalidate():
+                    if hasattr(settings, "revalidate"):
+                        is_valid = settings.revalidate()
+                        if is_valid:
+                            ui.notify(
+                                "Configuration re-validated successfully! Auto-save unlocked.",
+                                type="positive",
+                            )
+                        else:
+                            ui.notify(
+                                "Validation errors remain in configuration.",
+                                type="warning",
+                            )
+                    refresh()
+
+                ui.button("Re-validate", on_click=on_revalidate).props(
+                    'size=sm color=negative aria-label="Re-validate Settings Button"'
+                ).classes("font-bold")
+
+            ui.label(
+                "Automatic saving is locked because your settings file contains invalid values or errors. "
+                "The system is temporarily using healthy default values to keep the application running."
+            ).classes("text-red-900 text-sm mt-1").props(
+                'aria-label="Configuration Warning Label"'
             )
-            for err in errs:
-                err_row = ui.row().classes(
-                    "items-center gap-1 text-xs text-red-700 ml-4"
+
+            # Display specific errors and add a tooltip to each
+            errs = getattr(settings, "_validation_errors", [])
+            if errs:
+                ui.label("Validation Errors Found:").classes(
+                    "text-xs font-bold text-red-800 mt-2"
                 )
-                with err_row:
-                    ui.icon("arrow_right", size="xs")
-                    lbl = ui.label(
-                        f"Field '{err.get('field', '')}': {err.get('message', '')}"
-                    ).classes("font-mono")
+                for err in errs:
+                    err_row = ui.row().classes(
+                        "items-center gap-1 text-xs text-red-700 ml-4"
+                    )
+                    with err_row:
+                        ui.icon("arrow_right", size="xs")
+                        lbl = ui.label(
+                            f"Field '{err.get('field', '')}': {err.get('message', '')}"
+                        ).classes("font-mono")
 
-                    # Tooltip in plain language explaining the error
-                    field_name = err.get("field", "").lower()
-                    msg = err.get("message", "").lower()
-                    tip = f"The value for '{err.get('field')}' is not allowed. "
-                    if (
-                        "path" in field_name
-                        or "directory" in field_name
-                        or "invalid path" in msg
-                    ):
-                        tip += "Make sure the directory path is relative, does not use '..', and has no invalid characters like :, *, ?, or |."
-                    elif "empty" in msg or "required" in msg:
-                        tip += (
-                            "This field cannot be left blank. Please specify a value."
-                        )
-                    else:
-                        tip += "Please ensure the value matches the requested format or number limits."
-                    lbl.tooltip(tip)
-
-        # Recovery/Troubleshooting links
-        with ui.row().classes("items-center gap-2 mt-3 flex-wrap"):
-            ui.icon("help", size="xs", color="primary")
-            ui.link(
-                "Open Troubleshooting Guide (Online)",
-                "https://docs.smartautosorter.com/admin_guide/#configuration-recovery-troubleshooting",
-                new_tab=True,
-            ).classes("text-blue-600 hover:underline text-sm").props(
-                'aria-label="Troubleshooting Guide Link"'
-            )
-
-            ui.label("|").classes("text-gray-300 text-sm")
-
-            def show_offline_admin_guide():
-                import sys
-                from pathlib import Path
-
-                from app.core.path_utils import get_base_path, is_packaged
-                from app.ui.dialog_helper import get_dialog_card_classes
-
-                if is_packaged() and hasattr(sys, "_MEIPASS"):
-                    base_dir = Path(sys._MEIPASS)
-                else:
-                    base_dir = Path(get_base_path(__file__)).parent.parent
-
-                path = base_dir / "docs" / "admin_guide.md"
-                try:
-                    if path.exists():
-                        content = path.read_text(encoding="utf-8")
-                    else:
-                        content = f"Error: Admin guide not found at `{path}`."
-                except Exception as e:
-                    content = f"Error reading admin guide: {e}"
-
-                with ui.dialog() as d:
-                    with ui.card().classes(
-                        get_dialog_card_classes("xl", "h-[80vh] flex flex-col")
-                    ):
-                        with ui.row().classes(
-                            "w-full justify-between items-center mb-4"
+                        # Tooltip in plain language explaining the error
+                        field_name = str(err.get("field", "")).lower()
+                        msg = str(err.get("message", "")).lower()
+                        tip = f"The value for '{err.get('field')}' is not allowed. "
+                        if (
+                            "path" in field_name
+                            or "directory" in field_name
+                            or "invalid path" in msg
                         ):
-                            ui.label("Admin Guide & Troubleshooting").classes(
-                                "text-2xl font-bold"
+                            tip += "Make sure the directory path is relative, does not use '..', and has no invalid characters like :, *, ?, or |."
+                        elif "empty" in msg or "required" in msg:
+                            tip += (
+                                "This field cannot be left blank. Please specify a value."
                             )
-                            ui.button("Close", on_click=d.close).classes(
-                                "bg-gray-200 text-black"
-                            )
-                        with ui.scroll_area().classes(
-                            "w-full flex-grow border rounded p-4 overflow-y-auto"
-                        ):
-                            ui.markdown(content).classes("w-full")
-                    d.open()
+                        else:
+                            tip += "Please ensure the value matches the requested format or number limits."
+                        lbl.tooltip(tip)
 
-            ui.button("View Guide (Offline)", on_click=show_offline_admin_guide).props(
-                "flat dense size=sm color=primary"
-            ).classes("hover:underline").props(
-                'aria-label="Offline Troubleshooting Guide Link"'
-            )
+            # Recovery/Troubleshooting links
+            with ui.row().classes("items-center gap-2 mt-3 flex-wrap"):
+                ui.icon("help", size="xs", color="primary")
+                ui.link(
+                    "Open Troubleshooting Guide (Online)",
+                    "https://docs.smartautosorter.com/admin_guide/#configuration-recovery-troubleshooting",
+                    new_tab=True,
+                ).classes("text-blue-600 hover:underline text-sm").props(
+                    'aria-label="Troubleshooting Guide Link"'
+                )
+
+                ui.label("|").classes("text-gray-300 text-sm")
+
+                def show_offline_admin_guide():
+                    import sys
+                    from pathlib import Path
+
+                    from app.core.path_utils import get_base_path, is_packaged
+                    from app.ui.dialog_helper import get_dialog_card_classes
+
+                    if is_packaged() and hasattr(sys, "_MEIPASS"):
+                        base_dir = Path(sys._MEIPASS)
+                    else:
+                        base_dir = Path(get_base_path(__file__)).parent.parent
+
+                    path = base_dir / "docs" / "admin_guide.md"
+                    try:
+                        if path.exists():
+                            content = path.read_text(encoding="utf-8")
+                        else:
+                            content = f"Error: Admin guide not found at `{path}`."
+                    except Exception as e:
+                        content = f"Error reading admin guide: {e}"
+
+                    with ui.dialog() as d:
+                        with ui.card().classes(
+                            get_dialog_card_classes("xl", "h-[80vh] flex flex-col")
+                        ):
+                            with ui.row().classes(
+                                "w-full justify-between items-center mb-4"
+                            ):
+                                ui.label("Admin Guide & Troubleshooting").classes(
+                                    "text-2xl font-bold"
+                                )
+                                ui.button("Close", on_click=d.close).classes(
+                                    "bg-gray-200 text-black"
+                                )
+                            with ui.scroll_area().classes(
+                                "w-full flex-grow border rounded p-4 overflow-y-auto"
+                            ):
+                                ui.markdown(content).classes("w-full")
+                        d.open()
+
+                ui.button("View Guide (Offline)", on_click=show_offline_admin_guide).props(
+                    "flat dense size=sm color=primary"
+                ).classes("hover:underline").props(
+                    'aria-label="Offline Troubleshooting Guide Link"'
+                )
+
+    refresh()
+    try:
+        ui.timer(0.5, refresh)
+    except Exception:
+        pass
+    return banner_card
 
 
 def show_settings(parent_app, settings):
@@ -221,8 +260,7 @@ def show_settings(parent_app, settings):
 
         with ui.tab_panels(tabs, value="General").classes("w-full mt-4"):
             with ui.tab_panel("General"):
-                if getattr(settings, "_has_validation_errors", False):
-                    render_validation_warning_banner(settings)
+                render_validation_warning_banner(settings)
 
                 ui.label("System Integration").classes("text-lg font-bold mb-2")
                 ui.switch(
