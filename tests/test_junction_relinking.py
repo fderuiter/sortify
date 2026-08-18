@@ -164,6 +164,38 @@ def test_relocate_target_directory_updates_junction(tmp_path):
             assert os.path.normpath(read_target) == os.path.normpath(new_target_dir)
 
 
+def test_safe_replace_link_fallback_on_oserror(tmp_path):
+    """Verify _safe_replace_link falls back to resilient deletion when os.replace raises OSError."""
+    from app.core.mover import _safe_replace_link
+
+    target1 = tmp_path / "target1"
+    target1.mkdir()
+    target2 = tmp_path / "target2"
+    target2.mkdir()
+
+    junc_path = tmp_path / "test_junc"
+    _create_junction(str(target1), str(junc_path))
+
+    shadow_path = tmp_path / "shadow_junc"
+    _create_junction(str(target2), str(shadow_path))
+
+    orig_replace = os.replace
+    calls = []
+
+    def mock_replace(src, dst):
+        calls.append((src, dst))
+        if len(calls) == 1:
+            raise OSError(183, "Cannot create a file when that file already exists")
+        return orig_replace(src, dst)
+
+    with patch("os.replace", side_effect=mock_replace):
+        _safe_replace_link(str(shadow_path), str(junc_path))
+
+    assert len(calls) == 2
+    assert os.path.exists(junc_path)
+    assert not os.path.exists(shadow_path)
+
+
 def test_directory_cleanup_deletes_junction_without_modifying_target_files(tmp_path):
     base_dir = str(tmp_path)
     target_dir = os.path.join(base_dir, "target_dir")

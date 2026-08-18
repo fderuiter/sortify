@@ -45,6 +45,9 @@ def test_settings_debounce_configurability(tmp_path):
     assert app_settings.MAX_DEBOUNCE_DELAY == 10.0
     assert app_settings.IGNORED_EXTENSIONS == [".crdownload", ".tmp", ".custom_tmp"]
 
+    # Save immediately to flush debounced save timer
+    app_settings._save()
+
     # Reload from file to verify serialization/deserialization
     app_settings.load()
     assert app_settings.DEBOUNCE_DELAY == 1.5

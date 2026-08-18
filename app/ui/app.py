@@ -1049,6 +1049,9 @@ body {
                 if not was_skipped:
                     chunk = {item: {"text": text, "hash": file_hash}}
                     await asyncio.to_thread(self.app_session.partial_fit, chunk)
+                    chunk.clear()
+                    del chunk
+                del text
 
                 self.completed_files += 1
                 if self.total_files > 0:

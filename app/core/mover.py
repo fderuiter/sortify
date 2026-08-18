@@ -76,6 +76,18 @@ def _create_junction(target_path: str, junction_path: str):
     os.symlink(target_path, junction_path, target_is_directory=True)
 
 
+def _safe_replace_link(shadow_name: str, dest_path: str):
+    """Safely replace dest_path with shadow_name, falling back to resilient deletion of dest_path if os.replace fails on Windows directory junctions/links."""
+    try:
+        os.replace(shadow_name, dest_path)
+    except OSError:
+        if os.path.lexists(dest_path) or is_junction_path(dest_path):
+            from app.core.resilient_file_ops import resilient_remove
+
+            resilient_remove(dest_path)
+        os.replace(shadow_name, dest_path)
+
+
 def resolve_new_target(abs_target: str, path_map: dict) -> str:
     """Resolve the updated target path if the target file or directory moved."""
     if not abs_target or not path_map:
@@ -150,11 +162,15 @@ def _execute_moves_recursive(
     active_parent_path: str = "",
     depth: int = 0,
     runtime_settings=None,
+    moved_counter: list = None,
+    batch_size: int = 50,
 ) -> None:
     """Recursively move files according to the plan."""
     base_dir = os.path.normpath(base_dir)
     if path_map is None:
         path_map = {}
+    if moved_counter is None:
+        moved_counter = [0]
 
     if not isinstance(plan, dict) or plan.get("__type__") in ("file", "directory"):
         return
@@ -285,19 +301,7 @@ def _execute_moves_recursive(
                                     "Shadow link creation failed validation."
                                 )
 
-                            try:
-                                os.replace(shadow_name, dest_path)
-                            except OSError:
-                                if os.path.lexists(dest_path) or is_junction_path(
-                                    dest_path
-                                ):
-                                    from app.core.resilient_file_ops import (
-                                        resilient_remove,
-                                    )
-
-                                    resilient_remove(dest_path)
-                                os.replace(shadow_name, dest_path)
-
+                            _safe_replace_link(shadow_name, dest_path)
                             if not _is_same_path(dest_path, source_path):
                                 from app.core.resilient_file_ops import resilient_remove
 
@@ -325,19 +329,7 @@ def _execute_moves_recursive(
                                     "Shadow junction creation failed validation."
                                 )
 
-                            try:
-                                os.replace(shadow_name, dest_path)
-                            except OSError:
-                                if os.path.lexists(dest_path) or is_junction_path(
-                                    dest_path
-                                ):
-                                    from app.core.resilient_file_ops import (
-                                        resilient_remove,
-                                    )
-
-                                    resilient_remove(dest_path)
-                                os.replace(shadow_name, dest_path)
-
+                            _safe_replace_link(shadow_name, dest_path)
                             if not _is_same_path(dest_path, source_path):
                                 from app.core.resilient_file_ops import resilient_remove
 
@@ -376,19 +368,7 @@ def _execute_moves_recursive(
                                     "Shadow link creation failed validation."
                                 )
 
-                            try:
-                                os.replace(shadow_name, dest_path)
-                            except OSError:
-                                if os.path.lexists(dest_path) or is_junction_path(
-                                    dest_path
-                                ):
-                                    from app.core.resilient_file_ops import (
-                                        resilient_remove,
-                                    )
-
-                                    resilient_remove(dest_path)
-                                os.replace(shadow_name, dest_path)
-
+                            _safe_replace_link(shadow_name, dest_path)
                             if not _is_same_path(dest_path, source_path):
                                 from app.core.resilient_file_ops import resilient_remove
 
@@ -462,6 +442,13 @@ def _execute_moves_recursive(
                 )
             else:
                 db.update_document_path(base_dir, source_rel_path, rel_dest)
+
+            moved_counter[0] += 1
+            if moved_counter[0] >= batch_size:
+                if db_updates_batch:
+                    db.execute_batch_updates(db_updates_batch)
+                    db_updates_batch.clear()
+                moved_counter[0] = 0
         else:
             # It's a folder
             _execute_moves_recursive(
@@ -474,6 +461,8 @@ def _execute_moves_recursive(
                 os.path.join(active_parent_path, key),
                 depth + 1,
                 runtime_settings,
+                moved_counter,
+                batch_size,
             )
 
 
@@ -484,6 +473,7 @@ def execute_moves(
     history_manager,
     runtime_settings=None,
     resume: bool = False,
+    batch_size: int = 50,
 ) -> dict:
     """Create directories and safely move files, tracking file-system errors."""
     base_dir = os.path.normpath(base_dir)
@@ -511,6 +501,7 @@ def execute_moves(
 
     # Execute all moves first
     db_updates_batch = []
+    moved_counter = [0]
     try:
         _execute_moves_recursive(
             base_dir,
@@ -520,6 +511,8 @@ def execute_moves(
             path_map,
             db_updates_batch,
             runtime_settings=runtime_settings,
+            moved_counter=moved_counter,
+            batch_size=batch_size,
         )
 
         summary = {"deleted_folders": 0, "protected_folders": 0}
