@@ -9,7 +9,7 @@ from app.core.db_worker import DBWorker
 class Database:
     """SQLite database abstraction for persistent storage of document state."""
 
-    CURRENT_VERSION = 5
+    CURRENT_VERSION = 6
 
     def __init__(self, db_path: Path, worker: DBWorker):
         self.db_path = str(db_path)
@@ -111,6 +111,25 @@ class Database:
                 )
             except Exception:
                 pass
+
+            # Initialize transaction ledger table for atomic batch relocation steps
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS transaction_ledger (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    session_id TEXT NOT NULL,
+                    step_number INTEGER NOT NULL,
+                    base_dir TEXT NOT NULL,
+                    source_path TEXT NOT NULL,
+                    destination_path TEXT NOT NULL,
+                    file_hash TEXT,
+                    item_type TEXT DEFAULT 'file',
+                    metadata TEXT,
+                    timestamp REAL
+                )
+            """)
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_transaction_ledger_session ON transaction_ledger (session_id, step_number)"
+            )
 
             # Purge existing unencrypted vector cache on startup to prevent reading insecure data
             cursor = conn.cursor()
@@ -748,9 +767,112 @@ class Database:
                                             decrypted_text,
                                             True,
                                         )
+                    elif item["type"] == "transaction_step":
+                        (
+                            session_id,
+                            step_number,
+                            base_dir,
+                            source_path,
+                            destination_path,
+                            file_hash,
+                            item_type,
+                            metadata,
+                        ) = item["args"]
+                        session_id = str(session_id)
+                        import time
+
+                        conn.execute(
+                            """
+                            INSERT INTO transaction_ledger (
+                                session_id, step_number, base_dir, source_path, destination_path,
+                                file_hash, item_type, metadata, timestamp
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            """,
+                            (
+                                session_id,
+                                step_number,
+                                base_dir,
+                                source_path.replace("\\", "/"),
+                                destination_path.replace("\\", "/"),
+                                file_hash,
+                                item_type,
+                                metadata,
+                                time.time(),
+                            ),
+                        )
             self.invalidate_cache()
 
         self.worker.execute_write(_write)
+
+    def record_transaction_step(
+        self,
+        session_id: str,
+        step_number: int,
+        base_dir: str,
+        source_path: str,
+        destination_path: str,
+        file_hash: str = None,
+        item_type: str = "file",
+        metadata: str = None,
+    ):
+        """Record an atomic relocation step entry into the core transaction ledger."""
+        import time
+
+        def _write():
+            conn = get_db_connection(self.db_path)
+            with conn:
+                conn.execute(
+                    """
+                    INSERT INTO transaction_ledger (
+                        session_id, step_number, base_dir, source_path, destination_path,
+                        file_hash, item_type, metadata, timestamp
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        session_id,
+                        step_number,
+                        base_dir,
+                        source_path.replace("\\", "/"),
+                        destination_path.replace("\\", "/"),
+                        file_hash,
+                        item_type,
+                        metadata,
+                        time.time(),
+                    ),
+                )
+
+        return self.worker.execute_write(_write)
+
+    def get_transaction_steps(self, session_id: str) -> list:
+        """Retrieve recorded transaction steps for a given session, ordered by step_number ASC."""
+        conn = get_db_connection(self.db_path)
+        with conn:
+            cursor = conn.execute(
+                """
+                SELECT id, session_id, step_number, base_dir, source_path, destination_path,
+                       file_hash, item_type, metadata, timestamp
+                FROM transaction_ledger
+                WHERE session_id = ?
+                ORDER BY step_number ASC
+                """,
+                (session_id,),
+            )
+            rows = cursor.fetchall()
+            return [
+                {
+                    "id": r[0],
+                    "session_id": r[1],
+                    "step_number": r[2],
+                    "base_dir": r[3],
+                    "source_path": r[4],
+                    "destination_path": r[5],
+                    "file_hash": r[6],
+                    "item_type": r[7],
+                    "metadata": r[8],
+                    "timestamp": r[9],
+                }
+                for r in rows
+            ]
 
     def clear(self, base_dir=None):
         """Clear documents from the database. If base_dir is provided, only clear those."""
