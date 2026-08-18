@@ -11,6 +11,7 @@ from app.core.cro_multi_study_pipeline import (
     MasterPipelineResult,
 )
 from app.ui.dialog_helper import ask_directory_async, get_dialog_card_classes
+from app.ui.tokens import TOKENS
 
 
 class CROForensicView:
@@ -30,8 +31,7 @@ class CROForensicView:
         with (
             ui.dialog() as dialog,
             ui.card().classes(
-                get_dialog_card_classes("xl")
-                + " p-6 max-h-[90vh] w-full max-w-4xl overflow-y-auto"
+                get_dialog_card_classes("xl", f"{TOKENS.SIZING.MAX_HEIGHT_DIALOG} flex flex-col overflow-y-auto")
             ),
         ):
             dialog.props('aria-label="CRO Forensic Ingest Dialog"')
