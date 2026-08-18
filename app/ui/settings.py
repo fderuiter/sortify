@@ -190,7 +190,7 @@ def render_validation_warning_banner(settings):
 
                     with ui.dialog() as d:
                         with ui.card().classes(
-                            get_dialog_card_classes("xl", "h-[80vh] flex flex-col")
+                            get_dialog_card_classes("xl", "max-h-[80vh] flex flex-col")
                         ):
                             with ui.row().classes(
                                 "w-full justify-between items-center mb-4"
@@ -1726,7 +1726,7 @@ def show_settings(parent_app, settings):
                                             policy.get("type", "").upper(),
                                         )
                                         type_lbl = ui.label(friendly_type).classes(
-                                            "w-36 font-bold"
+                                            "max-w-xs font-bold"
                                         )
                                         p_type = policy.get("type", "").lower()
                                         if p_type == "keyword":
@@ -1747,10 +1747,10 @@ def show_settings(parent_app, settings):
                                             )
 
                                         ui.label(policy.get("expression", "")).classes(
-                                            "w-32 font-mono truncate"
+                                            "max-w-xs font-mono truncate"
                                         )
                                         ui.label(policy.get("target_path", "")).classes(
-                                            "w-40 font-mono text-gray-500 truncate"
+                                            "max-w-xs font-mono text-gray-500 truncate"
                                         )
 
                                         with ui.row().classes("items-center gap-1"):
@@ -1903,7 +1903,7 @@ def show_settings(parent_app, settings):
                         label="Type",
                         options=OPTIONS,
                         value="keyword",
-                    ).classes("w-48")
+                    ).classes("w-full max-w-xs")
                     p_type_select.tooltip(
                         "Select a rule type: Keyword (word search), Pattern (text sequences), or Override (exact match)."
                     )
@@ -1912,21 +1912,21 @@ def show_settings(parent_app, settings):
                         .props(
                             'placeholder="e.g. invoice" aria-label="Policy Expression input"'
                         )
-                        .classes("w-40")
+                        .classes("w-full max-w-xs")
                     )
                     p_target_input = (
                         ui.input("Target Path")
                         .props(
                             'placeholder="Folder name" aria-label="Policy Target Path input"'
                         )
-                        .classes("w-40")
+                        .classes("w-full max-w-xs")
                     )
                     with ui.expansion("Advanced Settings", icon="settings").classes(
                         "w-full text-xs"
                     ):
                         p_priority_input = ui.number(
                             label="Priority", value=10, step=1
-                        ).classes("w-20")
+                        ).classes("w-full max-w-[5rem]")
                         p_priority_input.set_visibility(False)
                         p_halting_checkbox = ui.checkbox(
                             "Halt on mismatch", value=False

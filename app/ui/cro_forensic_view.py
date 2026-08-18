@@ -110,7 +110,7 @@ class CROForensicView:
                         value=self.mode,
                         label="Hierarchy Standard",
                         on_change=lambda e: setattr(self, "mode", e.value),
-                    ).classes("w-60").props(
+                    ).classes("w-full max-w-xs").props(
                         'outlined dense aria-label="Hierarchy Standard Selector"'
                     )
 

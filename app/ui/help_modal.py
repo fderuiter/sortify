@@ -37,7 +37,7 @@ def show_help(parent_app=None):
 
     with ui.dialog() as dialog:
         # Use xl size for the dialog card to render markdown guide with plenty of space
-        with ui.card().classes(get_dialog_card_classes("xl", "h-[80vh] flex flex-col")):
+        with ui.card().classes(get_dialog_card_classes("xl", "max-h-[80vh] flex flex-col")):
             # Header Row
             with ui.row().classes(
                 "w-full justify-between items-center mb-4 flex-nowrap"

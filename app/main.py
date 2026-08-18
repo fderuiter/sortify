@@ -322,6 +322,11 @@ def main():
         action="store_true",
         help="Launch the persistent directory-watching daemon",
     )
+    parser.add_argument(
+        "--debug-layout",
+        action="store_true",
+        help="Enable visual debug outlines for UI elements in dev mode",
+    )
 
     args = parser.parse_args()
 
@@ -383,7 +388,11 @@ def main():
     else:
         from app.ui.app import run_app
 
-        run_app(settings, args.directory)
+        debug_layout = getattr(args, "debug_layout", False) is True
+        if debug_layout:
+            run_app(settings, args.directory, debug_layout=True)
+        else:
+            run_app(settings, args.directory)
 
 
 if __name__ == "__main__":

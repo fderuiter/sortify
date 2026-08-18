@@ -54,4 +54,10 @@ repos:
         language: system
         files: '\.py$'
         pass_filenames: false
+      - id: validate-layout
+        name: Validate UI Layout Classes
+        entry: uv run python scripts/validate_layout.py
+        language: system
+        files: '\.py$'
+        pass_filenames: false
 

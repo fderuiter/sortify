@@ -6,6 +6,7 @@ import os
 
 from nicegui import ui
 
+from app.core.path_utils import is_packaged
 from app.core.session import AppSession
 from app.ui.dialog_helper import ask_directory_async, get_dialog_card_classes
 
@@ -15,8 +16,9 @@ logger = logging.getLogger(__name__)
 class AutoSorterApp:
     """Main application class for the NiceGUI interface."""
 
-    def __init__(self, settings):
+    def __init__(self, settings, debug_layout=False):
         self.settings = settings
+        self.debug_layout = debug_layout
         self.base_dir = ""
         self.plan = {}
         self.locked_files = {}
@@ -52,6 +54,11 @@ class AutoSorterApp:
 
     def build_ui(self):
         """Build the main user interface with modern styling, presets, and interactive controls."""
+        if self.debug_layout and not is_packaged():
+            ui.add_head_html(
+                "<style>* { outline: 1px solid #ef4444 !important; }</style>"
+            )
+
         ui.add_head_html("""
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -226,7 +233,7 @@ body {
                         label="Sorting Strategy",
                         on_change=self.change_sorting_strategy,
                     )
-                    .classes("w-64")
+                    .classes("w-full max-w-xs")
                     .props('outlined dense aria-label="Sorting Strategy Selector"')
                 )
 
@@ -313,7 +320,7 @@ body {
                             on_click=self.collapse_all_nodes,
                         ).props('size="sm" flat color="grey-8"')
 
-                with ui.scroll_area().classes("w-full h-96 p-2"):
+                with ui.scroll_area().classes("w-full max-h-96 p-2"):
                     self.tree_view = (
                         ui.tree([], label_key="text", children_key="children")
                         .classes("w-full")
@@ -777,7 +784,7 @@ body {
                             ui.label("Recovery completed with errors:").classes(
                                 "font-semibold text-sm text-red-500"
                             )
-                            with ui.scroll_area().classes("h-32 w-full border p-2"):
+                            with ui.scroll_area().classes("max-h-32 w-full border p-2"):
                                 for err in errors:
                                     ui.label(err).classes("text-xs text-red-500")
                         else:
@@ -2233,9 +2240,12 @@ def run_incremental_training_in_background(app_session, base_dir):
         )
 
 
-def run_app(settings, directory=None, port=8080, show=True) -> None:
+def run_app(settings, directory=None, port=8080, show=True, debug_layout=False) -> None:
     """Run the NiceGUI application."""
-    app_instance = AutoSorterApp(settings)
+    if debug_layout:
+        app_instance = AutoSorterApp(settings, debug_layout=True)
+    else:
+        app_instance = AutoSorterApp(settings)
     if directory:
         if os.path.exists(directory):
             app_instance.base_dir = os.path.abspath(directory)
