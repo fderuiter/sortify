@@ -398,23 +398,50 @@ def test_pytorch_thread_limits_selection(monkeypatch):
 
 def test_no_dns_during_import():
     """Verify that no DNS or hostname resolution runs during the module import phase."""
-    import importlib
     import sys
 
-    # Remove from sys.modules if already imported to force a fresh reload/import
-    if "app.core.shared_registry" in sys.modules:
-        del sys.modules["app.core.shared_registry"]
+    orig_module = sys.modules.get("app.core.shared_registry")
+    orig_getaddrinfo = getattr(socket, "getaddrinfo", None)
+    orig_gethostbyname = getattr(socket, "gethostbyname", None)
+    orig_gethostbyname_ex = getattr(socket, "gethostbyname_ex", None)
+    orig_gethostbyaddr = getattr(socket, "gethostbyaddr", None)
+    orig_getnameinfo = getattr(socket, "getnameinfo", None)
+    orig_getfqdn = getattr(socket, "getfqdn", None)
+    orig_connect = getattr(socket.socket, "connect", None)
+    orig_connect_ex = getattr(socket.socket, "connect_ex", None)
 
-    mock_gethostname = MagicMock(
-        side_effect=RuntimeError(
-            "socket.gethostname() should not be called at import time!"
+    try:
+        # Remove from sys.modules if already imported to force a fresh reload/import
+        if "app.core.shared_registry" in sys.modules:
+            del sys.modules["app.core.shared_registry"]
+
+        mock_gethostname = MagicMock(
+            side_effect=RuntimeError(
+                "socket.gethostname() should not be called at import time!"
+            )
         )
-    )
-    with patch("socket.gethostname", mock_gethostname):
-        # Importing should not trigger the gethostname call
-        import app.core.shared_registry
-
-        importlib.reload(app.core.shared_registry)
+        with patch("socket.gethostname", mock_gethostname):
+            # Importing should not trigger the gethostname call
+            import app.core.shared_registry  # noqa: F401
+    finally:
+        if orig_getaddrinfo is not None:
+            socket.getaddrinfo = orig_getaddrinfo
+        if orig_gethostbyname is not None:
+            socket.gethostbyname = orig_gethostbyname
+        if orig_gethostbyname_ex is not None:
+            socket.gethostbyname_ex = orig_gethostbyname_ex
+        if orig_gethostbyaddr is not None:
+            socket.gethostbyaddr = orig_gethostbyaddr
+        if orig_getnameinfo is not None:
+            socket.getnameinfo = orig_getnameinfo
+        if orig_getfqdn is not None:
+            socket.getfqdn = orig_getfqdn
+        if orig_connect is not None:
+            socket.socket.connect = orig_connect
+        if orig_connect_ex is not None:
+            socket.socket.connect_ex = orig_connect_ex
+        if orig_module is not None:
+            sys.modules["app.core.shared_registry"] = orig_module
 
 
 def test_sandbox_address_resolution_blocks_external():
