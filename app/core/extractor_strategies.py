@@ -16,15 +16,25 @@ def get_ocr_reader():
 
 
 def extract_text_from_image(image, settings=None, file_path=None) -> str:
-    """Extract character-level text from an image using the unified EasyOCR engine."""
-    reader = get_ocr_reader()
-    if reader is None:
-        return ""
+    """Extract character-level text from an image using configured vision engine with dynamic OCR fallback."""
+    import os
+
+    if settings is None:
+        from app.config import AppSettings
+
+        try:
+            settings = AppSettings()
+        except Exception:
+            pass
 
     try:
         from PIL import Image
 
-        # Check if we should get the image size and perform checks
+        if isinstance(image, str):
+            file_path = file_path or image
+            image = Image.open(image)
+
+        # Check image dimensions / skip threshold / downscaling
         width, height = None, None
         if hasattr(image, "size"):
             try:
@@ -35,16 +45,8 @@ def extract_text_from_image(image, settings=None, file_path=None) -> str:
                 pass
 
         if isinstance(width, (int, float)) and isinstance(height, (int, float)):
-            if settings is None:
-                from app.config import AppSettings
-
-                try:
-                    settings = AppSettings()
-                except Exception:
-                    pass
-
-            skip_threshold = settings.IMAGE_SKIP_THRESHOLD if settings else 3000
-            max_dimension = settings.IMAGE_MAX_DIMENSION if settings else 1000
+            skip_threshold = getattr(settings, "IMAGE_SKIP_THRESHOLD", 3000) if settings else 3000
+            max_dimension = getattr(settings, "IMAGE_MAX_DIMENSION", 1000) if settings else 1000
 
             if max(width, height) > skip_threshold:
                 name = file_path if file_path else "In-memory image"
@@ -62,7 +64,31 @@ def extract_text_from_image(image, settings=None, file_path=None) -> str:
                     f"Downscaling {name} from {(width, height)} to {(new_width, new_height)}"
                 )
                 image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+    except Exception as e:
+        logging.error(f"Failed preprocessing image: {e}")
 
+    vision_engine = getattr(settings, "VISION_ENGINE", "easyocr") if settings else "easyocr"
+    if vision_engine == "florence-2":
+        try:
+            from app.core.shared_registry import SharedModelRegistry
+
+            proc = SharedModelRegistry.get_instance().get_florence_processor()
+            if proc is not None:
+                res = proc.process_image(image, task_prompt="<OCR>")
+                extracted = res.get("sanitized_text", "") or res.get("raw_output", "")
+                if extracted and extracted.strip():
+                    return extracted.strip()
+        except Exception as e:
+            logging.warning(
+                f"Florence-2 vision engine processing failed for {file_path or 'image'}, falling back to EasyOCR: {e}"
+            )
+
+    # Fallback to standard OCR (EasyOCR)
+    reader = get_ocr_reader()
+    if reader is None:
+        return ""
+
+    try:
         import numpy as np
 
         img_np = np.array(image)
@@ -141,10 +167,6 @@ class PdfExtractor:
 
         if not text.strip():
             # Standard extraction yields no text, attempt visual extraction
-            reader = get_ocr_reader()
-            if reader is None:
-                return text
-
             visual_text = ""
             try:
                 from PIL import Image
@@ -188,14 +210,12 @@ class ImageExtractor:
             logging.error(f"Corrupt image file {file_path}: {e}")
             return "[STATUS:ERROR: Corrupt Image File]"
 
-        reader = get_ocr_reader()
-        if reader is None:
-            return "[STATUS:ERROR: Vision Model Offline]"
-
         try:
             extracted_text = extract_text_from_image(
                 image, settings=settings, file_path=file_path
             )
+            if not extracted_text:
+                return "[STATUS:ERROR: Vision Model Offline]"
             return extracted_text
         except Exception as e:
             logging.error(f"Failed to process image {file_path}: {e}")

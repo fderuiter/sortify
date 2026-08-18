@@ -124,6 +124,15 @@
       "title": "Ocr Languages",
       "type": "string"
     },
+    "VISION_ENGINE": {
+      "default": "easyocr",
+      "enum": [
+        "easyocr",
+        "florence-2"
+      ],
+      "title": "Vision Engine",
+      "type": "string"
+    },
     "CONFLICT_POLICY": {
       "default": "rename",
       "enum": [

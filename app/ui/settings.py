@@ -789,6 +789,29 @@ def show_settings(parent_app, settings):
                     'aria-label="Reset Model Cache Button"'
                 )
 
+                # Vision Extraction Configuration Section
+                ui.label("Vision Extraction Engine").classes("text-lg font-bold mt-4 mb-2")
+                ui.label(
+                    "Select the primary engine for image and scanned PDF text extraction:"
+                ).classes("text-sm text-gray-500 mb-2")
+
+                def on_vision_engine_change(e):
+                    try:
+                        settings.VISION_ENGINE = e.value
+                        ui.notify(f"Vision engine set to {e.value}.", type="positive")
+                    except Exception as ex:
+                        e.sender.value = getattr(settings, "VISION_ENGINE", "easyocr")
+                        ui.notify(f"Invalid vision engine: {ex}", type="negative")
+
+                ui.select(
+                    options={
+                        "easyocr": "EasyOCR (Standard OCR)",
+                        "florence-2": "Florence-2 (Vision-Language Model)",
+                    },
+                    value=getattr(settings, "VISION_ENGINE", "easyocr"),
+                    on_change=on_vision_engine_change,
+                ).props('aria-label="Vision Extraction Engine Select" class="w-full mb-2"')
+
                 # Network Configuration Section
                 ui.label("Network Configuration").classes("text-lg font-bold mt-4 mb-2")
 
