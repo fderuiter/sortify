@@ -12,6 +12,7 @@ from app.core.downloader import (
     ModelVerificationError,
 )
 from app.ui.dialog_helper import get_dialog_card_classes
+from app.ui.toolbar import OverflowToolbar
 
 
 class ThreadSafeState:
@@ -194,33 +195,60 @@ def show_wizard(parent_app, settings):
             dialog.close()
 
         # Welcome Buttons Layout
-        action_row_welcome = ui.row().classes("w-full justify-between flex-wrap gap-2")
-        with action_row_welcome:
-            ui.button("Accept & Download", on_click=accept).classes(
-                "bg-green-500 text-white"
-            ).props('aria-label="Accept and Download Button"')
-            ui.button("Decline", on_click=decline).classes(
-                "bg-gray-500 text-white"
-            ).props('aria-label="Decline Button"')
+        action_row_welcome = OverflowToolbar(classes="w-full justify-between gap-2")
+        action_row_welcome.add_action(
+            "Accept & Download",
+            on_click=accept,
+            is_primary=True,
+            priority=10,
+            classes="bg-green-500 text-white",
+            props='aria-label="Accept and Download Button"',
+            tooltip="Accept setup and download required AI models",
+        )
+        action_row_welcome.add_action(
+            "Decline",
+            on_click=decline,
+            is_primary=False,
+            priority=0,
+            classes="bg-gray-500 text-white",
+            props='aria-label="Decline Button"',
+            tooltip="Decline AI setup and run in offline mode",
+        )
 
         # Downloading Buttons Layout
-        action_row_download = ui.row().classes("w-full justify-end flex-wrap gap-2")
+        action_row_download = OverflowToolbar(classes="w-full justify-end gap-2")
         action_row_download.set_visibility(False)
-        with action_row_download:
-            ui.button("Cancel", on_click=cancel_download).classes(
-                "bg-gray-500 text-white"
-            ).props('aria-label="Cancel Download Button"')
+        action_row_download.add_action(
+            "Cancel",
+            on_click=cancel_download,
+            is_primary=True,
+            priority=10,
+            classes="bg-gray-500 text-white",
+            props='aria-label="Cancel Download Button"',
+            tooltip="Cancel model download",
+        )
 
         # Error Buttons Layout
-        action_row_error = ui.row().classes("w-full justify-between flex-wrap gap-2")
+        action_row_error = OverflowToolbar(classes="w-full justify-between gap-2")
         action_row_error.set_visibility(False)
-        with action_row_error:
-            ui.button("Retry", on_click=retry_download).classes(
-                "bg-green-500 text-white"
-            ).props('aria-label="Retry Download Button"')
-            ui.button("Decline", on_click=decline).classes(
-                "bg-gray-500 text-white"
-            ).props('aria-label="Decline Button"')
+        action_row_error.add_action(
+            "Retry",
+            on_click=retry_download,
+            is_primary=True,
+            priority=10,
+            classes="bg-green-500 text-white",
+            props='aria-label="Retry Download Button"',
+            tooltip="Retry downloading model with updated proxy settings",
+        )
+        action_row_error.add_action(
+            "Decline",
+            on_click=decline,
+            is_primary=False,
+            priority=0,
+            classes="bg-gray-500 text-white",
+            props='aria-label="Decline Button"',
+            tooltip="Decline setup and continue in offline mode",
+        )
 
         def handle_dismiss():
             sync_timer.cancel()

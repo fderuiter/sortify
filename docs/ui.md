@@ -22,6 +22,10 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.ui.settings
 
+## `app.ui.toolbar`
+
+::: app.ui.toolbar
+
 ## `app.ui.wizard`
 
 ::: app.ui.wizard

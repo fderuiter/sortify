@@ -8,6 +8,7 @@ from nicegui import ui
 
 from app.core.path_utils import get_base_path, is_packaged
 from app.ui.dialog_helper import get_dialog_card_classes
+from app.ui.toolbar import OverflowToolbar
 
 logger = logging.getLogger(__name__)
 
@@ -39,15 +40,20 @@ def show_help(parent_app=None):
         # Use xl size for the dialog card to render markdown guide with plenty of space
         with ui.card().classes(get_dialog_card_classes("xl", "h-[80vh] flex flex-col")):
             # Header Row
-            with ui.row().classes(
-                "w-full justify-between items-center mb-4 flex-nowrap"
-            ):
+            help_header = OverflowToolbar(classes="w-full justify-between items-center mb-4")
+            with help_header.left_container:
                 ui.label("User Guide & Documentation").classes(
                     "text-2xl font-bold"
                 ).props('aria-label="Help Dialog Title"')
-                ui.button("Close", on_click=dialog.close).classes(
-                    "bg-gray-200 text-black shrink-0"
-                ).props('aria-label="Close Help Dialog Button"')
+            help_header.add_action(
+                "Close",
+                on_click=dialog.close,
+                is_primary=True,
+                priority=10,
+                classes="bg-gray-200 text-black shrink-0",
+                props='aria-label="Close Help Dialog Button"',
+                tooltip="Close documentation window",
+            )
 
             # Scrollable area containing the fully formatted user guide markdown
             with ui.scroll_area().classes(
@@ -56,9 +62,15 @@ def show_help(parent_app=None):
                 ui.markdown(content).classes("w-full")
 
             # Footer / Close button at bottom
-            with ui.row().classes("w-full justify-end mt-4"):
-                ui.button("Close", on_click=dialog.close).classes(
-                    "bg-blue-500 text-white"
-                ).props('aria-label="Close Help Dialog Footer Button"')
+            help_footer = OverflowToolbar(classes="w-full justify-end mt-4")
+            help_footer.add_action(
+                "Close",
+                on_click=dialog.close,
+                is_primary=True,
+                priority=10,
+                classes="bg-blue-500 text-white",
+                props='aria-label="Close Help Dialog Footer Button"',
+                tooltip="Close user guide",
+            )
 
     dialog.open()
