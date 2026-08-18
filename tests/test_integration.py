@@ -628,3 +628,53 @@ def test_advanced_settings_sliders():
             "max debounce delay" in last_call_args[0].lower()
             or "validation" in last_call_args[0].lower()
         )
+
+
+def test_debounce_sliders_auto_adjustment():
+    """Test real-time slider auto-adjustment when slider values cross bounds."""
+    parent_app = MagicMock()
+    settings = AppSettings()
+    settings.DEBOUNCE_DELAY = 1.0
+    settings.MAX_DEBOUNCE_DELAY = 5.0
+
+    with patch("app.ui.settings.ui") as mock_ui:
+        show_settings(parent_app, settings)
+
+        sliders = {}
+        for call_args in mock_ui.slider.call_args_list:
+            _, kwargs = call_args
+            bounds = (kwargs.get("min"), kwargs.get("max"))
+            sliders[bounds] = kwargs
+
+        on_debounce_change = sliders[(0.1, 10.0)]["on_change"]
+        on_max_debounce_change = sliders[(0.5, 30.0)]["on_change"]
+
+        # 1. Slide MIN debounce delay above MAX debounce delay (e.g., 8.0 when MAX is 5.0)
+        mock_event = MagicMock()
+        mock_event.value = 8.0
+        mock_ui.notify.reset_mock()
+
+        on_debounce_change(mock_event)
+
+        assert settings.DEBOUNCE_DELAY == 8.0
+        assert settings.MAX_DEBOUNCE_DELAY == 8.0
+        for call in mock_ui.notify.call_args_list:
+            assert call.kwargs.get("type") != "negative"
+
+        # 2. Slide MAX debounce delay below MIN debounce delay (e.g., 2.0 when MIN is 8.0)
+        mock_event.value = 2.0
+        mock_ui.notify.reset_mock()
+
+        on_max_debounce_change(mock_event)
+
+        assert settings.DEBOUNCE_DELAY == 2.0
+        assert settings.MAX_DEBOUNCE_DELAY == 2.0
+        for call in mock_ui.notify.call_args_list:
+            assert call.kwargs.get("type") != "negative"
+
+        # 3. Non-overlapping update
+        mock_event.value = 1.0
+        on_debounce_change(mock_event)
+        assert settings.DEBOUNCE_DELAY == 1.0
+        assert settings.MAX_DEBOUNCE_DELAY == 2.0
+

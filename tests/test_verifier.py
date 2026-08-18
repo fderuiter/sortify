@@ -83,3 +83,59 @@ def test_path_length_validation_and_simulation():
     assert any(
         "exceeds the standard Windows character limit" in w for w in result["warnings"]
     )
+
+
+def test_check_ai_status_florence2_integrity_failure(tmp_path, monkeypatch):
+    """Verify check_ai_status detects Florence-2 integrity failures."""
+    from unittest.mock import patch
+
+    import pytest
+
+    from app.config import AppSettings
+    from app.core.shared_registry import SharedModelRegistry
+    from app.core.verifier import check_ai_status
+
+    settings = AppSettings()
+    settings.AI_ASSISTED_NAMING = True
+
+    # Register expected hashes for florence-2
+    SharedModelRegistry._instance = None
+    registry = SharedModelRegistry.get_instance()
+    registry.register_expected_hashes("florence-2", {"config.json": "expected_hash"})
+
+    # Setup florence-2 path
+    f2_dir = tmp_path / "florence-2"
+    f2_dir.mkdir()
+    (f2_dir / "config.json").write_bytes(b"tampered config")
+
+    monkeypatch.setattr(
+        "app.core.offline_loader.OfflineModelLoader.resolve_model_path",
+        lambda model_id: str(f2_dir) if model_id == "florence-2" else str(tmp_path),
+    )
+
+    def mock_verify_integrity(model_id, path):
+        if model_id == "florence-2":
+            raise ValueError("Integrity check failed for config.json")
+        return True
+
+    # Case 1: Non-sandboxed mode -> returns healthy=False with warning
+    with (
+        patch("app.core.verifier.is_ml_available", return_value=True),
+        patch("os.path.exists", return_value=True),
+        patch.object(registry, "verify_integrity", side_effect=mock_verify_integrity),
+    ):
+        is_healthy, warn_msg = check_ai_status(settings)
+        assert is_healthy is False
+        assert "Florence-2 vision model integrity check failed" in warn_msg
+
+    # Case 2: Sandboxed mode -> raises ValueError
+    with (
+        patch("app.core.verifier.is_ml_available", return_value=True),
+        patch("os.path.exists", return_value=True),
+        patch("app.core.path_utils.is_packaged", return_value=True),
+        patch.object(registry, "verify_integrity", side_effect=mock_verify_integrity),
+    ):
+        with pytest.raises(
+            ValueError, match="Florence-2 vision model integrity check failed"
+        ):
+            check_ai_status(settings)
