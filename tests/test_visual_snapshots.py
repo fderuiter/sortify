@@ -128,12 +128,12 @@ run_app(s, port={port}, show=False)
             shutil.rmtree(isolated_tmp, ignore_errors=True)
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def nicegui_server():
     yield from _start_nicegui_server(enable_pseudoloc=False)
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def nicegui_server_pseudoloc():
     yield from _start_nicegui_server(enable_pseudoloc=True)
 
@@ -212,15 +212,22 @@ def run_visual_snapshot_pass(
     server_url: str, viewport_name: str, width: int, height: int, pseudoloc: bool = False
 ):
     suffix = "_pseudoloc" if pseudoloc else ""
+    disable_animations_css = (
+        "* { animation-duration: 0s !important; transition-duration: 0s !important; }"
+    )
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page(viewport={"width": width, "height": height})
 
         page.goto(server_url)
+        try:
+            page.add_style_tag(content=disable_animations_css)
+        except Exception:
+            pass
 
         # 1. Wizard View Snapshot
         page.wait_for_selector('[aria-label="Setup Wizard Title"]', timeout=8000)
-        page.wait_for_timeout(1500)  # wait for animations to settle
+        page.wait_for_timeout(1000)  # wait for layout to settle
 
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
             temp_path = f.name
@@ -233,8 +240,22 @@ def run_visual_snapshot_pass(
 
         # 2. Main View Snapshot
         page.locator('[aria-label="Decline Button"]').first.click()
+        try:
+            page.wait_for_selector(
+                '[aria-label="Setup Wizard Title"]', state="hidden", timeout=5000
+            )
+        except Exception:
+            pass
+        try:
+            page.wait_for_selector(".q-dialog", state="hidden", timeout=5000)
+        except Exception:
+            pass
+        try:
+            page.add_style_tag(content=disable_animations_css)
+        except Exception:
+            pass
         page.wait_for_selector('[aria-label="Settings Button"]', timeout=5000)
-        page.wait_for_timeout(1500)  # wait for animations to settle
+        page.wait_for_timeout(2500)  # wait for animations and fade transitions to settle
 
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
             temp_path = f.name
@@ -248,7 +269,11 @@ def run_visual_snapshot_pass(
         # 3. Settings View Snapshot
         page.locator('[aria-label="Settings Button"]').click()
         page.wait_for_selector('[aria-label="Settings Dialog Title"]', timeout=5000)
-        page.wait_for_timeout(1500)  # wait for animations to settle
+        try:
+            page.add_style_tag(content=disable_animations_css)
+        except Exception:
+            pass
+        page.wait_for_timeout(1000)  # wait for layout to settle
 
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
             temp_path = f.name
