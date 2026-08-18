@@ -8,6 +8,7 @@ from nicegui import ui
 
 from app.core.session import AppSession
 from app.ui.dialog_helper import ask_directory_async, get_dialog_card_classes
+from app.ui.toolbar import OverflowToolbar
 
 logger = logging.getLogger(__name__)
 
@@ -71,27 +72,41 @@ body {
 """)
 
         with ui.header().classes(
-            "bg-slate-900 text-white px-6 py-3 items-center justify-between shadow-md"
+            "bg-slate-900 text-white px-6 py-3 items-center justify-between shadow-md h-16"
         ):
-            with ui.row().classes("items-center gap-3"):
+            header_toolbar = OverflowToolbar(classes="bg-transparent text-white p-0")
+            with header_toolbar.left_container:
                 ui.icon("folder_special", size="md", color="blue-4")
                 ui.label("Sortify AI Pro").classes("text-xl font-bold tracking-tight")
-            with ui.row().classes("items-center gap-2"):
-                ui.button(
-                    "CRO Forensic Ingest",
-                    icon="security",
-                    on_click=self.show_cro_forensic_dialog,
-                ).classes("bg-blue-600 text-white").props(
-                    'size="sm" unelevated aria-label="CRO Forensic Ingest Button"'
-                )
-                ui.button(
-                    "Settings", icon="tune", on_click=self.show_settings_view
-                ).props(
-                    'flat text-color="white" size="sm" aria-label="Settings Button"'
-                )
-                ui.button(
-                    "Help", icon="help_outline", on_click=self.show_help_view
-                ).props('flat text-color="white" size="sm" aria-label="Help Button"')
+
+            header_toolbar.add_action(
+                "CRO Forensic Ingest",
+                on_click=self.show_cro_forensic_dialog,
+                icon="security",
+                is_primary=True,
+                priority=10,
+                classes="bg-blue-600 text-white",
+                props='size="sm" unelevated aria-label="CRO Forensic Ingest Button"',
+                tooltip="CRO Forensic Multi-Study Ingestion & Audit",
+            )
+            header_toolbar.add_action(
+                "Settings",
+                on_click=self.show_settings_view,
+                icon="tune",
+                is_primary=False,
+                priority=0,
+                props='flat text-color="white" size="sm" aria-label="Settings Button"',
+                tooltip="Application Settings",
+            )
+            header_toolbar.add_action(
+                "Help",
+                on_click=self.show_help_view,
+                icon="help_outline",
+                is_primary=False,
+                priority=0,
+                props='flat text-color="white" size="sm" aria-label="Help Button"',
+                tooltip="User Guide & Documentation",
+            )
 
         with ui.column().classes("w-full max-w-5xl mx-auto p-6 items-center gap-4"):
             # 1. Directory Selection & Presets Card
@@ -394,30 +409,30 @@ body {
                     self.tree_view.on("folder-rename", self.show_rename_folder_dialog)
 
             # 5. Execution Action Bar & Post-Sort Undo Rollback
-            with ui.row().classes("w-full justify-center items-center gap-3 mt-2"):
-                self.execute_btn = (
-                    ui.button(
-                        "Approve & Execute Sort",
-                        icon="play_arrow",
-                        on_click=self.execute_sort,
-                    )
-                    .classes("bg-emerald-600 text-white font-semibold px-6 py-2 shadow")
-                    .props(
-                        'unelevated rounded aria-label="Approve and Execute Sort Button"'
-                    )
-                )
-                self.execute_btn.disable()
+            exec_toolbar = OverflowToolbar(classes="w-full justify-center items-center gap-3 mt-2")
+            self.execute_btn = exec_toolbar.add_action(
+                "Approve & Execute Sort",
+                on_click=self.execute_sort,
+                icon="play_arrow",
+                is_primary=True,
+                priority=10,
+                classes="bg-emerald-600 text-white font-semibold px-6 py-2 shadow",
+                props='unelevated rounded aria-label="Approve and Execute Sort Button"',
+                tooltip="Approve organizational plan and move files",
+            )
+            self.execute_btn.disable()
 
-                self.undo_btn = (
-                    ui.button(
-                        "Undo Last Sort (Rollback)",
-                        icon="undo",
-                        on_click=self.undo_last_sort,
-                    )
-                    .classes("bg-amber-600 text-white font-semibold px-6 py-2 shadow")
-                    .props('unelevated rounded aria-label="Undo Last Sort Button"')
-                )
-                self.undo_btn.set_visibility(False)
+            self.undo_btn = exec_toolbar.add_action(
+                "Undo Last Sort (Rollback)",
+                on_click=self.undo_last_sort,
+                icon="undo",
+                is_primary=False,
+                priority=0,
+                classes="bg-amber-600 text-white font-semibold px-6 py-2 shadow",
+                props='unelevated rounded aria-label="Undo Last Sort Button"',
+                tooltip="Revert all file movements from previous sort operation",
+            )
+            self.undo_btn.set_visibility(False)
 
         with ui.dialog() as self.recalc_dialog:
             self.recalc_dialog.props("persistent")

@@ -11,6 +11,7 @@ from app.core.cro_multi_study_pipeline import (
     MasterPipelineResult,
 )
 from app.ui.dialog_helper import ask_directory_async, get_dialog_card_classes
+from app.ui.toolbar import OverflowToolbar
 
 
 class CROForensicView:
@@ -36,7 +37,8 @@ class CROForensicView:
         ):
             dialog.props('aria-label="CRO Forensic Ingest Dialog"')
 
-            with ui.row().classes("w-full justify-between items-center border-b pb-3"):
+            cro_header = OverflowToolbar(classes="w-full justify-between items-center border-b pb-3")
+            with cro_header.left_container:
                 with ui.column().classes("gap-0"):
                     ui.label("CRO Forensic Multi-Study Ingestion & Audit").classes(
                         "text-h6 font-bold text-slate-900"
@@ -44,7 +46,14 @@ class CROForensicView:
                     ui.label(
                         "Scan raw drives/archives, disambiguate multiple clinical trial protocols, and build verified TMF binders."
                     ).classes("text-xs text-gray-500")
-                ui.button(icon="close", on_click=dialog.close).props("flat round dense")
+            cro_header.add_action(
+                icon="close",
+                on_click=dialog.close,
+                is_primary=True,
+                priority=10,
+                props="flat round dense aria-label='Close CRO Forensic Dialog'",
+                tooltip="Close dialog",
+            )
 
             # Source & Target Paths
             with ui.column().classes("w-full gap-3 mt-4"):
@@ -132,26 +141,28 @@ class CROForensicView:
                 self.status_label = ui.label("").classes("text-sm text-gray-600 mt-1")
                 self.status_label.set_visibility(False)
 
-                with ui.row().classes("gap-3 mt-3"):
-                    self.start_btn = (
-                        ui.button(
-                            "Start Forensic Ingest",
-                            icon="search_insights",
-                            on_click=self._execute_pipeline_task,
-                        )
-                        .classes("bg-blue-600 text-white font-bold")
-                        .props('aria-label="Start Ingest Button"')
-                    )
+                cro_footer = OverflowToolbar(classes="gap-3 mt-3 justify-center")
+                self.start_btn = cro_footer.add_action(
+                    "Start Forensic Ingest",
+                    on_click=self._execute_pipeline_task,
+                    icon="search_insights",
+                    is_primary=True,
+                    priority=10,
+                    classes="bg-blue-600 text-white font-bold",
+                    props='aria-label="Start Ingest Button"',
+                    tooltip="Start forensic multi-study scanning and ingestion",
+                )
 
-                    self.cancel_btn = (
-                        ui.button(
-                            "Cancel",
-                            on_click=self._cancel_pipeline,
-                        )
-                        .classes("bg-red-500 text-white")
-                        .props('aria-label="Cancel Ingest Button"')
-                    )
-                    self.cancel_btn.set_visibility(False)
+                self.cancel_btn = cro_footer.add_action(
+                    "Cancel",
+                    on_click=self._cancel_pipeline,
+                    is_primary=False,
+                    priority=0,
+                    classes="bg-red-500 text-white",
+                    props='aria-label="Cancel Ingest Button"',
+                    tooltip="Cancel forensic ingestion process",
+                )
+                self.cancel_btn.set_visibility(False)
 
             # Results Container
             self.results_container = ui.column().classes("w-full mt-4 gap-4")

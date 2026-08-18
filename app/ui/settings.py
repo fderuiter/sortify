@@ -6,6 +6,7 @@ from nicegui import ui
 
 from app.core.path_utils import validate_target_path
 from app.ui.dialog_helper import get_dialog_card_classes
+from app.ui.toolbar import OverflowToolbar
 
 
 class ThreadSafeState:
@@ -251,15 +252,20 @@ def show_settings(parent_app, settings):
             ui.notify(f"Failed to update Explorer integration: {ex}", type="negative")
 
     with ui.dialog() as dialog, ui.card().classes(get_dialog_card_classes("xl")):
-        with ui.row().classes(
-            "w-full justify-between items-center mb-6 flex-wrap gap-2"
-        ):
+        settings_toolbar = OverflowToolbar(classes="w-full justify-between items-center mb-6 gap-2")
+        with settings_toolbar.left_container:
             ui.label("Application Settings").classes("text-2xl font-bold").props(
                 'aria-label="Settings Dialog Title"'
             )
-            ui.button("Close", on_click=dialog.close).classes(
-                "bg-gray-200 text-black"
-            ).props('aria-label="Close Settings Button"')
+        settings_toolbar.add_action(
+            "Close",
+            on_click=dialog.close,
+            is_primary=True,
+            priority=10,
+            classes="bg-gray-200 text-black",
+            props='aria-label="Close Settings Button"',
+            tooltip="Close settings dialog",
+        )
 
         with ui.tabs().classes("w-full") as tabs:
             ui.tab("General", label="General").props(
