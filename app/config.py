@@ -9,6 +9,7 @@ import logging
 import os
 import sys
 import threading
+import weakref
 from pathlib import Path
 from typing import Literal
 
@@ -24,7 +25,7 @@ def get_app_dir() -> Path:
     return app_dir
 
 
-_active_instances = set()
+_active_instances = weakref.WeakSet()
 _instances_lock = threading.Lock()
 _disk_locks = {}
 _disk_locks_guard = threading.Lock()
