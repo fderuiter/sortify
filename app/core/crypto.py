@@ -6,7 +6,10 @@ import pickle
 import struct
 from typing import Any
 
-import numpy as np
+try:
+    import numpy as np
+except Exception:
+    np = None
 
 try:
     import sqlite3
@@ -399,7 +402,7 @@ class VectorBuffer:
                 if vector._buffer is not None:
                     self._buffer = bytearray(vector._buffer)
                     self._dim = vector._dim
-            elif isinstance(vector, np.ndarray):
+            elif np is not None and isinstance(vector, np.ndarray):
                 arr = vector.astype(np.float32)
                 self._dim = len(arr)
                 self._buffer = bytearray(arr.tobytes())
@@ -443,8 +446,10 @@ class VectorBuffer:
             return []
         return list(struct.unpack(f"{self._dim}f", self._buffer))
 
-    def to_numpy(self) -> np.ndarray:
+    def to_numpy(self) -> Any:
         """Convert byte buffer to NumPy float32 array."""
+        if np is None:
+            raise RuntimeError("NumPy is not installed")
         if self._buffer is None or len(self._buffer) == 0:
             return np.array([], dtype=np.float32)
         return np.frombuffer(bytes(self._buffer), dtype=np.float32)
@@ -471,7 +476,7 @@ def zero_vector_buffer(target: Any) -> None:
     elif isinstance(target, bytearray):
         for i in range(len(target)):
             target[i] = 0
-    elif isinstance(target, np.ndarray):
+    elif np is not None and isinstance(target, np.ndarray):
         target.fill(0)
     elif isinstance(target, (list, tuple, set)):
         for item in target:
