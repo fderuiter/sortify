@@ -1423,6 +1423,12 @@ def show_settings(parent_app, settings):
                             )
                             return
 
+                        try:
+                            validate_target_path(target, keyword=kw)
+                        except ValueError as ve:
+                            ui.notify(f"Invalid target path: {ve}", type="negative")
+                            return
+
                         updated_rules = dict(settings.KEYWORD_RULES)
                         updated_rules[kw] = target
                         try:
@@ -1432,7 +1438,10 @@ def show_settings(parent_app, settings):
                             target_input.value = ""
                             render_rules()
                         except Exception as ex:
-                            ui.notify(f"Invalid rule: {ex}", type="negative")
+                            error_msg = str(ex)
+                            if "Value error," in error_msg:
+                                error_msg = error_msg.split("Value error,")[-1].strip()
+                            ui.notify(f"Invalid rule: {error_msg}", type="negative")
 
                     ui.button("Add Rule", on_click=add_rule).props(
                         'aria-label="Add Rule Button"'
@@ -1966,25 +1975,12 @@ def show_settings(parent_app, settings):
                             )
                             return
 
-                        # 2. Path validation: Reject illegal characters, absolute paths, or traversal segments
-                        if any(char in '<>:"|?*' for char in p_target):
+                        # 2. Path validation: Validate all segments for illegal chars, absolute path, traversal, reserved names, trailing space/dot
+                        try:
+                            validate_target_path(p_target, keyword=p_expr)
+                        except ValueError as ve:
                             ui.notify(
-                                "Target Path contains illegal characters.",
-                                type="negative",
-                            )
-                            return
-
-                        if p_target.startswith("/") or p_target.startswith("\\"):
-                            ui.notify(
-                                "Target Path cannot be an absolute path.",
-                                type="negative",
-                            )
-                            return
-
-                        segments = p_target.replace("\\", "/").split("/")
-                        if ".." in segments:
-                            ui.notify(
-                                "Target Path cannot contain directory traversal segments (..).",
+                                f"Invalid target path: {ve}",
                                 type="negative",
                             )
                             return

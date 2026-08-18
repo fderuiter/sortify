@@ -117,3 +117,58 @@ def test_cross_study_shared_investigator():
     assert any(
         "gcp_smith.pdf" in d.file_name for d in partitioned["Cross_Study_Shared"]
     )
+
+
+def test_single_study_unassigned_fallback():
+    """Verify that on single-study volumes, non-matching files are routed to Unassigned_Study_Documents."""
+    disambiguator = StudyDisambiguator()
+
+    docs = [
+        # Clinical study doc (matches single study PROTO-101)
+        DiscoveredDocument(
+            source_path="/raw/study1/1572.pdf",
+            relative_path="study1/1572.pdf",
+            file_name="1572.pdf",
+            file_size_bytes=1000,
+            sha256_hash="hash1",
+            extracted_text="STATEMENT OF INVESTIGATOR Form FDA 1572 Protocol ID: PROTO-101 Principal Investigator: Dr. John Smith Site: 104",
+        ),
+        # Non-matching administrative receipt
+        DiscoveredDocument(
+            source_path="/raw/study1/receipt.pdf",
+            relative_path="study1/receipt.pdf",
+            file_name="receipt.pdf",
+            file_size_bytes=300,
+            sha256_hash="hash2",
+            extracted_text="Office Supply Store Receipt Expense Reimbursement $42.50 Paid in full.",
+        ),
+        # Non-matching operational script
+        DiscoveredDocument(
+            source_path="/raw/study1/deploy_script.sh",
+            relative_path="study1/deploy_script.sh",
+            file_name="deploy_script.sh",
+            file_size_bytes=150,
+            sha256_hash="hash3",
+            extracted_text="#!/bin/bash\necho 'Deploying server logs...'",
+        ),
+    ]
+
+    partitioned = disambiguator.discover_and_partition_studies(docs)
+
+    # Only PROTO_101 discovered as a study entity
+    assert len(disambiguator.studies) == 1
+    assert "PROTO_101" in disambiguator.studies
+
+    # Clinical doc is mapped to PROTO_101
+    proto101_files = [d.file_name for d in partitioned["PROTO_101"]]
+    assert "1572.pdf" in proto101_files
+    assert "receipt.pdf" not in proto101_files
+    assert "deploy_script.sh" not in proto101_files
+
+    # Non-matching files are placed into Unassigned_Study_Documents
+    assert "Unassigned_Study_Documents" in partitioned
+    unassigned_files = [d.file_name for d in partitioned["Unassigned_Study_Documents"]]
+    assert "receipt.pdf" in unassigned_files
+    assert "deploy_script.sh" in unassigned_files
+    assert "1572.pdf" not in unassigned_files
+

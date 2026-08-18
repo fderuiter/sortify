@@ -162,11 +162,15 @@ def _execute_moves_recursive(
     active_parent_path: str = "",
     depth: int = 0,
     runtime_settings=None,
+    moved_counter: list = None,
+    batch_size: int = 50,
 ) -> None:
     """Recursively move files according to the plan."""
     base_dir = os.path.normpath(base_dir)
     if path_map is None:
         path_map = {}
+    if moved_counter is None:
+        moved_counter = [0]
 
     if not isinstance(plan, dict) or plan.get("__type__") in ("file", "directory"):
         return
@@ -443,6 +447,13 @@ def _execute_moves_recursive(
                 )
             else:
                 db.update_document_path(base_dir, source_rel_path, rel_dest)
+
+            moved_counter[0] += 1
+            if moved_counter[0] >= batch_size:
+                if db_updates_batch:
+                    db.execute_batch_updates(db_updates_batch)
+                    db_updates_batch.clear()
+                moved_counter[0] = 0
         else:
             # It's a folder
             _execute_moves_recursive(
@@ -455,6 +466,8 @@ def _execute_moves_recursive(
                 os.path.join(active_parent_path, key),
                 depth + 1,
                 runtime_settings,
+                moved_counter,
+                batch_size,
             )
 
 
@@ -465,6 +478,7 @@ def execute_moves(
     history_manager,
     runtime_settings=None,
     resume: bool = False,
+    batch_size: int = 50,
 ) -> dict:
     """Create directories and safely move files, tracking file-system errors."""
     base_dir = os.path.normpath(base_dir)
@@ -492,6 +506,7 @@ def execute_moves(
 
     # Execute all moves first
     db_updates_batch = []
+    moved_counter = [0]
     try:
         _execute_moves_recursive(
             base_dir,
@@ -501,6 +516,8 @@ def execute_moves(
             path_map,
             db_updates_batch,
             runtime_settings=runtime_settings,
+            moved_counter=moved_counter,
+            batch_size=batch_size,
         )
 
         summary = {"deleted_folders": 0, "protected_folders": 0}

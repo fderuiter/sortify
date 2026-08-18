@@ -133,13 +133,7 @@ class StudyDisambiguator:
                 self.studies[assigned_study].associated_documents.append(doc)
                 partitioned[assigned_study].append(doc)
             else:
-                # If only 1 study was discovered on the entire drive, default documents there
-                if len(self.studies) == 1:
-                    single_study = next(iter(self.studies.keys()))
-                    self.studies[single_study].associated_documents.append(doc)
-                    partitioned[single_study].append(doc)
-                else:
-                    self.unassigned_docs.append(doc)
-                    partitioned["Unassigned_Study_Documents"].append(doc)
+                self.unassigned_docs.append(doc)
+                partitioned["Unassigned_Study_Documents"].append(doc)
 
         return dict(partitioned)
