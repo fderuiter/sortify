@@ -19,14 +19,36 @@ Your privacy is our priority.
 
 ## Exclusion List Configuration
 
-The Settings panel allows you to manage an **Exclusion List** (stop words). Words added to this list will be ignored by the AI sorting engine (e.g., 'the', 'and', file extensions). 
+The Settings panel allows you to manage an **Exclusion List** (stop words). Words added to this list are common text terms (e.g., 'the', 'and', 'for') that are ignored during text normalization and AI semantic analysis.
 
+It is important to distinguish stop word text filtering from file extension or filesystem rules:
+- **Text Filtering:** Exclusion list terms remove frequent or generic words from document content before text analysis and clustering take place.
+- **File Extensions:** Stop words do not filter file extensions (e.g., `.pdf`, `.docx`) or exclude specific file types from being processed by the application.
+
+To manage your exclusion list:
 - Type a word in the text box and press Enter to add it.
 - Click the '×' button next to a word to remove it.
 
 ## Folder Cleanup Options
 
 To keep your output directory organized, you can enable **Cleanup Empty Folders** in the Settings panel under *File Operations*. When enabled, the application will automatically remove any folders left empty after the sorting or clustering processes are completed.
+
+## Background Folder Monitoring
+
+Smart AutoSorter AI Pro provides continuous background directory monitoring to track target folders for real-time file additions and modifications.
+
+### Continuous Watchdog Monitoring
+When background folder monitoring is active, the system continuously tracks target directories for file events. When new files are added or existing files are modified, background monitoring automatically triggers sorting and reorganization without requiring manual intervention.
+
+### Transient File Filtering
+To ensure incomplete downloads or temporary working files do not disrupt background operations, the background monitor automatically filters out transient files. 
+- **Filtered Extensions:** By default, files with transient extensions such as `.crdownload`, `.tmp`, and `.download` are ignored during background monitoring and file scanning.
+- **Completion Detection:** Files are only processed once temporary download operations are fully complete and the file is finalized on disk.
+
+### Debounce Timing & Event Handling
+During rapid file creation or continuous file write operations (such as multi-file downloads or bulk file copies), processing every individual file event immediately would cause unnecessary background recalculations.
+- **Standard Debounce Delay:** A default delay of 0.6 seconds pauses processing after a file event, waiting briefly to aggregate additional rapid changes.
+- **Maximum Debounce Delay:** For continuous write streams, a maximum debounce delay limit of 5.0 seconds guarantees that background recalculations are scheduled once file activity stabilizes, preventing redundant processing while avoiding indefinite delays.
 
 ## Offline Non-Semantic Mode
 
