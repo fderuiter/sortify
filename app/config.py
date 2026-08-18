@@ -57,6 +57,25 @@ class Settings(BaseSettings):
     MAX_DEBOUNCE_DELAY: float = Field(default=5.0, gt=0.0)
     IGNORED_EXTENSIONS: list[str] = Field(default=[".crdownload", ".tmp", ".download"])
 
+    @field_validator("IGNORED_EXTENSIONS")
+    @classmethod
+    def validate_ignored_extensions(cls, v: list[str]) -> list[str]:
+        """Validate that IGNORED_EXTENSIONS contains non-empty strings and format leading dots."""
+        if not isinstance(v, list):
+            raise ValueError("IGNORED_EXTENSIONS must be a list.")
+        validated = []
+        for ext in v:
+            if not isinstance(ext, str):
+                raise ValueError("Ignored extension entry must be a string.")
+            cleaned = ext.strip()
+            if not cleaned or cleaned == ".":
+                raise ValueError("Ignored extension entry cannot be blank or whitespace-only.")
+            if not cleaned.startswith("."):
+                cleaned = f".{cleaned}"
+            if cleaned not in validated:
+                validated.append(cleaned)
+        return validated
+
     @field_validator("CONFLICT_POLICY")
     @classmethod
     def validate_conflict_policy(cls, v: str) -> str:
