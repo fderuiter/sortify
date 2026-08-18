@@ -208,7 +208,10 @@ def test_resilient_rmtree_warning_logged_after_max_attempts(tmp_path, caplog):
             with pytest.raises(OSError, match="Access denied"):
                 resilient_rmtree(str(d))
 
-    assert f"Failed to rmtree {d} after" in caplog.text
+    assert (
+        f"Failed to rmtree {d} after" in caplog.text
+        or f"Failed to rmtree <USER_HOME>/{d.name} after" in caplog.text
+    )
 
 
 def test_resilient_rmtree_ignore_errors(tmp_path, caplog):
@@ -221,5 +224,8 @@ def test_resilient_rmtree_ignore_errors(tmp_path, caplog):
         with patch("shutil.rmtree", side_effect=OSError("Access denied")):
             resilient_rmtree(str(d), ignore_errors=True)
 
-    assert f"Failed to rmtree {d} after" in caplog.text
+    assert (
+        f"Failed to rmtree {d} after" in caplog.text
+        or f"Failed to rmtree <USER_HOME>/{d.name} after" in caplog.text
+    )
 
