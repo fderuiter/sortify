@@ -6,10 +6,23 @@ import os
 
 from nicegui import ui
 
+from app.core.event_handler import CoreEventHandler, DebounceTracker, should_ignore_path
 from app.core.session import AppSession
 from app.ui.dialog_helper import ask_directory_async, get_dialog_card_classes
 
 logger = logging.getLogger(__name__)
+
+
+class FolderChangeHandler(CoreEventHandler):
+    """Handler for file system events inside monitored directory in UI mode."""
+
+    def __init__(self, app):
+        super().__init__(
+            callback=app._rebuild_plan_async,
+            settings=app.settings,
+            loop=app.loop,
+        )
+        self.app = app
 
 
 class AutoSorterApp:
@@ -39,6 +52,15 @@ class AutoSorterApp:
         self._debounce_task = None
         self._cancel_recalc_flag = False
         self.loop = None
+        self.debounce_tracker = DebounceTracker(self.settings)
+
+    @property
+    def _first_event_time(self):
+        return self.debounce_tracker.first_event_time
+
+    @_first_event_time.setter
+    def _first_event_time(self, val):
+        self.debounce_tracker.first_event_time = val
 
         self.contextual_rename = self.settings.CONTEXTUAL_RENAMING
         self.preserve_hierarchy = self.settings.PRESERVE_HIERARCHY
@@ -1311,6 +1333,11 @@ body {
         if getattr(self, "_sorting_in_progress", False):
             return
 
+        delay, is_starved = self.debounce_tracker.record_event()
+
+        if is_starved:
+            return
+
         import threading
 
         # Cancel any previous task's cancellation token immediately
@@ -1321,18 +1348,20 @@ body {
         token = threading.Event()
         self._current_recalc_token = token
 
-        if self._debounce_task:
+        if self._debounce_task and not self._debounce_task.done():
             self._debounce_task.cancel()
 
-        async def delayed_run(token):
+        async def delayed_run(token, delay_sec):
             try:
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(delay_sec)
             except asyncio.CancelledError:
                 token.set()
                 return
 
             if token.is_set():
                 return
+
+            self.debounce_tracker.reset()
 
             self.recalc_dialog.open()
             self.status_label.set_text("Rebuilding plan...")
@@ -1366,7 +1395,7 @@ body {
                 if getattr(self, "_current_recalc_token", None) == token:
                     self.recalc_dialog.close()
 
-        self._debounce_task = asyncio.create_task(delayed_run(token))
+        self._debounce_task = asyncio.create_task(delayed_run(token, delay))
 
     def load_locked_files_from_db(self):
         """Load user-verified target paths as locks from the database."""
@@ -1736,6 +1765,7 @@ body {
             return
 
         self._sorting_in_progress = True
+        self.debounce_tracker.reset()
 
         # Immediately cancel any ongoing recalculation and its debounce task
         if self._debounce_task:
@@ -1941,24 +1971,7 @@ body {
         except RuntimeError:
             self.loop = None
 
-        from watchdog.events import FileSystemEventHandler
         from watchdog.observers import Observer
-
-        class FolderChangeHandler(FileSystemEventHandler):
-            def __init__(self, app):
-                self.app = app
-
-            def on_any_event(self, event):
-                if (
-                    ".branches" in event.src_path
-                    or "autosorter.db" in event.src_path
-                    or "history.db" in event.src_path
-                    or "cache.db" in event.src_path
-                    or "plan.json" in event.src_path
-                ):
-                    return
-                if self.app.loop:
-                    self.app.loop.call_soon_threadsafe(self.app._rebuild_plan_async)
 
         self.observer = Observer()
         handler = FolderChangeHandler(self)
@@ -1968,6 +1981,8 @@ body {
 
     def stop_watcher(self):
         """Stop the watchdog folder observer."""
+        if hasattr(self, "debounce_tracker"):
+            self.debounce_tracker.reset()
         if self.observer:
             try:
                 self.observer.stop()

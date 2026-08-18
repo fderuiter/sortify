@@ -6,10 +6,10 @@ import os
 import threading
 import time
 
-from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
 from app.config import AppSettings
+from app.core.event_handler import CoreEventHandler, DebounceTracker, should_ignore_path
 from app.core.metadata import MetadataPass
 from app.core.scanner import get_files_recursively
 from app.core.session import AppSession
@@ -49,24 +49,16 @@ def _extract_plan_destinations(plan, base_dir=None, current_dest="", dests_set=N
     return dests_set
 
 
-class DaemonFolderHandler(FileSystemEventHandler):
-    """Handler for file system events inside monitored directory."""
+class DaemonFolderHandler(CoreEventHandler):
+    """Handler for file system events inside monitored directory in daemon mode."""
 
     def __init__(self, daemon):
+        super().__init__(
+            callback=daemon.trigger_recalculation,
+            settings=daemon.settings,
+            loop=None,
+        )
         self.daemon = daemon
-
-    def on_any_event(self, event):
-        """Handle any file system event, trigger recalculation if valid."""
-        # We must ignore application metadata, local databases, and temporary cache folders to prevent infinite trigger loops
-        if self.daemon.should_ignore_path(event.src_path):
-            return
-        if hasattr(event, "dest_path") and self.daemon.should_ignore_path(
-            event.dest_path
-        ):
-            return
-
-        # Trigger sorting recalculation (thread-safe and debounced)
-        self.daemon.trigger_recalculation()
 
 
 class ContinuousWatchdogDaemon:
@@ -81,50 +73,22 @@ class ContinuousWatchdogDaemon:
         self._debounce_timer = None
         self._cancel_event = threading.Event()
         self._is_running = False
-        self._first_event_time = None
+        self.debounce_tracker = DebounceTracker(self.settings)
 
         # We run the actual sorting loop on a dedicated background execution thread
         self._execution_thread = None
 
+    @property
+    def _first_event_time(self):
+        return self.debounce_tracker.first_event_time
+
+    @_first_event_time.setter
+    def _first_event_time(self, val):
+        self.debounce_tracker.first_event_time = val
+
     def should_ignore_path(self, path: str) -> bool:
         """Check if path should be ignored to prevent infinite feedback loop."""
-        if not path:
-            return True
-        norm_path = os.path.normpath(path).replace("\\", "/")
-
-        # Ignore database files, cache/temp folders, and application metadata files
-        ignored_patterns = [
-            ".autosorter",
-            "autosorter.db",
-            "history.db",
-            "cache.db",
-            "plan.json",
-            ".git",
-            ".branches",
-            ".pytest_cache",
-            "__pycache__",
-            "settings.json",
-            "autosorter.log",
-        ]
-
-        for pattern in ignored_patterns:
-            if pattern in norm_path:
-                return True
-
-        # Also ignore any temporary folder/session folders
-        if "autosorter_sessions" in norm_path:
-            return True
-
-        # Suffix matching on lowercase file extensions using IGNORED_EXTENSIONS configuration
-        ignored_exts = getattr(
-            self.settings, "IGNORED_EXTENSIONS", [".crdownload", ".tmp", ".download"]
-        )
-        lower_path = norm_path.lower()
-        for ext in ignored_exts:
-            if lower_path.endswith(ext.lower()):
-                return True
-
-        return False
+        return should_ignore_path(path, self.settings)
 
     def start(self):
         """Start the continuous watchdog daemon and files system observer."""
@@ -153,7 +117,7 @@ class ContinuousWatchdogDaemon:
                 return
             self._is_running = False
             self._cancel_event.set()
-            self._first_event_time = None
+            self.debounce_tracker.reset()
 
             if self._debounce_timer:
                 self._debounce_timer.cancel()
@@ -183,23 +147,13 @@ class ContinuousWatchdogDaemon:
             # Reset cancel event for the upcoming run
             self._cancel_event = threading.Event()
 
-            # Track the start time of the first event in a sequence
-            now = time.time()
-            if getattr(self, "_first_event_time", None) is None:
-                self._first_event_time = now
+            delay, is_starved = self.debounce_tracker.record_event()
 
-            elapsed = now - self._first_event_time
-            debounce_delay = getattr(self.settings, "DEBOUNCE_DELAY", 0.6)
-            max_debounce_delay = getattr(self.settings, "MAX_DEBOUNCE_DELAY", 5.0)
-
-            if elapsed >= max_debounce_delay:
+            if is_starved:
                 # Under continuous event traffic, if the max debounce delay has been reached,
                 # we let the already scheduled timer execute rather than canceling and rescheduling it.
                 # This guarantees that the run initiates and doesn't get starved by rapid events.
                 return
-
-            max_delay = max(0.0, max_debounce_delay - elapsed)
-            delay = min(debounce_delay, max_delay)
 
             if self._debounce_timer:
                 self._debounce_timer.cancel()
@@ -213,7 +167,7 @@ class ContinuousWatchdogDaemon:
     def _schedule_run(self, cancel_event):
         """Timer callback that executes the run on a background thread."""
         with self._lock:
-            self._first_event_time = None
+            self.debounce_tracker.reset()
             if not self._is_running or cancel_event.is_set():
                 return
 

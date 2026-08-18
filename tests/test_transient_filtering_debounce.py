@@ -178,3 +178,97 @@ def test_scanning_stage_filters_out_transient_files(tmp_path):
         # Verify scan was executed for directory
         mock_scan.assert_called_with(str(tmp_path))
         assert mock_scan.call_count >= 1
+
+
+def test_ui_folder_change_handler_filtering(tmp_path):
+    """Verify that FolderChangeHandler ignores transient, database, and session files in UI mode."""
+    from app.ui.app import FolderChangeHandler, AutoSorterApp
+
+    settings = DummySettings()
+    mock_app = mock.MagicMock(spec=AutoSorterApp)
+    mock_app.settings = settings
+    mock_app.loop = mock.MagicMock()
+
+    handler = FolderChangeHandler(mock_app)
+
+    # Event for temporary/transient files and DB files
+    event_tmp = mock.MagicMock(src_path=str(tmp_path / "download.tmp"))
+    event_crdownload = mock.MagicMock(src_path=str(tmp_path / "file.crdownload"))
+    event_db = mock.MagicMock(src_path=str(tmp_path / "autosorter.db"))
+    event_session = mock.MagicMock(src_path=str(tmp_path / "autosorter_sessions" / "sess1"))
+    event_valid = mock.MagicMock(src_path=str(tmp_path / "report.pdf"))
+
+    handler.on_any_event(event_tmp)
+    handler.on_any_event(event_crdownload)
+    handler.on_any_event(event_db)
+    handler.on_any_event(event_session)
+
+    # None of the ignored events should trigger callback dispatch
+    assert mock_app.loop.call_soon_threadsafe.call_count == 0
+
+    # Valid event should trigger callback dispatch
+    handler.on_any_event(event_valid)
+    assert mock_app.loop.call_soon_threadsafe.call_count == 1
+    mock_app.loop.call_soon_threadsafe.assert_called_with(mock_app._rebuild_plan_async)
+
+
+def test_dynamic_ignored_extensions_change(tmp_path):
+    """Verify dynamic changes to IGNORED_EXTENSIONS immediately take effect."""
+    from app.core.event_handler import should_ignore_path
+
+    settings = DummySettings()
+    settings.IGNORED_EXTENSIONS = [".tmp", ".crdownload"]
+
+    assert should_ignore_path("file.tmp", settings) is True
+    assert should_ignore_path("file.custom_ext", settings) is False
+
+    # Dynamic configuration update
+    settings.IGNORED_EXTENSIONS = [".custom_ext"]
+
+    assert should_ignore_path("file.tmp", settings) is False
+    assert should_ignore_path("file.custom_ext", settings) is True
+
+
+@pytest.mark.anyio
+async def test_ui_debounce_starvation_max_delay(tmp_path):
+    """Verify UI plan recalculation forces execution at MAX_DEBOUNCE_DELAY during continuous events."""
+    from app.ui.app import AutoSorterApp
+
+    settings = DummySettings()
+    app = AutoSorterApp(settings)
+    app.base_dir = str(tmp_path)
+    app.app_session = mock.MagicMock()
+
+    mock_time = 2000.0
+    created_tasks = []
+
+    def mock_create_task(coro):
+        coro.close()  # prevent unawaited coroutine warning
+        t = mock.MagicMock()
+        t.done.return_value = False
+        created_tasks.append(t)
+        return t
+
+    with (
+        mock.patch("time.time", return_value=mock_time) as patch_time,
+        mock.patch("asyncio.create_task", side_effect=mock_create_task),
+    ):
+        # 1. Event at t=0s
+        app._rebuild_plan_async()
+        assert app.debounce_tracker.first_event_time == 2000.0
+        assert len(created_tasks) == 1
+
+        # 2. Continuous events at t=1s, t=2s, t=4.9s
+        patch_time.return_value = 2001.0
+        app._rebuild_plan_async()
+        assert len(created_tasks) == 2
+
+        patch_time.return_value = 2004.9
+        app._rebuild_plan_async()
+        assert len(created_tasks) == 3
+
+        # 3. Event at t=5.0s (elapsed >= MAX_DEBOUNCE_DELAY)
+        # Should return early without scheduling a new task, allowing existing task to run.
+        patch_time.return_value = 2005.0
+        app._rebuild_plan_async()
+        assert len(created_tasks) == 3  # No new task created!
