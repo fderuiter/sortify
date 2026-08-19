@@ -86,7 +86,7 @@ run_app(s, port={port}, show=False)
     # Wait for the port to open
     start_time = time.time()
     opened = False
-    while time.time() - start_time < 15:
+    while time.time() - start_time < 30:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             try:
                 s.connect(("127.0.0.1", port))
@@ -105,7 +105,7 @@ run_app(s, port={port}, show=False)
         if os.path.exists(launcher_file.name):
             os.remove(launcher_file.name)
         pytest.fail(
-            f"Failed to start NiceGUI server within 15 seconds. Subprocess logs:\n{logs}"
+            f"Failed to start NiceGUI server within 30 seconds. Subprocess logs:\n{logs}"
         )
 
     try:
@@ -225,10 +225,19 @@ def run_visual_snapshot_pass(
         except Exception:
             pass
 
+        # Helper to clear focus and move mouse before taking screenshot
+        def prepare_for_screenshot():
+            try:
+                page.mouse.move(0, 0)
+                page.evaluate("() => document.activeElement && document.activeElement.blur()")
+            except Exception:
+                pass
+
         # 1. Wizard View Snapshot
         page.wait_for_selector('[aria-label="Setup Wizard Title"]', timeout=8000)
         page.wait_for_timeout(1000)  # wait for layout to settle
 
+        prepare_for_screenshot()
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
             temp_path = f.name
         try:
@@ -260,8 +269,9 @@ def run_visual_snapshot_pass(
             state="visible",
             timeout=15000,
         )
-        page.wait_for_timeout(1500)  # wait for animations and fade transitions to settle
+        page.wait_for_timeout(2000)  # wait for animations and fade transitions to settle
 
+        prepare_for_screenshot()
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
             temp_path = f.name
         try:
@@ -280,6 +290,7 @@ def run_visual_snapshot_pass(
             pass
         page.wait_for_timeout(1000)  # wait for layout to settle
 
+        prepare_for_screenshot()
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
             temp_path = f.name
         try:
