@@ -9,15 +9,49 @@ import time
 import pytest
 from PIL import Image, ImageChops, ImageDraw
 
-os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", "0")
 
-try:
-    from playwright.sync_api import sync_playwright
+def _setup_playwright_browsers_path():
+    try:
+        import playwright
 
-    with sync_playwright() as p:
-        PLAYWRIGHT_AVAILABLE = os.path.exists(p.chromium.executable_path)
-except Exception:
-    PLAYWRIGHT_AVAILABLE = False
+        pw_dir = os.path.dirname(playwright.__file__)
+        local_browsers = os.path.abspath(
+            os.path.join(pw_dir, "driver", "package", ".local-browsers")
+        )
+        if os.path.exists(local_browsers):
+            os.environ["PLAYWRIGHT_BROWSERS_PATH"] = local_browsers
+            return local_browsers
+    except Exception:
+        pass
+
+    user_cache = os.path.expanduser("~/.cache/ms-playwright")
+    if os.path.exists(user_cache):
+        os.environ["PLAYWRIGHT_BROWSERS_PATH"] = user_cache
+        return user_cache
+
+    env_path = os.environ.get("PLAYWRIGHT_BROWSERS_PATH")
+    if env_path and env_path != "0":
+        abs_env_path = os.path.abspath(env_path)
+        if os.path.exists(abs_env_path):
+            os.environ["PLAYWRIGHT_BROWSERS_PATH"] = abs_env_path
+            return abs_env_path
+
+    return None
+
+
+browsers_path = _setup_playwright_browsers_path()
+
+PLAYWRIGHT_AVAILABLE = False
+if browsers_path:
+    try:
+        from playwright.sync_api import sync_playwright
+
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            browser.close()
+        PLAYWRIGHT_AVAILABLE = True
+    except Exception:
+        PLAYWRIGHT_AVAILABLE = False
 
 SNAPSHOT_DIR = os.path.join(os.path.dirname(__file__), "snapshots")
 
