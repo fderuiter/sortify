@@ -179,7 +179,7 @@ def assert_visual_snapshot(snapshot_name, actual_image_path):
             f"Snapshot size mismatch for {snapshot_name}: baseline={img1.size}, actual={img2.size}"
         )
 
-    # Pixel-by-pixel diff
+    # Pixel-by-pixel diff with color tolerance for anti-aliasing / font smoothing noise
     diff = ImageChops.difference(img1, img2)
     diff_data = diff.load()
     width, height = diff.size
@@ -188,10 +188,13 @@ def assert_visual_snapshot(snapshot_name, actual_image_path):
     highlight = img2.copy()
     draw = ImageDraw.Draw(highlight)
 
+    # Ignore minor anti-aliasing / font smoothing noise (max channel difference <= 25)
+    COLOR_THRESHOLD = 25
+
     for y in range(height):
         for x in range(width):
             r, g, b = diff_data[x, y]
-            if r > 0 or g > 0 or b > 0:
+            if max(r, g, b) > COLOR_THRESHOLD:
                 different_pixels += 1
                 # Highlight in red
                 draw.point((x, y), fill=(255, 0, 0))
@@ -213,7 +216,14 @@ def run_visual_snapshot_pass(
 ):
     suffix = "_pseudoloc" if pseudoloc else ""
     disable_animations_css = (
-        "* { animation-duration: 0s !important; transition-duration: 0s !important; }"
+        "*, *::before, *::after { "
+        "animation: none !important; "
+        "animation-duration: 0s !important; "
+        "animation-delay: 0s !important; "
+        "transition: none !important; "
+        "transition-duration: 0s !important; "
+        "transition-delay: 0s !important; "
+        "}"
     )
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
@@ -225,11 +235,12 @@ def run_visual_snapshot_pass(
         except Exception:
             pass
 
-        # Helper to clear focus and move mouse before taking screenshot
+        # Helper to clear focus, move mouse, and wait for fonts before taking screenshot
         def prepare_for_screenshot():
             try:
                 page.mouse.move(0, 0)
                 page.evaluate("() => document.activeElement && document.activeElement.blur()")
+                page.evaluate("document.fonts.ready")
             except Exception:
                 pass
 
