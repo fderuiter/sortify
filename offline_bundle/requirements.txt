@@ -176,7 +176,7 @@ pygments==2.20.0
     # via nicegui
 pylnk3==0.4.3
     # via smart-autosorter (pyproject.toml)
-pypdf==6.15.0
+pypdf==6.16.1
     # via smart-autosorter (pyproject.toml)
 python-bidi==0.6.11
     # via easyocr
