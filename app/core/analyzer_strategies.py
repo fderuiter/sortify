@@ -21,6 +21,8 @@ from app.core.crypto import (
     zero_vector_buffer,
 )
 
+from app.core.text_utils import sanitize_text
+
 
 def is_debug_active() -> bool:
     """Check if debug mode is active via the DEBUG environment variable."""
@@ -686,10 +688,12 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
         try:
             from sklearn.feature_extraction.text import TfidfVectorizer
 
+            sanitized_docs = [sanitize_text(doc) if doc else "" for doc in documents]
+
             vectorizer = TfidfVectorizer(
                 stop_words=list(self.stop_words), max_features=self.max_features
             )
-            X = vectorizer.fit_transform(documents)
+            X = vectorizer.fit_transform(sanitized_docs)
             feature_names = vectorizer.get_feature_names_out()
             if len(feature_names) == 0:
                 return "Miscellaneous"
@@ -757,10 +761,12 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
             try:
                 from sklearn.feature_extraction.text import TfidfVectorizer
 
+                sanitized_docs = [sanitize_text(doc) if doc else "" for doc in documents]
+
                 vectorizer = TfidfVectorizer(
                     stop_words=list(self.stop_words), max_features=1000
                 )
-                X = vectorizer.fit_transform(documents)
+                X = vectorizer.fit_transform(sanitized_docs)
             except Exception:
                 for f in filenames:
                     plan[f] = {
@@ -1127,7 +1133,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                 vectorizer = TfidfVectorizer(
                     stop_words=list(stop_words), max_features=1000
                 )
-                safe_docs = [doc or "" for doc in documents]
+                safe_docs = [sanitize_text(doc) if doc else "" for doc in documents]
                 X = vectorizer.fit_transform(safe_docs)
                 for i, f in enumerate(filenames):
                     vector_dict[f] = X[i].toarray()[0]
@@ -1709,12 +1715,12 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                     )
 
             filtered_documents = [
-                doc
+                sanitize_text(doc)
                 for doc in documents
-                if doc and not doc.startswith("[STATUS:") and doc.strip()
+                if doc and not doc.startswith("[STATUS:") and sanitize_text(doc).strip()
             ]
             if not filtered_documents:
-                filtered_documents = documents
+                filtered_documents = [sanitize_text(doc) for doc in documents if doc]
 
             cluster_vectors = []
             if use_semantic and embedding_manager:
@@ -1737,7 +1743,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                         else "english",
                         max_features=1000,
                     )
-                    safe_docs = [doc or "" for doc in filtered_documents]
+                    safe_docs = [sanitize_text(doc) if doc else "" for doc in filtered_documents]
                     X = vectorizer.fit_transform(safe_docs)
                     cluster_vectors = [row.toarray()[0] for row in X]
                 except Exception as e:
@@ -1885,8 +1891,10 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                                 folder_indices = []
                                 for folder, texts in historical_folder_texts.items():
                                     for text in texts:
-                                        all_texts.append(text)
-                                        folder_indices.append(folder)
+                                        sanitized_t = sanitize_text(text or "")
+                                        if sanitized_t and not sanitized_t.startswith("[STATUS:"):
+                                            all_texts.append(sanitized_t)
+                                            folder_indices.append(folder)
 
                                 if all_texts:
                                     from sklearn.feature_extraction.text import (
@@ -1901,7 +1909,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                                     )
                                     hist_X = hist_vectorizer.fit_transform(all_texts)
                                     curr_X = hist_vectorizer.transform(
-                                        filtered_documents
+                                        [sanitize_text(d) for d in filtered_documents]
                                     )
                                     cluster_vectors_tfidf = [
                                         row.toarray()[0] for row in curr_X
@@ -2165,8 +2173,8 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                             sublinear_tf=True,
                         )
 
-                        hist_texts = [ex["text"] for ex in historical_examples]
-                        target_text = " ".join(filtered_documents)
+                        hist_texts = [sanitize_text(ex["text"] or "") for ex in historical_examples]
+                        target_text = sanitize_text(" ".join(filtered_documents or []))
 
                         hist_vectors = vectorizer.fit_transform(hist_texts)
                         target_vector = vectorizer.transform([target_text])
@@ -2498,7 +2506,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
 
                         if hist_vectors:
                             # Tokenize target text
-                            target_text = " ".join(filtered_documents)
+                            target_text = sanitize_text(" ".join(filtered_documents or []))
                             stop_words_list = (
                                 list(self.stop_words)
                                 if getattr(self, "stop_words", None)
@@ -2632,8 +2640,8 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                             sublinear_tf=True,
                         )
 
-                        hist_texts = [ex["text"] for ex in historical_examples]
-                        target_text = " ".join(filtered_documents)
+                        hist_texts = [sanitize_text(ex["text"] or "") for ex in historical_examples]
+                        target_text = sanitize_text(" ".join(filtered_documents or []))
 
                         # Fit vocabulary and IDF weights exclusively using historical document data to prevent target-driven weight warping
                         hist_vectors = vectorizer.fit_transform(hist_texts)
