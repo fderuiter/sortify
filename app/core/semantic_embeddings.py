@@ -498,6 +498,9 @@ class SemanticEmbeddingManager:
 
     def _generate_fallback_embedding(self, text: str | None) -> list[float]:
         """Generate deterministic, unit L2-normalized fallback vector embedding."""
+        from app.core.text_utils import sanitize_text
+
+        text = sanitize_text(text or "")
         text_cleaned = "".join((text or "").split())
         h = hashlib.sha256(text_cleaned.encode("utf-8")).digest()
         rng = random.Random(h)
@@ -518,11 +521,11 @@ class SemanticEmbeddingManager:
 
     def generate_embedding(self, text: str | None) -> list[float]:
         """Generate vector embedding of active model dimensions."""
+        from app.core.text_utils import sanitize_text
+
+        text = sanitize_text(text or "")
         if not text or not text.strip():
             return self._generate_fallback_embedding(text)
-
-        # Clean the text or default to empty
-        text = text or ""
 
         # If model_path is provided, we must use local ONNX model and must not do silent fallback
         if self.model_path is not None:
