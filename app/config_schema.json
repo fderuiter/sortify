@@ -119,6 +119,13 @@
       "title": "Audio Gpu Enabled",
       "type": "boolean"
     },
+    "AUDIO_MAX_WORKERS": {
+      "default": 2,
+      "exclusiveMinimum": 0,
+      "maximum": 64,
+      "title": "Audio Max Workers",
+      "type": "integer"
+    },
     "OCR_LANGUAGES": {
       "default": "en",
       "title": "Ocr Languages",

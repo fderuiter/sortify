@@ -15,6 +15,7 @@ import socket
 import sys
 import threading
 from contextlib import contextmanager
+from typing import Callable
 
 
 class ContextVarLocal:
@@ -1008,3 +1009,93 @@ class SharedWorkerPool:
         """Shutdown the underlying executor and reset singleton instance."""
         self._executor.shutdown(wait=wait)
         SharedWorkerPool._instance = None
+
+
+class AudioConcurrencyGuard:
+    """Concurrency guard restricting active audio transcription processes across worker threads."""
+
+    _instance = None
+    _class_lock = threading.Lock()
+
+    @classmethod
+    def get_instance(cls, limit: int | None = None):
+        """Retrieve the singleton instance of AudioConcurrencyGuard, updating limit if specified."""
+        with cls._class_lock:
+            if cls._instance is None:
+                if limit is None:
+                    limit = 2
+                cls._instance = cls(limit=limit)
+            elif limit is not None:
+                cls._instance.set_limit(limit)
+            return cls._instance
+
+    @classmethod
+    def reset_instance(cls):
+        """Reset the singleton instance (useful for testing)."""
+        with cls._class_lock:
+            cls._instance = None
+
+    def __init__(self, limit: int = 2):
+        self._lock = threading.Lock()
+        self._cond = threading.Condition(self._lock)
+        self._limit = max(1, int(limit))
+        self._active_count = 0
+
+    @property
+    def limit(self) -> int:
+        """Get the configured maximum concurrent audio tasks limit."""
+        with self._lock:
+            return self._limit
+
+    @property
+    def active_count(self) -> int:
+        """Get the current count of active audio tasks."""
+        with self._lock:
+            return self._active_count
+
+    def set_limit(self, new_limit: int):
+        """Update the maximum concurrent audio tasks limit and notify waiting threads."""
+        with self._lock:
+            self._limit = max(1, int(new_limit))
+            self._cond.notify_all()
+
+    def acquire_slot(
+        self, cancel_check: Callable[[], bool] | None = None, poll_interval: float = 0.05
+    ) -> bool:
+        """Acquire an audio execution slot.
+
+        Returns True if acquired, or False if cancellation was requested before acquisition.
+        """
+        with self._lock:
+            if cancel_check and cancel_check():
+                return False
+            while self._active_count >= self._limit:
+                self._cond.wait(timeout=poll_interval)
+                if cancel_check and cancel_check():
+                    return False
+            self._active_count += 1
+            return True
+
+    def release_slot(self):
+        """Release an audio execution slot and notify waiting tasks."""
+        with self._lock:
+            if self._active_count > 0:
+                self._active_count -= 1
+            self._cond.notify_all()
+
+    @contextmanager
+    def guard(
+        self, cancel_check: Callable[[], bool] | None = None, poll_interval: float = 0.05
+    ):
+        """Context manager for acquiring and releasing an audio execution slot.
+
+        Yields True if slot was acquired, or False if cancelled before acquiring.
+        """
+        acquired = self.acquire_slot(cancel_check=cancel_check, poll_interval=poll_interval)
+        if not acquired:
+            yield False
+            return
+        try:
+            yield True
+        finally:
+            self.release_slot()
