@@ -1,7 +1,56 @@
 """Global log filter to scrub sensitive user paths from log output."""
 
 import logging
+import os
+import re
 import traceback
+from pathlib import Path
+
+
+def scrub_diagnostic_text(text: str, home_dir: str = None) -> str:
+    """Scrub user home directory paths and sensitive credential tokens from diagnostic text."""
+    if not isinstance(text, str) or not text:
+        return text
+
+    if home_dir is None:
+        try:
+            home_dir = str(Path.home())
+        except Exception:
+            home_dir = None
+
+    if home_dir and home_dir not in ("/", "\\", ""):
+        home_dirs = [home_dir]
+        try:
+            expanded = os.path.expanduser("~")
+            if expanded and expanded not in home_dirs:
+                home_dirs.append(expanded)
+        except Exception:
+            pass
+
+        for h in home_dirs:
+            if not h or h in ("/", "\\"):
+                continue
+            fwd = h.replace("\\", "/")
+            back = h.replace("/", "\\")
+            dbl_back = back.replace("\\", "\\\\")
+            text = text.replace(dbl_back, "<USER_HOME>")
+            text = text.replace(back, "<USER_HOME>")
+            text = text.replace(fwd, "<USER_HOME>")
+
+    # Strip sensitive credential tokens and prefixes
+    # 1. Remove encrypted credential tokens and prefixes starting with 'enc:'
+    text = re.sub(r"\benc:[^\s,;'\"]*", "", text)
+    text = re.sub(r"enc:[^\s,;'\"]*", "", text)
+
+    # 2. Strip/mask Bearer tokens and sensitive key=value pairs (passwords, tokens, secrets, api keys)
+    text = re.sub(r"(?i)\b(bearer)\s+[a-zA-Z0-9._~+/-]+=*", "", text)
+    text = re.sub(
+        r"(?i)\b(password|passwd|secret|api_key|apikey|access_token|auth_token)\s*=\s*[^\s,;'\"]+",
+        r"\1=[REDACTED]",
+        text,
+    )
+
+    return text
 
 
 class LogScrubbingFilter(logging.Filter):
@@ -9,15 +58,14 @@ class LogScrubbingFilter(logging.Filter):
 
     def __init__(self, home_dir: str):
         super().__init__()
+        self.home_dir = home_dir
         self.home_dir_fwd = home_dir.replace("\\", "/")
         self.home_dir_back = home_dir.replace("/", "\\")
 
     def _scrub(self, text: str) -> str:
         if not isinstance(text, str):
             return text
-        text = text.replace(self.home_dir_fwd, "<USER_HOME>")
-        text = text.replace(self.home_dir_back, "<USER_HOME>")
-        return text
+        return scrub_diagnostic_text(text, self.home_dir)
 
     def _scrub_arg(self, arg):
         if isinstance(arg, str):

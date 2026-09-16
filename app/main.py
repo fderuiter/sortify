@@ -121,12 +121,16 @@ def write_smoke_test_error(message, include_traceback=False):
     from pathlib import Path
 
     from app.config import get_app_dir
+    from app.log_filter import scrub_diagnostic_text
 
     logger = logging.getLogger("app.main")
 
     err_str = message
     if include_traceback:
         err_str += "\n" + traceback.format_exc()
+
+    # Perform inline synchronous scrubbing of diagnostic error text prior to disk output
+    err_str = scrub_diagnostic_text(err_str)
 
     # Define primary locations
     primary_paths = []
