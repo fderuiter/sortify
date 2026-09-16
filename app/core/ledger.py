@@ -31,6 +31,8 @@ class TransactionLedger:
         """Initialize the sidecar transaction ledger database schema in WAL mode."""
         conn = get_db_connection(self.db_path)
         with conn:
+            conn.execute("PRAGMA temp_store = MEMORY")
+            conn.execute("PRAGMA wal_autocheckpoint = 5000")
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS transaction_ledger (
                     entry_id TEXT PRIMARY KEY,
