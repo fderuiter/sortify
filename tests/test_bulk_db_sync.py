@@ -223,11 +223,11 @@ def test_chunked_batching_120_files(tmp_path, db, history_manager, monkeypatch):
     assert db.execute_batch_updates_called == 3
     assert len(batch_history) == 3
 
-    # Check batch sizes in terms of items (2 items per file: verified_target + document_path)
-    assert len(batch_history[0]) == 100
-    assert len(batch_history[1]) == 100
-    assert len(batch_history[2]) == 40
-    assert len(db.updates) == 240
+    # Check batch sizes in terms of items (3 items per file: verified_target + document_path + transaction_step)
+    assert len(batch_history[0]) == 150
+    assert len(batch_history[1]) == 150
+    assert len(batch_history[2]) == 60
+    assert len(db.updates) == 360
 
 
 def test_interrupted_large_move_preserves_committed_chunks(
