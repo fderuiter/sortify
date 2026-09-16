@@ -1,5 +1,5 @@
 import pytest
-from nicegui import Client, context
+from nicegui import Client, context, ui
 from pydantic import ValidationError
 
 from app.config import AppSettings, Settings
@@ -106,8 +106,11 @@ def test_ui_ignored_extensions_rendering_and_actions():
         labels = [
             e
             for e in elements
-            if getattr(e, "text", "") in [".crdownload", ".tmp", ".download"]
-            or getattr(e, "_text", "") in [".crdownload", ".tmp", ".download"]
+            if isinstance(e, ui.label)
+            and (
+                getattr(e, "text", "") in [".crdownload", ".tmp", ".download"]
+                or getattr(e, "_text", "") in [".crdownload", ".tmp", ".download"]
+            )
         ]
         assert len(labels) == 3
 
