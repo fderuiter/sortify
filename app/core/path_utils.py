@@ -266,7 +266,7 @@ def _merge_plan_dicts(target_dict: dict, source_dict: dict) -> list[str]:
                 if isinstance(v, dict):
                     if "target_filename" in v:
                         v["target_filename"] = new_k
-                    v["is_confirmed"] = True
+                    v["confirmed"] = True
                 target_dict[new_k] = v
                 warnings.append(
                     f"Disambiguated target item '{k}' to '{new_k}' due to merging conflict"
@@ -275,7 +275,7 @@ def _merge_plan_dicts(target_dict: dict, source_dict: dict) -> list[str]:
 
 
 def sanitize_plan(plan: dict) -> tuple[dict, list[str]]:
-    """Recursively sanitize folder keys and file targets in a plan dictionary.
+    """Recursively sanitize folder keys in a plan dictionary.
 
     Returns (sanitized_plan, warnings).
     """
@@ -286,47 +286,17 @@ def sanitize_plan(plan: dict) -> tuple[dict, list[str]]:
     warnings = []
 
     for key, content in plan.items():
-        if content is None or (
-            isinstance(content, dict) and content.get("__type__") == "file"
-        ):
-            new_content = dict(content) if isinstance(content, dict) else {}
-
-            if isinstance(new_content, dict) and "target_filename" in new_content:
-                orig_tf = new_content["target_filename"]
-                safe_tf = sanitize_name(orig_tf)
-                if orig_tf != safe_tf:
-                    new_content["target_filename"] = safe_tf
-                    new_content["is_confirmed"] = True
-                    warnings.append(f"Sanitized file target '{orig_tf}' to '{safe_tf}'")
-
-            safe_file_key = sanitize_name(key)
-            if key != safe_file_key:
-                warnings.append(f"Sanitized file key '{key}' to '{safe_file_key}'")
-                new_file_key = safe_file_key
-            else:
-                new_file_key = key
-
-            if new_file_key in sanitized_plan:
-                new_file_key = _disambiguate_key(
-                    sanitized_plan, new_file_key, is_file=True
-                )
-                if isinstance(new_content, dict):
-                    if "target_filename" in new_content:
-                        new_content["target_filename"] = new_file_key
-                    new_content["is_confirmed"] = True
-
-            sanitized_plan[new_file_key] = new_content
-
+        if content is None:
+            sanitized_plan[key] = None
+        elif isinstance(content, dict) and content.get("__type__") == "file":
+            sanitized_plan[key] = dict(content)
         elif isinstance(content, dict) and content.get("__type__") == "directory":
             safe_key, transformed = sanitize_folder_key(key)
             if transformed:
                 warnings.append(f"Sanitized folder key '{key}' to '{safe_key}'")
 
-            if safe_key not in sanitized_plan:
-                dir_content = dict(content)
-                if "source_path" in dir_content:
-                    dir_content["source_path"] = safe_key
-                sanitized_plan[safe_key] = dir_content
+            dir_content = dict(content)
+            sanitized_plan[safe_key] = dir_content
 
         elif isinstance(content, dict):
             safe_key, transformed = sanitize_folder_key(key)
