@@ -9,6 +9,7 @@ from nicegui import ui
 
 from app.core.session import AppSession
 from app.ui.dialog_helper import ask_directory_async, get_dialog_card_classes
+from app.ui.tokens import TOKENS
 
 logger = logging.getLogger(__name__)
 
@@ -72,12 +73,12 @@ body {
 """)
 
         with ui.header().classes(
-            "bg-slate-900 text-white px-6 py-3 items-center justify-between shadow-md"
+            f"{TOKENS.COLORS.HEADER_BG} text-white px-6 py-3 items-center justify-between shadow-md"
         ):
-            with ui.row().classes("items-center gap-3"):
+            with ui.row().classes(f"items-center {TOKENS.SPACING.GAP_MD}"):
                 ui.icon("folder_special", size="md", color="blue-4")
                 ui.label("Sortify AI Pro").classes("text-xl font-bold tracking-tight")
-            with ui.row().classes("items-center gap-2"):
+            with ui.row().classes(f"items-center {TOKENS.SPACING.GAP_SM}"):
                 ui.button(
                     "CRO Forensic Ingest",
                     icon="security",
@@ -94,15 +95,13 @@ body {
                     "Help", icon="help_outline", on_click=self.show_help_view
                 ).props('flat text-color="white" size="sm" aria-label="Help Button"')
 
-        with ui.column().classes("w-full max-w-5xl mx-auto p-6 items-center gap-4"):
+        with ui.column().classes(f"w-full {TOKENS.SIZING.MAX_WIDTH_CONTAINER} mx-auto {TOKENS.SPACING.XL} items-center {TOKENS.SPACING.GAP_MD}"):
             # 1. Directory Selection & Presets Card
-            with ui.card().classes(
-                "w-full p-5 bg-white rounded-xl shadow-sm border border-slate-200"
-            ):
+            with ui.card().classes(TOKENS.COMPONENTS.CARD_BASE):
                 ui.label("Target Directory").classes(
                     "text-xs font-bold text-slate-500 uppercase tracking-wider mb-2"
                 )
-                with ui.row().classes("w-full items-center gap-3"):
+                with ui.row().classes(f"w-full items-center {TOKENS.SPACING.GAP_MD}"):
                     self.path_input = (
                         ui.input(
                             placeholder="Enter absolute directory path...",
@@ -129,7 +128,7 @@ body {
                         'outlined color="grey-8" aria-label="Browse Directory Button"'
                     )
 
-                with ui.row().classes("w-full items-center gap-2 mt-2 flex-wrap"):
+                with ui.row().classes(f"w-full items-center {TOKENS.SPACING.GAP_SM} mt-2 flex-wrap"):
                     ui.label("Quick Presets:").classes(
                         "text-xs font-medium text-slate-400"
                     )
@@ -156,7 +155,7 @@ body {
 
             # 2. Status and Progress Bar
             with ui.card().classes(
-                "w-full p-4 bg-white rounded-xl shadow-sm border border-slate-200 items-center text-center"
+                f"{TOKENS.COMPONENTS.CARD_BASE} items-center text-center"
             ):
                 self.status_label = (
                     ui.label("Ready. Select or enter a directory above to start.")
@@ -165,12 +164,12 @@ body {
                 )
                 self.progress_bar = (
                     ui.linear_progress(value=0)
-                    .classes("w-full max-w-xl mt-3 rounded-full")
+                    .classes(f"w-full {TOKENS.SIZING.MAX_WIDTH_PROGRESS} mt-3 rounded-full")
                     .props('aria-label="Progress Bar" color="blue"')
                 )
                 self.file_progress_bar = (
                     ui.linear_progress(value=0)
-                    .classes("w-full max-w-xl mt-2 rounded-full")
+                    .classes(f"w-full {TOKENS.SIZING.MAX_WIDTH_PROGRESS} mt-2 rounded-full")
                     .props('aria-label="File Progress Bar" color="indigo"')
                 )
                 self.file_progress_bar.set_visibility(False)
@@ -184,7 +183,7 @@ body {
 
                 self.cancel_btn = (
                     ui.button("Cancel Analysis", on_click=self.cancel_analysis)
-                    .classes("bg-red-500 text-white mt-2")
+                    .classes(f"{TOKENS.COLORS.ERROR_BTN} mt-2")
                     .props('size="sm" unelevated aria-label="Cancel Analysis Button"')
                 )
                 self.cancel_btn.set_visibility(False)
@@ -205,7 +204,7 @@ body {
                 self.ai_warnings_label = (
                     ui.label("")
                     .classes(
-                        "text-amber-700 mt-2 text-xs font-semibold text-center bg-amber-50 border border-amber-200 p-2 rounded-lg w-full max-w-lg"
+                        f"{TOKENS.COLORS.WARNING_TEXT} mt-2 text-xs font-semibold text-center {TOKENS.COLORS.WARNING_BG} border {TOKENS.COLORS.WARNING_BORDER} p-2 rounded-lg w-full {TOKENS.SIZING.MAX_WIDTH_LG}"
                     )
                     .props('aria-label="AI Offline Warning Label"')
                 )
@@ -213,7 +212,7 @@ body {
 
             # 3. Strategy Configuration Row
             with ui.row().classes(
-                "w-full items-center justify-between flex-wrap gap-4 px-2"
+                f"w-full items-center justify-between flex-wrap {TOKENS.SPACING.GAP_LG} px-2"
             ):
                 self.strategy_selector = (
                     ui.select(
@@ -231,7 +230,7 @@ body {
                     .props('outlined dense aria-label="Sorting Strategy Selector"')
                 )
 
-                with ui.row().classes("items-center gap-4 flex-wrap"):
+                with ui.row().classes(f"items-center {TOKENS.SPACING.GAP_LG} flex-wrap"):
                     ui.switch(
                         "Contextual Renaming",
                         value=self.contextual_rename,
@@ -250,10 +249,10 @@ body {
 
             is_clinical_init = self.sorting_strategy in ("clinical_tmf", "clinical_isf")
             with ui.row().classes(
-                "w-full items-center flex-wrap justify-between gap-4 bg-blue-50 p-3 rounded-xl border border-blue-100"
+                f"{TOKENS.COMPONENTS.PANEL_INFO} items-center flex-wrap justify-between {TOKENS.SPACING.GAP_LG}"
             ) as self.clinical_controls_row:
                 self.clinical_controls_row.set_visibility(is_clinical_init)
-                with ui.row().classes("items-center gap-4"):
+                with ui.row().classes(f"items-center {TOKENS.SPACING.GAP_LG}"):
                     ui.label("Clinical Controls:").classes(
                         "text-sm font-bold text-blue-900"
                     )
@@ -280,13 +279,11 @@ body {
                 )
 
             # 4. Proposed Plan Tree Card & Action Toolbar
-            with ui.card().classes(
-                "w-full p-5 bg-white rounded-xl shadow-sm border border-slate-200"
-            ):
+            with ui.card().classes(TOKENS.COMPONENTS.CARD_BASE):
                 with ui.row().classes(
                     "w-full items-center justify-between mb-3 pb-3 border-b border-slate-100"
                 ):
-                    with ui.row().classes("items-center gap-3"):
+                    with ui.row().classes(f"items-center {TOKENS.SPACING.GAP_MD}"):
                         ui.label("Proposed Organization Plan").classes(
                             "text-base font-bold text-slate-800"
                         )
@@ -297,7 +294,7 @@ body {
                             "0 files", color="slate-6"
                         ).props("rounded text-xs")
 
-                    with ui.row().classes("items-center gap-2"):
+                    with ui.row().classes(f"items-center {TOKENS.SPACING.GAP_SM}"):
                         ui.button(
                             "New Folder",
                             icon="create_new_folder",
@@ -314,7 +311,7 @@ body {
                             on_click=self.collapse_all_nodes,
                         ).props('size="sm" flat color="grey-8"')
 
-                with ui.scroll_area().classes("w-full h-96 p-2"):
+                with ui.scroll_area().classes(TOKENS.SIZING.TREE_CONTAINER_CLASSES):
                     self.tree_view = (
                         ui.tree([], label_key="text", children_key="children")
                         .classes("w-full")
@@ -789,7 +786,7 @@ body {
                             ui.label("Recovery completed with errors:").classes(
                                 "font-semibold text-sm text-red-500"
                             )
-                            with ui.scroll_area().classes("h-32 w-full border p-2"):
+                            with ui.scroll_area().classes(f"flex-1 {TOKENS.SIZING.CONTROL_HEIGHT_SM} max-h-48 w-full border p-2"):
                                 for err in errors:
                                     ui.label(err).classes("text-xs text-red-500")
                         else:
@@ -1214,7 +1211,7 @@ body {
         with (
             ui.dialog() as dialog,
             ui.card().classes(
-                get_dialog_card_classes("lg") + " p-6 max-h-[85vh] overflow-y-auto"
+                get_dialog_card_classes("lg", f"{TOKENS.SIZING.MAX_HEIGHT_DIALOG} flex flex-col overflow-y-auto")
             ),
         ):
             dialog.props('aria-label="Compliance Audit Checklist Dialog"')

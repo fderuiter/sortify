@@ -12,6 +12,7 @@ from app.core.downloader import (
     ModelVerificationError,
 )
 from app.ui.dialog_helper import get_dialog_card_classes
+from app.ui.tokens import TOKENS
 
 
 class ThreadSafeState:
@@ -71,12 +72,12 @@ def show_wizard(parent_app, settings):
         error_container = ui.column().classes("w-full")
         error_container.set_visibility(False)
         with error_container:
-            with ui.card().classes("bg-red-50 border-red-200 border p-4 mb-4 w-full"):
-                with ui.row().classes("items-center gap-2 text-red-800"):
+            with ui.card().classes(TOKENS.COMPONENTS.PANEL_ERROR):
+                with ui.row().classes(f"items-center {TOKENS.SPACING.GAP_SM} {TOKENS.COLORS.ERROR_TEXT}"):
                     ui.icon("error", size="sm")
                     ui.label("Network and System Diagnostics").classes("font-bold")
                 error_diagnostic_label = ui.label("").classes(
-                    "text-red-900 text-sm mt-1"
+                    f"{TOKENS.COLORS.ERROR_TEXT} text-sm mt-1"
                 )
 
             ui.label(

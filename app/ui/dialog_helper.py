@@ -6,24 +6,24 @@ import os
 import sys
 
 from app.core.env_helper import run_background_process
+from app.ui.tokens import TOKENS
 
 logger = logging.getLogger(__name__)
 
-
-# Standardized responsive fluid layout helpers
-STANDARD_DIALOG_CARD_MD = "w-full min-w-[320px] max-w-md p-6"
-STANDARD_DIALOG_CARD_LG = "w-full min-w-[320px] max-w-lg p-6 gap-4"
-STANDARD_DIALOG_CARD_XL = "w-full min-w-[320px] max-w-4xl p-6"
+# Standardized responsive fluid layout helpers re-exported from tokens
+STANDARD_DIALOG_CARD_MD = TOKENS.COMPONENTS.DIALOG_CARD_MD
+STANDARD_DIALOG_CARD_LG = TOKENS.COMPONENTS.DIALOG_CARD_LG
+STANDARD_DIALOG_CARD_XL = TOKENS.COMPONENTS.DIALOG_CARD_XL
 
 
 def get_dialog_card_classes(size="md", extra=""):
     """Get standardized, fluid-width layout classes for dialog cards to ensure responsiveness."""
     classes = {
-        "md": STANDARD_DIALOG_CARD_MD,
-        "lg": STANDARD_DIALOG_CARD_LG,
-        "xl": STANDARD_DIALOG_CARD_XL,
+        "md": TOKENS.COMPONENTS.DIALOG_CARD_MD,
+        "lg": TOKENS.COMPONENTS.DIALOG_CARD_LG,
+        "xl": TOKENS.COMPONENTS.DIALOG_CARD_XL,
     }
-    base = classes.get(size, STANDARD_DIALOG_CARD_MD)
+    base = classes.get(size, TOKENS.COMPONENTS.DIALOG_CARD_MD)
     if extra:
         return f"{base} {extra}"
     return base
