@@ -323,7 +323,7 @@ class Florence2VisualProcessor:
 
     def process_image(
         self,
-        image_path: str,
+        image_path: Any,
         task_prompt: str = "<OD>",
         image_size: Optional[Tuple[int, int]] = None,
     ) -> Dict[str, Any]:
@@ -331,10 +331,10 @@ class Florence2VisualProcessor:
 
         Parameters
         ----------
-        image_path : str
-            The path to the input image.
+        image_path : str, Path, or PIL.Image.Image
+            The path to the input image or PIL Image object.
         task_prompt : str
-            The prompt instructing the model (e.g., '<OD>', '<CAPTION>').
+            The prompt instructing the model (e.g., '<OD>', '<CAPTION>', '<OCR>').
         image_size : tuple of (int, int), optional
             The original size of the image as (width, height).
 
@@ -348,10 +348,15 @@ class Florence2VisualProcessor:
 
         self.load()
 
-        if not os.path.exists(image_path):
-            raise FileNotFoundError(f"Visual asset file not found: {image_path}")
+        if isinstance(image_path, Image.Image):
+            image = image_path.convert("RGB")
+        elif isinstance(image_path, (str, os.PathLike)):
+            if not os.path.exists(image_path):
+                raise FileNotFoundError(f"Visual asset file not found: {image_path}")
+            image = Image.open(image_path).convert("RGB")
+        else:
+            raise ValueError(f"Invalid image type passed to process_image: {type(image_path)}")
 
-        image = Image.open(image_path).convert("RGB")
         if image_size is None:
             image_size = image.size
 
