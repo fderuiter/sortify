@@ -41,7 +41,9 @@ jobs:
       continue-on-error: true
 
     - name: Workflow Linting
-      uses: rhysd/actionlint@v1
+      run: |
+        bash <(curl -s https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+        ./actionlint
 
   type-check:
     name: Type Check (MyPy)
