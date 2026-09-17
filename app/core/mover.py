@@ -152,6 +152,28 @@ def _remove_empty_dirs(path: str, protected_paths: list[str] = None):
             pass
 
 
+def _is_cross_volume(src: str, dst: str) -> bool:
+    """Check if moving src to dst crosses file system device or drive boundaries."""
+    try:
+        src_dev = os.stat(src).st_dev if os.path.lexists(src) else None
+        dst_dir = os.path.dirname(dst)
+        if not os.path.exists(dst_dir):
+            os.makedirs(dst_dir, exist_ok=True)
+        dst_dev = os.stat(dst_dir).st_dev
+        if src_dev is not None and src_dev != dst_dev:
+            return True
+    except OSError:
+        pass
+    try:
+        src_drive = os.path.splitdrive(os.path.abspath(src))[0].upper()
+        dst_drive = os.path.splitdrive(os.path.abspath(dst))[0].upper()
+        if src_drive and dst_drive and src_drive != dst_drive:
+            return True
+    except Exception:
+        pass
+    return False
+
+
 def _execute_moves_recursive(
     base_dir: str,
     plan: dict,
@@ -167,6 +189,7 @@ def _execute_moves_recursive(
     session_id: str = None,
     step_counter: list = None,
     ledger=None,
+    history_manager=None,
 ) -> None:
     """Recursively move files according to the plan."""
     base_dir = os.path.normpath(base_dir)
@@ -448,6 +471,25 @@ def _execute_moves_recursive(
                 except Exception as exc:
                     logging.warning(f"Failed to update transaction ledger status: {exc}")
 
+            if history_manager and session_id and not _is_same_path(dest_path, source_path):
+                file_hash = doc.get("file_hash") if doc else None
+                orig_filename = os.path.basename(source_path)
+                is_collision = bool(collision or (os.path.basename(dest_path) != orig_filename))
+                is_cross_vol = _is_cross_volume(source_path, dest_path)
+                try:
+                    history_manager.log_step(
+                        session_id=session_id,
+                        source_path=source_path,
+                        target_path=dest_path,
+                        original_path=source_path,
+                        original_filename=orig_filename,
+                        is_cross_volume=is_cross_vol,
+                        is_collision_renamed=is_collision,
+                        file_hash=file_hash,
+                    )
+                except Exception as log_err:
+                    logging.warning(f"Failed to log relocation step: {log_err}")
+
             # Record user verified target and update filepath only after successful move
             if doc and doc.get("file_hash"):
                 if db_updates_batch is not None:
@@ -549,6 +591,7 @@ def _execute_moves_recursive(
                 session_id=session_id,
                 step_counter=step_counter,
                 ledger=ledger,
+                history_manager=history_manager,
             )
 
 
@@ -632,6 +675,7 @@ def execute_moves(
             session_id=session_id,
             step_counter=step_counter,
             ledger=ledger,
+            history_manager=history_manager,
         )
 
         summary = {"deleted_folders": 0, "protected_folders": 0}
@@ -716,6 +760,11 @@ def execute_moves(
                 ledger.purge_session(session_id)
             except Exception as purge_err:
                 logging.warning(f"Failed to purge finalized session ledger: {purge_err}")
+        if session_id and history_manager:
+            try:
+                history_manager.clear_step_ledger(session_id)
+            except Exception:
+                pass
         return summary
 
     except Exception as e:
@@ -729,7 +778,7 @@ def execute_moves(
                 f"Error during background sorting: {e}. Initiating automatic rollback for session {session_id}"
             )
             try:
-                history_manager.rollback(session_id, ignore_missing=True)
+                history_manager.unwind_session(session_id, db=db)
                 logging.info(
                     f"Automatic rollback completed successfully for session {session_id}"
                 )
