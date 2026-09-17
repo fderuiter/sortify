@@ -1021,3 +1021,104 @@ def test_adaptive_onnx_compatibility(db, temp_dir):
 
         # Check returned vector is valid
         assert len(embedding) == 2
+
+
+def test_onnx_central_registry_session_routing_and_unloading(db, temp_dir):
+    """Verify that property extraction and asset validation route session loading
+    through SharedModelRegistry.get_onnx_session and that unload_all_models clears them.
+    """
+    from unittest.mock import MagicMock, patch
+
+    from app.core.semantic_embeddings import get_active_model_properties
+    from app.core.shared_registry import SharedModelRegistry
+
+    model_dir = temp_dir / "routing_model_dir"
+    model_dir.mkdir()
+    onnx_file = model_dir / "model.onnx"
+    onnx_file.write_text("dummy onnx content")
+    (model_dir / "vocab.txt").write_text("vocab content")
+    (model_dir / "tokenizer_config.json").write_text("config content")
+
+    registry = SharedModelRegistry.get_instance()
+    registry.unload_all_models()
+
+    mock_session = MagicMock()
+    out_node = MagicMock()
+    out_node.shape = [1, 3, 384]
+    mock_session.get_outputs.return_value = [out_node]
+
+    # Patch InferenceSession inside SharedModelRegistry.get_onnx_session
+    with patch("onnxruntime.InferenceSession", return_value=mock_session):
+        # 1. Property extraction uses central registry
+        props = get_active_model_properties(str(model_dir))
+        assert props[1] == 384
+        expected_key = f"onnx_{onnx_file}"
+        assert expected_key in registry._models
+        assert registry.is_model_loaded("onnx") is True
+
+        # 2. Asset validation uses central registry (reuses or loads into registry)
+        from app.core.hashes_registry import HASHES
+
+        expected_hash = HASHES["generative_naming"]["model.onnx"]
+        with patch("hashlib.sha256") as mock_sha:
+            mock_inst = MagicMock()
+            mock_inst.hexdigest.return_value = expected_hash
+            mock_sha.return_value = mock_inst
+
+            SemanticEmbeddingManager(
+                db, model_path=str(model_dir), force_validation=True
+            )
+            assert expected_key in registry._models
+
+        # 3. Calling unload_all_models clears session references
+        registry.unload_all_models()
+        assert expected_key not in registry._models
+        assert registry.is_model_loaded("onnx") is False
+
+
+def test_malformed_model_validation_failure_cleans_up_registry(db, temp_dir):
+    """Verify that when asset validation fails during session initialization or shape inspection,
+    any created session key is safely unloaded from SharedModelRegistry.
+    """
+    from unittest.mock import MagicMock, patch
+
+    from app.core.semantic_embeddings import ModelValidationError
+    from app.core.shared_registry import SharedModelRegistry
+
+    model_dir = temp_dir / "malformed_model_dir"
+    model_dir.mkdir()
+    onnx_file = model_dir / "model.onnx"
+    onnx_file.write_text("malformed onnx content")
+    (model_dir / "vocab.txt").write_text("vocab content")
+    (model_dir / "tokenizer_config.json").write_text("config content")
+
+    registry = SharedModelRegistry.get_instance()
+    registry.unload_all_models()
+
+    # Mock session returning incompatible 1D shape
+    mock_session = MagicMock()
+    out_node = MagicMock()
+    out_node.shape = [1]  # Incompatible shape (< 2D)
+    mock_session.get_outputs.return_value = [out_node]
+
+    from app.core.hashes_registry import HASHES
+
+    expected_hash = HASHES["generative_naming"]["model.onnx"]
+    expected_key = f"onnx_{onnx_file}"
+
+    with (
+        patch("onnxruntime.InferenceSession", return_value=mock_session),
+        patch("hashlib.sha256") as mock_sha,
+    ):
+        mock_inst = MagicMock()
+        mock_inst.hexdigest.return_value = expected_hash
+        mock_sha.return_value = mock_inst
+
+        with pytest.raises(ModelValidationError):
+            SemanticEmbeddingManager(
+                db, model_path=str(model_dir), force_validation=True
+            )
+
+        # Confirm registry cleaned up the session key
+        assert expected_key not in registry._models
+
