@@ -130,3 +130,19 @@ def test_db_decryption_uses_shared_worker_pool(tmp_path):
     assert len(docs) == 1
     assert docs[0][0] == "doc1.txt"
     assert docs[0][1] == "Hello World Decryption Test"
+
+
+def test_shared_worker_pool_reentrant_map_prevents_deadlock():
+    """Verify that calling pool.map from within a worker thread executes reentrantly without deadlocking."""
+    pool = SharedWorkerPool.get_instance(max_workers=1)
+
+    def inner_task(x):
+        return x * 10
+
+    def outer_task(y):
+        # Call pool.map reentrantly from inside worker thread when max_workers=1
+        return list(pool.map(inner_task, [y, y + 1]))
+
+    results = list(pool.map(outer_task, [1, 5]))
+    assert results == [[10, 20], [50, 60]]
+
