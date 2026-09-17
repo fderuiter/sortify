@@ -94,6 +94,10 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.core.integration
 
+## `app.core.ledger`
+
+::: app.core.ledger
+
 ## `app.core.link_manager`
 
 ::: app.core.link_manager

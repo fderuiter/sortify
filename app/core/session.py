@@ -141,6 +141,14 @@ class AppSession:
             self.db, self.cache_manager, str(self.session_dir / "history.db")
         )
 
+        try:
+            from app.core.ledger import TransactionLedger
+
+            ledger = TransactionLedger()
+            ledger.reconcile_incomplete_transactions(db=self.db)
+        except Exception:
+            pass
+
         base_path = get_base_path(__file__)
 
         local_model_path = os.path.join(base_path, "offline_bundle", "model")
