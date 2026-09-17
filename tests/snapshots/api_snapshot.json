@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "58b2a38a7a2947981d11e50e97d8d41c79ba7515ff5fb465caa1e0c415b1c9b3"
+    "checksum": "7d7aa899d9c96318843b4d7d70efef24d2b616f1f9bb4ff78f6772c88d42d07b"
   },
   "cli": {
     "app/main.py": [
@@ -39,18 +39,6 @@
       },
       {
         "args": [
-          "directory"
-        ],
-        "caller": "parser",
-        "keywords": {
-          "default": null,
-          "help": "Directory to analyze automatically",
-          "nargs": "?"
-        },
-        "method": "add_argument"
-      },
-      {
-        "args": [
           "--daemon"
         ],
         "caller": "parser",
@@ -68,6 +56,233 @@
         "keywords": {
           "action": "store_true",
           "help": "Enable visual debug outlines for UI elements in dev mode"
+        },
+        "method": "add_argument"
+      },
+      {
+        "args": [
+          "sort"
+        ],
+        "caller": "subparsers",
+        "keywords": {
+          "help": "Run document sorting in headless batch processing mode"
+        },
+        "method": "add_parser"
+      },
+      {
+        "args": [
+          "directory"
+        ],
+        "caller": "parser_sort",
+        "keywords": {
+          "help": "Target directory to sort",
+          "type": "str"
+        },
+        "method": "add_argument"
+      },
+      {
+        "args": [
+          "--json"
+        ],
+        "caller": "parser_sort",
+        "keywords": {
+          "action": "store_true",
+          "help": "Output result in structured JSON format"
+        },
+        "method": "add_argument"
+      },
+      {
+        "args": [
+          "--dest-dir"
+        ],
+        "caller": "parser_sort",
+        "keywords": {
+          "default": null,
+          "help": "Destination directory for sorted files",
+          "type": "str"
+        },
+        "method": "add_argument"
+      },
+      {
+        "args": [
+          "--dry-run"
+        ],
+        "caller": "parser_sort",
+        "keywords": {
+          "action": "store_true",
+          "help": "Perform dry run analysis without executing physical moves"
+        },
+        "method": "add_argument"
+      },
+      {
+        "args": [
+          "scan"
+        ],
+        "caller": "subparsers",
+        "keywords": {
+          "help": "Run directory scanning and analysis without moving files"
+        },
+        "method": "add_parser"
+      },
+      {
+        "args": [
+          "directory"
+        ],
+        "caller": "parser_scan",
+        "keywords": {
+          "help": "Target directory to scan",
+          "type": "str"
+        },
+        "method": "add_argument"
+      },
+      {
+        "args": [
+          "--json"
+        ],
+        "caller": "parser_scan",
+        "keywords": {
+          "action": "store_true",
+          "help": "Output scan plan in structured JSON format"
+        },
+        "method": "add_argument"
+      },
+      {
+        "args": [
+          "config"
+        ],
+        "caller": "subparsers",
+        "keywords": {
+          "help": "View or update application configuration settings"
+        },
+        "method": "add_parser"
+      },
+      {
+        "args": [
+          "--show"
+        ],
+        "caller": "parser_config",
+        "keywords": {
+          "action": "store_true",
+          "help": "Display current configuration settings"
+        },
+        "method": "add_argument"
+      },
+      {
+        "args": [
+          "--json"
+        ],
+        "caller": "parser_config",
+        "keywords": {
+          "action": "store_true",
+          "help": "Output configuration as JSON"
+        },
+        "method": "add_argument"
+      },
+      {
+        "args": [
+          "--set"
+        ],
+        "caller": "parser_config",
+        "keywords": {
+          "action": "append",
+          "help": "Set configuration KEY to VALUE",
+          "metavar": [
+            "KEY",
+            "VALUE"
+          ],
+          "nargs": 2
+        },
+        "method": "add_argument"
+      },
+      {
+        "args": [
+          "daemon"
+        ],
+        "caller": "subparsers",
+        "keywords": {
+          "help": "Launch the persistent directory-watching daemon"
+        },
+        "method": "add_parser"
+      },
+      {
+        "args": [
+          "directory"
+        ],
+        "caller": "parser_daemon",
+        "keywords": {
+          "default": null,
+          "help": "Directory to watch",
+          "nargs": "?"
+        },
+        "method": "add_argument"
+      },
+      {
+        "args": [
+          "--max-folders"
+        ],
+        "caller": "subparser",
+        "keywords": {
+          "default": null,
+          "help": "Maximum number of generated subfolders",
+          "type": "int"
+        },
+        "method": "add_argument"
+      },
+      {
+        "args": [
+          "--strategy"
+        ],
+        "caller": "subparser",
+        "keywords": {
+          "choices": [
+            "default",
+            "generative",
+            "clinical_tmf",
+            "clinical_isf"
+          ],
+          "default": null,
+          "help": "Sorting strategy",
+          "type": "str"
+        },
+        "method": "add_argument"
+      },
+      {
+        "args": [
+          "--conflict-policy"
+        ],
+        "caller": "subparser",
+        "keywords": {
+          "choices": [
+            "skip",
+            "rename"
+          ],
+          "default": null,
+          "help": "Conflict resolution policy",
+          "type": "str"
+        },
+        "method": "add_argument"
+      },
+      {
+        "args": [
+          "--contextual-renaming"
+        ],
+        "caller": "subparser",
+        "keywords": {
+          "action": "store_true",
+          "default": null,
+          "help": "Enable AI contextual renaming"
+        },
+        "method": "add_argument"
+      },
+      {
+        "args": [
+          "--no-contextual-renaming"
+        ],
+        "caller": "subparser",
+        "keywords": {
+          "action": "store_false",
+          "dest": "contextual_renaming",
+          "help": "Disable AI contextual renaming"
         },
         "method": "add_argument"
       }
@@ -113,6 +328,17 @@
           "help": "Run the analysis pipeline on all sandbox files"
         },
         "method": "add_parser"
+      },
+      {
+        "args": [
+          "--json"
+        ],
+        "caller": "parser_analyze",
+        "keywords": {
+          "action": "store_true",
+          "help": "Output raw JSON without decorative borders"
+        },
+        "method": "add_argument"
       }
     ]
   },
