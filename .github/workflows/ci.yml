@@ -129,24 +129,19 @@ jobs:
     - name: CLI Smoke Tests
       run: |
         uv run python scripts/test_cli.py
-
-    - name: Test with pytest
+    - name: Fast Smoke Tests
       env:
         SMOKE_TEST: "0"
       shell: bash
       run: |
-        if [[ "${{ matrix.os }}" == "ubuntu-latest" ]]; then
-          uv run pytest --cov --cov-report=term --cov-report=html --cov-report=xml tests/
-        else
-          if ! uv run pytest tests/; then
-            if [ -f pytest_failures.txt ]; then
-              echo "=== PYTEST FAILURES ==="
-              cat pytest_failures.txt
-            else
-              echo "No pytest_failures.txt found."
-            fi
-            exit 1
+        if ! uv run pytest -m "not slow" -n auto tests/; then
+          if [ -f pytest_failures.txt ]; then
+            echo "=== PYTEST FAILURES ==="
+            cat pytest_failures.txt
+          else
+            echo "No pytest_failures.txt found."
           fi
+          exit 1
         fi
 
     - name: Upload Test Coverage Artifacts
@@ -230,3 +225,47 @@ jobs:
       if: github.ref == 'refs/heads/main'
       run: |
         uv run mkdocs gh-deploy --force
+
+  heavy-tests:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Cache Model Weights and Assets
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.smart-autosorter/offline_bundle
+          offline_bundle/
+          ~/.cache/huggingface
+        key: model-weights-${{ runner.os }}-${{ hashFiles('pyproject.toml', 'offline_bundle/**', 'app/core/prompt_manifest.py') }}
+        restore-keys: |
+          model-weights-${{ runner.os }}-
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v5
+      with:
+        version: "latest"
+        enable-cache: true
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    - name: Install dependencies
+      run: |
+        uv sync --all-groups
+
+    - name: Heavy ML and Integration Tests
+      shell: bash
+      run: |
+        if ! uv run pytest -m "slow" -n auto --cov --cov-report=term tests/; then
+          if [ -f pytest_failures.txt ]; then
+            echo "=== PYTEST FAILURES ==="
+            cat pytest_failures.txt
+          else
+            echo "No pytest_failures.txt found."
+          fi
+          exit 1
+        fi

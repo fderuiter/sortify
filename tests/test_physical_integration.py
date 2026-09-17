@@ -2,11 +2,15 @@ import os
 import tempfile
 from pathlib import Path
 
+import pytest
+
 from app.core.cache import CacheManager
 from app.core.db import Database
 from app.core.db_worker import DBWorker
 from app.core.history import HistoryManager
 from app.core.mover import execute_moves
+
+pytestmark = [pytest.mark.slow, pytest.mark.integration]
 
 _test_dir = None
 db_worker = None

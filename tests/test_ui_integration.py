@@ -1,6 +1,7 @@
 import time
 from unittest.mock import MagicMock, patch
 
+import pytest
 from nicegui import Client
 from nicegui.elements.button import Button
 from nicegui.elements.dialog import Dialog
@@ -10,6 +11,8 @@ from app.config import AppSettings
 from app.core.downloader import run_background_download
 from app.ui.settings import show_settings
 from app.ui.wizard import show_wizard
+
+pytestmark = [pytest.mark.slow, pytest.mark.integration]
 
 
 def test_wizard_timer_and_thread_cleanup():

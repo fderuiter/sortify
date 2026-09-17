@@ -13,6 +13,8 @@ from app.core.extractor import build_corpus_generator
 from app.core.history import HistoryManager
 from tests.generate_corpus import CORPUS_DIR, create_corpus
 
+pytestmark = [pytest.mark.slow, pytest.mark.integration]
+
 _test_dir = None
 db_worker = None
 db = None

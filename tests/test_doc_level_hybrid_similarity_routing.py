@@ -11,6 +11,8 @@ from app.core.db import Database
 from app.core.db_conn import clear_connection_cache, get_db_connection
 from app.core.db_worker import DBWorker
 
+pytestmark = [pytest.mark.slow, pytest.mark.ml]
+
 _test_dir = None
 db_worker = None
 db = None

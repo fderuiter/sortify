@@ -1,6 +1,10 @@
 from unittest.mock import patch
 
+import pytest
+
 from app.core.analyzer_strategies import GenerativeNamingStrategy
+
+pytestmark = [pytest.mark.slow, pytest.mark.ml]
 
 
 def test_vector_similarity_filtering_below_threshold():

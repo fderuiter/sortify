@@ -92,6 +92,12 @@ pythonpath = [
   "."
 ]
 timeout = 360
+addopts = "-n auto"
+markers = [
+    "slow: marks tests as slow / heavy ML or integration tests (deselect with '-m \"not slow\"')",
+    "integration: marks integration tests",
+    "ml: marks machine learning model tests",
+]
 
 [tool.coverage.report]
 fail_under = 50

@@ -2,7 +2,11 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from scripts.generate_docs import convert_notebook_to_markdown, main
+
+pytestmark = [pytest.mark.slow, pytest.mark.integration]
 
 
 def test_all_notebooks_execution():
