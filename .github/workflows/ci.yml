@@ -42,7 +42,7 @@ jobs:
 
     - name: Workflow Linting
       run: |
-        bash <(curl -s https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+        curl -sSLf --connect-timeout 10 --max-time 30 --retry 5 --retry-connrefused https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz | tar -xz actionlint
         ./actionlint
 
   type-check:
