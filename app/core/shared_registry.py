@@ -1010,6 +1010,16 @@ class SharedWorkerPool:
                 _thread_local.sandboxed = was_sandboxed
                 _thread_local.reason = old_reason
 
+        current_thread_name = threading.current_thread().name
+        if current_thread_name.startswith("GlobalSharedWorker"):
+            fut = concurrent.futures.Future()
+            try:
+                res = offline_wrapped_fn(*args, **kwargs)
+                fut.set_result(res)
+            except Exception as exc:
+                fut.set_exception(exc)
+            return fut
+
         return self._executor.submit(offline_wrapped_fn, *args, **kwargs)
 
     def map(self, fn, *iterables, timeout=None, chunksize=1):
@@ -1032,8 +1042,9 @@ class SharedWorkerPool:
                 _thread_local.sandboxed = was_sandboxed
                 _thread_local.reason = old_reason
 
-        if threading.current_thread().name.startswith("GlobalSharedWorker"):
-            return [offline_wrapped_fn(*args) for args in zip(*iterables)]
+        current_thread_name = threading.current_thread().name
+        if current_thread_name.startswith("GlobalSharedWorker"):
+            return map(offline_wrapped_fn, *iterables)
 
         return self._executor.map(
             offline_wrapped_fn, *iterables, timeout=timeout, chunksize=chunksize
