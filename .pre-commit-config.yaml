@@ -60,4 +60,16 @@ repos:
         language: system
         files: '\.py$'
         pass_filenames: false
+      - id: validate-signatures
+        name: Validate API and CLI Signatures
+        entry: uv run python scripts/validate_signatures.py
+        language: system
+        files: '(\.py$|tests/snapshots/api_snapshot\.json$)'
+        pass_filenames: false
+      - id: validate-architecture
+        name: Validate Architectural Guardrails
+        entry: uv run python scripts/validate_architecture.py
+        language: system
+        files: '^app/.*\.py$'
+        pass_filenames: false
 
