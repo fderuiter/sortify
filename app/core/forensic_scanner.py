@@ -73,11 +73,9 @@ class ForensicScanner:
     @staticmethod
     def compute_sha256(filepath: str) -> str:
         """Compute SHA-256 cryptographic digest of a file."""
-        hasher = hashlib.sha256()
-        with open(filepath, "rb") as f:
-            while chunk := f.read(65536):
-                hasher.update(chunk)
-        return hasher.hexdigest()
+        from app.core.resilient_file_ops import resilient_file_hash
+
+        return resilient_file_hash(filepath)
 
     def unpack_archive(self, archive_path: str, destination_dir: str) -> List[str]:
         """Safely unpack compressed archives (.zip, .tar, .tgz) into staging destination."""

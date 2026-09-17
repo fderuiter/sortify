@@ -135,12 +135,10 @@ def get_active_model_properties(model_path: str | None) -> tuple[str, int, str]:
                 return _model_properties_cache[cache_key]
 
         # Cache miss: compute properties by reading and parsing the file
-        hasher = hashlib.sha256()
+        from app.core.resilient_file_ops import resilient_file_hash
+
         try:
-            with open(onnx_file, "rb") as f:
-                for chunk in iter(lambda: f.read(65536), b""):
-                    hasher.update(chunk)
-            signature = hasher.hexdigest()
+            signature = resilient_file_hash(onnx_file)
         except Exception:
             signature = f"sig_{os.path.basename(onnx_file)}"
 
@@ -312,12 +310,10 @@ class SemanticEmbeddingManager:
             )
 
         # 3. Compute SHA-256 signature of the ONNX file
-        hasher = hashlib.sha256()
+        from app.core.resilient_file_ops import resilient_file_hash
+
         try:
-            with open(onnx_file, "rb") as f:
-                for chunk in iter(lambda: f.read(65536), b""):
-                    hasher.update(chunk)
-            computed_sig = hasher.hexdigest()
+            computed_sig = resilient_file_hash(onnx_file)
         except Exception as e:
             raise ModelValidationError(
                 f"Failed to read or compute SHA-256 signature of ONNX model: {e}"

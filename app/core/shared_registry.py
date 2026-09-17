@@ -7,7 +7,6 @@ with offline enforcement and thread limits.
 
 import concurrent.futures
 import contextvars
-import hashlib
 import ipaddress
 import logging
 import os
@@ -689,22 +688,18 @@ class SharedModelRegistry:
                             f"Required model file {file_path} is missing."
                         )
 
-                    hasher = hashlib.sha256()
-                    with open(file_path, "rb") as f:
-                        for chunk in iter(lambda: f.read(65536), b""):
-                            hasher.update(chunk)
-                    actual_hash = hasher.hexdigest()
+                    from app.core.resilient_file_ops import resilient_file_hash
+
+                    actual_hash = resilient_file_hash(file_path)
                     if actual_hash != expected_hash:
                         raise ValueError(
                             f"Integrity check failed for {filename}. Expected {expected_hash}, got {actual_hash}"
                         )
             else:
                 # Single file
-                hasher = hashlib.sha256()
-                with open(model_path, "rb") as f:
-                    for chunk in iter(lambda: f.read(65536), b""):
-                        hasher.update(chunk)
-                actual_hash = hasher.hexdigest()
+                from app.core.resilient_file_ops import resilient_file_hash
+
+                actual_hash = resilient_file_hash(model_path)
                 expected_hash = (
                     expected.get(os.path.basename(model_path))
                     or list(expected.values())[0]
