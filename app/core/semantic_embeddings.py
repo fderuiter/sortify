@@ -146,19 +146,24 @@ def get_active_model_properties(model_path: str | None) -> tuple[str, int, str]:
         try:
             from app.core.shared_registry import SharedModelRegistry
 
-            # Ensure thread limits are applied via SharedModelRegistry initialization
-            _ = SharedModelRegistry.get_instance()
-
-            import onnxruntime as ort
-
-            sess = ort.InferenceSession(onnx_file)
+            registry = SharedModelRegistry.get_instance()
+            sess = registry.get_onnx_session(onnx_file)
             out = sess.get_outputs()[0]
             if out.shape and len(out.shape) >= 2:
                 dimensions = out.shape[-1]
                 if not isinstance(dimensions, int):
                     dimensions = 384
+            else:
+                is_valid = False
+                registry.unload_model(f"onnx_{onnx_file}")
         except Exception:
             is_valid = False
+            try:
+                from app.core.shared_registry import SharedModelRegistry
+
+                SharedModelRegistry.get_instance().unload_model(f"onnx_{onnx_file}")
+            except Exception:
+                pass
 
         version_file = os.path.join(os.path.dirname(onnx_file), "version.txt")
         if os.path.exists(version_file):
@@ -346,13 +351,11 @@ class SemanticEmbeddingManager:
                 raise ModelValidationError(f"Required tokenizer file is missing: {tf}")
 
         # 6. Check ONNX session initialization and dimensions
+        from app.core.shared_registry import SharedModelRegistry
+
+        registry = SharedModelRegistry.get_instance()
         try:
-            from app.core.shared_registry import SharedModelRegistry
-
-            _ = SharedModelRegistry.get_instance()
-            import onnxruntime as ort
-
-            sess = ort.InferenceSession(onnx_file)
+            sess = registry.get_onnx_session(onnx_file)
             out = sess.get_outputs()[0]
             if not out.shape or len(out.shape) < 2:
                 raise ModelValidationError(
@@ -362,11 +365,15 @@ class SemanticEmbeddingManager:
             if not isinstance(dimensions, int) or dimensions <= 0:
                 raise ModelValidationError(f"Invalid model dimensions: {dimensions}")
         except Exception as e:
+            try:
+                registry.unload_model(f"onnx_{onnx_file}")
+            except Exception:
+                pass
             if isinstance(e, ModelValidationError):
                 raise e
             raise ModelValidationError(
                 f"ONNX session initialization or dimension extraction failed: {e}"
-            )
+            ) from e
 
     def is_reconstruction_active(self) -> bool:
         """Return whether background reconstruction is currently running."""
