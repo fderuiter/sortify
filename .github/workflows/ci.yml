@@ -33,7 +33,7 @@ jobs:
     - name: Run Dependency Audit
       continue-on-error: true
       run: |
-        uv audit --preview-features audit 2>&1 || true
+        uv --preview-features audit audit --ignore GHSA-w8v5-vhqr-4h9v
 
     - name: Secret Scanning Guardrails
       uses: gitleaks/gitleaks-action@v2

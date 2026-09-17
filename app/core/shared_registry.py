@@ -1037,7 +1037,9 @@ class SharedWorkerPool:
     def shutdown(self, wait=True):
         """Shutdown the underlying executor and reset singleton instance."""
         self._executor.shutdown(wait=wait)
-        SharedWorkerPool._instance = None
+        with SharedWorkerPool._lock:
+            if SharedWorkerPool._instance is self:
+                SharedWorkerPool._instance = None
 
 
 class AudioConcurrencyGuard:
