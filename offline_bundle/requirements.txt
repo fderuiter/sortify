@@ -176,7 +176,7 @@ pygments==2.20.0
     # via nicegui
 pylnk3==0.4.3
     # via smart-autosorter (pyproject.toml)
-pypdf==6.16.1
+pypdf==6.19.0
     # via smart-autosorter (pyproject.toml)
 python-bidi==0.6.11
     # via easyocr
@@ -235,7 +235,7 @@ threadpoolctl==3.6.0
     # via scikit-learn
 tifffile==2026.7.14
     # via scikit-image
-torch==2.13.0+cpu
+torch==2.14.0
     # via
     #   easyocr
     #   torchvision
