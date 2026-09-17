@@ -527,13 +527,16 @@ class AppSettings:
         # Validate against Settings Pydantic model
         try:
             Settings(**data)
-        except ValidationError as e:
-            for err in e.errors():
-                loc = err.get("loc", [])
-                path = ".".join([str(p) for p in loc]) if loc else "root"
-                msg = err.get("msg", str(err))
-                if not any(item["field"] == path and item["message"] == msg for item in errors):
-                    errors.append({"field": path, "message": msg})
+        except (ValueError, ValidationError) as e:
+            if isinstance(e, ValidationError):
+                for err in e.errors():
+                    loc = err.get("loc", [])
+                    path = ".".join([str(p) for p in loc]) if loc else "root"
+                    msg = err.get("msg", str(err))
+                    if not any(item["field"] == path and item["message"] == msg for item in errors):
+                        errors.append({"field": path, "message": msg})
+            else:
+                errors.append({"field": "model", "message": str(e)})
 
         if not errors:
             self._has_validation_errors = False

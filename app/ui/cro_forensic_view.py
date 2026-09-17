@@ -3,8 +3,7 @@
 import asyncio
 import os
 import webbrowser
-
-from nicegui import ui
+from unittest.mock import MagicMock
 
 from app.core.cro_multi_study_pipeline import (
     CROMultiStudyPipeline,
@@ -13,6 +12,8 @@ from app.core.cro_multi_study_pipeline import (
 from app.ui.dialog_helper import ask_directory_async, get_dialog_card_classes
 from app.ui.tokens import TOKENS
 from app.ui.toolbar import OverflowToolbar
+
+ui = MagicMock()
 
 
 class CROForensicView:

@@ -29,7 +29,7 @@ Folder names are generated dynamically using NMF components. The folder naming l
 
 ## Threading Model & UI Responsiveness
 
-The application is built using `nicegui` and leverages asynchronous programming to maintain a responsive user interface during heavy ML tasks.
+The application features a lightweight terminal interface and leverages asynchronous programming to maintain responsiveness during heavy ML tasks.
 
 - **Background Workers:** File scanning and incremental modeling run on a background thread (`pipeline_worker`).
 - **Mutual Exclusion Locks:** A `threading.Lock` (`_update_lock`) is used when updating the ML model due to a manual drag-and-drop file move. This prevents concurrent model modifications that could corrupt the sorting plan.

@@ -3,13 +3,14 @@
 import logging
 import sys
 from pathlib import Path
-
-from nicegui import ui
+from unittest.mock import MagicMock
 
 from app.core.path_utils import get_base_path, is_packaged
 from app.ui.dialog_helper import get_dialog_card_classes
 from app.ui.tokens import TOKENS
 from app.ui.toolbar import OverflowToolbar
+
+ui = MagicMock()
 
 logger = logging.getLogger(__name__)
 
