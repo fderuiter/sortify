@@ -572,12 +572,15 @@ class SharedModelRegistry:
     """Centralized registry for caching heavy model references (e.g. generative model, EasyOCR reader)."""
 
     _instance = None
+    _lock = threading.Lock()
 
     @classmethod
     def get_instance(cls):
         """Retrieve the singleton instance of SharedModelRegistry."""
         if cls._instance is None:
-            cls._instance = cls()
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = cls()
         return cls._instance
 
     def __init__(self):
@@ -958,15 +961,18 @@ class SharedWorkerPool:
     """Global background task worker pool restricting concurrency and enforcing offline boundaries."""
 
     _instance = None
+    _lock = threading.Lock()
 
     @classmethod
     def get_instance(cls, max_workers=None):
         """Retrieve the singleton instance of SharedWorkerPool, initializing it if necessary."""
         if cls._instance is None:
-            # Respect system limits / CPU counts to prevent starvation
-            if max_workers is None:
-                max_workers = min(4, os.cpu_count() or 2)
-            cls._instance = cls(max_workers=max_workers)
+            with cls._lock:
+                if cls._instance is None:
+                    # Respect system limits / CPU counts to prevent starvation
+                    if max_workers is None:
+                        max_workers = min(4, os.cpu_count() or 2)
+                    cls._instance = cls(max_workers=max_workers)
         return cls._instance
 
     def __init__(self, max_workers: int):
