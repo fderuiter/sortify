@@ -266,6 +266,7 @@ def socket_mock(monkeypatch):
                     if (
                         "test_db_worker_sandbox" in filename_lower
                         or "test_shared_registry" in filename_lower
+                        or "test_strategy_decryption_shared_pool" in filename_lower
                     ):
                         return True
                 frame = frame.f_back
