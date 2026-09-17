@@ -21,7 +21,7 @@ def get_file_hash(file_path: str) -> str:
     """
     from app.core.resilient_file_ops import resilient_file_hash
 
-    return resilient_file_hash(file_path)
+    return resilient_file_hash(file_path, skip_media_tags=True)
 
 
 def extract_file_text(

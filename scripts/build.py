@@ -6,7 +6,6 @@ import sys
 
 def update_binaries_and_manifest(system_platform=None, bypass_pytest_check=False):
     """Copy real compiled sqlcipher3 binaries from the active environment to app/binaries/<platform>/sqlcipher3 and update manifest.json."""
-    import hashlib
     import importlib.util
     import json
     import shutil
@@ -324,23 +323,13 @@ def update_binaries_and_manifest(system_platform=None, bypass_pytest_check=False
     else:
         manifest = {}
 
+    from app.core.resilient_file_ops import resilient_file_hash
+
     platform_hashes = {}
     for rel_path_str in copied_files:
         file_path = target_dir / rel_path_str
-        hasher = hashlib.sha256()
-
         is_text_file = file_path.suffix in (".py", ".pyi", ".typed")
-        if is_text_file:
-            with open(file_path, "r", encoding="utf-8-sig", newline=None) as fh:
-                content = fh.read()
-            normalized_bytes = content.replace("\r\n", "\n").encode("utf-8")
-            hasher.update(normalized_bytes)
-        else:
-            with open(file_path, "rb") as fh:
-                while chunk := fh.read(8192):
-                    hasher.update(chunk)
-
-        actual_hash = hasher.hexdigest()
+        actual_hash = resilient_file_hash(file_path, normalize_text=is_text_file)
         platform_hashes[f"sqlcipher3/{rel_path_str}"] = actual_hash
 
     manifest[platform_key] = platform_hashes
@@ -355,7 +344,6 @@ def update_binaries_and_manifest(system_platform=None, bypass_pytest_check=False
 
 def download_and_prepare_weights():
     """Ensure that the build process downloads and bundles all necessary model weights."""
-    import hashlib
     import shutil
     import urllib.request
     import zipfile
@@ -424,22 +412,16 @@ def download_and_prepare_weights():
             zip_dest.unlink()
 
     # 3. Compute SHA-256 hashes and write to app/core/hashes_registry.py
+    from app.core.resilient_file_ops import resilient_file_hash
+
     hashes = {"generative_naming": {}, "easyocr": {}}
     for item in model_dir.glob("*"):
         if item.is_file():
-            hasher = hashlib.sha256()
-            with open(item, "rb") as f:
-                for chunk in iter(lambda: f.read(65536), b""):
-                    hasher.update(chunk)
-            hashes["generative_naming"][item.name] = hasher.hexdigest()
+            hashes["generative_naming"][item.name] = resilient_file_hash(item)
 
     for item in easyocr_dir.glob("*"):
         if item.is_file():
-            hasher = hashlib.sha256()
-            with open(item, "rb") as f:
-                for chunk in iter(lambda: f.read(65536), b""):
-                    hasher.update(chunk)
-            hashes["easyocr"][item.name] = hasher.hexdigest()
+            hashes["easyocr"][item.name] = resilient_file_hash(item)
 
     hashes_registry_path = Path("app/core/hashes_registry.py")
     hashes_registry_path.parent.mkdir(parents=True, exist_ok=True)

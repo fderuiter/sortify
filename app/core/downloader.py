@@ -1,6 +1,5 @@
 """Model downloader module with sandbox bypass, proxy support, and real-time tracking."""
 
-import hashlib
 import json
 import logging
 import os
@@ -208,20 +207,16 @@ def verify_temp_file_hash(temp_path: str, target_path: str) -> bool:
     if not os.path.exists(temp_path):
         raise ModelVerificationError("Temporary download file does not exist.")
 
+    from app.core.resilient_file_ops import resilient_file_hash
+
     # Requirement 1: Calculate the SHA-256 hash using low-memory chunked streaming
     # Keeping memory footprint under 100MB of RAM even for large files.
-    hasher = hashlib.sha256()
     try:
-        with open(temp_path, "rb") as f:
-            # Use 64KB chunk size (65536 bytes) to keep memory footprint minimal
-            for chunk in iter(lambda: f.read(65536), b""):
-                hasher.update(chunk)
+        actual_hash = resilient_file_hash(temp_path, chunk_size=65536)
     except OSError as e:
         raise ModelVerificationError(
             f"Failed to read temporary file during hash calculation: {e}"
         )
-
-    actual_hash = hasher.hexdigest()
 
     # Requirement 2: Validate computed hash against central registry
     from app.core.shared_registry import SharedModelRegistry
