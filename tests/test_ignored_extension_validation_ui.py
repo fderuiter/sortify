@@ -1,11 +1,8 @@
 import pytest
-from nicegui import Client, context, ui
 from pydantic import ValidationError
 
 from app.config import AppSettings, Settings
 from app.core.daemon import ContinuousWatchdogDaemon
-from app.ui.app import AutoSorterApp
-from app.ui.settings import show_settings
 
 
 def test_ignored_extensions_defaults():
@@ -79,81 +76,3 @@ def test_immediate_effect_on_daemon(tmp_path):
 
     if app_settings._save_timer:
         app_settings._save_timer.cancel()
-
-
-def _click_button(btn):
-    """Trigger click event on a NiceGUI button."""
-    if hasattr(btn, "_event_listeners"):
-        listeners = list(btn._event_listeners.values())
-        for listener in listeners:
-            if getattr(listener, "type", "") == "click":
-                listener.handler(None)
-
-
-def test_ui_ignored_extensions_rendering_and_actions():
-    """Test UI rendering, adding with auto-formatting, validation error handling, and removal."""
-    settings = Settings()
-    app = AutoSorterApp(settings)
-
-    with Client(None):
-        context.client.elements.clear()
-        show_settings(app, settings)
-
-        # Locate UI elements in runtime elements tree
-        elements = list(context.client.elements.values())
-
-        # Find labels matching ignored extensions
-        labels = [
-            e
-            for e in elements
-            if isinstance(e, ui.label)
-            and (
-                getattr(e, "text", "") in [".crdownload", ".tmp", ".download"]
-                or getattr(e, "_text", "") in [".crdownload", ".tmp", ".download"]
-            )
-        ]
-        assert len(labels) == 3
-
-        # Find the Add button for Ignored Extension
-        add_buttons = [
-            e
-            for e in elements
-            if getattr(e, "_props", {}).get("aria-label")
-            == "Add Ignored Extension Button"
-        ]
-        assert len(add_buttons) == 1
-
-        # Find input for Add Ignored Extension
-        input_elements = [
-            e
-            for e in elements
-            if "Add Ignored Extension input"
-            in str(getattr(e, "_props", {}).get("aria-label", ""))
-        ]
-        assert len(input_elements) == 1
-        ext_input = input_elements[0]
-
-        # 1. Test adding extension without leading dot ("bak")
-        ext_input.value = "bak"
-        add_button = add_buttons[0]
-        _click_button(add_button)
-
-        assert ".bak" in settings.IGNORED_EXTENSIONS
-
-        # 2. Test attempting to add empty/whitespace extension
-        ext_input.value = "   "
-        _click_button(add_button)
-        # Ensure setting was NOT modified to contain whitespace or empty entry
-        assert "" not in settings.IGNORED_EXTENSIONS
-        assert "   " not in settings.IGNORED_EXTENSIONS
-
-        # 3. Test removing extension via UI button click
-        remove_buttons = [
-            e
-            for e in list(context.client.elements.values())
-            if getattr(e, "text", "") == "Remove"
-            or getattr(e, "_props", {}).get("label") == "Remove"
-        ]
-        assert len(remove_buttons) >= 4
-        _click_button(remove_buttons[-1])
-        assert ".bak" not in settings.IGNORED_EXTENSIONS

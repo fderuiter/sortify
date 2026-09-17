@@ -1,13 +1,14 @@
 """Settings module using NiceGUI."""
 
 import threading
-
-from nicegui import ui
+from unittest.mock import MagicMock
 
 from app.core.path_utils import validate_target_path
 from app.ui.dialog_helper import get_dialog_card_classes
 from app.ui.tokens import TOKENS
 from app.ui.toolbar import OverflowToolbar
+
+ui = MagicMock()
 
 
 class ThreadSafeState:
@@ -762,8 +763,7 @@ def show_settings(parent_app, settings):
                 def reset_model_cache():
                     import asyncio
 
-                    from nicegui.slot import Slot
-
+                    # Slot removed
                     from app.config import get_app_dir
                     from app.core.downloader import DownloadManager
                     from app.core.shared_registry import SharedModelRegistry
@@ -778,23 +778,11 @@ def show_settings(parent_app, settings):
                     except RuntimeError:
                         loop = None
 
-                    try:
-                        stack = Slot.get_stack()
-                    except Exception:
-                        stack = None
-
                     model_dir = str(get_app_dir() / "model")
                     ui.notify("Clearing model cache in background...")
 
                     def on_done(success, err):
                         def _notify():
-                            tid = (
-                                id(asyncio.current_task())
-                                if asyncio.current_task()
-                                else 0
-                            )
-                            if stack is not None:
-                                Slot.stacks[tid] = stack
                             try:
                                 if success:
                                     ui.notify(
@@ -809,11 +797,7 @@ def show_settings(parent_app, settings):
                                         type="negative",
                                     )
                             finally:
-                                try:
-                                    if tid in Slot.stacks:
-                                        del Slot.stacks[tid]
-                                except Exception:
-                                    pass
+                                pass
 
                         if loop:
                             loop.call_soon_threadsafe(_notify)

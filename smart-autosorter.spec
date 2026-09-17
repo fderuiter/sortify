@@ -34,15 +34,6 @@ for pkg in ml_packages:
     except Exception as e:
         print(f"Warning: Could not collect package {pkg}: {e}")
 
-# Bundle nicegui static assets and dependencies
-try:
-    nicegui_datas, nicegui_binaries, nicegui_hiddenimports = collect_all('nicegui')
-    datas.extend(nicegui_datas)
-    binaries.extend(nicegui_binaries)
-    hiddenimports.extend(nicegui_hiddenimports)
-except Exception as e:
-    print(f"Warning: Could not collect nicegui package: {e}")
-
 # Bundle secure database shared libraries directly from the active virtual environment
 sqlcipher_spec = importlib.util.find_spec("sqlcipher3")
 if sqlcipher_spec and sqlcipher_spec.submodule_search_locations:

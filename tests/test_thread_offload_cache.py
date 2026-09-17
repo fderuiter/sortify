@@ -100,16 +100,11 @@ def test_handle_node_drop_instantly_updates_cache(test_env):
 
     e = MockEvent()
 
-    from nicegui import Client
-
-    # Verify handle_node_drop instantly updates app.locked_files in-memory before/without blocking
-    # We patch set_user_verified_target_path to make sure it's called
-    with Client(None):
-        with patch.object(
-            db, "set_user_verified_target_path", wraps=db.set_user_verified_target_path
-        ) as mock_write:
-            app.handle_node_drop(e)
-            assert mock_write.call_count == 1
+    with patch.object(
+        db, "set_user_verified_target_path", wraps=db.set_user_verified_target_path
+    ) as mock_write:
+        app.handle_node_drop(e)
+        assert mock_write.call_count == 1
 
     # Verify locked files cache updated instantly
     assert app.locked_files["doc1.txt"] == "TargetFolder"
@@ -127,15 +122,11 @@ def test_handle_node_rate_instantly_updates_cache(test_env):
 
     e = MockEvent()
 
-    from nicegui import Client
-
-    # Patch set_document_rating to track the write
-    with Client(None):
-        with patch.object(
-            db, "set_document_rating", wraps=db.set_document_rating
-        ) as mock_write:
-            app.handle_node_rate(e)
-            assert mock_write.call_count == 1
+    with patch.object(
+        db, "set_document_rating", wraps=db.set_document_rating
+    ) as mock_write:
+        app.handle_node_rate(e)
+        assert mock_write.call_count == 1
 
     # Verify in-memory ratings cache updated instantly
     assert app._ratings_cache["doc1.txt"] == "positive"

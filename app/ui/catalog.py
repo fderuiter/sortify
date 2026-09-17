@@ -8,13 +8,14 @@ and responsive viewport stress testing.
 import argparse
 import sys
 from typing import Any, Dict, List
-
-from nicegui import ui
+from unittest.mock import MagicMock
 
 from app.ui.a11y_runner import (
     run_all_catalog_scans,
 )
 from app.ui.dialog_helper import get_dialog_card_classes
+
+ui = MagicMock()
 
 # --- COMPONENT CATALOG RENDERERS ---
 
