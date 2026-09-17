@@ -436,6 +436,94 @@ def update_security_md():
         f.writelines(out_lines)
 
 
+def get_handwritten_docs():
+    """Discover all handwritten markdown documentation files."""
+    generated_set = {
+        os.path.normpath(p)
+        for p in [
+            "docs/api_reference.md",
+            "docs/ui.md",
+            "docs/admin_guide.md",
+            "SECURITY.md",
+        ]
+    }
+    docs = []
+    for root_file in ["README.md", "PRIVACY.md"]:
+        if os.path.exists(root_file):
+            docs.append(root_file)
+
+    if os.path.exists("docs"):
+        for root, dirs, files in os.walk("docs"):
+            if "tutorials" in dirs:
+                dirs.remove("tutorials")
+            for f in sorted(files):
+                if f.endswith(".md"):
+                    full_path = os.path.normpath(os.path.join(root, f))
+                    if full_path not in generated_set:
+                        docs.append(full_path)
+    return sorted(list(set(docs)))
+
+
+def audit_handwritten_docs():
+    """Audit external links and relative codebase path references in handwritten docs."""
+    import re
+
+    from scripts.validate_links import DEFAULT_BYPASS_DOMAINS, URL_REGEX, validate_url
+
+    handwritten_docs = get_handwritten_docs()
+    errors = []
+
+    path_pattern = re.compile(
+        r"\b(?:app|scripts|docs|tests|notebooks|offline_bundle|sandbox)/(?:[a-zA-Z0-9_\-.]+/)*[a-zA-Z0-9_\-.]+(?:\.[a-zA-Z0-9]+)?"
+    )
+
+    for doc_path in handwritten_docs:
+        if not os.path.exists(doc_path):
+            continue
+        try:
+            with open(doc_path, "r", encoding="utf-8") as f:
+                content = f.read()
+        except Exception:
+            continue
+
+        # 1. External URL validation
+        for match in URL_REGEX.finditer(content):
+            url = match.group(0).strip().rstrip(".,;)'\"`<> \n\r\t\\")
+            if not url:
+                continue
+            success, msg, is_critical = validate_url(url, DEFAULT_BYPASS_DOMAINS)
+            if not success and is_critical:
+                errors.append(f"Broken external link in {doc_path}: {url} ({msg})")
+
+        # 2. Codebase path reference validation (excluding fenced code blocks)
+        content_no_code_blocks = re.sub(r"```[\s\S]*?```", "", content)
+
+        found_paths = set()
+
+        # Markdown links: [label](path)
+        for match in re.finditer(r"\[[^\]]*\]\(([^)]+)\)", content_no_code_blocks):
+            target = match.group(1).strip()
+            if not target.startswith(("http://", "https://", "mailto:", "#")):
+                path_only = target.split("#")[0].strip()
+                if path_only:
+                    found_paths.add(path_only)
+
+        # Path regex pattern
+        for match in path_pattern.finditer(content_no_code_blocks):
+            p = match.group(0).rstrip(".,;)'\"`:")
+            if p:
+                found_paths.add(p)
+
+        # Verify existence
+        for p in sorted(found_paths):
+            doc_dir = os.path.dirname(doc_path)
+            rel_to_doc = os.path.join(doc_dir, p) if doc_dir else p
+            if not (os.path.exists(p) or os.path.exists(rel_to_doc)):
+                errors.append(f"Invalid codebase path reference in {doc_path}: {p}")
+
+    return errors
+
+
 def main():
     import argparse
     import subprocess
@@ -525,7 +613,7 @@ def main():
             sys.stderr.write("\n")
         sys.exit(1)
 
-    # 3. Check for unsynced files if requested
+    # 3. Check for unsynced files and audit handwritten docs if requested
     changed_files = []
     if args.check:
         for filepath in generated_files:
@@ -538,6 +626,15 @@ def main():
                     pass
             if new_content != initial_contents.get(filepath):
                 changed_files.append(filepath)
+
+        doc_audit_errors = audit_handwritten_docs()
+        if doc_audit_errors:
+            sys.stderr.write(
+                "\nError: Handwritten documentation audit failed with the following issues:\n"
+            )
+            for err in doc_audit_errors:
+                sys.stderr.write(f"  - {err}\n")
+            sys.exit(1)
 
     # 4. Run MkDocs build (and preserve strict build flags)
     build_cmd = [sys.executable, "-m", "mkdocs", "build"]

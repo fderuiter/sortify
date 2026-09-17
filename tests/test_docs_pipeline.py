@@ -1,7 +1,59 @@
 import os
 from unittest.mock import MagicMock, patch
 
-from scripts.generate_docs import main
+from scripts.generate_docs import audit_handwritten_docs, get_handwritten_docs, main
+
+
+def test_get_handwritten_docs():
+    docs = get_handwritten_docs()
+    assert "README.md" in docs
+    assert "PRIVACY.md" in docs
+    assert any("docs/" in d for d in docs)
+    # Ensure generated files are excluded
+    assert "docs/api_reference.md" not in docs
+    assert "docs/ui.md" not in docs
+    assert "docs/admin_guide.md" not in docs
+    assert "SECURITY.md" not in docs
+
+
+def test_audit_handwritten_docs_clean():
+    errors = audit_handwritten_docs()
+    assert errors == []
+
+
+def test_audit_handwritten_docs_detects_invalid_path(tmp_path):
+    bad_doc = tmp_path / "bad_guide.md"
+    bad_doc.write_text(
+        "Reference to nonexistent file: `app/nonexistent_module_xyz123.py`\n"
+    )
+
+    with patch(
+        "scripts.generate_docs.get_handwritten_docs", return_value=[str(bad_doc)]
+    ):
+        errors = audit_handwritten_docs()
+        assert len(errors) == 1
+        assert "Invalid codebase path reference" in errors[0]
+        assert "app/nonexistent_module_xyz123.py" in errors[0]
+
+
+def test_audit_handwritten_docs_detects_broken_link(tmp_path):
+    bad_doc = tmp_path / "bad_link_doc.md"
+    bad_url = "https://" + "example.invalid/404_not_found"
+    bad_doc.write_text(f"Broken link: {bad_url}\n")
+
+    with (
+        patch(
+            "scripts.generate_docs.get_handwritten_docs", return_value=[str(bad_doc)]
+        ),
+        patch(
+            "scripts.validate_links.validate_url",
+            return_value=(False, "HTTP Error 404: Not Found", True),
+        ),
+    ):
+        errors = audit_handwritten_docs()
+        assert len(errors) == 1
+        assert "Broken external link" in errors[0]
+        assert bad_url in errors[0]
 
 
 def test_main_strict_flag():
