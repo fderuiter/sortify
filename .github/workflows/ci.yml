@@ -41,7 +41,7 @@ jobs:
       continue-on-error: true
 
     - name: Workflow Linting
-      uses: rhysd/actionlint-action@v1
+      uses: rhysd/actionlint@v1
 
   type-check:
     name: Type Check (MyPy)
