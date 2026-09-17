@@ -34,6 +34,10 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.ui.tokens
 
+## `app.ui.toolbar`
+
+::: app.ui.toolbar
+
 ## `app.ui.wizard`
 
 ::: app.ui.wizard
