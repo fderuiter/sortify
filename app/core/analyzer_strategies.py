@@ -9,7 +9,6 @@ import re
 import sys
 import threading
 from collections import defaultdict
-from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from pathlib import Path
 from typing import List, Optional, Protocol, Union
@@ -152,21 +151,11 @@ def scrub_prompt_text(text: str) -> str:
     return text
 
 
-_DECRYPTION_EXECUTOR = None
-_DECRYPTION_EXECUTOR_LOCK = threading.Lock()
-
-
 def get_decryption_executor():
-    """Retrieve or initialize the global thread pool executor for parallel decryption."""
-    global _DECRYPTION_EXECUTOR
-    if _DECRYPTION_EXECUTOR is None:
-        with _DECRYPTION_EXECUTOR_LOCK:
-            if _DECRYPTION_EXECUTOR is None:
-                max_workers = min(32, (os.cpu_count() or 1) + 4)
-                _DECRYPTION_EXECUTOR = ThreadPoolExecutor(
-                    max_workers=max_workers, thread_name_prefix="decryption_worker"
-                )
-    return _DECRYPTION_EXECUTOR
+    """Retrieve the central shared background worker pool instance for strategy decryption."""
+    from app.core.shared_registry import SharedWorkerPool
+
+    return SharedWorkerPool.get_instance()
 
 
 class IsolatedStrategyMixin:
@@ -260,7 +249,6 @@ def thread_isolated_execution(func):
 
     @functools.wraps(func)
     def wrapper(self, *args, **kwargs):
-        import threading
 
         if not hasattr(self, "_local_state_var"):
             object.__setattr__(
