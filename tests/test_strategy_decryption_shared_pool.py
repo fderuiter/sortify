@@ -112,21 +112,26 @@ def test_db_decryption_uses_shared_worker_pool(tmp_path):
     from app.core.db_worker import DBWorker
 
     db_worker = DBWorker()
-    db_path = tmp_path / "test_docs.db"
-    db = Database(db_path, worker=db_worker)
+    try:
+        db_path = tmp_path / "test_docs.db"
+        db = Database(db_path, worker=db_worker)
 
-    base_dir = str(tmp_path / "test_base")
-    os.makedirs(base_dir, exist_ok=True)
+        base_dir = str(tmp_path / "test_base")
+        os.makedirs(base_dir, exist_ok=True)
 
-    # Add a document to db
-    db.upsert_document(
-        base_dir=base_dir,
-        filepath="doc1.txt",
-        file_hash="hash123",
-        extracted_text="Hello World Decryption Test",
-    )
+        # Add a document to db
+        db.upsert_document(
+            base_dir=base_dir,
+            filepath="doc1.txt",
+            file_hash="hash123",
+            extracted_text="Hello World Decryption Test",
+        )
 
-    docs = db.get_all_documents(base_dir)
-    assert len(docs) == 1
-    assert docs[0][0] == "doc1.txt"
-    assert docs[0][1] == "Hello World Decryption Test"
+        docs = db.get_all_documents(base_dir)
+        assert len(docs) == 1
+        assert docs[0][0] == "doc1.txt"
+        assert docs[0][1] == "Hello World Decryption Test"
+    finally:
+        db_worker.stop()
+
+
