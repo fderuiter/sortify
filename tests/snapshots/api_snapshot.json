@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "d5a98d567df15d623d2d7d3673b13bdf43a6c9adc4e6c669a8894add66c21312"
+    "checksum": "58b2a38a7a2947981d11e50e97d8d41c79ba7515ff5fb465caa1e0c415b1c9b3"
   },
   "cli": {
     "app/main.py": [
@@ -57,6 +57,17 @@
         "keywords": {
           "action": "store_true",
           "help": "Launch the persistent directory-watching daemon"
+        },
+        "method": "add_argument"
+      },
+      {
+        "args": [
+          "--debug-layout"
+        ],
+        "caller": "parser",
+        "keywords": {
+          "action": "store_true",
+          "help": "Enable visual debug outlines for UI elements in dev mode"
         },
         "method": "add_argument"
       }

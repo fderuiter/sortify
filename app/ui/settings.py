@@ -1790,7 +1790,7 @@ def show_settings(parent_app, settings):
                                             policy.get("type", "").upper(),
                                         )
                                         type_lbl = ui.label(friendly_type).classes(
-                                            "w-36 font-bold shrink-0"
+                                            "max-w-xs font-bold shrink-0"
                                         )
                                         p_type = policy.get("type", "").lower()
                                         if p_type == "keyword":
@@ -1812,13 +1812,13 @@ def show_settings(parent_app, settings):
 
                                         expr_val = policy.get("expression", "")
                                         expr_lbl = ui.label(expr_val).classes(
-                                            "w-32 font-mono truncate shrink-0 min-w-0"
+                                            "max-w-xs font-mono truncate shrink-0 min-w-0"
                                         )
                                         expr_lbl.tooltip(expr_val)
 
                                         target_val = policy.get("target_path", "")
                                         target_lbl = ui.label(target_val).classes(
-                                            "w-40 font-mono text-gray-500 truncate flex-1 min-w-0"
+                                            "max-w-xs font-mono text-gray-500 truncate flex-1 min-w-0"
                                         )
                                         target_lbl.tooltip(target_val)
 
@@ -1972,7 +1972,7 @@ def show_settings(parent_app, settings):
                         label="Type",
                         options=OPTIONS,
                         value="keyword",
-                    ).classes("w-48")
+                    ).classes("w-full max-w-xs")
                     p_type_select.tooltip(
                         "Select a rule type: Keyword (word search), Pattern (text sequences), or Override (exact match)."
                     )
@@ -1981,21 +1981,21 @@ def show_settings(parent_app, settings):
                         .props(
                             'placeholder="e.g. invoice" aria-label="Policy Expression input"'
                         )
-                        .classes("w-40")
+                        .classes("w-full max-w-xs")
                     )
                     p_target_input = (
                         ui.input("Target Path")
                         .props(
                             'placeholder="Folder name" aria-label="Policy Target Path input"'
                         )
-                        .classes("w-40")
+                        .classes("w-full max-w-xs")
                     )
                     with ui.expansion("Advanced Settings", icon="settings").classes(
                         "w-full text-xs"
                     ):
                         p_priority_input = ui.number(
                             label="Priority", value=10, step=1
-                        ).classes("w-20")
+                        ).classes("w-full max-w-[5rem]")
                         p_priority_input.set_visibility(False)
                         p_halting_checkbox = ui.checkbox(
                             "Halt on mismatch", value=False

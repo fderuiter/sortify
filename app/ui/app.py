@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, Mock
 
 from nicegui import ui
 
+from app.core.path_utils import is_packaged
 from app.core.session import AppSession
 from app.ui.dialog_helper import ask_directory_async, get_dialog_card_classes
 from app.ui.tokens import TOKENS
@@ -18,8 +19,9 @@ logger = logging.getLogger(__name__)
 class AutoSorterApp:
     """Main application class for the NiceGUI interface."""
 
-    def __init__(self, settings):
+    def __init__(self, settings, debug_layout=False):
         self.settings = settings
+        self.debug_layout = debug_layout
         self.base_dir = ""
         self.plan = {}
         self.locked_files = {}
@@ -55,6 +57,11 @@ class AutoSorterApp:
 
     def build_ui(self):
         """Build the main user interface with modern styling, presets, and interactive controls."""
+        if self.debug_layout and not is_packaged():
+            ui.add_head_html(
+                "<style>* { outline: 1px solid #ef4444 !important; }</style>"
+            )
+
         ui.add_head_html("""
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -74,7 +81,7 @@ body {
 """)
 
         with ui.header().classes(
-            f"{TOKENS.COLORS.HEADER_BG} text-white px-6 py-3 items-center justify-between shadow-md h-16"
+            f"{TOKENS.COLORS.HEADER_BG} text-white px-6 py-3 items-center justify-between shadow-md min-h-16"
         ):
             header_toolbar = OverflowToolbar(classes="bg-transparent text-white p-0")
             with header_toolbar.left_container:
@@ -241,7 +248,7 @@ body {
                         label="Sorting Strategy",
                         on_change=self.change_sorting_strategy,
                     )
-                    .classes("w-64")
+                    .classes("w-full max-w-xs")
                     .props('outlined dense aria-label="Sorting Strategy Selector"')
                 )
 
@@ -2576,11 +2583,14 @@ def run_incremental_training_in_background(app_session, base_dir):
         )
 
 
-def run_app(settings, directory=None, port=8080, show=True) -> None:
+def run_app(settings, directory=None, port=8080, show=True, debug_layout=False) -> None:
     """Run the NiceGUI application."""
 
     def main_page():
-        app_instance = AutoSorterApp(settings)
+        if debug_layout:
+            app_instance = AutoSorterApp(settings, debug_layout=True)
+        else:
+            app_instance = AutoSorterApp(settings)
         if directory:
             if os.path.exists(directory):
                 app_instance.base_dir = os.path.abspath(directory)
@@ -2591,7 +2601,6 @@ def run_app(settings, directory=None, port=8080, show=True) -> None:
 
     if isinstance(ui.page, (Mock, MagicMock)):
         main_page()
-
     ui.run(
         host="127.0.0.1",
         title="Smart AutoSorter AI Pro",
