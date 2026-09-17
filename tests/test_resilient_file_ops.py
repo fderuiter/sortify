@@ -141,6 +141,107 @@ def test_resilient_file_hash_success(tmp_path):
     assert h == expected
 
 
+def test_resilient_file_hash_normalize_text(tmp_path):
+    f = tmp_path / "script.py"
+    # Write file with CRLF line endings
+    f.write_bytes(b"line1\r\nline2\r\n")
+
+    import hashlib
+
+    # With normalize_text=False, hash includes \r\n
+    raw_hash = resilient_file_hash(str(f), normalize_text=False)
+    expected_raw = hashlib.sha256(b"line1\r\nline2\r\n").hexdigest()
+    assert raw_hash == expected_raw
+
+    # With normalize_text=True, hash normalizes \r\n to \n
+    norm_hash = resilient_file_hash(str(f), normalize_text=True)
+    expected_norm = hashlib.sha256(b"line1\nline2\n").hexdigest()
+    assert norm_hash == expected_norm
+
+
+def test_resilient_file_hash_skip_media_tags(tmp_path):
+    # Construct a mock MP3 with ID3 header
+    id3_header = b"ID3\x03\x00\x00\x00\x00\x00\x0a" + b"1234567890"  # 10 byte header + 10 byte tag
+    audio_data = b"AUDIO_DATA_PAYLOAD_12345"
+    mp3_file = tmp_path / "test.mp3"
+    mp3_file.write_bytes(id3_header + audio_data)
+
+    import hashlib
+
+    # With skip_media_tags=False (default), hash computes full file hash
+    full_hash = resilient_file_hash(str(mp3_file), skip_media_tags=False)
+    assert full_hash == hashlib.sha256(id3_header + audio_data).hexdigest()
+
+    # With skip_media_tags=True, hash computes audio payload only
+    payload_hash = resilient_file_hash(str(mp3_file), skip_media_tags=True)
+    assert payload_hash == hashlib.sha256(audio_data).hexdigest()
+    assert full_hash != payload_hash
+
+
+@patch("app.core.resilient_file_ops.IS_WINDOWS", True)
+@patch("app.core.resilient_file_ops.MAX_ATTEMPTS", 5)
+@patch("app.core.resilient_file_ops.RETRY_DELAY", 0.01)
+@patch("gc.collect")
+@patch("time.sleep")
+def test_resilient_file_hash_transient_permission_error_recovery(
+    mock_sleep, mock_collect, tmp_path
+):
+    f = tmp_path / "locked.bin"
+    f.write_bytes(b"locked_content_payload")
+
+    import builtins
+    import hashlib
+
+    expected_hash = hashlib.sha256(b"locked_content_payload").hexdigest()
+
+    real_open = builtins.open
+    calls = []
+
+    def mock_open_func(file_path, *args, **kwargs):
+        calls.append(file_path)
+        if len(calls) < 3:
+            raise PermissionError("File in use by another process")
+        return real_open(file_path, *args, **kwargs)
+
+    import builtins
+
+    with patch("builtins.open", side_effect=mock_open_func):
+        computed_hash = resilient_file_hash(str(f))
+
+    assert computed_hash == expected_hash
+    assert len(calls) == 3
+    assert mock_collect.call_count == 2
+    assert mock_sleep.call_count == 2
+
+
+def test_scanner_and_extractor_hash_alignment(tmp_path):
+    from app.core.extractor import get_file_hash
+    from app.core.forensic_scanner import ForensicScanner
+
+    # Standard file: ForensicScanner and extractor.get_file_hash return identical full-file hashes
+    txt_file = tmp_path / "document.txt"
+    txt_file.write_text("Hello World Forensic")
+
+    scanner_hash = ForensicScanner.compute_sha256(str(txt_file))
+    extractor_hash = get_file_hash(str(txt_file))
+
+    assert scanner_hash == extractor_hash
+
+    # Media file: ForensicScanner computes full-file hash, extractor.get_file_hash skips tags
+    id3_header = b"ID3\x03\x00\x00\x00\x00\x00\x0a" + b"1234567890"
+    audio_data = b"AUDIO_DATA"
+    mp3_file = tmp_path / "song.mp3"
+    mp3_file.write_bytes(id3_header + audio_data)
+
+    scanner_mp3_hash = ForensicScanner.compute_sha256(str(mp3_file))
+    extractor_mp3_hash = get_file_hash(str(mp3_file))
+
+    import hashlib
+
+    assert scanner_mp3_hash == hashlib.sha256(id3_header + audio_data).hexdigest()
+    assert extractor_mp3_hash == hashlib.sha256(audio_data).hexdigest()
+
+
 @patch("app.core.resilient_file_ops.IS_WINDOWS", True)
 @patch("app.core.resilient_file_ops.MAX_ATTEMPTS", 3)
 @patch("app.core.resilient_file_ops.RETRY_DELAY", 0.01)

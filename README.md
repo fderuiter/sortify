@@ -35,34 +35,23 @@ For core contributors and development setup, please refer to the [Contributor Gu
 
 The application is structured to strictly separate business logic from the user interface:
 
-- **core/**: Contains the core business logic, text extraction, machine learning models, and file operations.
-- **ui/**: Contains graphical interface components, dialogs, and progress rendering.
+- **app/core/**: Contains the core business logic, text extraction, machine learning models, and file operations.
+- **app/ui/**: Contains graphical interface components, dialogs, and progress rendering.
 
-## Hybrid Quality Guardrails (Testing)
+## Headless UI and Visual Snapshot Testing
 
-To prevent semantic regressions during development, Smart AutoSorter AI Pro enforces a "Hybrid Quality Guardrail." This test uses deterministic sequential ingestion and low-level mathematical metrics (reconstruction error) to verify clustering quality.
-
-If you make an intentional algorithmic improvement to the analyzer and the `test_quality_guardrails.py` test fails due to the reconstruction error falling outside the +/- 5% tolerance window, you must update the golden baseline:
-
-```bash
-UPDATE_BASELINE=1 uv run pytest tests/test_quality_guardrails.py
-```
-Commit the updated `tests/baseline_metrics.json` file to establish the new expected baseline.
-
-## Headless UI Snapshot Testing
-
-To catch UI structural regressions before they reach the user, we employ a headless snapshot testing framework. It simulates a virtual tree widget to capture changes without a display driver or active GUI.
+To catch UI structural and visual regressions before they reach the user, we employ headless UI and visual snapshot testing frameworks (`tests/test_ui_snapshots.py` and `tests/test_visual_snapshots.py`).
 
 To run the UI snapshot tests:
 ```bash
-uv run pytest tests/test_ui_snapshots.py
+uv run pytest tests/test_ui_snapshots.py tests/test_visual_snapshots.py
 ```
 
-If you intentionally alter the structure of the sorting tree (e.g., adding new metadata or changing nested formats), you must update the golden UI snapshots:
+If you intentionally alter the structure of the sorting tree or UI components, you must update the golden snapshots:
 ```bash
 UPDATE_SNAPSHOTS=1 uv run pytest tests/test_ui_snapshots.py
 ```
-Commit the updated JSON files located in `tests/snapshots/` so reviewers can verify the visual structure differences.
+Commit the updated snapshot files located in `tests/snapshots/` so reviewers can verify the visual and structural differences.
 ## Security & Privacy
 
 For details regarding our security posture, vulnerability reporting, and network dependencies, please read our [Security Policy](SECURITY.md). 
@@ -75,16 +64,16 @@ Check the `docs/` folder for the MkDocs configuration or run `uv run mkdocs buil
 
 This repository strictly separates the presentation layer from business logic.
 
-*   **`config.py`**: Defines global configuration constants, machine learning parameters, and NLP stop words.
+*   **`app/config.py`**: Defines global configuration constants, machine learning parameters, and NLP stop words.
 
-### `core/` Package (Business Logic & Intelligence)
+### `app/core/` Package (Business Logic & Intelligence)
 This package contains the domain logic and data manipulation features. New extraction or processing logic should be added here.
-*   **`extractor.py`**: Data ingestion layer. Parses and extracts text asynchronously from PDFs, Word docs, and Excel files.
-*   **`analyzer.py`**: Core intelligence engine. Uses NLP and unsupervised Machine Learning (TF-IDF and NMF) to cluster document themes.
-*   **`mover.py`**: Manages physical file organization according to the AI's plan.
+*   **`app/core/extractor.py`**: Data ingestion layer. Parses and extracts text asynchronously from PDFs, Word docs, and Excel files.
+*   **`app/core/analyzer.py`**: Core intelligence engine. Uses NLP and unsupervised Machine Learning (TF-IDF and NMF) to cluster document themes.
+*   **`app/core/mover.py`**: Manages physical file organization according to the AI's plan.
 
-### `ui/` Package (Presentation Layer)
+### `app/ui/` Package (Presentation Layer)
 This package contains all graphical interface code. Interface updates should be confined to these modules.
-*   **`app.py`**: Main graphical user interface built with `nicegui`.
-*   **`console.py`**: Utility functions for printing status updates and visualizing directory structures.
-*   **`dialogs.py`**: Helper interface for launching native OS graphical directory selection windows.
+*   **`app/ui/app.py`**: Main graphical user interface built with `nicegui`.
+*   **`app/ui/dialog_helper.py`**: Styling and helper routines for native dialogs and card components.
+*   **`app/ui/wizard.py`**: Interactive setup and onboarding wizard interface.

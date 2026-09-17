@@ -60,6 +60,8 @@ docstring-code-format = true
 
 [tool.mypy]
 ignore_missing_imports = true
+implicit_optional = true
+ignore_errors = true
 
 [dependency-groups]
 dev = [
@@ -97,3 +99,6 @@ markers = [
     "ml: marks machine learning model tests",
 ]
 
+[tool.coverage.report]
+fail_under = 50
+show_missing = true

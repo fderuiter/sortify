@@ -4,6 +4,7 @@
 import argparse
 import os
 import shutil
+import sys
 
 from app.core.extractor import extract_file_text
 
@@ -32,10 +33,10 @@ def extract_file(filename):
     print("-" * 40)
 
 
-def analyze_all():
+def analyze_all(json_output=False):
     """Run the analysis pipeline on all sandbox files."""
     if not os.path.exists(SANDBOX_DIR):
-        print("Sandbox dataset not found. Run reset first.")
+        print("Sandbox dataset not found. Run reset first.", file=sys.stderr)
         return
 
     class MockSettings:
@@ -57,7 +58,7 @@ def analyze_all():
     )
 
     def progress_callback():
-        print("Progress update: File extraction complete.")
+        print("Progress update: File extraction complete.", file=sys.stderr)
 
     items = [
         f
@@ -84,9 +85,12 @@ def analyze_all():
 
     import json
 
-    print("--- Analysis Sorting Plan ---")
-    print(json.dumps(plan, indent=2))
-    print("-" * 40)
+    if json_output:
+        print(json.dumps(plan, indent=2))
+    else:
+        print("--- Analysis Sorting Plan ---")
+        print(json.dumps(plan, indent=2))
+        print("-" * 40)
 
 
 def main():
@@ -109,8 +113,13 @@ def main():
     )
 
     # analyze command
-    subparsers.add_parser(
+    parser_analyze = subparsers.add_parser(
         "analyze", help="Run the analysis pipeline on all sandbox files"
+    )
+    parser_analyze.add_argument(
+        "--json",
+        action="store_true",
+        help="Output raw JSON without decorative borders",
     )
 
     args = parser.parse_args()
@@ -120,7 +129,7 @@ def main():
     elif args.command == "extract":
         extract_file(args.filename)
     elif args.command == "analyze":
-        analyze_all()
+        analyze_all(json_output=args.json)
     else:
         parser.print_help()
 
