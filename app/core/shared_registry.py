@@ -1020,6 +1020,9 @@ class SharedWorkerPool:
                 _thread_local.sandboxed = was_sandboxed
                 _thread_local.reason = old_reason
 
+        if threading.current_thread().name.startswith("GlobalSharedWorker"):
+            return [offline_wrapped_fn(*args) for args in zip(*iterables)]
+
         return self._executor.map(
             offline_wrapped_fn, *iterables, timeout=timeout, chunksize=chunksize
         )
