@@ -10,6 +10,8 @@ from app.core.cro_multi_study_pipeline import CROMultiStudyPipeline
 from app.core.downloader import DownloadManager
 from app.core.shared_registry import SharedModelRegistry
 
+pytestmark = [pytest.mark.slow, pytest.mark.ml]
+
 
 @pytest.fixture(autouse=True)
 def clean_registry():

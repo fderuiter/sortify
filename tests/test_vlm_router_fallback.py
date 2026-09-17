@@ -10,6 +10,8 @@ from app.core.extractor import (
 )
 from app.core.offline_loader import OfflineModelLoadError
 
+pytestmark = [pytest.mark.slow, pytest.mark.ml]
+
 
 def test_settings_vision_engine_default_and_validation(tmp_path):
     # Test default setting

@@ -26,6 +26,8 @@ from app.core.crypto import (
     zero_vector_buffer,
 )
 
+pytestmark = [pytest.mark.slow, pytest.mark.ml]
+
 
 def test_vector_buffer_operations_and_zero_filling():
     """Verify VectorBuffer encapsulates float vectors in mutable byte buffers and zeroes them on cleanup."""

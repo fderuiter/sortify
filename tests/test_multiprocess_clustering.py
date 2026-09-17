@@ -14,6 +14,8 @@ import pytest
 from app.core.analyzer_strategies import RecursiveKMeansStrategy
 from app.core.shared_registry import SharedModelRegistry
 
+pytestmark = [pytest.mark.slow, pytest.mark.ml]
+
 
 @pytest.fixture(autouse=True)
 def force_multiprocessing():
