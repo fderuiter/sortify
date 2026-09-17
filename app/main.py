@@ -298,9 +298,251 @@ def run_smoke_test():
             pass
 
 
+def apply_config_overrides(settings: AppSettings, args: argparse.Namespace):
+    """Apply command-line argument overrides to AppSettings."""
+    if getattr(args, "max_folders", None) is not None:
+        settings.MAX_FOLDERS = args.max_folders
+    if getattr(args, "strategy", None) is not None:
+        settings.SORTING_STRATEGY = args.strategy
+    if getattr(args, "conflict_policy", None) is not None:
+        settings.CONFLICT_POLICY = args.conflict_policy
+    if getattr(args, "contextual_renaming", None) is not None:
+        settings.CONTEXTUAL_RENAMING = args.contextual_renaming
+
+
+def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
+    """Execute non-interactive document batch sorting."""
+    import json
+    from pathlib import Path
+
+    target_path = Path(args.directory).resolve()
+    if not target_path.exists() or not target_path.is_dir():
+        print(
+            f"Error: Target directory '{args.directory}' does not exist or is not a directory.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    apply_config_overrides(settings, args)
+
+    try:
+        from app.core.extractor import build_corpus_generator
+        from app.core.scanner import get_files_recursively
+        from app.core.session import AppSession
+
+        session = AppSession(settings, base_dir=str(target_path))
+        files = get_files_recursively(str(target_path))
+
+        def progress_cb(info=None):
+            pass
+
+        generator = build_corpus_generator(
+            base_dir=str(target_path),
+            items_to_sort=files,
+            progress_callback=progress_cb,
+            max_workers=settings.MAX_WORKERS,
+            db=session.db,
+            chunk_size=50,
+            settings=settings,
+        )
+
+        for chunk in generator:
+            session.partial_fit(chunk)
+
+        plan = session.generate_sorting_plan()
+
+        if args.dest_dir:
+            dest_base = Path(args.dest_dir).resolve()
+            dest_base.mkdir(parents=True, exist_ok=True)
+            re_rooted_plan = {}
+            for k, v in plan.items():
+                if os.path.isabs(k):
+                    re_rooted_plan[k] = v
+                else:
+                    new_key = str(dest_base / k)
+                    re_rooted_plan[new_key] = v
+            plan = re_rooted_plan
+
+        if args.dry_run:
+            result = {
+                "status": "success",
+                "dry_run": True,
+                "target_directory": str(target_path),
+                "destination_directory": (
+                    str(Path(args.dest_dir).resolve())
+                    if args.dest_dir
+                    else str(target_path)
+                ),
+                "plan": plan,
+            }
+        else:
+            summary = session.execute_moves(plan)
+            result = {
+                "status": "success",
+                "dry_run": False,
+                "target_directory": str(target_path),
+                "destination_directory": (
+                    str(Path(args.dest_dir).resolve())
+                    if args.dest_dir
+                    else str(target_path)
+                ),
+                "plan": plan,
+                "summary": summary,
+            }
+
+        session.close()
+
+        if args.json:
+            sys.stdout.write(json.dumps(result, indent=2) + "\n")
+            sys.stdout.flush()
+        else:
+            print(f"Batch sorting completed successfully for '{target_path}'.")
+            if args.dry_run:
+                print("Dry-run mode: no files were moved.")
+            print(json.dumps(plan, indent=2))
+
+        sys.exit(0)
+    except Exception as e:
+        print(f"Error during sorting operation: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def handle_scan_command(args: argparse.Namespace, settings: AppSettings):
+    """Execute directory scanning and sorting analysis without moving files."""
+    import json
+    from pathlib import Path
+
+    target_path = Path(args.directory).resolve()
+    if not target_path.exists() or not target_path.is_dir():
+        print(
+            f"Error: Target directory '{args.directory}' does not exist or is not a directory.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    apply_config_overrides(settings, args)
+
+    try:
+        from app.core.extractor import build_corpus_generator
+        from app.core.scanner import get_files_recursively
+        from app.core.session import AppSession
+
+        session = AppSession(settings, base_dir=str(target_path))
+        files = get_files_recursively(str(target_path))
+
+        def progress_cb(info=None):
+            pass
+
+        generator = build_corpus_generator(
+            base_dir=str(target_path),
+            items_to_sort=files,
+            progress_callback=progress_cb,
+            max_workers=settings.MAX_WORKERS,
+            db=session.db,
+            chunk_size=50,
+            settings=settings,
+        )
+
+        for chunk in generator:
+            session.partial_fit(chunk)
+
+        plan = session.generate_sorting_plan()
+        session.close()
+
+        result = {
+            "status": "success",
+            "target_directory": str(target_path),
+            "files_scanned": len(files),
+            "plan": plan,
+        }
+
+        if args.json:
+            sys.stdout.write(json.dumps(result, indent=2) + "\n")
+            sys.stdout.flush()
+        else:
+            print(
+                f"Scan analysis completed for '{target_path}'. Scanned {len(files)} files."
+            )
+            print(json.dumps(plan, indent=2))
+
+        sys.exit(0)
+    except Exception as e:
+        print(f"Error during scan operation: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def handle_config_command(args: argparse.Namespace, settings: AppSettings):
+    """View or update application settings."""
+    import json
+
+    apply_config_overrides(settings, args)
+
+    if getattr(args, "set", None):
+        for key, value in args.set:
+            key_upper = key.upper()
+            if hasattr(settings._settings_model, key_upper):
+                curr_val = getattr(settings, key_upper)
+                try:
+                    if isinstance(curr_val, bool):
+                        new_val = value.lower() in ("true", "1", "yes")
+                    elif isinstance(curr_val, int):
+                        new_val = int(value)
+                    elif isinstance(curr_val, float):
+                        new_val = float(value)
+                    else:
+                        new_val = value
+                    setattr(settings, key_upper, new_val)
+                except Exception as ex:
+                    print(
+                        f"Error: Failed to set configuration key '{key_upper}' to '{value}': {ex}",
+                        file=sys.stderr,
+                    )
+                    sys.exit(1)
+            else:
+                print(
+                    f"Error: Unknown configuration key '{key}'.",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+
+    settings_dict = settings._settings_model.model_dump(mode="json")
+    if args.json:
+        sys.stdout.write(json.dumps(settings_dict, indent=2) + "\n")
+        sys.stdout.flush()
+    else:
+        print("Application Settings:")
+        for k, v in settings_dict.items():
+            print(f"  {k}: {v}")
+
+    sys.exit(0)
+
+
+def handle_daemon_command(args: argparse.Namespace, settings: AppSettings):
+    """Launch persistent directory-watching daemon."""
+    from pathlib import Path
+
+    from app.core.daemon import start_daemon
+
+    apply_config_overrides(settings, args)
+
+    target_dir = args.directory
+    if target_dir:
+        target_path = Path(target_dir).resolve()
+        if not target_path.exists() or not target_path.is_dir():
+            print(
+                f"Error: Target directory '{target_dir}' does not exist or is not a directory.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        target_dir = str(target_path)
+
+    start_daemon(settings, target_dir)
+
+
 def main():
     """Execute the main application GUI or Demo."""
     import multiprocessing
+    import sys
 
     multiprocessing.freeze_support()
 
@@ -319,9 +561,6 @@ def main():
         help="Regenerate reference baseline snapshots across all covered views",
     )
     parser.add_argument(
-        "directory", nargs="?", default=None, help="Directory to analyze automatically"
-    )
-    parser.add_argument(
         "--daemon",
         action="store_true",
         help="Launch the persistent directory-watching daemon",
@@ -332,7 +571,123 @@ def main():
         help="Enable visual debug outlines for UI elements in dev mode",
     )
 
+    subparsers = parser.add_subparsers(dest="subcommand", help="Available subcommands")
+
+    def add_common_override_args(subparser):
+        subparser.add_argument(
+            "--max-folders",
+            type=int,
+            default=None,
+            help="Maximum number of generated subfolders",
+        )
+        subparser.add_argument(
+            "--strategy",
+            type=str,
+            choices=["default", "generative", "clinical_tmf", "clinical_isf"],
+            default=None,
+            help="Sorting strategy",
+        )
+        subparser.add_argument(
+            "--conflict-policy",
+            type=str,
+            choices=["skip", "rename"],
+            default=None,
+            help="Conflict resolution policy",
+        )
+        subparser.add_argument(
+            "--contextual-renaming",
+            action="store_true",
+            default=None,
+            help="Enable AI contextual renaming",
+        )
+        subparser.add_argument(
+            "--no-contextual-renaming",
+            action="store_false",
+            dest="contextual_renaming",
+            help="Disable AI contextual renaming",
+        )
+
+    # Subcommand: sort
+    parser_sort = subparsers.add_parser(
+        "sort", help="Run document sorting in headless batch processing mode"
+    )
+    parser_sort.add_argument("directory", type=str, help="Target directory to sort")
+    parser_sort.add_argument(
+        "--json",
+        action="store_true",
+        help="Output result in structured JSON format",
+    )
+    parser_sort.add_argument(
+        "--dest-dir",
+        type=str,
+        default=None,
+        help="Destination directory for sorted files",
+    )
+    parser_sort.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Perform dry run analysis without executing physical moves",
+    )
+    add_common_override_args(parser_sort)
+
+    # Subcommand: scan
+    parser_scan = subparsers.add_parser(
+        "scan", help="Run directory scanning and analysis without moving files"
+    )
+    parser_scan.add_argument("directory", type=str, help="Target directory to scan")
+    parser_scan.add_argument(
+        "--json",
+        action="store_true",
+        help="Output scan plan in structured JSON format",
+    )
+    add_common_override_args(parser_scan)
+
+    # Subcommand: config
+    parser_config = subparsers.add_parser(
+        "config", help="View or update application configuration settings"
+    )
+    parser_config.add_argument(
+        "--show",
+        action="store_true",
+        help="Display current configuration settings",
+    )
+    parser_config.add_argument(
+        "--json",
+        action="store_true",
+        help="Output configuration as JSON",
+    )
+    parser_config.add_argument(
+        "--set",
+        nargs=2,
+        action="append",
+        metavar=("KEY", "VALUE"),
+        help="Set configuration KEY to VALUE",
+    )
+    add_common_override_args(parser_config)
+
+    # Subcommand: daemon
+    parser_daemon = subparsers.add_parser(
+        "daemon", help="Launch the persistent directory-watching daemon"
+    )
+    parser_daemon.add_argument(
+        "directory",
+        nargs="?",
+        default=None,
+        help="Directory to watch",
+    )
+    add_common_override_args(parser_daemon)
+
+    legacy_directory = None
+    if (
+        len(sys.argv) > 1
+        and not sys.argv[1].startswith("-")
+        and sys.argv[1] not in ("sort", "scan", "config", "daemon")
+    ):
+        legacy_directory = sys.argv.pop(1)
+
     args = parser.parse_args()
+    if legacy_directory and not getattr(args, "directory", None):
+        args.directory = legacy_directory
 
     if getattr(args, "update_snapshots", False) is True:
         import os
@@ -350,14 +705,24 @@ def main():
 
     settings = AppSettings()
 
+    # Direct subcommand execution
+    if getattr(args, "subcommand", None) == "sort":
+        handle_sort_command(args, settings)
+    elif getattr(args, "subcommand", None) == "scan":
+        handle_scan_command(args, settings)
+    elif getattr(args, "subcommand", None) == "config":
+        handle_config_command(args, settings)
+    elif getattr(args, "subcommand", None) == "daemon":
+        handle_daemon_command(args, settings)
+
     # Verify embedded model integrity upfront if packaged / sandboxed
     if is_packaged():
-        print("Verifying integrity of embedded model weights...")
+        print("Verifying integrity of embedded model weights...", file=sys.stderr)
         try:
             from app.core.verifier import check_ai_status
 
             check_ai_status(settings)
-            print("Model weights integrity verified successfully.")
+            print("Model weights integrity verified successfully.", file=sys.stderr)
         except Exception as e:
             print(f"Startup verification failed: {e}", file=sys.stderr)
             write_smoke_test_error(
