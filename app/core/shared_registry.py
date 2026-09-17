@@ -1000,6 +1000,30 @@ class SharedWorkerPool:
 
         return self._executor.submit(offline_wrapped_fn, *args, **kwargs)
 
+    def map(self, fn, *iterables, timeout=None, chunksize=1):
+        """Map a function over iterables using the shared worker pool, enforcing offline boundaries."""
+        parent_sandboxed = getattr(_thread_local, "sandboxed", None)
+        parent_reason = getattr(_thread_local, "reason", "worker execution")
+
+        def offline_wrapped_fn(*a, **kw):
+            is_sandboxed = True
+            reason = parent_reason if parent_sandboxed is True else "worker execution"
+
+            was_sandboxed = getattr(_thread_local, "sandboxed", False)
+            old_reason = getattr(_thread_local, "reason", "worker execution")
+
+            _thread_local.sandboxed = is_sandboxed
+            _thread_local.reason = reason
+            try:
+                return fn(*a, **kw)
+            finally:
+                _thread_local.sandboxed = was_sandboxed
+                _thread_local.reason = old_reason
+
+        return self._executor.map(
+            offline_wrapped_fn, *iterables, timeout=timeout, chunksize=chunksize
+        )
+
     def shutdown(self, wait=True):
         """Shutdown the underlying executor and reset singleton instance."""
         self._executor.shutdown(wait=wait)
