@@ -34,7 +34,13 @@ def test_coherence_threshold_persistence(tmp_path):
     assert app_settings.COHERENCE_THRESHOLD == 0.8
 
     # Wait for debounced timer to persist
-    time.sleep(0.7)
+    if app_settings._save_timer:
+        app_settings._save_timer.join(timeout=2.0)
+
+    for _ in range(20):
+        if config_file.exists():
+            break
+        time.sleep(0.1)
 
     with open(config_file, "r", encoding="utf-8") as f:
         data = json.load(f)
