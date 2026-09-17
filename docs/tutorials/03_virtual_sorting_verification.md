@@ -119,4 +119,3 @@ print("[*] Cleaning up mock sandbox base directory...")
 sandbox_dir.cleanup()
 print("[+] Workspace deleted. Verification simulation finalized safely!")
 ```
-

@@ -25,4 +25,3 @@ quality_guardrails_cache.db
 offline_bundle/*
 !offline_bundle/requirements.txt
 offline_bundle.zip
-

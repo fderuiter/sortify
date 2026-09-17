@@ -12,7 +12,7 @@ def create_ml_analyzer_notebook():
                     "# Stateful ML Analyzer Clustering\n",
                     "\n",
                     "## 1. Context & Overview\n",
-                    "This notebook demonstrates how the **Smart AutoSorter AI Pro**'s core machine learning engine works under the hood. \n",
+                    "This notebook demonstrates how the **Smart AutoSorter AI Pro**'s core machine learning engine works under the hood.\n",
                     "The system utilizes an `IncrementalAnalyzer` that processes documents and automatically clusters them into semantic themes. This process allows developers and integration engineers to understand document themes without manual categorization.\n",
                     "\n",
                     "## 2. Parameter Explanations & Expectations\n",
@@ -605,6 +605,7 @@ def main():
         notebooks_dir / "01_ml_analyzer_clustering.ipynb", "w", encoding="utf-8"
     ) as f:
         json.dump(ml_nb, f, indent=1)
+        f.write("\n")
     print("[+] Generated 01_ml_analyzer_clustering.ipynb")
 
     # 2. Multi-format text extraction & session management
@@ -613,6 +614,7 @@ def main():
         notebooks_dir / "02_multi_format_text_extraction.ipynb", "w", encoding="utf-8"
     ) as f:
         json.dump(ex_nb, f, indent=1)
+        f.write("\n")
     print("[+] Generated 02_multi_format_text_extraction.ipynb")
 
     # 3. Virtual sorting verification
@@ -621,6 +623,7 @@ def main():
         notebooks_dir / "03_virtual_sorting_verification.ipynb", "w", encoding="utf-8"
     ) as f:
         json.dump(ver_nb, f, indent=1)
+        f.write("\n")
     print("[+] Generated 03_virtual_sorting_verification.ipynb")
 
 

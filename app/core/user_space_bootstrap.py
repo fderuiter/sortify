@@ -76,7 +76,7 @@ def verify_sqlcipher_encryption() -> bool:
         return False
 
 
-def inject_bootstrap_paths(platform_binaries_dir: Path = None):
+def inject_bootstrap_paths(platform_binaries_dir: Path | None = None):
     """Dynamically modify search paths to include the local binaries folder."""
     if platform_binaries_dir is None:
         platform_binaries_dir = get_bootstrap_bin_dir()

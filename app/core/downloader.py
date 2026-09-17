@@ -170,9 +170,12 @@ class DownloadManager:
 
                 try:
                     from app.core.shared_registry import SharedModelRegistry
+
                     SharedModelRegistry.get_instance().unload_all_models()
                 except Exception as e:
-                    logger.warning(f"Failed to unload in-memory model instances during deletion: {e}")
+                    logger.warning(
+                        f"Failed to unload in-memory model instances during deletion: {e}"
+                    )
 
                 import shutil
 

@@ -149,6 +149,7 @@ def test_dense_vector_generation_sanitization():
     class MockDB:
         def get_model_metadata(self, key):
             return None
+
         def set_model_metadata(self, key, value):
             pass
 
@@ -175,7 +176,7 @@ def test_folder_keyword_generation_sanitization():
     docs_with_markup = [
         "<OD> Financial statement quarterly revenue report <loc_10> <loc_20> [10, 20, 30, 40]",
         "<OCR_WITH_REGION_AND_BOX> Financial statement quarterly profit balance <loc_100>",
-        "Financial statement quarterly earnings statement <loc_500>"
+        "Financial statement quarterly earnings statement <loc_500>",
     ]
 
     folder_name = strategy._get_cluster_keywords(docs_with_markup)
@@ -185,7 +186,11 @@ def test_folder_keyword_generation_sanitization():
     assert "<OCR" not in folder_name
     assert "loc_" not in folder_name.lower()
     assert "[" not in folder_name and "]" not in folder_name
-    assert "Financial" in folder_name or "Quarterly" in folder_name or "Statement" in folder_name
+    assert (
+        "Financial" in folder_name
+        or "Quarterly" in folder_name
+        or "Statement" in folder_name
+    )
 
 
 def test_raw_payload_preservation():
@@ -193,7 +198,9 @@ def test_raw_payload_preservation():
     from app.core.offline_loader import Florence2VisualProcessor
 
     raw_florence_output = "Invoice <loc_100> <loc_200> <loc_300> <loc_400>"
-    result = Florence2VisualProcessor.parse_and_sanitize(raw_florence_output, image_size=(1000, 1000))
+    result = Florence2VisualProcessor.parse_and_sanitize(
+        raw_florence_output, image_size=(1000, 1000)
+    )
 
     # Raw payload MUST retain original uncleaned output and bounding box structures
     assert result["raw_output"] == raw_florence_output
@@ -201,4 +208,3 @@ def test_raw_payload_preservation():
     assert result["coordinates"][0]["box_2d_relative"] == [0.1, 0.2, 0.3, 0.4]
     # Sanitized text is generated separately in sanitized_text
     assert result["sanitized_text"] == "Invoice"
-

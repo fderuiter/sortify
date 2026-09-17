@@ -251,15 +251,17 @@ def extract_metadata_and_payload(snapshot_data: dict) -> tuple[dict | None, dict
     """Separate metadata header from the definitions payload dictionary."""
     metadata = None
     if isinstance(snapshot_data, dict):
-        if "_metadata" in snapshot_data and isinstance(snapshot_data["_metadata"], dict):
+        if "_metadata" in snapshot_data and isinstance(
+            snapshot_data["_metadata"], dict
+        ):
             metadata = snapshot_data["_metadata"]
-        elif "metadata" in snapshot_data and isinstance(snapshot_data["metadata"], dict):
+        elif "metadata" in snapshot_data and isinstance(
+            snapshot_data["metadata"], dict
+        ):
             metadata = snapshot_data["metadata"]
 
     payload = {
-        k: v
-        for k, v in snapshot_data.items()
-        if k not in ("_metadata", "metadata")
+        k: v for k, v in snapshot_data.items() if k not in ("_metadata", "metadata")
     }
     return metadata, payload
 

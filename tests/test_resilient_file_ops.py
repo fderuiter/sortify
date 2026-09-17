@@ -331,4 +331,3 @@ def test_resilient_rmtree_ignore_errors(tmp_path, caplog):
         or f"Failed to rmtree <USER_HOME>/{d.name} after" in caplog.text
         or f"Failed to rmtree <USER_HOME>\\{d.name} after" in caplog.text
     )
-

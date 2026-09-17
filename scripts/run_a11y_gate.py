@@ -27,7 +27,9 @@ def main():
     )
 
     if violations:
-        print(f"FAIL: {len(violations)} accessibility / layout violation(s) detected across {total_scans} scans!\n")
+        print(
+            f"FAIL: {len(violations)} accessibility / layout violation(s) detected across {total_scans} scans!\n"
+        )
         print("----------------------------------------------------------------------")
         print("VIOLATION DETAILS:")
         print("----------------------------------------------------------------------")

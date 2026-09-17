@@ -78,7 +78,11 @@ def test_contextual_renaming_fallback_offline():
     assert new_fn != "scan_001.pdf"
     assert new_fn.endswith(".pdf")
     # New filename should be generated from extracted terms
-    assert "audit" in new_fn.lower() or "financial" in new_fn.lower() or "statement" in new_fn.lower()
+    assert (
+        "audit" in new_fn.lower()
+        or "financial" in new_fn.lower()
+        or "statement" in new_fn.lower()
+    )
 
 
 def test_ai_consent_verification():
@@ -130,9 +134,7 @@ def test_protected_paths_and_locks():
 
     # File with manual user lock
     assert (
-        is_file_protected_or_locked(
-            "/app/my_files/scan_002.pdf", locked_files=locked
-        )
+        is_file_protected_or_locked("/app/my_files/scan_002.pdf", locked_files=locked)
         is True
     )
 
@@ -187,7 +189,10 @@ def test_sorting_plan_processing_without_altering_folders():
 
     # Verify good name annual_summary.pdf is unchanged (no target_filename needed or same)
     report_node = processed_plan["Reports"]["annual_summary.pdf"]
-    assert report_node.get("target_filename") is None or report_node.get("target_filename") == "annual_summary.pdf"
+    assert (
+        report_node.get("target_filename") is None
+        or report_node.get("target_filename") == "annual_summary.pdf"
+    )
 
 
 def test_memory_purge_after_plan_generation():
@@ -200,9 +205,7 @@ def test_memory_purge_after_plan_generation():
             "scan_999.pdf": {"__type__": "file", "relative_source": "scan_999.pdf"}
         }
     }
-    docs_map = {
-        "scan_999.pdf": "Confidential Medical Record Patient Agreement."
-    }
+    docs_map = {"scan_999.pdf": "Confidential Medical Record Patient Agreement."}
 
     engine.process_sorting_plan(plan, docs_map, base_dir="/app/work")
 

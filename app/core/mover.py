@@ -277,7 +277,11 @@ def _execute_moves_recursive(
 
             source_rel_path = os.path.relpath(source_path, base_dir).replace("\\", "/")
             rel_dest = os.path.relpath(dest_path, base_dir).replace("\\", "/")
-            doc = db.get_document(base_dir, source_rel_path) if hasattr(db, "get_document") else None
+            doc = (
+                db.get_document(base_dir, source_rel_path)
+                if hasattr(db, "get_document")
+                else None
+            )
             file_hash = doc.get("file_hash") if (doc and isinstance(doc, dict)) else ""
 
             entry_id = f"{session_id}:{source_rel_path}" if session_id else None
@@ -295,7 +299,9 @@ def _execute_moves_recursive(
                         entry_id=entry_id,
                     )
                 except Exception as exc:
-                    logging.warning(f"Failed to log move intent to transaction ledger: {exc}")
+                    logging.warning(
+                        f"Failed to log move intent to transaction ledger: {exc}"
+                    )
 
             link_info = LinkManager.get_link_info(source_path)
             if not link_info:
@@ -469,12 +475,20 @@ def _execute_moves_recursive(
                 try:
                     ledger.update_status(entry_id, "MOVED_PHYSICAL")
                 except Exception as exc:
-                    logging.warning(f"Failed to update transaction ledger status: {exc}")
+                    logging.warning(
+                        f"Failed to update transaction ledger status: {exc}"
+                    )
 
-            if history_manager and session_id and not _is_same_path(dest_path, source_path):
+            if (
+                history_manager
+                and session_id
+                and not _is_same_path(dest_path, source_path)
+            ):
                 file_hash = doc.get("file_hash") if doc else None
                 orig_filename = os.path.basename(source_path)
-                is_collision = bool(collision or (os.path.basename(dest_path) != orig_filename))
+                is_collision = bool(
+                    collision or (os.path.basename(dest_path) != orig_filename)
+                )
                 is_cross_vol = _is_cross_volume(source_path, dest_path)
                 try:
                     history_manager.log_step(
@@ -527,12 +541,15 @@ def _execute_moves_recursive(
                 link_meta = None
                 if link_info:
                     link_meta = {
-                        "target": new_abs_target if "new_abs_target" in locals() else link_info.get("target"),
+                        "target": new_abs_target
+                        if "new_abs_target" in locals()
+                        else link_info.get("target"),
                         "type": link_info["type"],
                     }
                     if link_info["type"] == "lnk" and "kwargs" in locals():
                         link_meta.update(kwargs)
                 import json
+
                 step_hash = None
                 if item_type == "file" and os.path.exists(dest_path):
                     try:
@@ -566,7 +583,9 @@ def _execute_moves_recursive(
                 try:
                     ledger.update_status(entry_id, "COMPLETED")
                 except Exception as exc:
-                    logging.warning(f"Failed to update transaction ledger completion: {exc}")
+                    logging.warning(
+                        f"Failed to update transaction ledger completion: {exc}"
+                    )
 
             moved_counter[0] += 1
             if moved_counter[0] >= batch_size:
@@ -614,7 +633,9 @@ def execute_moves(
         or integrity_result.get("unconfirmed_renames")
         or integrity_result.get("circular_renames")
     ):
-        warn_text = "; ".join(integrity_result.get("warnings", [])) or "Plan validation failed."
+        warn_text = (
+            "; ".join(integrity_result.get("warnings", [])) or "Plan validation failed."
+        )
         raise ValueError(f"Plan validation or confirmation failed: {warn_text}")
 
     session_id = None
@@ -759,7 +780,9 @@ def execute_moves(
             try:
                 ledger.purge_session(session_id)
             except Exception as purge_err:
-                logging.warning(f"Failed to purge finalized session ledger: {purge_err}")
+                logging.warning(
+                    f"Failed to purge finalized session ledger: {purge_err}"
+                )
         if session_id and history_manager:
             try:
                 history_manager.clear_step_ledger(session_id)

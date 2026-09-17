@@ -66,6 +66,7 @@ class Settings(BaseSettings):
     @MAX_AUDIO_WORKERS.setter
     def MAX_AUDIO_WORKERS(self, val: int) -> None:
         self.AUDIO_MAX_WORKERS = val
+
     OCR_LANGUAGES: str = Field(default="en")
     VISION_ENGINE: Literal["easyocr", "florence-2"] = Field(default="easyocr")
     CONFLICT_POLICY: Literal["skip", "rename"] = Field(default="rename")
@@ -500,7 +501,9 @@ class AppSettings:
                 with open(schema_path, "r", encoding="utf-8") as sf:
                     schema = json.load(sf)
                 validator = jsonschema.Draft202012Validator(schema)
-                schema_errors = sorted(validator.iter_errors(data), key=lambda e: e.path)
+                schema_errors = sorted(
+                    validator.iter_errors(data), key=lambda e: e.path
+                )
                 for error in schema_errors:
                     path = (
                         ".".join([str(p) for p in error.path]) if error.path else "root"
@@ -517,7 +520,9 @@ class AppSettings:
                 loc = err.get("loc", [])
                 path = ".".join([str(p) for p in loc]) if loc else "root"
                 msg = err.get("msg", str(err))
-                if not any(item["field"] == path and item["message"] == msg for item in errors):
+                if not any(
+                    item["field"] == path and item["message"] == msg for item in errors
+                ):
                     errors.append({"field": path, "message": msg})
 
         if not errors:

@@ -1,5 +1,4 @@
-"""Tests for Audio Extractor Concurrency Semaphore Guard and AUDIO_MAX_WORKERS configuration.
-"""
+"""Tests for Audio Extractor Concurrency Semaphore Guard and AUDIO_MAX_WORKERS configuration."""
 
 import concurrent.futures
 import time
@@ -89,6 +88,7 @@ def test_audio_concurrency_guard_restricts_active_tasks():
     active_records = []
     peak_active = 0
     import threading
+
     lock = threading.Lock()
 
     def simulate_audio_task(task_id: int):
@@ -127,9 +127,12 @@ def test_audio_extraction_batch_concurrency_limit(tmp_path):
     guard = AudioConcurrencyGuard.get_instance(limit=2)
     peak_active = 0
     import threading
+
     lock = threading.Lock()
 
-    def mock_do_extract(file_path, settings=None, progress_callback=None, cancel_check=None):
+    def mock_do_extract(
+        file_path, settings=None, progress_callback=None, cancel_check=None
+    ):
         nonlocal peak_active
         with lock:
             curr = guard.active_count

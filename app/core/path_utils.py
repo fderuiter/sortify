@@ -40,7 +40,7 @@ def is_packaged() -> bool:
     return getattr(sys, "frozen", False)
 
 
-def get_base_path(caller_file_path: str = None) -> str:
+def get_base_path(caller_file_path: str | None = None) -> str:
     """Get the standard base path of the application.
 
     Compatible with frozen/packaged execution and local development.
@@ -59,7 +59,7 @@ def get_session_base_dir() -> Path:
     return Path(tempfile.gettempdir()) / "autosorter_sessions"
 
 
-def setup_session_directory(session_id: str = None) -> tuple[str, Path]:
+def setup_session_directory(session_id: str | None = None) -> tuple[str, Path]:
     """Set up and return the session ID and standard session database directory."""
     import uuid
 
@@ -79,7 +79,7 @@ def resolve_db_crypto(db_path: Path | str):
     return SessionCrypto(key_path, db_path_obj)
 
 
-def validate_target_path(target_path: str, keyword: str = None) -> None:
+def validate_target_path(target_path: str, keyword: str | None = None) -> None:
     """Validate a target folder path for safety and correct structure.
 
     Raises ValueError if invalid.
@@ -246,13 +246,12 @@ def _merge_plan_dicts(target_dict: dict, source_dict: dict) -> list[str]:
             target_dict[k] = v
         else:
             existing_val = target_dict[k]
-            is_existing_subfolder = (
-                isinstance(existing_val, dict)
-                and existing_val.get("__type__") not in ("file", "directory")
-            )
-            is_v_subfolder = (
-                isinstance(v, dict)
-                and v.get("__type__") not in ("file", "directory")
+            is_existing_subfolder = isinstance(existing_val, dict) and existing_val.get(
+                "__type__"
+            ) not in ("file", "directory")
+            is_v_subfolder = isinstance(v, dict) and v.get("__type__") not in (
+                "file",
+                "directory",
             )
 
             if is_existing_subfolder and is_v_subfolder:
@@ -308,9 +307,9 @@ def sanitize_plan(plan: dict) -> tuple[dict, list[str]]:
 
             if safe_key in sanitized_plan:
                 existing = sanitized_plan[safe_key]
-                if (
-                    isinstance(existing, dict)
-                    and existing.get("__type__") not in ("file", "directory")
+                if isinstance(existing, dict) and existing.get("__type__") not in (
+                    "file",
+                    "directory",
                 ):
                     merge_warns = _merge_plan_dicts(existing, sub_sanitized)
                     warnings.extend(merge_warns)
@@ -378,4 +377,3 @@ def is_junction_entry(entry) -> bool:
         return os.path.isjunction(path)
     except (AttributeError, OSError):
         return False
-

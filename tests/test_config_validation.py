@@ -729,7 +729,13 @@ def test_app_settings_inverted_debounce_load_prevention(tmp_path):
 
 def test_reject_reserved_device_names_in_segments():
     """Multi-segment target paths containing reserved device names in any segment should be rejected."""
-    reserved_samples = ["sub/CON/path", "nested/AUX.txt/data", "folder/COM1/sub", "prn/files", "data/LPT9/out"]
+    reserved_samples = [
+        "sub/CON/path",
+        "nested/AUX.txt/data",
+        "folder/COM1/sub",
+        "prn/files",
+        "data/LPT9/out",
+    ]
     for path in reserved_samples:
         with pytest.raises(ValidationError) as exc_info:
             Settings(KEYWORD_RULES={"rule": path})
@@ -738,7 +744,12 @@ def test_reject_reserved_device_names_in_segments():
 
 def test_reject_trailing_spaces_or_dots_in_segments():
     """Multi-segment target paths containing trailing dots or spaces in any segment should be rejected."""
-    invalid_paths = ["nested/folder /target", "nested/folder./target", "folder/sub. /target", "trailing.dot."]
+    invalid_paths = [
+        "nested/folder /target",
+        "nested/folder./target",
+        "folder/sub. /target",
+        "trailing.dot.",
+    ]
     for path in invalid_paths:
         with pytest.raises(ValidationError) as exc_info:
             Settings(KEYWORD_RULES={"rule": path})

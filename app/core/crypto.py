@@ -538,4 +538,3 @@ def decrypt_ipc_payload(encrypted_bytes: bytes, session_key: bytes | str) -> Any
     cipher = Fernet(session_key)
     decrypted = cipher.decrypt(encrypted_bytes)
     return pickle.loads(decrypted)
-

@@ -119,7 +119,9 @@ def main():
         )
         sys.exit(1)
     else:
-        print("Static layout validation passed successfully. No rigid layout classes detected.")
+        print(
+            "Static layout validation passed successfully. No rigid layout classes detected."
+        )
         sys.exit(0)
 
 

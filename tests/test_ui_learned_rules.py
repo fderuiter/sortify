@@ -185,9 +185,10 @@ def test_learned_rules_inline_editing_and_validation(tmp_path):
         # Test 1: Invalid path edit (absolute path)
         notifications.clear()
         path_inp.set_value("/absolute/path/not/allowed")
-        assert any("Invalid target path" in msg and type_ == "negative" for msg, type_ in notifications), (
-            "Expected negative notification for absolute path edit"
-        )
+        assert any(
+            "Invalid target path" in msg and type_ == "negative"
+            for msg, type_ in notifications
+        ), "Expected negative notification for absolute path edit"
         assert settings.LEARNED_RULES["invoice"] == "Invoices/2026", (
             "Invalid path edit must not update settings"
         )
@@ -195,17 +196,19 @@ def test_learned_rules_inline_editing_and_validation(tmp_path):
         # Test 2: Invalid path edit (illegal characters)
         notifications.clear()
         path_inp.set_value("Invoices:*?")
-        assert any("Invalid target path" in msg and type_ == "negative" for msg, type_ in notifications), (
-            "Expected negative notification for illegal path characters"
-        )
+        assert any(
+            "Invalid target path" in msg and type_ == "negative"
+            for msg, type_ in notifications
+        ), "Expected negative notification for illegal path characters"
         assert settings.LEARNED_RULES["invoice"] == "Invoices/2026"
 
         # Test 3: Invalid path edit (directory traversal)
         notifications.clear()
         path_inp.set_value("Invoices/../traversal")
-        assert any("Invalid target path" in msg and type_ == "negative" for msg, type_ in notifications), (
-            "Expected negative notification for directory traversal"
-        )
+        assert any(
+            "Invalid target path" in msg and type_ == "negative"
+            for msg, type_ in notifications
+        ), "Expected negative notification for directory traversal"
         assert settings.LEARNED_RULES["invoice"] == "Invoices/2026"
 
         # Test 4: Valid path edit
@@ -214,12 +217,17 @@ def test_learned_rules_inline_editing_and_validation(tmp_path):
         assert settings.LEARNED_RULES["invoice"] == "Invoices/Archived", (
             "Valid path edit should update settings.LEARNED_RULES"
         )
-        assert any("Updated destination path" in msg and type_ == "positive" for msg, type_ in notifications)
+        assert any(
+            "Updated destination path" in msg and type_ == "positive"
+            for msg, type_ in notifications
+        )
 
         # Test 5: Valid keyword edit
         notifications.clear()
         kw_inp.set_value("tax_invoice")
-        assert "tax_invoice" in settings.LEARNED_RULES, "Keyword change should update settings"
+        assert "tax_invoice" in settings.LEARNED_RULES, (
+            "Keyword change should update settings"
+        )
         assert "invoice" not in settings.LEARNED_RULES, "Old keyword should be removed"
         assert settings.LEARNED_RULES["tax_invoice"] == "Invoices/Archived"
 
@@ -282,4 +290,7 @@ def test_learned_rules_row_deletion(tmp_path):
         assert "temp_rule" not in settings.LEARNED_RULES, (
             "Rule should be deleted from settings.LEARNED_RULES"
         )
-        assert any("deleted" in msg.lower() and type_ == "positive" for msg, type_ in notifications)
+        assert any(
+            "deleted" in msg.lower() and type_ == "positive"
+            for msg, type_ in notifications
+        )

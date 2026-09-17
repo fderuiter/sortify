@@ -34,7 +34,7 @@ def convert_notebook_to_markdown(notebook_path: Path, output_path: Path) -> None
         else:
             text = str(source)
 
-        text = text.strip()
+        text = "\n".join(line.rstrip() for line in text.splitlines()).strip()
         if not text:
             continue
 
@@ -45,7 +45,7 @@ def convert_notebook_to_markdown(notebook_path: Path, output_path: Path) -> None
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with open(output_path, "w", encoding="utf-8", newline="\n") as f:
-        f.write("".join(md_lines))
+        f.write("".join(md_lines).rstrip() + "\n")
 
 
 def generate_tutorial_docs():
@@ -71,28 +71,32 @@ def generate_api_docs():
     app_dir = "app"
     output_file = os.path.join("docs", "api_reference.md")
 
+    content = [
+        "# API Reference\n\n",
+        "This document is automatically generated. Do not edit manually.\n\n",
+    ]
+
+    # Find all python files except ui and binaries
+    py_files = glob.glob(os.path.join(app_dir, "**", "*.py"), recursive=True)
+    py_files = [
+        p
+        for p in py_files
+        if not p.endswith("__init__.py")
+        and "/ui/" not in p
+        and "\\ui\\" not in p
+        and "/binaries/" not in p
+        and "\\binaries\\" not in p
+    ]
+    py_files.sort(key=lambda p: Path(p).parts)
+
+    for file_path in py_files:
+        parts = Path(file_path).with_suffix("").parts
+        module_name = ".".join(parts)
+        content.append(f"## `{module_name}`\n\n")
+        content.append(f"::: {module_name}\n\n")
+
     with open(output_file, "w", encoding="utf-8", newline="\n") as f:
-        f.write("# API Reference\n\n")
-        f.write("This document is automatically generated. Do not edit manually.\n\n")
-
-        # Find all python files except ui and binaries
-        py_files = glob.glob(os.path.join(app_dir, "**", "*.py"), recursive=True)
-        py_files = [
-            p
-            for p in py_files
-            if not p.endswith("__init__.py")
-            and "/ui/" not in p
-            and "\\ui\\" not in p
-            and "/binaries/" not in p
-            and "\\binaries\\" not in p
-        ]
-        py_files.sort(key=lambda p: Path(p).parts)
-
-        for file_path in py_files:
-            parts = Path(file_path).with_suffix("").parts
-            module_name = ".".join(parts)
-            f.write(f"## `{module_name}`\n\n")
-            f.write(f"::: {module_name}\n\n")
+        f.write("".join(content).rstrip() + "\n")
 
 
 def generate_ui_docs():
@@ -100,19 +104,23 @@ def generate_ui_docs():
     app_dir = os.path.join("app", "ui")
     output_file = os.path.join("docs", "ui.md")
 
+    content = [
+        "# UI API Reference\n\n",
+        "This document is automatically generated. Do not edit manually.\n\n",
+    ]
+
+    py_files = glob.glob(os.path.join(app_dir, "*.py"))
+    py_files = [p for p in py_files if not p.endswith("__init__.py")]
+    py_files.sort(key=lambda p: Path(p).parts)
+
+    for file_path in py_files:
+        parts = Path(file_path).with_suffix("").parts
+        module_name = ".".join(parts)
+        content.append(f"## `{module_name}`\n\n")
+        content.append(f"::: {module_name}\n\n")
+
     with open(output_file, "w", encoding="utf-8", newline="\n") as f:
-        f.write("# UI API Reference\n\n")
-        f.write("This document is automatically generated. Do not edit manually.\n\n")
-
-        py_files = glob.glob(os.path.join(app_dir, "*.py"))
-        py_files = [p for p in py_files if not p.endswith("__init__.py")]
-        py_files.sort(key=lambda p: Path(p).parts)
-
-        for file_path in py_files:
-            parts = Path(file_path).with_suffix("").parts
-            module_name = ".".join(parts)
-            f.write(f"## `{module_name}`\n\n")
-            f.write(f"::: {module_name}\n\n")
+        f.write("".join(content).rstrip() + "\n")
 
 
 def generate_admin_guide():
@@ -122,155 +130,158 @@ def generate_admin_guide():
     # Import config safely
     from app.config import Settings
 
+    content = [
+        "# Administrator Guide\n\n",
+        "This document is automatically generated. Do not edit manually.\n\n",
+        "## Configuration Parameters\n\n",
+        "The following parameters are extracted directly from the application's configuration schema (`app.config.Settings`).\n\n",
+    ]
+
+    for name, field in Settings.model_fields.items():
+        default_val = field.default
+        if isinstance(default_val, set):
+            default_val = sorted(list(default_val))
+        elif isinstance(default_val, str):
+            try:
+                rel_path = Path(default_val).relative_to(Path.home())
+                default_val = f"~/{rel_path.as_posix()}"
+            except ValueError:
+                pass
+
+        content.append(f"### `{name}`\n")
+        content.append(f"- **Default**: `{default_val}`\n")
+        content.append(f"- **Required**: `{field.is_required()}`\n\n")
+
+    content.append("## Precedence Rules\n\n")
+    content.append(
+        "The application evaluates configuration parameters using a strict precedence hierarchy to determine how settings interact. The priority is applied as follows, from highest to lowest:\n\n"
+    )
+    content.append(
+        "1. **Local Settings File (`~/.autosorter/settings.json`):** This local configuration file takes absolute priority. Any parameters defined here will override environment variables and default properties.\n"
+    )
+    content.append(
+        "2. **Environment Variables (or `.env` file):** Variables configured in the environment take precedence over default parameters.\n"
+    )
+    content.append(
+        "3. **Default Parameters:** Base defaults are used as fallbacks if a setting is not explicitly defined in the local file or environment.\n\n"
+    )
+
+    content.append("## Dynamic Configuration Saves\n\n")
+    content.append(
+        "System settings modified during runtime are dynamically saved to the local JSON configuration file (`~/.autosorter/settings.json`) located in the user's home directory. To ensure stability and prevent excessive disk writes, these dynamic changes are saved with a short debounced delay of 0.5 seconds.\n\n"
+    )
+
+    content.append("## Compliance Policies & Routing Rules\n\n")
+    content.append("### Rule Syntax & Types\n\n")
+    content.append(
+        "Compliance policies categorize and sort documents based on three rule types:\n\n"
+    )
+    content.append(
+        "- **Keyword Rules**: Search for files containing a specific word or phrase anywhere in their text contents (for example, 'invoice' or 'billing').\n"
+    )
+    content.append(
+        "- **Pattern Rules**: Match files using structured formatting or text sequences (such as a standard format of letters followed by numbers) to match specific document types.\n"
+    )
+    content.append(
+        "- **Override Rules**: Check for exact text matches, taking precedent to bypass standard classification rules.\n\n"
+    )
+
+    content.append("### Sequential Execution & Priority\n\n")
+    content.append(
+        "Rules are evaluated sequentially, starting from the highest priority value down to the lowest. "
+    )
+    content.append(
+        "Because rules are checked in priority order, if a higher-priority rule matches, it will be executed first. "
+    )
+    content.append(
+        "This can sometimes result in 'shadowing', where a lower-priority rule never runs because a higher-priority rule has already matched the same conditions. "
+    )
+    content.append(
+        "To resolve overlaps, adjust rule priority numbers or make matching conditions more specific.\n\n"
+    )
+
+    content.append("### Halting Parameters\n\n")
+    content.append("Each policy includes a 'Halt on mismatch' setting. ")
+    content.append(
+        "When active, if a document fails to meet this rule's criteria, the system will immediately stop evaluating any remaining lower-priority rules. "
+    )
+    content.append(
+        "This halting behavior is crucial for enforcing strict sequential checks and ensuring that files do not proceed to general classification or AI-based sorting if they fail compliance conditions.\n\n"
+    )
+
+    content.append("### Path Validation Rules\n\n")
+    content.append(
+        "To ensure system security, stability, and compatibility across operating systems, all target paths must comply with the following strict validation rules:\n\n"
+    )
+    content.append(
+        "- **No Absolute Paths**: All target paths must be relative paths and cannot start with leading slashes (such as `/` or `\\`).\n"
+    )
+    content.append(
+        "- **No Directory Traversal**: Paths are blocked from using directory traversal segments (such as `..`) to prevent files from being moved outside of the designated folders.\n"
+    )
+    content.append(
+        '- **No Illegal Characters**: Target paths must not contain any prohibited characters, including `<`, `>`, `:`, `"`, `|`, `?`, or `*`.\n\n'
+    )
+
+    content.append("### Configuration Recovery & Troubleshooting\n\n")
+    content.append(
+        "If the system detects invalid fields or syntax errors in the configuration file (`settings.json`), automatic saves are locked. "
+    )
+    content.append(
+        "This safeguard prevents overwriting and potentially corrupting your existing settings. "
+    )
+    content.append(
+        "While saves are suspended, the application will use temporary default values to prevent crashes.\n\n"
+    )
+    content.append(
+        "To resolve a blocked-save state, follow these recovery options:\n\n"
+    )
+    content.append(
+        "1. **Check Warning Banners**: Review the detailed list of validation errors displayed under the warning banner in the application settings dialog.\n"
+    )
+    content.append(
+        "2. **Manually Edit Settings**: Open the local configuration file (`~/.autosorter/settings.json`) and correct the invalid values or formats.\n"
+    )
+    content.append(
+        "3. **Reset Configuration**: Delete the invalid `settings.json` file or click the reset button to restore default, valid configuration values, which will immediately re-enable automatic saving.\n\n"
+    )
+
+    content.append("## Maintenance Scripts and CLI Commands\n\n")
+
+    # sandbox_cli.py
+    content.append("### `sandbox_cli.py`\n")
+    import sandbox_cli
+
+    content.append(f"{sandbox_cli.__doc__}\n\n")
+    content.append("#### Usage\n```text\n")
+    import subprocess
+
+    env = os.environ.copy()
+    env["COLUMNS"] = "80"
+    result = subprocess.run(
+        ["uv", "run", "python", "sandbox_cli.py", "--help"],
+        capture_output=True,
+        text=True,
+        check=True,
+        env=env,
+    )
+    content.append(result.stdout.replace("\r\n", "\n"))
+    content.append("```\n\n")
+
+    # scripts/prepare_offline.py
+    content.append("### `scripts/prepare_offline.py`\n")
+    import scripts.prepare_offline as prepare_offline
+
+    content.append(f"{prepare_offline.__doc__}\n\n")
+
+    # scripts/install_offline.py
+    content.append("### `scripts/install_offline.py`\n")
+    import scripts.install_offline as install_offline
+
+    content.append(f"{install_offline.__doc__}\n\n")
+
     with open(output_file, "w", encoding="utf-8", newline="\n") as f:
-        f.write("# Administrator Guide\n\n")
-        f.write("This document is automatically generated. Do not edit manually.\n\n")
-
-        f.write("## Configuration Parameters\n\n")
-        f.write(
-            "The following parameters are extracted directly from the application's configuration schema (`app.config.Settings`).\n\n"
-        )
-
-        for name, field in Settings.model_fields.items():
-            default_val = field.default
-            if isinstance(default_val, set):
-                default_val = sorted(list(default_val))
-            elif isinstance(default_val, str):
-                try:
-                    rel_path = Path(default_val).relative_to(Path.home())
-                    default_val = f"~/{rel_path.as_posix()}"
-                except ValueError:
-                    pass
-
-            f.write(f"### `{name}`\n")
-            f.write(f"- **Default**: `{default_val}`\n")
-            f.write(f"- **Required**: `{field.is_required()}`\n\n")
-
-        f.write("## Precedence Rules\n\n")
-        f.write(
-            "The application evaluates configuration parameters using a strict precedence hierarchy to determine how settings interact. The priority is applied as follows, from highest to lowest:\n\n"
-        )
-        f.write(
-            "1. **Local Settings File (`~/.autosorter/settings.json`):** This local configuration file takes absolute priority. Any parameters defined here will override environment variables and default properties.\n"
-        )
-        f.write(
-            "2. **Environment Variables (or `.env` file):** Variables configured in the environment take precedence over default parameters.\n"
-        )
-        f.write(
-            "3. **Default Parameters:** Base defaults are used as fallbacks if a setting is not explicitly defined in the local file or environment.\n\n"
-        )
-
-        f.write("## Dynamic Configuration Saves\n\n")
-        f.write(
-            "System settings modified during runtime are dynamically saved to the local JSON configuration file (`~/.autosorter/settings.json`) located in the user's home directory. To ensure stability and prevent excessive disk writes, these dynamic changes are saved with a short debounced delay of 0.5 seconds.\n\n"
-        )
-
-        f.write("## Compliance Policies & Routing Rules\n\n")
-        f.write("### Rule Syntax & Types\n\n")
-        f.write(
-            "Compliance policies categorize and sort documents based on three rule types:\n\n"
-        )
-        f.write(
-            "- **Keyword Rules**: Search for files containing a specific word or phrase anywhere in their text contents (for example, 'invoice' or 'billing').\n"
-        )
-        f.write(
-            "- **Pattern Rules**: Match files using structured formatting or text sequences (such as a standard format of letters followed by numbers) to match specific document types.\n"
-        )
-        f.write(
-            "- **Override Rules**: Check for exact text matches, taking precedent to bypass standard classification rules.\n\n"
-        )
-
-        f.write("### Sequential Execution & Priority\n\n")
-        f.write(
-            "Rules are evaluated sequentially, starting from the highest priority value down to the lowest. "
-        )
-        f.write(
-            "Because rules are checked in priority order, if a higher-priority rule matches, it will be executed first. "
-        )
-        f.write(
-            "This can sometimes result in 'shadowing', where a lower-priority rule never runs because a higher-priority rule has already matched the same conditions. "
-        )
-        f.write(
-            "To resolve overlaps, adjust rule priority numbers or make matching conditions more specific.\n\n"
-        )
-
-        f.write("### Halting Parameters\n\n")
-        f.write("Each policy includes a 'Halt on mismatch' setting. ")
-        f.write(
-            "When active, if a document fails to meet this rule's criteria, the system will immediately stop evaluating any remaining lower-priority rules. "
-        )
-        f.write(
-            "This halting behavior is crucial for enforcing strict sequential checks and ensuring that files do not proceed to general classification or AI-based sorting if they fail compliance conditions.\n\n"
-        )
-
-        f.write("### Path Validation Rules\n\n")
-        f.write(
-            "To ensure system security, stability, and compatibility across operating systems, all target paths must comply with the following strict validation rules:\n\n"
-        )
-        f.write(
-            "- **No Absolute Paths**: All target paths must be relative paths and cannot start with leading slashes (such as `/` or `\\`).\n"
-        )
-        f.write(
-            "- **No Directory Traversal**: Paths are blocked from using directory traversal segments (such as `..`) to prevent files from being moved outside of the designated folders.\n"
-        )
-        f.write(
-            '- **No Illegal Characters**: Target paths must not contain any prohibited characters, including `<`, `>`, `:`, `"`, `|`, `?`, or `*`.\n\n'
-        )
-
-        f.write("### Configuration Recovery & Troubleshooting\n\n")
-        f.write(
-            "If the system detects invalid fields or syntax errors in the configuration file (`settings.json`), automatic saves are locked. "
-        )
-        f.write(
-            "This safeguard prevents overwriting and potentially corrupting your existing settings. "
-        )
-        f.write(
-            "While saves are suspended, the application will use temporary default values to prevent crashes.\n\n"
-        )
-        f.write("To resolve a blocked-save state, follow these recovery options:\n\n")
-        f.write(
-            "1. **Check Warning Banners**: Review the detailed list of validation errors displayed under the warning banner in the application settings dialog.\n"
-        )
-        f.write(
-            "2. **Manually Edit Settings**: Open the local configuration file (`~/.autosorter/settings.json`) and correct the invalid values or formats.\n"
-        )
-        f.write(
-            "3. **Reset Configuration**: Delete the invalid `settings.json` file or click the reset button to restore default, valid configuration values, which will immediately re-enable automatic saving.\n\n"
-        )
-
-        f.write("## Maintenance Scripts and CLI Commands\n\n")
-
-        # sandbox_cli.py
-        f.write("### `sandbox_cli.py`\n")
-        import sandbox_cli
-
-        f.write(f"{sandbox_cli.__doc__}\n\n")
-        f.write("#### Usage\n```text\n")
-        import subprocess
-
-        env = os.environ.copy()
-        env["COLUMNS"] = "80"
-        result = subprocess.run(
-            ["uv", "run", "python", "sandbox_cli.py", "--help"],
-            capture_output=True,
-            text=True,
-            check=True,
-            env=env,
-        )
-        f.write(result.stdout.replace("\r\n", "\n"))
-        f.write("```\n\n")
-
-        # scripts/prepare_offline.py
-        f.write("### `scripts/prepare_offline.py`\n")
-        import scripts.prepare_offline as prepare_offline
-
-        f.write(f"{prepare_offline.__doc__}\n\n")
-
-        # scripts/install_offline.py
-        f.write("### `scripts/install_offline.py`\n")
-        import scripts.install_offline as install_offline
-
-        f.write(f"{install_offline.__doc__}\n\n")
+        f.write("".join(content).rstrip() + "\n")
 
 
 def update_security_md():
@@ -433,7 +444,7 @@ def update_security_md():
             out_lines.append(line)
 
     with open(sec_file, "w", encoding="utf-8", newline="\n") as f:
-        f.writelines(out_lines)
+        f.write("".join(out_lines).rstrip() + "\n")
 
 
 def get_handwritten_docs():

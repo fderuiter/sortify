@@ -281,9 +281,7 @@ def build_corpus_generator(
                         break
                     future = item_to_future[item]
                     try:
-                        item_name, item_text, file_hash = future.result(
-                            timeout=timeout
-                        )
+                        item_name, item_text, file_hash = future.result(timeout=timeout)
                     except concurrent.futures.TimeoutError:
                         logging.warning(
                             f"Extraction of '{item}' timed out after {timeout} seconds."

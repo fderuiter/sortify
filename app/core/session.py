@@ -69,7 +69,9 @@ async def scan_abandoned_sessions_async():
                 try:
                     conn = std_sqlite3.connect(str(history_db), timeout=30.0)
                     cursor = conn.cursor()
-                    cursor.execute("SELECT session_id, base_dir, status FROM sessions ORDER BY timestamp DESC")
+                    cursor.execute(
+                        "SELECT session_id, base_dir, status FROM sessions ORDER BY timestamp DESC"
+                    )
                     rows = cursor.fetchall()
                 except Exception:
                     if conn:
@@ -79,7 +81,9 @@ async def scan_abandoned_sessions_async():
                             pass
                     conn = get_db_connection(str(history_db))
                     cursor = conn.cursor()
-                    cursor.execute("SELECT session_id, base_dir, status FROM sessions ORDER BY timestamp DESC")
+                    cursor.execute(
+                        "SELECT session_id, base_dir, status FROM sessions ORDER BY timestamp DESC"
+                    )
                     rows = cursor.fetchall()
 
                 trapped_sessions = []

@@ -688,7 +688,9 @@ class VirtualFilesystemTracker:
                 )
 
         # Check rename proposals
-        invalid_renames, unconfirmed_renames = self.check_rename_proposals(base_dir, plan)
+        invalid_renames, unconfirmed_renames = self.check_rename_proposals(
+            base_dir, plan
+        )
 
         # Consolidate all warnings
         warnings = []
@@ -769,9 +771,7 @@ class VirtualFilesystemTracker:
                         src_stem, src_ext = os.path.splitext(src_filename)
                         tgt_stem, tgt_ext = os.path.splitext(target_filename)
 
-                        source_path = os.path.normpath(
-                            os.path.join(base_dir, rel_src)
-                        )
+                        source_path = os.path.normpath(os.path.join(base_dir, rel_src))
                         dest_dir = os.path.normpath(
                             os.path.join(base_dir, current_dest)
                         )

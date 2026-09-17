@@ -117,7 +117,9 @@ body {
                 tooltip="User Guide & Documentation",
             )
 
-        with ui.column().classes(f"w-full {TOKENS.SIZING.MAX_WIDTH_CONTAINER} mx-auto {TOKENS.SPACING.XL} items-center {TOKENS.SPACING.GAP_MD}"):
+        with ui.column().classes(
+            f"w-full {TOKENS.SIZING.MAX_WIDTH_CONTAINER} mx-auto {TOKENS.SPACING.XL} items-center {TOKENS.SPACING.GAP_MD}"
+        ):
             # 1. Directory Selection & Presets Card
             with ui.card().classes(TOKENS.COMPONENTS.CARD_BASE):
                 ui.label("Target Directory").classes(
@@ -150,7 +152,9 @@ body {
                         'outlined color="grey-8" aria-label="Browse Directory Button"'
                     )
 
-                with ui.row().classes(f"w-full items-center {TOKENS.SPACING.GAP_SM} mt-2 flex-wrap"):
+                with ui.row().classes(
+                    f"w-full items-center {TOKENS.SPACING.GAP_SM} mt-2 flex-wrap"
+                ):
                     ui.label("Quick Presets:").classes(
                         "text-xs font-medium text-slate-400"
                     )
@@ -186,12 +190,16 @@ body {
                 )
                 self.progress_bar = (
                     ui.linear_progress(value=0)
-                    .classes(f"w-full {TOKENS.SIZING.MAX_WIDTH_PROGRESS} mt-3 rounded-full")
+                    .classes(
+                        f"w-full {TOKENS.SIZING.MAX_WIDTH_PROGRESS} mt-3 rounded-full"
+                    )
                     .props('aria-label="Progress Bar" color="blue"')
                 )
                 self.file_progress_bar = (
                     ui.linear_progress(value=0)
-                    .classes(f"w-full {TOKENS.SIZING.MAX_WIDTH_PROGRESS} mt-2 rounded-full")
+                    .classes(
+                        f"w-full {TOKENS.SIZING.MAX_WIDTH_PROGRESS} mt-2 rounded-full"
+                    )
                     .props('aria-label="File Progress Bar" color="indigo"')
                 )
                 self.file_progress_bar.set_visibility(False)
@@ -252,7 +260,9 @@ body {
                     .props('outlined dense aria-label="Sorting Strategy Selector"')
                 )
 
-                with ui.row().classes(f"items-center {TOKENS.SPACING.GAP_LG} flex-wrap"):
+                with ui.row().classes(
+                    f"items-center {TOKENS.SPACING.GAP_LG} flex-wrap"
+                ):
                     ui.switch(
                         "Contextual Renaming",
                         value=self.contextual_rename,
@@ -345,18 +355,18 @@ body {
                         """
                         <div class="row items-center justify-between w-full group tree-node-row py-1 min-w-0 flex-nowrap"
                              :draggable="prop.node.is_file"
-                             @dragstart="(e) => { 
+                             @dragstart="(e) => {
                                  if (prop.node.is_file) {
                                      e.dataTransfer.setData('text/plain', prop.node.id);
                                      e.dataTransfer.effectAllowed = 'move';
                                  }
                              }"
-                             @dragover="(e) => { 
+                             @dragover="(e) => {
                                  if (!prop.node.is_file) {
-                                     e.preventDefault(); 
+                                     e.preventDefault();
                                  }
                              }"
-                             @drop="(e) => { 
+                             @drop="(e) => {
                                  if (!prop.node.is_file) {
                                      e.preventDefault();
                                      const sourceId = e.dataTransfer.getData('text/plain');
@@ -364,14 +374,14 @@ body {
                                  }
                              }">
                             <div class="row items-center gap-2 min-w-0 flex-1 mr-2 flex-nowrap overflow-hidden">
-                                <q-icon :name="prop.node.icon" 
-                                        :color="prop.node.is_file ? (prop.node.is_locked ? 'amber-9' : 'primary') : 'amber-8'" 
+                                <q-icon :name="prop.node.icon"
+                                        :color="prop.node.is_file ? (prop.node.is_locked ? 'amber-9' : 'primary') : 'amber-8'"
                                         size="xs"
                                         class="shrink-0" />
                                 <span class="font-medium text-sm text-slate-800 truncate block min-w-0 flex-1">{{ prop.node.text }}<q-tooltip anchor="top middle" self="bottom middle" :offset="[0, 8]">{{ prop.node.filepath || prop.node.text }}</q-tooltip></span>
-                                <q-badge v-if="prop.node.badge" 
-                                         :color="prop.node.badge_color || 'grey-7'" 
-                                         text-color="white" 
+                                <q-badge v-if="prop.node.badge"
+                                         :color="prop.node.badge_color || 'grey-7'"
+                                         text-color="white"
                                          class="text-xs shrink-0" rounded>
                                     {{ prop.node.badge }}
                                 </q-badge>
@@ -387,24 +397,24 @@ body {
                                        @click.stop="$parent.$emit('file-rename', { file_id: prop.node.id })">
                                     <q-tooltip>Rename file</q-tooltip>
                                 </q-btn>
-                                <q-btn flat round dense 
-                                       :icon="prop.node.is_locked ? 'lock' : 'lock_open'" 
-                                       size="xs" 
+                                <q-btn flat round dense
+                                       :icon="prop.node.is_locked ? 'lock' : 'lock_open'"
+                                       size="xs"
                                        :color="prop.node.is_locked ? 'amber-9' : 'grey-6'"
                                        @click.stop="$parent.$emit('node-toggle-lock', { file_id: prop.node.id })">
                                     <q-tooltip>{{ prop.node.is_locked ? 'Unlock automatic sorting' : 'Lock to this folder' }}</q-tooltip>
                                 </q-btn>
-                                <q-btn flat round dense 
+                                <q-btn flat round dense
                                        :icon="prop.node.rating === 'positive' ? 'thumb_up' : 'thumb_up_off_alt'"
-                                       size="xs" 
-                                       :color="prop.node.rating === 'positive' ? 'green-7' : 'grey-6'" 
+                                       size="xs"
+                                       :color="prop.node.rating === 'positive' ? 'green-7' : 'grey-6'"
                                        @click.stop="$parent.$emit('node-rate', { file_id: prop.node.id, rating: 'positive' })">
                                     <q-tooltip>Accurate folder placement</q-tooltip>
                                 </q-btn>
-                                <q-btn flat round dense 
+                                <q-btn flat round dense
                                        :icon="prop.node.rating === 'negative' ? 'thumb_down' : 'thumb_down_off_alt'"
-                                       size="xs" 
-                                       :color="prop.node.rating === 'negative' ? 'red-7' : 'grey-6'" 
+                                       size="xs"
+                                       :color="prop.node.rating === 'negative' ? 'red-7' : 'grey-6'"
                                        @click.stop="$parent.$emit('node-rate', { file_id: prop.node.id, rating: 'negative' })">
                                     <q-tooltip>Incorrect folder placement</q-tooltip>
                                 </q-btn>
@@ -423,10 +433,14 @@ body {
                     self.tree_view.on("node-toggle-lock", self.handle_node_toggle_lock)
                     self.tree_view.on("folder-rename", self.show_rename_folder_dialog)
                     self.tree_view.on("file-rename", self.show_rename_file_dialog)
-                    self.tree_view.on("node-confirm-rename", self.handle_node_confirm_rename)
+                    self.tree_view.on(
+                        "node-confirm-rename", self.handle_node_confirm_rename
+                    )
 
             # 5. Execution Action Bar & Post-Sort Undo Rollback
-            exec_toolbar = OverflowToolbar(classes="w-full justify-center items-center gap-3 mt-2")
+            exec_toolbar = OverflowToolbar(
+                classes="w-full justify-center items-center gap-3 mt-2"
+            )
             self.execute_btn = exec_toolbar.add_action(
                 "Approve & Execute Sort",
                 on_click=self.execute_sort,
@@ -483,7 +497,9 @@ body {
 
             session_info = abandoned[0]
 
-            if session_info.get("has_step_ledger") or session_info.get("uncommitted_batch"):
+            if session_info.get("has_step_ledger") or session_info.get(
+                "uncommitted_batch"
+            ):
                 self.base_dir = session_info["base_dir"]
                 self.app_session = AppSession(
                     self.settings, self.base_dir, session_id=session_info["session_id"]
@@ -494,7 +510,9 @@ body {
                         session_info["session_id"],
                         self.app_session.db,
                     )
-                    ui.notify("Automatic recovery completed: unwound interrupted batch move.")
+                    ui.notify(
+                        "Automatic recovery completed: unwound interrupted batch move."
+                    )
                 except Exception as e:
                     logger.error(f"Error during automatic recovery: {e}")
                 return
@@ -825,7 +843,9 @@ body {
                             ui.label("Recovery completed with errors:").classes(
                                 "font-semibold text-sm text-red-500"
                             )
-                            with ui.scroll_area().classes(f"flex-1 {TOKENS.SIZING.CONTROL_HEIGHT_SM} max-h-48 w-full border p-2"):
+                            with ui.scroll_area().classes(
+                                f"flex-1 {TOKENS.SIZING.CONTROL_HEIGHT_SM} max-h-48 w-full border p-2"
+                            ):
                                 for err in errors:
                                     ui.label(err).classes("text-xs text-red-500")
                         else:
@@ -1250,7 +1270,10 @@ body {
         with (
             ui.dialog() as dialog,
             ui.card().classes(
-                get_dialog_card_classes("lg", f"{TOKENS.SIZING.MAX_HEIGHT_DIALOG} flex flex-col overflow-y-auto")
+                get_dialog_card_classes(
+                    "lg",
+                    f"{TOKENS.SIZING.MAX_HEIGHT_DIALOG} flex flex-col overflow-y-auto",
+                )
             ),
         ):
             dialog.props('aria-label="Compliance Audit Checklist Dialog"')
@@ -1577,9 +1600,7 @@ body {
             insert_file_into_plan(self.plan, target_folder, file_key, file_info)
             self.render_tree()
             asyncio.create_task(self.verify_current_plan())
-            ui.notify(
-                f"Confirmed proposed rename for '{file_key}'", type="positive"
-            )
+            ui.notify(f"Confirmed proposed rename for '{file_key}'", type="positive")
 
     def show_rename_file_dialog(self, e):
         """Display dialog to manually rename a target file, locking the extension and validating OS rules."""
@@ -1629,9 +1650,9 @@ body {
             ).classes("text-xs text-slate-500 font-mono mb-2")
 
             with ui.row().classes("w-full items-center gap-2"):
-                name_input = ui.input(
-                    label="New File Name", value=curr_stem
-                ).classes("flex-1")
+                name_input = ui.input(label="New File Name", value=curr_stem).classes(
+                    "flex-1"
+                )
                 if orig_ext:
                     ui.label(orig_ext).classes(
                         "text-sm font-bold text-slate-600 bg-slate-100 px-2 py-1 rounded"
@@ -1646,7 +1667,7 @@ body {
                     return
 
                 if orig_ext and new_val.lower().endswith(orig_ext.lower()):
-                    new_val = new_val[:-len(orig_ext)]
+                    new_val = new_val[: -len(orig_ext)]
                 final_target = new_val + orig_ext
 
                 file_info["target_filename"] = final_target
@@ -1672,7 +1693,7 @@ body {
             def validate_input(val):
                 stem = val.strip()
                 if orig_ext and stem.lower().endswith(orig_ext.lower()):
-                    stem = stem[:-len(orig_ext)]
+                    stem = stem[: -len(orig_ext)]
                 proposed_filename = stem + orig_ext
 
                 if not stem:
@@ -1823,9 +1844,17 @@ body {
 
     def render_tree(self):
         """Render the tree view of the sorting plan and update folder/file badges."""
-        if not getattr(self, "_ratings_cache", None) and getattr(self, "app_session", None) and getattr(self, "base_dir", None):
+        if (
+            not getattr(self, "_ratings_cache", None)
+            and getattr(self, "app_session", None)
+            and getattr(self, "base_dir", None)
+        ):
             self.load_ratings_from_db()
-        if not getattr(self, "locked_files", None) and getattr(self, "app_session", None) and getattr(self, "base_dir", None):
+        if (
+            not getattr(self, "locked_files", None)
+            and getattr(self, "app_session", None)
+            and getattr(self, "base_dir", None)
+        ):
             self.load_locked_files_from_db()
         self.tree_nodes = []
         folder_count, file_count = self._flatten(self.plan, "", self.tree_nodes)
@@ -1945,11 +1974,7 @@ body {
                         icon = "error"
 
                 plan_errors = getattr(self, "plan_errors", {})
-                if (
-                    k in plan_errors
-                    or node_id in plan_errors
-                    or tgt_fn in plan_errors
-                ):
+                if k in plan_errors or node_id in plan_errors or tgt_fn in plan_errors:
                     err_msg = (
                         plan_errors.get(node_id)
                         or plan_errors.get(k)
@@ -2116,6 +2141,7 @@ body {
 
                 # Explicitly unload extraction OCR models before AI phase
                 from app.core.shared_registry import SharedModelRegistry
+
                 registry = SharedModelRegistry.get_instance()
                 registry.unload_model("easyocr")
                 registry.unload_model("florence-2")

@@ -43,8 +43,12 @@ def extract_text_from_image(image, settings=None, file_path=None) -> str:
                 pass
 
         if isinstance(width, (int, float)) and isinstance(height, (int, float)):
-            skip_threshold = getattr(settings, "IMAGE_SKIP_THRESHOLD", 3000) if settings else 3000
-            max_dimension = getattr(settings, "IMAGE_MAX_DIMENSION", 1000) if settings else 1000
+            skip_threshold = (
+                getattr(settings, "IMAGE_SKIP_THRESHOLD", 3000) if settings else 3000
+            )
+            max_dimension = (
+                getattr(settings, "IMAGE_MAX_DIMENSION", 1000) if settings else 1000
+            )
 
             if max(width, height) > skip_threshold:
                 name = file_path if file_path else "In-memory image"
@@ -65,7 +69,9 @@ def extract_text_from_image(image, settings=None, file_path=None) -> str:
     except Exception as e:
         logging.error(f"Failed preprocessing image: {e}")
 
-    vision_engine = getattr(settings, "VISION_ENGINE", "easyocr") if settings else "easyocr"
+    vision_engine = (
+        getattr(settings, "VISION_ENGINE", "easyocr") if settings else "easyocr"
+    )
     if vision_engine == "florence-2":
         try:
             from app.core.shared_registry import SharedModelRegistry
@@ -236,7 +242,9 @@ class XlsxExtractor:
 
                         added_len = len(row_str) + (1 if extracted_lines else 0)
                         if total_chars + added_len > max_chars:
-                            remaining = max_chars - total_chars - (1 if extracted_lines else 0)
+                            remaining = (
+                                max_chars - total_chars - (1 if extracted_lines else 0)
+                            )
                             if remaining > 0:
                                 extracted_lines.append(row_str[:remaining])
                             total_chars = max_chars

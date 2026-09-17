@@ -61,7 +61,11 @@ docstring-code-format = true
 [tool.mypy]
 ignore_missing_imports = true
 implicit_optional = true
-ignore_errors = true
+check_untyped_defs = false
+disable_error_code = ["var-annotated", "has-type", "assignment", "return-value", "arg-type", "attr-defined", "union-attr", "no-redef", "method-assign", "call-overload", "misc", "truthy-function", "annotation-unchecked"]
+exclude = [
+    "app/binaries",
+]
 
 [dependency-groups]
 dev = [
