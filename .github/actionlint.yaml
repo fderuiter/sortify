@@ -1,0 +1,3 @@
+# Configuration for actionlint
+ignore:
+  - 'runtime "node20" is deprecated'
