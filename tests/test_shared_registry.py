@@ -401,20 +401,44 @@ def test_no_dns_during_import():
     import importlib
     import sys
 
-    # Remove from sys.modules if already imported to force a fresh reload/import
-    if "app.core.shared_registry" in sys.modules:
-        del sys.modules["app.core.shared_registry"]
+    old_module = sys.modules.get("app.core.shared_registry")
+    old_getaddrinfo = socket.getaddrinfo
+    old_gethostbyname = socket.gethostbyname
+    old_gethostbyname_ex = socket.gethostbyname_ex
+    old_gethostbyaddr = socket.gethostbyaddr
+    old_getnameinfo = socket.getnameinfo
+    old_getfqdn = socket.getfqdn
+    old_connect = socket.socket.connect
+    old_connect_ex = socket.socket.connect_ex
 
-    mock_gethostname = MagicMock(
-        side_effect=RuntimeError(
-            "socket.gethostname() should not be called at import time!"
+    try:
+        # Remove from sys.modules if already imported to force a fresh reload/import
+        if "app.core.shared_registry" in sys.modules:
+            del sys.modules["app.core.shared_registry"]
+
+        mock_gethostname = MagicMock(
+            side_effect=RuntimeError(
+                "socket.gethostname() should not be called at import time!"
+            )
         )
-    )
-    with patch("socket.gethostname", mock_gethostname):
-        # Importing should not trigger the gethostname call
-        import app.core.shared_registry
+        with patch("socket.gethostname", mock_gethostname):
+            # Importing should not trigger the gethostname call
+            import app.core.shared_registry
 
-        importlib.reload(app.core.shared_registry)
+            importlib.reload(app.core.shared_registry)
+    finally:
+        socket.getaddrinfo = old_getaddrinfo
+        socket.gethostbyname = old_gethostbyname
+        socket.gethostbyname_ex = old_gethostbyname_ex
+        socket.gethostbyaddr = old_gethostbyaddr
+        socket.getnameinfo = old_getnameinfo
+        socket.getfqdn = old_getfqdn
+        socket.socket.connect = old_connect
+        socket.socket.connect_ex = old_connect_ex
+        if old_module is not None:
+            sys.modules["app.core.shared_registry"] = old_module
+        elif "app.core.shared_registry" in sys.modules:
+            del sys.modules["app.core.shared_registry"]
 
 
 def test_sandbox_address_resolution_blocks_external():
