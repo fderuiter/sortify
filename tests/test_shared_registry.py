@@ -684,3 +684,21 @@ def test_check_ai_status_local_offline_bundle(tmp_path, monkeypatch):
             _, kwargs = mock_reader.call_args
             assert "offline_bundle" in kwargs.get("model_storage_directory", "")
             assert "easyocr" in kwargs.get("model_storage_directory", "")
+
+
+def test_shared_worker_pool_reentrant_execution_prevents_deadlock():
+    """Verify that reentrant submit and map calls inside SharedWorkerPool worker threads execute inline without deadlocking."""
+    pool = SharedWorkerPool.get_instance(max_workers=1)
+
+    def inner_task(x):
+        return x * 10
+
+    def outer_task(x):
+        # Nested map call inside worker thread
+        mapped_res = list(pool.map(inner_task, [x, x + 1]))
+        # Nested submit call inside worker thread
+        submitted_fut = pool.submit(inner_task, x + 2)
+        return mapped_res + [submitted_fut.result()]
+
+    fut = pool.submit(outer_task, 1)
+    assert fut.result() == [10, 20, 30]
