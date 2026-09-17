@@ -31,8 +31,9 @@ jobs:
         uv sync --all-groups
 
     - name: Run Dependency Audit
+      continue-on-error: true
       run: |
-        uv audit || true
+        uv audit --preview-features audit 2>&1 || true
 
     - name: Secret Scanning Guardrails
       uses: gitleaks/gitleaks-action@v2
