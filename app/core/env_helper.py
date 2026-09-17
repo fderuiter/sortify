@@ -529,7 +529,7 @@ elif sys.platform == "win32":
     SANDBOX_SUPPORTED = check_windows_sandbox_support()
 
 
-def get_cleaned_env(env: dict = None) -> dict:
+def get_cleaned_env(env: dict | None = None) -> dict:
     """Return a copy of the environment dictionary with PyInstaller-specific variables removed.
 
     This also explicitly injects the local cache directory into PYTHONPATH.

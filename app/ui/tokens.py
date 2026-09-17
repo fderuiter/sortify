@@ -93,19 +93,11 @@ class ColorTokens:
 class ComponentTokens:
     """Standardized component class presets."""
 
-    CARD_BASE: str = (
-        "w-full p-5 bg-white rounded-xl shadow-sm border border-slate-200"
-    )
+    CARD_BASE: str = "w-full p-5 bg-white rounded-xl shadow-sm border border-slate-200"
 
-    DIALOG_CARD_MD: str = (
-        "w-full min-w-[320px] max-w-md p-6 max-h-[90vh] overflow-y-auto overflow-x-hidden"
-    )
-    DIALOG_CARD_LG: str = (
-        "w-full min-w-[320px] max-w-lg p-6 gap-4 max-h-[90vh] overflow-y-auto overflow-x-hidden"
-    )
-    DIALOG_CARD_XL: str = (
-        "w-full min-w-[320px] max-w-4xl p-6 max-h-[90vh] overflow-y-auto overflow-x-hidden"
-    )
+    DIALOG_CARD_MD: str = "w-full min-w-[320px] max-w-md p-6 max-h-[90vh] overflow-y-auto overflow-x-hidden"
+    DIALOG_CARD_LG: str = "w-full min-w-[320px] max-w-lg p-6 gap-4 max-h-[90vh] overflow-y-auto overflow-x-hidden"
+    DIALOG_CARD_XL: str = "w-full min-w-[320px] max-w-4xl p-6 max-h-[90vh] overflow-y-auto overflow-x-hidden"
 
     PANEL_ERROR: str = "bg-red-50 border-red-200 border p-4 mb-4 w-full rounded-lg"
     PANEL_WARNING: str = (
@@ -114,9 +106,7 @@ class ComponentTokens:
     PANEL_SUCCESS: str = (
         "bg-green-50 border-green-200 border p-4 mb-4 w-full rounded-lg"
     )
-    PANEL_INFO: str = (
-        "bg-blue-50 border-blue-100 border p-3 rounded-xl w-full"
-    )
+    PANEL_INFO: str = "bg-blue-50 border-blue-100 border p-3 rounded-xl w-full"
 
 
 @dataclass(frozen=True)

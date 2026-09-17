@@ -12,6 +12,7 @@ from watchdog.observers import Observer
 
 from app.config import AppSettings
 from app.core.metadata import MetadataPass
+from app.core.path_utils import get_session_base_dir
 from app.core.scanner import get_files_recursively
 from app.core.session import AppSession
 
@@ -167,9 +168,7 @@ class ContinuousWatchdogDaemon:
         for key, content in plan.items():
             if isinstance(content, str):
                 src_path = (
-                    os.path.join(base, key)
-                    if base and not os.path.isabs(key)
-                    else key
+                    os.path.join(base, key) if base and not os.path.isabs(key) else key
                 )
                 dst_path = (
                     os.path.join(base, content)
@@ -187,9 +186,7 @@ class ContinuousWatchdogDaemon:
             elif isinstance(content, dict):
                 if content.get("__type__") == "file":
                     rel_src = content.get("relative_source") or key
-                    filename = (
-                        content.get("target_filename") or os.path.basename(key)
-                    )
+                    filename = content.get("target_filename") or os.path.basename(key)
                     rel_dst = os.path.join(current_dest, filename)
 
                     src_path = (
@@ -293,10 +290,8 @@ class ContinuousWatchdogDaemon:
                 return True
 
         # Also ignore any temporary folder/session folders
-        from app.core.path_utils import get_session_base_dir
-
-        session_base = get_session_base_dir()
-        if session_base.name in norm_path or str(session_base) in norm_path:
+        session_base_dir = get_session_base_dir()
+        if str(session_base_dir) in norm_path or session_base_dir.name in norm_path:
             return True
 
         # Suffix matching on lowercase file extensions using IGNORED_EXTENSIONS configuration
@@ -559,7 +554,7 @@ class ContinuousWatchdogDaemon:
                 pass
 
 
-def start_daemon(settings: AppSettings, base_dir: str = None):
+def start_daemon(settings: AppSettings, base_dir: str | None = None):
     """Start the persistent directory-watching daemon service."""
     if not base_dir:
         base_dir = os.getcwd()

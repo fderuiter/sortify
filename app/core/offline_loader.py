@@ -13,6 +13,7 @@ import socket
 import sys
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from app.core.path_utils import is_packaged
 from app.core.shared_registry import block_external_network
 from app.core.text_utils import sanitize_text
 
@@ -96,7 +97,6 @@ class OfflineModelLoader:
             searched_paths.append(env_path)
 
         # Precedence 2: PyInstaller temporary execution directory
-        from app.core.path_utils import is_packaged
 
         if is_packaged() and hasattr(sys, "_MEIPASS"):
             meipass_path = os.path.join(sys._MEIPASS, "offline_bundle", model_id)
@@ -265,7 +265,9 @@ class Florence2VisualProcessor:
                 self.model_id, self._model_path
             )
         except Exception as e:
-            logger.error(f"Florence-2 integrity check failed for '{self.model_id}': {e}")
+            logger.error(
+                f"Florence-2 integrity check failed for '{self.model_id}': {e}"
+            )
             if not isinstance(e, OfflineModelLoadError):
                 raise OfflineModelLoadError(
                     f"Florence-2 model load failed: Integrity check failed for '{self.model_id}': {e}"
@@ -312,9 +314,11 @@ class Florence2VisualProcessor:
         self.model = None
         self.processor = None
         import gc
+
         gc.collect()
         try:
             import torch
+
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
             if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
@@ -357,7 +361,9 @@ class Florence2VisualProcessor:
                 raise FileNotFoundError(f"Visual asset file not found: {image_path}")
             image = Image.open(image_path).convert("RGB")
         else:
-            raise ValueError(f"Invalid image type passed to process_image: {type(image_path)}")
+            raise ValueError(
+                f"Invalid image type passed to process_image: {type(image_path)}"
+            )
 
         if image_size is None:
             image_size = image.size

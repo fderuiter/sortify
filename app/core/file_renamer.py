@@ -352,9 +352,7 @@ class FileRenamerEngine:
             for filepath, doc_text in documents_map.items():
                 filename = os.path.basename(filepath)
 
-                if is_file_protected_or_locked(
-                    filepath, locked_files, protected_paths
-                ):
+                if is_file_protected_or_locked(filepath, locked_files, protected_paths):
                     continue
 
                 if HeuristicEvaluator.is_poorly_named(filename):
@@ -397,9 +395,7 @@ class FileRenamerEngine:
 
                 target_fn = norm_map.get(norm_k)
                 if not target_fn and isinstance(v, dict) and "relative_source" in v:
-                    norm_rel = os.path.normpath(v["relative_source"]).replace(
-                        "\\", "/"
-                    )
+                    norm_rel = os.path.normpath(v["relative_source"]).replace("\\", "/")
                     target_fn = norm_map.get(norm_rel)
 
                 if not target_fn:

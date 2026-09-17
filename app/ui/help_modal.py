@@ -39,9 +39,15 @@ def show_help(parent_app=None):
 
     with ui.dialog() as dialog:
         # Use xl size for the dialog card to render markdown guide with plenty of space
-        with ui.card().classes(get_dialog_card_classes("xl", f"{TOKENS.SIZING.VIEWPORT_DIALOG_HEIGHT} flex flex-col")):
+        with ui.card().classes(
+            get_dialog_card_classes(
+                "xl", f"{TOKENS.SIZING.VIEWPORT_DIALOG_HEIGHT} flex flex-col"
+            )
+        ):
             # Header Row
-            help_header = OverflowToolbar(classes="w-full justify-between items-center mb-4")
+            help_header = OverflowToolbar(
+                classes="w-full justify-between items-center mb-4"
+            )
             with help_header.left_container:
                 ui.label("User Guide & Documentation").classes(
                     "text-2xl font-bold"

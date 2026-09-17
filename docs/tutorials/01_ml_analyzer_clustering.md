@@ -3,7 +3,7 @@
 # Stateful ML Analyzer Clustering
 
 ## 1. Context & Overview
-This notebook demonstrates how the **Smart AutoSorter AI Pro**'s core machine learning engine works under the hood. 
+This notebook demonstrates how the **Smart AutoSorter AI Pro**'s core machine learning engine works under the hood.
 The system utilizes an `IncrementalAnalyzer` that processes documents and automatically clusters them into semantic themes. This process allows developers and integration engineers to understand document themes without manual categorization.
 
 ## 2. Parameter Explanations & Expectations
@@ -107,4 +107,3 @@ clear_connection_cache(only_current_and_inactive=False)
 sandbox_dir.cleanup()
 print("[+] Sandbox environment cleaned up successfully. Bye!")
 ```
-

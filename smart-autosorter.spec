@@ -62,7 +62,7 @@ if sqlcipher_spec and sqlcipher_spec.submodule_search_locations:
             abs_file_path = os.path.join(root, file)
             rel_path = os.path.relpath(abs_file_path, sqlcipher_dir)
             dest_dir = os.path.join('sqlcipher3', os.path.dirname(rel_path))
-            
+
             # Identify platform-specific binary extensions (.dll, .dylib, .so, .pyd)
             file_lower = file.lower()
             if file_lower.endswith(('.dll', '.dylib', '.so', '.pyd')) or '.so.' in file_lower:
@@ -114,7 +114,7 @@ if (platform.system().lower() == "windows" or sys.platform == "win32") and "pyte
             p = os.path.join(sys.prefix, sub.replace("/", os.sep))
             if os.path.isdir(p):
                 search_dirs.append(p)
-                
+
     # Fallback to base python prefix (sys.base_prefix) and its subdirectories only if different
     if sys.base_prefix and sys.base_prefix != sys.prefix:
         search_dirs.append(sys.base_prefix)
@@ -122,12 +122,12 @@ if (platform.system().lower() == "windows" or sys.platform == "win32") and "pyte
             p = os.path.join(sys.base_prefix, sub.replace("/", os.sep))
             if os.path.isdir(p):
                 search_dirs.append(p)
-                
+
     # Finally, check executable directory
     exe_dir = os.path.dirname(sys.executable)
     if exe_dir and exe_dir not in search_dirs:
         search_dirs.append(exe_dir)
-                
+
     # Also add directories from system PATH to find system-installed OpenSSL DLLs on GHA Windows runner
     path_dirs = []
     for d in os.environ.get("PATH", "").split(os.pathsep):
@@ -159,7 +159,7 @@ if (platform.system().lower() == "windows" or sys.platform == "win32") and "pyte
     for path_dir in path_dirs:
         if path_dir not in search_dirs:
             search_dirs.append(path_dir)
-            
+
     # Also add common/standard Windows OpenSSL installation directories
     common_openssl_dirs = [
         "C:\\Program Files\\OpenSSL-Win64\\bin",
@@ -173,11 +173,11 @@ if (platform.system().lower() == "windows" or sys.platform == "win32") and "pyte
     for cod in common_openssl_dirs:
         if os.path.isdir(cod) and cod not in search_dirs:
             search_dirs.append(cod)
-                
+
     found_dll_names = set()
     found_dlls = set()
     dll_patterns = ["libcrypto", "libssl", "sqlcipher", "libsqlcipher", "sqlite3"]
-    
+
     # 1. Check recursively inside the installed sqlcipher3 package directory itself for any DLLs
     if sqlcipher_spec and sqlcipher_spec.submodule_search_locations:
         sqlcipher_dir = sqlcipher_spec.submodule_search_locations[0]
@@ -260,27 +260,27 @@ def is_tcl_tk_asset(name):
 def is_prunable_asset(name):
     name_lower = name.lower().replace('\\', '/')
     parts = name_lower.split('/')
-    
+
     # Safety Rule: Core weights, model files, and crucial bin targets must NEVER be pruned.
     safety_keywords = ("weight", "bin", "model", "checkpoint", "offline_bundle", "easyocr", "user_guide")
     if any(sk in name_lower for sk in safety_keywords):
         return False
-        
+
     # Non-essential development/test folder names
     prune_folders = {
-        'tests', 'test', 'include', 'cmake', 'headers', 'examples', 
+        'tests', 'test', 'include', 'cmake', 'headers', 'examples',
         'benchmarks', 'docs', 'documentation', 'test_data', 'testing'
     }
-    
+
     # If any parent directory matches a prune folder
     if any(p in prune_folders for p in parts):
         return True
-        
+
     # Exclude files with non-essential extensions (development header files, markdown docs, text files)
     # as long as they don't contain safety keywords
     if name_lower.endswith(('.h', '.hpp', '.c', '.cpp', '.cmake', '.rst', '.md')):
         return True
-        
+
     return False
 
 
@@ -288,13 +288,13 @@ def is_prunable_asset(name):
 def is_standard_sqlite_binary(dest_name, src_path):
     dest_lower = dest_name.lower().replace('\\', '/')
     src_lower = src_path.lower().replace('\\', '/')
-    
+
     # Identify any standard sqlite3 binary files
     if any(term in dest_lower for term in ('sqlite3', '_sqlite3')):
         # Allow it only if it originates from sqlcipher3 or app/binaries
         if 'sqlcipher3' in src_lower or 'app/binaries' in src_lower or 'app_binaries' in src_lower:
             return False
-            
+
         # Build list of virtualenv directories to check
         venv_dirs = []
         v_env = os.environ.get("VIRTUAL_ENV")
@@ -306,17 +306,17 @@ def is_standard_sqlite_binary(dest_name, src_path):
                 venv_dirs.append(local_venv)
         if sys.prefix and os.path.abspath(sys.prefix) not in venv_dirs:
             venv_dirs.append(os.path.abspath(sys.prefix))
-            
+
         for vd in venv_dirs:
             prefix_lower = vd.lower().replace('\\', '/')
             if prefix_lower in src_lower:
                 return False
-                
+
         if sys.base_prefix:
             base_lower = sys.base_prefix.lower().replace('\\', '/')
             if base_lower in src_lower:
                 return True
-                
+
         return True
     return False
 
@@ -345,11 +345,11 @@ if "pytest" not in sys.modules:
             venv_dirs.append(local_venv)
         if sys.prefix and os.path.abspath(sys.prefix) not in venv_dirs:
             venv_dirs.append(os.path.abspath(sys.prefix))
-            
+
         for vd in venv_dirs:
             prefix_lower = vd.lower().replace('\\', '/')
             base_lower = sys.base_prefix.lower().replace('\\', '/') if sys.base_prefix else None
-            
+
             # Check standard candidate paths inside virtualenv first
             for sub in ["Library/bin", "Scripts", "Lib/site-packages/sqlcipher3"]:
                 candidate_dir = os.path.join(vd, sub.replace("/", os.sep))
@@ -360,7 +360,7 @@ if "pytest" not in sys.modules:
                         break
             if custom_sqlite3_dll:
                 break
-                
+
             for root, dirs, files in os.walk(vd):
                 # Filter out heavy directories in-place to prevent os.walk from recursing into them
                 dirs[:] = [d for d in dirs if d.lower() not in ("torch", "easyocr", "scipy", "transformers", "numpy", "pandas", "sklearn", "matplotlib", "jinja2", "anyio", "aiohttp", "pydantic", "pydantic_core")]
@@ -398,10 +398,10 @@ for x in a.binaries:
     dest_name, src_path = x[0], x[1]
     dest_lower = dest_name.lower().replace('\\', '/')
     src_lower = src_path.lower().replace('\\', '/')
-    
+
     if is_tcl_tk_asset(dest_name) or is_prunable_asset(dest_name):
         continue
-        
+
     # Redirect standard sqlite3.dll to our custom one instead of discarding it to satisfy pefile/dependency requirements
     if dest_lower.endswith("sqlite3.dll") and custom_sqlite3_dll:
         if not ('sqlcipher3' in src_lower or 'app/binaries' in src_lower or 'app_binaries' in src_lower):
@@ -412,7 +412,7 @@ for x in a.binaries:
     if is_standard_sqlite_binary(dest_name, src_path):
         print(f"Filtering out standard sqlite binary: {dest_name} from {src_path}")
         continue
-        
+
     new_binaries.append(x)
 
 a.binaries = new_binaries

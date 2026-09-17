@@ -450,7 +450,8 @@ def test_florence2_pre_execution_integrity_tampered_bundle_aborts(tmp_path, mock
     processor = Florence2VisualProcessor()
 
     with pytest.raises(
-        OfflineModelLoadError, match="Integrity check failed for processing_florence2.py"
+        OfflineModelLoadError,
+        match="Integrity check failed for processing_florence2.py",
     ):
         processor.load()
 

@@ -279,9 +279,7 @@ def test_interrupted_large_move_preserves_committed_chunks(
     assert not any("file_055.txt" in args for args in committed_args)
 
 
-def test_cache_invalidation_on_chunk_flush(
-    tmp_path, history_manager, monkeypatch
-):
+def test_cache_invalidation_on_chunk_flush(tmp_path, history_manager, monkeypatch):
     """
     Scenario: Document path cache clears immediately following each completed database commit chunk.
     Verify that Database.invalidate_cache is called during each chunk flush.
@@ -328,5 +326,3 @@ def test_cache_invalidation_on_chunk_flush(
     # invalidate_cache is called when execute_batch_updates is executed for chunk 1 (50 files) and chunk 2 (10 files)
     assert len(invalidate_calls) >= 2
     worker.stop()
-
-

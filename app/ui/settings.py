@@ -81,9 +81,8 @@ def render_validation_warning_banner(settings):
                     pass
             return
         banner_card.clear()
-        has_errors = (
-            getattr(settings, "_has_validation_errors", False) is True
-            or bool(getattr(settings, "_validation_errors", None))
+        has_errors = getattr(settings, "_has_validation_errors", False) is True or bool(
+            getattr(settings, "_validation_errors", None)
         )
         if not has_errors:
             banner_card.set_visibility(False)
@@ -91,7 +90,9 @@ def render_validation_warning_banner(settings):
 
         banner_card.set_visibility(True)
         with banner_card:
-            with ui.row().classes("items-center justify-between w-full flex-wrap gap-2"):
+            with ui.row().classes(
+                "items-center justify-between w-full flex-wrap gap-2"
+            ):
                 with ui.row().classes("items-center gap-2 text-red-800"):
                     ui.icon("error", size="sm")
                     ui.label("Configuration Saves Suspended").classes("font-bold")
@@ -149,9 +150,7 @@ def render_validation_warning_banner(settings):
                         ):
                             tip += "Make sure the directory path is relative, does not use '..', and has no invalid characters like :, *, ?, or |."
                         elif "empty" in msg or "required" in msg:
-                            tip += (
-                                "This field cannot be left blank. Please specify a value."
-                            )
+                            tip += "This field cannot be left blank. Please specify a value."
                         else:
                             tip += "Please ensure the value matches the requested format or number limits."
                         lbl.tooltip(tip)
@@ -192,7 +191,10 @@ def render_validation_warning_banner(settings):
 
                     with ui.dialog() as d:
                         with ui.card().classes(
-                            get_dialog_card_classes("xl", f"{TOKENS.SIZING.VIEWPORT_DIALOG_HEIGHT} flex flex-col")
+                            get_dialog_card_classes(
+                                "xl",
+                                f"{TOKENS.SIZING.VIEWPORT_DIALOG_HEIGHT} flex flex-col",
+                            )
                         ):
                             with ui.row().classes(
                                 "w-full justify-between items-center mb-4"
@@ -209,11 +211,11 @@ def render_validation_warning_banner(settings):
                                 ui.markdown(content).classes("w-full")
                         d.open()
 
-                ui.button("View Guide (Offline)", on_click=show_offline_admin_guide).props(
-                    "flat dense size=sm color=primary"
-                ).classes("hover:underline").props(
-                    'aria-label="Offline Troubleshooting Guide Link"'
-                )
+                ui.button(
+                    "View Guide (Offline)", on_click=show_offline_admin_guide
+                ).props("flat dense size=sm color=primary").classes(
+                    "hover:underline"
+                ).props('aria-label="Offline Troubleshooting Guide Link"')
 
     refresh()
     try:
@@ -253,7 +255,9 @@ def show_settings(parent_app, settings):
             ui.notify(f"Failed to update Explorer integration: {ex}", type="negative")
 
     with ui.dialog() as dialog, ui.card().classes(get_dialog_card_classes("xl")):
-        settings_toolbar = OverflowToolbar(classes="w-full justify-between items-center mb-6 gap-2")
+        settings_toolbar = OverflowToolbar(
+            classes="w-full justify-between items-center mb-6 gap-2"
+        )
         with settings_toolbar.left_container:
             ui.label("Application Settings").classes("text-2xl font-bold").props(
                 'aria-label="Settings Dialog Title"'
@@ -333,7 +337,9 @@ def show_settings(parent_app, settings):
                                 with ui.row().classes(
                                     "w-full items-center justify-between border-b pb-2 mb-2 min-w-0 flex-nowrap gap-2"
                                 ):
-                                    p_lbl = ui.label(path).classes("font-mono text-sm truncate min-w-0 flex-1")
+                                    p_lbl = ui.label(path).classes(
+                                        "font-mono text-sm truncate min-w-0 flex-1"
+                                    )
                                     p_lbl.tooltip(path)
 
                                     def delete_path(idx_to_del=idx):
@@ -428,7 +434,9 @@ def show_settings(parent_app, settings):
                                 with ui.row().classes(
                                     "w-full items-center justify-between border-b pb-2 mb-2 min-w-0 flex-nowrap gap-2"
                                 ):
-                                    e_lbl = ui.label(ext).classes("font-mono text-sm truncate min-w-0 flex-1")
+                                    e_lbl = ui.label(ext).classes(
+                                        "font-mono text-sm truncate min-w-0 flex-1"
+                                    )
                                     e_lbl.tooltip(ext)
 
                                     def delete_ext(idx_to_del=idx):
@@ -836,7 +844,9 @@ def show_settings(parent_app, settings):
                 )
 
                 # Vision Extraction Configuration Section
-                ui.label("Vision Extraction Engine").classes("text-lg font-bold mt-4 mb-2")
+                ui.label("Vision Extraction Engine").classes(
+                    "text-lg font-bold mt-4 mb-2"
+                )
                 ui.label(
                     "Select the primary engine for image and scanned PDF text extraction:"
                 ).classes("text-sm text-gray-500 mb-2")
@@ -856,7 +866,9 @@ def show_settings(parent_app, settings):
                     },
                     value=getattr(settings, "VISION_ENGINE", "easyocr"),
                     on_change=on_vision_engine_change,
-                ).props('aria-label="Vision Extraction Engine Select" class="w-full mb-2"')
+                ).props(
+                    'aria-label="Vision Extraction Engine Select" class="w-full mb-2"'
+                )
 
                 # Network Configuration Section
                 ui.label("Network Configuration").classes("text-lg font-bold mt-4 mb-2")
@@ -1083,7 +1095,9 @@ def show_settings(parent_app, settings):
                         try:
                             settings.COHERENCE_THRESHOLD = val
                         except Exception as ex:
-                            e.sender.value = getattr(settings, "COHERENCE_THRESHOLD", 0.5)
+                            e.sender.value = getattr(
+                                settings, "COHERENCE_THRESHOLD", 0.5
+                            )
                             ui.notify(
                                 f"Invalid coherence threshold: {ex}", type="negative"
                             )
@@ -1114,9 +1128,9 @@ def show_settings(parent_app, settings):
                         coherence_val_lbl = ui.label().bind_text_from(
                             coherence_slider,
                             "value",
-                            backward=lambda v: f"{float(v):.2f}"
-                            if v is not None
-                            else "0.50",
+                            backward=lambda v: (
+                                f"{float(v):.2f}" if v is not None else "0.50"
+                            ),
                         )
                         coherence_val_lbl.tooltip(coherence_tooltip)
 
@@ -1452,7 +1466,9 @@ def show_settings(parent_app, settings):
                             with ui.row().classes(
                                 "w-full items-center justify-between border-b pb-2 mb-2 min-w-0 flex-nowrap gap-2"
                             ):
-                                kw_lbl = ui.label(kw).classes("w-1/4 font-mono truncate min-w-0 shrink-0")
+                                kw_lbl = ui.label(kw).classes(
+                                    "w-1/4 font-mono truncate min-w-0 shrink-0"
+                                )
                                 kw_lbl.tooltip(kw)
                                 target_lbl = ui.label(target).classes(
                                     "w-1/2 font-mono text-gray-500 truncate min-w-0 flex-1"
@@ -1536,7 +1552,9 @@ def show_settings(parent_app, settings):
                         on_change=lambda _: render_learned_rules(),
                     )
                     .classes("w-full mb-4")
-                    .props('aria-label="Search learned rules" clearable dense icon="search"')
+                    .props(
+                        'aria-label="Search learned rules" clearable dense icon="search"'
+                    )
                 )
 
                 learned_rules_container = ui.column().classes("w-full mb-4")
@@ -1588,15 +1606,27 @@ def show_settings(parent_app, settings):
                                     )
                                     path_input = (
                                         ui.input(value=target_path)
-                                        .classes("w-5/12 font-mono text-sm text-gray-700")
+                                        .classes(
+                                            "w-5/12 font-mono text-sm text-gray-700"
+                                        )
                                         .props(
                                             f'aria-label="Destination path input for {kw}" dense outline'
                                         )
                                     )
 
-                                    def make_kw_handler(old_k=kw, p_inp=path_input, k_inp=kw_input):
+                                    def make_kw_handler(
+                                        old_k=kw, p_inp=path_input, k_inp=kw_input
+                                    ):
                                         def on_kw_change(e=None):
-                                            val = k_inp.value if k_inp else (e.value if hasattr(e, "value") else None)
+                                            val = (
+                                                k_inp.value
+                                                if k_inp
+                                                else (
+                                                    e.value
+                                                    if hasattr(e, "value")
+                                                    else None
+                                                )
+                                            )
                                             new_k = (val or "").strip()
                                             if new_k == old_k:
                                                 return
@@ -1607,9 +1637,13 @@ def show_settings(parent_app, settings):
                                                 )
                                                 k_inp.value = old_k
                                                 return
-                                            rules_copy = dict(getattr(settings, "LEARNED_RULES", {}))
+                                            rules_copy = dict(
+                                                getattr(settings, "LEARNED_RULES", {})
+                                            )
                                             rules_copy.pop(old_k, None)
-                                            rules_copy[new_k] = (p_inp.value or "").strip()
+                                            rules_copy[new_k] = (
+                                                p_inp.value or ""
+                                            ).strip()
                                             try:
                                                 settings.LEARNED_RULES = rules_copy
                                                 ui.notify(
@@ -1620,20 +1654,37 @@ def show_settings(parent_app, settings):
                                             except Exception as ex:
                                                 error_msg = str(ex)
                                                 if "Value error," in error_msg:
-                                                    error_msg = error_msg.split("Value error,")[-1].strip()
+                                                    error_msg = error_msg.split(
+                                                        "Value error,"
+                                                    )[-1].strip()
                                                 ui.notify(
                                                     f"Invalid keyword update: {error_msg}",
                                                     type="negative",
                                                 )
                                                 k_inp.value = old_k
+
                                         return on_kw_change
 
-                                    def make_path_handler(k=kw, old_p=target_path, p_inp=path_input):
+                                    def make_path_handler(
+                                        k=kw, old_p=target_path, p_inp=path_input
+                                    ):
                                         def on_path_change(e=None):
-                                            val = p_inp.value if p_inp else (e.value if hasattr(e, "value") else None)
+                                            val = (
+                                                p_inp.value
+                                                if p_inp
+                                                else (
+                                                    e.value
+                                                    if hasattr(e, "value")
+                                                    else None
+                                                )
+                                            )
                                             new_p = (val or "").strip()
-                                            current_rules_dict = dict(getattr(settings, "LEARNED_RULES", {}))
-                                            actual_old_p = current_rules_dict.get(k, old_p)
+                                            current_rules_dict = dict(
+                                                getattr(settings, "LEARNED_RULES", {})
+                                            )
+                                            actual_old_p = current_rules_dict.get(
+                                                k, old_p
+                                            )
                                             if new_p == actual_old_p:
                                                 return
                                             if not new_p:
@@ -1664,17 +1715,22 @@ def show_settings(parent_app, settings):
                                             except Exception as ex:
                                                 error_msg = str(ex)
                                                 if "Value error," in error_msg:
-                                                    error_msg = error_msg.split("Value error,")[-1].strip()
+                                                    error_msg = error_msg.split(
+                                                        "Value error,"
+                                                    )[-1].strip()
                                                 ui.notify(
                                                     f"Invalid destination path: {error_msg}",
                                                     type="negative",
                                                 )
                                                 p_inp.value = actual_old_p
+
                                         return on_path_change
 
                                     def make_delete_rule(k=kw):
                                         def delete_rule():
-                                            rules_copy = dict(getattr(settings, "LEARNED_RULES", {}))
+                                            rules_copy = dict(
+                                                getattr(settings, "LEARNED_RULES", {})
+                                            )
                                             if k in rules_copy:
                                                 del rules_copy[k]
                                                 try:
@@ -1689,10 +1745,15 @@ def show_settings(parent_app, settings):
                                                         f"Failed to delete rule: {ex}",
                                                         type="negative",
                                                     )
+
                                         return delete_rule
 
-                                    kw_handler = make_kw_handler(kw, path_input, kw_input)
-                                    path_handler = make_path_handler(kw, target_path, path_input)
+                                    kw_handler = make_kw_handler(
+                                        kw, path_input, kw_input
+                                    )
+                                    path_handler = make_path_handler(
+                                        kw, target_path, path_input
+                                    )
 
                                     kw_input.on_value_change(kw_handler)
                                     kw_input.on("change", kw_handler)
@@ -1705,7 +1766,9 @@ def show_settings(parent_app, settings):
                                             on_click=make_delete_rule(kw),
                                             color="red",
                                             icon="delete",
-                                        ).props(f'size=sm aria-label="Delete learned rule for {kw}"')
+                                        ).props(
+                                            f'size=sm aria-label="Delete learned rule for {kw}"'
+                                        )
 
                 render_learned_rules()
 

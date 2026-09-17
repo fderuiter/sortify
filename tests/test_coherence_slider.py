@@ -81,7 +81,9 @@ def test_generative_naming_strategy_uses_coherence_threshold():
             "app.core.analyzer_strategies.RecursiveKMeansStrategy.generate_plan",
             lambda self, *args, **kwargs: (plan, 0.0),
         )
-        res_plan, err = strategy.generate_plan(filenames, documents, max_folders=5, stop_words=set())
+        res_plan, err = strategy.generate_plan(
+            filenames, documents, max_folders=5, stop_words=set()
+        )
         assert "Review Required" in res_plan
 
 
@@ -139,4 +141,3 @@ def test_ui_coherence_threshold_slider_rendering():
     finally:
         Slider.__init__ = orig_slider_init
         Label.__init__ = orig_label_init
-

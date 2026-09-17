@@ -3,7 +3,7 @@
 # Multi-Format Text Extraction & Local Session Management
 
 ## 1. Context & Overview
-This notebook demonstrates the document ingestion layer of **Smart AutoSorter AI Pro**. 
+This notebook demonstrates the document ingestion layer of **Smart AutoSorter AI Pro**.
 We will explore:
 1. **Local Session Management**: Initializing and managing the lifespan of an application run via `AppSession`.
 2. **Multi-Format Text Extraction**: Writing programmatically supported formats (`.txt`, `.csv`, `.docx`, `.xlsx`) to disk and extracting their text content safely.
@@ -140,4 +140,3 @@ clear_connection_cache(only_current_and_inactive=False)
 sandbox_dir.cleanup()
 print("[+] Environment cleaned up. Extraction workflow complete!")
 ```
-

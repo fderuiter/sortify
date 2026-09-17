@@ -229,4 +229,3 @@ Utility script to prepare an offline deployment bundle.
 
 ### `scripts/install_offline.py`
 Offline installation and verification script.
-

@@ -115,6 +115,7 @@ def test_multiprocess_few_shot_prefetch_flow(db, temp_dir):
 
     # Set up prompt dump file path inside sandboxed debug directory
     from app.config import get_debug_log_dir
+
     prompt_dump_path = get_debug_log_dir() / "prefetch_prompt_dump.txt"
     os.environ["DEBUG"] = "1"
     os.environ["PROMPT_DUMP_FILE"] = "prefetch_prompt_dump.txt"

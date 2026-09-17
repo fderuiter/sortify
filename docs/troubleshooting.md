@@ -23,7 +23,7 @@ If the initial download in the Setup Wizard fails or if you accidentally clicked
 
 1. Open the **Settings** panel from the main application window.
 2. Scroll down to the **AI Features & Privacy** section.
-3. Click the **Download AI Model** button. 
+3. Click the **Download AI Model** button.
 4. The setup wizard will reappear, allowing you to try the 80MB model download again.
 
 If the problem persists and you cannot resolve your network issues, you can continue using the application in **Offline Non-Semantic Mode**, which will still process your files automatically, albeit without advanced AI context.

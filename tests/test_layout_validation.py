@@ -207,7 +207,9 @@ def test_validate_layout_script_passes():
     except SystemExit as e:
         assert e.code == 0
     duration = time.time() - start
-    assert duration < 2.0, f"Expected validate_layout to run in <2s, took {duration:.2f}s"
+    assert duration < 2.0, (
+        f"Expected validate_layout to run in <2s, took {duration:.2f}s"
+    )
 
 
 def test_validate_layout_script_catches_rigid_classes(tmp_path):
@@ -216,9 +218,7 @@ def test_validate_layout_script_catches_rigid_classes(tmp_path):
 
     bad_file = tmp_path / "app/ui/bad_component.py"
     bad_file.parent.mkdir(parents=True, exist_ok=True)
-    bad_file.write_text(
-        'ui.card().classes("w-96 h-[500px] flex")\n', encoding="utf-8"
-    )
+    bad_file.write_text('ui.card().classes("w-96 h-[500px] flex")\n', encoding="utf-8")
 
     errors = validate_file(str(bad_file))
     assert len(errors) == 2
@@ -257,4 +257,3 @@ def test_dev_mode_visual_outlines_toggle(mocker):
         app.build_ui()
         head_html = getattr(context.client, "head_html", "")
         assert "outline: 1px solid #ef4444 !important;" not in head_html
-

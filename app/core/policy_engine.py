@@ -62,7 +62,7 @@ class PolicyEngine:
         return matched_policy
 
     @staticmethod
-    def validate_lock_path(lock_path: str, file_path: str = None) -> None:
+    def validate_lock_path(lock_path: str, file_path: str | None = None) -> None:
         """Validate a folder lock path against the established policy schema (path rules).
 
         Raises ValueError if invalid.

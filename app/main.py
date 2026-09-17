@@ -749,7 +749,9 @@ def main():
         ledger = TransactionLedger()
         ledger.reconcile_incomplete_transactions()
     except Exception as exc:
-        logging.warning(f"Headless transaction ledger reconciliation on startup failed: {exc}")
+        logging.warning(
+            f"Headless transaction ledger reconciliation on startup failed: {exc}"
+        )
 
     # Create and add the log scrubbing filter to the root logger
     root_logger = logging.getLogger()

@@ -33,12 +33,20 @@ def test_tree_header_responsive_truncation_and_tooltips():
         # Check tree nodes structure
         assert len(app.tree_nodes) == 1
         folder_node = app.tree_nodes[0]
-        assert folder_node["filepath"] == "LongFolderName_1234567890_Very_Deep_Directory"
+        assert (
+            folder_node["filepath"] == "LongFolderName_1234567890_Very_Deep_Directory"
+        )
         assert folder_node["text"] == "LongFolderName_1234567890_Very_Deep_Directory"
 
         file_node = folder_node["children"][0]
-        assert file_node["filepath"] == "LongFolderName_1234567890_Very_Deep_Directory/Very_Long_File_Path_Document_Name_2026_Clinical_Trial_Data_Report.pdf"
-        assert file_node["text"] == "Very_Long_File_Path_Document_Name_2026_Clinical_Trial_Data_Report.pdf [Proposed]"
+        assert (
+            file_node["filepath"]
+            == "LongFolderName_1234567890_Very_Deep_Directory/Very_Long_File_Path_Document_Name_2026_Clinical_Trial_Data_Report.pdf"
+        )
+        assert (
+            file_node["text"]
+            == "Very_Long_File_Path_Document_Name_2026_Clinical_Trial_Data_Report.pdf [Proposed]"
+        )
 
         # Build app UI and inspect tree header slot template
         app.build_ui()

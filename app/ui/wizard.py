@@ -74,7 +74,9 @@ def show_wizard(parent_app, settings):
         error_container.set_visibility(False)
         with error_container:
             with ui.card().classes(TOKENS.COMPONENTS.PANEL_ERROR):
-                with ui.row().classes(f"items-center {TOKENS.SPACING.GAP_SM} {TOKENS.COLORS.ERROR_TEXT}"):
+                with ui.row().classes(
+                    f"items-center {TOKENS.SPACING.GAP_SM} {TOKENS.COLORS.ERROR_TEXT}"
+                ):
                     ui.icon("error", size="sm")
                     ui.label("Network and System Diagnostics").classes("font-bold")
                 error_diagnostic_label = ui.label("").classes(

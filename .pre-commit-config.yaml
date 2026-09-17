@@ -1,3 +1,5 @@
+default_stages: [pre-commit]
+
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.6.0
@@ -5,6 +7,13 @@ repos:
       - id: check-added-large-files
       - id: check-merge-conflict
       - id: debug-statements
+      - id: check-yaml
+        args: ["--unsafe"]
+      - id: check-toml
+      - id: end-of-file-fixer
+        exclude: '^app/binaries/'
+      - id: trailing-whitespace
+        exclude: '^app/binaries/'
       - id: no-commit-to-branch
         args: ['--branch', 'main']
 
@@ -15,11 +24,25 @@ repos:
         entry: uv run ruff format
         language: system
         types: [python]
+        args: ["--force-exclude"]
       - id: ruff-check
         name: Ruff Validation
         entry: uv run ruff check
         language: system
         types: [python]
+        args: ["--force-exclude"]
+      - id: uv-lock-check
+        name: Check uv lockfile consistency
+        entry: uv lock --check
+        language: system
+        files: '^(pyproject\.toml|uv\.lock)$'
+        pass_filenames: false
+      - id: mypy
+        name: Mypy Type Check
+        entry: uv run mypy app
+        language: system
+        types: [python]
+        pass_filenames: false
       - id: forbid-cache-files
         name: Block cache files, virtual environments, and bytecode
         entry: Cannot commit cache files, bytecode, or virtual environments. Please clean your workspace.
@@ -72,4 +95,3 @@ repos:
         language: system
         files: '^app/.*\.py$'
         pass_filenames: false
-

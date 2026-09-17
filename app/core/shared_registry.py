@@ -725,9 +725,15 @@ class SharedModelRegistry:
 
                     base_path = get_base_path(__file__)
                 except Exception:
-                    base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-                local_easyocr_path = os.path.join(base_path, "offline_bundle", "easyocr")
-                cwd_easyocr_path = os.path.join(os.getcwd(), "offline_bundle", "easyocr")
+                    base_path = os.path.dirname(
+                        os.path.dirname(os.path.abspath(__file__))
+                    )
+                local_easyocr_path = os.path.join(
+                    base_path, "offline_bundle", "easyocr"
+                )
+                cwd_easyocr_path = os.path.join(
+                    os.getcwd(), "offline_bundle", "easyocr"
+                )
                 easyocr_path = os.environ.get("EASYOCR_MODULE_PATH")
                 if os.path.exists(local_easyocr_path):
                     easyocr_dir = local_easyocr_path
@@ -875,9 +881,11 @@ class SharedModelRegistry:
     def _free_memory(self):
         """Drop object references, run garbage collection, and clear hardware acceleration buffers."""
         import gc
+
         gc.collect()
         try:
             import torch
+
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
                 if hasattr(torch.cuda, "ipc_collect"):
@@ -916,14 +924,18 @@ class SharedModelRegistry:
                 keys_to_remove = ["easyocr", "easyocr_info"]
             elif model_id == "onnx":
                 keys_to_remove = [
-                    k for k in self._models if k.startswith("onnx_") or k.startswith("tokenizer_")
+                    k
+                    for k in self._models
+                    if k.startswith("onnx_") or k.startswith("tokenizer_")
                 ]
             else:
                 if model_id in self._models:
                     keys_to_remove.append(model_id)
                 else:
                     keys_to_remove = [
-                        k for k in self._models if k == model_id or k.startswith(f"{model_id}_")
+                        k
+                        for k in self._models
+                        if k == model_id or k.startswith(f"{model_id}_")
                     ]
 
             for key in keys_to_remove:
@@ -1111,7 +1123,9 @@ class AudioConcurrencyGuard:
             self._cond.notify_all()
 
     def acquire_slot(
-        self, cancel_check: Callable[[], bool] | None = None, poll_interval: float = 0.05
+        self,
+        cancel_check: Callable[[], bool] | None = None,
+        poll_interval: float = 0.05,
     ) -> bool:
         """Acquire an audio execution slot.
 
@@ -1136,13 +1150,17 @@ class AudioConcurrencyGuard:
 
     @contextmanager
     def guard(
-        self, cancel_check: Callable[[], bool] | None = None, poll_interval: float = 0.05
+        self,
+        cancel_check: Callable[[], bool] | None = None,
+        poll_interval: float = 0.05,
     ):
         """Context manager for acquiring and releasing an audio execution slot.
 
         Yields True if slot was acquired, or False if cancelled before acquiring.
         """
-        acquired = self.acquire_slot(cancel_check=cancel_check, poll_interval=poll_interval)
+        acquired = self.acquire_slot(
+            cancel_check=cancel_check, poll_interval=poll_interval
+        )
         if not acquired:
             yield False
             return
