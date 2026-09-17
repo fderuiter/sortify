@@ -401,20 +401,53 @@ def test_no_dns_during_import():
     import importlib
     import sys
 
-    # Remove from sys.modules if already imported to force a fresh reload/import
-    if "app.core.shared_registry" in sys.modules:
-        del sys.modules["app.core.shared_registry"]
+    orig_module = sys.modules.get("app.core.shared_registry")
+    orig_connect = getattr(socket.socket, "connect", None)
+    orig_connect_ex = getattr(socket.socket, "connect_ex", None)
+    orig_getaddrinfo = getattr(socket, "getaddrinfo", None)
+    orig_gethostbyname = getattr(socket, "gethostbyname", None)
+    orig_gethostbyname_ex = getattr(socket, "gethostbyname_ex", None)
+    orig_gethostbyaddr = getattr(socket, "gethostbyaddr", None)
+    orig_getnameinfo = getattr(socket, "getnameinfo", None)
+    orig_getfqdn = getattr(socket, "getfqdn", None)
 
-    mock_gethostname = MagicMock(
-        side_effect=RuntimeError(
-            "socket.gethostname() should not be called at import time!"
+    try:
+        # Remove from sys.modules if already imported to force a fresh reload/import
+        if "app.core.shared_registry" in sys.modules:
+            del sys.modules["app.core.shared_registry"]
+
+        mock_gethostname = MagicMock(
+            side_effect=RuntimeError(
+                "socket.gethostname() should not be called at import time!"
+            )
         )
-    )
-    with patch("socket.gethostname", mock_gethostname):
-        # Importing should not trigger the gethostname call
-        import app.core.shared_registry
+        with patch("socket.gethostname", mock_gethostname):
+            # Importing should not trigger the gethostname call
+            import app.core.shared_registry
 
-        importlib.reload(app.core.shared_registry)
+            importlib.reload(app.core.shared_registry)
+    finally:
+        if orig_module is not None:
+            sys.modules["app.core.shared_registry"] = orig_module
+        elif "app.core.shared_registry" in sys.modules:
+            del sys.modules["app.core.shared_registry"]
+
+        if orig_connect:
+            socket.socket.connect = orig_connect
+        if orig_connect_ex:
+            socket.socket.connect_ex = orig_connect_ex
+        if orig_getaddrinfo:
+            socket.getaddrinfo = orig_getaddrinfo
+        if orig_gethostbyname:
+            socket.gethostbyname = orig_gethostbyname
+        if orig_gethostbyname_ex:
+            socket.gethostbyname_ex = orig_gethostbyname_ex
+        if orig_gethostbyaddr:
+            socket.gethostbyaddr = orig_gethostbyaddr
+        if orig_getnameinfo:
+            socket.getnameinfo = orig_getnameinfo
+        if orig_getfqdn:
+            socket.getfqdn = orig_getfqdn
 
 
 def test_sandbox_address_resolution_blocks_external():
