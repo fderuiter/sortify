@@ -7,7 +7,25 @@ from unittest.mock import MagicMock, patch
 # Add scripts to path so we can import it
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from scripts.validate_links import URL_REGEX, validate_url
+from scripts.validate_links import (
+    URL_REGEX,
+    get_all_python_files,
+    get_all_target_files,
+    validate_url,
+)
+
+
+def test_get_all_target_files():
+    files = get_all_target_files(extensions=(".py", ".md"))
+    assert len(files) > 0
+    assert any(f.endswith(".py") for f in files)
+    assert any(f.endswith(".md") for f in files)
+
+
+def test_get_all_python_files():
+    py_files = get_all_python_files()
+    assert len(py_files) > 0
+    assert all(f.endswith(".py") for f in py_files)
 
 
 def test_url_extraction():

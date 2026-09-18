@@ -89,11 +89,11 @@ def validate_url(url: str, bypass_domains: set = None):
         return False, f"Unexpected Error: {str(e)}", False
 
 
-def get_all_python_files():
-    """Get all python files in the repository."""
+def get_all_target_files(extensions=(".py", ".md")):
+    """Get all files with specified extensions in the repository."""
     import os
 
-    py_files = []
+    target_files = []
     for root, dirs, files in os.walk("."):
         dirs[:] = [
             d
@@ -102,21 +102,26 @@ def get_all_python_files():
             and d not in ("venv", "env", "__pycache__", "node_modules", "site-packages")
         ]
         for file in files:
-            if file.endswith(".py"):
-                py_files.append(os.path.join(root, file))
-    return py_files
+            if any(file.endswith(ext) for ext in extensions):
+                target_files.append(os.path.join(root, file))
+    return target_files
+
+
+def get_all_python_files():
+    """Get all python files in the repository (backwards compatibility wrapper)."""
+    return get_all_target_files(extensions=(".py",))
 
 
 def main():
     """Parse arguments and run concurrent URL validation."""
-    parser = argparse.ArgumentParser(description="Local-First Python Link Validator")
+    parser = argparse.ArgumentParser(description="Local-First Link Validator")
     parser.add_argument("--bypass", nargs="*", default=[], help="Domains to bypass")
     args = parser.parse_args()
 
     bypass_domains = set(args.bypass) | DEFAULT_BYPASS_DOMAINS
     urls = set()
 
-    for file_path in get_all_python_files():
+    for file_path in get_all_target_files(extensions=(".py", ".md")):
         try:
             with open(file_path, "r", encoding="utf-8") as f:
                 try:
@@ -125,8 +130,9 @@ def main():
                     continue
                 found = URL_REGEX.findall(file_content)
                 for url in found:
-                    url = url.rstrip(".,;)'\"")
-                    urls.add(url)
+                    url = url.strip().rstrip(".,;)'\"`<> \n\r\t\\")
+                    if url:
+                        urls.add(url)
         except FileNotFoundError:
             continue
 
