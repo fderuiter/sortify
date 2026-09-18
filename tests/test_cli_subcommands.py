@@ -16,7 +16,9 @@ def run_cli(args, env=None):
     current_env.pop("PYTEST_CURRENT_TEST", None)
     current_env.setdefault("PYTHON_KEYRING_BACKEND", "keyring.backends.fail.Keyring")
     repo_root = str(Path(__file__).parent.parent.resolve())
-    current_env["PYTHONPATH"] = repo_root + os.pathsep + current_env.get("PYTHONPATH", "")
+    current_env["PYTHONPATH"] = (
+        repo_root + os.pathsep + current_env.get("PYTHONPATH", "")
+    )
     if env:
         current_env.update(env)
 
@@ -30,26 +32,35 @@ def create_sample_corpus(base_dir):
     base = Path(base_dir)
     base.mkdir(parents=True, exist_ok=True)
     (base / "finance_doc.txt").write_text("Finance, investment, and banking report.")
-    (base / "tech_doc.txt").write_text("Software engineering, Python, algorithms, and computers.")
-    (base / "health_doc.txt").write_text("Medical science, clinical trial, doctor, and patient data.")
+    (base / "tech_doc.txt").write_text(
+        "Software engineering, Python, algorithms, and computers."
+    )
+    (base / "health_doc.txt").write_text(
+        "Medical science, clinical trial, doctor, and patient data."
+    )
     (base / "empty.txt").write_text("")
 
 
 @pytest.mark.xdist_group(name="cli_subcommands")
 def test_sort_subcommand_dry_run_json():
     """Test sort subcommand with --dry-run and --json flags."""
-    with tempfile.TemporaryDirectory() as src_dir, tempfile.TemporaryDirectory() as dest_dir:
+    with (
+        tempfile.TemporaryDirectory() as src_dir,
+        tempfile.TemporaryDirectory() as dest_dir,
+    ):
         create_sample_corpus(src_dir)
-        code, stdout, stderr = run_cli([
-            "sort",
-            src_dir,
-            "--json",
-            "--dest-dir",
-            dest_dir,
-            "--dry-run",
-            "--max-folders",
-            "5",
-        ])
+        code, stdout, stderr = run_cli(
+            [
+                "sort",
+                src_dir,
+                "--json",
+                "--dest-dir",
+                dest_dir,
+                "--dry-run",
+                "--max-folders",
+                "5",
+            ]
+        )
 
         assert code == 0, f"Expected 0 exit code, got {code}. Stderr: {stderr}"
         data = json.loads(stdout)
@@ -66,15 +77,20 @@ def test_sort_subcommand_dry_run_json():
 @pytest.mark.xdist_group(name="cli_subcommands")
 def test_sort_subcommand_live_execution():
     """Test sort subcommand live batch execution."""
-    with tempfile.TemporaryDirectory() as src_dir, tempfile.TemporaryDirectory() as dest_dir:
+    with (
+        tempfile.TemporaryDirectory() as src_dir,
+        tempfile.TemporaryDirectory() as dest_dir,
+    ):
         create_sample_corpus(src_dir)
-        code, stdout, stderr = run_cli([
-            "sort",
-            src_dir,
-            "--json",
-            "--dest-dir",
-            dest_dir,
-        ])
+        code, stdout, stderr = run_cli(
+            [
+                "sort",
+                src_dir,
+                "--json",
+                "--dest-dir",
+                dest_dir,
+            ]
+        )
 
         assert code == 0, f"Expected 0 exit code, got {code}. Stderr: {stderr}"
         data = json.loads(stdout)
@@ -89,15 +105,17 @@ def test_scan_subcommand_json():
     """Test scan subcommand with --json output and jq pipeline style structure."""
     with tempfile.TemporaryDirectory() as src_dir:
         create_sample_corpus(src_dir)
-        code, stdout, stderr = run_cli([
-            "scan",
-            src_dir,
-            "--json",
-            "--strategy",
-            "default",
-            "--conflict-policy",
-            "rename",
-        ])
+        code, stdout, stderr = run_cli(
+            [
+                "scan",
+                src_dir,
+                "--json",
+                "--strategy",
+                "default",
+                "--conflict-policy",
+                "rename",
+            ]
+        )
 
         assert code == 0, f"Expected 0 exit code, got {code}. Stderr: {stderr}"
         data = json.loads(stdout)
@@ -115,13 +133,15 @@ def test_config_subcommand_show_and_set():
     assert "MAX_FOLDERS" in data
     assert "CONFLICT_POLICY" in data
 
-    code_set, stdout_set, stderr_set = run_cli([
-        "config",
-        "--set",
-        "MAX_FOLDERS",
-        "10",
-        "--json",
-    ])
+    code_set, stdout_set, stderr_set = run_cli(
+        [
+            "config",
+            "--set",
+            "MAX_FOLDERS",
+            "10",
+            "--json",
+        ]
+    )
     assert code_set == 0, f"Expected 0 exit code, got {code_set}. Stderr: {stderr_set}"
     data_set = json.loads(stdout_set)
     assert data_set["MAX_FOLDERS"] == 10
@@ -151,10 +171,17 @@ def test_sandbox_cli_json():
     current_env = os.environ.copy()
     current_env.pop("PYTEST_CURRENT_TEST", None)
     current_env.setdefault("PYTHON_KEYRING_BACKEND", "keyring.backends.fail.Keyring")
-    current_env["PYTHONPATH"] = repo_root + os.pathsep + current_env.get("PYTHONPATH", "")
+    current_env["PYTHONPATH"] = (
+        repo_root + os.pathsep + current_env.get("PYTHONPATH", "")
+    )
 
     # First reset sandbox
-    subprocess.run([sys.executable, str(Path(repo_root) / "sandbox_cli.py"), "reset"], check=True, env=current_env, timeout=60)
+    subprocess.run(
+        [sys.executable, str(Path(repo_root) / "sandbox_cli.py"), "reset"],
+        check=True,
+        env=current_env,
+        timeout=60,
+    )
 
     # Run analyze with --json
     cmd = [sys.executable, str(Path(repo_root) / "sandbox_cli.py"), "analyze", "--json"]
