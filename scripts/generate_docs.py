@@ -439,7 +439,7 @@ def update_security_md():
 def get_handwritten_docs():
     """Discover all handwritten markdown documentation files."""
     generated_set = {
-        os.path.normpath(p)
+        os.path.normpath(p).replace("\\", "/")
         for p in [
             "docs/api_reference.md",
             "docs/ui.md",
@@ -458,7 +458,7 @@ def get_handwritten_docs():
                 dirs.remove("tutorials")
             for f in sorted(files):
                 if f.endswith(".md"):
-                    full_path = os.path.normpath(os.path.join(root, f))
+                    full_path = os.path.normpath(os.path.join(root, f)).replace("\\", "/")
                     if full_path not in generated_set:
                         docs.append(full_path)
     return sorted(list(set(docs)))
