@@ -307,6 +307,13 @@ class AppSession:
             self.analyzer.terminate()
         if hasattr(self, "db_worker") and self.db_worker:
             self.db_worker.stop()
+        try:
+            from app.core.shared_registry import SharedModelRegistry, SharedWorkerPool
+
+            SharedWorkerPool.shutdown_instance(wait=False)
+            SharedModelRegistry.get_instance().unload_all_models()
+        except Exception:
+            pass
         from app.core.db_conn import clear_connection_cache
 
         clear_connection_cache(only_current_and_inactive=False)

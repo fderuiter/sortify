@@ -17,7 +17,7 @@ def run_cli(args, env=None):
         current_env.update(env)
 
     cmd = [sys.executable, str(Path(repo_root) / "app" / "main.py")] + args
-    res = subprocess.run(cmd, capture_output=True, text=True, env=current_env)
+    res = subprocess.run(cmd, capture_output=True, text=True, env=current_env, timeout=60)
     return res.returncode, res.stdout, res.stderr
 
 
@@ -141,11 +141,11 @@ def test_sandbox_cli_json():
     current_env["PYTHONPATH"] = repo_root + os.pathsep + current_env.get("PYTHONPATH", "")
 
     # First reset sandbox
-    subprocess.run([sys.executable, str(Path(repo_root) / "sandbox_cli.py"), "reset"], check=True, env=current_env)
+    subprocess.run([sys.executable, str(Path(repo_root) / "sandbox_cli.py"), "reset"], check=True, env=current_env, timeout=60)
 
     # Run analyze with --json
     cmd = [sys.executable, str(Path(repo_root) / "sandbox_cli.py"), "analyze", "--json"]
-    res = subprocess.run(cmd, capture_output=True, text=True, env=current_env)
+    res = subprocess.run(cmd, capture_output=True, text=True, env=current_env, timeout=60)
 
     assert res.returncode == 0
     assert "--- Analysis Sorting Plan ---" not in res.stdout

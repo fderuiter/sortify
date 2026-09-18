@@ -684,11 +684,13 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
                 process.join(timeout=1.0)
 
             try:
+                input_queue.cancel_join_thread()
                 input_queue.close()
             except Exception:
                 pass
 
             try:
+                output_queue.cancel_join_thread()
                 output_queue.close()
             except Exception:
                 pass
@@ -1426,6 +1428,22 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
     def _fallback_to_pytorch(self):
         self._gguf_failed = True
         self._gguf_active = False
+        if getattr(self, "_gguf_input_queue", None):
+            try:
+                self._gguf_input_queue.cancel_join_thread()
+                self._gguf_input_queue.close()
+            except Exception:
+                pass
+            self._gguf_input_queue = None
+
+        if getattr(self, "_gguf_output_queue", None):
+            try:
+                self._gguf_output_queue.cancel_join_thread()
+                self._gguf_output_queue.close()
+            except Exception:
+                pass
+            self._gguf_output_queue = None
+
         if self._gguf_process:
             try:
                 self._gguf_process.terminate()

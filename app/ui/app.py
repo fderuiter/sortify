@@ -2177,16 +2177,29 @@ class AutoSorterApp:
                 print(f"{indent}📁 {node['text']}/")
         print("-----------------------------------\n")
 
+    def _run_async(self, coro):
+        """Run an asynchronous coroutine safely across different event loop lifecycle states."""
+        try:
+            loop = asyncio.get_running_loop()
+            if loop.is_running():
+                return loop.create_task(coro)
+        except RuntimeError:
+            pass
+
+        try:
+            return asyncio.run(coro)
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                return loop.run_until_complete(coro)
+            finally:
+                loop.close()
+                asyncio.set_event_loop(None)
+
     def start_analysis_sync(self):
         """Run directory analysis and plan generation synchronously."""
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                return loop.create_task(self._scan_and_process_worker())
-            else:
-                loop.run_until_complete(self._scan_and_process_worker())
-        except RuntimeError:
-            asyncio.run(self._scan_and_process_worker())
+        return self._run_async(self._scan_and_process_worker())
 
     async def execute_sort_async(self):
         """Asynchronously execute the approved sorting plan."""
@@ -2219,14 +2232,7 @@ class AutoSorterApp:
 
     def execute_sort_sync(self):
         """Run the approved sorting plan synchronously."""
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                return loop.create_task(self.execute_sort_async())
-            else:
-                loop.run_until_complete(self.execute_sort_async())
-        except RuntimeError:
-            asyncio.run(self.execute_sort_async())
+        return self._run_async(self.execute_sort_async())
 
     async def undo_last_sort_async(self):
         """Asynchronously undo the last sorting operation."""
@@ -2251,14 +2257,7 @@ class AutoSorterApp:
 
     def undo_last_sort_sync(self):
         """Revert the last sorting operation synchronously."""
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                return loop.create_task(self.undo_last_sort_async())
-            else:
-                loop.run_until_complete(self.undo_last_sort_async())
-        except RuntimeError:
-            asyncio.run(self.undo_last_sort_async())
+        return self._run_async(self.undo_last_sort_async())
 
     def run_interactive_terminal(self):
         """Run interactive CLI workspace loop in terminal."""
