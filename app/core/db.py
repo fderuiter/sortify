@@ -242,18 +242,13 @@ class Database:
             )
             rows = cursor.fetchall()
 
-        from app.core.shared_registry import SharedWorkerPool
-
         def _decrypt_row(row):
             decrypted_text = (
                 self.crypto.decrypt_text(row[1]) if row[1] is not None else None
             )
             return (row[0].replace("\\", "/"), decrypted_text, row[2], row[3])
 
-        results = []
-        if rows:
-            pool = SharedWorkerPool.get_instance()
-            results = list(pool.map(_decrypt_row, rows))
+        results = [_decrypt_row(row) for row in rows] if rows else []
 
         with self._cache_lock:
             self._cached_base_dir = base_dir
@@ -371,20 +366,13 @@ class Database:
             )
             rows = cursor.fetchall()
 
-            from app.core.shared_registry import SharedWorkerPool
-
             def _decrypt_row(row):
                 decrypted_text = (
                     self.crypto.decrypt_text(row[1]) if row[1] is not None else None
                 )
                 return (row[0].replace("\\", "/"), decrypted_text, row[2], row[3])
 
-            results = []
-            if rows:
-                pool = SharedWorkerPool.get_instance()
-                results = list(pool.map(_decrypt_row, rows))
-
-            return results
+            return [_decrypt_row(row) for row in rows] if rows else []
 
     def set_user_verified_target(self, base_dir, file_hash, target_path):
         """Record the historical folder assignment for a specific document hash."""
