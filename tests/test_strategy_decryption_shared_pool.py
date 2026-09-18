@@ -135,3 +135,22 @@ def test_db_decryption_uses_shared_worker_pool(tmp_path):
         db_worker.stop()
 
 
+def test_reentrant_submit_and_map_prevent_deadlock():
+    """Verify that re-entrant submit and map calls from inside pool threads execute inline without deadlocking."""
+    pool = SharedWorkerPool.get_instance(max_workers=2)
+
+    def inner_task(val):
+        return val * 10
+
+    def outer_task(val):
+        fut = pool.submit(inner_task, val)
+        sub_mapped = list(pool.map(inner_task, [val + 1]))
+        return fut.result() + sub_mapped[0]
+
+    # Submit enough outer tasks to fill all pool worker threads
+    outer_futs = [pool.submit(outer_task, i) for i in range(5)]
+    results = [f.result(timeout=5.0) for f in outer_futs]
+
+    assert results == [i * 10 + (i + 1) * 10 for i in range(5)]
+
+
