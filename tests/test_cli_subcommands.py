@@ -18,9 +18,12 @@ def run_cli(args, env=None):
     repo_root = str(Path(__file__).parent.parent.resolve())
     current_env["PYTHONPATH"] = repo_root + os.pathsep + current_env.get("PYTHONPATH", "")
     current_env["PYTHONUNBUFFERED"] = "1"
-    current_env["OMP_NUM_THREADS"] = "2"
-    current_env["MKL_NUM_THREADS"] = "2"
-    current_env["OPENBLAS_NUM_THREADS"] = "2"
+    current_env["OMP_NUM_THREADS"] = "1"
+    current_env["MKL_NUM_THREADS"] = "1"
+    current_env["OPENBLAS_NUM_THREADS"] = "1"
+    current_env["VECLIB_MAXIMUM_THREADS"] = "1"
+    current_env["NUMEXPR_NUM_THREADS"] = "1"
+    current_env.pop("PYTEST_CURRENT_TEST", None)
     if env:
         current_env.update(env)
 
@@ -157,18 +160,27 @@ def test_sandbox_cli_json():
     current_env.setdefault("PYTHON_KEYRING_BACKEND", "keyring.backends.fail.Keyring")
     current_env["PYTHONPATH"] = repo_root + os.pathsep + current_env.get("PYTHONPATH", "")
     current_env["PYTHONUNBUFFERED"] = "1"
-    current_env["OMP_NUM_THREADS"] = "2"
-    current_env["MKL_NUM_THREADS"] = "2"
-    current_env["OPENBLAS_NUM_THREADS"] = "2"
+    current_env["OMP_NUM_THREADS"] = "1"
+    current_env["MKL_NUM_THREADS"] = "1"
+    current_env["OPENBLAS_NUM_THREADS"] = "1"
+    current_env["VECLIB_MAXIMUM_THREADS"] = "1"
+    current_env["NUMEXPR_NUM_THREADS"] = "1"
+    current_env.pop("PYTEST_CURRENT_TEST", None)
 
-    # First reset sandbox
-    subprocess.run([sys.executable, str(Path(repo_root) / "sandbox_cli.py"), "reset"], check=True, env=current_env, timeout=180)
+    try:
+        # First reset sandbox
+        subprocess.run([sys.executable, str(Path(repo_root) / "sandbox_cli.py"), "reset"], check=True, env=current_env, timeout=180)
 
-    # Run analyze with --json
-    cmd = [sys.executable, str(Path(repo_root) / "sandbox_cli.py"), "analyze", "--json"]
-    res = subprocess.run(cmd, capture_output=True, text=True, env=current_env, timeout=240)
+        # Run analyze with --json
+        cmd = [sys.executable, str(Path(repo_root) / "sandbox_cli.py"), "analyze", "--json"]
+        res = subprocess.run(cmd, capture_output=True, text=True, env=current_env, timeout=240)
 
-    assert res.returncode == 0
-    assert "--- Analysis Sorting Plan ---" not in res.stdout
-    data = json.loads(res.stdout)
-    assert isinstance(data, dict)
+        assert res.returncode == 0
+        assert "--- Analysis Sorting Plan ---" not in res.stdout
+        data = json.loads(res.stdout)
+        assert isinstance(data, dict)
+    finally:
+        try:
+            subprocess.run([sys.executable, str(Path(repo_root) / "sandbox_cli.py"), "reset"], check=False, env=current_env, timeout=180)
+        except Exception:
+            pass

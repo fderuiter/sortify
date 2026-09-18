@@ -15,6 +15,7 @@ site/
 dist/
 settings.json
 sandbox/dataset/
+sandbox/*.db*
 autosorter.db
 tests/corpus/
 
