@@ -575,18 +575,18 @@ def test_sandbox_address_resolution_supports_mocks():
 
 def test_hardware_helpers():
     """Test environment helper hardware check functions."""
-    from app.core.env_helper import is_cuda_available, is_mps_available
-
-    with patch("torch.cuda.is_available", return_value=True):
+    import sys
+    mock_torch = MagicMock()
+    mock_torch.cuda.is_available.return_value = True
+    mock_torch.backends.mps.is_available.return_value = True
+    with patch.dict(sys.modules, {"torch": mock_torch}):
+        from app.core.env_helper import is_cuda_available, is_mps_available
         assert is_cuda_available() is True
-
-    with patch("torch.cuda.is_available", return_value=False):
+        mock_torch.cuda.is_available.return_value = False
         assert is_cuda_available() is False
-
-    with patch("torch.backends.mps.is_available", return_value=True):
+        mock_torch.backends.mps.is_available.return_value = True
         assert is_mps_available() is True
-
-    with patch("torch.backends.mps.is_available", return_value=False):
+        mock_torch.backends.mps.is_available.return_value = False
         assert is_mps_available() is False
 
 
@@ -666,6 +666,7 @@ def test_get_ocr_reader_fallback(monkeypatch):
 
 def test_check_ai_status_local_offline_bundle(tmp_path, monkeypatch):
     """Verify that check_ai_status and get_ocr_reader can locate and verify easyocr and model files in the offline_bundle directory."""
+    import sys
     from app.config import AppSettings
     from app.core.shared_registry import SharedModelRegistry
     from app.core.verifier import check_ai_status
@@ -708,11 +709,14 @@ def test_check_ai_status_local_offline_bundle(tmp_path, monkeypatch):
 
         # Verify that get_ocr_reader also correctly resolves the directory
         registry = SharedModelRegistry.get_instance()
-        with patch("easyocr.Reader") as mock_reader:
-            registry.get_ocr_reader()
-            _, kwargs = mock_reader.call_args
-            assert "offline_bundle" in kwargs.get("model_storage_directory", "")
-            assert "easyocr" in kwargs.get("model_storage_directory", "")
+        mock_easyocr = MagicMock()
+        mock_torch = MagicMock()
+        monkeypatch.setitem(sys.modules, "easyocr", mock_easyocr)
+        monkeypatch.setitem(sys.modules, "torch", mock_torch)
+        registry.get_ocr_reader()
+        _, kwargs = mock_easyocr.Reader.call_args
+        assert "offline_bundle" in kwargs.get("model_storage_directory", "")
+        assert "easyocr" in kwargs.get("model_storage_directory", "")
 
 
 def test_shared_worker_pool_reentrant_execution_prevents_deadlock():
