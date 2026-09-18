@@ -40,11 +40,6 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       continue-on-error: true
 
-    - name: Set up Go
-      uses: actions/setup-go@v5
-      with:
-        go-version: '1.25'
-
     - name: Workflow Linting
       run: |
         curl -sSL --connect-timeout 10 --max-time 30 --retry 5 --retry-connrefused https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash | bash
