@@ -9,7 +9,7 @@ from app.core.analyzer_strategies import (
     IsolatedStrategyMixin,
     get_decryption_executor,
 )
-from app.core.shared_registry import SharedWorkerPool, block_external_network
+from app.core.shared_registry import block_external_network
 
 
 class DummyStrategy(IsolatedStrategyMixin):
@@ -31,6 +31,8 @@ def test_get_decryption_executor_delegates_to_shared_worker_pool():
 
 def test_strategy_context_variable_propagation_in_background_worker():
     """Verify that thread-isolated strategy attributes (contextvars) are preserved in worker threads."""
+    from app.core.shared_registry import SharedWorkerPool
+
     strategy = DummyStrategy()
     strategy.stop_words = {"test_word_1", "test_word_2"}
     strategy.max_folders = 5
@@ -62,6 +64,8 @@ def test_strategy_context_variable_propagation_in_background_worker():
 
 def test_shared_worker_pool_map_enforces_socket_sandboxing(socket_mock):
     """Verify network socket sandboxing guardrails are enforced on all worker threads in pool.map."""
+    from app.core.shared_registry import SharedWorkerPool
+
     mock_connect, _ = socket_mock
     pool = SharedWorkerPool.get_instance()
 
@@ -83,6 +87,8 @@ def test_shared_worker_pool_map_enforces_socket_sandboxing(socket_mock):
 
 def test_global_thread_count_strictly_bounded():
     """Verify that background decryption task execution stays within configured SharedWorkerPool thread limits."""
+    from app.core.shared_registry import SharedWorkerPool
+
     pool = SharedWorkerPool.get_instance(max_workers=3)
     max_workers = pool.max_workers
 
