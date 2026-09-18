@@ -454,11 +454,6 @@ def recursive_kmeans_worker_main(
             out_q.put(encrypt_ipc_payload(res_data, key))
         elif out_q is not None:
             out_q.put(res_data)
-        if out_q is not None:
-            try:
-                out_q.close()
-            except Exception:
-                pass
     except Exception as e:
         import traceback
 
@@ -470,11 +465,6 @@ def recursive_kmeans_worker_main(
             out_q.put(encrypt_ipc_payload(err_data, key))
         elif out_q is not None:
             out_q.put(err_data)
-        if out_q is not None:
-            try:
-                out_q.close()
-            except Exception:
-                pass
     finally:
         # Guarantee memory zeroing of vector byte buffers on completion or failure
         zero_vector_buffer(vector_buffers)
