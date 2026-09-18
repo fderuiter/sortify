@@ -11,6 +11,7 @@ from app.core.extractor import extract_file_text
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SANDBOX_DIR = os.path.join(BASE_DIR, "sandbox", "dataset")
 GOLDEN_DIR = os.path.join(BASE_DIR, "sandbox", "dataset_golden")
+SANDBOX_DB_PATH = os.path.join(BASE_DIR, "sandbox", "sandbox.db")
 
 
 def reset_sandbox():
@@ -33,6 +34,18 @@ def reset_sandbox():
         pass
     if os.path.exists(SANDBOX_DIR):
         shutil.rmtree(SANDBOX_DIR)
+    if os.path.exists(SANDBOX_DB_PATH):
+        try:
+            os.remove(SANDBOX_DB_PATH)
+        except Exception:
+            pass
+    for ext in ("-wal", "-shm"):
+        sidecar = f"{SANDBOX_DB_PATH}{ext}"
+        if os.path.exists(sidecar):
+            try:
+                os.remove(sidecar)
+            except Exception:
+                pass
     shutil.copytree(GOLDEN_DIR, SANDBOX_DIR)
     print("Sandbox dataset has been reset to its original state.")
 
@@ -68,7 +81,7 @@ def analyze_all(json_output=False):
     analyzer = None
     try:
         db_worker = DBWorker()
-        db_path = os.path.join(SANDBOX_DIR, "sandbox.db")
+        db_path = SANDBOX_DB_PATH
         db = Database(db_path, db_worker)
 
         analyzer = IncrementalAnalyzer(

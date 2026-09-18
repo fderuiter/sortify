@@ -220,7 +220,7 @@ class SessionCrypto:
         if key is None:
             if (
                 self.db_path.exists()
-                and self.db_path.stat().st_size > 4096
+                and self.db_path.stat().st_size > 0
                 and self.db_path.suffix.lower()
                 not in (
                     ".json",
