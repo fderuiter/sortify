@@ -31,7 +31,6 @@ def reset_sandbox():
             crypto.isolated_key_path.unlink()
     except Exception:
         pass
-
     if os.path.exists(SANDBOX_DIR):
         shutil.rmtree(SANDBOX_DIR)
     shutil.copytree(GOLDEN_DIR, SANDBOX_DIR)
