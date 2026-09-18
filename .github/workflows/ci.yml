@@ -47,8 +47,8 @@ jobs:
 
     - name: Workflow Linting
       run: |
-        go install github.com/rhysd/actionlint/cmd/actionlint@latest
-        $(go env GOPATH)/bin/actionlint
+        curl -sSL --connect-timeout 10 --max-time 30 --retry 5 --retry-connrefused https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash | bash
+        ./actionlint
 
   type-check:
     name: Type Check (MyPy)
