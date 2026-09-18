@@ -1004,6 +1004,7 @@ class SharedWorkerPool:
         if (
             getattr(_thread_local, "in_shared_worker_pool", False)
             or threading.current_thread().name.startswith("GlobalSharedWorker")
+            or threading.current_thread().name.startswith("DBWorker")
         ):
             fut = concurrent.futures.Future()
             try:
@@ -1041,6 +1042,7 @@ class SharedWorkerPool:
         if (
             getattr(_thread_local, "in_shared_worker_pool", False)
             or threading.current_thread().name.startswith("GlobalSharedWorker")
+            or threading.current_thread().name.startswith("DBWorker")
         ):
             return [offline_wrapped_fn(*args) for args in zip(*iterables)]
 

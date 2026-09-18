@@ -154,3 +154,29 @@ def test_reentrant_submit_and_map_prevent_deadlock():
     assert results == [i * 10 + (i + 1) * 10 for i in range(5)]
 
 
+def test_db_worker_reentrant_shared_worker_pool_deadlock_prevention():
+    """Verify DBWorker tasks executing on behalf of SharedWorkerPool worker threads execute nested pool operations inline without deadlocking."""
+    from app.core.db_worker import DBWorker
+
+    pool = SharedWorkerPool.get_instance(max_workers=2)
+    db_worker = DBWorker()
+
+    try:
+        def inner_task(val):
+            return val * 10
+
+        def db_task(val):
+            return list(pool.map(inner_task, [val]))
+
+        def outer_task(val):
+            return db_worker.execute_write(db_task, val)
+
+        outer_futs = [pool.submit(outer_task, i) for i in range(4)]
+        results = [f.result(timeout=5.0) for f in outer_futs]
+
+        assert results == [[i * 10] for i in range(4)]
+    finally:
+        db_worker.stop()
+
+
+
