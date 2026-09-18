@@ -80,6 +80,7 @@ dev = [
     "jupyter",
     "ipykernel",
     "notebook",
+    "playwright>=1.62.0",
 ]
 
 build = [
