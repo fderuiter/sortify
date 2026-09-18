@@ -56,6 +56,9 @@ def get_base_path(caller_file_path: str = None) -> str:
 
 def get_session_base_dir() -> Path:
     """Get the standard base directory for sessions."""
+    override = os.environ.get("AUTOSORTER_SESSION_BASE_DIR")
+    if override:
+        return Path(override)
     return Path(tempfile.gettempdir()) / "autosorter_sessions"
 
 
