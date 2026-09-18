@@ -48,7 +48,9 @@ def render_directory_selection_card(container, state="default", viewport_width=1
     with ui.card().classes(
         "w-full max-w-5xl mx-auto p-5 bg-white rounded-xl shadow-sm border border-slate-200"
     ):
-        with ui.row().classes("w-full items-center justify-between mb-3 flex-wrap gap-2"):
+        with ui.row().classes(
+            "w-full items-center justify-between mb-3 flex-wrap gap-2"
+        ):
             with ui.row().classes("items-center gap-2 flex-wrap"):
                 ui.icon("folder", color="primary", size="sm").props(
                     'aria-label="Folder Icon"'
@@ -59,7 +61,11 @@ def render_directory_selection_card(container, state="default", viewport_width=1
 
         with ui.column().classes("w-full gap-4"):
             with ui.row().classes("w-full items-center gap-3 flex-wrap"):
-                path_val = "/tmp/test_documents" if state != "overflow" else "/tmp/very_long_path_that_stretches_across_the_entire_screen_width_for_testing_label_overflow_and_text_truncation_handling_in_narrow_viewports"
+                path_val = (
+                    "/tmp/test_documents"
+                    if state != "overflow"
+                    else "/tmp/very_long_path_that_stretches_across_the_entire_screen_width_for_testing_label_overflow_and_text_truncation_handling_in_narrow_viewports"
+                )
                 ui.input(
                     label="Target Directory Path",
                     placeholder="Select root directory or file...",
@@ -71,7 +77,9 @@ def render_directory_selection_card(container, state="default", viewport_width=1
                     "bg-slate-800 text-white"
                 ).props('unelevated size="md" aria-label="Browse Directory Button"')
 
-            with ui.row().classes("w-full items-center justify-between flex-wrap gap-3"):
+            with ui.row().classes(
+                "w-full items-center justify-between flex-wrap gap-3"
+            ):
                 ui.select(
                     options=[
                         "Standard AutoSorter",
@@ -88,7 +96,9 @@ def render_directory_selection_card(container, state="default", viewport_width=1
                 with ui.row().classes("items-center gap-2 flex-wrap"):
                     ui.button("Clean & Organize", icon="auto_fix_high").classes(
                         "bg-blue-600 text-white"
-                    ).props('color="primary" unelevated size="md" aria-label="Start Organization Button"')
+                    ).props(
+                        'color="primary" unelevated size="md" aria-label="Start Organization Button"'
+                    )
                     ui.button("Cancel", icon="cancel").props(
                         'flat color="negative" size="md" aria-label="Cancel Organization Button"'
                     )
@@ -102,7 +112,9 @@ def render_plan_treeview_card(container, state="default", viewport_width=1280):
     with ui.card().classes(
         "w-full max-w-5xl mx-auto p-5 bg-white rounded-xl shadow-sm border border-slate-200"
     ):
-        with ui.row().classes("w-full justify-between items-center mb-4 flex-wrap gap-2"):
+        with ui.row().classes(
+            "w-full justify-between items-center mb-4 flex-wrap gap-2"
+        ):
             with ui.row().classes("items-center gap-2 flex-wrap"):
                 ui.icon("account_tree", color="primary", size="sm").props(
                     'aria-label="Treeview Icon"'
@@ -114,7 +126,9 @@ def render_plan_treeview_card(container, state="default", viewport_width=1280):
             with ui.row().classes("items-center gap-2 flex-wrap"):
                 ui.button("Apply Organization Plan", icon="check_circle").classes(
                     "bg-green-600 text-white"
-                ).props('unelevated size="sm" aria-label="Apply Organization Plan Button"')
+                ).props(
+                    'unelevated size="sm" aria-label="Apply Organization Plan Button"'
+                )
 
         if state == "error":
             with ui.card().classes(
@@ -145,9 +159,13 @@ def render_plan_treeview_card(container, state="default", viewport_width=1280):
 def render_settings_modal_card(container, state="default", viewport_width=1280):
     """Render settings dialog view in isolation."""
     with ui.card().classes(
-        get_dialog_card_classes("xl", "w-full p-6 bg-white rounded-xl shadow-lg border border-slate-200")
+        get_dialog_card_classes(
+            "xl", "w-full p-6 bg-white rounded-xl shadow-lg border border-slate-200"
+        )
     ):
-        with ui.row().classes("w-full justify-between items-center mb-4 flex-wrap gap-2"):
+        with ui.row().classes(
+            "w-full justify-between items-center mb-4 flex-wrap gap-2"
+        ):
             with ui.row().classes("items-center gap-2 flex-wrap"):
                 ui.icon("settings", color="primary", size="md").props(
                     'aria-label="Settings Header Icon"'
@@ -175,12 +193,12 @@ def render_settings_modal_card(container, state="default", viewport_width=1280):
                 )
 
             with ui.column().classes("w-full p-2 gap-3"):
-                ui.switch(
-                    "Enable Contextual Smart Renaming", value=True
-                ).props('aria-label="Contextual Smart Renaming Switch"')
-                ui.switch(
-                    "Preserve Original Folder Hierarchy", value=False
-                ).props('aria-label="Preserve Hierarchy Switch"')
+                ui.switch("Enable Contextual Smart Renaming", value=True).props(
+                    'aria-label="Contextual Smart Renaming Switch"'
+                )
+                ui.switch("Preserve Original Folder Hierarchy", value=False).props(
+                    'aria-label="Preserve Hierarchy Switch"'
+                )
 
             with ui.row().classes("w-full justify-end gap-2 mt-4 flex-wrap"):
                 ui.button("Save Settings", icon="save").classes(
@@ -191,7 +209,9 @@ def render_settings_modal_card(container, state="default", viewport_width=1280):
 def render_setup_wizard_card(container, state="default", viewport_width=1280):
     """Render initial AI setup wizard modal in isolation."""
     with ui.card().classes(
-        get_dialog_card_classes("md", "w-full p-6 bg-white rounded-xl shadow-lg border border-slate-200")
+        get_dialog_card_classes(
+            "md", "w-full p-6 bg-white rounded-xl shadow-lg border border-slate-200"
+        )
     ):
         ui.label("AI Features & Model Initialization").classes(
             "text-xl font-bold text-slate-900 mb-3 break-words"
@@ -223,9 +243,13 @@ def render_setup_wizard_card(container, state="default", viewport_width=1280):
 def render_cro_forensic_card(container, state="default", viewport_width=1280):
     """Render CRO Multi-Study Forensic drive scanning dialog card in isolation."""
     with ui.card().classes(
-        get_dialog_card_classes("xl", "w-full p-6 bg-white rounded-xl shadow-lg border border-slate-200")
+        get_dialog_card_classes(
+            "xl", "w-full p-6 bg-white rounded-xl shadow-lg border border-slate-200"
+        )
     ):
-        with ui.row().classes("w-full justify-between items-center border-b pb-3 flex-wrap gap-2"):
+        with ui.row().classes(
+            "w-full justify-between items-center border-b pb-3 flex-wrap gap-2"
+        ):
             with ui.column().classes("gap-0"):
                 ui.label("CRO Forensic Multi-Study Ingestion & Audit").classes(
                     "text-lg font-bold text-slate-900 break-words"
@@ -271,9 +295,13 @@ def render_cro_forensic_card(container, state="default", viewport_width=1280):
 def render_help_modal_card(container, state="default", viewport_width=1280):
     """Render user documentation guide modal in isolation."""
     with ui.card().classes(
-        get_dialog_card_classes("xl", "w-full p-6 bg-white rounded-xl shadow-lg border border-slate-200")
+        get_dialog_card_classes(
+            "xl", "w-full p-6 bg-white rounded-xl shadow-lg border border-slate-200"
+        )
     ):
-        with ui.row().classes("w-full justify-between items-center mb-4 flex-wrap gap-2"):
+        with ui.row().classes(
+            "w-full justify-between items-center mb-4 flex-wrap gap-2"
+        ):
             ui.label("User Guide & Documentation").classes(
                 "text-2xl font-bold text-slate-900 break-words"
             ).props('aria-label="Help Dialog Title"')
@@ -281,7 +309,9 @@ def render_help_modal_card(container, state="default", viewport_width=1280):
                 "bg-gray-200 text-black shrink-0"
             ).props('aria-label="Close Help Dialog Button"')
 
-        with ui.scroll_area().classes("w-full max-h-48 border rounded p-4 overflow-y-auto"):
+        with ui.scroll_area().classes(
+            "w-full max-h-48 border rounded p-4 overflow-y-auto"
+        ):
             ui.markdown(
                 "# Smart AutoSorter Guide\n\n- Select target directory\n- Choose classification preset\n- Review reorganization plan before applying."
             ).classes("w-full break-words")
@@ -292,7 +322,9 @@ def render_status_progress_panel(container, state="default", viewport_width=1280
     with ui.card().classes(
         "w-full max-w-5xl mx-auto p-5 bg-white rounded-xl shadow-sm border border-slate-200"
     ):
-        with ui.row().classes("w-full justify-between items-center mb-2 flex-wrap gap-2"):
+        with ui.row().classes(
+            "w-full justify-between items-center mb-2 flex-wrap gap-2"
+        ):
             ui.label("Processing Operations in Progress").classes(
                 "text-md font-bold text-slate-800 break-words"
             )
@@ -396,20 +428,30 @@ body { font-family: 'Inter', sans-serif; background-color: #f8fafc; color: #0f17
 
     comp_map = {c["id"]: c for c in CATALOG_REGISTRY}
 
-    with ui.header().classes("bg-slate-900 text-white px-6 py-3 items-center justify-between shadow-md"):
+    with ui.header().classes(
+        "bg-slate-900 text-white px-6 py-3 items-center justify-between shadow-md"
+    ):
         with ui.row().classes("items-center gap-3"):
             ui.icon("view_in_ar", size="md", color="blue-4")
-            ui.label("Component Catalog & A11y Workbench").classes("text-xl font-bold tracking-tight")
+            ui.label("Component Catalog & A11y Workbench").classes(
+                "text-xl font-bold tracking-tight"
+            )
 
     with ui.column().classes("w-full max-w-7xl mx-auto p-6 gap-6"):
         # Control Bar
-        with ui.card().classes("w-full p-4 bg-white rounded-xl shadow-sm border border-slate-200"):
-            with ui.row().classes("w-full items-center justify-between flex-wrap gap-4"):
+        with ui.card().classes(
+            "w-full p-4 bg-white rounded-xl shadow-sm border border-slate-200"
+        ):
+            with ui.row().classes(
+                "w-full items-center justify-between flex-wrap gap-4"
+            ):
                 ui.select(
                     options={c["id"]: c["name"] for c in CATALOG_REGISTRY},
                     value=selected_comp_id,
                     label="Select UI Component",
-                ).classes("w-full max-w-xs").props('outlined dense aria-label="Component Selector"')
+                ).classes("w-full max-w-xs").props(
+                    'outlined dense aria-label="Component Selector"'
+                )
 
                 ui.select(
                     options={
@@ -420,16 +462,22 @@ body { font-family: 'Inter', sans-serif; background-color: #f8fafc; color: #0f17
                     },
                     value=selected_viewport_width,
                     label="Viewport Size",
-                ).classes("w-full max-w-xs").props('outlined dense aria-label="Viewport Selector"')
+                ).classes("w-full max-w-xs").props(
+                    'outlined dense aria-label="Viewport Selector"'
+                )
 
                 ui.select(
                     options=["default", "overflow", "loading", "error"],
                     value=selected_state,
                     label="State Variant",
-                ).classes("w-full max-w-xs").props('outlined dense aria-label="State Selector"')
+                ).classes("w-full max-w-xs").props(
+                    'outlined dense aria-label="State Selector"'
+                )
 
         # Preview Container
-        with ui.column().classes("w-full items-center justify-center p-4 bg-slate-100 rounded-xl min-h-[400px]"):
+        with ui.column().classes(
+            "w-full items-center justify-center p-4 bg-slate-100 rounded-xl min-h-[400px]"
+        ):
             preview_container = ui.element("div").classes(
                 "preview-viewport-frame w-full rounded-xl p-4 shadow-sm"
             )
@@ -465,12 +513,20 @@ def main():
     if args.audit_only:
         total_scans, violations = run_all_catalog_scans(CATALOG_REGISTRY)
         if violations:
-            print(f"FAILED: Found {len(violations)} accessibility violations across {total_scans} scans.", file=sys.stderr)
+            print(
+                f"FAILED: Found {len(violations)} accessibility violations across {total_scans} scans.",
+                file=sys.stderr,
+            )
             for v in violations:
-                print(f"  [{v.rule_id}] Component '{v.component_id}' ({v.viewport_name}): {v.message} @ {v.locator}", file=sys.stderr)
+                print(
+                    f"  [{v.rule_id}] Component '{v.component_id}' ({v.viewport_name}): {v.message} @ {v.locator}",
+                    file=sys.stderr,
+                )
             sys.exit(1)
         else:
-            print(f"SUCCESS: All {total_scans} catalog component-viewport accessibility scans passed.")
+            print(
+                f"SUCCESS: All {total_scans} catalog component-viewport accessibility scans passed."
+            )
             sys.exit(0)
 
     @ui.page("/")

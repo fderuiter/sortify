@@ -44,7 +44,9 @@ def test_a11y_gate_passes_for_all_catalog_components():
         CATALOG_REGISTRY, viewports=DEFAULT_CONFIGURED_VIEWPORTS
     )
     assert total_scans >= 32
-    assert len(violations) == 0, f"Expected 0 A11y violations, got {len(violations)}: {violations}"
+    assert len(violations) == 0, (
+        f"Expected 0 A11y violations, got {len(violations)}: {violations}"
+    )
 
 
 def test_a11y_gate_catches_missing_label_violation():

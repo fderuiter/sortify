@@ -52,4 +52,3 @@ All shared system utilities must reside in or be exposed through `app.core.path_
 * **No Direct `sys.frozen` Checks:** Never use `getattr(sys, "frozen", False)` in modules. Use `is_packaged()` instead.
 * **Consolidated Illegal Characters:** All paths and filenames must validate against `ILLEGAL_PATH_CHARS_SET` or `ILLEGAL_NAME_CHARS_SET` inside `app/core/path_utils.py`.
 * **Standard Key Resolution:** Any database connection or database initialization must obtain its `SessionCrypto` instance via `resolve_db_crypto(db_path)`. Do not hardcode standard `secret.key` filenames or paths inside database modules.
-

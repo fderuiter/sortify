@@ -161,7 +161,9 @@ def test_resilient_file_hash_normalize_text(tmp_path):
 
 def test_resilient_file_hash_skip_media_tags(tmp_path):
     # Construct a mock MP3 with ID3 header
-    id3_header = b"ID3\x03\x00\x00\x00\x00\x00\x0a" + b"1234567890"  # 10 byte header + 10 byte tag
+    id3_header = (
+        b"ID3\x03\x00\x00\x00\x00\x00\x0a" + b"1234567890"
+    )  # 10 byte header + 10 byte tag
     audio_data = b"AUDIO_DATA_PAYLOAD_12345"
     mp3_file = tmp_path / "test.mp3"
     mp3_file.write_bytes(id3_header + audio_data)
@@ -331,4 +333,3 @@ def test_resilient_rmtree_ignore_errors(tmp_path, caplog):
         or f"Failed to rmtree <USER_HOME>/{d.name} after" in caplog.text
         or f"Failed to rmtree <USER_HOME>\\{d.name} after" in caplog.text
     )
-

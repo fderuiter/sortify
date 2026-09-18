@@ -94,9 +94,7 @@ def test_concurrent_load_and_unload():
         except Exception as e:
             errors.append(e)
 
-    threads = [
-        threading.Thread(target=load_task, args=(i,)) for i in range(5)
-    ] + [
+    threads = [threading.Thread(target=load_task, args=(i,)) for i in range(5)] + [
         threading.Thread(target=unload_all_task) for _ in range(2)
     ]
 

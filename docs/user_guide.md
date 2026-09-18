@@ -14,7 +14,7 @@ When you launch Smart AutoSorter AI Pro for the first time, you will be presente
 
 Your privacy is our priority.
 - **Local Processing:** If you download the model, all semantic analysis occurs strictly on your machine.
-- **No External Communication:** We never send your files or personal data to any external server. 
+- **No External Communication:** We never send your files or personal data to any external server.
 - **Privacy Settings:** You can always verify if the model is downloaded and change your preferences in the Settings panel.
 
 ## Exclusion List Configuration
@@ -41,7 +41,7 @@ Smart AutoSorter AI Pro provides continuous background directory monitoring to t
 When background folder monitoring is active, the system continuously tracks target directories for file events. When new files are added or existing files are modified, background monitoring automatically triggers sorting and reorganization without requiring manual intervention.
 
 ### Transient File Filtering
-To ensure incomplete downloads or temporary working files do not disrupt background operations, the background monitor automatically filters out transient files. 
+To ensure incomplete downloads or temporary working files do not disrupt background operations, the background monitor automatically filters out transient files.
 - **Filtered Extensions:** By default, files with transient extensions such as `.crdownload`, `.tmp`, and `.download` are ignored during background monitoring and file scanning.
 - **Completion Detection:** Files are only processed once temporary download operations are fully complete and the file is finalized on disk.
 
@@ -55,7 +55,7 @@ During rapid file creation or continuous file write operations (such as multi-fi
 This application includes a dedicated offline non-semantic sorting fallback mode. This mode is activated automatically if you decline the model download, if you are completely offline during setup, or if the model is otherwise missing.
 
 ### How Offline Mode Works
-In offline non-semantic mode, the AI clustering features are disabled. Instead, the application processes folders by grouping files based purely on file extensions or basic alphabetical sorting rules, without analyzing the internal text or semantic meaning. 
+In offline non-semantic mode, the AI clustering features are disabled. Instead, the application processes folders by grouping files based purely on file extensions or basic alphabetical sorting rules, without analyzing the internal text or semantic meaning.
 - Files are grouped into generic category folders (e.g., all `.txt` files into a Text Documents folder).
 - No background network connections are attempted.
 - Performance is extremely fast as no heavy machine learning computations occur.

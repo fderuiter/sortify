@@ -611,7 +611,12 @@ def test_snapshot_integrity_checksum_mismatch(tmp_path, monkeypatch):
             "MyProtocol": {
                 "class_name": "MyProtocol",
                 "methods": [
-                    {"name": "tampered_method", "async": False, "parameters": [], "returns": "None"}
+                    {
+                        "name": "tampered_method",
+                        "async": False,
+                        "parameters": [],
+                        "returns": "None",
+                    }
                 ],
             }
         },

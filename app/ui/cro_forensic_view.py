@@ -32,12 +32,17 @@ class CROForensicView:
         with (
             ui.dialog() as dialog,
             ui.card().classes(
-                get_dialog_card_classes("xl", f"{TOKENS.SIZING.MAX_HEIGHT_DIALOG} flex flex-col overflow-y-auto")
+                get_dialog_card_classes(
+                    "xl",
+                    f"{TOKENS.SIZING.MAX_HEIGHT_DIALOG} flex flex-col overflow-y-auto",
+                )
             ),
         ):
             dialog.props('aria-label="CRO Forensic Ingest Dialog"')
 
-            cro_header = OverflowToolbar(classes="w-full justify-between items-center border-b pb-3")
+            cro_header = OverflowToolbar(
+                classes="w-full justify-between items-center border-b pb-3"
+            )
             with cro_header.left_container:
                 with ui.column().classes("gap-0"):
                     ui.label("CRO Forensic Multi-Study Ingestion & Audit").classes(
@@ -281,9 +286,15 @@ class CROForensicView:
                         if study.compliance_score_percent >= 60
                         else "negative"
                     )
-                    with ui.card().classes("w-full p-4 border rounded-lg overflow-hidden"):
-                        with ui.row().classes("w-full justify-between items-center min-w-0 flex-nowrap gap-2"):
-                            with ui.column().classes("gap-0 min-w-0 flex-1 mr-2 overflow-hidden"):
+                    with ui.card().classes(
+                        "w-full p-4 border rounded-lg overflow-hidden"
+                    ):
+                        with ui.row().classes(
+                            "w-full justify-between items-center min-w-0 flex-nowrap gap-2"
+                        ):
+                            with ui.column().classes(
+                                "gap-0 min-w-0 flex-1 mr-2 overflow-hidden"
+                            ):
                                 study_lbl = ui.label(study.study_id).classes(
                                     "text-lg font-bold text-blue-900 truncate block w-full"
                                 )
@@ -292,7 +303,9 @@ class CROForensicView:
                                     f"{study.total_documents} documents organized into regulatory binder"
                                 ).classes("text-xs text-gray-500 truncate block w-full")
 
-                            with ui.row().classes("items-center gap-3 shrink-0 flex-nowrap"):
+                            with ui.row().classes(
+                                "items-center gap-3 shrink-0 flex-nowrap"
+                            ):
                                 ui.badge(
                                     f"{study.audit_readiness_status} ({study.compliance_score_percent}%)",
                                     color=badge_color,

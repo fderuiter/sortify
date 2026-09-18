@@ -1251,7 +1251,7 @@ class Database:
 
             cursor = conn.execute(
                 """
-                SELECT d.filepath, d.extracted_text 
+                SELECT d.filepath, d.extracted_text
                 FROM documents d
                 LEFT JOIN document_vectors v ON d.base_dir = v.base_dir AND d.filepath = v.filepath
                 WHERE d.base_dir = ? AND (v.vector IS NULL OR v.model_signature IS NULL OR v.model_signature != ?)

@@ -172,7 +172,13 @@ def test_batch_moves_execute_without_invalid_path_errors():
         assert result["success"] is True
 
         mock_db = MagicMock()
-        summary = execute_moves(tmp_dir, plan, db=mock_db, history_manager=history_mgr, runtime_settings=settings)
+        summary = execute_moves(
+            tmp_dir,
+            plan,
+            db=mock_db,
+            history_manager=history_mgr,
+            runtime_settings=settings,
+        )
 
         # Confirm target folders were created with safe names and files moved
         target_inv = os.path.join(tmp_dir, "Invoices_ 2023", "file1.txt")

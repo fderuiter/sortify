@@ -8,11 +8,11 @@ def test_get_handwritten_docs():
     docs = get_handwritten_docs()
     assert "README.md" in docs
     assert "PRIVACY.md" in docs
-    assert any("docs/" in d for d in docs)
+    assert any("docs/" in d or "docs\\" in d for d in docs)
     # Ensure generated files are excluded
-    assert "docs/api_reference.md" not in docs
-    assert "docs/ui.md" not in docs
-    assert "docs/admin_guide.md" not in docs
+    assert "docs/api_reference.md" not in docs and "docs\\api_reference.md" not in docs
+    assert "docs/ui.md" not in docs and "docs\\ui.md" not in docs
+    assert "docs/admin_guide.md" not in docs and "docs\\admin_guide.md" not in docs
     assert "SECURITY.md" not in docs
 
 

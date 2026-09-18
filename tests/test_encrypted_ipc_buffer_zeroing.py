@@ -215,7 +215,10 @@ def test_worker_failure_triggers_buffer_zeroing():
 
         assert isinstance(raw_output, bytes)
         decrypted_output = decrypt_ipc_payload(raw_output, session_key)
-        assert decrypted_output.get("status") == "error" or decrypted_output.get("plan") is not None
+        assert (
+            decrypted_output.get("status") == "error"
+            or decrypted_output.get("plan") is not None
+        )
     finally:
         if proc.is_alive():
             proc.terminate()

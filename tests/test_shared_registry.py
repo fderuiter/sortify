@@ -401,20 +401,44 @@ def test_no_dns_during_import():
     import importlib
     import sys
 
-    # Remove from sys.modules if already imported to force a fresh reload/import
-    if "app.core.shared_registry" in sys.modules:
-        del sys.modules["app.core.shared_registry"]
+    old_module = sys.modules.get("app.core.shared_registry")
+    old_getaddrinfo = socket.getaddrinfo
+    old_gethostbyname = socket.gethostbyname
+    old_gethostbyname_ex = socket.gethostbyname_ex
+    old_gethostbyaddr = socket.gethostbyaddr
+    old_getnameinfo = socket.getnameinfo
+    old_getfqdn = socket.getfqdn
+    old_connect = socket.socket.connect
+    old_connect_ex = socket.socket.connect_ex
 
-    mock_gethostname = MagicMock(
-        side_effect=RuntimeError(
-            "socket.gethostname() should not be called at import time!"
+    try:
+        # Remove from sys.modules if already imported to force a fresh reload/import
+        if "app.core.shared_registry" in sys.modules:
+            del sys.modules["app.core.shared_registry"]
+
+        mock_gethostname = MagicMock(
+            side_effect=RuntimeError(
+                "socket.gethostname() should not be called at import time!"
+            )
         )
-    )
-    with patch("socket.gethostname", mock_gethostname):
-        # Importing should not trigger the gethostname call
-        import app.core.shared_registry
+        with patch("socket.gethostname", mock_gethostname):
+            # Importing should not trigger the gethostname call
+            import app.core.shared_registry
 
-        importlib.reload(app.core.shared_registry)
+            importlib.reload(app.core.shared_registry)
+    finally:
+        socket.getaddrinfo = old_getaddrinfo
+        socket.gethostbyname = old_gethostbyname
+        socket.gethostbyname_ex = old_gethostbyname_ex
+        socket.gethostbyaddr = old_gethostbyaddr
+        socket.getnameinfo = old_getnameinfo
+        socket.getfqdn = old_getfqdn
+        socket.socket.connect = old_connect
+        socket.socket.connect_ex = old_connect_ex
+        if old_module is not None:
+            sys.modules["app.core.shared_registry"] = old_module
+        elif "app.core.shared_registry" in sys.modules:
+            del sys.modules["app.core.shared_registry"]
 
 
 def test_sandbox_address_resolution_blocks_external():
@@ -551,18 +575,20 @@ def test_sandbox_address_resolution_supports_mocks():
 
 def test_hardware_helpers():
     """Test environment helper hardware check functions."""
-    from app.core.env_helper import is_cuda_available, is_mps_available
+    import sys
 
-    with patch("torch.cuda.is_available", return_value=True):
+    mock_torch = MagicMock()
+    mock_torch.cuda.is_available.return_value = True
+    mock_torch.backends.mps.is_available.return_value = True
+    with patch.dict(sys.modules, {"torch": mock_torch}):
+        from app.core.env_helper import is_cuda_available, is_mps_available
+
         assert is_cuda_available() is True
-
-    with patch("torch.cuda.is_available", return_value=False):
+        mock_torch.cuda.is_available.return_value = False
         assert is_cuda_available() is False
-
-    with patch("torch.backends.mps.is_available", return_value=True):
+        mock_torch.backends.mps.is_available.return_value = True
         assert is_mps_available() is True
-
-    with patch("torch.backends.mps.is_available", return_value=False):
+        mock_torch.backends.mps.is_available.return_value = False
         assert is_mps_available() is False
 
 
@@ -642,6 +668,8 @@ def test_get_ocr_reader_fallback(monkeypatch):
 
 def test_check_ai_status_local_offline_bundle(tmp_path, monkeypatch):
     """Verify that check_ai_status and get_ocr_reader can locate and verify easyocr and model files in the offline_bundle directory."""
+    import sys
+
     from app.config import AppSettings
     from app.core.shared_registry import SharedModelRegistry
     from app.core.verifier import check_ai_status
@@ -684,8 +712,29 @@ def test_check_ai_status_local_offline_bundle(tmp_path, monkeypatch):
 
         # Verify that get_ocr_reader also correctly resolves the directory
         registry = SharedModelRegistry.get_instance()
-        with patch("easyocr.Reader") as mock_reader:
-            registry.get_ocr_reader()
-            _, kwargs = mock_reader.call_args
-            assert "offline_bundle" in kwargs.get("model_storage_directory", "")
-            assert "easyocr" in kwargs.get("model_storage_directory", "")
+        mock_easyocr = MagicMock()
+        mock_torch = MagicMock()
+        monkeypatch.setitem(sys.modules, "easyocr", mock_easyocr)
+        monkeypatch.setitem(sys.modules, "torch", mock_torch)
+        registry.get_ocr_reader()
+        _, kwargs = mock_easyocr.Reader.call_args
+        assert "offline_bundle" in kwargs.get("model_storage_directory", "")
+        assert "easyocr" in kwargs.get("model_storage_directory", "")
+
+
+def test_shared_worker_pool_reentrant_execution_prevents_deadlock():
+    """Verify that reentrant submit and map calls inside SharedWorkerPool worker threads execute inline without deadlocking."""
+    pool = SharedWorkerPool.get_instance(max_workers=1)
+
+    def inner_task(x):
+        return x * 10
+
+    def outer_task(x):
+        # Nested map call inside worker thread
+        mapped_res = list(pool.map(inner_task, [x, x + 1]))
+        # Nested submit call inside worker thread
+        submitted_fut = pool.submit(inner_task, x + 2)
+        return mapped_res + [submitted_fut.result()]
+
+    fut = pool.submit(outer_task, 1)
+    assert fut.result() == [10, 20, 30]

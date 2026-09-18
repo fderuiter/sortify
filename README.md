@@ -29,7 +29,14 @@ Smart AutoSorter AI Pro is distributed as a zero-config standalone executable. Y
 2. Make the file executable: `chmod +x SmartAutoSorter-Linux`
 3. Run the application: `./SmartAutoSorter-Linux`
 
-For core contributors and development setup, please refer to the [Contributor Guide](docs/contributor.md).
+For core contributors and development setup, run the following setup commands:
+
+```bash
+uv sync
+uv run pre-commit install
+```
+
+For further development guidelines, please refer to the [Contributor Guide](docs/contributor.md).
 
 ## Architecture
 
@@ -54,7 +61,7 @@ UPDATE_SNAPSHOTS=1 uv run pytest tests/test_ui_snapshots.py
 Commit the updated snapshot files located in `tests/snapshots/` so reviewers can verify the visual and structural differences.
 ## Security & Privacy
 
-For details regarding our security posture, vulnerability reporting, and network dependencies, please read our [Security Policy](SECURITY.md). 
+For details regarding our security posture, vulnerability reporting, and network dependencies, please read our [Security Policy](SECURITY.md).
 To understand how your data is processed locally and stored, please refer to our [Privacy Policy](PRIVACY.md).
 
 ## Documentation

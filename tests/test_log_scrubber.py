@@ -160,4 +160,3 @@ def test_write_smoke_test_error_fallback_scrubs_diagnostic_file(tmp_path, monkey
     assert "enc:" not in content
     assert "SecretFallbackKey123" not in content
     assert "<USER_HOME>/user_data" in content
-

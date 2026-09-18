@@ -7,7 +7,7 @@ import traceback
 from pathlib import Path
 
 
-def scrub_diagnostic_text(text: str, home_dir: str = None) -> str:
+def scrub_diagnostic_text(text: str, home_dir: str | None = None) -> str:
     """Scrub user home directory paths and sensitive credential tokens from diagnostic text."""
     if not isinstance(text, str) or not text:
         return text

@@ -709,4 +709,3 @@ def test_debounce_sliders_auto_adjustment():
         on_debounce_change(mock_event)
         assert settings.DEBOUNCE_DELAY == 1.0
         assert settings.MAX_DEBOUNCE_DELAY == 2.0
-
