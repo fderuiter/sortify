@@ -42,8 +42,7 @@ jobs:
 
     - name: Workflow Linting
       run: |
-        curl -sSL --connect-timeout 10 --max-time 30 --retry 5 --retry-connrefused https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash | bash
-        ./actionlint
+        uvx --from actionlint-py actionlint
 
   type-check:
     name: Type Check (MyPy)
