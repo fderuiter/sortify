@@ -15,6 +15,9 @@ GOLDEN_DIR = os.path.join(BASE_DIR, "sandbox", "dataset_golden")
 
 def reset_sandbox():
     """Restores the sandbox dataset to its original state from the golden dataset."""
+    from app.core.db_conn import clear_connection_cache
+
+    clear_connection_cache(only_current_and_inactive=False)
     if os.path.exists(SANDBOX_DIR):
         shutil.rmtree(SANDBOX_DIR)
     shutil.copytree(GOLDEN_DIR, SANDBOX_DIR)
@@ -82,6 +85,9 @@ def analyze_all(json_output=False):
 
     analyzer.terminate()
     db_worker.stop()
+    from app.core.db_conn import clear_connection_cache
+
+    clear_connection_cache(only_current_and_inactive=False)
 
     import json
 

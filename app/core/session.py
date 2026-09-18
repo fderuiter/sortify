@@ -307,5 +307,8 @@ class AppSession:
             self.analyzer.terminate()
         if hasattr(self, "db_worker") and self.db_worker:
             self.db_worker.stop()
+        from app.core.db_conn import clear_connection_cache
+
+        clear_connection_cache(only_current_and_inactive=False)
         if self.session_dir and os.path.exists(self.session_dir):
             shutil.rmtree(self.session_dir, ignore_errors=True)
