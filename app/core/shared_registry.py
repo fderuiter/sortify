@@ -124,7 +124,7 @@ class ContextPropagatingThread(threading.Thread):
             ):
                 _thread_local.sandboxed = True
                 _thread_local.reason = "background vector reconstruction"
-            super(ContextPropagatingThread, self).run()
+            threading.Thread.run(self)
 
         self._ctx.run(wrapped)
 

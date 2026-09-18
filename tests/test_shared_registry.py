@@ -401,20 +401,16 @@ def test_no_dns_during_import():
     import importlib
     import sys
 
-    # Remove from sys.modules if already imported to force a fresh reload/import
-    if "app.core.shared_registry" in sys.modules:
-        del sys.modules["app.core.shared_registry"]
-
     mock_gethostname = MagicMock(
         side_effect=RuntimeError(
             "socket.gethostname() should not be called at import time!"
         )
     )
     with patch("socket.gethostname", mock_gethostname):
-        # Importing should not trigger the gethostname call
-        import app.core.shared_registry
-
-        importlib.reload(app.core.shared_registry)
+        if "app.core.shared_registry" in sys.modules:
+            importlib.reload(sys.modules["app.core.shared_registry"])
+        else:
+            importlib.import_module("app.core.shared_registry")
 
 
 def test_sandbox_address_resolution_blocks_external():
