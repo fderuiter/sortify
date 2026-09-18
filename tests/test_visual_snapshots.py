@@ -110,6 +110,7 @@ run_app(s, port={port}, show=False)
     env = os.environ.copy()
     env["NICEGUI_SHOW_WELCOME"] = "False"
     env["PYTHONPATH"] = PROJECT_ROOT
+    env["PYTHON_KEYRING_BACKEND"] = "keyring.backends.fail.Keyring"
     env["PYTHONKEYRING_BACKEND"] = "keyring.backends.fail.Keyring"
     env["TMPDIR"] = isolated_tmp
     env["TEMP"] = isolated_tmp

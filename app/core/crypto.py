@@ -8,6 +8,7 @@ import sys
 from typing import Any
 
 if sys.platform == "darwin" and (os.environ.get("CI") or os.environ.get("GITHUB_ACTIONS")):
+    os.environ.setdefault("PYTHON_KEYRING_BACKEND", "keyring.backends.fail.Keyring")
     os.environ.setdefault("PYTHONKEYRING_BACKEND", "keyring.backends.fail.Keyring")
 
 try:
