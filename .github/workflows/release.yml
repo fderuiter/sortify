@@ -45,6 +45,7 @@ jobs:
 
       - name: Package as Archive (Windows)
         if: runner.os == 'Windows'
+        shell: pwsh
         run: |
           tar.exe -acf dist\${{ matrix.artifact_name }} -C dist smart-autosorter
 
@@ -55,6 +56,7 @@ jobs:
 
       - name: Generate Checksum (Windows)
         if: runner.os == 'Windows'
+        shell: pwsh
         run: |
           $hash = Get-FileHash -Path dist\${{ matrix.artifact_name }} -Algorithm SHA256
           $hash.Hash + "  ${{ matrix.artifact_name }}" | Out-File -FilePath dist\${{ matrix.artifact_name }}.sha256 -Encoding ascii
