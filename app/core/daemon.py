@@ -12,6 +12,7 @@ from watchdog.observers import Observer
 
 from app.config import AppSettings
 from app.core.metadata import MetadataPass
+from app.core.path_utils import get_session_base_dir
 from app.core.scanner import get_files_recursively
 from app.core.session import AppSession
 
@@ -293,7 +294,7 @@ class ContinuousWatchdogDaemon:
                 return True
 
         # Also ignore any temporary folder/session folders
-        if "autosorter_sessions" in norm_path:
+        if get_session_base_dir().name in norm_path:
             return True
 
         # Suffix matching on lowercase file extensions using IGNORED_EXTENSIONS configuration

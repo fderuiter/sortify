@@ -13,6 +13,7 @@ import socket
 import sys
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from app.core.path_utils import is_packaged
 from app.core.shared_registry import block_external_network
 from app.core.text_utils import sanitize_text
 
@@ -96,7 +97,7 @@ class OfflineModelLoader:
             searched_paths.append(env_path)
 
         # Precedence 2: PyInstaller temporary execution directory
-        if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        if is_packaged() and hasattr(sys, "_MEIPASS"):
             meipass_path = os.path.join(sys._MEIPASS, "offline_bundle", model_id)
             searched_paths.append(meipass_path)
 

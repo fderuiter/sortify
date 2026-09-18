@@ -107,6 +107,8 @@ def main():
         "Run interactive CLI demo mode",
         "--update-snapshots",
         "Regenerate reference baseline snapshots",
+        "--tui",
+        "Launch full-screen Textual TUI interface",
     ]
     if not run_command(main_cmd, main_expected):
         success = False
