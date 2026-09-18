@@ -515,20 +515,8 @@ def recursive_kmeans_worker_main(
                 pass
         elif key is not None and out_q is not None:
             out_q.put(encrypt_ipc_payload(res_data, key))
-            try:
-                out_q.close()
-                if hasattr(out_q, "join_thread"):
-                    out_q.join_thread()
-            except Exception:
-                pass
         elif out_q is not None:
             out_q.put(res_data)
-            try:
-                out_q.close()
-                if hasattr(out_q, "join_thread"):
-                    out_q.join_thread()
-            except Exception:
-                pass
     except Exception as e:
         import traceback
 
@@ -553,20 +541,8 @@ def recursive_kmeans_worker_main(
                 pass
         elif key is not None and out_q is not None:
             out_q.put(encrypt_ipc_payload(err_data, key))
-            try:
-                out_q.close()
-                if hasattr(out_q, "join_thread"):
-                    out_q.join_thread()
-            except Exception:
-                pass
         elif out_q is not None:
             out_q.put(err_data)
-            try:
-                out_q.close()
-                if hasattr(out_q, "join_thread"):
-                    out_q.join_thread()
-            except Exception:
-                pass
     finally:
         # Guarantee memory zeroing of vector byte buffers on completion or failure
         try:
