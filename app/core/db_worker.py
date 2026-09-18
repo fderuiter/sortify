@@ -41,7 +41,7 @@ class DBWorker:
                 from app.core.shared_registry import _thread_local
 
                 was_in_pool = getattr(_thread_local, "in_shared_worker_pool", False)
-                if in_pool or threading.current_thread() != threading.main_thread():
+                if in_pool or threading.current_thread().name.startswith("DBWorker") or threading.current_thread().name.startswith("GlobalSharedWorker"):
                     _thread_local.in_shared_worker_pool = True
             except Exception:
                 pass
@@ -81,7 +81,6 @@ class DBWorker:
 
                 in_pool = (
                     getattr(_thread_local, "in_shared_worker_pool", False)
-                    or threading.current_thread() != threading.main_thread()
                     or threading.current_thread().name.startswith("GlobalSharedWorker")
                     or threading.current_thread().name.startswith("DBWorker")
                 )
@@ -109,7 +108,6 @@ class DBWorker:
 
                 in_pool = (
                     getattr(_thread_local, "in_shared_worker_pool", False)
-                    or threading.current_thread() != threading.main_thread()
                     or threading.current_thread().name.startswith("GlobalSharedWorker")
                     or threading.current_thread().name.startswith("DBWorker")
                 )
