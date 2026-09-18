@@ -307,5 +307,12 @@ class AppSession:
             self.analyzer.terminate()
         if hasattr(self, "db_worker") and self.db_worker:
             self.db_worker.stop()
+        try:
+            from app.core.shared_registry import SharedWorkerPool
+
+            if SharedWorkerPool._instance:
+                SharedWorkerPool._instance.shutdown(wait=False, cancel_futures=True)
+        except Exception:
+            pass
         if self.session_dir and os.path.exists(self.session_dir):
             shutil.rmtree(self.session_dir, ignore_errors=True)

@@ -82,6 +82,13 @@ def analyze_all(json_output=False):
 
     analyzer.terminate()
     db_worker.stop()
+    try:
+        from app.core.shared_registry import SharedWorkerPool
+
+        if SharedWorkerPool._instance:
+            SharedWorkerPool._instance.shutdown(wait=False, cancel_futures=True)
+    except Exception:
+        pass
 
     import json
 

@@ -1050,9 +1050,15 @@ class SharedWorkerPool:
             offline_wrapped_fn, *iterables, timeout=timeout, chunksize=chunksize
         )
 
-    def shutdown(self, wait=True):
+    def shutdown(self, wait=False, cancel_futures=True):
         """Shutdown the underlying executor and reset singleton instance."""
-        self._executor.shutdown(wait=wait)
+        if hasattr(self, "_executor") and self._executor:
+            try:
+                self._executor.shutdown(wait=wait, cancel_futures=cancel_futures)
+            except TypeError:
+                self._executor.shutdown(wait=wait)
+            except Exception:
+                pass
         SharedWorkerPool._instance = None
 
 

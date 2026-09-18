@@ -411,12 +411,13 @@ class ContinuousWatchdogDaemon:
                 return
             self._first_event_time = None
 
+            from app.core.shared_registry import ContextPropagatingThread
+
             # Start a background execution thread for sorting
             # (Ensures we don't block the timer thread or watchdog event handling)
-            thread = threading.Thread(
-                target=self._run_sorting_sync, args=(cancel_event,)
+            thread = ContextPropagatingThread(
+                target=self._run_sorting_sync, args=(cancel_event,), daemon=True
             )
-            thread.daemon = True
             thread.start()
 
     def _run_sorting_sync(self, cancel_event):
