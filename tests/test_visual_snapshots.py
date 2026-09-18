@@ -16,6 +16,8 @@ try:
 except ImportError:
     PLAYWRIGHT_AVAILABLE = False
 
+pytestmark = [pytest.mark.slow, pytest.mark.integration]
+
 SNAPSHOT_DIR = os.path.join(os.path.dirname(__file__), "snapshots")
 
 

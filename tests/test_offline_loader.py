@@ -15,6 +15,8 @@ from app.core.offline_loader import (
 )
 from app.core.shared_registry import SharedModelRegistry
 
+pytestmark = [pytest.mark.slow, pytest.mark.ml]
+
 
 def test_model_weights_not_found_error():
     """Verify that ModelWeightsNotFoundError includes the searched locations in its message."""

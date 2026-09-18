@@ -12,6 +12,8 @@ from app.core.db import Database
 from app.core.db_worker import DBWorker
 from app.core.semantic_embeddings import ModelProperties, SemanticEmbeddingManager
 
+pytestmark = [pytest.mark.slow, pytest.mark.ml]
+
 
 @pytest.fixture
 def temp_dir():

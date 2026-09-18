@@ -9,6 +9,8 @@ from app.core.integration import is_admin, register_context_menu
 from app.ui.app import AutoSorterApp, run_app
 from app.ui.settings import show_settings
 
+pytestmark = [pytest.mark.slow, pytest.mark.integration]
+
 
 @pytest.fixture()
 def mock_winreg_and_ctypes():

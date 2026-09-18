@@ -10,6 +10,8 @@ from app.core.db import Database
 from app.core.db_worker import DBWorker
 from app.core.semantic_embeddings import SemanticEmbeddingManager
 
+pytestmark = [pytest.mark.slow, pytest.mark.ml]
+
 
 class MockSettings:
     MAX_FOLDERS = 5

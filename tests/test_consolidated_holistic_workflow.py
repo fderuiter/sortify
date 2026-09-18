@@ -26,6 +26,8 @@ from app.core.mover import _remove_empty_dirs, get_safe_path
 from app.core.semantic_embeddings import ModelProperties, SemanticEmbeddingManager
 from app.ui.app import AutoSorterApp
 
+pytestmark = [pytest.mark.slow, pytest.mark.integration]
+
 
 @pytest.fixture
 def temp_workspace():

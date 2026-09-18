@@ -13,11 +13,11 @@ import pytest
 from sklearn.feature_extraction.text import TfidfVectorizer
 
 from app.core.analyzer import IncrementalAnalyzer
-from app.core.analyzer_strategies import (
-    RecursiveKMeansStrategy,
-)
+from app.core.analyzer_strategies import RecursiveKMeansStrategy
 from app.core.db import Database
 from app.core.db_worker import DBWorker
+
+pytestmark = [pytest.mark.slow, pytest.mark.ml]
 
 
 @pytest.fixture

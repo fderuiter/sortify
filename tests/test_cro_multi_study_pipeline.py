@@ -5,7 +5,11 @@ import os
 import tempfile
 import zipfile
 
+import pytest
+
 from app.core.cro_multi_study_pipeline import CROMultiStudyPipeline
+
+pytestmark = [pytest.mark.slow, pytest.mark.integration]
 
 
 def test_cro_pipeline_end_to_end():

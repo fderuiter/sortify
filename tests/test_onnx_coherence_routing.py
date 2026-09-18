@@ -1,6 +1,10 @@
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from app.core.analyzer_strategies import GenerativeNamingStrategy
+
+pytestmark = [pytest.mark.slow, pytest.mark.ml]
 
 
 class MockSettings:
