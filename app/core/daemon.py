@@ -293,7 +293,10 @@ class ContinuousWatchdogDaemon:
                 return True
 
         # Also ignore any temporary folder/session folders
-        if "autosorter_sessions" in norm_path:
+        from app.core.path_utils import get_session_base_dir
+
+        session_base = get_session_base_dir()
+        if session_base.name in norm_path or str(session_base) in norm_path:
             return True
 
         # Suffix matching on lowercase file extensions using IGNORED_EXTENSIONS configuration
