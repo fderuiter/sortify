@@ -49,46 +49,50 @@ def analyze_all(json_output=False):
     from app.core.db_worker import DBWorker
     from app.core.extractor import build_corpus_generator
 
-    db_worker = DBWorker()
-    db_path = os.path.join(SANDBOX_DIR, "sandbox.db")
-    db = Database(db_path, db_worker)
-
-    analyzer = IncrementalAnalyzer(
-        max_folders=MockSettings.MAX_FOLDERS, stop_words=MockSettings.STOP_WORDS, db=db
-    )
-
-    def progress_callback():
-        print("Progress update: File extraction complete.", file=sys.stderr)
-
-    items = [
-        f
-        for f in os.listdir(SANDBOX_DIR)
-        if os.path.isfile(os.path.join(SANDBOX_DIR, f))
-    ]
-
-    generator = build_corpus_generator(
-        base_dir=SANDBOX_DIR,
-        items_to_sort=items,
-        progress_callback=progress_callback,
-        max_workers=1,
-        db=db,
-        chunk_size=50,
-    )
-
-    for chunk in generator:
-        analyzer.partial_fit(SANDBOX_DIR, chunk, MockSettings())
-
-    plan = analyzer.generate_sorting_plan(SANDBOX_DIR, MockSettings())
-
-    analyzer.terminate()
-    db_worker.stop()
+    analyzer = None
     try:
-        from app.core.shared_registry import SharedWorkerPool
+        db_worker = DBWorker()
+        db_path = os.path.join(SANDBOX_DIR, "sandbox.db")
+        db = Database(db_path, db_worker)
 
-        if SharedWorkerPool._instance:
-            SharedWorkerPool._instance.shutdown(wait=False, cancel_futures=True)
-    except Exception:
-        pass
+        analyzer = IncrementalAnalyzer(
+            max_folders=MockSettings.MAX_FOLDERS, stop_words=MockSettings.STOP_WORDS, db=db
+        )
+
+        def progress_callback():
+            print("Progress update: File extraction complete.", file=sys.stderr)
+
+        items = [
+            f
+            for f in os.listdir(SANDBOX_DIR)
+            if os.path.isfile(os.path.join(SANDBOX_DIR, f))
+        ]
+
+        generator = build_corpus_generator(
+            base_dir=SANDBOX_DIR,
+            items_to_sort=items,
+            progress_callback=progress_callback,
+            max_workers=1,
+            db=db,
+            chunk_size=50,
+        )
+
+        for chunk in generator:
+            analyzer.partial_fit(SANDBOX_DIR, chunk, MockSettings())
+
+        plan = analyzer.generate_sorting_plan(SANDBOX_DIR, MockSettings())
+    finally:
+        if analyzer is not None:
+            analyzer.terminate()
+        if 'db_worker' in locals() and db_worker:
+            db_worker.stop()
+        try:
+            from app.core.shared_registry import SharedWorkerPool
+
+            if SharedWorkerPool._instance:
+                SharedWorkerPool._instance.shutdown(wait=False, cancel_futures=True)
+        except Exception:
+            pass
 
     import json
 
