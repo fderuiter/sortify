@@ -360,9 +360,7 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
 
         try:
             is_text_file = file_path.suffix in (".py", ".pyi", ".typed")
-            actual_hash = resilient_file_hash(
-                file_path, normalize_text=is_text_file
-            )
+            actual_hash = resilient_file_hash(file_path, normalize_text=is_text_file)
         except Exception as e:
             raise RuntimeError(
                 f"Startup validation failed: could not verify integrity of {rel_path_str}. Error: {e}"

@@ -576,11 +576,13 @@ def test_sandbox_address_resolution_supports_mocks():
 def test_hardware_helpers():
     """Test environment helper hardware check functions."""
     import sys
+
     mock_torch = MagicMock()
     mock_torch.cuda.is_available.return_value = True
     mock_torch.backends.mps.is_available.return_value = True
     with patch.dict(sys.modules, {"torch": mock_torch}):
         from app.core.env_helper import is_cuda_available, is_mps_available
+
         assert is_cuda_available() is True
         mock_torch.cuda.is_available.return_value = False
         assert is_cuda_available() is False
@@ -667,6 +669,7 @@ def test_get_ocr_reader_fallback(monkeypatch):
 def test_check_ai_status_local_offline_bundle(tmp_path, monkeypatch):
     """Verify that check_ai_status and get_ocr_reader can locate and verify easyocr and model files in the offline_bundle directory."""
     import sys
+
     from app.config import AppSettings
     from app.core.shared_registry import SharedModelRegistry
     from app.core.verifier import check_ai_status
