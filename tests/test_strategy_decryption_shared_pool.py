@@ -179,4 +179,31 @@ def test_db_worker_reentrant_shared_worker_pool_deadlock_prevention():
         db_worker.stop()
 
 
+def test_non_main_thread_shared_worker_pool_deadlock_prevention():
+    """Verify tasks submitted to SharedWorkerPool from background threads execute inline without deadlocking."""
+    import threading
+
+    pool = SharedWorkerPool.get_instance(max_workers=2)
+    bg_results = []
+    exception_holder = []
+
+    def bg_thread_worker():
+        try:
+            res = list(pool.map(lambda x: x * 5, range(3)))
+            bg_results.append(res)
+        except Exception as e:
+            exception_holder.append(e)
+
+    threads = [threading.Thread(target=bg_thread_worker) for _ in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=5.0)
+
+    assert not exception_holder, f"Exception in background thread: {exception_holder}"
+    assert len(bg_results) == 4
+    assert all(res == [0, 5, 10] for res in bg_results)
+
+
+
 

@@ -41,7 +41,7 @@ class DBWorker:
                 from app.core.shared_registry import _thread_local
 
                 was_in_pool = getattr(_thread_local, "in_shared_worker_pool", False)
-                if in_pool:
+                if in_pool or threading.current_thread() != threading.main_thread():
                     _thread_local.in_shared_worker_pool = True
             except Exception:
                 pass
@@ -79,9 +79,12 @@ class DBWorker:
             try:
                 from app.core.shared_registry import _thread_local
 
-                in_pool = getattr(
-                    _thread_local, "in_shared_worker_pool", False
-                ) or threading.current_thread().name.startswith("GlobalSharedWorker")
+                in_pool = (
+                    getattr(_thread_local, "in_shared_worker_pool", False)
+                    or threading.current_thread() != threading.main_thread()
+                    or threading.current_thread().name.startswith("GlobalSharedWorker")
+                    or threading.current_thread().name.startswith("DBWorker")
+                )
             except Exception:
                 pass
             self.q.put((func, args, kwargs, result_q, in_pool))
@@ -104,9 +107,12 @@ class DBWorker:
             try:
                 from app.core.shared_registry import _thread_local
 
-                in_pool = getattr(
-                    _thread_local, "in_shared_worker_pool", False
-                ) or threading.current_thread().name.startswith("GlobalSharedWorker")
+                in_pool = (
+                    getattr(_thread_local, "in_shared_worker_pool", False)
+                    or threading.current_thread() != threading.main_thread()
+                    or threading.current_thread().name.startswith("GlobalSharedWorker")
+                    or threading.current_thread().name.startswith("DBWorker")
+                )
             except Exception:
                 pass
             self.q.put((func, args, kwargs, None, in_pool))

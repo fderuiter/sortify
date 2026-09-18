@@ -1003,6 +1003,7 @@ class SharedWorkerPool:
 
         if (
             getattr(_thread_local, "in_shared_worker_pool", False)
+            or threading.current_thread() != threading.main_thread()
             or threading.current_thread().name.startswith("GlobalSharedWorker")
             or threading.current_thread().name.startswith("DBWorker")
         ):
@@ -1041,6 +1042,7 @@ class SharedWorkerPool:
 
         if (
             getattr(_thread_local, "in_shared_worker_pool", False)
+            or threading.current_thread() != threading.main_thread()
             or threading.current_thread().name.startswith("GlobalSharedWorker")
             or threading.current_thread().name.startswith("DBWorker")
         ):
