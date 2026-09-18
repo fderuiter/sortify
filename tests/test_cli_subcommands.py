@@ -17,6 +17,7 @@ def run_cli(args, env=None):
     current_env.setdefault("PYTHON_KEYRING_BACKEND", "keyring.backends.fail.Keyring")
     repo_root = str(Path(__file__).parent.parent.resolve())
     current_env["PYTHONPATH"] = repo_root + os.pathsep + current_env.get("PYTHONPATH", "")
+    current_env["PYTHONKEYRING_BACKEND"] = "keyring.backends.fail.Keyring"
     if env:
         current_env.update(env)
 
@@ -152,6 +153,7 @@ def test_sandbox_cli_json():
     current_env.pop("PYTEST_CURRENT_TEST", None)
     current_env.setdefault("PYTHON_KEYRING_BACKEND", "keyring.backends.fail.Keyring")
     current_env["PYTHONPATH"] = repo_root + os.pathsep + current_env.get("PYTHONPATH", "")
+    current_env["PYTHONKEYRING_BACKEND"] = "keyring.backends.fail.Keyring"
 
     # First reset sandbox
     subprocess.run([sys.executable, str(Path(repo_root) / "sandbox_cli.py"), "reset"], check=True, env=current_env, timeout=60)
