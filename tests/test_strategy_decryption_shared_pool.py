@@ -21,8 +21,10 @@ class DummyStrategy(IsolatedStrategyMixin):
 
 def test_get_decryption_executor_delegates_to_shared_worker_pool():
     """Verify that get_decryption_executor returns the singleton SharedWorkerPool instance."""
-    pool = SharedWorkerPool.get_instance()
+    from app.core.shared_registry import SharedWorkerPool
+
     executor = get_decryption_executor()
+    pool = SharedWorkerPool.get_instance()
     assert executor is pool
     assert isinstance(executor, SharedWorkerPool)
 
