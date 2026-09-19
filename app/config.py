@@ -11,7 +11,6 @@ import threading
 from pathlib import Path
 from typing import Annotated, Literal
 
-import jsonschema
 from pydantic import Field, ValidationError, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -27,6 +26,8 @@ def _get_schema_validator():
                 schema_path = Path(__file__).parent / "config_schema.json"
                 if schema_path.exists():
                     try:
+                        import jsonschema
+
                         with open(schema_path, "r", encoding="utf-8") as sf:
                             schema = json.load(sf)
                         _SCHEMA_VALIDATOR = jsonschema.Draft202012Validator(schema)

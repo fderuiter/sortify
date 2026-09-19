@@ -43,6 +43,16 @@ try:
 except Exception as e:
     print(f"Warning: Could not collect nicegui package: {e}")
 
+# Bundle jsonschema and rfc3987 syntax data assets
+for schema_pkg in ('jsonschema', 'jsonschema_specifications', 'referencing', 'rfc3987_syntax', 'rfc3987'):
+    try:
+        s_datas, s_binaries, s_hiddenimports = collect_all(schema_pkg)
+        datas.extend(s_datas)
+        binaries.extend(s_binaries)
+        hiddenimports.extend(s_hiddenimports)
+    except Exception as e:
+        print(f"Warning: Could not collect package {schema_pkg}: {e}")
+
 # Bundle secure database shared libraries directly from the active virtual environment
 sqlcipher_spec = importlib.util.find_spec("sqlcipher3")
 if sqlcipher_spec and sqlcipher_spec.submodule_search_locations:
