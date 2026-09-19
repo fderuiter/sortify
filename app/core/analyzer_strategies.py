@@ -456,7 +456,8 @@ def recursive_kmeans_worker_main(
             out_q.put(res_data)
         if out_q is not None:
             try:
-                out_q.cancel_join_thread()
+                out_q.close()
+                out_q.join_thread()
             except Exception:
                 pass
     except Exception as e:
@@ -472,7 +473,8 @@ def recursive_kmeans_worker_main(
             out_q.put(err_data)
         if out_q is not None:
             try:
-                out_q.cancel_join_thread()
+                out_q.close()
+                out_q.join_thread()
             except Exception:
                 pass
     finally:
@@ -684,18 +686,6 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
                 self._vector_map.clear()
             session_crypto.purge()
 
-            try:
-                input_queue.cancel_join_thread()
-                input_queue.close()
-            except Exception:
-                pass
-
-            try:
-                output_queue.cancel_join_thread()
-                output_queue.close()
-            except Exception:
-                pass
-
             if process.is_alive():
                 process.join(timeout=1.0)
                 if process.is_alive():
@@ -706,6 +696,16 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
                         process.join(timeout=0.1)
             else:
                 process.join(timeout=0.1)
+
+            try:
+                input_queue.close()
+            except Exception:
+                pass
+
+            try:
+                output_queue.close()
+            except Exception:
+                pass
 
             try:
                 process.close()
