@@ -15,6 +15,23 @@ GOLDEN_DIR = os.path.join(BASE_DIR, "sandbox", "dataset_golden")
 
 def reset_sandbox():
     """Restores the sandbox dataset to its original state from the golden dataset."""
+    try:
+        from app.core.db_conn import clear_connection_cache
+
+        clear_connection_cache(only_current_and_inactive=False)
+    except Exception:
+        pass
+
+    db_path = os.path.join(SANDBOX_DIR, "sandbox.db")
+    try:
+        from app.core.path_utils import resolve_db_crypto
+
+        crypto = resolve_db_crypto(db_path)
+        if crypto.isolated_key_path.exists():
+            crypto.isolated_key_path.unlink()
+    except Exception:
+        pass
+
     if os.path.exists(SANDBOX_DIR):
         shutil.rmtree(SANDBOX_DIR)
     shutil.copytree(GOLDEN_DIR, SANDBOX_DIR)
