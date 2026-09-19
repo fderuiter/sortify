@@ -19,7 +19,6 @@ def run_cli(args, env=None):
     current_env["OPENBLAS_NUM_THREADS"] = "1"
     current_env["VECLIB_MAXIMUM_THREADS"] = "1"
     current_env["NUMEXPR_NUM_THREADS"] = "1"
-    current_env.pop("PYTEST_CURRENT_TEST", None)
     if env:
         current_env.update(env)
 
@@ -152,7 +151,6 @@ def test_sandbox_cli_json():
     current_env["OPENBLAS_NUM_THREADS"] = "1"
     current_env["VECLIB_MAXIMUM_THREADS"] = "1"
     current_env["NUMEXPR_NUM_THREADS"] = "1"
-    current_env.pop("PYTEST_CURRENT_TEST", None)
 
     try:
         # First reset sandbox
