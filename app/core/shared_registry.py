@@ -124,7 +124,7 @@ class ContextPropagatingThread(threading.Thread):
             ):
                 _thread_local.sandboxed = True
                 _thread_local.reason = "background vector reconstruction"
-            super(ContextPropagatingThread, self).run()
+            threading.Thread.run(self)
 
         self._ctx.run(wrapped)
 
@@ -1031,6 +1031,16 @@ class SharedWorkerPool:
         """Shutdown the underlying executor and reset singleton instance."""
         self._executor.shutdown(wait=wait)
         SharedWorkerPool._instance = None
+
+    @classmethod
+    def shutdown_instance(cls, wait=False):
+        """Shutdown the global SharedWorkerPool singleton instance if it exists."""
+        if cls._instance is not None:
+            try:
+                cls._instance._executor.shutdown(wait=wait, cancel_futures=True)
+            except Exception:
+                pass
+            cls._instance = None
 
 
 class AudioConcurrencyGuard:

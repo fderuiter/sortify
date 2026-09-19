@@ -454,11 +454,6 @@ def recursive_kmeans_worker_main(
             out_q.put(encrypt_ipc_payload(res_data, key))
         elif out_q is not None:
             out_q.put(res_data)
-        if out_q is not None:
-            try:
-                out_q.close()
-            except Exception:
-                pass
     except Exception as e:
         import traceback
 
@@ -470,11 +465,6 @@ def recursive_kmeans_worker_main(
             out_q.put(encrypt_ipc_payload(err_data, key))
         elif out_q is not None:
             out_q.put(err_data)
-        if out_q is not None:
-            try:
-                out_q.close()
-            except Exception:
-                pass
     finally:
         # Guarantee memory zeroing of vector byte buffers on completion or failure
         zero_vector_buffer(vector_buffers)
@@ -694,11 +684,13 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
                 process.join(timeout=1.0)
 
             try:
+                input_queue.cancel_join_thread()
                 input_queue.close()
             except Exception:
                 pass
 
             try:
+                output_queue.cancel_join_thread()
                 output_queue.close()
             except Exception:
                 pass
@@ -1436,6 +1428,22 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
     def _fallback_to_pytorch(self):
         self._gguf_failed = True
         self._gguf_active = False
+        if getattr(self, "_gguf_input_queue", None):
+            try:
+                self._gguf_input_queue.cancel_join_thread()
+                self._gguf_input_queue.close()
+            except Exception:
+                pass
+            self._gguf_input_queue = None
+
+        if getattr(self, "_gguf_output_queue", None):
+            try:
+                self._gguf_output_queue.cancel_join_thread()
+                self._gguf_output_queue.close()
+            except Exception:
+                pass
+            self._gguf_output_queue = None
+
         if self._gguf_process:
             try:
                 self._gguf_process.terminate()

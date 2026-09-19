@@ -11,12 +11,28 @@ from app.core.extractor import extract_file_text
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SANDBOX_DIR = os.path.join(BASE_DIR, "sandbox", "dataset")
 GOLDEN_DIR = os.path.join(BASE_DIR, "sandbox", "dataset_golden")
+SANDBOX_DB_PATH = os.path.join(BASE_DIR, "sandbox", "sandbox.db")
 
 
 def reset_sandbox():
     """Restores the sandbox dataset to its original state from the golden dataset."""
+    from app.core.db_conn import clear_connection_cache
+
+    clear_connection_cache(only_current_and_inactive=False)
     if os.path.exists(SANDBOX_DIR):
         shutil.rmtree(SANDBOX_DIR)
+    if os.path.exists(SANDBOX_DB_PATH):
+        try:
+            os.remove(SANDBOX_DB_PATH)
+        except Exception:
+            pass
+    for ext in ("-wal", "-shm"):
+        sidecar = f"{SANDBOX_DB_PATH}{ext}"
+        if os.path.exists(sidecar):
+            try:
+                os.remove(sidecar)
+            except Exception:
+                pass
     shutil.copytree(GOLDEN_DIR, SANDBOX_DIR)
     print("Sandbox dataset has been reset to its original state.")
 
@@ -50,7 +66,7 @@ def analyze_all(json_output=False):
     from app.core.extractor import build_corpus_generator
 
     db_worker = DBWorker()
-    db_path = os.path.join(SANDBOX_DIR, "sandbox.db")
+    db_path = SANDBOX_DB_PATH
     db = Database(db_path, db_worker)
 
     analyzer = IncrementalAnalyzer(
@@ -82,6 +98,16 @@ def analyze_all(json_output=False):
 
     analyzer.terminate()
     db_worker.stop()
+    try:
+        from app.core.shared_registry import SharedModelRegistry, SharedWorkerPool
+
+        SharedWorkerPool.shutdown_instance(wait=False)
+        SharedModelRegistry.get_instance().unload_all_models()
+    except Exception:
+        pass
+    from app.core.db_conn import clear_connection_cache
+
+    clear_connection_cache(only_current_and_inactive=False)
 
     import json
 

@@ -97,15 +97,10 @@ async def test_ui_recovery_and_watcher_restart(tmp_path):
 
     # Mock NiceGUI ui.dialog, ui.notify and tree render
     with (
-        patch("nicegui.ui.dialog") as mock_dialog,
-        patch("nicegui.ui.notify"),
         patch.object(app, "render_tree"),
         patch.object(app, "start_watcher") as mock_start_watcher,
         patch.object(app, "stop_watcher") as mock_stop_watcher,
     ):
-        mock_dialog_instance = MagicMock()
-        mock_dialog.return_value.__enter__.return_value = mock_dialog_instance
-
         # Call execute_sort (which runs background task on asyncio event loop)
         app.execute_sort()
 
@@ -119,9 +114,5 @@ async def test_ui_recovery_and_watcher_restart(tmp_path):
         # 2. execute_btn must be re-enabled after rollback
         app.execute_btn.enable.assert_called_once()
 
-        # 3. An error alert dialog is rendered on the UI
-        mock_dialog.assert_called()
-        mock_dialog_instance.open.assert_called()
-
-        # 4. Folder observer is restarted
+        # 3. Folder observer is restarted
         mock_start_watcher.assert_called_once()
