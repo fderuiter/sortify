@@ -741,6 +741,16 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
                 self._vector_map.clear()
             session_crypto.purge()
 
+            try:
+                parent_conn.close()
+            except Exception:
+                pass
+
+            try:
+                child_conn.close()
+            except Exception:
+                pass
+
             if process.is_alive():
                 process.join(timeout=1.0)
                 if process.is_alive():
@@ -751,16 +761,6 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
                         process.join(timeout=0.1)
             else:
                 process.join(timeout=0.1)
-
-            try:
-                parent_conn.close()
-            except Exception:
-                pass
-
-            try:
-                child_conn.close()
-            except Exception:
-                pass
 
             try:
                 process.close()
