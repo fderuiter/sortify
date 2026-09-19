@@ -314,5 +314,11 @@ class AppSession:
                 SharedWorkerPool._instance.shutdown(wait=False, cancel_futures=True)
         except Exception:
             pass
+        try:
+            from app.core.db_conn import clear_connection_cache
+
+            clear_connection_cache(only_current_and_inactive=False)
+        except Exception:
+            pass
         if self.session_dir and os.path.exists(self.session_dir):
             shutil.rmtree(self.session_dir, ignore_errors=True)

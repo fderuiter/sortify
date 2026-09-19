@@ -93,6 +93,12 @@ def analyze_all(json_output=False):
                 SharedWorkerPool._instance.shutdown(wait=False, cancel_futures=True)
         except Exception:
             pass
+        try:
+            from app.core.db_conn import clear_connection_cache
+
+            clear_connection_cache(only_current_and_inactive=False)
+        except Exception:
+            pass
 
     import json
 

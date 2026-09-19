@@ -676,19 +676,23 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
 
             if process.is_alive():
                 process.join(timeout=2.0)
-            if process.is_alive():
-                process.terminate()
-                process.join(timeout=2.0)
                 if process.is_alive():
-                    process.kill()
-                    process.join(timeout=0.1)
+                    process.terminate()
+                    process.join(timeout=2.0)
+                    if process.is_alive():
+                        process.kill()
+                        process.join(timeout=0.1)
+            else:
+                process.join(timeout=1.0)
 
             try:
+                input_queue.cancel_join_thread()
                 input_queue.close()
             except Exception:
                 pass
 
             try:
+                output_queue.cancel_join_thread()
                 output_queue.close()
             except Exception:
                 pass
@@ -1083,13 +1087,15 @@ def cooperative_join(target, timeout=1.0):
 
     start_time = time.time()
     is_alive_fn = getattr(target, "is_alive", None)
-    if not is_alive_fn:
-        if hasattr(target, "join"):
-            target.join(timeout)
-        return
+    if is_alive_fn:
+        while is_alive_fn() and (time.time() - start_time < timeout):
+            time.sleep(0.01)
 
-    while is_alive_fn() and (time.time() - start_time < timeout):
-        time.sleep(0.01)
+    if hasattr(target, "join"):
+        try:
+            target.join(timeout=0.1)
+        except Exception:
+            pass
 
 
 class GenerativeNamingStrategy(RecursiveKMeansStrategy):

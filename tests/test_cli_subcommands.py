@@ -11,6 +11,7 @@ from pathlib import Path
 def run_cli(args, env=None):
     """Run app/main.py in a subprocess and return (returncode, stdout, stderr)."""
     current_env = os.environ.copy()
+    current_env.pop("PYTEST_CURRENT_TEST", None)
     repo_root = str(Path(__file__).parent.parent.resolve())
     current_env["PYTHONPATH"] = repo_root + os.pathsep + current_env.get("PYTHONPATH", "")
     if env:
@@ -138,6 +139,7 @@ def test_sandbox_cli_json():
     """Test sandbox_cli.py analyze --json outputs raw JSON without decorative borders."""
     repo_root = str(Path(__file__).parent.parent.resolve())
     current_env = os.environ.copy()
+    current_env.pop("PYTEST_CURRENT_TEST", None)
     current_env["PYTHONPATH"] = repo_root + os.pathsep + current_env.get("PYTHONPATH", "")
 
     # First reset sandbox
