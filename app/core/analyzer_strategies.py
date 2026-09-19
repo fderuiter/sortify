@@ -329,15 +329,37 @@ def recursive_kmeans_worker_main(
     import os
     import sys
 
-    is_ipc = hasattr(filenames_or_input_queue, "get")
+    is_pipe = hasattr(filenames_or_input_queue, "recv_bytes")
+    is_ipc = is_pipe or hasattr(filenames_or_input_queue, "get")
 
     out_q = None
+    conn = None
     key = None
 
-    if is_ipc:
+    if is_pipe:
+        conn = filenames_or_input_queue
+        key = documents_or_output_queue if session_key is None else session_key
+        raw_encrypted = conn.recv_bytes()
+        payload = decrypt_ipc_payload(raw_encrypted, key)
+
+        filenames = payload["filenames"]
+        documents = payload["documents"]
+        max_folders = payload["max_folders"]
+        stop_words_data = payload.get("stop_words")
+        if isinstance(stop_words_data, (list, tuple)):
+            stop_words = set(stop_words_data)
+        else:
+            stop_words = stop_words_data or set()
+        max_depth = payload.get("max_depth", 5)
+        max_features = payload.get("max_features", 3)
+        pre_fetched_vectors = payload.get("pre_fetched_vectors")
+        strategy_class_name = payload.get("strategy_class_name", "RecursiveKMeansStrategy")
+        thread_limit = payload.get("thread_limit")
+        pre_fetched_corpus = payload.get("pre_fetched_corpus")
+    elif is_ipc:
         input_q = filenames_or_input_queue
         out_q = documents_or_output_queue
-        key = max_folders_or_key
+        key = max_folders_or_key if session_key is None else session_key
         raw_encrypted = input_q.get()
         payload = decrypt_ipc_payload(raw_encrypted, key)
 
@@ -450,14 +472,25 @@ def recursive_kmeans_worker_main(
             "worker_niceness": worker_niceness,
             "worker_thread_limit": thread_limit,
         }
-        if key is not None and out_q is not None:
+        if conn is not None:
+            if key is not None:
+                conn.send_bytes(encrypt_ipc_payload(res_data, key))
+            else:
+                conn.send(res_data)
+            try:
+                conn.close()
+            except Exception:
+                pass
+        elif key is not None and out_q is not None:
             out_q.put(encrypt_ipc_payload(res_data, key))
-        elif out_q is not None:
-            out_q.put(res_data)
-        if out_q is not None:
             try:
                 out_q.close()
-                out_q.join_thread()
+            except Exception:
+                pass
+        elif out_q is not None:
+            out_q.put(res_data)
+            try:
+                out_q.close()
             except Exception:
                 pass
     except Exception as e:
@@ -467,14 +500,31 @@ def recursive_kmeans_worker_main(
             f"Error inside clustering child process: {e}\n{traceback.format_exc()}"
         )
         err_data = {"status": "error", "message": str(e)}
-        if key is not None and out_q is not None:
+        if conn is not None:
+            if key is not None:
+                try:
+                    conn.send_bytes(encrypt_ipc_payload(err_data, key))
+                except Exception:
+                    pass
+            else:
+                try:
+                    conn.send(err_data)
+                except Exception:
+                    pass
+            try:
+                conn.close()
+            except Exception:
+                pass
+        elif key is not None and out_q is not None:
             out_q.put(encrypt_ipc_payload(err_data, key))
-        elif out_q is not None:
-            out_q.put(err_data)
-        if out_q is not None:
             try:
                 out_q.close()
-                out_q.join_thread()
+            except Exception:
+                pass
+        elif out_q is not None:
+            out_q.put(err_data)
+            try:
+                out_q.close()
             except Exception:
                 pass
     finally:
@@ -597,7 +647,6 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
 
         import logging
         import multiprocessing
-        import queue
         import time
 
         # Retrieve the thread limit from the parent process global registry
@@ -609,8 +658,7 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
             parent_thread_limit = None
 
         ctx = multiprocessing.get_context("spawn")
-        input_queue = ctx.Queue()
-        output_queue = ctx.Queue()
+        parent_conn, child_conn = ctx.Pipe(duplex=True)
 
         strategy_class_name = self.__class__.__name__
 
@@ -628,13 +676,15 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
         }
 
         encrypted_input = session_crypto.encrypt_payload(payload)
-        input_queue.put(encrypted_input)
 
         process = ctx.Process(
             target=recursive_kmeans_worker_main,
-            args=(input_queue, output_queue, session_key),
+            args=(child_conn, session_key),
         )
         process.start()
+
+        # Send payload through parent_conn
+        parent_conn.send_bytes(encrypted_input)
 
         raw_result = None
         poll_interval = 0.01
@@ -653,17 +703,13 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
                             process.join(timeout=0.1)
                     return {}, 0.0
 
-                try:
-                    raw_result = output_queue.get_nowait()
+                if parent_conn.poll(0.01):
+                    raw_result = parent_conn.recv_bytes()
                     break
-                except queue.Empty:
-                    pass
 
                 if not process.is_alive():
-                    try:
-                        raw_result = output_queue.get(timeout=1.0)
-                    except queue.Empty:
-                        pass
+                    if parent_conn.poll(0.1):
+                        raw_result = parent_conn.recv_bytes()
                     break
 
                 time.sleep(poll_interval)
@@ -698,12 +744,12 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
                 process.join(timeout=0.1)
 
             try:
-                input_queue.close()
+                parent_conn.close()
             except Exception:
                 pass
 
             try:
-                output_queue.close()
+                child_conn.close()
             except Exception:
                 pass
 
