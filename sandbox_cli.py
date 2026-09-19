@@ -83,6 +83,8 @@ def analyze_all(json_output=False):
             f
             for f in os.listdir(SANDBOX_DIR)
             if os.path.isfile(os.path.join(SANDBOX_DIR, f))
+            and not f.endswith((".db", ".db-wal", ".db-shm", ".key", ".log"))
+            and f != "secret.key"
         ]
 
         generator = build_corpus_generator(

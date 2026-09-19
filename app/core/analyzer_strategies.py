@@ -380,6 +380,8 @@ def recursive_kmeans_worker_main(
                     conn.close()
                 except Exception:
                     pass
+                if is_ipc or is_pipe:
+                    os._exit(0)
                 return
 
             filenames = payload["filenames"]
@@ -791,14 +793,14 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
                 pass
 
             if process.is_alive():
-                join_timeout = 0.1 if raw_result is not None else 1.0
+                join_timeout = 5.0 if raw_result is not None else 1.0
                 cooperative_join(process, timeout=join_timeout)
                 if process.is_alive():
                     process.terminate()
-                    cooperative_join(process, timeout=0.1)
+                    cooperative_join(process, timeout=0.5)
                     if process.is_alive():
                         process.kill()
-                        cooperative_join(process, timeout=0.1)
+                        cooperative_join(process, timeout=0.2)
             else:
                 try:
                     process.join(timeout=0.1)
