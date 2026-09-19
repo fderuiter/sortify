@@ -1,6 +1,8 @@
 import os
 import sys
 
+os.environ.setdefault("PYTHON_KEYRING_BACKEND", "keyring.backends.fail.Keyring")
+
 if sys.platform == "win32":
     # Inject DLL directory paths for Windows to allow direct import of sqlcipher3
     import importlib.util
