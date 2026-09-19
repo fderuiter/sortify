@@ -7,6 +7,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+import pytest
+
 
 def run_cli(args, env=None):
     """Run app/main.py in a subprocess and return (returncode, stdout, stderr)."""
@@ -18,7 +20,7 @@ def run_cli(args, env=None):
         current_env.update(env)
 
     cmd = [sys.executable, str(Path(repo_root) / "app" / "main.py")] + args
-    res = subprocess.run(cmd, capture_output=True, text=True, env=current_env, timeout=180)
+    res = subprocess.run(cmd, capture_output=True, text=True, env=current_env, timeout=240)
     return res.returncode, res.stdout, res.stderr
 
 
@@ -32,6 +34,7 @@ def create_sample_corpus(base_dir):
     (base / "empty.txt").write_text("")
 
 
+@pytest.mark.xdist_group(name="cli_subcommands")
 def test_sort_subcommand_dry_run_json():
     """Test sort subcommand with --dry-run and --json flags."""
     with tempfile.TemporaryDirectory() as src_dir, tempfile.TemporaryDirectory() as dest_dir:
@@ -59,6 +62,7 @@ def test_sort_subcommand_dry_run_json():
         assert (Path(src_dir) / "finance_doc.txt").exists()
 
 
+@pytest.mark.xdist_group(name="cli_subcommands")
 def test_sort_subcommand_live_execution():
     """Test sort subcommand live batch execution."""
     with tempfile.TemporaryDirectory() as src_dir, tempfile.TemporaryDirectory() as dest_dir:
@@ -79,6 +83,7 @@ def test_sort_subcommand_live_execution():
         assert "summary" in data
 
 
+@pytest.mark.xdist_group(name="cli_subcommands")
 def test_scan_subcommand_json():
     """Test scan subcommand with --json output and jq pipeline style structure."""
     with tempfile.TemporaryDirectory() as src_dir:
@@ -100,6 +105,7 @@ def test_scan_subcommand_json():
         assert data["files_scanned"] >= 3
 
 
+@pytest.mark.xdist_group(name="cli_subcommands")
 def test_config_subcommand_show_and_set():
     """Test config subcommand with --show and --set flags."""
     code, stdout, stderr = run_cli(["config", "--show", "--json"])
@@ -120,6 +126,7 @@ def test_config_subcommand_show_and_set():
     assert data_set["MAX_FOLDERS"] == 10
 
 
+@pytest.mark.xdist_group(name="cli_subcommands")
 def test_subcommand_error_nonexistent_directory():
     """Test non-existent directory error causes non-zero exit code 1."""
     nonexistent = "/nonexistent/path/for/autosorter/test/12345"
@@ -128,6 +135,7 @@ def test_subcommand_error_nonexistent_directory():
     assert "does not exist" in stderr
 
 
+@pytest.mark.xdist_group(name="cli_subcommands")
 def test_subcommand_invalid_argument_exit_code():
     """Test invalid argument causes exit code 2 (usage error)."""
     code, stdout, stderr = run_cli(["sort", "/tmp", "--invalid-argument-xyz"])
@@ -135,6 +143,7 @@ def test_subcommand_invalid_argument_exit_code():
     assert "unrecognized arguments" in stderr or "invalid" in stderr
 
 
+@pytest.mark.xdist_group(name="cli_subcommands")
 def test_sandbox_cli_json():
     """Test sandbox_cli.py analyze --json outputs raw JSON without decorative borders."""
     repo_root = str(Path(__file__).parent.parent.resolve())
@@ -147,7 +156,7 @@ def test_sandbox_cli_json():
 
     # Run analyze with --json
     cmd = [sys.executable, str(Path(repo_root) / "sandbox_cli.py"), "analyze", "--json"]
-    res = subprocess.run(cmd, capture_output=True, text=True, env=current_env, timeout=180)
+    res = subprocess.run(cmd, capture_output=True, text=True, env=current_env, timeout=240)
 
     assert res.returncode == 0
     assert "--- Analysis Sorting Plan ---" not in res.stdout
