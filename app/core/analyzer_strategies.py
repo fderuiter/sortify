@@ -683,6 +683,12 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
         )
         process.start()
 
+        # Close parent's copy of child_conn so child_conn is owned exclusively by child process
+        try:
+            child_conn.close()
+        except Exception:
+            pass
+
         # Send payload through parent_conn
         parent_conn.send_bytes(encrypted_input)
 
