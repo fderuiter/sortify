@@ -416,12 +416,6 @@ def recursive_kmeans_worker_main(
     except Exception:
         pass
 
-    if sys.platform != "win32":
-        try:
-            os.nice(19)
-        except Exception:
-            pass
-
     # 3. Create the appropriate strategy instance and execute calculations
     strategy = None
     vector_buffers = []
