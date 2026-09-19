@@ -357,105 +357,105 @@ def recursive_kmeans_worker_main(
     out_q = None
     conn = None
     key = None
+    strategy = None
+    vector_buffers = []
 
-    if is_pipe:
-        conn = filenames_or_input_queue
-        key = documents_or_output_queue if session_key is None else session_key
-        try:
-            raw_encrypted = conn.recv_bytes()
+    try:
+        if is_pipe:
+            conn = filenames_or_input_queue
+            key = documents_or_output_queue if session_key is None else session_key
+            try:
+                raw_encrypted = conn.recv_bytes()
+                payload = decrypt_ipc_payload(raw_encrypted, key)
+            except Exception as e:
+                err_data = {"status": "error", "message": f"Failed receiving IPC payload: {e}"}
+                try:
+                    if key is not None:
+                        conn.send_bytes(encrypt_ipc_payload(err_data, key))
+                    else:
+                        conn.send(err_data)
+                except Exception:
+                    pass
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+                return
+
+            filenames = payload["filenames"]
+            documents = payload["documents"]
+            max_folders = payload["max_folders"]
+            stop_words_data = payload.get("stop_words")
+            if isinstance(stop_words_data, (list, tuple)):
+                stop_words = set(stop_words_data)
+            else:
+                stop_words = stop_words_data or set()
+            max_depth = payload.get("max_depth", 5)
+            max_features = payload.get("max_features", 3)
+            pre_fetched_vectors = payload.get("pre_fetched_vectors")
+            strategy_class_name = payload.get("strategy_class_name", "RecursiveKMeansStrategy")
+            thread_limit = payload.get("thread_limit")
+            pre_fetched_corpus = payload.get("pre_fetched_corpus")
+        elif is_ipc:
+            input_q = filenames_or_input_queue
+            out_q = documents_or_output_queue
+            key = max_folders_or_key if session_key is None else session_key
+            raw_encrypted = input_q.get()
             payload = decrypt_ipc_payload(raw_encrypted, key)
-        except Exception as e:
-            err_data = {"status": "error", "message": f"Failed receiving IPC payload: {e}"}
+
+            filenames = payload["filenames"]
+            documents = payload["documents"]
+            max_folders = payload["max_folders"]
+            stop_words_data = payload.get("stop_words")
+            if isinstance(stop_words_data, (list, tuple)):
+                stop_words = set(stop_words_data)
+            else:
+                stop_words = stop_words_data or set()
+            max_depth = payload.get("max_depth", 5)
+            max_features = payload.get("max_features", 3)
+            pre_fetched_vectors = payload.get("pre_fetched_vectors")
+            strategy_class_name = payload.get("strategy_class_name", "RecursiveKMeansStrategy")
+            thread_limit = payload.get("thread_limit")
+            pre_fetched_corpus = payload.get("pre_fetched_corpus")
+        else:
+            filenames = filenames_or_input_queue
+            documents = documents_or_output_queue
+            max_folders = max_folders_or_key
+            out_q = output_queue
+            key = session_key
+
+        # 1. Respect configured CPU thread limits from global registry
+        if thread_limit is None:
             try:
-                if key is not None:
-                    conn.send_bytes(encrypt_ipc_payload(err_data, key))
-                else:
-                    conn.send(err_data)
+                from app.core.shared_registry import SharedModelRegistry
+
+                thread_limit = SharedModelRegistry.get_instance().get_thread_limit()
+            except Exception:
+                thread_limit = 2
+
+        # Set thread limits for all math/vector libraries
+        limit_str = str(thread_limit)
+        os.environ["OMP_NUM_THREADS"] = limit_str
+        os.environ["MKL_NUM_THREADS"] = limit_str
+        os.environ["OPENBLAS_NUM_THREADS"] = limit_str
+        os.environ["VECLIB_MAXIMUM_THREADS"] = limit_str
+        os.environ["NUMEXPR_NUM_THREADS"] = limit_str
+
+        if "torch" in sys.modules:
+            try:
+                sys.modules["torch"].set_num_threads(thread_limit)
             except Exception:
                 pass
-            try:
-                conn.close()
-            except Exception:
-                pass
-            return
 
-        filenames = payload["filenames"]
-        documents = payload["documents"]
-        max_folders = payload["max_folders"]
-        stop_words_data = payload.get("stop_words")
-        if isinstance(stop_words_data, (list, tuple)):
-            stop_words = set(stop_words_data)
-        else:
-            stop_words = stop_words_data or set()
-        max_depth = payload.get("max_depth", 5)
-        max_features = payload.get("max_features", 3)
-        pre_fetched_vectors = payload.get("pre_fetched_vectors")
-        strategy_class_name = payload.get("strategy_class_name", "RecursiveKMeansStrategy")
-        thread_limit = payload.get("thread_limit")
-        pre_fetched_corpus = payload.get("pre_fetched_corpus")
-    elif is_ipc:
-        input_q = filenames_or_input_queue
-        out_q = documents_or_output_queue
-        key = max_folders_or_key if session_key is None else session_key
-        raw_encrypted = input_q.get()
-        payload = decrypt_ipc_payload(raw_encrypted, key)
-
-        filenames = payload["filenames"]
-        documents = payload["documents"]
-        max_folders = payload["max_folders"]
-        stop_words_data = payload.get("stop_words")
-        if isinstance(stop_words_data, (list, tuple)):
-            stop_words = set(stop_words_data)
-        else:
-            stop_words = stop_words_data or set()
-        max_depth = payload.get("max_depth", 5)
-        max_features = payload.get("max_features", 3)
-        pre_fetched_vectors = payload.get("pre_fetched_vectors")
-        strategy_class_name = payload.get("strategy_class_name", "RecursiveKMeansStrategy")
-        thread_limit = payload.get("thread_limit")
-        pre_fetched_corpus = payload.get("pre_fetched_corpus")
-    else:
-        filenames = filenames_or_input_queue
-        documents = documents_or_output_queue
-        max_folders = max_folders_or_key
-        out_q = output_queue
-        key = session_key
-
-    # 1. Respect configured CPU thread limits from global registry
-    if thread_limit is None:
+        # 2. Priority management
         try:
-            from app.core.shared_registry import SharedModelRegistry
+            from app.core.semantic_embeddings import set_low_priority
 
-            thread_limit = SharedModelRegistry.get_instance().get_thread_limit()
-        except Exception:
-            thread_limit = 2
-
-    # Set thread limits for all math/vector libraries
-    limit_str = str(thread_limit)
-    os.environ["OMP_NUM_THREADS"] = limit_str
-    os.environ["MKL_NUM_THREADS"] = limit_str
-    os.environ["OPENBLAS_NUM_THREADS"] = limit_str
-    os.environ["VECLIB_MAXIMUM_THREADS"] = limit_str
-    os.environ["NUMEXPR_NUM_THREADS"] = limit_str
-
-    if "torch" in sys.modules:
-        try:
-            sys.modules["torch"].set_num_threads(thread_limit)
+            set_low_priority()
         except Exception:
             pass
 
-    # 2. Priority management
-    try:
-        from app.core.semantic_embeddings import set_low_priority
-
-        set_low_priority()
-    except Exception:
-        pass
-
-    # 3. Create the appropriate strategy instance and execute calculations
-    strategy = None
-    vector_buffers = []
-    try:
+        # 3. Create the appropriate strategy instance and execute calculations
         strategy_cls = globals().get(strategy_class_name)
         if strategy_cls is not None:
             strategy = strategy_cls()
@@ -791,14 +791,14 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
                 pass
 
             if process.is_alive():
-                join_timeout = 5.0 if raw_result is not None else 1.0
+                join_timeout = 0.1 if raw_result is not None else 1.0
                 cooperative_join(process, timeout=join_timeout)
                 if process.is_alive():
                     process.terminate()
-                    cooperative_join(process, timeout=0.5)
+                    cooperative_join(process, timeout=0.1)
                     if process.is_alive():
                         process.kill()
-                        cooperative_join(process, timeout=0.2)
+                        cooperative_join(process, timeout=0.1)
             else:
                 try:
                     process.join(timeout=0.1)
