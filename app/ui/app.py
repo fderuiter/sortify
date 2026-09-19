@@ -1077,8 +1077,11 @@ body {
                             f"Active file progress: {pct * 100:.1f}%"
                         )
 
-                if self.loop:
-                    self.loop.call_soon_threadsafe(update_ui)
+                if self.loop and not getattr(self.loop, "is_closed", lambda: False)():
+                    try:
+                        self.loop.call_soon_threadsafe(update_ui)
+                    except RuntimeError:
+                        pass
 
             import inspect
 
@@ -2288,8 +2291,11 @@ body {
                     or "plan.json" in event.src_path
                 ):
                     return
-                if self.app.loop:
-                    self.app.loop.call_soon_threadsafe(self.app._rebuild_plan_async)
+                if self.app.loop and not getattr(self.app.loop, "is_closed", lambda: False)():
+                    try:
+                        self.app.loop.call_soon_threadsafe(self.app._rebuild_plan_async)
+                    except RuntimeError:
+                        pass
 
         self.observer = Observer()
         handler = FolderChangeHandler(self)

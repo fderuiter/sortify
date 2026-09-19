@@ -697,7 +697,6 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
 
         import logging
         import multiprocessing
-        import time
 
         # Retrieve the thread limit from the parent process global registry
         try:
@@ -737,7 +736,6 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
         parent_conn.send_bytes(encrypted_input)
 
         raw_result = None
-        poll_interval = 0.01
 
         try:
             while True:
@@ -758,11 +756,9 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
                     break
 
                 if not process.is_alive():
-                    if parent_conn.poll(0.1):
+                    if parent_conn.poll(0.05):
                         raw_result = parent_conn.recv_bytes()
                     break
-
-                time.sleep(poll_interval)
 
             if isinstance(raw_result, bytes):
                 try:
@@ -793,7 +789,7 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
                 pass
 
             if process.is_alive():
-                join_timeout = 5.0 if raw_result is not None else 1.0
+                join_timeout = 1.0
                 cooperative_join(process, timeout=join_timeout)
                 if process.is_alive():
                     process.terminate()

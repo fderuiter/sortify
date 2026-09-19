@@ -255,8 +255,14 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {{
                             except Exception:
                                 pass
 
-                    if loop:
-                        loop.call_soon_threadsafe(show_dialog)
+                    if loop and not getattr(loop, "is_closed", lambda: False)():
+                        try:
+                            loop.call_soon_threadsafe(show_dialog)
+                        except RuntimeError:
+                            if enable_ui_callback:
+                                enable_ui_callback()
+                            if callback:
+                                callback("")
                     else:
                         if enable_ui_callback:
                             enable_ui_callback()
@@ -295,8 +301,11 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {{
                 except Exception:
                     pass
 
-        if loop:
-            loop.call_soon_threadsafe(_on_complete)
+        if loop and not getattr(loop, "is_closed", lambda: False)():
+            try:
+                loop.call_soon_threadsafe(_on_complete)
+            except RuntimeError:
+                _on_complete()
         else:
             _on_complete()
 
