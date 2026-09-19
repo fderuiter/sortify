@@ -299,6 +299,23 @@ LANGUAGE_CHAR_MAP = {
 }
 
 
+def cooperative_join(target, timeout=1.0):
+    """Join a thread or process blockingly with cooperative GIL yielding to ensure complete termination."""
+    import time
+
+    start_time = time.time()
+    is_alive_fn = getattr(target, "is_alive", None)
+    if is_alive_fn:
+        while is_alive_fn() and (time.time() - start_time < timeout):
+            time.sleep(0.01)
+
+    if hasattr(target, "join"):
+        try:
+            target.join(timeout=0.1)
+        except Exception:
+            pass
+
+
 @contextmanager
 def block_external_network():
     """Block outgoing non-localhost network traffic during naming generation."""
@@ -752,15 +769,18 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
                 pass
 
             if process.is_alive():
-                process.join(timeout=1.0)
+                cooperative_join(process, timeout=10.0)
                 if process.is_alive():
                     process.terminate()
-                    process.join(timeout=1.0)
+                    cooperative_join(process, timeout=2.0)
                     if process.is_alive():
                         process.kill()
-                        process.join(timeout=0.1)
+                        cooperative_join(process, timeout=0.5)
             else:
-                process.join(timeout=0.1)
+                try:
+                    process.join(timeout=0.1)
+                except Exception:
+                    pass
 
             try:
                 process.close()
@@ -1144,23 +1164,6 @@ def cooperative_queue_get(q, timeout=8.0):
             pass
         time.sleep(0.01)  # Cooperative sleep to yield control to other threads / GIL
     raise queue.Empty
-
-
-def cooperative_join(target, timeout=1.0):
-    """Join a thread or process blockingly with cooperative GIL yielding to ensure complete termination."""
-    import time
-
-    start_time = time.time()
-    is_alive_fn = getattr(target, "is_alive", None)
-    if is_alive_fn:
-        while is_alive_fn() and (time.time() - start_time < timeout):
-            time.sleep(0.01)
-
-    if hasattr(target, "join"):
-        try:
-            target.join(timeout=0.1)
-        except Exception:
-            pass
 
 
 class GenerativeNamingStrategy(RecursiveKMeansStrategy):
