@@ -304,14 +304,19 @@ def cooperative_join(target, timeout=1.0):
     import time
 
     start_time = time.time()
+    join_fn = getattr(target, "join", None)
     is_alive_fn = getattr(target, "is_alive", None)
-    if is_alive_fn:
-        while is_alive_fn() and (time.time() - start_time < timeout):
-            time.sleep(0.01)
 
-    if hasattr(target, "join"):
+    if join_fn and is_alive_fn:
+        while is_alive_fn() and (time.time() - start_time < timeout):
+            try:
+                join_fn(timeout=0.05)
+            except Exception:
+                break
+            time.sleep(0.01)
+    elif join_fn:
         try:
-            target.join(timeout=0.1)
+            join_fn(timeout=timeout)
         except Exception:
             pass
 
@@ -433,12 +438,11 @@ def recursive_kmeans_worker_main(
     os.environ["VECLIB_MAXIMUM_THREADS"] = limit_str
     os.environ["NUMEXPR_NUM_THREADS"] = limit_str
 
-    try:
-        import torch
-
-        torch.set_num_threads(thread_limit)
-    except Exception:
-        pass
+    if "torch" in sys.modules:
+        try:
+            sys.modules["torch"].set_num_threads(thread_limit)
+        except Exception:
+            pass
 
     # 2. Priority management
     try:
@@ -769,13 +773,13 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
                 pass
 
             if process.is_alive():
-                cooperative_join(process, timeout=10.0)
+                cooperative_join(process, timeout=1.0)
                 if process.is_alive():
                     process.terminate()
-                    cooperative_join(process, timeout=2.0)
+                    cooperative_join(process, timeout=0.5)
                     if process.is_alive():
                         process.kill()
-                        cooperative_join(process, timeout=0.5)
+                        cooperative_join(process, timeout=0.2)
             else:
                 try:
                     process.join(timeout=0.1)
