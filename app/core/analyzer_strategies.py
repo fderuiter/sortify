@@ -773,13 +773,22 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
                 pass
 
             if process.is_alive():
-                cooperative_join(process, timeout=1.0)
-                if process.is_alive():
-                    process.terminate()
-                    cooperative_join(process, timeout=0.5)
+                if raw_result is not None:
+                    cooperative_join(process, timeout=10.0)
                     if process.is_alive():
-                        process.kill()
-                        cooperative_join(process, timeout=0.2)
+                        process.terminate()
+                        cooperative_join(process, timeout=1.0)
+                        if process.is_alive():
+                            process.kill()
+                            cooperative_join(process, timeout=0.5)
+                else:
+                    cooperative_join(process, timeout=1.0)
+                    if process.is_alive():
+                        process.terminate()
+                        cooperative_join(process, timeout=0.5)
+                        if process.is_alive():
+                            process.kill()
+                            cooperative_join(process, timeout=0.2)
             else:
                 try:
                     process.join(timeout=0.1)
