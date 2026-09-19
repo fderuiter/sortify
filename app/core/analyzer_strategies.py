@@ -567,12 +567,18 @@ def recursive_kmeans_worker_main(
                 pass
     finally:
         # Guarantee memory zeroing of vector byte buffers on completion or failure
-        zero_vector_buffer(vector_buffers)
-        if strategy is not None:
-            strategy.pre_fetched_corpus = None
-            if hasattr(strategy, "_vector_map") and strategy._vector_map:
-                zero_vector_buffer(strategy._vector_map)
-                strategy._vector_map.clear()
+        try:
+            zero_vector_buffer(vector_buffers)
+        except Exception:
+            pass
+        try:
+            if strategy is not None:
+                strategy.pre_fetched_corpus = None
+                if hasattr(strategy, "_vector_map") and strategy._vector_map:
+                    zero_vector_buffer(strategy._vector_map)
+                    strategy._vector_map.clear()
+        except Exception:
+            pass
         pre_fetched_corpus = None
         key = None
         if is_ipc or is_pipe:
@@ -785,7 +791,7 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
                 pass
 
             if process.is_alive():
-                join_timeout = 10.0 if raw_result is not None else 1.0
+                join_timeout = 0.5 if raw_result is not None else 1.0
                 cooperative_join(process, timeout=join_timeout)
                 if process.is_alive():
                     process.terminate()
