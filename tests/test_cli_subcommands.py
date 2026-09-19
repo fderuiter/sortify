@@ -1,30 +1,42 @@
 """Tests for unified CLI subcommands and structured JSON output."""
 
+import io
 import json
 import os
-import subprocess
-import sys
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 
 def run_cli(args, env=None):
-    """Run app/main.py in a subprocess and return (returncode, stdout, stderr)."""
-    current_env = os.environ.copy()
+    """Run app/main.py in-process and return (returncode, stdout, stderr)."""
+    old_env = os.environ.copy()
     repo_root = str(Path(__file__).parent.parent.resolve())
-    current_env["PYTHONPATH"] = repo_root + os.pathsep + current_env.get("PYTHONPATH", "")
-    current_env["PYTHONUNBUFFERED"] = "1"
-    current_env["OMP_NUM_THREADS"] = "1"
-    current_env["MKL_NUM_THREADS"] = "1"
-    current_env["OPENBLAS_NUM_THREADS"] = "1"
-    current_env["VECLIB_MAXIMUM_THREADS"] = "1"
-    current_env["NUMEXPR_NUM_THREADS"] = "1"
-    if env:
-        current_env.update(env)
+    os.environ["PYTHONPATH"] = repo_root + os.pathsep + os.environ.get("PYTHONPATH", "")
 
-    cmd = [sys.executable, str(Path(repo_root) / "app" / "main.py")] + args
-    res = subprocess.run(cmd, capture_output=True, text=True, env=current_env, timeout=180)
-    return res.returncode, res.stdout, res.stderr
+    if env:
+        os.environ.update(env)
+
+    stdout_cap = io.StringIO()
+    stderr_cap = io.StringIO()
+    test_args = ["main.py"] + args
+
+    code = 0
+    with patch("sys.argv", test_args), patch("sys.stdout", stdout_cap), patch("sys.stderr", stderr_cap):
+        try:
+            from app.main import main
+
+            main()
+        except SystemExit as e:
+            code = e.code if isinstance(e.code, int) else (0 if e.code is None else 1)
+        except Exception as e:
+            stderr_cap.write(str(e))
+            code = 1
+        finally:
+            os.environ.clear()
+            os.environ.update(old_env)
+
+    return code, stdout_cap.getvalue(), stderr_cap.getvalue()
 
 
 def create_sample_corpus(base_dir):
@@ -142,30 +154,32 @@ def test_subcommand_invalid_argument_exit_code():
 
 def test_sandbox_cli_json():
     """Test sandbox_cli.py analyze --json outputs raw JSON without decorative borders."""
-    repo_root = str(Path(__file__).parent.parent.resolve())
-    current_env = os.environ.copy()
-    current_env["PYTHONPATH"] = repo_root + os.pathsep + current_env.get("PYTHONPATH", "")
-    current_env["PYTHONUNBUFFERED"] = "1"
-    current_env["OMP_NUM_THREADS"] = "1"
-    current_env["MKL_NUM_THREADS"] = "1"
-    current_env["OPENBLAS_NUM_THREADS"] = "1"
-    current_env["VECLIB_MAXIMUM_THREADS"] = "1"
-    current_env["NUMEXPR_NUM_THREADS"] = "1"
+    stdout_cap = io.StringIO()
+    stderr_cap = io.StringIO()
 
     try:
         # First reset sandbox
-        subprocess.run([sys.executable, str(Path(repo_root) / "sandbox_cli.py"), "reset"], check=True, env=current_env, timeout=180)
+        with patch("sys.argv", ["sandbox_cli.py", "reset"]), patch("sys.stdout", stdout_cap), patch("sys.stderr", stderr_cap):
+            import sandbox_cli
+
+            sandbox_cli.main()
+
+        stdout_cap = io.StringIO()
+        stderr_cap = io.StringIO()
 
         # Run analyze with --json
-        cmd = [sys.executable, str(Path(repo_root) / "sandbox_cli.py"), "analyze", "--json"]
-        res = subprocess.run(cmd, capture_output=True, text=True, env=current_env, timeout=180)
+        with patch("sys.argv", ["sandbox_cli.py", "analyze", "--json"]), patch("sys.stdout", stdout_cap), patch("sys.stderr", stderr_cap):
+            sandbox_cli.main()
 
-        assert res.returncode == 0
-        assert "--- Analysis Sorting Plan ---" not in res.stdout
-        data = json.loads(res.stdout)
+        out = stdout_cap.getvalue()
+        assert "--- Analysis Sorting Plan ---" not in out
+        data = json.loads(out)
         assert isinstance(data, dict)
     finally:
         try:
-            subprocess.run([sys.executable, str(Path(repo_root) / "sandbox_cli.py"), "reset"], check=False, env=current_env, timeout=180)
+            with patch("sys.argv", ["sandbox_cli.py", "reset"]), patch("sys.stdout", io.StringIO()), patch("sys.stderr", io.StringIO()):
+                import sandbox_cli
+
+                sandbox_cli.main()
         except Exception:
             pass
