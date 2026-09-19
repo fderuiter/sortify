@@ -339,8 +339,23 @@ def recursive_kmeans_worker_main(
     if is_pipe:
         conn = filenames_or_input_queue
         key = documents_or_output_queue if session_key is None else session_key
-        raw_encrypted = conn.recv_bytes()
-        payload = decrypt_ipc_payload(raw_encrypted, key)
+        try:
+            raw_encrypted = conn.recv_bytes()
+            payload = decrypt_ipc_payload(raw_encrypted, key)
+        except Exception as e:
+            err_data = {"status": "error", "message": f"Failed receiving IPC payload: {e}"}
+            try:
+                if key is not None:
+                    conn.send_bytes(encrypt_ipc_payload(err_data, key))
+                else:
+                    conn.send(err_data)
+            except Exception:
+                pass
+            try:
+                conn.close()
+            except Exception:
+                pass
+            return
 
         filenames = payload["filenames"]
         documents = payload["documents"]
@@ -676,12 +691,6 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
             args=(child_conn, session_key),
         )
         process.start()
-
-        # Close parent's copy of child_conn so child_conn is owned exclusively by child process
-        try:
-            child_conn.close()
-        except Exception:
-            pass
 
         # Send payload through parent_conn
         parent_conn.send_bytes(encrypted_input)
