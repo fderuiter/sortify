@@ -11,8 +11,28 @@ import threading
 from pathlib import Path
 from typing import Annotated, Literal
 
+import jsonschema
 from pydantic import Field, ValidationError, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_SCHEMA_VALIDATOR = None
+_SCHEMA_VALIDATOR_LOCK = threading.Lock()
+
+
+def _get_schema_validator():
+    global _SCHEMA_VALIDATOR
+    if _SCHEMA_VALIDATOR is None:
+        with _SCHEMA_VALIDATOR_LOCK:
+            if _SCHEMA_VALIDATOR is None:
+                schema_path = Path(__file__).parent / "config_schema.json"
+                if schema_path.exists():
+                    try:
+                        with open(schema_path, "r", encoding="utf-8") as sf:
+                            schema = json.load(sf)
+                        _SCHEMA_VALIDATOR = jsonschema.Draft202012Validator(schema)
+                    except Exception as e:
+                        logging.error(f"Failed to load config schema: {e}")
+    return _SCHEMA_VALIDATOR
 
 
 def get_app_dir() -> Path:
@@ -492,14 +512,9 @@ class AppSettings:
         data = self._settings_model.model_dump(mode="json")
 
         # Validate against static schema file if it exists
-        schema_path = Path(__file__).parent / "config_schema.json"
-        if schema_path.exists():
-            import jsonschema
-
+        validator = _get_schema_validator()
+        if validator is not None:
             try:
-                with open(schema_path, "r", encoding="utf-8") as sf:
-                    schema = json.load(sf)
-                validator = jsonschema.Draft202012Validator(schema)
                 schema_errors = sorted(validator.iter_errors(data), key=lambda e: e.path)
                 for error in schema_errors:
                     path = (
