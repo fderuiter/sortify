@@ -989,14 +989,30 @@ class SharedWorkerPool:
 
             was_sandboxed = getattr(_thread_local, "sandboxed", False)
             old_reason = getattr(_thread_local, "reason", "worker execution")
+            was_in_pool = getattr(_thread_local, "in_shared_worker_pool", False)
 
             _thread_local.sandboxed = is_sandboxed
             _thread_local.reason = reason
+            _thread_local.in_shared_worker_pool = True
             try:
                 return fn(*a, **kw)
             finally:
                 _thread_local.sandboxed = was_sandboxed
                 _thread_local.reason = old_reason
+                _thread_local.in_shared_worker_pool = was_in_pool
+
+        if (
+            getattr(_thread_local, "in_shared_worker_pool", False)
+            or threading.current_thread().name.startswith("GlobalSharedWorker")
+            or threading.current_thread().name.startswith("DBWorker")
+        ):
+            fut = concurrent.futures.Future()
+            try:
+                res = offline_wrapped_fn(*args, **kwargs)
+                fut.set_result(res)
+            except Exception as exc:
+                fut.set_exception(exc)
+            return fut
 
         return self._executor.submit(offline_wrapped_fn, *args, **kwargs)
 
@@ -1011,25 +1027,38 @@ class SharedWorkerPool:
 
             was_sandboxed = getattr(_thread_local, "sandboxed", False)
             old_reason = getattr(_thread_local, "reason", "worker execution")
+            was_in_pool = getattr(_thread_local, "in_shared_worker_pool", False)
 
             _thread_local.sandboxed = is_sandboxed
             _thread_local.reason = reason
+            _thread_local.in_shared_worker_pool = True
             try:
                 return fn(*a, **kw)
             finally:
                 _thread_local.sandboxed = was_sandboxed
                 _thread_local.reason = old_reason
+                _thread_local.in_shared_worker_pool = was_in_pool
 
-        if threading.current_thread().name.startswith("GlobalSharedWorker"):
+        if (
+            getattr(_thread_local, "in_shared_worker_pool", False)
+            or threading.current_thread().name.startswith("GlobalSharedWorker")
+            or threading.current_thread().name.startswith("DBWorker")
+        ):
             return [offline_wrapped_fn(*args) for args in zip(*iterables)]
 
         return self._executor.map(
             offline_wrapped_fn, *iterables, timeout=timeout, chunksize=chunksize
         )
 
-    def shutdown(self, wait=True):
+    def shutdown(self, wait=False, cancel_futures=True):
         """Shutdown the underlying executor and reset singleton instance."""
-        self._executor.shutdown(wait=wait)
+        if hasattr(self, "_executor") and self._executor:
+            try:
+                self._executor.shutdown(wait=wait, cancel_futures=cancel_futures)
+            except TypeError:
+                self._executor.shutdown(wait=wait)
+            except Exception:
+                pass
         SharedWorkerPool._instance = None
 
 

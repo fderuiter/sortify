@@ -1,6 +1,8 @@
 import os
 import sys
 
+os.environ.setdefault("PYTHON_KEYRING_BACKEND", "keyring.backends.fail.Keyring")
+
 if sys.platform == "win32":
     # Inject DLL directory paths for Windows to allow direct import of sqlcipher3
     import importlib.util
@@ -266,6 +268,7 @@ def socket_mock(monkeypatch):
                     if (
                         "test_db_worker_sandbox" in filename_lower
                         or "test_shared_registry" in filename_lower
+                        or "test_strategy_decryption_shared_pool" in filename_lower
                     ):
                         return True
                 frame = frame.f_back
