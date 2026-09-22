@@ -82,6 +82,8 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    env:
+      PYTHON_KEYRING_BACKEND: keyring.backends.fail.Keyring
     steps:
     - uses: actions/checkout@v4
 
@@ -119,6 +121,11 @@ jobs:
       if: matrix.os == 'ubuntu-latest'
       run: |
         uv run python scripts/validate_architecture.py
+
+    - name: Validate Duplicate System Utilities
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        uv run python scripts/validate_duplicates.py
 
     - name: Validate UI Layout Classes
       if: matrix.os == 'ubuntu-latest'
