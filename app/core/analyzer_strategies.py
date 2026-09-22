@@ -2626,34 +2626,55 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                             for term, df in top_terms
                         }
 
-                        # Group doc_terms by filepath
                         from collections import defaultdict
 
-                        doc_tfs = defaultdict(list)
-                        for filepath, term, tf in doc_terms:
-                            doc_tfs[filepath].append((term, tf))
-
-                        # Compute document vectors for documents that have metadata
                         hist_vectors = []
                         historical_examples_meta = []
+                        cached_matrix_rows = db.get_tfidf_matrix_cache(base_dir)
 
-                        for filepath, target_path in doc_metadata.items():
-                            tfs = doc_tfs.get(filepath)
-                            if not tfs:
-                                continue
-                            vec = np.zeros(len(vocab))
-                            for term, tf in tfs:
-                                if term in vocab:
-                                    idx = vocab[term]
-                                    tf_weight = 1 + math.log(tf)
-                                    vec[idx] = tf_weight * idf_weights[term]
-                            norm = np.linalg.norm(vec)
-                            if norm > 0:
-                                vec = vec / norm
-                            hist_vectors.append(vec)
-                            historical_examples_meta.append(
-                                {"filepath": filepath, "target_path": target_path}
-                            )
+                        if cached_matrix_rows:
+                            doc_weights = defaultdict(list)
+                            for filepath, term, weight in cached_matrix_rows:
+                                doc_weights[filepath].append((term, weight))
+
+                            for filepath, target_path in doc_metadata.items():
+                                weights = doc_weights.get(filepath)
+                                if not weights:
+                                    continue
+                                vec = np.zeros(len(vocab))
+                                for term, weight in weights:
+                                    if term in vocab:
+                                        vec[vocab[term]] = weight
+                                norm = np.linalg.norm(vec)
+                                if norm > 0:
+                                    vec = vec / norm
+                                hist_vectors.append(vec)
+                                historical_examples_meta.append(
+                                    {"filepath": filepath, "target_path": target_path}
+                                )
+                        else:
+                            doc_tfs = defaultdict(list)
+                            for filepath, term, tf in doc_terms:
+                                doc_tfs[filepath].append((term, tf))
+
+                            for filepath, target_path in doc_metadata.items():
+                                tfs = doc_tfs.get(filepath)
+                                if not tfs:
+                                    continue
+                                vec = np.zeros(len(vocab))
+                                for term, tf in tfs:
+                                    if term in vocab:
+                                        idx = vocab[term]
+                                        tf_weight = 1 + math.log(tf)
+                                        vec[idx] = tf_weight * idf_weights[term]
+                                norm = np.linalg.norm(vec)
+                                if norm > 0:
+                                    vec = vec / norm
+                                hist_vectors.append(vec)
+                                historical_examples_meta.append(
+                                    {"filepath": filepath, "target_path": target_path}
+                                )
+                            db.update_tfidf_matrix_cache(base_dir)
 
                         if hist_vectors:
                             # Tokenize target text

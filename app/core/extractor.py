@@ -29,6 +29,7 @@ class ExtractionStatus(str, Enum):
     SKIPPED = "SKIPPED"
     CANCELLED = "CANCELLED"
     ERROR = "ERROR"
+    PROVISIONAL = "PROVISIONAL"
 
 
 class ExtractionResult(BaseModel):
@@ -119,10 +120,29 @@ def get_file_hash(file_path: str) -> str:
 
 
 def extract_file_text(
-    file_path: str, settings=None, progress_callback=None, cancel_check=None
+    file_path: str,
+    settings=None,
+    progress_callback=None,
+    cancel_check=None,
+    fast_triage: bool = False,
+    db=None,
+    base_dir: str | None = None,
 ) -> ExtractionResult:
     """Extract text content from a given file."""
     ext = os.path.splitext(file_path)[1].lower()
+
+    if fast_triage and ext in (".png", ".jpg", ".jpeg", ".bmp", ".tiff"):
+        if db and hasattr(db, "worker") and db.worker:
+            def _bg_visual_job():
+                full_text = str(extract_file_text(file_path, settings=settings, fast_triage=False))
+                if base_dir:
+                    rel_path = os.path.relpath(file_path, base_dir).replace("\\", "/")
+                    f_hash = get_file_hash(file_path)
+                    db.upsert_document(base_dir, rel_path, f_hash, full_text)
+                    db.update_tfidf_matrix_cache(base_dir)
+            db.worker.submit_background_job(_bg_visual_job)
+        return ExtractionResult(text="", status=ExtractionStatus.PROVISIONAL)
+
     try:
         extractor = registry.get_extractor(ext)
         if extractor:
@@ -137,6 +157,19 @@ def extract_file_text(
                 kwargs["cancel_check"] = cancel_check
 
             raw_text = extractor.extract(file_path, **kwargs)
+
+            if fast_triage and ext == ".pdf" and not (raw_text and str(raw_text).strip()):
+                if db and hasattr(db, "worker") and db.worker:
+                    def _bg_pdf_job():
+                        full_text = str(extractor.extract(file_path, **kwargs))
+                        if base_dir:
+                            rel_path = os.path.relpath(file_path, base_dir).replace("\\", "/")
+                            f_hash = get_file_hash(file_path)
+                            db.upsert_document(base_dir, rel_path, f_hash, full_text)
+                            db.update_tfidf_matrix_cache(base_dir)
+                    db.worker.submit_background_job(_bg_pdf_job)
+                return ExtractionResult(text="", status=ExtractionStatus.PROVISIONAL)
+
             text = sanitize_text(raw_text)
             if not text.strip():
                 return ExtractionResult(text="", status=ExtractionStatus.EMPTY)
@@ -176,6 +209,15 @@ def extract_file_text(
         return ExtractionResult(
             text="", status=ExtractionStatus.FAILED, error_message=str(e)
         )
+
+
+def fast_triage_extract(
+    file_path: str, settings=None, db=None, base_dir: str | None = None
+) -> str:
+    """Fast-tier synchronous extractor for native text and metadata (<50ms)."""
+    return extract_file_text(
+        file_path, settings=settings, fast_triage=True, db=db, base_dir=base_dir
+    )
 
 
 def process_item_worker(
