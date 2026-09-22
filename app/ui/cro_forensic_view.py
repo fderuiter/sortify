@@ -2,7 +2,6 @@
 
 import asyncio
 import os
-import webbrowser
 from unittest.mock import MagicMock
 
 from app.core.cro_multi_study_pipeline import (
@@ -10,6 +9,7 @@ from app.core.cro_multi_study_pipeline import (
     MasterPipelineResult,
 )
 from app.ui.dialog_helper import ask_directory_async, get_dialog_card_classes
+from app.ui.report_helper import serve_or_download_report
 from app.ui.tokens import TOKENS
 from app.ui.toolbar import OverflowToolbar
 
@@ -300,8 +300,7 @@ class CROForensicView:
                                 ).classes("text-sm p-2 shrink-0")
 
                                 def open_html(path=study.audit_report_html_path):
-                                    if os.path.exists(path):
-                                        webbrowser.open(f"file://{path}")
+                                    serve_or_download_report(path, open_in_new_tab=True)
 
                                 ui.button(
                                     "View Audit Dossier",
@@ -318,8 +317,8 @@ class CROForensicView:
                 ):
 
                     def open_manifest():
-                        webbrowser.open(
-                            f"file://{result.chain_of_custody_manifest_path}"
+                        serve_or_download_report(
+                            result.chain_of_custody_manifest_path, open_in_new_tab=False
                         )
 
                     ui.button(

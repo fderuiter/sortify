@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 
 from app.core.session import AppSession
 from app.ui.dialog_helper import ask_directory_async, get_dialog_card_classes
+from app.ui.report_helper import serve_or_download_report
 from app.ui.tokens import TOKENS
 
 ui = MagicMock()
@@ -1064,12 +1065,10 @@ class AutoSorterApp:
                     if self.base_dir
                     else ""
                 )
-                if report_html and os.path.exists(report_html):
+                if report_html:
 
                     def open_report():
-                        import webbrowser
-
-                        webbrowser.open(f"file://{report_html}")
+                        serve_or_download_report(report_html, open_in_new_tab=True)
 
                     ui.button("Open Full HTML Dossier", on_click=open_report).props(
                         'color="primary" outline'
