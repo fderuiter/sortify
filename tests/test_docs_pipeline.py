@@ -326,3 +326,11 @@ def test_diagram_toolchain_cli_main_verify():
     ):
         dt.main()
         mock_exit.assert_called_once_with(0)
+
+
+def test_find_mmdc_executable():
+    from scripts.diagram_toolchain import find_mmdc_executable
+
+    cmd = find_mmdc_executable()
+    if cmd and any("npx" in arg for arg in cmd):
+        assert "--yes" in cmd

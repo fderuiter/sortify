@@ -40,7 +40,7 @@ def find_mmdc_executable() -> Optional[List[str]]:
 
     npx_path = shutil.which("npx")
     if npx_path:
-        return [npx_path, "-p", "@mermaid-js/mermaid-cli", "mmdc"]
+        return [npx_path, "--yes", "-p", "@mermaid-js/mermaid-cli", "mmdc"]
 
     return None
 
