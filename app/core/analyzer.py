@@ -6,10 +6,131 @@ This module provides topic modeling functionality.
 import hashlib
 import logging
 import os
+from typing import Any, Dict, Optional, Union
+
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.analyzer_strategies import clustering_registry
 
 _UNSPECIFIED = object()
+
+
+class _SortingPlanNodeSchema(BaseModel):
+    node_type: str = Field(default="file", alias="__type__")
+    relative_source: Optional[str] = None
+    routed_by: Optional[str] = None
+    keyword: Optional[str] = None
+    match: Optional[str] = None
+    status: Optional[str] = None
+    extraction_status: Optional[Union[str, Any]] = None
+    is_corrected: Optional[bool] = None
+    corrected: Optional[bool] = None
+    is_overridden: Optional[bool] = None
+    overridden: Optional[bool] = None
+    original_lock_path: Optional[str] = None
+    original_path: Optional[str] = None
+    user_lock_path: Optional[str] = None
+    historical_path: Optional[str] = None
+    policy_path: Optional[str] = None
+    new_policy_path: Optional[str] = None
+    is_conflicted: Optional[bool] = None
+    compliance_path: Optional[str] = None
+    new_filename: Optional[str] = None
+
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+
+class SortingPlanNode(dict):
+    """Pydantic-validated dict node representing a file or directory in a sorting plan."""
+
+    @classmethod
+    def model_validate(cls, obj: Any) -> "SortingPlanNode":
+        """Validate and construct a SortingPlanNode from a dictionary or instance."""
+        if isinstance(obj, SortingPlanNode):
+            return obj
+        if isinstance(obj, dict):
+            # Validate with Pydantic schema
+            validated = _SortingPlanNodeSchema.model_validate(obj).model_dump(
+                by_alias=True, exclude_none=True
+            )
+            res = cls(obj)
+            res.update(validated)
+            return res
+        raise ValueError(f"Cannot validate {type(obj)} as SortingPlanNode")
+
+    def model_dump(self, *args, **kwargs) -> Dict[str, Any]:
+        """Dump the node data as a standard dictionary."""
+        return dict(self)
+
+    def dict(self, *args, **kwargs) -> Dict[str, Any]:
+        """Backward compatibility method for legacy callers."""
+        return self.model_dump(*args, **kwargs)
+
+
+class SortingPlan(dict):
+    """Pydantic-validated dict representing a complete hierarchical sorting plan."""
+
+    def __init__(self, plan: Optional[Dict[str, Any]] = None, **kwargs):
+        if plan is not None and isinstance(plan, dict):
+            super().__init__(plan)
+        elif kwargs:
+            super().__init__(kwargs)
+        else:
+            super().__init__()
+
+    @classmethod
+    def model_validate(cls, obj: Any) -> "SortingPlan":
+        """Validate and construct a SortingPlan from a dictionary or instance."""
+        if isinstance(obj, SortingPlan):
+            return obj
+        if isinstance(obj, dict):
+            validated_nodes = _validate_sorting_plan_nodes(obj)
+            return cls(validated_nodes)
+        raise ValueError(f"Cannot validate {type(obj)} as SortingPlan")
+
+    def model_dump(self, *args, **kwargs) -> Dict[str, Any]:
+        """Dump the complete plan as a standard dictionary."""
+        res = {}
+        for k, v in self.items():
+            if hasattr(v, "model_dump"):
+                res[k] = v.model_dump(*args, **kwargs)
+            elif isinstance(v, dict):
+                res[k] = _dump_node_recursive(v, *args, **kwargs)
+            else:
+                res[k] = v
+        return res
+
+    def dict(self, *args, **kwargs) -> Dict[str, Any]:
+        """Backward compatibility method for legacy callers."""
+        return self.model_dump(*args, **kwargs)
+
+
+def _dump_node_recursive(node: Any, *args, **kwargs) -> Any:
+    if hasattr(node, "model_dump"):
+        return node.model_dump(*args, **kwargs)
+    if isinstance(node, dict):
+        return {k: _dump_node_recursive(v, *args, **kwargs) for k, v in node.items()}
+    return node
+
+
+def _validate_sorting_plan_nodes(node: Dict[str, Any]) -> Dict[str, Any]:
+    """Recursively validate all file dictionary nodes in the plan using SortingPlanNode."""
+    validated = {}
+    for k, v in node.items():
+        if isinstance(v, dict) or isinstance(v, SortingPlanNode):
+            v_dict = v.model_dump() if hasattr(v, "model_dump") else v
+            if (
+                v_dict.get("__type__") == "file"
+                or "relative_source" in v_dict
+                or "routed_by" in v_dict
+                or "status" in v_dict
+            ):
+                validated[k] = SortingPlanNode.model_validate(v_dict)
+            else:
+                validated[k] = _validate_sorting_plan_nodes(v_dict)
+        else:
+            validated[k] = v
+    return validated
 
 
 def pre_fetch_historical_corpus(
@@ -330,7 +451,7 @@ class IncrementalAnalyzer:
         locked_files: dict = None,
         cancel_check=None,
         fast_path_only: bool = False,
-    ) -> dict:
+    ) -> SortingPlan:
         """Generate a sorting plan mapping file paths to destination paths based on current model state.
 
         Args:
@@ -345,7 +466,7 @@ class IncrementalAnalyzer:
 
         Returns
         -------
-            Dict mapping relative file paths to target folder categories or absolute paths.
+            SortingPlan mapping relative file paths to target folder categories or absolute paths.
         """
         if locked_files:
             from app.core.policy_engine import PolicyEngine
@@ -357,7 +478,7 @@ class IncrementalAnalyzer:
         try:
             docs = self.db.get_all_documents(base_dir)
             if not docs:
-                return {}
+                return SortingPlan()
 
             from app.core.extractor_strategies import registry
 
@@ -1165,13 +1286,15 @@ class IncrementalAnalyzer:
                         f"Contextual file renaming phase failed: {e}", exc_info=True
                     )
 
-            return self._inject_hierarchy(clean_plan)
+            raw_plan = self._inject_hierarchy(clean_plan)
+            validated_plan = _validate_sorting_plan_nodes(raw_plan)
+            return SortingPlan(plan=validated_plan)
 
         except Exception as e:
             logging.error(
                 f"Failed during generate_sorting_plan. Error: {str(e)}", exc_info=True
             )
-            return {}
+            return SortingPlan()
         finally:
             try:
                 active_strategy_name = self.strategy_name
