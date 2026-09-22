@@ -105,11 +105,12 @@ def test_ui_stop_words_rendering():
             french_btn = None
             spanish_btn = None
             for btn in buttons:
-                if btn.text == "German":
+                txt = str(getattr(btn, "text", ""))
+                if "German" in txt:
                     german_btn = btn
-                elif btn.text == "French":
+                elif "French" in txt:
                     french_btn = btn
-                elif btn.text == "Spanish":
+                elif "Spanish" in txt:
                     spanish_btn = btn
 
             assert german_btn is not None

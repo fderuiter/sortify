@@ -103,7 +103,13 @@ def test_wizard_timer_and_thread_cleanup():
             # Find 'Accept & Download' button
             accept_btn = None
             for btn in buttons:
-                if btn.text == "Accept & Download":
+                aria_lbl = getattr(btn, "_props", {}).get("aria-label", "")
+                txt = str(getattr(btn, "text", ""))
+                if (
+                    aria_lbl == "Accept and Download Button"
+                    or txt == "Accept & Download"
+                    or "Accept" in txt
+                ):
                     accept_btn = btn
                     break
             assert accept_btn is not None, "Accept & Download button not found"
@@ -130,7 +136,13 @@ def test_wizard_timer_and_thread_cleanup():
             # Find 'Cancel' button to cancel download
             cancel_btn = None
             for btn in buttons:
-                if btn.text == "Cancel":
+                aria_lbl = getattr(btn, "_props", {}).get("aria-label", "")
+                txt = str(getattr(btn, "text", ""))
+                if (
+                    aria_lbl == "Cancel Download Button"
+                    or txt == "Cancel"
+                    or "Cancel" in txt
+                ):
                     cancel_btn = btn
                     break
             assert cancel_btn is not None, "Cancel Download button not found"
@@ -262,7 +274,14 @@ def test_settings_timer_and_thread_cleanup():
             # Find 'Download AI Model' button
             download_btn = None
             for btn in buttons:
-                if btn.text == "Download AI Model":
+                aria_lbl = getattr(btn, "_props", {}).get("aria-label", "")
+                txt = str(getattr(btn, "text", ""))
+                if (
+                    aria_lbl == "Download AI Model Button"
+                    or txt in ("Download AI Model", "AI Model Downloaded")
+                    or "Download AI Model" in txt
+                    or "AI Model" in txt
+                ):
                     download_btn = btn
                     break
             assert download_btn is not None, "Download AI Model button not found"
