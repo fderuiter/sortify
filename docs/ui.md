@@ -38,6 +38,10 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.ui.toolbar
 
+## `app.ui.tui`
+
+::: app.ui.tui
+
 ## `app.ui.wizard`
 
 ::: app.ui.wizard
