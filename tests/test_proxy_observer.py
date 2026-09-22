@@ -21,10 +21,12 @@ from app.core.shared_registry import SharedModelRegistry
 
 @pytest.fixture(autouse=True)
 def clean_observers():
-    """Ensure AppSettings observers are reset before and after each test."""
+    """Ensure AppSettings observers and DownloadManager singleton are reset before and after each test."""
     AppSettings.clear_observers()
+    DownloadManager.reset_instance()
     yield
     AppSettings.clear_observers()
+    DownloadManager.reset_instance()
 
 
 @pytest.fixture

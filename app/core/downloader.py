@@ -90,6 +90,19 @@ class DownloadManager:
                     pass
             return cls._instance
 
+    @classmethod
+    def reset_instance(cls):
+        """Reset the singleton instance of DownloadManager."""
+        with cls._lock:
+            if cls._instance is not None:
+                try:
+                    from app.config import AppSettings
+
+                    AppSettings.remove_observer("PROXY", cls._instance._on_proxy_changed)
+                except Exception:
+                    pass
+                cls._instance = None
+
     def __init__(self, settings=None):
         self.state = ThreadSafeState(
             progress=0.0,
