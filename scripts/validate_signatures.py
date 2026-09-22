@@ -14,7 +14,9 @@ import os
 import sys
 
 # Compute project base directory (/app) based on script location
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+BASE_DIR = os.path.realpath(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+)
 SNAPSHOT_PATH = os.path.join(BASE_DIR, "tests", "snapshots", "api_snapshot.json")
 
 # Source files to parse
@@ -31,7 +33,7 @@ SANDBOX_CLI_PATH = os.path.join(BASE_DIR, "sandbox_cli.py")
 def safe_relpath(path, start):
     """Compute relative path if possible, fallback to absolute path if on different Windows drives."""
     try:
-        return os.path.relpath(path, start)
+        return os.path.relpath(os.path.realpath(path), os.path.realpath(start))
     except ValueError:
         return os.path.abspath(path)
 
