@@ -119,7 +119,7 @@ class QuarantineInterceptorService:
         effective_timeout = (
             timeout_override if timeout_override is not None else self.worker_timeout
         )
-        start_time = time.monotonic()
+        start_time = time.perf_counter()
 
         # 1. State transition: STAGED -> IN_INSPECTION
         self.db.update_quarantine_status(
@@ -138,7 +138,7 @@ class QuarantineInterceptorService:
 
         try:
             # Check timeout guardrail
-            if effective_timeout <= 0 or (time.monotonic() - start_time) >= effective_timeout:
+            if effective_timeout <= 0 or (time.perf_counter() - start_time) >= effective_timeout:
                 raise TimeoutError(f"Forensic scanning job exceeded timeout of {effective_timeout}s")
 
             # 2. Deep Forensic Scanning & Extraction
@@ -160,7 +160,7 @@ class QuarantineInterceptorService:
                     extracted_text = extract_file_text(staged_path) or ""
 
             # Re-check timeout guardrail
-            if effective_timeout <= 0 or (time.monotonic() - start_time) >= effective_timeout:
+            if effective_timeout <= 0 or (time.perf_counter() - start_time) >= effective_timeout:
                 raise TimeoutError(f"Forensic scanning job exceeded timeout of {effective_timeout}s")
 
             # 3. Clinical Compliance Gap Analysis if relevant
@@ -191,7 +191,7 @@ class QuarantineInterceptorService:
             target_subfolder = matched_rule.get("target_path") if matched_rule else None
 
             # Re-check timeout guardrail before action execution
-            if effective_timeout <= 0 or (time.monotonic() - start_time) >= effective_timeout:
+            if effective_timeout <= 0 or (time.perf_counter() - start_time) >= effective_timeout:
                 raise TimeoutError(f"Forensic scanning job exceeded timeout of {effective_timeout}s")
 
             # 5. Policy Lifecycle Action Execution
