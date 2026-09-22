@@ -122,20 +122,6 @@ class DownloadManager:
             self._current_proxy = p_str
             self._opener = None
             self._active_proxy_str = None
-            if p_str and "<DECRYPTION_FAILED>" not in p_str:
-                try:
-                    handlers = [
-                        urllib.request.ProxyHandler(
-                            {"http": p_str, "https": p_str}
-                        )
-                    ]
-                    self._opener = urllib.request.build_opener(*handlers)
-                    self._active_proxy_str = p_str
-                except Exception as e:
-                    logger.warning(
-                        f"Failed to reconstruct opener for proxy '{p_str}': {e}"
-                    )
-                    self._opener = None
             logger.info(f"DownloadManager proxy configuration updated: '{p_str}'")
 
     def get_opener(self, proxy: str = None) -> urllib.request.OpenerDirector:
@@ -149,17 +135,15 @@ class DownloadManager:
             if "<DECRYPTION_FAILED>" in target_proxy:
                 raise NetworkError("Invalid proxy configuration: decryption failed.")
 
-            if self._opener is None or self._active_proxy_str != target_proxy:
-                handlers = []
-                if target_proxy:
-                    handlers.append(
-                        urllib.request.ProxyHandler(
-                            {"http": target_proxy, "https": target_proxy}
-                        )
+            handlers = []
+            if target_proxy:
+                handlers.append(
+                    urllib.request.ProxyHandler(
+                        {"http": target_proxy, "https": target_proxy}
                     )
-                self._opener = urllib.request.build_opener(*handlers)
-                self._active_proxy_str = target_proxy
-
+                )
+            self._opener = urllib.request.build_opener(*handlers)
+            self._active_proxy_str = target_proxy
             return self._opener
 
     def start_download(self, url: str, model_dir: str, proxy: str = ""):
