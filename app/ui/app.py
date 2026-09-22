@@ -780,16 +780,38 @@ class AutoSorterApp:
             bypassed_set = set(bypassed_files)
             items_to_sort = [f for f in files if f not in bypassed_set]
 
-            def file_progress_cb(pct):
+            def file_progress_cb(pct=0.0, stage=None, *args, **kwargs):
+                pct_val = 0.0
+                stage_text = None
+
+                if isinstance(pct, (int, float)):
+                    pct_val = float(pct)
+                    if stage and isinstance(stage, str):
+                        stage_text = stage
+                    elif args and isinstance(args[0], str):
+                        stage_text = args[0]
+                elif isinstance(pct, str):
+                    stage_text = pct
+                    if stage and isinstance(stage, (int, float)):
+                        pct_val = float(stage)
+
+                if not stage_text:
+                    if "stage" in kwargs and isinstance(kwargs["stage"], str):
+                        stage_text = kwargs["stage"]
+                    elif "message" in kwargs and isinstance(kwargs["message"], str):
+                        stage_text = kwargs["message"]
+
                 def update_ui():
                     if hasattr(self, "file_progress_bar"):
                         self.file_progress_bar.set_visibility(True)
-                        self.file_progress_bar.set_value(pct)
+                        self.file_progress_bar.set_value(pct_val)
                     if hasattr(self, "file_progress_label"):
                         self.file_progress_label.set_visibility(True)
-                        self.file_progress_label.set_text(
-                            f"Active file progress: {pct * 100:.1f}%"
-                        )
+                        if stage_text:
+                            text = f"Active file progress: {pct_val * 100:.1f}% - {stage_text}"
+                        else:
+                            text = f"Active file progress: {pct_val * 100:.1f}%"
+                        self.file_progress_label.set_text(text)
 
                 if self.loop and not getattr(self.loop, "is_closed", lambda: False)():
                     try:
