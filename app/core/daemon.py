@@ -6,6 +6,8 @@ import logging
 import os
 import threading
 import time
+from dataclasses import dataclass, field
+from typing import Optional
 
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
@@ -16,6 +18,16 @@ from app.core.scanner import get_files_recursively
 from app.core.session import AppSession
 
 logger = logging.getLogger("app.daemon")
+
+
+@dataclass
+class FileChangeEvent:
+    """Structured filesystem event message for async queue streaming."""
+
+    event_type: str
+    file_path: str
+    timestamp: float = field(default_factory=time.time)
+    dest_path: Optional[str] = None
 
 
 def _extract_plan_destinations(plan, base_dir=None, current_dest="", dests_set=None):
@@ -57,13 +69,13 @@ class DaemonFolderHandler(FileSystemEventHandler):
         self.daemon = daemon
 
     def on_any_event(self, event):
-        """Handle any file system event, trigger recalculation if valid."""
-        # We must ignore application metadata, local databases, and temporary cache folders to prevent infinite trigger loops
-        if self.daemon.should_ignore_path(event.src_path):
+        """Handle any file system event, publish FileChangeEvent to queue and trigger recalculation if valid."""
+        src_path = getattr(event, "src_path", "")
+        dest_path = getattr(event, "dest_path", None)
+
+        if self.daemon.should_ignore_path(src_path):
             return
-        if getattr(event, "dest_path", None) and self.daemon.should_ignore_path(
-            event.dest_path
-        ):
+        if dest_path and self.daemon.should_ignore_path(dest_path):
             return
 
         # Suppress recalculation triggers if file moves are actively running,
@@ -75,12 +87,21 @@ class DaemonFolderHandler(FileSystemEventHandler):
                 self.daemon.mark_pending_dirty()
                 return
 
-        # Trigger sorting recalculation (thread-safe and debounced)
+        event_type = getattr(event, "event_type", "modified")
+        change_event = FileChangeEvent(
+            event_type=event_type,
+            file_path=src_path,
+            timestamp=time.time(),
+            dest_path=dest_path,
+        )
+        self.daemon.enqueue_event(change_event)
+
+        # Trigger sorting recalculation (thread-safe and debounced for legacy fallback)
         self.daemon.trigger_recalculation()
 
 
 class ContinuousWatchdogDaemon:
-    """Daemon that continuously monitors a folder and triggers silent sorting."""
+    """Daemon that continuously monitors a folder using an async queue pipeline."""
 
     def __init__(self, settings: AppSettings, base_dir: str):
         self.settings = settings
@@ -95,6 +116,24 @@ class ContinuousWatchdogDaemon:
         self._pending_dirty = False
         self._active_move_paths = set()
         self._first_event_time = None
+
+        # Configurable properties for async event pipeline
+        self.max_queue_capacity = getattr(settings, "MAX_QUEUE_CAPACITY", 1000)
+        self.dedup_window = getattr(settings, "DEDUP_WINDOW", 0.5)
+        self.num_workers = getattr(settings, "MAX_WORKERS", 4)
+        self.reconciliation_interval = getattr(
+            settings, "RECONCILIATION_INTERVAL", 30.0
+        )
+
+        # Pipeline state
+        self._event_loop: Optional[asyncio.AbstractEventLoop] = None
+        self._event_queue: Optional[asyncio.Queue[FileChangeEvent]] = None
+        self._recent_events: dict[str, float] = {}
+        self._active_path_locks: dict[str, asyncio.Lock] = {}
+        self._active_triage_paths: set[str] = set()
+        self._worker_tasks: list[asyncio.Task] = []
+        self._reconciliation_task: Optional[asyncio.Task] = None
+        self._app_session: Optional[AppSession] = None
 
         # We run the actual sorting loop on a dedicated background execution thread
         self._execution_thread = None
@@ -314,8 +353,307 @@ class ContinuousWatchdogDaemon:
 
         return False
 
+    def enqueue_event(self, change_event: FileChangeEvent) -> bool:
+        """Publish a FileChangeEvent directly to the asynchronous FIFO queue with deduplication."""
+        if not change_event or not change_event.file_path:
+            return False
+
+        file_path = change_event.file_path
+        if self.should_ignore_path(file_path):
+            return False
+
+        norm_p = os.path.normcase(os.path.abspath(file_path))
+        now = time.time()
+
+        with self._lock:
+            if not self._is_running:
+                return False
+
+            last_time = self._recent_events.get(norm_p)
+            if last_time is not None and (now - last_time) < self.dedup_window:
+                logger.debug(f"Deduplicating rapid event for path: {file_path}")
+                return False
+
+            if norm_p in self._active_triage_paths:
+                logger.debug(
+                    f"Path is currently being triaged, deduplicating event: {file_path}"
+                )
+                return False
+
+            self._recent_events[norm_p] = now
+            if len(self._recent_events) > 2000:
+                cutoff = now - (self.dedup_window * 5)
+                self._recent_events = {
+                    k: v for k, v in self._recent_events.items() if v > cutoff
+                }
+
+        queue = self._event_queue
+        loop = self._event_loop
+
+        if queue is not None:
+            if queue.full():
+                logger.warning(
+                    f"Queue full (capacity {self.max_queue_capacity}), dropping event for: {file_path}"
+                )
+                return False
+
+            if loop and loop.is_running():
+                loop.call_soon_threadsafe(
+                    lambda: queue.put_nowait(change_event) if not queue.full() else None
+                )
+                return True
+            else:
+                try:
+                    queue.put_nowait(change_event)
+                    return True
+                except asyncio.QueueFull:
+                    logger.warning(f"Queue full, dropping event: {file_path}")
+                    return False
+
+        return False
+
+    def _get_path_lock(self, norm_path: str) -> asyncio.Lock:
+        """Retrieve or create an asyncio.Lock for a specific normalized file path."""
+        with self._lock:
+            if norm_path not in self._active_path_locks:
+                self._active_path_locks[norm_path] = asyncio.Lock()
+            return self._active_path_locks[norm_path]
+
+    def _get_or_create_session(self) -> AppSession:
+        """Thread-safe lazy initialization of the daemon AppSession."""
+        with self._lock:
+            if getattr(self, "_app_session", None) is None:
+                self._app_session = AppSession(self.settings, self.base_dir)
+            return self._app_session
+
+    def _start_pipeline_event_loop(self):
+        """Initialize and launch the background asyncio event loop thread for streaming event processing."""
+        from app.core.shared_registry import ContextPropagatingThread
+
+        ready_event = threading.Event()
+
+        def _loop_thread_main():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            self._event_loop = loop
+            self._event_queue = asyncio.Queue(maxsize=self.max_queue_capacity)
+
+            self._worker_tasks = [
+                loop.create_task(self._triage_worker(i))
+                for i in range(self.num_workers)
+            ]
+            self._reconciliation_task = loop.create_task(
+                self._reconciliation_worker()
+            )
+
+            ready_event.set()
+
+            try:
+                loop.run_forever()
+            finally:
+                for task in self._worker_tasks:
+                    task.cancel()
+                if self._reconciliation_task:
+                    self._reconciliation_task.cancel()
+
+                pending = [t for t in asyncio.all_tasks(loop) if not t.done()]
+                if pending:
+                    loop.run_until_complete(
+                        asyncio.gather(*pending, return_exceptions=True)
+                    )
+
+                if getattr(self, "_app_session", None):
+                    try:
+                        self._app_session.close()
+                    except Exception:
+                        pass
+                    self._app_session = None
+                loop.close()
+
+        self._execution_thread = ContextPropagatingThread(
+            target=_loop_thread_main, daemon=True
+        )
+        self._execution_thread.start()
+        ready_event.wait(timeout=5.0)
+
+    async def _triage_worker(self, worker_id: int):
+        """Async worker task that continuously consumes FileChangeEvents and triages paths."""
+        logger.info(f"Async triage worker {worker_id} started.")
+        while self._is_running and not self._cancel_event.is_set():
+            try:
+                if self._event_queue is None:
+                    await asyncio.sleep(0.05)
+                    continue
+                event = await self._event_queue.get()
+            except (asyncio.CancelledError, RuntimeError):
+                break
+
+            try:
+                await self._process_single_event(event)
+            except Exception as e:
+                logger.error(
+                    f"Worker {worker_id} error processing event {event}: {e}",
+                    exc_info=True,
+                )
+            finally:
+                if self._event_queue is not None:
+                    self._event_queue.task_done()
+
+    async def _process_single_event(self, event: FileChangeEvent):
+        """Triage a single file event without whole-directory scans."""
+        file_path = event.file_path
+        if not file_path or self.should_ignore_path(file_path):
+            return
+
+        abs_path = os.path.abspath(file_path)
+        if not os.path.exists(abs_path) or not os.path.isfile(abs_path):
+            return
+
+        if self.is_moving and self.is_self_generated_event(event):
+            return
+
+        norm_p = os.path.normcase(abs_path)
+        lock = self._get_path_lock(norm_p)
+
+        async with lock:
+            with self._lock:
+                self._active_triage_paths.add(norm_p)
+            try:
+                await self._triage_file_path(abs_path)
+            finally:
+                with self._lock:
+                    self._active_triage_paths.discard(norm_p)
+
+    async def _triage_file_path(self, abs_path: str):
+        """Targeted triage on a single item path without whole-directory file listing utilities."""
+        if not os.path.exists(abs_path):
+            return
+
+        rel_path = (
+            os.path.relpath(abs_path, self.base_dir).replace("\\", "/")
+            if self.base_dir and abs_path.startswith(self.base_dir)
+            else os.path.basename(abs_path)
+        )
+
+        app_session = self._get_or_create_session()
+
+        def cancel_check():
+            return self._cancel_event.is_set() or not self._is_running
+
+        try:
+            self.settings.load()
+        except Exception:
+            pass
+
+        # Phase 1: Fast-Path Rule Evaluation
+        MetadataPass.run(
+            self.base_dir, [rel_path], self.settings, app_session.db, None, cancel_check
+        )
+
+        if cancel_check():
+            return
+
+        fast_path_plan = app_session.generate_sorting_plan(fast_path_only=True)
+        if fast_path_plan:
+            with self.scoped_move_phase(plan=fast_path_plan):
+                summary = app_session.execute_moves(fast_path_plan)
+            logger.info(
+                f"Targeted Fast-Path triage completed for {rel_path}: {summary}"
+            )
+            return
+
+        if cancel_check():
+            return
+
+        if not os.path.exists(abs_path):
+            return
+
+        # Phase 2: Text Extraction & Incremental Model Training
+        async for item, text, file_hash, was_skipped in app_session.process_items_async(
+            [rel_path], cancel_check
+        ):
+            if cancel_check():
+                break
+            if not was_skipped:
+                chunk = {item: {"text": text, "hash": file_hash}}
+                await asyncio.to_thread(app_session.partial_fit, chunk)
+                chunk.clear()
+
+        if cancel_check():
+            return
+
+        slow_path_plan = app_session.generate_sorting_plan(fast_path_only=False)
+        if slow_path_plan:
+            with self.scoped_move_phase(plan=slow_path_plan):
+                summary = app_session.execute_moves(slow_path_plan)
+            logger.info(
+                f"Targeted Slow-Path AI triage completed for {rel_path}: {summary}"
+            )
+
+    async def _reconciliation_worker(self):
+        """Periodic background reconciliation task executing low-priority directory audits."""
+        logger.info("Background reconciliation task started.")
+        while self._is_running and not self._cancel_event.is_set():
+            try:
+                await asyncio.sleep(self.reconciliation_interval)
+            except asyncio.CancelledError:
+                break
+
+            if not self._is_running or self._cancel_event.is_set():
+                break
+
+            if (
+                self._event_queue is not None
+                and self._event_queue.empty()
+                and not self.is_moving
+            ):
+                try:
+                    await self._run_reconciliation_audit()
+                except Exception as e:
+                    logger.error(
+                        f"Error during periodic background reconciliation: {e}",
+                        exc_info=True,
+                    )
+
+    async def _run_reconciliation_audit(self):
+        """Low-priority directory audit to enqueue any untracked files missed during OS buffer overflows."""
+        if not self.base_dir or not os.path.exists(self.base_dir):
+            return
+
+        def _scan():
+            files = get_files_recursively(self.base_dir)
+            return [f for f in files if not self.should_ignore_path(f)]
+
+        scanned_files = await asyncio.to_thread(_scan)
+        now = time.time()
+        enqueued_count = 0
+
+        for file_path in scanned_files:
+            if self._cancel_event.is_set() or not self._is_running:
+                break
+            norm_p = os.path.normcase(os.path.abspath(file_path))
+            with self._lock:
+                if norm_p in self._active_triage_paths:
+                    continue
+                last_t = self._recent_events.get(norm_p)
+                if last_t is not None and (now - last_t) < self.dedup_window * 2:
+                    continue
+
+            change_event = FileChangeEvent(
+                event_type="reconciliation",
+                file_path=file_path,
+                timestamp=now,
+            )
+            if self.enqueue_event(change_event):
+                enqueued_count += 1
+
+        if enqueued_count > 0:
+            logger.info(
+                f"Reconciliation audit enqueued {enqueued_count} untracked files."
+            )
+
     def start(self):
-        """Start the continuous watchdog daemon and files system observer."""
+        """Start the continuous watchdog daemon, workers, event loop, and file system observer."""
         with self._lock:
             if self._is_running:
                 return
@@ -324,9 +662,15 @@ class ContinuousWatchdogDaemon:
             self._pending_dirty = False
             self._active_move_paths.clear()
             self._cancel_event.clear()
+            self._recent_events.clear()
+            self._active_path_locks.clear()
+            self._active_triage_paths.clear()
 
         logger.info(f"Starting continuous watchdog daemon for: {self.base_dir}")
         print(f"Starting continuous watchdog daemon for: {self.base_dir}")
+
+        # Launch background asyncio event loop & worker pool
+        self._start_pipeline_event_loop()
 
         # Start watchdog observer
         self.observer = Observer()
@@ -334,11 +678,14 @@ class ContinuousWatchdogDaemon:
         self.observer.schedule(handler, self.base_dir, recursive=True)
         self.observer.start()
 
-        # Trigger an initial sorting run on start
-        self.trigger_recalculation()
+        # Trigger initial low-priority reconciliation audit
+        if self._event_loop and self._event_loop.is_running():
+            self._event_loop.call_soon_threadsafe(
+                lambda: asyncio.create_task(self._run_reconciliation_audit())
+            )
 
     def stop(self):
-        """Stop the continuous watchdog daemon and join the observer thread."""
+        """Stop the continuous watchdog daemon, workers, observer, and event loop."""
         with self._lock:
             if not self._is_running:
                 return
@@ -361,6 +708,24 @@ class ContinuousWatchdogDaemon:
                 logger.error(f"Error stopping observer: {e}")
             finally:
                 self.observer = None
+
+        loop = self._event_loop
+        if loop and loop.is_running():
+            loop.call_soon_threadsafe(loop.stop)
+
+        if self._execution_thread and self._execution_thread.is_alive():
+            self._execution_thread.join(timeout=3.0)
+
+        self._event_loop = None
+        self._event_queue = None
+
+        with self._lock:
+            if getattr(self, "_app_session", None):
+                try:
+                    self._app_session.close()
+                except Exception:
+                    pass
+                self._app_session = None
 
         logger.info("Watchdog daemon stopped.")
         print("Watchdog daemon stopped.")
