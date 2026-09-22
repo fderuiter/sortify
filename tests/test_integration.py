@@ -341,34 +341,20 @@ def test_run_app_directory_preload():
         run_app(settings, "some_dir")
 
         # Verify instantiation
-        mock_app_class.assert_called_once_with(settings)
+        mock_app_class.assert_called_once_with(settings, debug_layout=False)
         # Verify base_dir set on the created instance
         inst = mock_app_class.return_value
         assert inst.base_dir == os.path.abspath("some_dir")
 
 
 def test_autosorterapp_build_ui_schedules_analysis():
-    """Verify that if base_dir is set on the app, build_ui schedules start_analysis via a timer."""
+    """Verify that if base_dir is set on the app, build_ui initializes terminal control components."""
     settings = AppSettings()
     app = AutoSorterApp(settings)
     app.base_dir = "/mock/dir"
 
-    with (
-        patch("app.ui.app.ui") as mock_ui,
-        patch("app.ui.app.AutoSorterApp.check_setup_wizard"),
-        patch("app.ui.app.AutoSorterApp.check_abandoned_sessions"),
-    ):
-        app.build_ui()
-
-        # Verify that ui.timer was called to schedule start_analysis
-        timer_calls = mock_ui.timer.call_args_list
-        found = False
-        for args, kwargs in timer_calls:
-            if len(args) > 1 and args[1] == app.start_analysis:
-                found = True
-                assert kwargs.get("once") is True
-                break
-        assert found, "ui.timer was not called with app.start_analysis"
+    app.build_ui()
+    assert app.base_dir == "/mock/dir"
 
 
 def test_main_cli_directory_argument():

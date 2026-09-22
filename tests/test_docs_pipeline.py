@@ -9,6 +9,7 @@ def test_get_handwritten_docs():
     assert "README.md" in docs
     assert "PRIVACY.md" in docs
     assert any("docs/" in d for d in docs)
+    assert all("\\" not in d for d in docs)
     # Ensure generated files are excluded
     assert "docs/api_reference.md" not in docs
     assert "docs/ui.md" not in docs

@@ -575,6 +575,16 @@ def main():
         action="store_true",
         help="Enable visual debug outlines for UI elements in dev mode",
     )
+    parser.add_argument(
+        "--tui",
+        action="store_true",
+        help="Launch full-screen Textual TUI interface",
+    )
+    parser.add_argument(
+        "--gui",
+        action="store_true",
+        help="Force launch graphical web interface",
+    )
 
     subparsers = parser.add_subparsers(dest="subcommand", help="Available subcommands")
 
@@ -695,9 +705,6 @@ def main():
         args.directory = legacy_directory
 
     if getattr(args, "update_snapshots", False) is True:
-        import os
-        import sys
-
         import pytest
 
         print("Regenerating baseline snapshots across all covered views...")
@@ -768,6 +775,12 @@ def main():
         from app.demo import run_demo
 
         run_demo(settings)
+    elif getattr(args, "tui", False) is True or (
+        sys.stdin.isatty() and not getattr(args, "gui", False) and not os.environ.get("FORCE_GUI")
+    ):
+        from app.ui.tui import run_tui
+
+        run_tui(settings, args.directory)
     else:
         from app.ui.app import run_app
 

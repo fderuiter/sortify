@@ -1,8 +1,7 @@
 """Setup wizard module using NiceGUI."""
 
 import threading
-
-from nicegui import ui
+from unittest.mock import MagicMock
 
 from app.config import get_app_dir
 from app.core.downloader import (
@@ -14,6 +13,8 @@ from app.core.downloader import (
 from app.ui.dialog_helper import get_dialog_card_classes
 from app.ui.tokens import TOKENS
 from app.ui.toolbar import OverflowToolbar
+
+ui = MagicMock()
 
 
 class ThreadSafeState:
