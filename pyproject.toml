@@ -33,6 +33,11 @@ smart-autosorter = "app.main:main"
 docs = "scripts.generate_docs:main"
 component-catalog = "app.ui.catalog:main"
 
+[project.optional-dependencies]
+gui = [
+    "nicegui>=2.0.0",
+]
+
 [tool.hatch.build.targets.wheel]
 packages = ["app"]
 

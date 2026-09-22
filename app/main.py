@@ -789,7 +789,15 @@ def main():
 
         run_tui(settings, args.directory)
     else:
-        from app.ui.app import run_app
+        try:
+            from app.ui.app import run_app
+        except ImportError:
+            print(
+                "Error: NiceGUI web interface dependencies are not installed.\n"
+                "To use the graphical user interface, install with optional GUI extra: pip install 'smart-autosorter[gui]'",
+                file=sys.stderr,
+            )
+            sys.exit(1)
 
         debug_layout = getattr(args, "debug_layout", False) is True
         if debug_layout:

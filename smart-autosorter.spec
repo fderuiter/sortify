@@ -205,7 +205,12 @@ if (platform.system().lower() == "windows" or sys.platform == "win32") and "pyte
                     binaries.append((dll_path, 'sqlcipher3'))
 
 is_lite = os.environ.get("LITE_BUILD") == "1"
+is_headless = os.environ.get("HEADLESS_BUILD") == "1" or "--headless" in sys.argv
 excludes = ['tkinter', 'tcl', 'tk', '_tkinter', 'sqlite3', '_sqlite3']
+if is_headless:
+    excludes.extend([
+        'nicegui', 'fastapi', 'uvicorn', 'starlette', 'socketio', 'engineio', 'vbuild'
+    ])
 if is_lite:
     excludes.extend([
         'torch', 'torchvision', 'triton', 'nvidia', 'easyocr', 'scipy',
@@ -275,6 +280,16 @@ def is_prunable_asset(name):
 
 
 # Prevent any standard non-cryptographic sqlite binaries from being bundled
+def is_nicegui_asset(name):
+    if not is_headless:
+        return False
+    name_lower = name.lower().replace('\\', '/')
+    parts = name_lower.split('/')
+    if 'nicegui' in parts or 'nicegui' in name_lower or 'quasar' in name_lower:
+        return True
+    return False
+
+
 def is_standard_sqlite_binary(dest_name, src_path):
     dest_lower = dest_name.lower().replace('\\', '/')
     src_lower = src_path.lower().replace('\\', '/')
@@ -389,7 +404,7 @@ for x in a.binaries:
     dest_lower = dest_name.lower().replace('\\', '/')
     src_lower = src_path.lower().replace('\\', '/')
     
-    if is_tcl_tk_asset(dest_name) or is_prunable_asset(dest_name):
+    if is_tcl_tk_asset(dest_name) or is_prunable_asset(dest_name) or is_nicegui_asset(dest_name) or is_nicegui_asset(src_path):
         continue
         
     # Redirect standard sqlite3.dll to our custom one instead of discarding it to satisfy pefile/dependency requirements
@@ -406,7 +421,9 @@ for x in a.binaries:
     new_binaries.append(x)
 
 a.binaries = new_binaries
-a.datas = [x for x in a.datas if not is_tcl_tk_asset(x[0]) and not is_prunable_asset(x[0])]
+a.datas = [x for x in a.datas if not is_tcl_tk_asset(x[0]) and not is_prunable_asset(x[0]) and not is_nicegui_asset(x[0]) and not is_nicegui_asset(x[1])]
+if is_headless:
+    a.pure = [x for x in a.pure if not is_nicegui_asset(x[0]) and not x[0].startswith("nicegui")]
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 

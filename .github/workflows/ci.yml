@@ -28,7 +28,7 @@ jobs:
 
     - name: Install dependencies
       run: |
-        uv sync --all-groups
+        uv sync --all-groups --extra gui
 
     - name: Run Dependency Audit
       run: |
@@ -70,20 +70,23 @@ jobs:
 
     - name: Install dependencies
       run: |
-        uv sync --all-groups
+        uv sync --all-groups --extra gui
 
     - name: Run MyPy Type Check
       run: |
         uv run mypy app/
 
   build-and-test:
-    name: Build & Test
+    name: Build & Test (${{ matrix.os }} - ${{ matrix.profile }})
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
+        profile: [gui, headless]
     runs-on: ${{ matrix.os }}
     env:
       PYTHON_KEYRING_BACKEND: keyring.backends.fail.Keyring
+      HEADLESS_BUILD: ${{ matrix.profile == 'headless' && '1' || '0' }}
     steps:
     - uses: actions/checkout@v4
 
@@ -98,7 +101,13 @@ jobs:
       with:
         python-version: "3.12"
 
-    - name: Install dependencies
+    - name: Install dependencies (GUI)
+      if: matrix.profile == 'gui'
+      run: |
+        uv sync --all-groups --extra gui
+
+    - name: Install dependencies (Headless)
+      if: matrix.profile == 'headless'
       run: |
         uv sync --all-groups
 
@@ -178,10 +187,20 @@ jobs:
           coverage.xml
         retention-days: 14
 
-    - name: Build executable (Lite)
-      if: matrix.os == 'windows-latest'
+    - name: Build executable (Lite GUI)
+      if: matrix.os == 'windows-latest' && matrix.profile == 'gui'
       run: |
         uv run python scripts/build.py --lite
+
+    - name: Build executable (Lite Headless)
+      if: matrix.os == 'windows-latest' && matrix.profile == 'headless'
+      run: |
+        uv run python scripts/build.py --lite --headless
+
+    - name: Build executable (Headless Linux Validation)
+      if: matrix.os == 'ubuntu-latest' && matrix.profile == 'headless'
+      run: |
+        uv run python scripts/build.py --lite --headless
 
     - name: Verify compiled executable (Windows Smoke Test)
       if: matrix.os == 'windows-latest'
@@ -239,7 +258,7 @@ jobs:
 
     - name: Install dependencies
       run: |
-        uv sync --all-groups
+        uv sync --all-groups --extra gui
 
     - name: Deploy Documentation
       if: github.ref == 'refs/heads/main'
@@ -275,7 +294,7 @@ jobs:
 
     - name: Install dependencies
       run: |
-        uv sync --all-groups
+        uv sync --all-groups --extra gui
 
     - name: Heavy ML and Integration Tests
       shell: bash

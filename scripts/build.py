@@ -448,6 +448,14 @@ def main():
         os.environ["CPU_BUILD"] = "1"
         print("CPU-only build profile enabled.")
 
+    is_headless = "--headless" in sys.argv or os.environ.get("HEADLESS_BUILD") == "1"
+    if "--headless" in sys.argv:
+        sys.argv.remove("--headless")
+        os.environ["HEADLESS_BUILD"] = "1"
+        print("Headless build profile enabled. Web UI and NiceGUI assets will be excluded.")
+    elif is_headless:
+        print("Headless build profile enabled via HEADLESS_BUILD environment variable. Web UI and NiceGUI assets will be excluded.")
+
     is_lite = "--lite" in sys.argv
     if is_lite:
         sys.argv.remove("--lite")
