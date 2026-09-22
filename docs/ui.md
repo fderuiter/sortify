@@ -26,6 +26,10 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.ui.help_modal
 
+## `app.ui.report_helper`
+
+::: app.ui.report_helper
+
 ## `app.ui.settings`
 
 ::: app.ui.settings
