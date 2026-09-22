@@ -1,8 +1,8 @@
 """Cryptographic management for envelope encryption."""
 
 import hashlib
+import json
 import os
-import pickle
 import struct
 from typing import Any
 
@@ -491,6 +491,17 @@ def zero_vector_buffer(target: Any) -> None:
             zero_vector_buffer(v)
 
 
+def _json_default(obj: Any) -> Any:
+    """JSON default encoder helper for converting non-primitive Python types to JSON lists."""
+    if isinstance(obj, (set, tuple)):
+        return list(obj)
+    if hasattr(obj, "to_list") and callable(obj.to_list):
+        return obj.to_list()
+    if hasattr(obj, "tolist") and callable(obj.tolist):
+        return obj.tolist()
+    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
+
+
 class EphemeralSessionCrypto:
     """Manages ephemeral session encryption for inter-process communication (IPC)."""
 
@@ -507,15 +518,23 @@ class EphemeralSessionCrypto:
         """Serialize and encrypt a data payload."""
         if self._cipher is None:
             raise ValueError("Ephemeral session key has been purged")
-        serialized = pickle.dumps(payload, protocol=pickle.HIGHEST_PROTOCOL)
+        serialized = json.dumps(payload, default=_json_default).encode("utf-8")
         return self._cipher.encrypt(serialized)
 
     def decrypt_payload(self, encrypted_bytes: bytes) -> Any:
         """Decrypt and deserialize a data payload."""
         if self._cipher is None:
             raise ValueError("Ephemeral session key has been purged")
-        decrypted = self._cipher.decrypt(encrypted_bytes)
-        return pickle.loads(decrypted)
+        decrypted_bytes = self._cipher.decrypt(encrypted_bytes)
+        try:
+            decrypted_str = decrypted_bytes.decode("utf-8")
+        except UnicodeDecodeError as e:
+            raise json.JSONDecodeError(
+                f"Invalid UTF-8 sequence for JSON payload: {e}",
+                doc=decrypted_bytes.decode("utf-8", errors="replace"),
+                pos=0,
+            ) from e
+        return json.loads(decrypted_str)
 
     def purge(self) -> None:
         """Purge the session key."""
@@ -530,7 +549,7 @@ def encrypt_ipc_payload(payload: Any, session_key: bytes | str) -> bytes:
     if isinstance(session_key, str):
         session_key = session_key.encode("utf-8")
     cipher = Fernet(session_key)
-    serialized = pickle.dumps(payload, protocol=pickle.HIGHEST_PROTOCOL)
+    serialized = json.dumps(payload, default=_json_default).encode("utf-8")
     return cipher.encrypt(serialized)
 
 
@@ -541,6 +560,14 @@ def decrypt_ipc_payload(encrypted_bytes: bytes, session_key: bytes | str) -> Any
     if isinstance(session_key, str):
         session_key = session_key.encode("utf-8")
     cipher = Fernet(session_key)
-    decrypted = cipher.decrypt(encrypted_bytes)
-    return pickle.loads(decrypted)
+    decrypted_bytes = cipher.decrypt(encrypted_bytes)
+    try:
+        decrypted_str = decrypted_bytes.decode("utf-8")
+    except UnicodeDecodeError as e:
+        raise json.JSONDecodeError(
+            f"Invalid UTF-8 sequence for JSON payload: {e}",
+            doc=decrypted_bytes.decode("utf-8", errors="replace"),
+            pos=0,
+        ) from e
+    return json.loads(decrypted_str)
 
