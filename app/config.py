@@ -554,19 +554,27 @@ class AppSettings:
             self._validation_errors = errors
             return False
 
-    @classmethod
-    def add_observer(cls, key: str, callback: Callable) -> None:
+    def add_observer(self_or_cls, key: str, callback: Callable) -> None:
         """Register a callback to be notified when setting `key` changes."""
-        with cls._class_observer_lock:
-            if callback not in cls._class_observers[key]:
-                cls._class_observers[key].append(callback)
+        if isinstance(self_or_cls, type):
+            with self_or_cls._class_observer_lock:
+                if callback not in self_or_cls._class_observers[key]:
+                    self_or_cls._class_observers[key].append(callback)
+        else:
+            with self_or_cls._observer_lock:
+                if callback not in self_or_cls._observers[key]:
+                    self_or_cls._observers[key].append(callback)
 
-    @classmethod
-    def remove_observer(cls, key: str, callback: Callable) -> None:
+    def remove_observer(self_or_cls, key: str, callback: Callable) -> None:
         """Unregister a setting change callback."""
-        with cls._class_observer_lock:
-            if callback in cls._class_observers[key]:
-                cls._class_observers[key].remove(callback)
+        if isinstance(self_or_cls, type):
+            with self_or_cls._class_observer_lock:
+                if callback in self_or_cls._class_observers[key]:
+                    self_or_cls._class_observers[key].remove(callback)
+        else:
+            with self_or_cls._observer_lock:
+                if callback in self_or_cls._observers[key]:
+                    self_or_cls._observers[key].remove(callback)
 
     def _notify_observers(self, key: str, value: Any) -> None:
         """Notify registered setting change observers for `key`."""
