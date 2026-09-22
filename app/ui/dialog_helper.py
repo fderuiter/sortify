@@ -5,9 +5,17 @@ import logging
 import sys
 
 from app.core.env_helper import run_background_process
+from app.ui.report_helper import serve_or_download_report, show_file_error_dialog
 from app.ui.tokens import TOKENS
 
 logger = logging.getLogger(__name__)
+
+__all__ = [
+    "ask_directory_async",
+    "get_dialog_card_classes",
+    "serve_or_download_report",
+    "show_file_error_dialog",
+]
 
 # Standardized responsive fluid layout helpers re-exported from tokens
 STANDARD_DIALOG_CARD_MD = TOKENS.COMPONENTS.DIALOG_CARD_MD
