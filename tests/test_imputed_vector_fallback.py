@@ -69,8 +69,10 @@ def test_imputed_vector_fallback_partial_missing():
         )
 
         # Verify a valid plan was generated
+        from app.core.analyzer import SortingPlan
+
         assert plan is not None
-        assert isinstance(plan, dict)
+        assert isinstance(plan, (SortingPlan, dict))
 
 
 def test_imputed_vector_fallback_100_percent_missing():

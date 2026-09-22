@@ -57,8 +57,10 @@ def test_multiprocess_clustering_execution():
         pre_fetched_vectors=pre_fetched_vectors,
     )
 
+    from app.core.analyzer import SortingPlan
+
     assert plan is not None
-    assert isinstance(plan, dict)
+    assert isinstance(plan, (SortingPlan, dict))
 
     # Verify process isolation
     assert hasattr(strategy, "_last_worker_pid")

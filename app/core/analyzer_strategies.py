@@ -620,8 +620,11 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
             self._vector_map = {}
 
         try:
+            from app.core.analyzer import SortingPlan, _validate_sorting_plan_nodes
+
             plan = self._cluster_recursive(filenames, documents, depth=1)
-            return plan, self._error
+            validated_plan = _validate_sorting_plan_nodes(plan)
+            return SortingPlan(plan=validated_plan), self._error
         finally:
             zero_vector_buffer(vector_buffers)
             if getattr(self, "_vector_map", None):
@@ -805,7 +808,10 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
             self._last_worker_pid = result.get("worker_pid")
             self._last_worker_niceness = result.get("worker_niceness")
             self._last_worker_thread_limit = result.get("worker_thread_limit")
-            return result["plan"], result["error"]
+            from app.core.analyzer import SortingPlan, _validate_sorting_plan_nodes
+
+            validated_p = _validate_sorting_plan_nodes(result["plan"])
+            return SortingPlan(plan=validated_p), result["error"]
         else:
             err_msg = result.get("message") if isinstance(result, dict) else "Unknown error"
             logging.error(
@@ -1375,7 +1381,12 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                 new_plan["Review Required"] = {}
             new_plan["Review Required"].update(lc_files)
 
-        return new_plan, error
+        from app.core.analyzer import SortingPlan, _validate_sorting_plan_nodes
+
+        validated_gen_plan = _validate_sorting_plan_nodes(
+            new_plan.model_dump() if hasattr(new_plan, "model_dump") else new_plan
+        )
+        return SortingPlan(plan=validated_gen_plan), error
 
     def __init__(self, model_path: str = None):
         self._generator = None
