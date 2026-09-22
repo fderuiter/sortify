@@ -272,7 +272,7 @@ def build_corpus_generator(
                     )
                     for item in batch
                 }
-                timeout = settings.VISUAL_TIMEOUT if settings else None
+                timeout = getattr(settings, "VISUAL_TIMEOUT", None) if settings else None
                 for item in batch:
                     if cancel_check and cancel_check():
                         # Attempt to cancel remaining futures in this batch

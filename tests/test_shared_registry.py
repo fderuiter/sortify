@@ -398,23 +398,18 @@ def test_pytorch_thread_limits_selection(monkeypatch):
 
 def test_no_dns_during_import():
     """Verify that no DNS or hostname resolution runs during the module import phase."""
-    import importlib
+    import subprocess
     import sys
 
-    # Remove from sys.modules if already imported to force a fresh reload/import
-    if "app.core.shared_registry" in sys.modules:
-        del sys.modules["app.core.shared_registry"]
-
-    mock_gethostname = MagicMock(
-        side_effect=RuntimeError(
-            "socket.gethostname() should not be called at import time!"
-        )
-    )
-    with patch("socket.gethostname", mock_gethostname):
-        # Importing should not trigger the gethostname call
-        import app.core.shared_registry
-
-        importlib.reload(app.core.shared_registry)
+    cmd = [
+        sys.executable,
+        "-c",
+        "import socket, unittest.mock as mock; "
+        "socket.gethostname = mock.MagicMock(side_effect=RuntimeError('socket.gethostname should not be called at import time')); "
+        "import app.core.shared_registry",
+    ]
+    res = subprocess.run(cmd, capture_output=True, text=True)
+    assert res.returncode == 0, f"Import triggered DNS / socket call:\n{res.stderr}"
 
 
 def test_sandbox_address_resolution_blocks_external():

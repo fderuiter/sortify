@@ -293,7 +293,10 @@ class ContinuousWatchdogDaemon:
                 return True
 
         # Also ignore any temporary folder/session folders
-        if "autosorter_sessions" in norm_path:
+        from app.core.path_utils import get_session_base_dir
+
+        session_base = get_session_base_dir()
+        if session_base.name in norm_path or str(session_base) in norm_path:
             return True
 
         # Suffix matching on lowercase file extensions using IGNORED_EXTENSIONS configuration
@@ -408,12 +411,13 @@ class ContinuousWatchdogDaemon:
                 return
             self._first_event_time = None
 
+            from app.core.shared_registry import ContextPropagatingThread
+
             # Start a background execution thread for sorting
             # (Ensures we don't block the timer thread or watchdog event handling)
-            thread = threading.Thread(
-                target=self._run_sorting_sync, args=(cancel_event,)
+            thread = ContextPropagatingThread(
+                target=self._run_sorting_sync, args=(cancel_event,), daemon=True
             )
-            thread.daemon = True
             thread.start()
 
     def _run_sorting_sync(self, cancel_event):
