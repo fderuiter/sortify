@@ -777,18 +777,6 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
                 process.join(timeout=1.0)
 
             try:
-                input_queue.cancel_join_thread()
-                input_queue.close()
-            except Exception:
-                pass
-
-            try:
-                output_queue.cancel_join_thread()
-                output_queue.close()
-            except Exception:
-                pass
-
-            try:
                 process.close()
             except Exception:
                 pass

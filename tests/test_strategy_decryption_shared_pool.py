@@ -9,7 +9,7 @@ from app.core.analyzer_strategies import (
     IsolatedStrategyMixin,
     get_decryption_executor,
 )
-from app.core.shared_registry import block_external_network
+from app.core.shared_registry import SharedWorkerPool, block_external_network
 
 
 class DummyStrategy(IsolatedStrategyMixin):
