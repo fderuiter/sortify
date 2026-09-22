@@ -299,6 +299,28 @@ LANGUAGE_CHAR_MAP = {
 }
 
 
+def cooperative_join(target, timeout=1.0):
+    """Join a thread or process blockingly with cooperative GIL yielding to ensure complete termination."""
+    import time
+
+    start_time = time.time()
+    join_fn = getattr(target, "join", None)
+    is_alive_fn = getattr(target, "is_alive", None)
+
+    if join_fn and is_alive_fn:
+        while is_alive_fn() and (time.time() - start_time < timeout):
+            try:
+                join_fn(timeout=0.05)
+            except Exception:
+                break
+            time.sleep(0.01)
+    elif join_fn:
+        try:
+            join_fn(timeout=timeout)
+        except Exception:
+            pass
+
+
 @contextmanager
 def block_external_network():
     """Block outgoing non-localhost network traffic during naming generation."""
@@ -329,81 +351,113 @@ def recursive_kmeans_worker_main(
     import os
     import sys
 
-    is_ipc = hasattr(filenames_or_input_queue, "get")
+    is_pipe = hasattr(filenames_or_input_queue, "recv_bytes")
+    is_ipc = is_pipe or hasattr(filenames_or_input_queue, "get")
 
     out_q = None
+    conn = None
     key = None
+    strategy = None
+    vector_buffers = []
 
-    if is_ipc:
-        input_q = filenames_or_input_queue
-        out_q = documents_or_output_queue
-        key = max_folders_or_key
-        raw_encrypted = input_q.get()
-        payload = decrypt_ipc_payload(raw_encrypted, key)
+    try:
+        if is_pipe:
+            conn = filenames_or_input_queue
+            key = documents_or_output_queue if session_key is None else session_key
+            try:
+                raw_encrypted = conn.recv_bytes()
+                payload = decrypt_ipc_payload(raw_encrypted, key)
+            except Exception as e:
+                err_data = {"status": "error", "message": f"Failed receiving IPC payload: {e}"}
+                try:
+                    if key is not None:
+                        conn.send_bytes(encrypt_ipc_payload(err_data, key))
+                    else:
+                        conn.send(err_data)
+                except Exception:
+                    pass
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+                if is_ipc or is_pipe:
+                    os._exit(0)
+                return
 
-        filenames = payload["filenames"]
-        documents = payload["documents"]
-        max_folders = payload["max_folders"]
-        stop_words_data = payload.get("stop_words")
-        if isinstance(stop_words_data, (list, tuple)):
-            stop_words = set(stop_words_data)
+            filenames = payload["filenames"]
+            documents = payload["documents"]
+            max_folders = payload["max_folders"]
+            stop_words_data = payload.get("stop_words")
+            if isinstance(stop_words_data, (list, tuple)):
+                stop_words = set(stop_words_data)
+            else:
+                stop_words = stop_words_data or set()
+            max_depth = payload.get("max_depth", 5)
+            max_features = payload.get("max_features", 3)
+            pre_fetched_vectors = payload.get("pre_fetched_vectors")
+            strategy_class_name = payload.get("strategy_class_name", "RecursiveKMeansStrategy")
+            thread_limit = payload.get("thread_limit")
+            pre_fetched_corpus = payload.get("pre_fetched_corpus")
+        elif is_ipc:
+            input_q = filenames_or_input_queue
+            out_q = documents_or_output_queue
+            key = max_folders_or_key if session_key is None else session_key
+            raw_encrypted = input_q.get()
+            payload = decrypt_ipc_payload(raw_encrypted, key)
+
+            filenames = payload["filenames"]
+            documents = payload["documents"]
+            max_folders = payload["max_folders"]
+            stop_words_data = payload.get("stop_words")
+            if isinstance(stop_words_data, (list, tuple)):
+                stop_words = set(stop_words_data)
+            else:
+                stop_words = stop_words_data or set()
+            max_depth = payload.get("max_depth", 5)
+            max_features = payload.get("max_features", 3)
+            pre_fetched_vectors = payload.get("pre_fetched_vectors")
+            strategy_class_name = payload.get("strategy_class_name", "RecursiveKMeansStrategy")
+            thread_limit = payload.get("thread_limit")
+            pre_fetched_corpus = payload.get("pre_fetched_corpus")
         else:
-            stop_words = stop_words_data or set()
-        max_depth = payload.get("max_depth", 5)
-        max_features = payload.get("max_features", 3)
-        pre_fetched_vectors = payload.get("pre_fetched_vectors")
-        strategy_class_name = payload.get("strategy_class_name", "RecursiveKMeansStrategy")
-        thread_limit = payload.get("thread_limit")
-        pre_fetched_corpus = payload.get("pre_fetched_corpus")
-    else:
-        filenames = filenames_or_input_queue
-        documents = documents_or_output_queue
-        max_folders = max_folders_or_key
-        out_q = output_queue
-        key = session_key
+            filenames = filenames_or_input_queue
+            documents = documents_or_output_queue
+            max_folders = max_folders_or_key
+            out_q = output_queue
+            key = session_key
 
-    # 1. Respect configured CPU thread limits from global registry
-    if thread_limit is None:
+        # 1. Respect configured CPU thread limits from global registry
+        if thread_limit is None:
+            try:
+                from app.core.shared_registry import SharedModelRegistry
+
+                thread_limit = SharedModelRegistry.get_instance().get_thread_limit()
+            except Exception:
+                thread_limit = 2
+
+        # Set thread limits for all math/vector libraries
+        limit_str = str(thread_limit)
+        os.environ["OMP_NUM_THREADS"] = limit_str
+        os.environ["MKL_NUM_THREADS"] = limit_str
+        os.environ["OPENBLAS_NUM_THREADS"] = limit_str
+        os.environ["VECLIB_MAXIMUM_THREADS"] = limit_str
+        os.environ["NUMEXPR_NUM_THREADS"] = limit_str
+
+        if "torch" in sys.modules:
+            try:
+                sys.modules["torch"].set_num_threads(thread_limit)
+            except Exception:
+                pass
+
+        # 2. Priority management
         try:
-            from app.core.shared_registry import SharedModelRegistry
+            from app.core.semantic_embeddings import set_low_priority
 
-            thread_limit = SharedModelRegistry.get_instance().get_thread_limit()
-        except Exception:
-            thread_limit = 2
-
-    # Set thread limits for all math/vector libraries
-    limit_str = str(thread_limit)
-    os.environ["OMP_NUM_THREADS"] = limit_str
-    os.environ["MKL_NUM_THREADS"] = limit_str
-    os.environ["OPENBLAS_NUM_THREADS"] = limit_str
-    os.environ["VECLIB_MAXIMUM_THREADS"] = limit_str
-    os.environ["NUMEXPR_NUM_THREADS"] = limit_str
-
-    try:
-        import torch
-
-        torch.set_num_threads(thread_limit)
-    except Exception:
-        pass
-
-    # 2. Priority management
-    try:
-        from app.core.semantic_embeddings import set_low_priority
-
-        set_low_priority()
-    except Exception:
-        pass
-
-    if sys.platform != "win32":
-        try:
-            os.nice(19)
+            set_low_priority()
         except Exception:
             pass
 
-    # 3. Create the appropriate strategy instance and execute calculations
-    strategy = None
-    vector_buffers = []
-    try:
+        # 3. Create the appropriate strategy instance and execute calculations
         strategy_cls = globals().get(strategy_class_name)
         if strategy_cls is not None:
             strategy = strategy_cls()
@@ -450,13 +504,29 @@ def recursive_kmeans_worker_main(
             "worker_niceness": worker_niceness,
             "worker_thread_limit": thread_limit,
         }
-        if key is not None and out_q is not None:
+        if conn is not None:
+            if key is not None:
+                conn.send_bytes(encrypt_ipc_payload(res_data, key))
+            else:
+                conn.send(res_data)
+            try:
+                conn.close()
+            except Exception:
+                pass
+        elif key is not None and out_q is not None:
             out_q.put(encrypt_ipc_payload(res_data, key))
-        elif out_q is not None:
-            out_q.put(res_data)
-        if out_q is not None:
             try:
                 out_q.close()
+                if hasattr(out_q, "join_thread"):
+                    out_q.join_thread()
+            except Exception:
+                pass
+        elif out_q is not None:
+            out_q.put(res_data)
+            try:
+                out_q.close()
+                if hasattr(out_q, "join_thread"):
+                    out_q.join_thread()
             except Exception:
                 pass
     except Exception as e:
@@ -466,25 +536,57 @@ def recursive_kmeans_worker_main(
             f"Error inside clustering child process: {e}\n{traceback.format_exc()}"
         )
         err_data = {"status": "error", "message": str(e)}
-        if key is not None and out_q is not None:
+        if conn is not None:
+            if key is not None:
+                try:
+                    conn.send_bytes(encrypt_ipc_payload(err_data, key))
+                except Exception:
+                    pass
+            else:
+                try:
+                    conn.send(err_data)
+                except Exception:
+                    pass
+            try:
+                conn.close()
+            except Exception:
+                pass
+        elif key is not None and out_q is not None:
             out_q.put(encrypt_ipc_payload(err_data, key))
-        elif out_q is not None:
-            out_q.put(err_data)
-        if out_q is not None:
             try:
                 out_q.close()
+                if hasattr(out_q, "join_thread"):
+                    out_q.join_thread()
+            except Exception:
+                pass
+        elif out_q is not None:
+            out_q.put(err_data)
+            try:
+                out_q.close()
+                if hasattr(out_q, "join_thread"):
+                    out_q.join_thread()
             except Exception:
                 pass
     finally:
         # Guarantee memory zeroing of vector byte buffers on completion or failure
-        zero_vector_buffer(vector_buffers)
-        if strategy is not None:
-            strategy.pre_fetched_corpus = None
-            if hasattr(strategy, "_vector_map") and strategy._vector_map:
-                zero_vector_buffer(strategy._vector_map)
-                strategy._vector_map.clear()
+        try:
+            zero_vector_buffer(vector_buffers)
+        except Exception:
+            pass
+        try:
+            if strategy is not None:
+                strategy.pre_fetched_corpus = None
+                if hasattr(strategy, "_vector_map") and strategy._vector_map:
+                    zero_vector_buffer(strategy._vector_map)
+                    strategy._vector_map.clear()
+        except Exception:
+            pass
         pre_fetched_corpus = None
         key = None
+        if is_ipc or is_pipe:
+            import os
+
+            os._exit(0)
 
 
 class ClusteringStrategy(Protocol):
@@ -595,8 +697,6 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
 
         import logging
         import multiprocessing
-        import queue
-        import time
 
         # Retrieve the thread limit from the parent process global registry
         try:
@@ -607,8 +707,7 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
             parent_thread_limit = None
 
         ctx = multiprocessing.get_context("spawn")
-        input_queue = ctx.Queue()
-        output_queue = ctx.Queue()
+        parent_conn, child_conn = ctx.Pipe(duplex=True)
 
         strategy_class_name = self.__class__.__name__
 
@@ -626,16 +725,17 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
         }
 
         encrypted_input = session_crypto.encrypt_payload(payload)
-        input_queue.put(encrypted_input)
 
         process = ctx.Process(
             target=recursive_kmeans_worker_main,
-            args=(input_queue, output_queue, session_key),
+            args=(child_conn, session_key),
         )
         process.start()
 
+        # Send payload through parent_conn
+        parent_conn.send_bytes(encrypted_input)
+
         raw_result = None
-        poll_interval = 0.01
 
         try:
             while True:
@@ -651,20 +751,14 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
                             process.join(timeout=0.1)
                     return {}, 0.0
 
-                try:
-                    raw_result = output_queue.get_nowait()
+                if parent_conn.poll(0.01):
+                    raw_result = parent_conn.recv_bytes()
                     break
-                except queue.Empty:
-                    pass
 
                 if not process.is_alive():
-                    try:
-                        raw_result = output_queue.get(timeout=1.0)
-                    except queue.Empty:
-                        pass
+                    if parent_conn.poll(0.05):
+                        raw_result = parent_conn.recv_bytes()
                     break
-
-                time.sleep(poll_interval)
 
             if isinstance(raw_result, bytes):
                 try:
@@ -684,24 +778,30 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
                 self._vector_map.clear()
             session_crypto.purge()
 
+            try:
+                parent_conn.close()
+            except Exception:
+                pass
+
+            try:
+                child_conn.close()
+            except Exception:
+                pass
+
             if process.is_alive():
-                process.terminate()
-                process.join(timeout=2.0)
+                join_timeout = 5.0 if raw_result is not None else 1.0
+                cooperative_join(process, timeout=join_timeout)
                 if process.is_alive():
-                    process.kill()
-                    process.join(timeout=0.1)
+                    process.terminate()
+                    cooperative_join(process, timeout=0.5)
+                    if process.is_alive():
+                        process.kill()
+                        cooperative_join(process, timeout=0.2)
             else:
-                process.join(timeout=1.0)
-
-            try:
-                input_queue.close()
-            except Exception:
-                pass
-
-            try:
-                output_queue.close()
-            except Exception:
-                pass
+                try:
+                    process.join(timeout=0.1)
+                except Exception:
+                    pass
 
             try:
                 process.close()
@@ -1085,21 +1185,6 @@ def cooperative_queue_get(q, timeout=8.0):
             pass
         time.sleep(0.01)  # Cooperative sleep to yield control to other threads / GIL
     raise queue.Empty
-
-
-def cooperative_join(target, timeout=1.0):
-    """Join a thread or process blockingly with cooperative GIL yielding to ensure complete termination."""
-    import time
-
-    start_time = time.time()
-    is_alive_fn = getattr(target, "is_alive", None)
-    if not is_alive_fn:
-        if hasattr(target, "join"):
-            target.join(timeout)
-        return
-
-    while is_alive_fn() and (time.time() - start_time < timeout):
-        time.sleep(0.01)
 
 
 class GenerativeNamingStrategy(RecursiveKMeansStrategy):

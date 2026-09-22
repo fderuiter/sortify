@@ -112,21 +112,98 @@ def test_db_decryption_uses_shared_worker_pool(tmp_path):
     from app.core.db_worker import DBWorker
 
     db_worker = DBWorker()
-    db_path = tmp_path / "test_docs.db"
-    db = Database(db_path, worker=db_worker)
+    try:
+        db_path = tmp_path / "test_docs.db"
+        db = Database(db_path, worker=db_worker)
 
-    base_dir = str(tmp_path / "test_base")
-    os.makedirs(base_dir, exist_ok=True)
+        base_dir = str(tmp_path / "test_base")
+        os.makedirs(base_dir, exist_ok=True)
 
-    # Add a document to db
-    db.upsert_document(
-        base_dir=base_dir,
-        filepath="doc1.txt",
-        file_hash="hash123",
-        extracted_text="Hello World Decryption Test",
-    )
+        # Add a document to db
+        db.upsert_document(
+            base_dir=base_dir,
+            filepath="doc1.txt",
+            file_hash="hash123",
+            extracted_text="Hello World Decryption Test",
+        )
 
-    docs = db.get_all_documents(base_dir)
-    assert len(docs) == 1
-    assert docs[0][0] == "doc1.txt"
-    assert docs[0][1] == "Hello World Decryption Test"
+        docs = db.get_all_documents(base_dir)
+        assert len(docs) == 1
+        assert docs[0][0] == "doc1.txt"
+        assert docs[0][1] == "Hello World Decryption Test"
+    finally:
+        db_worker.stop()
+
+
+def test_reentrant_submit_and_map_prevent_deadlock():
+    """Verify that re-entrant submit and map calls from inside pool threads execute inline without deadlocking."""
+    pool = SharedWorkerPool.get_instance(max_workers=2)
+
+    def inner_task(val):
+        return val * 10
+
+    def outer_task(val):
+        fut = pool.submit(inner_task, val)
+        sub_mapped = list(pool.map(inner_task, [val + 1]))
+        return fut.result() + sub_mapped[0]
+
+    # Submit enough outer tasks to fill all pool worker threads
+    outer_futs = [pool.submit(outer_task, i) for i in range(5)]
+    results = [f.result(timeout=5.0) for f in outer_futs]
+
+    assert results == [i * 10 + (i + 1) * 10 for i in range(5)]
+
+
+def test_db_worker_reentrant_shared_worker_pool_deadlock_prevention():
+    """Verify DBWorker tasks executing on behalf of SharedWorkerPool worker threads execute nested pool operations inline without deadlocking."""
+    from app.core.db_worker import DBWorker
+
+    pool = SharedWorkerPool.get_instance(max_workers=2)
+    db_worker = DBWorker()
+
+    try:
+        def inner_task(val):
+            return val * 10
+
+        def db_task(val):
+            return list(pool.map(inner_task, [val]))
+
+        def outer_task(val):
+            return db_worker.execute_write(db_task, val)
+
+        outer_futs = [pool.submit(outer_task, i) for i in range(4)]
+        results = [f.result(timeout=5.0) for f in outer_futs]
+
+        assert results == [[i * 10] for i in range(4)]
+    finally:
+        db_worker.stop()
+
+
+def test_non_main_thread_shared_worker_pool_deadlock_prevention():
+    """Verify tasks submitted to SharedWorkerPool from background threads execute inline without deadlocking."""
+    import threading
+
+    pool = SharedWorkerPool.get_instance(max_workers=2)
+    bg_results = []
+    exception_holder = []
+
+    def bg_thread_worker():
+        try:
+            res = list(pool.map(lambda x: x * 5, range(3)))
+            bg_results.append(res)
+        except Exception as e:
+            exception_holder.append(e)
+
+    threads = [threading.Thread(target=bg_thread_worker) for _ in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=5.0)
+
+    assert not exception_holder, f"Exception in background thread: {exception_holder}"
+    assert len(bg_results) == 4
+    assert all(res == [0, 5, 10] for res in bg_results)
+
+
+
+

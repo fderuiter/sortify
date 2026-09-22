@@ -15,7 +15,9 @@ class DBWorker:
         self._lock = threading.Lock()
         from app.core.shared_registry import ContextPropagatingThread
 
-        self.thread = ContextPropagatingThread(target=self._run, daemon=True)
+        self.thread = ContextPropagatingThread(
+            target=self._run, daemon=True, name="DBWorkerThread"
+        )
         self.thread.start()
 
     def _run(self):
@@ -28,9 +30,22 @@ class DBWorker:
             pass
 
         while True:
-            func, args, kwargs, result_q = self.q.get()
-            if func is None:
+            item = self.q.get()
+            if item[0] is None:
                 break
+            func, args, kwargs, result_q = item[:4]
+            in_pool = item[4] if len(item) > 4 else False
+
+            was_in_pool = False
+            try:
+                from app.core.shared_registry import _thread_local
+
+                was_in_pool = getattr(_thread_local, "in_shared_worker_pool", False)
+                if in_pool or threading.current_thread().name.startswith("DBWorker") or threading.current_thread().name.startswith("GlobalSharedWorker"):
+                    _thread_local.in_shared_worker_pool = True
+            except Exception:
+                pass
+
             try:
                 result = func(*args, **kwargs)
                 if result_q is not None:
@@ -39,6 +54,12 @@ class DBWorker:
                 if result_q is not None:
                     result_q.put(("error", e))
             finally:
+                try:
+                    from app.core.shared_registry import _thread_local
+
+                    _thread_local.in_shared_worker_pool = was_in_pool
+                except Exception:
+                    pass
                 self.q.task_done()
 
         # Ensure all database connections opened by this worker thread are closed
@@ -54,7 +75,18 @@ class DBWorker:
                     ("error", RuntimeError("Database worker has been stopped"))
                 )
                 return result_q
-            self.q.put((func, args, kwargs, result_q))
+            in_pool = False
+            try:
+                from app.core.shared_registry import _thread_local
+
+                in_pool = (
+                    getattr(_thread_local, "in_shared_worker_pool", False)
+                    or threading.current_thread().name.startswith("GlobalSharedWorker")
+                    or threading.current_thread().name.startswith("DBWorker")
+                )
+            except Exception:
+                pass
+            self.q.put((func, args, kwargs, result_q, in_pool))
         return result_q
 
     def execute_write(self, func, *args, **kwargs):
@@ -70,7 +102,18 @@ class DBWorker:
         with self._lock:
             if self._stopped:
                 return
-            self.q.put((func, args, kwargs, None))
+            in_pool = False
+            try:
+                from app.core.shared_registry import _thread_local
+
+                in_pool = (
+                    getattr(_thread_local, "in_shared_worker_pool", False)
+                    or threading.current_thread().name.startswith("GlobalSharedWorker")
+                    or threading.current_thread().name.startswith("DBWorker")
+                )
+            except Exception:
+                pass
+            self.q.put((func, args, kwargs, None, in_pool))
 
     def stop(self):
         """Gracefully stop the worker thread and wait for it to finish."""

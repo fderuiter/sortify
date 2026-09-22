@@ -15,6 +15,23 @@ GOLDEN_DIR = os.path.join(BASE_DIR, "sandbox", "dataset_golden")
 
 def reset_sandbox():
     """Restores the sandbox dataset to its original state from the golden dataset."""
+    try:
+        from app.core.db_conn import clear_connection_cache
+
+        clear_connection_cache(only_current_and_inactive=False)
+    except Exception:
+        pass
+
+    db_path = os.path.join(SANDBOX_DIR, "sandbox.db")
+    try:
+        from app.core.path_utils import resolve_db_crypto
+
+        crypto = resolve_db_crypto(db_path)
+        if crypto.isolated_key_path.exists():
+            crypto.isolated_key_path.unlink()
+    except Exception:
+        pass
+
     if os.path.exists(SANDBOX_DIR):
         shutil.rmtree(SANDBOX_DIR)
     shutil.copytree(GOLDEN_DIR, SANDBOX_DIR)
@@ -49,39 +66,58 @@ def analyze_all(json_output=False):
     from app.core.db_worker import DBWorker
     from app.core.extractor import build_corpus_generator
 
-    db_worker = DBWorker()
-    db_path = os.path.join(SANDBOX_DIR, "sandbox.db")
-    db = Database(db_path, db_worker)
+    analyzer = None
+    try:
+        db_worker = DBWorker()
+        db_path = os.path.join(SANDBOX_DIR, "sandbox.db")
+        db = Database(db_path, db_worker)
 
-    analyzer = IncrementalAnalyzer(
-        max_folders=MockSettings.MAX_FOLDERS, stop_words=MockSettings.STOP_WORDS, db=db
-    )
+        analyzer = IncrementalAnalyzer(
+            max_folders=MockSettings.MAX_FOLDERS, stop_words=MockSettings.STOP_WORDS, db=db
+        )
 
-    def progress_callback():
-        print("Progress update: File extraction complete.", file=sys.stderr)
+        def progress_callback():
+            print("Progress update: File extraction complete.", file=sys.stderr)
 
-    items = [
-        f
-        for f in os.listdir(SANDBOX_DIR)
-        if os.path.isfile(os.path.join(SANDBOX_DIR, f))
-    ]
+        items = [
+            f
+            for f in os.listdir(SANDBOX_DIR)
+            if os.path.isfile(os.path.join(SANDBOX_DIR, f))
+            and not f.endswith((".db", ".db-wal", ".db-shm", ".key", ".log"))
+            and f != "secret.key"
+        ]
 
-    generator = build_corpus_generator(
-        base_dir=SANDBOX_DIR,
-        items_to_sort=items,
-        progress_callback=progress_callback,
-        max_workers=1,
-        db=db,
-        chunk_size=50,
-    )
+        generator = build_corpus_generator(
+            base_dir=SANDBOX_DIR,
+            items_to_sort=items,
+            progress_callback=progress_callback,
+            max_workers=1,
+            db=db,
+            chunk_size=50,
+        )
 
-    for chunk in generator:
-        analyzer.partial_fit(SANDBOX_DIR, chunk, MockSettings())
+        for chunk in generator:
+            analyzer.partial_fit(SANDBOX_DIR, chunk, MockSettings())
 
-    plan = analyzer.generate_sorting_plan(SANDBOX_DIR, MockSettings())
+        plan = analyzer.generate_sorting_plan(SANDBOX_DIR, MockSettings())
+    finally:
+        if analyzer is not None:
+            analyzer.terminate()
+        if 'db_worker' in locals() and db_worker:
+            db_worker.stop()
+        try:
+            from app.core.shared_registry import SharedWorkerPool
 
-    analyzer.terminate()
-    db_worker.stop()
+            if SharedWorkerPool._instance:
+                SharedWorkerPool._instance.shutdown(wait=False, cancel_futures=True)
+        except Exception:
+            pass
+        try:
+            from app.core.db_conn import clear_connection_cache
+
+            clear_connection_cache(only_current_and_inactive=False)
+        except Exception:
+            pass
 
     import json
 

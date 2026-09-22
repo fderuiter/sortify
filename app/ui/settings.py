@@ -788,13 +788,17 @@ def show_settings(parent_app, settings):
 
                     def on_done(success, err):
                         def _notify():
-                            tid = (
-                                id(asyncio.current_task())
-                                if asyncio.current_task()
-                                else 0
-                            )
-                            if stack is not None:
-                                Slot.stacks[tid] = stack
+                            tid = None
+                            try:
+                                tid = (
+                                    id(asyncio.current_task())
+                                    if asyncio.current_task()
+                                    else 0
+                                )
+                                if stack is not None:
+                                    Slot.stacks[tid] = stack
+                            except Exception:
+                                tid = None
                             try:
                                 if success:
                                     ui.notify(
@@ -810,13 +814,16 @@ def show_settings(parent_app, settings):
                                     )
                             finally:
                                 try:
-                                    if tid in Slot.stacks:
+                                    if tid and tid in Slot.stacks:
                                         del Slot.stacks[tid]
                                 except Exception:
                                     pass
 
-                        if loop:
-                            loop.call_soon_threadsafe(_notify)
+                        if loop and not getattr(loop, "is_closed", lambda: False)():
+                            try:
+                                loop.call_soon_threadsafe(_notify)
+                            except RuntimeError:
+                                _notify()
                         else:
                             _notify()
 

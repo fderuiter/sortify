@@ -325,6 +325,7 @@ def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
 
     apply_config_overrides(settings, args)
 
+    session = None
     try:
         from app.core.extractor import build_corpus_generator
         from app.core.scanner import get_files_recursively
@@ -390,8 +391,6 @@ def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
                 "summary": summary,
             }
 
-        session.close()
-
         if args.json:
             sys.stdout.write(json.dumps(result, indent=2) + "\n")
             sys.stdout.flush()
@@ -405,6 +404,9 @@ def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
     except Exception as e:
         print(f"Error during sorting operation: {e}", file=sys.stderr)
         sys.exit(1)
+    finally:
+        if session is not None:
+            session.close()
 
 
 def handle_scan_command(args: argparse.Namespace, settings: AppSettings):
@@ -422,6 +424,7 @@ def handle_scan_command(args: argparse.Namespace, settings: AppSettings):
 
     apply_config_overrides(settings, args)
 
+    session = None
     try:
         from app.core.extractor import build_corpus_generator
         from app.core.scanner import get_files_recursively
@@ -447,7 +450,6 @@ def handle_scan_command(args: argparse.Namespace, settings: AppSettings):
             session.partial_fit(chunk)
 
         plan = session.generate_sorting_plan()
-        session.close()
 
         result = {
             "status": "success",
@@ -469,6 +471,9 @@ def handle_scan_command(args: argparse.Namespace, settings: AppSettings):
     except Exception as e:
         print(f"Error during scan operation: {e}", file=sys.stderr)
         sys.exit(1)
+    finally:
+        if session is not None:
+            session.close()
 
 
 def handle_config_command(args: argparse.Namespace, settings: AppSettings):
