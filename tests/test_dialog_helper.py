@@ -1,6 +1,7 @@
 import asyncio
 from unittest import mock
 
+import nicegui.ui  # noqa: F401 - ensure nicegui/aiohttp SSL context initializes under native platform
 import pytest
 
 from app.ui.dialog_helper import ask_directory_async
