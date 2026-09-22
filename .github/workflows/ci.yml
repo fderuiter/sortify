@@ -119,6 +119,11 @@ jobs:
       run: |
         uv run python scripts/validate_architecture.py
 
+    - name: Validate UI Layout Classes
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        uv run python scripts/validate_layout.py
+
     - name: Continuous Integration Accessibility Gate
       if: matrix.os == 'ubuntu-latest'
       run: |
