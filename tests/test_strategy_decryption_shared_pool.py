@@ -162,6 +162,7 @@ def test_db_worker_reentrant_shared_worker_pool_deadlock_prevention():
     db_worker = DBWorker()
 
     try:
+
         def inner_task(val):
             return val * 10
 
@@ -203,7 +204,3 @@ def test_non_main_thread_shared_worker_pool_deadlock_prevention():
     assert not exception_holder, f"Exception in background thread: {exception_holder}"
     assert len(bg_results) == 4
     assert all(res == [0, 5, 10] for res in bg_results)
-
-
-
-

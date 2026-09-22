@@ -370,7 +370,10 @@ def recursive_kmeans_worker_main(
                 raw_encrypted = conn.recv_bytes()
                 payload = decrypt_ipc_payload(raw_encrypted, key)
             except Exception as e:
-                err_data = {"status": "error", "message": f"Failed receiving IPC payload: {e}"}
+                err_data = {
+                    "status": "error",
+                    "message": f"Failed receiving IPC payload: {e}",
+                }
                 try:
                     if key is not None:
                         conn.send_bytes(encrypt_ipc_payload(err_data, key))
@@ -397,7 +400,9 @@ def recursive_kmeans_worker_main(
             max_depth = payload.get("max_depth", 5)
             max_features = payload.get("max_features", 3)
             pre_fetched_vectors = payload.get("pre_fetched_vectors")
-            strategy_class_name = payload.get("strategy_class_name", "RecursiveKMeansStrategy")
+            strategy_class_name = payload.get(
+                "strategy_class_name", "RecursiveKMeansStrategy"
+            )
             thread_limit = payload.get("thread_limit")
             pre_fetched_corpus = payload.get("pre_fetched_corpus")
         elif is_ipc:
@@ -418,7 +423,9 @@ def recursive_kmeans_worker_main(
             max_depth = payload.get("max_depth", 5)
             max_features = payload.get("max_features", 3)
             pre_fetched_vectors = payload.get("pre_fetched_vectors")
-            strategy_class_name = payload.get("strategy_class_name", "RecursiveKMeansStrategy")
+            strategy_class_name = payload.get(
+                "strategy_class_name", "RecursiveKMeansStrategy"
+            )
             thread_limit = payload.get("thread_limit")
             pre_fetched_corpus = payload.get("pre_fetched_corpus")
         else:

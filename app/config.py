@@ -516,7 +516,9 @@ class AppSettings:
         validator = _get_schema_validator()
         if validator is not None:
             try:
-                schema_errors = sorted(validator.iter_errors(data), key=lambda e: e.path)
+                schema_errors = sorted(
+                    validator.iter_errors(data), key=lambda e: e.path
+                )
                 for error in schema_errors:
                     path = (
                         ".".join([str(p) for p in error.path]) if error.path else "root"

@@ -2317,7 +2317,10 @@ body {
                     or "plan.json" in event.src_path
                 ):
                     return
-                if self.app.loop and not getattr(self.app.loop, "is_closed", lambda: False)():
+                if (
+                    self.app.loop
+                    and not getattr(self.app.loop, "is_closed", lambda: False)()
+                ):
                     try:
                         self.app.loop.call_soon_threadsafe(self.app._rebuild_plan_async)
                     except RuntimeError:

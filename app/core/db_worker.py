@@ -41,7 +41,11 @@ class DBWorker:
                 from app.core.shared_registry import _thread_local
 
                 was_in_pool = getattr(_thread_local, "in_shared_worker_pool", False)
-                if in_pool or threading.current_thread().name.startswith("DBWorker") or threading.current_thread().name.startswith("GlobalSharedWorker"):
+                if (
+                    in_pool
+                    or threading.current_thread().name.startswith("DBWorker")
+                    or threading.current_thread().name.startswith("GlobalSharedWorker")
+                ):
                     _thread_local.in_shared_worker_pool = True
             except Exception:
                 pass

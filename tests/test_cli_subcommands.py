@@ -23,7 +23,9 @@ def run_cli(args, env=None):
         current_env.update(env)
 
     cmd = [sys.executable, str(Path(repo_root) / "app" / "main.py")] + args
-    res = subprocess.run(cmd, capture_output=True, text=True, env=current_env, timeout=240)
+    res = subprocess.run(
+        cmd, capture_output=True, text=True, env=current_env, timeout=240
+    )
     return res.returncode, res.stdout, res.stderr
 
 
@@ -185,7 +187,9 @@ def test_sandbox_cli_json():
 
     # Run analyze with --json
     cmd = [sys.executable, str(Path(repo_root) / "sandbox_cli.py"), "analyze", "--json"]
-    res = subprocess.run(cmd, capture_output=True, text=True, env=current_env, timeout=240)
+    res = subprocess.run(
+        cmd, capture_output=True, text=True, env=current_env, timeout=240
+    )
 
     assert res.returncode == 0
     assert "--- Analysis Sorting Plan ---" not in res.stdout

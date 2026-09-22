@@ -73,7 +73,9 @@ def analyze_all(json_output=False):
         db = Database(db_path, db_worker)
 
         analyzer = IncrementalAnalyzer(
-            max_folders=MockSettings.MAX_FOLDERS, stop_words=MockSettings.STOP_WORDS, db=db
+            max_folders=MockSettings.MAX_FOLDERS,
+            stop_words=MockSettings.STOP_WORDS,
+            db=db,
         )
 
         def progress_callback():
@@ -103,7 +105,7 @@ def analyze_all(json_output=False):
     finally:
         if analyzer is not None:
             analyzer.terminate()
-        if 'db_worker' in locals() and db_worker:
+        if "db_worker" in locals() and db_worker:
             db_worker.stop()
         try:
             from app.core.shared_registry import SharedWorkerPool
