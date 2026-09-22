@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "bbe51105a20597b82ef32c05104234aefd9f5b2822d3176ee19ff3dc9b357f7b"
+    "checksum": "b5ae91038f92ec9b508d3e490ac5fed2eafe8ee1e4498560278a361d4b1d7fad"
   },
   "cli": {
     "app/main.py": [
@@ -3381,6 +3381,24 @@
                 }
               ],
               "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "get_opener",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": "None",
+                  "name": "proxy"
+                }
+              ],
+              "returns": "urllib.request.OpenerDirector"
             },
             {
               "async": false,

@@ -3,13 +3,14 @@
 This module contains the AppSettings for managing dynamic configuration.
 """
 
+import inspect
 import json
 import logging
 import os
 import sys
 import threading
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Any, Callable, Literal
 
 import jsonschema
 from pydantic import Field, ValidationError, field_validator, model_validator
@@ -33,6 +34,33 @@ def _get_schema_validator():
                     except Exception as e:
                         logging.error(f"Failed to load config schema: {e}")
     return _SCHEMA_VALIDATOR
+
+
+def _dispatch_observer_callback(cb: Any, key: str, value: Any) -> None:
+    try:
+        sig = inspect.signature(cb)
+        params = [
+            p
+            for p in sig.parameters.values()
+            if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
+        ]
+        has_var_args = any(p.kind == p.VAR_POSITIONAL for p in sig.parameters.values())
+
+        if len(params) == 0 and not has_var_args:
+            cb()
+        elif len(params) == 1:
+            cb(value)
+        elif len(params) == 2:
+            cb(key, value)
+        elif has_var_args:
+            cb(value)
+        else:
+            cb(value)
+    except Exception as e:
+        logging.error(
+            f"Error executing config observer callback for key '{key}': {e}",
+            exc_info=True,
+        )
 
 
 def get_app_dir() -> Path:
@@ -356,12 +384,45 @@ class Settings(BaseSettings):
 class AppSettings:
     """A registry for application settings that provides persistence and validation."""
 
+    _class_observers: dict = {}
+    _class_observer_lock = threading.Lock()
+
+    @classmethod
+    def add_observer(cls, key: str, callback: Callable) -> None:
+        """Register a thread-safe observer callback for setting mutation events.
+
+        Supports both class-level (AppSettings.add_observer) and instance-level invocations.
+        """
+        with cls._class_observer_lock:
+            if key not in cls._class_observers:
+                cls._class_observers[key] = []
+            if callback not in cls._class_observers[key]:
+                cls._class_observers[key].append(callback)
+
+    @classmethod
+    def remove_observer(cls, key: str, callback: Callable) -> None:
+        """Remove a previously registered setting observer callback."""
+        with cls._class_observer_lock:
+            if key in cls._class_observers and callback in cls._class_observers[key]:
+                cls._class_observers[key].remove(callback)
+
+    @classmethod
+    def clear_observers(cls, key: str = None) -> None:
+        """Clear all registered observers or observers for a specific key."""
+        with cls._class_observer_lock:
+            if key is None:
+                cls._class_observers.clear()
+            elif key in cls._class_observers:
+                cls._class_observers[key].clear()
+
     def __init__(self, filepath=None):
         self._filepath = filepath or str(get_app_dir() / "settings.json")
         self._save_timer = None
         self._lock = threading.Lock()
         self._raw_encrypted_proxy = None
         self._validation_errors = []
+        self._observers = {}
+        self._observer_lock = threading.Lock()
 
         try:
             self._settings_model = Settings()
@@ -370,6 +431,26 @@ class AppSettings:
             sys.exit(1)
 
         self.load()
+
+    def _notify_observers(self, key: str, value: Any) -> None:
+        """Notify registered setting change observers synchronously with updated configuration."""
+        callbacks = []
+        with AppSettings._class_observer_lock:
+            callbacks.extend(AppSettings._class_observers.get(key, []))
+            callbacks.extend(AppSettings._class_observers.get("*", []))
+
+        if hasattr(self, "_observer_lock") and hasattr(self, "_observers"):
+            with self._observer_lock:
+                callbacks.extend(self._observers.get(key, []))
+                callbacks.extend(self._observers.get("*", []))
+
+        unique_callbacks = []
+        for cb in callbacks:
+            if cb not in unique_callbacks:
+                unique_callbacks.append(cb)
+
+        for cb in unique_callbacks:
+            _dispatch_observer_callback(cb, key, value)
 
     def load(self):
         """Load settings from the configuration file."""
@@ -453,6 +534,9 @@ class AppSettings:
 
             if needs_migration and not has_validation_errors:
                 self._trigger_save()
+
+            if hasattr(self._settings_model, "PROXY"):
+                self._notify_observers("PROXY", getattr(self._settings_model, "PROXY"))
 
         except Exception as e:
             logging.warning(f"Failed to load settings, using defaults: {e}")
@@ -568,6 +652,8 @@ class AppSettings:
             "_raw_encrypted_proxy",
             "_validation_errors",
             "_has_validation_errors",
+            "_observers",
+            "_observer_lock",
         ):
             super().__setattr__(name, value)
         else:
@@ -577,3 +663,4 @@ class AppSettings:
                 super().__setattr__("_raw_encrypted_proxy", None)
             setattr(self._settings_model, name, value)
             self.revalidate()
+            self._notify_observers(name, value)

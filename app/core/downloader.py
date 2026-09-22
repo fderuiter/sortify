@@ -81,6 +81,13 @@ class DownloadManager:
         with cls._lock:
             if cls._instance is None:
                 cls._instance = cls()
+            else:
+                try:
+                    from app.config import AppSettings
+
+                    AppSettings.add_observer("PROXY", cls._instance._on_proxy_changed)
+                except Exception:
+                    pass
             return cls._instance
 
     def __init__(self):
@@ -94,6 +101,66 @@ class DownloadManager:
         self.cancel_event = threading.Event()
         self.current_thread = None
         self._manager_lock = threading.Lock()
+        self._current_proxy = ""
+        self._opener = None
+        self._active_proxy_str = None
+        self._opener_lock = threading.Lock()
+
+        try:
+            from app.config import AppSettings
+
+            AppSettings.add_observer("PROXY", self._on_proxy_changed)
+        except Exception as e:
+            logger.warning(
+                f"Failed to register DownloadManager proxy setting observer: {e}"
+            )
+
+    def _on_proxy_changed(self, new_proxy: str):
+        """Handle setting mutation events for PROXY."""
+        with self._opener_lock:
+            p_str = str(new_proxy or "").strip()
+            self._current_proxy = p_str
+            self._opener = None
+            self._active_proxy_str = None
+            if p_str and "<DECRYPTION_FAILED>" not in p_str:
+                try:
+                    handlers = [
+                        urllib.request.ProxyHandler(
+                            {"http": p_str, "https": p_str}
+                        )
+                    ]
+                    self._opener = urllib.request.build_opener(*handlers)
+                    self._active_proxy_str = p_str
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to reconstruct opener for proxy '{p_str}': {e}"
+                    )
+                    self._opener = None
+            logger.info(f"DownloadManager proxy configuration updated: '{p_str}'")
+
+    def get_opener(self, proxy: str = None) -> urllib.request.OpenerDirector:
+        """Retrieve or reconstruct the urllib opener for network operations."""
+        with self._opener_lock:
+            if proxy is not None and proxy != "":
+                target_proxy = str(proxy).strip()
+            else:
+                target_proxy = self._current_proxy
+
+            if "<DECRYPTION_FAILED>" in target_proxy:
+                raise NetworkError("Invalid proxy configuration: decryption failed.")
+
+            if self._opener is None or self._active_proxy_str != target_proxy:
+                handlers = []
+                if target_proxy:
+                    handlers.append(
+                        urllib.request.ProxyHandler(
+                            {"http": target_proxy, "https": target_proxy}
+                        )
+                    )
+                self._opener = urllib.request.build_opener(*handlers)
+                self._active_proxy_str = target_proxy
+
+            return self._opener
 
     def start_download(self, url: str, model_dir: str, proxy: str = ""):
         """Initiate model download thread-safely if not already downloading."""
@@ -305,17 +372,8 @@ def run_background_download(
             target_path = os.path.join(model_dir, "model.onnx")
 
             # Setup urllib opener with proxy support if specified
-            handlers = []
-            if proxy and proxy.strip():
-                p_str = proxy.strip()
-                if "<DECRYPTION_FAILED>" in p_str:
-                    raise NetworkError(
-                        "Invalid proxy configuration: decryption failed."
-                    )
-                handlers.append(
-                    urllib.request.ProxyHandler({"http": p_str, "https": p_str})
-                )
-            opener = urllib.request.build_opener(*handlers)
+            dm = DownloadManager.get_instance()
+            opener = dm.get_opener(proxy)
 
             req = urllib.request.Request(
                 url, headers={"User-Agent": "Smart-AutoSorter/1.0"}
