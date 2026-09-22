@@ -190,6 +190,26 @@ class Database:
                 "CREATE INDEX IF NOT EXISTS idx_transaction_ledger_session ON transaction_ledger (session_id, step_number)"
             )
 
+            # Initialize quarantine staging records table for atomic compliance state tracking
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS quarantine_records (
+                    job_id TEXT PRIMARY KEY,
+                    base_dir TEXT NOT NULL,
+                    original_filepath TEXT NOT NULL,
+                    staged_filepath TEXT NOT NULL,
+                    file_hash TEXT,
+                    status TEXT NOT NULL,
+                    policy_action TEXT,
+                    audit_log TEXT,
+                    created_at REAL,
+                    updated_at REAL,
+                    error_message TEXT
+                )
+            """)
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_quarantine_records_base_dir ON quarantine_records (base_dir, status)"
+            )
+
             # Purge existing unencrypted vector cache on startup to prevent reading insecure data
             cursor = conn.cursor()
             try:
@@ -1356,4 +1376,242 @@ class Database:
                     self.crypto.decrypt_text(enc_text) if enc_text is not None else None
                 )
                 results.append((filepath, dec_text))
+            return results
+
+    def stage_quarantine_record(
+        self,
+        job_id: str,
+        base_dir: str,
+        original_filepath: str,
+        staged_filepath: str,
+        file_hash: str | None = None,
+        policy_action: str | None = None,
+    ):
+        """Record an incoming document in quarantine staging with status STAGED."""
+        import json
+        import time
+
+        now = time.time()
+        audit_log = json.dumps([
+            {
+                "timestamp": now,
+                "status": "STAGED",
+                "details": "Initial document placement in quarantine staging",
+            }
+        ])
+
+        def _write():
+            conn = get_db_connection(self.db_path)
+            with conn:
+                conn.execute(
+                    """
+                    INSERT INTO quarantine_records (
+                        job_id, base_dir, original_filepath, staged_filepath,
+                        file_hash, status, policy_action, audit_log, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, 'STAGED', ?, ?, ?, ?)
+                    """,
+                    (
+                        job_id,
+                        base_dir,
+                        original_filepath.replace("\\", "/"),
+                        staged_filepath.replace("\\", "/"),
+                        file_hash,
+                        policy_action,
+                        audit_log,
+                        now,
+                        now,
+                    ),
+                )
+
+        return self.worker.execute_write(_write)
+
+    def update_quarantine_status(
+        self,
+        job_id: str,
+        status: str,
+        policy_action: str | None = None,
+        error_message: str | None = None,
+        audit_entry: dict | str | None = None,
+    ):
+        """Atomically transition quarantine job state and append structured audit record."""
+        import json
+        import time
+
+        now = time.time()
+
+        def _write():
+            conn = get_db_connection(self.db_path)
+            with conn:
+                cursor = conn.execute(
+                    "SELECT audit_log, policy_action FROM quarantine_records WHERE job_id = ?",
+                    (job_id,),
+                )
+                row = cursor.fetchone()
+                current_log = []
+                if row and row[0]:
+                    try:
+                        current_log = json.loads(row[0])
+                    except Exception:
+                        current_log = []
+
+                existing_action = row[1] if row else None
+                act_to_save = policy_action if policy_action is not None else existing_action
+
+                if audit_entry:
+                    if isinstance(audit_entry, dict):
+                        if "timestamp" not in audit_entry:
+                            audit_entry["timestamp"] = now
+                        current_log.append(audit_entry)
+                    else:
+                        current_log.append({
+                            "timestamp": now,
+                            "status": status,
+                            "details": str(audit_entry),
+                        })
+                else:
+                    current_log.append({
+                        "timestamp": now,
+                        "status": status,
+                        "details": f"Transitioned quarantine state to {status}",
+                    })
+
+                conn.execute(
+                    """
+                    UPDATE quarantine_records
+                    SET status = ?, policy_action = ?, audit_log = ?, updated_at = ?, error_message = ?
+                    WHERE job_id = ?
+                    """,
+                    (status, act_to_save, json.dumps(current_log), now, error_message, job_id),
+                )
+
+        return self.worker.execute_write(_write)
+
+    def get_quarantine_record(self, job_id: str) -> dict | None:
+        """Retrieve a quarantine staging record by job_id."""
+        import json
+
+        conn = get_db_connection(self.db_path)
+        with conn:
+            cursor = conn.execute(
+                """
+                SELECT job_id, base_dir, original_filepath, staged_filepath, file_hash,
+                       status, policy_action, audit_log, created_at, updated_at, error_message
+                FROM quarantine_records
+                WHERE job_id = ?
+                """,
+                (job_id,),
+            )
+            row = cursor.fetchone()
+            if not row:
+                return None
+            audit = []
+            if row[7]:
+                try:
+                    audit = json.loads(row[7])
+                except Exception:
+                    audit = []
+            return {
+                "job_id": row[0],
+                "base_dir": row[1],
+                "original_filepath": row[2],
+                "staged_filepath": row[3],
+                "file_hash": row[4],
+                "status": row[5],
+                "policy_action": row[6],
+                "audit_log": audit,
+                "created_at": row[8],
+                "updated_at": row[9],
+                "error_message": row[10],
+            }
+
+    def get_quarantine_records_by_base_dir(
+        self, base_dir: str, status: str | None = None
+    ) -> list[dict]:
+        """Retrieve quarantine staging records for a base directory."""
+        import json
+
+        conn = get_db_connection(self.db_path)
+        with conn:
+            if status:
+                cursor = conn.execute(
+                    """
+                    SELECT job_id, base_dir, original_filepath, staged_filepath, file_hash,
+                           status, policy_action, audit_log, created_at, updated_at, error_message
+                    FROM quarantine_records
+                    WHERE base_dir = ? AND status = ?
+                    ORDER BY created_at ASC
+                    """,
+                    (base_dir, status),
+                )
+            else:
+                cursor = conn.execute(
+                    """
+                    SELECT job_id, base_dir, original_filepath, staged_filepath, file_hash,
+                           status, policy_action, audit_log, created_at, updated_at, error_message
+                    FROM quarantine_records
+                    WHERE base_dir = ?
+                    ORDER BY created_at ASC
+                    """,
+                    (base_dir,),
+                )
+            rows = cursor.fetchall()
+            results = []
+            for row in rows:
+                audit = []
+                if row[7]:
+                    try:
+                        audit = json.loads(row[7])
+                    except Exception:
+                        audit = []
+                results.append({
+                    "job_id": row[0],
+                    "base_dir": row[1],
+                    "original_filepath": row[2],
+                    "staged_filepath": row[3],
+                    "file_hash": row[4],
+                    "status": row[5],
+                    "policy_action": row[6],
+                    "audit_log": audit,
+                    "created_at": row[8],
+                    "updated_at": row[9],
+                    "error_message": row[10],
+                })
+            return results
+
+    def get_all_quarantine_records(self) -> list[dict]:
+        """Retrieve all quarantine staging records across all sessions."""
+        import json
+
+        conn = get_db_connection(self.db_path)
+        with conn:
+            cursor = conn.execute(
+                """
+                SELECT job_id, base_dir, original_filepath, staged_filepath, file_hash,
+                       status, policy_action, audit_log, created_at, updated_at, error_message
+                FROM quarantine_records
+                ORDER BY created_at ASC
+                """
+            )
+            rows = cursor.fetchall()
+            results = []
+            for row in rows:
+                audit = []
+                if row[7]:
+                    try:
+                        audit = json.loads(row[7])
+                    except Exception:
+                        audit = []
+                results.append({
+                    "job_id": row[0],
+                    "base_dir": row[1],
+                    "original_filepath": row[2],
+                    "staged_filepath": row[3],
+                    "file_hash": row[4],
+                    "status": row[5],
+                    "policy_action": row[6],
+                    "audit_log": audit,
+                    "created_at": row[8],
+                    "updated_at": row[9],
+                    "error_message": row[10],
+                })
             return results

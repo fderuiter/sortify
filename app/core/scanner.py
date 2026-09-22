@@ -23,6 +23,9 @@ def get_files_recursively(
             for entry in sorted_entries:
                 if not include_hidden and entry.name.startswith("."):
                     continue
+                # Quarantine isolation: unreleased files in _Quarantine_Staging must remain inaccessible to standard scans
+                if entry.name == "_Quarantine_Staging" or entry.name.startswith("_Quarantine_Staging"):
+                    continue
                 entry_rel_path = (
                     os.path.join(rel_path, entry.name) if rel_path else entry.name
                 )
