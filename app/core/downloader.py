@@ -143,6 +143,8 @@ class DownloadManager:
                     handlers.append(
                         urllib.request.ProxyHandler({"http": p_str, "https": p_str})
                     )
+            else:
+                handlers.append(urllib.request.ProxyHandler({}))
             self._opener = urllib.request.build_opener(*handlers)
 
     def get_opener(self):
@@ -392,6 +394,8 @@ def run_background_download(
                     handlers.append(
                         urllib.request.ProxyHandler({"http": p_str, "https": p_str})
                     )
+                else:
+                    handlers.append(urllib.request.ProxyHandler({}))
                 return urllib.request.build_opener(*handlers)
 
             bytes_downloaded = 0
