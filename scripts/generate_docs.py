@@ -250,6 +250,8 @@ def generate_admin_guide():
 
         env = os.environ.copy()
         env["COLUMNS"] = "80"
+        env["PYTHON_KEYRING_BACKEND"] = "keyring.backends.fail.Keyring"
+        env["PYTHONKEYRING_BACKEND"] = "keyring.backends.fail.Keyring"
         result = subprocess.run(
             ["uv", "run", "python", "sandbox_cli.py", "--help"],
             capture_output=True,

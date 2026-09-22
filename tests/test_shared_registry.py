@@ -398,9 +398,13 @@ def test_pytorch_thread_limits_selection(monkeypatch):
 
 def test_no_dns_during_import():
     """Verify that no DNS or hostname resolution runs during the module import phase."""
+    import os
     import subprocess
     import sys
 
+    env = os.environ.copy()
+    env["PYTHON_KEYRING_BACKEND"] = "keyring.backends.fail.Keyring"
+    env["PYTHONKEYRING_BACKEND"] = "keyring.backends.fail.Keyring"
     cmd = [
         sys.executable,
         "-c",
@@ -408,7 +412,7 @@ def test_no_dns_during_import():
         "socket.gethostname = mock.MagicMock(side_effect=RuntimeError('socket.gethostname should not be called at import time')); "
         "import app.core.shared_registry",
     ]
-    res = subprocess.run(cmd, capture_output=True, text=True)
+    res = subprocess.run(cmd, capture_output=True, text=True, env=env)
     assert res.returncode == 0, f"Import triggered DNS / socket call:\n{res.stderr}"
 
 

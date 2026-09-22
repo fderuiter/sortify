@@ -11,6 +11,8 @@ def run_command(command, expected_args):
     try:
         env = os.environ.copy()
         env["COLUMNS"] = "80"
+        env["PYTHON_KEYRING_BACKEND"] = "keyring.backends.fail.Keyring"
+        env["PYTHONKEYRING_BACKEND"] = "keyring.backends.fail.Keyring"
 
         # Add repository root to PYTHONPATH
         repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))

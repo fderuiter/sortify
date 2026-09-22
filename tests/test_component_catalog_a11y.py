@@ -1,5 +1,6 @@
 """Unit and integration tests for Component Catalog and Accessibility Gate."""
 
+import os
 import subprocess
 import sys
 
@@ -113,10 +114,14 @@ def test_a11y_gate_catches_label_overflow_violation():
 
 def test_cli_a11y_gate_script():
     """Test running scripts/run_a11y_gate.py as a subprocess."""
+    env = os.environ.copy()
+    env["PYTHON_KEYRING_BACKEND"] = "keyring.backends.fail.Keyring"
+    env["PYTHONKEYRING_BACKEND"] = "keyring.backends.fail.Keyring"
     result = subprocess.run(
         [sys.executable, "scripts/run_a11y_gate.py"],
         capture_output=True,
         text=True,
+        env=env,
     )
     assert result.returncode == 0
     assert "SUCCESS: All" in result.stdout
@@ -125,10 +130,14 @@ def test_cli_a11y_gate_script():
 
 def test_cli_standalone_catalog_audit_mode():
     """Test running scripts/component_catalog.py --audit-only as a subprocess."""
+    env = os.environ.copy()
+    env["PYTHON_KEYRING_BACKEND"] = "keyring.backends.fail.Keyring"
+    env["PYTHONKEYRING_BACKEND"] = "keyring.backends.fail.Keyring"
     result = subprocess.run(
         [sys.executable, "scripts/component_catalog.py", "--audit-only"],
         capture_output=True,
         text=True,
+        env=env,
     )
     assert result.returncode == 0
     assert "SUCCESS: All" in result.stdout
