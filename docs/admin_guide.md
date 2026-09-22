@@ -209,8 +209,9 @@ Main command-line interface for Smart AutoSorter AI Pro.
 
 #### Top-Level Usage
 ```text
-usage: app/main.py [-h] [--demo] [--smoke-test] [--update-snapshots]
-                   [--daemon] [--debug-layout] [--tui] [--gui]
+usage: app/main.py [-h] [-q] [--no-color] [--demo] [--smoke-test]
+                   [--update-snapshots] [--daemon] [--debug-layout] [--tui]
+                   [--gui]
                    {sort,scan,config,daemon} ...
 
 Smart AutoSorter AI Pro
@@ -226,6 +227,9 @@ positional arguments:
 
 options:
   -h, --help            show this help message and exit
+  -q, --quiet           Suppress informational prints and non-essential
+                        progress output
+  --no-color            Disable ANSI color and style formatting
   --demo                Run interactive CLI demo mode
   --smoke-test          Run automated database smoke test and exit
   --update-snapshots    Regenerate reference baseline snapshots across all
@@ -241,8 +245,8 @@ options:
 
 ##### `sort`
 ```text
-usage: app/main.py sort [-h] [--json] [--dest-dir DEST_DIR] [--dry-run]
-                        [--max-folders MAX_FOLDERS]
+usage: app/main.py sort [-h] [--json] [--dest-dir DEST_DIR] [--dry-run] [-q]
+                        [--no-color] [--max-folders MAX_FOLDERS]
                         [--strategy {default,generative,clinical_tmf,clinical_isf}]
                         [--conflict-policy {skip,rename}]
                         [--contextual-renaming] [--no-contextual-renaming]
@@ -257,6 +261,9 @@ options:
   --dest-dir DEST_DIR   Destination directory for sorted files
   --dry-run             Perform dry run analysis without executing physical
                         moves
+  -q, --quiet           Suppress informational prints and non-essential
+                        progress output
+  --no-color            Disable ANSI color and style formatting
   --max-folders MAX_FOLDERS
                         Maximum number of generated subfolders
   --strategy {default,generative,clinical_tmf,clinical_isf}
@@ -271,7 +278,8 @@ options:
 
 ##### `scan`
 ```text
-usage: app/main.py scan [-h] [--json] [--max-folders MAX_FOLDERS]
+usage: app/main.py scan [-h] [--json] [-q] [--no-color]
+                        [--max-folders MAX_FOLDERS]
                         [--strategy {default,generative,clinical_tmf,clinical_isf}]
                         [--conflict-policy {skip,rename}]
                         [--contextual-renaming] [--no-contextual-renaming]
@@ -283,6 +291,9 @@ positional arguments:
 options:
   -h, --help            show this help message and exit
   --json                Output scan plan in structured JSON format
+  -q, --quiet           Suppress informational prints and non-essential
+                        progress output
+  --no-color            Disable ANSI color and style formatting
   --max-folders MAX_FOLDERS
                         Maximum number of generated subfolders
   --strategy {default,generative,clinical_tmf,clinical_isf}
@@ -297,8 +308,8 @@ options:
 
 ##### `config`
 ```text
-usage: app/main.py config [-h] [--show] [--json] [--set KEY VALUE]
-                          [--max-folders MAX_FOLDERS]
+usage: app/main.py config [-h] [--show] [--json] [--set KEY VALUE] [-q]
+                          [--no-color] [--max-folders MAX_FOLDERS]
                           [--strategy {default,generative,clinical_tmf,clinical_isf}]
                           [--conflict-policy {skip,rename}]
                           [--contextual-renaming] [--no-contextual-renaming]
@@ -308,6 +319,9 @@ options:
   --show                Display current configuration settings
   --json                Output configuration as JSON
   --set KEY VALUE       Set configuration KEY to VALUE
+  -q, --quiet           Suppress informational prints and non-essential
+                        progress output
+  --no-color            Disable ANSI color and style formatting
   --max-folders MAX_FOLDERS
                         Maximum number of generated subfolders
   --strategy {default,generative,clinical_tmf,clinical_isf}
@@ -322,7 +336,7 @@ options:
 
 ##### `daemon`
 ```text
-usage: app/main.py daemon [-h] [--max-folders MAX_FOLDERS]
+usage: app/main.py daemon [-h] [-q] [--no-color] [--max-folders MAX_FOLDERS]
                           [--strategy {default,generative,clinical_tmf,clinical_isf}]
                           [--conflict-policy {skip,rename}]
                           [--contextual-renaming] [--no-contextual-renaming]
@@ -333,6 +347,9 @@ positional arguments:
 
 options:
   -h, --help            show this help message and exit
+  -q, --quiet           Suppress informational prints and non-essential
+                        progress output
+  --no-color            Disable ANSI color and style formatting
   --max-folders MAX_FOLDERS
                         Maximum number of generated subfolders
   --strategy {default,generative,clinical_tmf,clinical_isf}
@@ -350,7 +367,7 @@ CLI tool for testing ML extraction and analysis in an isolated sandbox environme
 
 #### Usage
 ```text
-usage: sandbox_cli.py [-h] {reset,extract,analyze} ...
+usage: sandbox_cli.py [-h] [-q] [--no-color] {reset,extract,analyze} ...
 
 Sandbox CLI Tool for ML Accuracy Verification
 
@@ -363,6 +380,8 @@ positional arguments:
 
 options:
   -h, --help            show this help message and exit
+  -q, --quiet           Suppress informational prints
+  --no-color            Disable ANSI color output
 ```
 
 ### `scripts/prepare_offline.py`
