@@ -608,9 +608,11 @@ def validate_mermaid_diagrams():
                     doc_files.append(Path(root, f).as_posix())
 
     if os.path.exists("notebooks"):
-        for f in sorted(os.listdir("notebooks")):
-            if f.endswith(".ipynb"):
-                doc_files.append(Path("notebooks", f).as_posix())
+        for root, dirs, files in os.walk("notebooks"):
+            dirs[:] = [d for d in dirs if not d.startswith(".")]
+            for f in sorted(files):
+                if f.endswith(".ipynb"):
+                    doc_files.append(Path(root, f).as_posix())
 
     valid_types = {
         "flowchart",
@@ -690,16 +692,21 @@ def validate_mermaid_diagrams():
                 continue
 
             bracket_counts = {"[": 0, "]": 0, "(": 0, ")": 0, "{": 0, "}": 0}
-            in_quotes = False
             for line in lines:
                 if line.startswith("%%"):
                     continue
-                for char in line:
-                    if char == '"':
+                line_code = line.split("%%")[0].strip()
+                if not line_code:
+                    continue
+                in_quotes = False
+                escaped = False
+                for char in line_code:
+                    if char == '"' and not escaped:
                         in_quotes = not in_quotes
                     elif not in_quotes:
                         if char in bracket_counts:
                             bracket_counts[char] += 1
+                    escaped = (char == "\\") and not escaped
 
             if (
                 bracket_counts["["] != bracket_counts["]"]
