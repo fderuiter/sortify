@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "3becdfef61252a116c1ede9ed34995d3cedc6df5ab19b000a0b2385aaae4ccec"
+    "checksum": "2ffc65a28c7d0c6cf6333e7071ccb4abc3d404241d2cf77f68daebd7f12e8655"
   },
   "cli": {
     "app/main.py": [
@@ -364,81 +364,3304 @@
       }
     ]
   },
-  "protocols": {
-    "ClusteringStrategy": {
-      "class_name": "ClusteringStrategy",
-      "methods": [
+  "core": {
+    "app/core/__init__.py": {
+      "classes": [],
+      "functions": []
+    },
+    "app/core/analyzer.py": {
+      "classes": [
+        {
+          "class_name": "IncrementalAnalyzer",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "__init__",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "int",
+                  "default": null,
+                  "name": "max_folders"
+                },
+                {
+                  "annotation": "set",
+                  "default": null,
+                  "name": "stop_words"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "db"
+                },
+                {
+                  "annotation": "str",
+                  "default": "'generative'",
+                  "name": "strategy_name"
+                },
+                {
+                  "annotation": "str | None",
+                  "default": "_UNSPECIFIED",
+                  "name": "model_path"
+                }
+              ],
+              "returns": "None"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "close",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "generate_sorting_plan",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "base_dir"
+                },
+                {
+                  "annotation": null,
+                  "default": "None",
+                  "name": "runtime_settings"
+                },
+                {
+                  "annotation": "dict",
+                  "default": "None",
+                  "name": "locked_files"
+                },
+                {
+                  "annotation": null,
+                  "default": "None",
+                  "name": "cancel_check"
+                },
+                {
+                  "annotation": "bool",
+                  "default": "False",
+                  "name": "fast_path_only"
+                }
+              ],
+              "returns": "dict"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "partial_fit",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "base_dir"
+                },
+                {
+                  "annotation": "dict",
+                  "default": null,
+                  "name": "new_corpus"
+                },
+                {
+                  "annotation": null,
+                  "default": "None",
+                  "name": "runtime_settings"
+                }
+              ],
+              "returns": "None"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "reload_stop_words",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "set",
+                  "default": null,
+                  "name": "new_stop_words"
+                }
+              ],
+              "returns": "None"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "terminate",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": null
+            }
+          ]
+        }
+      ],
+      "functions": [
         {
           "async": false,
-          "name": "generate_plan",
+          "decorators": [],
+          "name": "pre_fetch_historical_corpus",
           "parameters": [
             {
               "annotation": null,
               "default": null,
-              "name": "self"
+              "name": "db"
             },
             {
-              "annotation": "List[str]",
+              "annotation": null,
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": null,
               "default": null,
               "name": "filenames"
             },
             {
-              "annotation": "List[str]",
+              "annotation": null,
               "default": null,
               "name": "documents"
             },
             {
-              "annotation": "int",
-              "default": null,
-              "name": "max_folders"
+              "annotation": null,
+              "default": "None",
+              "name": "pre_fetched_vectors"
             },
             {
-              "annotation": "set",
+              "annotation": null,
+              "default": "50",
+              "name": "max_examples"
+            }
+          ],
+          "returns": null
+        }
+      ]
+    },
+    "app/core/analyzer_strategies.py": {
+      "classes": [
+        {
+          "class_name": "ClusteringRegistry",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "__init__",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "get_strategy",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "name"
+                }
+              ],
+              "returns": "ClusteringStrategy"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "register",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "name"
+                },
+                {
+                  "annotation": "ClusteringStrategy",
+                  "default": null,
+                  "name": "strategy"
+                }
+              ],
+              "returns": null
+            }
+          ]
+        },
+        {
+          "class_name": "ClusteringStrategy",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "generate_plan",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "List[str]",
+                  "default": null,
+                  "name": "filenames"
+                },
+                {
+                  "annotation": "List[str]",
+                  "default": null,
+                  "name": "documents"
+                },
+                {
+                  "annotation": "int",
+                  "default": null,
+                  "name": "max_folders"
+                },
+                {
+                  "annotation": "set",
+                  "default": null,
+                  "name": "stop_words"
+                },
+                {
+                  "annotation": "int",
+                  "default": "5",
+                  "name": "max_depth"
+                },
+                {
+                  "annotation": "int",
+                  "default": "3",
+                  "name": "max_features"
+                },
+                {
+                  "annotation": "List[list] | None",
+                  "default": "None",
+                  "name": "pre_fetched_vectors"
+                },
+                {
+                  "annotation": null,
+                  "default": "None",
+                  "name": "cancel_check"
+                },
+                {
+                  "annotation": "list | dict | None",
+                  "default": "None",
+                  "name": "pre_fetched_corpus"
+                }
+              ],
+              "returns": "tuple[dict, float]"
+            }
+          ]
+        },
+        {
+          "class_name": "GenerativeNamingStrategy",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "__init__",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": "None",
+                  "name": "model_path"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [
+                "@thread_isolated_execution"
+              ],
+              "name": "generate_plan",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "List[str]",
+                  "default": null,
+                  "name": "filenames"
+                },
+                {
+                  "annotation": "List[str]",
+                  "default": null,
+                  "name": "documents"
+                },
+                {
+                  "annotation": "int",
+                  "default": null,
+                  "name": "max_folders"
+                },
+                {
+                  "annotation": "set",
+                  "default": null,
+                  "name": "stop_words"
+                },
+                {
+                  "annotation": "int",
+                  "default": "5",
+                  "name": "max_depth"
+                },
+                {
+                  "annotation": "int",
+                  "default": "3",
+                  "name": "max_features"
+                },
+                {
+                  "annotation": "List[list] | None",
+                  "default": "None",
+                  "name": "pre_fetched_vectors"
+                },
+                {
+                  "annotation": null,
+                  "default": "None",
+                  "name": "cancel_check"
+                },
+                {
+                  "annotation": "list | dict | None",
+                  "default": "None",
+                  "name": "pre_fetched_corpus"
+                }
+              ],
+              "returns": "tuple[dict, float]"
+            },
+            {
+              "async": false,
+              "decorators": [
+                "@property"
+              ],
+              "name": "generator",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [
+                "@generator.setter"
+              ],
+              "name": "generator",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "value"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "set_db_context",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "db"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "base_dir"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "unload",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": null
+            }
+          ]
+        },
+        {
+          "class_name": "IsolatedStrategyMixin",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "__init__",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "*args"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "**kwargs"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "clear_isolated_state",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": null
+            }
+          ]
+        },
+        {
+          "class_name": "NegativeLogitBiasProcessor",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "__init__",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "dict",
+                  "default": null,
+                  "name": "token_biases"
+                }
+              ],
+              "returns": null
+            }
+          ]
+        },
+        {
+          "class_name": "RecursiveKMeansStrategy",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [
+                "@thread_isolated_execution"
+              ],
+              "name": "generate_plan",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "List[str]",
+                  "default": null,
+                  "name": "filenames"
+                },
+                {
+                  "annotation": "List[str]",
+                  "default": null,
+                  "name": "documents"
+                },
+                {
+                  "annotation": "int",
+                  "default": null,
+                  "name": "max_folders"
+                },
+                {
+                  "annotation": "set",
+                  "default": null,
+                  "name": "stop_words"
+                },
+                {
+                  "annotation": "int",
+                  "default": "5",
+                  "name": "max_depth"
+                },
+                {
+                  "annotation": "int",
+                  "default": "3",
+                  "name": "max_features"
+                },
+                {
+                  "annotation": "List[list] | None",
+                  "default": "None",
+                  "name": "pre_fetched_vectors"
+                },
+                {
+                  "annotation": null,
+                  "default": "None",
+                  "name": "cancel_check"
+                },
+                {
+                  "annotation": "list | dict | None",
+                  "default": "None",
+                  "name": "pre_fetched_corpus"
+                }
+              ],
+              "returns": "tuple[dict, float]"
+            }
+          ]
+        }
+      ],
+      "functions": [
+        {
+          "async": false,
+          "decorators": [
+            "@contextmanager"
+          ],
+          "name": "block_external_network",
+          "parameters": [],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "cooperative_join",
+          "parameters": [
+            {
+              "annotation": null,
               "default": null,
+              "name": "target"
+            },
+            {
+              "annotation": null,
+              "default": "1.0",
+              "name": "timeout"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "cooperative_queue_get",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "q"
+            },
+            {
+              "annotation": null,
+              "default": "8.0",
+              "name": "timeout"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_decryption_executor",
+          "parameters": [],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "gguf_worker_main",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "model_path"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "input_queue"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "output_queue"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "n_threads"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "session_key"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "is_debug_active",
+          "parameters": [],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "is_gguf_model_dir",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "model_path"
+            }
+          ],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "is_prompt_dump_enabled",
+          "parameters": [],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "recursive_kmeans_worker_main",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "filenames_or_input_queue"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "documents_or_output_queue"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "max_folders_or_key"
+            },
+            {
+              "annotation": null,
+              "default": "None",
               "name": "stop_words"
             },
             {
-              "annotation": "int",
+              "annotation": null,
               "default": "5",
               "name": "max_depth"
             },
             {
-              "annotation": "int",
+              "annotation": null,
               "default": "3",
               "name": "max_features"
             },
             {
-              "annotation": "List[list] | None",
+              "annotation": null,
               "default": "None",
               "name": "pre_fetched_vectors"
             },
             {
               "annotation": null,
               "default": "None",
-              "name": "cancel_check"
+              "name": "output_queue"
+            },
+            {
+              "annotation": "str",
+              "default": "'RecursiveKMeansStrategy'",
+              "name": "strategy_class_name"
+            },
+            {
+              "annotation": "int | None",
+              "default": "None",
+              "name": "thread_limit"
             },
             {
               "annotation": "list | dict | None",
               "default": "None",
               "name": "pre_fetched_corpus"
+            },
+            {
+              "annotation": "bytes | str | None",
+              "default": "None",
+              "name": "session_key"
             }
           ],
-          "returns": "tuple[dict, float]"
-        }
-      ]
-    },
-    "DocumentExtractor": {
-      "class_name": "DocumentExtractor",
-      "methods": [
+          "returns": null
+        },
         {
           "async": false,
-          "name": "extract",
+          "decorators": [],
+          "name": "redact_sensitive_text",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "text"
+            }
+          ],
+          "returns": "str"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "scrub_prompt_text",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "text"
+            }
+          ],
+          "returns": "str"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "thread_isolated_execution",
           "parameters": [
             {
               "annotation": null,
               "default": null,
-              "name": "self"
+              "name": "func"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "validate_prompt_dump_path",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "dump_file"
+            }
+          ],
+          "returns": "Path"
+        }
+      ]
+    },
+    "app/core/cache.py": {
+      "classes": [
+        {
+          "class_name": "CacheManager",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "__init__",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "db_path"
+                },
+                {
+                  "annotation": "DBWorker",
+                  "default": null,
+                  "name": "worker"
+                }
+              ],
+              "returns": null
             },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "load_cache",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "source_directory"
+                }
+              ],
+              "returns": null
+            }
+          ]
+        }
+      ],
+      "functions": []
+    },
+    "app/core/clinical_compliance.py": {
+      "classes": [
+        {
+          "class_name": "ClinicalComplianceEngine",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "__init__",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "evaluate_compliance",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "Dict[str, str]",
+                  "default": null,
+                  "name": "classified_artifacts"
+                },
+                {
+                  "annotation": "List[str]",
+                  "default": null,
+                  "name": "all_filenames"
+                },
+                {
+                  "annotation": "str",
+                  "default": "''",
+                  "name": "base_dir"
+                }
+              ],
+              "returns": "Dict[str, Any]"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "export_json_report",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "Dict[str, Any]",
+                  "default": null,
+                  "name": "compliance_data"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "output_path"
+                }
+              ],
+              "returns": "str"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "generate_html_report",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "Dict[str, Any]",
+                  "default": null,
+                  "name": "compliance_data"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "output_path"
+                }
+              ],
+              "returns": "str"
+            }
+          ]
+        }
+      ],
+      "functions": []
+    },
+    "app/core/clinical_renamer.py": {
+      "classes": [
+        {
+          "class_name": "ClinicalRenamer",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [
+                "@staticmethod"
+              ],
+              "name": "extract_date_or_version",
+              "parameters": [
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "text"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "filename"
+                }
+              ],
+              "returns": "Optional[str]"
+            },
+            {
+              "async": false,
+              "decorators": [
+                "@staticmethod"
+              ],
+              "name": "extract_investigator_name",
+              "parameters": [
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "text"
+                }
+              ],
+              "returns": "Optional[str]"
+            },
+            {
+              "async": false,
+              "decorators": [
+                "@staticmethod"
+              ],
+              "name": "extract_protocol_id",
+              "parameters": [
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "text"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "filename"
+                }
+              ],
+              "returns": "Optional[str]"
+            },
+            {
+              "async": false,
+              "decorators": [
+                "@classmethod"
+              ],
+              "name": "generate_standard_filename",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "cls"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "original_filename"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "artifact_name"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "text"
+                }
+              ],
+              "returns": "str"
+            }
+          ]
+        }
+      ],
+      "functions": []
+    },
+    "app/core/clinical_strategy.py": {
+      "classes": [
+        {
+          "class_name": "ClinicalTMFStrategy",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "__init__",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": "'tmf'",
+                  "name": "mode"
+                },
+                {
+                  "annotation": "bool",
+                  "default": "False",
+                  "name": "smart_renaming"
+                },
+                {
+                  "annotation": "bool",
+                  "default": "True",
+                  "name": "generate_audit_report"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "generate_plan",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "List[str]",
+                  "default": null,
+                  "name": "filenames"
+                },
+                {
+                  "annotation": "List[str]",
+                  "default": null,
+                  "name": "documents"
+                },
+                {
+                  "annotation": "int",
+                  "default": "15",
+                  "name": "max_folders"
+                },
+                {
+                  "annotation": "Optional[set]",
+                  "default": "None",
+                  "name": "stop_words"
+                },
+                {
+                  "annotation": "int",
+                  "default": "5",
+                  "name": "max_depth"
+                },
+                {
+                  "annotation": "int",
+                  "default": "3",
+                  "name": "max_features"
+                },
+                {
+                  "annotation": "Optional[List[list]]",
+                  "default": "None",
+                  "name": "pre_fetched_vectors"
+                },
+                {
+                  "annotation": null,
+                  "default": "None",
+                  "name": "cancel_check"
+                },
+                {
+                  "annotation": "Optional[Any]",
+                  "default": "None",
+                  "name": "pre_fetched_corpus"
+                }
+              ],
+              "returns": "Tuple[dict, float]"
+            }
+          ]
+        }
+      ],
+      "functions": []
+    },
+    "app/core/clinical_taxonomy.py": {
+      "classes": [
+        {
+          "class_name": "ClinicalArtifactDefinition",
+          "decorators": [
+            "@dataclass"
+          ],
+          "methods": []
+        }
+      ],
+      "functions": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_artifact_by_id",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "artifact_id"
+            }
+          ],
+          "returns": "Optional[ClinicalArtifactDefinition]"
+        }
+      ]
+    },
+    "app/core/cro_multi_study_pipeline.py": {
+      "classes": [
+        {
+          "class_name": "CROMultiStudyPipeline",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "__init__",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": "'tmf'",
+                  "name": "mode"
+                },
+                {
+                  "annotation": "bool",
+                  "default": "True",
+                  "name": "smart_renaming"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "run_pipeline",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "source_root"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "target_root"
+                },
+                {
+                  "annotation": "Optional[Callable[[int, str], None]]",
+                  "default": "None",
+                  "name": "progress_callback"
+                },
+                {
+                  "annotation": "Optional[Callable[[], bool]]",
+                  "default": "None",
+                  "name": "cancel_check"
+                }
+              ],
+              "returns": "MasterPipelineResult"
+            }
+          ]
+        },
+        {
+          "class_name": "MasterPipelineResult",
+          "decorators": [
+            "@dataclass"
+          ],
+          "methods": []
+        },
+        {
+          "class_name": "StudyIngestSummary",
+          "decorators": [
+            "@dataclass"
+          ],
+          "methods": []
+        }
+      ],
+      "functions": []
+    },
+    "app/core/crypto.py": {
+      "classes": [
+        {
+          "class_name": "EphemeralSessionCrypto",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "__init__",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "bytes | str | None",
+                  "default": "None",
+                  "name": "session_key"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "decrypt_payload",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "bytes",
+                  "default": null,
+                  "name": "encrypted_bytes"
+                }
+              ],
+              "returns": "Any"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "encrypt_payload",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "Any",
+                  "default": null,
+                  "name": "payload"
+                }
+              ],
+              "returns": "bytes"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "purge",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": "None"
+            }
+          ]
+        },
+        {
+          "class_name": "SessionCrypto",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "__init__",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "Path",
+                  "default": null,
+                  "name": "key_path"
+                },
+                {
+                  "annotation": "Path",
+                  "default": null,
+                  "name": "db_path"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "decrypt_and_parse_vector",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "bytes",
+                  "default": null,
+                  "name": "cipher_bytes"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "decrypt_text",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "bytes",
+                  "default": null,
+                  "name": "cipher_bytes"
+                }
+              ],
+              "returns": "str"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "decrypt_vector",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "bytes",
+                  "default": null,
+                  "name": "cipher_bytes"
+                }
+              ],
+              "returns": "str"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "encrypt_text",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "text"
+                }
+              ],
+              "returns": "bytes"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "encrypt_vector",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "text"
+                }
+              ],
+              "returns": "bytes"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "get_cipher",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "get_raw_key",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": "str"
+            }
+          ]
+        },
+        {
+          "class_name": "VectorBuffer",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "__init__",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "Any",
+                  "default": null,
+                  "name": "vector"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "is_zeroed",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": "bool"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "to_list",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": "list[float]"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "to_numpy",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": "Any"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "zero_fill",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": "None"
+            }
+          ]
+        }
+      ],
+      "functions": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "decrypt_ipc_payload",
+          "parameters": [
+            {
+              "annotation": "bytes",
+              "default": null,
+              "name": "encrypted_bytes"
+            },
+            {
+              "annotation": "bytes | str",
+              "default": null,
+              "name": "session_key"
+            }
+          ],
+          "returns": "Any"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "encrypt_ipc_payload",
+          "parameters": [
+            {
+              "annotation": "Any",
+              "default": null,
+              "name": "payload"
+            },
+            {
+              "annotation": "bytes | str",
+              "default": null,
+              "name": "session_key"
+            }
+          ],
+          "returns": "bytes"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_fallback_keys_dir",
+          "parameters": [],
+          "returns": "Path"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "secure_delete_dir",
+          "parameters": [
+            {
+              "annotation": "Path",
+              "default": null,
+              "name": "dir_path"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "secure_delete_file",
+          "parameters": [
+            {
+              "annotation": "Path",
+              "default": null,
+              "name": "file_path"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "zero_vector_buffer",
+          "parameters": [
+            {
+              "annotation": "Any",
+              "default": null,
+              "name": "target"
+            }
+          ],
+          "returns": "None"
+        }
+      ]
+    },
+    "app/core/daemon.py": {
+      "classes": [
+        {
+          "class_name": "ContinuousWatchdogDaemon",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "__init__",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "AppSettings",
+                  "default": null,
+                  "name": "settings"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "base_dir"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [
+                "@property"
+              ],
+              "name": "is_moving",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": "bool"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "is_self_generated_event",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "event"
+                }
+              ],
+              "returns": "bool"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "mark_pending_dirty",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [
+                "@property"
+              ],
+              "name": "pending_dirty",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": "bool"
+            },
+            {
+              "async": false,
+              "decorators": [
+                "@contextlib.contextmanager"
+              ],
+              "name": "scoped_move_phase",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": null,
+                  "default": "None",
+                  "name": "plan"
+                },
+                {
+                  "annotation": null,
+                  "default": "None",
+                  "name": "active_paths"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "should_ignore_path",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "path"
+                }
+              ],
+              "returns": "bool"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "start",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "stop",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "trigger_recalculation",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": null
+            }
+          ]
+        },
+        {
+          "class_name": "DaemonFolderHandler",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "__init__",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "daemon"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "on_any_event",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "event"
+                }
+              ],
+              "returns": null
+            }
+          ]
+        }
+      ],
+      "functions": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "start_daemon",
+          "parameters": [
+            {
+              "annotation": "AppSettings",
+              "default": null,
+              "name": "settings"
+            },
+            {
+              "annotation": "str",
+              "default": "None",
+              "name": "base_dir"
+            }
+          ],
+          "returns": null
+        }
+      ]
+    },
+    "app/core/db.py": {
+      "classes": [
+        {
+          "class_name": "Database",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "__init__",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "Path",
+                  "default": null,
+                  "name": "db_path"
+                },
+                {
+                  "annotation": "DBWorker",
+                  "default": null,
+                  "name": "worker"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "clear",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": null,
+                  "default": "None",
+                  "name": "base_dir"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "clear_all_document_vectors",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "clear_corrupted_vectors",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "base_dir"
+                },
+                {
+                  "annotation": "list[str]",
+                  "default": null,
+                  "name": "filepaths"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "execute_batch_updates",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "updates"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "get_all_document_ratings",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "base_dir"
+                }
+              ],
+              "returns": "dict[str, str]"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "get_all_documents",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "base_dir"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "get_corrupted_vectors_by_base_dir",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "base_dir"
+                }
+              ],
+              "returns": "list[str]"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "get_document",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "base_dir"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "filepath"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "get_document_rating",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "base_dir"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "filepath"
+                }
+              ],
+              "returns": "str | None"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "get_document_vector",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "base_dir"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "filepath"
+                }
+              ],
+              "returns": "list[float] | None"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "get_document_vectors_batch",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "base_dir"
+                },
+                {
+                  "annotation": "list[str]",
+                  "default": null,
+                  "name": "filepaths"
+                }
+              ],
+              "returns": "dict[str, list[float]]"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "get_documents_by_filepaths",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "base_dir"
+                },
+                {
+                  "annotation": "list[str]",
+                  "default": null,
+                  "name": "filepaths"
+                }
+              ],
+              "returns": "list[tuple[str, str]]"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "get_documents_missing_vectors",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "base_dir"
+                },
+                {
+                  "annotation": "int",
+                  "default": "50",
+                  "name": "limit"
+                },
+                {
+                  "annotation": "int",
+                  "default": "0",
+                  "name": "offset"
+                },
+                {
+                  "annotation": "str | None",
+                  "default": "None",
+                  "name": "active_model_signature"
+                }
+              ],
+              "returns": "list[tuple[str, str]]"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "get_model_metadata",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "key"
+                }
+              ],
+              "returns": "str | None"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "get_tfidf_stats",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "base_dir"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "get_transaction_steps",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "session_id"
+                }
+              ],
+              "returns": "list"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "init_db",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "invalidate_cache",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "record_transaction_step",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "session_id"
+                },
+                {
+                  "annotation": "int",
+                  "default": null,
+                  "name": "step_number"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "base_dir"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "source_path"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "destination_path"
+                },
+                {
+                  "annotation": "str",
+                  "default": "None",
+                  "name": "file_hash"
+                },
+                {
+                  "annotation": "str",
+                  "default": "'file'",
+                  "name": "item_type"
+                },
+                {
+                  "annotation": "str",
+                  "default": "None",
+                  "name": "metadata"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "remove_document",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "base_dir"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "filepath"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "set_document_rating",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "base_dir"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "filepath"
+                },
+                {
+                  "annotation": "str | None",
+                  "default": null,
+                  "name": "rating"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "set_document_rating_by_hash",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "base_dir"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "file_hash"
+                },
+                {
+                  "annotation": "str | None",
+                  "default": null,
+                  "name": "rating"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "set_model_metadata",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "key"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "value"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "set_user_verified_target",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "base_dir"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "file_hash"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "target_path"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "set_user_verified_target_path",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "base_dir"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "filepath"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "target_path"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "track_corrupted_vector",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "base_dir"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "filepath"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "update_document_path",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "base_dir"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "old_filepath"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "new_filepath"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "upsert_document",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "base_dir"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "filepath"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "file_hash"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "extracted_text"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "upsert_document_vectors",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "base_dir"
+                },
+                {
+                  "annotation": "list[tuple[str, list[float]]]",
+                  "default": null,
+                  "name": "vectors_data"
+                },
+                {
+                  "annotation": "str | None",
+                  "default": "None",
+                  "name": "model_signature"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "upsert_documents",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "documents"
+                }
+              ],
+              "returns": null
+            }
+          ]
+        }
+      ],
+      "functions": []
+    },
+    "app/core/db_conn.py": {
+      "classes": [],
+      "functions": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "clear_connection_cache",
+          "parameters": [
+            {
+              "annotation": "bool",
+              "default": "True",
+              "name": "only_current_and_inactive"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "clear_dead_thread_connections",
+          "parameters": [],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_db_connection",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "db_path"
+            }
+          ],
+          "returns": null
+        }
+      ]
+    },
+    "app/core/db_worker.py": {
+      "classes": [
+        {
+          "class_name": "DBWorker",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "__init__",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "execute_write",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "func"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "*args"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "**kwargs"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "execute_write_async",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "func"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "*args"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "**kwargs"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "stop",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "submit_write",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "func"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "*args"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "**kwargs"
+                }
+              ],
+              "returns": null
+            }
+          ]
+        }
+      ],
+      "functions": []
+    },
+    "app/core/downloader.py": {
+      "classes": [
+        {
+          "class_name": "DiskSpaceError",
+          "decorators": [],
+          "methods": []
+        },
+        {
+          "class_name": "DownloadCancelledError",
+          "decorators": [],
+          "methods": []
+        },
+        {
+          "class_name": "DownloadError",
+          "decorators": [],
+          "methods": []
+        },
+        {
+          "class_name": "DownloadManager",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "__init__",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "cancel_download",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "delete_model_async",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "model_dir"
+                },
+                {
+                  "annotation": null,
+                  "default": "None",
+                  "name": "on_done"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [
+                "@classmethod"
+              ],
+              "name": "get_instance",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "cls"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "start_download",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "url"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "model_dir"
+                },
+                {
+                  "annotation": "str",
+                  "default": "''",
+                  "name": "proxy"
+                }
+              ],
+              "returns": null
+            }
+          ]
+        },
+        {
+          "class_name": "ModelVerificationError",
+          "decorators": [],
+          "methods": []
+        },
+        {
+          "class_name": "NetworkError",
+          "decorators": [],
+          "methods": []
+        },
+        {
+          "class_name": "ThreadSafeState",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "__init__",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "**kwargs"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "get",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "key"
+                },
+                {
+                  "annotation": null,
+                  "default": "None",
+                  "name": "default"
+                }
+              ],
+              "returns": null
+            }
+          ]
+        }
+      ],
+      "functions": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "run_background_download",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "url"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "model_dir"
+            },
+            {
+              "annotation": "str",
+              "default": "''",
+              "name": "proxy"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "progress_callback"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "on_success"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "on_failure"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "cancel_event"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "verify_downloaded_model",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "model_dir"
+            }
+          ],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "verify_temp_file_hash",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "temp_path"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "target_path"
+            }
+          ],
+          "returns": "bool"
+        }
+      ]
+    },
+    "app/core/env_helper.py": {
+      "classes": [],
+      "functions": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "check_linux_sandbox_support",
+          "parameters": [],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "check_macos_sandbox_support",
+          "parameters": [],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "check_windows_sandbox_support",
+          "parameters": [],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_cleaned_env",
+          "parameters": [
+            {
+              "annotation": "dict",
+              "default": "None",
+              "name": "env"
+            }
+          ],
+          "returns": "dict"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_subprocess_startupinfo",
+          "parameters": [],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "is_cuda_available",
+          "parameters": [],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "is_mps_available",
+          "parameters": [],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "run_background_process",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cmd"
+            },
+            {
+              "annotation": "bool",
+              "default": "SANDBOX_SUPPORTED",
+              "name": "sandbox"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "**kwargs"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "spawn_background_process",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cmd"
+            },
+            {
+              "annotation": "bool",
+              "default": "SANDBOX_SUPPORTED",
+              "name": "sandbox"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "**kwargs"
+            }
+          ],
+          "returns": null
+        }
+      ]
+    },
+    "app/core/extractor.py": {
+      "classes": [],
+      "functions": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "build_corpus_generator",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": "list",
+              "default": null,
+              "name": "items_to_sort"
+            },
+            {
+              "annotation": "Callable",
+              "default": null,
+              "name": "progress_callback"
+            },
+            {
+              "annotation": "int",
+              "default": null,
+              "name": "max_workers"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "db"
+            },
+            {
+              "annotation": "int",
+              "default": "50",
+              "name": "chunk_size"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "sequential"
+            },
+            {
+              "annotation": "Callable | None",
+              "default": "None",
+              "name": "cancel_check"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "settings"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": true,
+          "decorators": [],
+          "name": "build_corpus_generator_async",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": "list",
+              "default": null,
+              "name": "items_to_sort"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "db"
+            },
+            {
+              "annotation": "Callable | None",
+              "default": "None",
+              "name": "cancel_check"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "settings"
+            },
+            {
+              "annotation": "Callable | None",
+              "default": "None",
+              "name": "progress_callback"
+            },
+            {
+              "annotation": "int",
+              "default": "50",
+              "name": "batch_size"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "extract_file_text",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "file_path"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "settings"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "progress_callback"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "cancel_check"
+            }
+          ],
+          "returns": "str"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_file_hash",
+          "parameters": [
             {
               "annotation": "str",
               "default": null,
@@ -446,6 +3669,3830 @@
             }
           ],
           "returns": "str"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "process_item_worker",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "item"
+            },
+            {
+              "annotation": "Callable",
+              "default": null,
+              "name": "progress_callback"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "db"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "settings"
+            }
+          ],
+          "returns": "Tuple[str, str, str]"
+        }
+      ]
+    },
+    "app/core/extractor_strategies.py": {
+      "classes": [
+        {
+          "class_name": "AudioExtractor",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "extract",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "file_path"
+                },
+                {
+                  "annotation": null,
+                  "default": "None",
+                  "name": "settings"
+                },
+                {
+                  "annotation": null,
+                  "default": "None",
+                  "name": "progress_callback"
+                },
+                {
+                  "annotation": null,
+                  "default": "None",
+                  "name": "cancel_check"
+                }
+              ],
+              "returns": "str"
+            }
+          ]
+        },
+        {
+          "class_name": "CsvExtractor",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "extract",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "file_path"
+                },
+                {
+                  "annotation": null,
+                  "default": "None",
+                  "name": "settings"
+                }
+              ],
+              "returns": "str"
+            }
+          ]
+        },
+        {
+          "class_name": "DocumentExtractor",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "extract",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "file_path"
+                }
+              ],
+              "returns": "str"
+            }
+          ]
+        },
+        {
+          "class_name": "DocxExtractor",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "extract",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "file_path"
+                },
+                {
+                  "annotation": null,
+                  "default": "None",
+                  "name": "settings"
+                }
+              ],
+              "returns": "str"
+            }
+          ]
+        },
+        {
+          "class_name": "ExtractorRegistry",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "__init__",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "get_extractor",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "extension"
+                }
+              ],
+              "returns": "DocumentExtractor"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "is_supported",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "extension"
+                }
+              ],
+              "returns": "bool"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "register",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "extension"
+                },
+                {
+                  "annotation": "DocumentExtractor",
+                  "default": null,
+                  "name": "extractor"
+                }
+              ],
+              "returns": null
+            }
+          ]
+        },
+        {
+          "class_name": "ImageExtractor",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "extract",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "file_path"
+                },
+                {
+                  "annotation": null,
+                  "default": "None",
+                  "name": "settings"
+                }
+              ],
+              "returns": "str"
+            }
+          ]
+        },
+        {
+          "class_name": "PdfExtractor",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "extract",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "file_path"
+                },
+                {
+                  "annotation": null,
+                  "default": "None",
+                  "name": "settings"
+                }
+              ],
+              "returns": "str"
+            }
+          ]
+        },
+        {
+          "class_name": "TxtExtractor",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "extract",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "file_path"
+                },
+                {
+                  "annotation": null,
+                  "default": "None",
+                  "name": "settings"
+                }
+              ],
+              "returns": "str"
+            }
+          ]
+        },
+        {
+          "class_name": "XlsxExtractor",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "extract",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "file_path"
+                },
+                {
+                  "annotation": null,
+                  "default": "None",
+                  "name": "settings"
+                }
+              ],
+              "returns": "str"
+            }
+          ]
+        }
+      ],
+      "functions": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "extract_text_from_image",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "image"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "settings"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "file_path"
+            }
+          ],
+          "returns": "str"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_audio_duration",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "file_path"
+            }
+          ],
+          "returns": "float"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_ocr_reader",
+          "parameters": [],
+          "returns": null
+        }
+      ]
+    },
+    "app/core/file_renamer.py": {
+      "classes": [
+        {
+          "class_name": "ContextExtractor",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [
+                "@staticmethod"
+              ],
+              "name": "extract_keywords_tfidf",
+              "parameters": [
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "text"
+                },
+                {
+                  "annotation": "Optional[Set[str]]",
+                  "default": "None",
+                  "name": "stop_words"
+                },
+                {
+                  "annotation": "int",
+                  "default": "3",
+                  "name": "max_keywords"
+                }
+              ],
+              "returns": "List[str]"
+            }
+          ]
+        },
+        {
+          "class_name": "FileRenamerEngine",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "__init__",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": null,
+                  "default": "None",
+                  "name": "runtime_settings"
+                },
+                {
+                  "annotation": null,
+                  "default": "None",
+                  "name": "db"
+                },
+                {
+                  "annotation": null,
+                  "default": "None",
+                  "name": "embedding_manager"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "generate_contextual_name",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "original_filename"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "text"
+                },
+                {
+                  "annotation": "Optional[Set[str]]",
+                  "default": "None",
+                  "name": "stop_words"
+                }
+              ],
+              "returns": "str"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "process_sorting_plan",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "dict",
+                  "default": null,
+                  "name": "plan"
+                },
+                {
+                  "annotation": "Dict[str, str]",
+                  "default": null,
+                  "name": "documents_map"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "base_dir"
+                },
+                {
+                  "annotation": "Optional[dict]",
+                  "default": "None",
+                  "name": "locked_files"
+                },
+                {
+                  "annotation": "Optional[Set[str]]",
+                  "default": "None",
+                  "name": "stop_words"
+                }
+              ],
+              "returns": "dict"
+            }
+          ]
+        },
+        {
+          "class_name": "HeuristicEvaluator",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [
+                "@classmethod"
+              ],
+              "name": "evaluate_filename",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "cls"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "filename"
+                }
+              ],
+              "returns": "dict"
+            },
+            {
+              "async": false,
+              "decorators": [
+                "@classmethod"
+              ],
+              "name": "is_poorly_named",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "cls"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "filename"
+                }
+              ],
+              "returns": "bool"
+            }
+          ]
+        }
+      ],
+      "functions": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "is_file_protected_or_locked",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "filepath"
+            },
+            {
+              "annotation": "Optional[dict]",
+              "default": "None",
+              "name": "locked_files"
+            },
+            {
+              "annotation": "Optional[list]",
+              "default": "None",
+              "name": "protected_paths"
+            },
+            {
+              "annotation": "Optional[dict]",
+              "default": "None",
+              "name": "matched_policies"
+            }
+          ],
+          "returns": "bool"
+        }
+      ]
+    },
+    "app/core/forensic_scanner.py": {
+      "classes": [
+        {
+          "class_name": "DiscoveredDocument",
+          "decorators": [
+            "@dataclass"
+          ],
+          "methods": []
+        },
+        {
+          "class_name": "ForensicScanner",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "__init__",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "Optional[str]",
+                  "default": "None",
+                  "name": "temp_staging_dir"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "cleanup",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [
+                "@staticmethod"
+              ],
+              "name": "compute_sha256",
+              "parameters": [
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "filepath"
+                }
+              ],
+              "returns": "str"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "parse_eml_file",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "eml_path"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "destination_dir"
+                }
+              ],
+              "returns": "tuple[str, List[str]]"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "scan_drive",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "source_root"
+                },
+                {
+                  "annotation": "Optional[Callable[[int, str], None]]",
+                  "default": "None",
+                  "name": "progress_callback"
+                },
+                {
+                  "annotation": "Optional[Callable[[], bool]]",
+                  "default": "None",
+                  "name": "cancel_check"
+                }
+              ],
+              "returns": "List[DiscoveredDocument]"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "unpack_archive",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "archive_path"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "destination_dir"
+                }
+              ],
+              "returns": "List[str]"
+            }
+          ]
+        }
+      ],
+      "functions": []
+    },
+    "app/core/hashes_registry.py": {
+      "classes": [],
+      "functions": []
+    },
+    "app/core/history.py": {
+      "classes": [
+        {
+          "class_name": "HistoryManager",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "__init__",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "db"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "cache_manager"
+                },
+                {
+                  "annotation": null,
+                  "default": "None",
+                  "name": "db_path"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "check_missing_files",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "session_id"
+                }
+              ],
+              "returns": "List[str]"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "clear_step_ledger",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "session_id"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "create_snapshot",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "base_dir"
+                }
+              ],
+              "returns": "str"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "get_bidirectional_path_map",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "session_id"
+                }
+              ],
+              "returns": "Dict[str, Any]"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "get_sessions",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": "List[Dict[str, Any]]"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "get_step_ledger",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "session_id"
+                }
+              ],
+              "returns": "List[Dict[str, Any]]"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "log_step",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "session_id"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "source_path"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "target_path"
+                },
+                {
+                  "annotation": "str",
+                  "default": "None",
+                  "name": "original_path"
+                },
+                {
+                  "annotation": "str",
+                  "default": "None",
+                  "name": "original_filename"
+                },
+                {
+                  "annotation": "bool",
+                  "default": "False",
+                  "name": "is_cross_volume"
+                },
+                {
+                  "annotation": "bool",
+                  "default": "False",
+                  "name": "is_collision_renamed"
+                },
+                {
+                  "annotation": "str",
+                  "default": "None",
+                  "name": "file_hash"
+                }
+              ],
+              "returns": "int"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "resume_rollback",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "session_id"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "revert_rollback",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "safety_session_id"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "rollback",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "session_id"
+                },
+                {
+                  "annotation": "bool",
+                  "default": "False",
+                  "name": "ignore_missing"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "unwind_session",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "session_id"
+                },
+                {
+                  "annotation": null,
+                  "default": "None",
+                  "name": "db"
+                }
+              ],
+              "returns": "int"
+            }
+          ]
+        }
+      ],
+      "functions": []
+    },
+    "app/core/integration.py": {
+      "classes": [],
+      "functions": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "is_admin",
+          "parameters": [],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "register_context_menu",
+          "parameters": [
+            {
+              "annotation": "bool",
+              "default": null,
+              "name": "enable"
+            }
+          ],
+          "returns": null
+        }
+      ]
+    },
+    "app/core/ledger.py": {
+      "classes": [
+        {
+          "class_name": "TransactionLedger",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "__init__",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "Optional[str]",
+                  "default": "None",
+                  "name": "db_path"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "get_pending_entries",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "Optional[str]",
+                  "default": "None",
+                  "name": "session_id"
+                }
+              ],
+              "returns": "List[Dict]"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "log_intent",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "session_id"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "base_dir"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "source_path"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "dest_path"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "source_rel_path"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "dest_rel_path"
+                },
+                {
+                  "annotation": "str",
+                  "default": "''",
+                  "name": "current_dest"
+                },
+                {
+                  "annotation": "str",
+                  "default": "''",
+                  "name": "file_hash"
+                },
+                {
+                  "annotation": "Optional[str]",
+                  "default": "None",
+                  "name": "entry_id"
+                }
+              ],
+              "returns": "str"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "purge_completed",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "purge_session",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "session_id"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "reconcile_incomplete_transactions",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": null,
+                  "default": "None",
+                  "name": "db"
+                }
+              ],
+              "returns": "int"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "update_status",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "entry_id"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "status"
+                }
+              ],
+              "returns": null
+            }
+          ]
+        }
+      ],
+      "functions": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_default_ledger_path",
+          "parameters": [],
+          "returns": "str"
+        }
+      ]
+    },
+    "app/core/link_manager.py": {
+      "classes": [
+        {
+          "class_name": "LinkManager",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [
+                "@classmethod"
+              ],
+              "name": "clear",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "cls"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [
+                "@classmethod"
+              ],
+              "name": "get_link_info",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "cls"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "full_path"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [
+                "@classmethod"
+              ],
+              "name": "register_link",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "cls"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "base_dir"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "rel_path"
+                }
+              ],
+              "returns": null
+            }
+          ]
+        }
+      ],
+      "functions": []
+    },
+    "app/core/metadata.py": {
+      "classes": [
+        {
+          "class_name": "MetadataPass",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [
+                "@staticmethod"
+              ],
+              "name": "run",
+              "parameters": [
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "base_dir"
+                },
+                {
+                  "annotation": "list",
+                  "default": null,
+                  "name": "items_to_sort"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "settings"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "db"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "callback"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "cancel_check"
+                }
+              ],
+              "returns": "list"
+            }
+          ]
+        }
+      ],
+      "functions": []
+    },
+    "app/core/mover.py": {
+      "classes": [],
+      "functions": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "execute_moves",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": "dict",
+              "default": null,
+              "name": "plan"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "db"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "history_manager"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "runtime_settings"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "resume"
+            },
+            {
+              "annotation": "int",
+              "default": "50",
+              "name": "batch_size"
+            }
+          ],
+          "returns": "dict"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_safe_path",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "dest_dir"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "filename"
+            },
+            {
+              "annotation": "str",
+              "default": "None",
+              "name": "source_path"
+            }
+          ],
+          "returns": "str"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "is_subpath_or_equal",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "child"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "parent"
+            }
+          ],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "resolve_new_target",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "abs_target"
+            },
+            {
+              "annotation": "dict",
+              "default": null,
+              "name": "path_map"
+            }
+          ],
+          "returns": "str"
+        }
+      ]
+    },
+    "app/core/offline_loader.py": {
+      "classes": [
+        {
+          "class_name": "Florence2VisualProcessor",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "__init__",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": "'florence-2'",
+                  "name": "model_id"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "load",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": "None"
+            },
+            {
+              "async": false,
+              "decorators": [
+                "@classmethod"
+              ],
+              "name": "parse_and_sanitize",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "cls"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "text"
+                },
+                {
+                  "annotation": "Tuple[int, int]",
+                  "default": null,
+                  "name": "image_size"
+                }
+              ],
+              "returns": "Dict[str, Any]"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "process_image",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "Any",
+                  "default": null,
+                  "name": "image_path"
+                },
+                {
+                  "annotation": "str",
+                  "default": "'<OD>'",
+                  "name": "task_prompt"
+                },
+                {
+                  "annotation": "Optional[Tuple[int, int]]",
+                  "default": "None",
+                  "name": "image_size"
+                }
+              ],
+              "returns": "Dict[str, Any]"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "unload",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": "None"
+            }
+          ]
+        },
+        {
+          "class_name": "ModelWeightsNotFoundError",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "__init__",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "model_id"
+                },
+                {
+                  "annotation": "List[str]",
+                  "default": null,
+                  "name": "searched_paths"
+                }
+              ],
+              "returns": null
+            }
+          ]
+        },
+        {
+          "class_name": "OfflineModelLoadError",
+          "decorators": [],
+          "methods": []
+        },
+        {
+          "class_name": "OfflineModelLoader",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [
+                "@classmethod"
+              ],
+              "name": "load_model",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "cls"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "model_id"
+                },
+                {
+                  "annotation": "Callable[..., Any]",
+                  "default": null,
+                  "name": "loader_fn"
+                },
+                {
+                  "annotation": "Any",
+                  "default": null,
+                  "name": "*args"
+                },
+                {
+                  "annotation": "Any",
+                  "default": null,
+                  "name": "**kwargs"
+                }
+              ],
+              "returns": "Any"
+            },
+            {
+              "async": false,
+              "decorators": [
+                "@classmethod"
+              ],
+              "name": "register_model",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "cls"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "model_id"
+                },
+                {
+                  "annotation": "Optional[List[str]]",
+                  "default": "None",
+                  "name": "expected_files"
+                }
+              ],
+              "returns": "None"
+            },
+            {
+              "async": false,
+              "decorators": [
+                "@classmethod"
+              ],
+              "name": "resolve_model_path",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "cls"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "model_id"
+                }
+              ],
+              "returns": "str"
+            }
+          ]
+        }
+      ],
+      "functions": []
+    },
+    "app/core/path_utils.py": {
+      "classes": [],
+      "functions": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_base_path",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": "None",
+              "name": "caller_file_path"
+            }
+          ],
+          "returns": "str"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_session_base_dir",
+          "parameters": [],
+          "returns": "Path"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "is_junction_entry",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "entry"
+            }
+          ],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "is_junction_path",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "path"
+            }
+          ],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "is_packaged",
+          "parameters": [],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "is_path_too_long",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "path"
+            },
+            {
+              "annotation": "int",
+              "default": "260",
+              "name": "limit"
+            }
+          ],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "is_valid_name",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "name"
+            }
+          ],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "resolve_db_crypto",
+          "parameters": [
+            {
+              "annotation": "Path | str",
+              "default": null,
+              "name": "db_path"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "sanitize_folder_key",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "key"
+            }
+          ],
+          "returns": "tuple[str, bool]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "sanitize_name",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "name"
+            }
+          ],
+          "returns": "str"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "sanitize_plan",
+          "parameters": [
+            {
+              "annotation": "dict",
+              "default": null,
+              "name": "plan"
+            }
+          ],
+          "returns": "tuple[dict, list[str]]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "setup_session_directory",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": "None",
+              "name": "session_id"
+            }
+          ],
+          "returns": "tuple[str, Path]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "validate_target_path",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "target_path"
+            },
+            {
+              "annotation": "str",
+              "default": "None",
+              "name": "keyword"
+            }
+          ],
+          "returns": "None"
+        }
+      ]
+    },
+    "app/core/policy_engine.py": {
+      "classes": [
+        {
+          "class_name": "PolicyEngine",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [
+                "@classmethod"
+              ],
+              "name": "evaluate_policies",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "cls"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "file_path"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "doc_text"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "status_match"
+                },
+                {
+                  "annotation": "list[dict]",
+                  "default": null,
+                  "name": "policies"
+                },
+                {
+                  "annotation": "bool",
+                  "default": "False",
+                  "name": "return_halting"
+                }
+              ],
+              "returns": "dict | None | tuple[dict | None, bool]"
+            },
+            {
+              "async": false,
+              "decorators": [
+                "@staticmethod"
+              ],
+              "name": "match_policy",
+              "parameters": [
+                {
+                  "annotation": "dict",
+                  "default": null,
+                  "name": "rule"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "file_path"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "doc_text"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "status_match"
+                }
+              ],
+              "returns": "bool"
+            },
+            {
+              "async": false,
+              "decorators": [
+                "@staticmethod"
+              ],
+              "name": "validate_lock_path",
+              "parameters": [
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "lock_path"
+                },
+                {
+                  "annotation": "str",
+                  "default": "None",
+                  "name": "file_path"
+                }
+              ],
+              "returns": "None"
+            }
+          ]
+        }
+      ],
+      "functions": []
+    },
+    "app/core/resilient_file_ops.py": {
+      "classes": [],
+      "functions": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "resilient_file_hash",
+          "parameters": [
+            {
+              "annotation": "str | os.PathLike",
+              "default": null,
+              "name": "file_path"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "skip_media_tags"
+            },
+            {
+              "annotation": "int",
+              "default": "65536",
+              "name": "chunk_size"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "normalize_text"
+            }
+          ],
+          "returns": "str"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "resilient_move",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "src"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "dst"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "resilient_remove",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "path"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "resilient_rmtree",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "path"
+            },
+            {
+              "annotation": null,
+              "default": "False",
+              "name": "ignore_errors"
+            }
+          ],
+          "returns": null
+        }
+      ]
+    },
+    "app/core/scanner.py": {
+      "classes": [],
+      "functions": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_files_recursively",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base"
+            },
+            {
+              "annotation": "str",
+              "default": "''",
+              "name": "rel_path"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "include_hidden"
+            }
+          ],
+          "returns": "list"
+        }
+      ]
+    },
+    "app/core/semantic_embeddings.py": {
+      "classes": [
+        {
+          "class_name": "DimensionMismatchError",
+          "decorators": [],
+          "methods": []
+        },
+        {
+          "class_name": "ModelProperties",
+          "decorators": [],
+          "methods": []
+        },
+        {
+          "class_name": "ModelValidationError",
+          "decorators": [],
+          "methods": []
+        },
+        {
+          "class_name": "SemanticEmbeddingManager",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "__init__",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "db"
+                },
+                {
+                  "annotation": "str | None",
+                  "default": "None",
+                  "name": "model_path"
+                },
+                {
+                  "annotation": "bool",
+                  "default": "False",
+                  "name": "bypass_validation"
+                },
+                {
+                  "annotation": "bool",
+                  "default": "False",
+                  "name": "force_validation"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "generate_embedding",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str | None",
+                  "default": null,
+                  "name": "text"
+                }
+              ],
+              "returns": "list[float]"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "get_embedding",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str | None",
+                  "default": null,
+                  "name": "text"
+                }
+              ],
+              "returns": "list[float]"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "get_vector",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "base_dir"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "filepath"
+                }
+              ],
+              "returns": "list[float] | None"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "get_vectors_batch",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "base_dir"
+                },
+                {
+                  "annotation": "list[str]",
+                  "default": null,
+                  "name": "filepaths"
+                },
+                {
+                  "annotation": "bool",
+                  "default": "True",
+                  "name": "regenerate"
+                }
+              ],
+              "returns": "dict[str, list[float]]"
+            },
+            {
+              "async": false,
+              "decorators": [
+                "@property"
+              ],
+              "name": "is_mock",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": "bool"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "is_reconstruction_active",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": "bool"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "stop",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [
+                "@classmethod"
+              ],
+              "name": "stop_all",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "cls"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "trigger_reconstruction",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "base_dir"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "validate_model_assets",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "validate_vector_dimension",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "list[float] | None",
+                  "default": null,
+                  "name": "vector"
+                }
+              ],
+              "returns": "bool"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "verify_active_model",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": null
+            }
+          ]
+        }
+      ],
+      "functions": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_active_model_properties",
+          "parameters": [
+            {
+              "annotation": "str | None",
+              "default": null,
+              "name": "model_path"
+            }
+          ],
+          "returns": "tuple[str, int, str]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "set_low_priority",
+          "parameters": [],
+          "returns": null
+        }
+      ]
+    },
+    "app/core/session.py": {
+      "classes": [
+        {
+          "class_name": "AppSession",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "__init__",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "settings"
+                },
+                {
+                  "annotation": null,
+                  "default": "None",
+                  "name": "base_dir"
+                },
+                {
+                  "annotation": null,
+                  "default": "None",
+                  "name": "session_id"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "close",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "execute_moves",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "plan"
+                },
+                {
+                  "annotation": null,
+                  "default": "False",
+                  "name": "resume"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "generate_sorting_plan",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "bool",
+                  "default": "False",
+                  "name": "fast_path_only"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "partial_fit",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "chunk"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": true,
+              "decorators": [],
+              "name": "process_items_async",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "items_to_sort"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "cancel_check"
+                },
+                {
+                  "annotation": null,
+                  "default": "None",
+                  "name": "progress_callback"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "rollback",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "session_id"
+                },
+                {
+                  "annotation": null,
+                  "default": "False",
+                  "name": "ignore_missing"
+                }
+              ],
+              "returns": null
+            }
+          ]
+        }
+      ],
+      "functions": [
+        {
+          "async": true,
+          "decorators": [],
+          "name": "scan_abandoned_sessions_async",
+          "parameters": [],
+          "returns": null
+        }
+      ]
+    },
+    "app/core/shared_registry.py": {
+      "classes": [
+        {
+          "class_name": "AudioConcurrencyGuard",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "__init__",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "int",
+                  "default": "2",
+                  "name": "limit"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "acquire_slot",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "Callable[[], bool] | None",
+                  "default": "None",
+                  "name": "cancel_check"
+                },
+                {
+                  "annotation": "float",
+                  "default": "0.05",
+                  "name": "poll_interval"
+                }
+              ],
+              "returns": "bool"
+            },
+            {
+              "async": false,
+              "decorators": [
+                "@property"
+              ],
+              "name": "active_count",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": "int"
+            },
+            {
+              "async": false,
+              "decorators": [
+                "@classmethod"
+              ],
+              "name": "get_instance",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "cls"
+                },
+                {
+                  "annotation": "int | None",
+                  "default": "None",
+                  "name": "limit"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [
+                "@contextmanager"
+              ],
+              "name": "guard",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "Callable[[], bool] | None",
+                  "default": "None",
+                  "name": "cancel_check"
+                },
+                {
+                  "annotation": "float",
+                  "default": "0.05",
+                  "name": "poll_interval"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [
+                "@property"
+              ],
+              "name": "limit",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": "int"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "release_slot",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [
+                "@classmethod"
+              ],
+              "name": "reset_instance",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "cls"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "set_limit",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "int",
+                  "default": null,
+                  "name": "new_limit"
+                }
+              ],
+              "returns": null
+            }
+          ]
+        },
+        {
+          "class_name": "ContextPropagatingThread",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "__init__",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "*args"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "**kwargs"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "run",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": null
+            }
+          ]
+        },
+        {
+          "class_name": "ContextPropagatingThreadPoolExecutor",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "submit",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "fn"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "*args"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "**kwargs"
+                }
+              ],
+              "returns": null
+            }
+          ]
+        },
+        {
+          "class_name": "ContextVarLocal",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "__init__",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": null
+            }
+          ]
+        },
+        {
+          "class_name": "SharedModelRegistry",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "__init__",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "apply_onnx_thread_limits",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "get_florence_processor",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "get_generative_model",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "model_path"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [
+                "@classmethod"
+              ],
+              "name": "get_instance",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "cls"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "get_ocr_reader",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "get_onnx_session",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "model_path"
+                },
+                {
+                  "annotation": null,
+                  "default": "None",
+                  "name": "sess_options"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "get_thread_limit",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": "int"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "is_model_loaded",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "model_id"
+                }
+              ],
+              "returns": "bool"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "register_expected_hashes",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "model_id"
+                },
+                {
+                  "annotation": "dict[str, str]",
+                  "default": null,
+                  "name": "hashes"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "unload_all_models",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": "None"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "unload_model",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "model_id"
+                }
+              ],
+              "returns": "bool"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "verify_integrity",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "model_id"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "model_path"
+                }
+              ],
+              "returns": "bool"
+            }
+          ]
+        },
+        {
+          "class_name": "SharedWorkerPool",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "__init__",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "int",
+                  "default": null,
+                  "name": "max_workers"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [
+                "@classmethod"
+              ],
+              "name": "get_instance",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "cls"
+                },
+                {
+                  "annotation": null,
+                  "default": "None",
+                  "name": "max_workers"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "map",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "fn"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "*iterables"
+                },
+                {
+                  "annotation": null,
+                  "default": "None",
+                  "name": "timeout"
+                },
+                {
+                  "annotation": null,
+                  "default": "1",
+                  "name": "chunksize"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "shutdown",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": null,
+                  "default": "False",
+                  "name": "wait"
+                },
+                {
+                  "annotation": null,
+                  "default": "True",
+                  "name": "cancel_futures"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [
+                "@classmethod"
+              ],
+              "name": "shutdown_instance",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "cls"
+                },
+                {
+                  "annotation": null,
+                  "default": "False",
+                  "name": "wait"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "submit",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "fn"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "*args"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "**kwargs"
+                }
+              ],
+              "returns": null
+            }
+          ]
+        }
+      ],
+      "functions": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "apply_global_socket_sandbox",
+          "parameters": [],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@contextmanager"
+          ],
+          "name": "block_external_network",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": "'worker execution'",
+              "name": "reason"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "safe_connect",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "address"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "safe_connect_ex",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "address"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "safe_getaddrinfo",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "*args"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "**kwargs"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "safe_getfqdn",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "*args"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "**kwargs"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "safe_gethostbyaddr",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "*args"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "**kwargs"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "safe_gethostbyname",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "*args"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "**kwargs"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "safe_gethostbyname_ex",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "*args"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "**kwargs"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "safe_getnameinfo",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "*args"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "**kwargs"
+            }
+          ],
+          "returns": null
+        }
+      ]
+    },
+    "app/core/study_disambiguator.py": {
+      "classes": [
+        {
+          "class_name": "StudyDisambiguator",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "__init__",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "discover_and_partition_studies",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "List[DiscoveredDocument]",
+                  "default": null,
+                  "name": "documents"
+                }
+              ],
+              "returns": "Dict[str, List[DiscoveredDocument]]"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "extract_site_number",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "text"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "path"
+                }
+              ],
+              "returns": "Optional[str]"
+            }
+          ]
+        },
+        {
+          "class_name": "StudyEntity",
+          "decorators": [
+            "@dataclass"
+          ],
+          "methods": []
+        }
+      ],
+      "functions": []
+    },
+    "app/core/text_utils.py": {
+      "classes": [],
+      "functions": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "sanitize_text",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "text"
+            }
+          ],
+          "returns": "str"
+        }
+      ]
+    },
+    "app/core/user_space_bootstrap.py": {
+      "classes": [],
+      "functions": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "bootstrap_binaries",
+          "parameters": [
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "force_download"
+            }
+          ],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "check_internet_connection",
+          "parameters": [
+            {
+              "annotation": "float",
+              "default": "2.0",
+              "name": "timeout"
+            }
+          ],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_bootstrap_bin_dir",
+          "parameters": [],
+          "returns": "Path"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "inject_bootstrap_paths",
+          "parameters": [
+            {
+              "annotation": "Path",
+              "default": "None",
+              "name": "platform_binaries_dir"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "verify_sqlcipher_encryption",
+          "parameters": [],
+          "returns": "bool"
+        }
+      ]
+    },
+    "app/core/verifier.py": {
+      "classes": [
+        {
+          "class_name": "VerificationEngine",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [
+                "@staticmethod"
+              ],
+              "name": "get_moves",
+              "parameters": [
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "base_dir"
+                },
+                {
+                  "annotation": "dict",
+                  "default": null,
+                  "name": "plan"
+                },
+                {
+                  "annotation": "str",
+                  "default": "''",
+                  "name": "current_dest"
+                },
+                {
+                  "annotation": "str",
+                  "default": "''",
+                  "name": "active_parent_path"
+                },
+                {
+                  "annotation": "int",
+                  "default": "0",
+                  "name": "depth"
+                }
+              ],
+              "returns": "list"
+            },
+            {
+              "async": false,
+              "decorators": [
+                "@staticmethod"
+              ],
+              "name": "sanitize_plan",
+              "parameters": [
+                {
+                  "annotation": "dict",
+                  "default": null,
+                  "name": "plan"
+                }
+              ],
+              "returns": "tuple[dict, list[str]]"
+            },
+            {
+              "async": false,
+              "decorators": [
+                "@staticmethod"
+              ],
+              "name": "verify_plan_integrity",
+              "parameters": [
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "base_dir"
+                },
+                {
+                  "annotation": "dict",
+                  "default": null,
+                  "name": "plan"
+                }
+              ],
+              "returns": "dict"
+            }
+          ]
+        },
+        {
+          "class_name": "VirtualFilesystemTracker",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "__init__",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "check_broken_links",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "list",
+                  "default": null,
+                  "name": "moves_list"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "base_dir"
+                },
+                {
+                  "annotation": "dict",
+                  "default": null,
+                  "name": "final_nodes"
+                }
+              ],
+              "returns": "list"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "check_circular_renames",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "list",
+                  "default": null,
+                  "name": "moves_list"
+                }
+              ],
+              "returns": "list"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "check_collisions",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "list",
+                  "default": null,
+                  "name": "moves_list"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "base_dir"
+                }
+              ],
+              "returns": "list"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "check_rename_proposals",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "base_dir"
+                },
+                {
+                  "annotation": "dict",
+                  "default": null,
+                  "name": "plan"
+                }
+              ],
+              "returns": "tuple[list, list]"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "populate_from_disk",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "base_dir"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "populate_from_moves",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "list",
+                  "default": null,
+                  "name": "moves_list"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "simulate_final_state",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "list",
+                  "default": null,
+                  "name": "moves_list"
+                }
+              ],
+              "returns": "dict"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "verify_integrity",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "base_dir"
+                },
+                {
+                  "annotation": "dict",
+                  "default": null,
+                  "name": "plan"
+                }
+              ],
+              "returns": "dict"
+            }
+          ]
+        },
+        {
+          "class_name": "VirtualNode",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "__init__",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "path"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "is_dir"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "inode"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "size"
+                },
+                {
+                  "annotation": null,
+                  "default": "None",
+                  "name": "symlink_target"
+                },
+                {
+                  "annotation": null,
+                  "default": "None",
+                  "name": "shortcut_target"
+                }
+              ],
+              "returns": null
+            }
+          ]
+        }
+      ],
+      "functions": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "check_ai_status",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "settings"
+            }
+          ],
+          "returns": "tuple[bool, str | None]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "is_ml_available",
+          "parameters": [],
+          "returns": "bool"
         }
       ]
     }

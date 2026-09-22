@@ -1,8 +1,78 @@
 from scripts.validate_signatures import (
+    collect_core_definitions,
     collect_current_definitions,
     extract_cli,
+    extract_module_signatures,
     extract_protocols,
 )
+
+
+def test_extract_module_signatures(tmp_path):
+    module_file = tmp_path / "test_module.py"
+    module_code = """
+import functools
+from dataclasses import dataclass
+
+@dataclass
+class ServiceWorker:
+    name: str
+
+    @staticmethod
+    def process_data(value: int = 100) -> str:
+        return str(value)
+
+    def _private_method(self):
+        pass
+
+def public_top_level_fn(flag: bool = True) -> int:
+    return 1 if flag else 0
+
+def _private_top_level_fn():
+    pass
+"""
+    module_file.write_text(module_code)
+    sigs = extract_module_signatures(str(module_file))
+
+    assert "classes" in sigs
+    assert "functions" in sigs
+
+    # Public class checks
+    assert len(sigs["classes"]) == 1
+    cls = sigs["classes"][0]
+    assert cls["class_name"] == "ServiceWorker"
+    assert "@dataclass" in cls["decorators"]
+
+    method_names = [m["name"] for m in cls["methods"]]
+    assert "process_data" in method_names
+    assert "_private_method" not in method_names
+
+    process_method = [m for m in cls["methods"] if m["name"] == "process_data"][0]
+    assert "@staticmethod" in process_method["decorators"]
+    assert process_method["parameters"][0]["name"] == "value"
+    assert process_method["parameters"][0]["default"] == "100"
+    assert process_method["parameters"][0]["annotation"] == "int"
+
+    # Public top level functions
+    func_names = [f["name"] for f in sigs["functions"]]
+    assert "public_top_level_fn" in func_names
+    assert "_private_top_level_fn" not in func_names
+
+
+def test_dynamic_core_file_discovery(tmp_path):
+    core_dir = tmp_path / "core"
+    core_dir.mkdir()
+
+    (core_dir / "alpha.py").write_text("def alpha_fn(): pass")
+    (core_dir / "beta.py").write_text("def beta_fn(): pass")
+
+    core_defs = collect_core_definitions(str(core_dir))
+    keys = list(core_defs.keys())
+    assert len(keys) == 2
+
+    # Automatically discovers newly added module without config changes
+    (core_dir / "gamma.py").write_text("def gamma_fn(): pass")
+    core_defs_updated = collect_core_definitions(str(core_dir))
+    assert len(core_defs_updated.keys()) == 3
 
 
 def test_extract_protocols_empty_and_valid(tmp_path):
@@ -66,12 +136,12 @@ parser.add_argument("--verbose", action="store_true", help="Enable verbose loggi
 
 def test_collect_current_definitions():
     defs = collect_current_definitions()
-    assert "protocols" in defs
+    assert "core" in defs
     assert "cli" in defs
 
-    # Check that ClusteringStrategy is extracted
-    assert "ClusteringStrategy" in defs["protocols"]
-    assert "DocumentExtractor" in defs["protocols"]
+    # Check core module paths
+    assert "app/core/analyzer.py" in defs["core"]
+    assert "app/core/extractor.py" in defs["core"]
 
     # Check CLI keys
     assert "app/main.py" in defs["cli"]
