@@ -4,6 +4,7 @@ This module provides utilities to read text from various file formats.
 """
 
 import concurrent.futures
+import inspect
 import logging
 import os
 from enum import Enum
@@ -13,6 +14,7 @@ import pypdf.errors
 from pydantic import BaseModel, ConfigDict
 
 from app.core.extractor_strategies import registry
+from app.core.text_utils import sanitize_text
 
 
 class ExtractionStatus(str, Enum):
@@ -127,8 +129,6 @@ def extract_file_text(
     base_dir: str | None = None,
 ) -> ExtractionResult:
     """Extract text content from a given file."""
-    import inspect
-
     ext = os.path.splitext(file_path)[1].lower()
 
     if fast_triage and ext in (".png", ".jpg", ".jpeg", ".bmp", ".tiff"):
@@ -157,7 +157,6 @@ def extract_file_text(
                 kwargs["cancel_check"] = cancel_check
 
             raw_text = extractor.extract(file_path, **kwargs)
-
             if fast_triage and ext == ".pdf" and not raw_text.strip():
                 if db and hasattr(db, "worker") and db.worker:
                     def _bg_pdf_job():
@@ -169,9 +168,6 @@ def extract_file_text(
                             db.update_tfidf_matrix_cache(base_dir)
                     db.worker.submit_background_job(_bg_pdf_job)
                 return ExtractionResult(text="", status=ExtractionStatus.PROVISIONAL)
-
-            from app.core.text_utils import sanitize_text
-
             text = sanitize_text(raw_text)
             if not text.strip():
                 return ExtractionResult(text="", status=ExtractionStatus.EMPTY)
