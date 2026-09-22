@@ -790,6 +790,10 @@ def main():
         run_tui(settings, getattr(args, "directory", None))
     else:
         try:
+            import importlib.util
+
+            if importlib.util.find_spec("nicegui") is None:
+                raise ImportError("NiceGUI web interface dependencies are not installed.")
             from app.ui.app import run_app
         except ImportError:
             print(
