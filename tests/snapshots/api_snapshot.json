@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "5fd1d3bdf71534ef87f60ca2f0821338f39998dc91c601c52c9e266b0520b312"
+    "checksum": "bf3b4843d87f37206c362a4e00b0b96b6fd380d1e85cfc8c95db2ec0bbeac8a0"
   },
   "cli": {
     "app/main.py": [
@@ -3204,6 +3204,11 @@
                   "annotation": null,
                   "default": null,
                   "name": "self"
+                },
+                {
+                  "annotation": null,
+                  "default": "None",
+                  "name": "settings"
                 }
               ],
               "returns": null
@@ -3262,6 +3267,19 @@
             {
               "async": false,
               "decorators": [],
+              "name": "get_opener",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
               "name": "start_download",
               "parameters": [
                 {
@@ -3283,6 +3301,24 @@
                   "annotation": "str",
                   "default": "''",
                   "name": "proxy"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "update_proxy",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "proxy_str"
                 }
               ],
               "returns": null
@@ -3387,6 +3423,11 @@
               "annotation": null,
               "default": "None",
               "name": "cancel_event"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "download_manager"
             }
           ],
           "returns": null
