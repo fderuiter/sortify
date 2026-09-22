@@ -544,14 +544,9 @@ def handle_daemon_command(args: argparse.Namespace, settings: AppSettings):
     start_daemon(settings, target_dir)
 
 
-def main():
-    """Execute the main application GUI or Demo."""
-    import multiprocessing
-    import sys
-
-    multiprocessing.freeze_support()
-
-    parser = argparse.ArgumentParser(description="Smart AutoSorter AI Pro")
+def build_parser(prog: str | None = "app/main.py") -> argparse.ArgumentParser:
+    """Build and return the main command-line argument parser for Smart AutoSorter AI Pro."""
+    parser = argparse.ArgumentParser(prog=prog, description="Smart AutoSorter AI Pro")
     parser.add_argument(
         "--demo", action="store_true", help="Run interactive CLI demo mode"
     )
@@ -691,6 +686,18 @@ def main():
         help="Directory to watch",
     )
     add_common_override_args(parser_daemon)
+
+    return parser
+
+
+def main():
+    """Execute the main application GUI or Demo."""
+    import multiprocessing
+    import sys
+
+    multiprocessing.freeze_support()
+
+    parser = build_parser()
 
     legacy_directory = None
     if (

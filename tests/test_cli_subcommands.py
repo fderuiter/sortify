@@ -192,3 +192,38 @@ def test_sandbox_cli_json():
                 sandbox_cli.main()
         except Exception:
             pass
+
+
+@pytest.mark.xdist_group(name="cli_subcommands")
+def test_build_parser_factory():
+    """Test that build_parser() returns a fully configured ArgumentParser instance."""
+    import argparse
+
+    from app.main import build_parser
+
+    parser = build_parser()
+    assert isinstance(parser, argparse.ArgumentParser)
+    assert parser.prog == "app/main.py"
+
+    help_text = parser.format_help()
+    assert "--demo" in help_text
+    assert "--smoke-test" in help_text
+    assert "--tui" in help_text
+    assert "sort" in help_text
+    assert "scan" in help_text
+    assert "config" in help_text
+    assert "daemon" in help_text
+
+    subparsers_action = next(
+        (a for a in parser._actions if isinstance(a, argparse._SubParsersAction)),
+        None,
+    )
+    assert subparsers_action is not None
+    assert set(subparsers_action.choices.keys()) == {"sort", "scan", "config", "daemon"}
+
+    sort_parser = subparsers_action.choices["sort"]
+    sort_help = sort_parser.format_help()
+    assert "directory" in sort_help
+    assert "--dest-dir" in sort_help
+    assert "--dry-run" in sort_help
+
