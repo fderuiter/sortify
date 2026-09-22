@@ -83,7 +83,7 @@ class DownloadManager:
                 cls._instance = cls()
             return cls._instance
 
-    def __init__(self):
+    def __init__(self, settings=None):
         self.state = ThreadSafeState(
             progress=0.0,
             status_text="Idle",
@@ -94,6 +94,65 @@ class DownloadManager:
         self.cancel_event = threading.Event()
         self.current_thread = None
         self._manager_lock = threading.Lock()
+        self._opener_lock = threading.Lock()
+
+        # Dynamic Proxy & Opener State
+        self._settings = settings
+        self._proxy = ""
+        self._proxy_error = None
+        self._opener = None
+
+        self._initialize_proxy_observer()
+
+    def _initialize_proxy_observer(self):
+        """Subscribe DownloadManager to AppSettings proxy configuration changes."""
+        try:
+            from app.config import AppSettings
+
+            if self._settings is None:
+                self._settings = AppSettings()
+
+            initial_proxy = getattr(self._settings, "PROXY", "")
+            self.update_proxy(initial_proxy)
+
+            # Requirement 3: Register setting change listener during initialization
+            self._settings.add_observer("PROXY", self._on_proxy_changed)
+        except Exception as e:
+            logger.warning(
+                f"Failed to initialize proxy setting observer in DownloadManager: {e}"
+            )
+
+    def _on_proxy_changed(self, new_proxy: str):
+        """Observer callback executed synchronously when PROXY configuration mutates."""
+        logger.info(
+            f"DownloadManager notified of proxy setting modification: '{new_proxy}'"
+        )
+        self.update_proxy(new_proxy)
+
+    def update_proxy(self, proxy_str: str):
+        """Invalidate cached network handlers and reconstruct opener using updated proxy URL."""
+        with self._opener_lock:
+            self._proxy = proxy_str or ""
+            self._proxy_error = None
+            handlers = []
+            if self._proxy and self._proxy.strip():
+                p_str = self._proxy.strip()
+                if "<DECRYPTION_FAILED>" in p_str:
+                    self._proxy_error = "Invalid proxy configuration: decryption failed."
+                else:
+                    handlers.append(
+                        urllib.request.ProxyHandler({"http": p_str, "https": p_str})
+                    )
+            self._opener = urllib.request.build_opener(*handlers)
+
+    def get_opener(self):
+        """Retrieve the active cached opener or raise NetworkError if proxy configuration is invalid."""
+        with self._opener_lock:
+            if self._proxy_error:
+                raise NetworkError(self._proxy_error)
+            if self._opener is None:
+                self.update_proxy(self._proxy)
+            return self._opener
 
     def start_download(self, url: str, model_dir: str, proxy: str = ""):
         """Initiate model download thread-safely if not already downloading."""
@@ -107,6 +166,12 @@ class DownloadManager:
             self.state["success"] = False
             self.state["is_downloading"] = True
             self.cancel_event.clear()
+
+            # Sync proxy parameter if explicitly provided and different
+            if proxy and proxy.strip() and proxy != self._proxy:
+                self.update_proxy(proxy)
+
+            effective_proxy = self._proxy if not proxy else proxy
 
             def on_success_wrapper():
                 with self._manager_lock:
@@ -136,11 +201,12 @@ class DownloadManager:
             self.current_thread = run_background_download(
                 url=url,
                 model_dir=model_dir,
-                proxy=proxy,
+                proxy=effective_proxy,
                 progress_callback=progress_callback_wrapper,
                 on_success=on_success_wrapper,
                 on_failure=on_failure_wrapper,
                 cancel_event=self.cancel_event,
+                download_manager=self,
             )
             return self.current_thread
 
@@ -284,6 +350,7 @@ def run_background_download(
     on_success=None,
     on_failure=None,
     cancel_event=None,
+    download_manager=None,
 ):
     """Run model download in a dedicated background thread that bypasses sandboxing."""
     if cancel_event is None:
@@ -303,96 +370,150 @@ def run_background_download(
             # Create model directory
             os.makedirs(model_dir, exist_ok=True)
             target_path = os.path.join(model_dir, "model.onnx")
+            temp_path = target_path + ".tmp"
 
-            # Setup urllib opener with proxy support if specified
-            handlers = []
-            if proxy and proxy.strip():
-                p_str = proxy.strip()
-                if "<DECRYPTION_FAILED>" in p_str:
+            dm = download_manager
+            if dm is None:
+                try:
+                    dm = DownloadManager.get_instance()
+                except Exception:
+                    dm = None
+
+            def get_current_opener():
+                if download_manager is not None:
+                    return download_manager.get_opener()
+                p_str = (proxy or "").strip()
+                if p_str and "<DECRYPTION_FAILED>" in p_str:
                     raise NetworkError(
                         "Invalid proxy configuration: decryption failed."
                     )
-                handlers.append(
-                    urllib.request.ProxyHandler({"http": p_str, "https": p_str})
-                )
-            opener = urllib.request.build_opener(*handlers)
+                handlers = []
+                if p_str:
+                    handlers.append(
+                        urllib.request.ProxyHandler({"http": p_str, "https": p_str})
+                    )
+                return urllib.request.build_opener(*handlers)
 
-            req = urllib.request.Request(
-                url, headers={"User-Agent": "Smart-AutoSorter/1.0"}
-            )
+            bytes_downloaded = 0
+            total_size = 0
+            chunk_size = 1024 * 64
+            max_retries = 3
+            retries = 0
 
-            with opener.open(req, timeout=15) as response:
-                total_size = int(response.info().get("Content-Length", 0))
+            while True:
+                try:
+                    opener = get_current_opener()
+                    req = urllib.request.Request(
+                        url, headers={"User-Agent": "Smart-AutoSorter/1.0"}
+                    )
+                    if bytes_downloaded > 0:
+                        req.add_header("Range", f"bytes={bytes_downloaded}-")
 
-                # Proactive disk space check
-                if total_size > 0:
-                    try:
-                        _, _, free = shutil.disk_usage(model_dir)
-                        if free < total_size:
-                            raise DiskSpaceError(
-                                f"Insufficient disk space. Required: {total_size} bytes, Free: {free} bytes."
-                            )
-                    except OSError as e:
-                        # If disk_usage fails (e.g. on custom mount), we log and proceed
-                        logger.warning(f"Could not retrieve disk usage: {e}")
+                    mode = "ab" if bytes_downloaded > 0 else "wb"
+                    with opener.open(req, timeout=15) as response:
+                        if response.status == 206:
+                            content_range = response.info().get("Content-Range")
+                            if content_range and "/" in content_range:
+                                total_size = int(content_range.split("/")[-1])
+                        else:
+                            if mode == "ab":
+                                mode = "wb"
+                                bytes_downloaded = 0
+                            total_size = int(response.info().get("Content-Length", 0))
 
-                bytes_downloaded = 0
-                chunk_size = 1024 * 64  # 64KB chunks
-                temp_path = target_path + ".tmp"
-
-                with open(temp_path, "wb") as f:
-                    while True:
-                        if cancel_event.is_set():
-                            raise DownloadCancelledError(
-                                "Download was cancelled by the user."
-                            )
-
-                        try:
-                            chunk = response.read(chunk_size)
-                        except Exception as e:
-                            raise NetworkError(f"Network error during read: {e}") from e
-
-                        if not chunk:
-                            break
-
-                        try:
-                            f.write(chunk)
-                        except OSError as e:
-                            if e.errno == 28 or "No space" in str(e):
-                                raise DiskSpaceError(
-                                    "Insufficient disk space on the target drive."
-                                ) from e
-                            raise DiskSpaceError(f"Local file write error: {e}") from e
-
-                        bytes_downloaded += len(chunk)
-                        if progress_callback:
+                        # Proactive disk space check
+                        if total_size > 0 and bytes_downloaded == 0:
                             try:
-                                progress_callback(bytes_downloaded, total_size)
-                            except Exception:
-                                pass
+                                _, _, free = shutil.disk_usage(model_dir)
+                                if free < total_size:
+                                    raise DiskSpaceError(
+                                        f"Insufficient disk space. Required: {total_size} bytes, Free: {free} bytes."
+                                    )
+                            except OSError as e:
+                                logger.warning(f"Could not retrieve disk usage: {e}")
 
-                # Requirement 3 & Zero-Trust File Finalization: Calculate and verify cryptographic hash before moving to final destination
-                verify_temp_file_hash(temp_path, target_path)
+                        with open(temp_path, mode) as f:
+                            while True:
+                                if cancel_event.is_set():
+                                    raise DownloadCancelledError(
+                                        "Download was cancelled by the user."
+                                    )
 
-                # If verification passes, finalize and rename it and write config
-                if os.path.exists(temp_path):
-                    if os.path.exists(target_path):
-                        os.remove(target_path)
-                    os.rename(temp_path, target_path)
+                                try:
+                                    chunk = response.read(chunk_size)
+                                except Exception as e:
+                                    raise NetworkError(
+                                        f"Network error during read: {e}"
+                                    ) from e
 
-                # Write a placeholder config.json next to it
-                config_path = os.path.join(model_dir, "config.json")
-                with open(config_path, "w", encoding="utf-8") as cf:
-                    json.dump({"model_type": "onnx", "dimensions": 384}, cf)
+                                if not chunk:
+                                    break
 
-                # Requirement 6: Run integrity verification on completed download
-                if not verify_downloaded_model(model_dir):
-                    raise DownloadError(
-                        "Integrity verification failed for the downloaded model."
+                                try:
+                                    f.write(chunk)
+                                except OSError as e:
+                                    if e.errno == 28 or "No space" in str(e):
+                                        raise DiskSpaceError(
+                                            "Insufficient disk space on the target drive."
+                                        ) from e
+                                    raise DiskSpaceError(
+                                        f"Local file write error: {e}"
+                                    ) from e
+
+                                bytes_downloaded += len(chunk)
+                                if progress_callback:
+                                    try:
+                                        progress_callback(bytes_downloaded, total_size)
+                                    except Exception:
+                                        pass
+                    # Download succeeded
+                    break
+
+                except (DownloadCancelledError, DiskSpaceError):
+                    raise
+                except Exception as net_err:
+                    if cancel_event.is_set():
+                        raise DownloadCancelledError(
+                            "Download was cancelled by the user."
+                        )
+                    if isinstance(net_err, DownloadError) and not isinstance(
+                        net_err, NetworkError
+                    ):
+                        raise
+                    retries += 1
+                    if retries > max_retries:
+                        err = (
+                            net_err
+                            if isinstance(net_err, DownloadError)
+                            else NetworkError(str(net_err))
+                        )
+                        raise err
+                    logger.info(
+                        f"Retrying download operation ({retries}/{max_retries}) using updated proxy opener: {net_err}"
                     )
 
-                if on_success:
-                    on_success()
+            # Requirement 3 & Zero-Trust File Finalization: Calculate and verify cryptographic hash before moving to final destination
+            verify_temp_file_hash(temp_path, target_path)
+
+            # If verification passes, finalize and rename it and write config
+            if os.path.exists(temp_path):
+                if os.path.exists(target_path):
+                    os.remove(target_path)
+                os.rename(temp_path, target_path)
+
+            # Write a placeholder config.json next to it
+            config_path = os.path.join(model_dir, "config.json")
+            with open(config_path, "w", encoding="utf-8") as cf:
+                json.dump({"model_type": "onnx", "dimensions": 384}, cf)
+
+            # Requirement 6: Run integrity verification on completed download
+            if not verify_downloaded_model(model_dir):
+                raise DownloadError(
+                    "Integrity verification failed for the downloaded model."
+                )
+
+            if on_success:
+                on_success()
 
         except DownloadCancelledError as e:
             # Clean up temp files
