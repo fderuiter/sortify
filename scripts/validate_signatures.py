@@ -14,7 +14,9 @@ import os
 import sys
 
 # Compute project base directory (/app) based on script location
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+BASE_DIR = os.path.realpath(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+)
 SNAPSHOT_PATH = os.path.join(BASE_DIR, "tests", "snapshots", "api_snapshot.json")
 
 # Source files to parse
@@ -31,7 +33,7 @@ SANDBOX_CLI_PATH = os.path.join(BASE_DIR, "sandbox_cli.py")
 def safe_relpath(path, start):
     """Compute relative path if possible, fallback to absolute path if on different Windows drives."""
     try:
-        return os.path.relpath(path, start)
+        return os.path.relpath(os.path.realpath(path), os.path.realpath(start))
     except ValueError:
         return os.path.abspath(path)
 
@@ -56,6 +58,160 @@ def is_protocol_node(node_to_check):
     ):
         return True
     return False
+
+
+def extract_decorators(decorator_list):
+    """Format AST decorator nodes as readable decorator strings."""
+    decorators = []
+    for d in decorator_list:
+        dec_str = ast.unparse(d)
+        if not dec_str.startswith("@"):
+            dec_str = f"@{dec_str}"
+        decorators.append(dec_str)
+    return decorators
+
+
+def extract_parameters(args_node):
+    """Extract parameters, annotations, and defaults from an AST arguments node."""
+    all_args = args_node.posonlyargs + args_node.args
+    defaults = args_node.defaults
+    default_map = {}
+    for i, default_node in enumerate(defaults):
+        arg_idx = len(all_args) - len(defaults) + i
+        default_map[id(all_args[arg_idx])] = ast.unparse(default_node)
+
+    params = []
+    for arg_node in all_args:
+        annotation_str = (
+            ast.unparse(arg_node.annotation) if arg_node.annotation else None
+        )
+        default_str = default_map.get(id(arg_node), None)
+        params.append(
+            {
+                "name": arg_node.arg,
+                "annotation": annotation_str,
+                "default": default_str,
+            }
+        )
+
+    if args_node.vararg:
+        arg_node = args_node.vararg
+        annotation_str = (
+            ast.unparse(arg_node.annotation) if arg_node.annotation else None
+        )
+        params.append(
+            {
+                "name": f"*{arg_node.arg}",
+                "annotation": annotation_str,
+                "default": None,
+            }
+        )
+
+    for kwarg, default_node in zip(args_node.kwonlyargs, args_node.kw_defaults):
+        annotation_str = (
+            ast.unparse(kwarg.annotation) if kwarg.annotation else None
+        )
+        default_str = (
+            ast.unparse(default_node) if default_node is not None else None
+        )
+        params.append(
+            {
+                "name": kwarg.arg,
+                "annotation": annotation_str,
+                "default": default_str,
+            }
+        )
+
+    if args_node.kwarg:
+        arg_node = args_node.kwarg
+        annotation_str = (
+            ast.unparse(arg_node.annotation) if arg_node.annotation else None
+        )
+        params.append(
+            {
+                "name": f"**{arg_node.arg}",
+                "annotation": annotation_str,
+                "default": None,
+            }
+        )
+
+    return params
+
+
+def extract_function_signature(func_node):
+    """Extract signature dictionary for a FunctionDef or AsyncFunctionDef node."""
+    is_async = isinstance(func_node, ast.AsyncFunctionDef)
+    params = extract_parameters(func_node.args)
+    return_annotation = (
+        ast.unparse(func_node.returns) if func_node.returns else None
+    )
+    decorators = extract_decorators(func_node.decorator_list)
+
+    return {
+        "name": func_node.name,
+        "async": is_async,
+        "decorators": decorators,
+        "parameters": params,
+        "returns": return_annotation,
+    }
+
+
+def extract_module_signatures(file_path):
+    """Statically parse a Python file and extract public class and function signatures."""
+    if not os.path.exists(file_path):
+        print(f"Error: Module source file not found: {file_path}", file=sys.stderr)
+        return {"classes": [], "functions": []}
+
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            source = f.read()
+        tree = ast.parse(source, filename=file_path)
+    except Exception as e:
+        print(f"Warning: Failed to parse AST for {file_path}: {e}", file=sys.stderr)
+        return {"classes": [], "functions": []}
+
+    classes = []
+    functions = []
+
+    for node in tree.body:
+        if isinstance(node, ast.ClassDef):
+            # Only extract public classes
+            if node.name.startswith("_"):
+                continue
+
+            class_decorators = extract_decorators(node.decorator_list)
+            methods = []
+
+            for body_node in node.body:
+                if isinstance(body_node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    # Include public methods and __init__
+                    if body_node.name.startswith("_") and body_node.name != "__init__":
+                        continue
+                    methods.append(extract_function_signature(body_node))
+
+            methods.sort(key=lambda m: m["name"])
+            classes.append(
+                {
+                    "class_name": node.name,
+                    "decorators": class_decorators,
+                    "methods": methods,
+                }
+            )
+
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            # Only extract public top-level functions
+            if node.name.startswith("_"):
+                continue
+
+            functions.append(extract_function_signature(node))
+
+    classes.sort(key=lambda c: c["class_name"])
+    functions.sort(key=lambda f: f["name"])
+
+    return {
+        "classes": classes,
+        "functions": functions,
+    }
 
 
 def extract_protocols(file_path):
@@ -84,97 +240,7 @@ def extract_protocols(file_path):
                 methods = []
                 for body_node in node.body:
                     if isinstance(body_node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                        is_async = isinstance(body_node, ast.AsyncFunctionDef)
-                        all_args = body_node.args.posonlyargs + body_node.args.args
-                        defaults = body_node.args.defaults
-                        default_map = {}
-                        for i, default_node in enumerate(defaults):
-                            arg_idx = len(all_args) - len(defaults) + i
-                            default_map[id(all_args[arg_idx])] = ast.unparse(
-                                default_node
-                            )
-
-                        params = []
-                        for arg_node in all_args:
-                            annotation_str = (
-                                ast.unparse(arg_node.annotation)
-                                if arg_node.annotation
-                                else None
-                            )
-                            default_str = default_map.get(id(arg_node), None)
-                            params.append(
-                                {
-                                    "name": arg_node.arg,
-                                    "annotation": annotation_str,
-                                    "default": default_str,
-                                }
-                            )
-
-                        if body_node.args.vararg:
-                            arg_node = body_node.args.vararg
-                            annotation_str = (
-                                ast.unparse(arg_node.annotation)
-                                if arg_node.annotation
-                                else None
-                            )
-                            params.append(
-                                {
-                                    "name": f"*{arg_node.arg}",
-                                    "annotation": annotation_str,
-                                    "default": None,
-                                }
-                            )
-
-                        for kwarg, default_node in zip(
-                            body_node.args.kwonlyargs, body_node.args.kw_defaults
-                        ):
-                            annotation_str = (
-                                ast.unparse(kwarg.annotation)
-                                if kwarg.annotation
-                                else None
-                            )
-                            default_str = (
-                                ast.unparse(default_node)
-                                if default_node is not None
-                                else None
-                            )
-                            params.append(
-                                {
-                                    "name": kwarg.arg,
-                                    "annotation": annotation_str,
-                                    "default": default_str,
-                                }
-                            )
-
-                        if body_node.args.kwarg:
-                            arg_node = body_node.args.kwarg
-                            annotation_str = (
-                                ast.unparse(arg_node.annotation)
-                                if arg_node.annotation
-                                else None
-                            )
-                            params.append(
-                                {
-                                    "name": f"**{arg_node.arg}",
-                                    "annotation": annotation_str,
-                                    "default": None,
-                                }
-                            )
-
-                        return_annotation = (
-                            ast.unparse(body_node.returns)
-                            if body_node.returns
-                            else None
-                        )
-
-                        methods.append(
-                            {
-                                "name": body_node.name,
-                                "parameters": params,
-                                "returns": return_annotation,
-                                "async": is_async,
-                            }
-                        )
+                        methods.append(extract_function_signature(body_node))
 
                 protocols[class_name] = {
                     "class_name": class_name,
@@ -224,20 +290,35 @@ def extract_cli(file_path):
     return cli_calls
 
 
+def collect_core_definitions(core_dir=None):
+    """Dynamically scan core package modules and extract public definitions."""
+    if core_dir is None:
+        core_dir = os.path.join(BASE_DIR, "app", "core")
+
+    core_data = {}
+    if os.path.exists(core_dir):
+        for root, dirs, files in os.walk(core_dir):
+            dirs.sort()
+            files.sort()
+            for file in files:
+                if file.endswith(".py") and not file.startswith("."):
+                    full_path = os.path.join(root, file)
+                    rel_path = safe_relpath(full_path, BASE_DIR).replace("\\", "/")
+                    core_data[rel_path] = extract_module_signatures(full_path)
+
+    return dict(sorted(core_data.items()))
+
+
 def collect_current_definitions():
     """Parse codebase files and return the complete current definitions structure."""
-    protocols_data = {}
-    protocols_data.update(extract_protocols(ANALYZER_STRATEGIES_PATH))
-    protocols_data.update(extract_protocols(EXTRACTOR_STRATEGIES_PATH))
-
     cli_data = {
         "app/main.py": extract_cli(MAIN_CLI_PATH),
         "sandbox_cli.py": extract_cli(SANDBOX_CLI_PATH),
     }
 
     return {
-        "protocols": protocols_data,
         "cli": cli_data,
+        "core": collect_core_definitions(),
     }
 
 
