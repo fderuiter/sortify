@@ -308,10 +308,10 @@ class AppSession:
         if hasattr(self, "db_worker") and self.db_worker:
             self.db_worker.stop()
         try:
-            from app.core.shared_registry import SharedWorkerPool
+            from app.core.shared_registry import SharedModelRegistry, SharedWorkerPool
 
-            if SharedWorkerPool._instance:
-                SharedWorkerPool._instance.shutdown(wait=False, cancel_futures=True)
+            SharedWorkerPool.shutdown_instance(wait=False)
+            SharedModelRegistry.get_instance().unload_all_models()
         except Exception:
             pass
         try:

@@ -515,20 +515,8 @@ def recursive_kmeans_worker_main(
                 pass
         elif key is not None and out_q is not None:
             out_q.put(encrypt_ipc_payload(res_data, key))
-            try:
-                out_q.close()
-                if hasattr(out_q, "join_thread"):
-                    out_q.join_thread()
-            except Exception:
-                pass
         elif out_q is not None:
             out_q.put(res_data)
-            try:
-                out_q.close()
-                if hasattr(out_q, "join_thread"):
-                    out_q.join_thread()
-            except Exception:
-                pass
     except Exception as e:
         import traceback
 
@@ -553,20 +541,8 @@ def recursive_kmeans_worker_main(
                 pass
         elif key is not None and out_q is not None:
             out_q.put(encrypt_ipc_payload(err_data, key))
-            try:
-                out_q.close()
-                if hasattr(out_q, "join_thread"):
-                    out_q.join_thread()
-            except Exception:
-                pass
         elif out_q is not None:
             out_q.put(err_data)
-            try:
-                out_q.close()
-                if hasattr(out_q, "join_thread"):
-                    out_q.join_thread()
-            except Exception:
-                pass
     finally:
         # Guarantee memory zeroing of vector byte buffers on completion or failure
         try:
@@ -583,6 +559,12 @@ def recursive_kmeans_worker_main(
             pass
         pre_fetched_corpus = None
         key = None
+        if out_q is not None:
+            try:
+                out_q.close()
+                out_q.join_thread()
+            except Exception:
+                pass
         if is_ipc or is_pipe:
             import os
 
@@ -798,10 +780,7 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
                         process.kill()
                         cooperative_join(process, timeout=0.2)
             else:
-                try:
-                    process.join(timeout=0.1)
-                except Exception:
-                    pass
+                process.join(timeout=1.0)
 
             try:
                 process.close()
@@ -1521,6 +1500,22 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
     def _fallback_to_pytorch(self):
         self._gguf_failed = True
         self._gguf_active = False
+        if getattr(self, "_gguf_input_queue", None):
+            try:
+                self._gguf_input_queue.cancel_join_thread()
+                self._gguf_input_queue.close()
+            except Exception:
+                pass
+            self._gguf_input_queue = None
+
+        if getattr(self, "_gguf_output_queue", None):
+            try:
+                self._gguf_output_queue.cancel_join_thread()
+                self._gguf_output_queue.close()
+            except Exception:
+                pass
+            self._gguf_output_queue = None
+
         if self._gguf_process:
             try:
                 self._gguf_process.terminate()

@@ -48,7 +48,8 @@ jobs:
     - name: Workflow Linting
       run: |
         go install github.com/rhysd/actionlint/cmd/actionlint@latest
-        "$(go env GOPATH)/bin/actionlint"
+        gopath="$(go env GOPATH)"
+        "${gopath}/bin/actionlint"
 
   type-check:
     name: Type Check (MyPy)

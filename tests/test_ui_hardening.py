@@ -1,25 +1,14 @@
+"""Tests for terminal application run_app hardening."""
+
 from unittest.mock import patch
 
-# Ensure dummy settings are injected similar to other UI snapshot tests
 from app.config import AppSettings
 from app.ui.app import run_app
 
 
-def test_run_app_hardening():
-    """Verify that run_app binds exclusively to 127.0.0.1 (local-only hardening)."""
-    with (
-        patch("app.ui.app.ui") as mock_ui,
-        patch("app.ui.app.AutoSorterApp"),
-    ):
-        settings = AppSettings()
+def test_run_app_terminal_execution():
+    """Verify that run_app executes without network binding or starting web servers."""
+    settings = AppSettings()
+    with patch("app.ui.app.AutoSorterApp") as mock_app_cls:
         run_app(settings)
-
-        # Verify ui.run was called once
-        mock_ui.run.assert_called_once()
-
-        # Check arguments
-        kwargs = mock_ui.run.call_args[1]
-        assert kwargs.get("host") == "127.0.0.1"
-        assert kwargs.get("port") == 8080
-        assert kwargs.get("reload") is False
-        assert kwargs.get("show") is True
+        mock_app_cls.assert_called_once_with(settings, debug_layout=False)
