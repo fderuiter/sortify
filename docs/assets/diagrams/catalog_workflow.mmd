@@ -1,0 +1,16 @@
+graph TD
+    workbench("Catalog Workbench")
+    selector["Component Selector"]
+    viewport["Viewport Controller"]
+    state_var["State Variant Switcher"]
+    renderer[["Component Renderer"]]
+    a11y_scan{Accessibility Auditor}
+    preview("Interactive Viewport Frame")
+    workbench --> selector
+    workbench --> viewport
+    workbench --> state_var
+    selector --> renderer
+    viewport --> preview
+    state_var --> renderer
+    renderer --> preview
+    renderer --> a11y_scan

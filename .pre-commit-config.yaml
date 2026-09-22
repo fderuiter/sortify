@@ -30,6 +30,12 @@ repos:
         entry: uv run docs --check
         language: system
         pass_filenames: false
+      - id: validate-diagram-artifacts
+        name: Validate Diagram Artifacts and Mermaid Compilation
+        entry: uv run python scripts/diagram_toolchain.py --verify
+        language: system
+        files: '^(app/ui/.*\.py|scripts/diagram_toolchain\.py|docs/assets/diagrams/.*)$'
+        pass_filenames: false
       - id: validate-links
         name: Validate External Links
         entry: uv run python scripts/validate_links.py
