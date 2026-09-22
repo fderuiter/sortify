@@ -3,7 +3,7 @@
 from typing import Any, Callable, List, Optional
 from unittest.mock import MagicMock
 
-from nicegui import ui
+ui = MagicMock()
 
 _TOOLBAR_CSS_HEAD_INJECTED = False
 

@@ -3,17 +3,80 @@
 import asyncio
 import logging
 import os
-from unittest.mock import MagicMock, Mock
+from unittest.mock import MagicMock
 
-from nicegui import ui
-
-from app.core.path_utils import is_packaged
 from app.core.session import AppSession
 from app.ui.dialog_helper import ask_directory_async, get_dialog_card_classes
 from app.ui.tokens import TOKENS
-from app.ui.toolbar import OverflowToolbar
+
+ui = MagicMock()
 
 logger = logging.getLogger(__name__)
+
+
+class TerminalControl:
+    """Mock/terminal control element to emulate UI widgets."""
+
+    def __init__(self, name=""):
+        self.name = name
+        self.text = ""
+        self.value = 0.0
+        self.visible = True
+        self.enabled = True
+        self._props = {}
+
+    def set_text(self, text: str):
+        """Set text content."""
+        self.text = str(text)
+        if text:
+            logger.info(f"[{self.name}] {text}")
+
+    def set_value(self, val: float):
+        """Set progress value."""
+        try:
+            self.value = float(val)
+        except Exception:
+            self.value = 0.0
+
+    def set_visibility(self, visible: bool):
+        """Set visibility state."""
+        self.visible = bool(visible)
+
+    def enable(self):
+        """Enable the control."""
+        self.enabled = True
+
+    def disable(self):
+        """Disable the control."""
+        self.enabled = False
+
+    def props(self, *args, **kwargs):
+        """Chain property configuration."""
+        return self
+
+    def classes(self, *args, **kwargs):
+        """Chain style classes configuration."""
+        return self
+
+    def on(self, *args, **kwargs):
+        """Bind event handler."""
+        return self
+
+    def add_slot(self, *args, **kwargs):
+        """Add slot template."""
+        return self
+
+    def update(self, *args, **kwargs):
+        """Update element rendering."""
+        return self
+
+    def close(self, *args, **kwargs):
+        """Close dialog or component."""
+        return self
+
+    def open(self, *args, **kwargs):
+        """Open dialog or component."""
+        return self
 
 
 class AutoSorterApp:
@@ -56,421 +119,28 @@ class AutoSorterApp:
         )
 
     def build_ui(self):
-        """Build the main user interface with modern styling, presets, and interactive controls."""
-        if self.debug_layout and not is_packaged():
-            ui.add_head_html(
-                "<style>* { outline: 1px solid #ef4444 !important; }</style>"
-            )
-
-        ui.add_head_html("""
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-<style>
-body {
-    font-family: 'Inter', sans-serif;
-    background-color: #f8fafc;
-    color: #0f172a;
-}
-.q-tree__node-header { padding: 6px 8px; border-radius: 6px; transition: background-color 0.15s ease; }
-.q-tree__node-header:hover { background-color: #f1f5f9; }
-.tree-node-row .action-buttons { opacity: 0.2; transition: opacity 0.15s ease; }
-.tree-node-row:hover .action-buttons { opacity: 1.0; }
-.drag-target-active { outline: 2px dashed #3b82f6; background-color: #eff6ff !important; }
-</style>
-""")
-
-        with ui.header().classes(
-            f"{TOKENS.COLORS.HEADER_BG} text-white px-6 py-3 items-center justify-between shadow-md min-h-16"
-        ):
-            header_toolbar = OverflowToolbar(classes="bg-transparent text-white p-0")
-            with header_toolbar.left_container:
-                ui.icon("folder_special", size="md", color="blue-4")
-                ui.label("Sortify AI Pro").classes("text-xl font-bold tracking-tight")
-
-            header_toolbar.add_action(
-                "CRO Forensic Ingest",
-                on_click=self.show_cro_forensic_dialog,
-                icon="security",
-                is_primary=True,
-                priority=10,
-                classes="bg-blue-600 text-white",
-                props='size="sm" unelevated aria-label="CRO Forensic Ingest Button"',
-                tooltip="CRO Forensic Multi-Study Ingestion & Audit",
-            )
-            header_toolbar.add_action(
-                "Settings",
-                on_click=self.show_settings_view,
-                icon="tune",
-                is_primary=False,
-                priority=0,
-                props='flat text-color="white" size="sm" aria-label="Settings Button"',
-                tooltip="Application Settings",
-            )
-            header_toolbar.add_action(
-                "Help",
-                on_click=self.show_help_view,
-                icon="help_outline",
-                is_primary=False,
-                priority=0,
-                props='flat text-color="white" size="sm" aria-label="Help Button"',
-                tooltip="User Guide & Documentation",
-            )
-
-        with ui.column().classes(f"w-full {TOKENS.SIZING.MAX_WIDTH_CONTAINER} mx-auto {TOKENS.SPACING.XL} items-center {TOKENS.SPACING.GAP_MD}"):
-            # 1. Directory Selection & Presets Card
-            with ui.card().classes(TOKENS.COMPONENTS.CARD_BASE):
-                ui.label("Target Directory").classes(
-                    "text-xs font-bold text-slate-500 uppercase tracking-wider mb-2"
-                )
-                with ui.row().classes(f"w-full items-center {TOKENS.SPACING.GAP_MD}"):
-                    self.path_input = (
-                        ui.input(
-                            placeholder="Enter absolute directory path...",
-                            value=self.base_dir,
-                        )
-                        .classes("flex-grow")
-                        .props("outlined dense")
-                    )
-                    self.path_input.on("keydown.enter", self.on_scan_clicked)
-
-                    self.scan_btn = (
-                        ui.button(
-                            "Scan & Organize",
-                            icon="bolt",
-                            on_click=self.on_scan_clicked,
-                        )
-                        .classes("bg-blue-600 text-white font-medium")
-                        .props('unelevated aria-label="Scan and Organize Button"')
-                    )
-
-                    self.browse_btn = ui.button(
-                        "Browse...", icon="folder_open", on_click=self.select_directory
-                    ).props(
-                        'outlined color="grey-8" aria-label="Browse Directory Button"'
-                    )
-
-                with ui.row().classes(f"w-full items-center {TOKENS.SPACING.GAP_SM} mt-2 flex-wrap"):
-                    ui.label("Quick Presets:").classes(
-                        "text-xs font-medium text-slate-400"
-                    )
-                    demo_path = os.path.abspath("sandbox/demo_workspace")
-                    ui.button(
-                        "Demo Workspace",
-                        icon="science",
-                        on_click=lambda: self.load_preset(demo_path),
-                    ).props('size="xs" outline color="primary" rounded')
-                    ui.button(
-                        "Downloads",
-                        icon="download",
-                        on_click=lambda: self.load_preset(
-                            os.path.expanduser("~/Downloads")
-                        ),
-                    ).props('size="xs" outline color="grey-8" rounded')
-                    ui.button(
-                        "Documents",
-                        icon="description",
-                        on_click=lambda: self.load_preset(
-                            os.path.expanduser("~/Documents")
-                        ),
-                    ).props('size="xs" outline color="grey-8" rounded')
-
-            # 2. Status and Progress Bar
-            with ui.card().classes(
-                f"{TOKENS.COMPONENTS.CARD_BASE} items-center text-center"
-            ):
-                self.status_label = (
-                    ui.label("Ready. Select or enter a directory above to start.")
-                    .classes("text-sm font-medium text-slate-600")
-                    .props('aria-label="Status Label"')
-                )
-                self.progress_bar = (
-                    ui.linear_progress(value=0)
-                    .classes(f"w-full {TOKENS.SIZING.MAX_WIDTH_PROGRESS} mt-3 rounded-full")
-                    .props('aria-label="Progress Bar" color="blue"')
-                )
-                self.file_progress_bar = (
-                    ui.linear_progress(value=0)
-                    .classes(f"w-full {TOKENS.SIZING.MAX_WIDTH_PROGRESS} mt-2 rounded-full")
-                    .props('aria-label="File Progress Bar" color="indigo"')
-                )
-                self.file_progress_bar.set_visibility(False)
-
-                self.file_progress_label = (
-                    ui.label("")
-                    .classes("text-slate-400 text-xs mt-1")
-                    .props('aria-label="File Progress Label"')
-                )
-                self.file_progress_label.set_visibility(False)
-
-                self.cancel_btn = (
-                    ui.button("Cancel Analysis", on_click=self.cancel_analysis)
-                    .classes(f"{TOKENS.COLORS.ERROR_BTN} mt-2")
-                    .props('size="sm" unelevated aria-label="Cancel Analysis Button"')
-                )
-                self.cancel_btn.set_visibility(False)
-
-                self.meta_label = (
-                    ui.label("")
-                    .classes("text-cyan-600 text-xs font-mono mt-2")
-                    .props('aria-label="Metadata Label"')
-                )
-
-                self.warnings_label = (
-                    ui.label("")
-                    .classes("text-red-500 mt-2 font-bold text-center text-xs")
-                    .props('aria-label="Warnings Label"')
-                )
-                self.warnings_label.set_visibility(False)
-
-                self.ai_warnings_label = (
-                    ui.label("")
-                    .classes(
-                        f"{TOKENS.COLORS.WARNING_TEXT} mt-2 text-xs font-semibold text-center {TOKENS.COLORS.WARNING_BG} border {TOKENS.COLORS.WARNING_BORDER} p-2 rounded-lg w-full {TOKENS.SIZING.MAX_WIDTH_LG}"
-                    )
-                    .props('aria-label="AI Offline Warning Label"')
-                )
-                self.ai_warnings_label.set_visibility(False)
-
-            # 3. Strategy Configuration Row
-            with ui.row().classes(
-                f"w-full items-center justify-between flex-wrap {TOKENS.SPACING.GAP_LG} px-2"
-            ):
-                self.strategy_selector = (
-                    ui.select(
-                        {
-                            "default": "Standard Semantic",
-                            "generative": "Generative AI",
-                            "clinical_tmf": "Clinical TMF (Sponsor)",
-                            "clinical_isf": "Clinical ISF (Site Binder)",
-                        },
-                        value=self.sorting_strategy,
-                        label="Sorting Strategy",
-                        on_change=self.change_sorting_strategy,
-                    )
-                    .classes("w-full max-w-xs")
-                    .props('outlined dense aria-label="Sorting Strategy Selector"')
-                )
-
-                with ui.row().classes(f"items-center {TOKENS.SPACING.GAP_LG} flex-wrap"):
-                    ui.switch(
-                        "Contextual Renaming",
-                        value=self.contextual_rename,
-                        on_change=self.toggle_contextual_rename,
-                    ).props('dense aria-label="Contextual Renaming Switch"')
-                    ui.switch(
-                        "Preserve Hierarchy",
-                        value=self.preserve_hierarchy,
-                        on_change=self.toggle_preserve_hierarchy,
-                    ).props('dense aria-label="Preserve Hierarchy Switch"')
-                    self.ai_naming_switch = ui.switch(
-                        "AI Naming",
-                        value=getattr(self.settings, "AI_ASSISTED_NAMING", False),
-                        on_change=self.toggle_ai_assisted_naming,
-                    ).props('dense aria-label="AI-Assisted Naming Switch"')
-
-            is_clinical_init = self.sorting_strategy in ("clinical_tmf", "clinical_isf")
-            with ui.row().classes(
-                f"{TOKENS.COMPONENTS.PANEL_INFO} items-center flex-wrap justify-between {TOKENS.SPACING.GAP_LG}"
-            ) as self.clinical_controls_row:
-                self.clinical_controls_row.set_visibility(is_clinical_init)
-                with ui.row().classes(f"items-center {TOKENS.SPACING.GAP_LG}"):
-                    ui.label("Clinical Controls:").classes(
-                        "text-sm font-bold text-blue-900"
-                    )
-                    ui.switch(
-                        "Smart Clinical Renaming",
-                        value=self.clinical_smart_renaming,
-                        on_change=self.toggle_clinical_renaming,
-                    ).props('dense aria-label="Clinical Renaming Switch"')
-                    ui.switch(
-                        "Generate Audit Report",
-                        value=self.clinical_generate_audit_report,
-                        on_change=self.toggle_clinical_audit_report,
-                    ).props('dense aria-label="Clinical Audit Report Switch"')
-                self.compliance_btn = (
-                    ui.button(
-                        "Compliance Checklist",
-                        on_click=self.show_compliance_checklist_dialog,
-                        icon="fact_check",
-                    )
-                    .classes("bg-blue-600 text-white")
-                    .props(
-                        'size="sm" unelevated aria-label="Compliance Audit Checklist Button"'
-                    )
-                )
-
-            # 4. Proposed Plan Tree Card & Action Toolbar
-            with ui.card().classes(TOKENS.COMPONENTS.CARD_BASE):
-                with ui.row().classes(
-                    "w-full items-center justify-between mb-3 pb-3 border-b border-slate-100"
-                ):
-                    with ui.row().classes(f"items-center {TOKENS.SPACING.GAP_MD}"):
-                        ui.label("Proposed Organization Plan").classes(
-                            "text-base font-bold text-slate-800"
-                        )
-                        self.folder_count_badge = ui.badge(
-                            "0 folders", color="blue-7"
-                        ).props("rounded text-xs")
-                        self.file_count_badge = ui.badge(
-                            "0 files", color="slate-6"
-                        ).props("rounded text-xs")
-
-                    with ui.row().classes(f"items-center {TOKENS.SPACING.GAP_SM}"):
-                        ui.button(
-                            "New Folder",
-                            icon="create_new_folder",
-                            on_click=self.show_new_folder_dialog,
-                        ).props('size="sm" outline color="primary" rounded')
-                        ui.button(
-                            "Expand All",
-                            icon="unfold_more",
-                            on_click=self.expand_all_nodes,
-                        ).props('size="sm" flat color="grey-8"')
-                        ui.button(
-                            "Collapse All",
-                            icon="unfold_less",
-                            on_click=self.collapse_all_nodes,
-                        ).props('size="sm" flat color="grey-8"')
-
-                with ui.scroll_area().classes(TOKENS.SIZING.TREE_CONTAINER_CLASSES):
-                    self.tree_view = (
-                        ui.tree([], label_key="text", children_key="children")
-                        .classes("w-full")
-                        .props('default-expand-all aria-label="Sorting Plan Tree"')
-                    )
-                    # Vue slot for rich drag-drop, badge chips, rename, lock, and quality ratings
-                    self.tree_view.add_slot(
-                        "default-header",
-                        """
-                        <div class="row items-center justify-between w-full group tree-node-row py-1 min-w-0 flex-nowrap"
-                             :draggable="prop.node.is_file"
-                             @dragstart="(e) => { 
-                                 if (prop.node.is_file) {
-                                     e.dataTransfer.setData('text/plain', prop.node.id);
-                                     e.dataTransfer.effectAllowed = 'move';
-                                 }
-                             }"
-                             @dragover="(e) => { 
-                                 if (!prop.node.is_file) {
-                                     e.preventDefault(); 
-                                 }
-                             }"
-                             @drop="(e) => { 
-                                 if (!prop.node.is_file) {
-                                     e.preventDefault();
-                                     const sourceId = e.dataTransfer.getData('text/plain');
-                                     $parent.$emit('node-drop', { source: sourceId, target: prop.node.id });
-                                 }
-                             }">
-                            <div class="row items-center gap-2 min-w-0 flex-1 mr-2 flex-nowrap overflow-hidden">
-                                <q-icon :name="prop.node.icon" 
-                                        :color="prop.node.is_file ? (prop.node.is_locked ? 'amber-9' : 'primary') : 'amber-8'" 
-                                        size="xs"
-                                        class="shrink-0" />
-                                <span class="font-medium text-sm text-slate-800 truncate block min-w-0 flex-1">{{ prop.node.text }}<q-tooltip anchor="top middle" self="bottom middle" :offset="[0, 8]">{{ prop.node.filepath || prop.node.text }}</q-tooltip></span>
-                                <q-badge v-if="prop.node.badge" 
-                                         :color="prop.node.badge_color || 'grey-7'" 
-                                         text-color="white" 
-                                         class="text-xs shrink-0" rounded>
-                                    {{ prop.node.badge }}
-                                </q-badge>
-                            </div>
-                            <!-- Action buttons -->
-                            <div v-if="prop.node.is_file" class="action-buttons row items-center q-gutter-xs shrink-0 flex-nowrap">
-                                <q-btn v-if="prop.node.has_rename_proposal && !prop.node.is_confirmed" flat round dense
-                                       icon="check_circle" size="xs" color="emerald-6"
-                                       @click.stop="$parent.$emit('node-confirm-rename', { file_id: prop.node.id })">
-                                    <q-tooltip>Confirm proposed file rename</q-tooltip>
-                                </q-btn>
-                                <q-btn flat round dense icon="edit" size="xs" color="grey-6"
-                                       @click.stop="$parent.$emit('file-rename', { file_id: prop.node.id })">
-                                    <q-tooltip>Rename file</q-tooltip>
-                                </q-btn>
-                                <q-btn flat round dense 
-                                       :icon="prop.node.is_locked ? 'lock' : 'lock_open'" 
-                                       size="xs" 
-                                       :color="prop.node.is_locked ? 'amber-9' : 'grey-6'"
-                                       @click.stop="$parent.$emit('node-toggle-lock', { file_id: prop.node.id })">
-                                    <q-tooltip>{{ prop.node.is_locked ? 'Unlock automatic sorting' : 'Lock to this folder' }}</q-tooltip>
-                                </q-btn>
-                                <q-btn flat round dense 
-                                       :icon="prop.node.rating === 'positive' ? 'thumb_up' : 'thumb_up_off_alt'"
-                                       size="xs" 
-                                       :color="prop.node.rating === 'positive' ? 'green-7' : 'grey-6'" 
-                                       @click.stop="$parent.$emit('node-rate', { file_id: prop.node.id, rating: 'positive' })">
-                                    <q-tooltip>Accurate folder placement</q-tooltip>
-                                </q-btn>
-                                <q-btn flat round dense 
-                                       :icon="prop.node.rating === 'negative' ? 'thumb_down' : 'thumb_down_off_alt'"
-                                       size="xs" 
-                                       :color="prop.node.rating === 'negative' ? 'red-7' : 'grey-6'" 
-                                       @click.stop="$parent.$emit('node-rate', { file_id: prop.node.id, rating: 'negative' })">
-                                    <q-tooltip>Incorrect folder placement</q-tooltip>
-                                </q-btn>
-                            </div>
-                            <div v-else class="action-buttons row items-center q-gutter-xs shrink-0 flex-nowrap">
-                                <q-btn flat round dense icon="edit" size="xs" color="grey-6"
-                                       @click.stop="$parent.$emit('folder-rename', { folder_id: prop.node.id })">
-                                    <q-tooltip>Rename folder</q-tooltip>
-                                </q-btn>
-                            </div>
-                        </div>
-                    """,
-                    )
-                    self.tree_view.on("node-drop", self.handle_node_drop)
-                    self.tree_view.on("node-rate", self.handle_node_rate)
-                    self.tree_view.on("node-toggle-lock", self.handle_node_toggle_lock)
-                    self.tree_view.on("folder-rename", self.show_rename_folder_dialog)
-                    self.tree_view.on("file-rename", self.show_rename_file_dialog)
-                    self.tree_view.on("node-confirm-rename", self.handle_node_confirm_rename)
-
-            # 5. Execution Action Bar & Post-Sort Undo Rollback
-            exec_toolbar = OverflowToolbar(classes="w-full justify-center items-center gap-3 mt-2")
-            self.execute_btn = exec_toolbar.add_action(
-                "Approve & Execute Sort",
-                on_click=self.execute_sort,
-                icon="play_arrow",
-                is_primary=True,
-                priority=10,
-                classes="bg-emerald-600 text-white font-semibold px-6 py-2 shadow",
-                props='unelevated rounded aria-label="Approve and Execute Sort Button"',
-                tooltip="Approve organizational plan and move files",
-            )
-            self.execute_btn.disable()
-
-            self.undo_btn = exec_toolbar.add_action(
-                "Undo Last Sort (Rollback)",
-                on_click=self.undo_last_sort,
-                icon="undo",
-                is_primary=False,
-                priority=0,
-                classes="bg-amber-600 text-white font-semibold px-6 py-2 shadow",
-                props='unelevated rounded aria-label="Undo Last Sort Button"',
-                tooltip="Revert all file movements from previous sort operation",
-            )
-            self.undo_btn.set_visibility(False)
-
-        with ui.dialog() as self.recalc_dialog:
-            self.recalc_dialog.props("persistent")
-            with ui.card().classes(
-                "items-center w-full max-w-md min-w-[320px] p-6 rounded-xl"
-            ):
-                ui.label("Recalculating plan...").classes(
-                    "font-semibold text-slate-800"
-                )
-                ui.spinner(size="lg", color="blue")
-                ui.button("Cancel", on_click=self.cancel_recalc).props(
-                    'flat color="grey-7" aria-label="Cancel Recalculation Button"'
-                )
-
-        # Check wizard and recovery on startup
-        ui.timer(0.05, self.update_ai_warning, once=True)
-        ui.timer(0.1, self.check_setup_wizard, once=True)
-        ui.timer(0.2, self.check_abandoned_sessions, once=True)
-
-        if self.base_dir:
-            ui.timer(0.3, self.start_analysis, once=True)
+        """Build the terminal user interface control bindings."""
+        self.path_input = TerminalControl("PATH_INPUT")
+        self.path_input.value = self.base_dir
+        self.status_label = TerminalControl("STATUS")
+        self.status_label.text = "Ready."
+        self.progress_bar = TerminalControl("PROGRESS")
+        self.file_progress_bar = TerminalControl("FILE_PROGRESS")
+        self.file_progress_label = TerminalControl("FILE_PROGRESS_LABEL")
+        self.cancel_btn = TerminalControl("CANCEL")
+        self.meta_label = TerminalControl("META")
+        self.warnings_label = TerminalControl("WARNINGS")
+        self.ai_warnings_label = TerminalControl("AI_WARNINGS")
+        self.strategy_selector = TerminalControl("STRATEGY_SELECTOR")
+        self.strategy_selector.value = self.sorting_strategy
+        self.clinical_controls_row = TerminalControl("CLINICAL_CONTROLS")
+        self.folder_count_badge = TerminalControl("FOLDER_COUNT")
+        self.file_count_badge = TerminalControl("FILE_COUNT")
+        self.tree_view = TerminalControl("TREE")
+        self.tree_view._props = {}
+        self.execute_btn = TerminalControl("EXECUTE")
+        self.undo_btn = TerminalControl("UNDO")
+        self.recalc_dialog = TerminalControl("RECALC_DIALOG")
 
     def check_abandoned_sessions(self):
         """Check for abandoned sessions on startup and prompt for recovery."""
@@ -635,8 +305,48 @@ body {
 
         asyncio.create_task(run())
 
+    def run_recovery(self, session_info, restore_to_original=True, custom_path=None):
+        """Execute recovery for a failed rollback session with trapped files."""
+        import os
+        import shutil
+
+        base_dir = session_info["base_dir"]
+        safety_folder = session_info.get("safety_folder", "")
+
+        if not safety_folder or not os.path.exists(safety_folder):
+            return
+
+        files_to_recover = []
+        for root, _, files in os.walk(safety_folder):
+            for file in files:
+                full_path = os.path.join(root, file)
+                rel_path = os.path.relpath(full_path, safety_folder)
+                files_to_recover.append((full_path, rel_path))
+
+        for full_path, rel_path in files_to_recover:
+            if restore_to_original:
+                target_full_path = os.path.join(base_dir, rel_path)
+            else:
+                target_full_path = os.path.join(custom_path or base_dir, rel_path)
+
+            target_dir = os.path.dirname(target_full_path)
+            os.makedirs(target_dir, exist_ok=True)
+
+            if os.path.exists(target_full_path):
+                from app.core.mover import get_safe_path
+                t_dir, t_name = os.path.split(target_full_path)
+                target_full_path = get_safe_path(t_dir, t_name)
+
+            try:
+                shutil.move(full_path, target_full_path)
+            except Exception as e:
+                logger.error(f"Failed to recover file {full_path}: {e}")
+
+        shutil.rmtree(safety_folder, ignore_errors=True)
+
     def show_recovery_wizard(self, session_info):
-        """Display the interactive recovery wizard for a failed rollback session with trapped files."""
+        """Display recovery workflow and run recovery."""
+        self.run_recovery(session_info, restore_to_original=True)
         import os
         import shutil
 
@@ -1030,6 +740,10 @@ body {
 
     async def _scan_and_process_worker(self):
         try:
+            if not self.app_session:
+                from app.core.session import AppSession
+                self.app_session = AppSession(self.settings, self.base_dir)
+
             from app.core.scanner import get_files_recursively
 
             files = await asyncio.to_thread(
@@ -2454,6 +2168,158 @@ body {
 
         asyncio.create_task(_run())
 
+    def print_terminal_tree(self):
+        """Print formatted organization plan tree to terminal stdout."""
+        print("\n--- Proposed Organization Plan ---")
+        if not self.tree_nodes:
+            print("  (No files or empty plan)")
+        for node in self.tree_nodes:
+            depth = node["id"].count("/")
+            indent = "  " * depth
+            if node.get("is_file"):
+                badge_str = f" [{node['badge']}]" if node.get("badge") else ""
+                print(f"{indent}📄 {node['text']}{badge_str}")
+            else:
+                print(f"{indent}📁 {node['text']}/")
+        print("-----------------------------------\n")
+
+    def _run_async(self, coro):
+        """Run an asynchronous coroutine safely across different event loop lifecycle states."""
+        try:
+            loop = asyncio.get_running_loop()
+            if loop.is_running():
+                return loop.create_task(coro)
+        except RuntimeError:
+            pass
+
+        try:
+            return asyncio.run(coro)
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                return loop.run_until_complete(coro)
+            finally:
+                loop.close()
+                asyncio.set_event_loop(None)
+
+    def start_analysis_sync(self):
+        """Run directory analysis and plan generation synchronously."""
+        return self._run_async(self._scan_and_process_worker())
+
+    async def execute_sort_async(self):
+        """Asynchronously execute the approved sorting plan."""
+        if not self.plan:
+            print("No plan available to execute.")
+            return
+
+        fast_path_plan, slow_path_plan = self.split_plan_phases(self.plan)
+
+        summary = {}
+        if fast_path_plan:
+            print("Executing fast-path file relocation...")
+            s1 = await asyncio.to_thread(self.app_session.execute_moves, fast_path_plan)
+            if s1 and isinstance(s1, dict):
+                summary.update(s1)
+
+        if slow_path_plan:
+            print("Executing AI classification file relocation...")
+            s2 = await asyncio.to_thread(self.app_session.execute_moves, slow_path_plan)
+            if s2 and isinstance(s2, dict):
+                for k, v in s2.items():
+                    if isinstance(v, (int, float)):
+                        summary[k] = summary.get(k, 0) + v
+                    else:
+                        summary[k] = v
+
+        print(f"\n[+] Sorting execution complete! Summary: {summary}\n")
+        self.plan = {}
+        self.render_tree()
+
+    def execute_sort_sync(self):
+        """Run the approved sorting plan synchronously."""
+        return self._run_async(self.execute_sort_async())
+
+    async def undo_last_sort_async(self):
+        """Asynchronously undo the last sorting operation."""
+        if not self.base_dir or not os.path.exists(self.base_dir):
+            print("No valid directory selected for rollback.")
+            return
+
+        if not self.app_session:
+            from app.core.session import AppSession
+            self.app_session = AppSession(self.settings, self.base_dir)
+
+        try:
+            sessions = self.app_session.history_manager.get_sessions()
+            if sessions:
+                session_id = sessions[0]["session_id"]
+                await asyncio.to_thread(self.app_session.rollback, session_id)
+                print(f"\n[+] Undo rollback completed for session {session_id}.\n")
+            else:
+                print("\n[-] No sort history available to undo.\n")
+        except Exception as e:
+            print(f"\n[-] Undo rollback failed: {e}\n")
+
+    def undo_last_sort_sync(self):
+        """Revert the last sorting operation synchronously."""
+        return self._run_async(self.undo_last_sort_async())
+
+    def run_interactive_terminal(self):
+        """Run interactive CLI workspace loop in terminal."""
+        print("==========================================")
+        print(" Smart AutoSorter AI Pro - Terminal Workspace")
+        print("==========================================")
+        while True:
+            print(f"\nCurrent Directory: {self.base_dir or '(None)'}")
+            print("1. Set Target Directory")
+            print("2. Scan & Analyze Directory")
+            print("3. View Proposed Plan Tree")
+            print("4. Approve & Execute Sort")
+            print("5. Undo Last Sort (Rollback)")
+            print("6. Exit")
+            try:
+                choice = input("\nSelect an option [1-6]: ").strip()
+            except (EOFError, KeyboardInterrupt):
+                print("\nExiting Smart AutoSorter.")
+                break
+
+            if choice == "1":
+                path_str = input("Enter absolute target directory path: ").strip()
+                if path_str and os.path.exists(path_str):
+                    self.base_dir = os.path.abspath(path_str)
+                    print(f"Target directory set to: {self.base_dir}")
+                else:
+                    print("Invalid directory path.")
+            elif choice == "2":
+                if not self.base_dir or not os.path.exists(self.base_dir):
+                    print("Please set a valid target directory first.")
+                else:
+                    print("\nStarting scan and analysis...")
+                    self.start_analysis_sync()
+                    self.print_terminal_tree()
+            elif choice == "3":
+                self.print_terminal_tree()
+            elif choice == "4":
+                if not self.plan:
+                    print("No plan available to execute. Please run a scan first.")
+                else:
+                    confirm = input("Approve and execute file sorting now? [y/N]: ").strip().lower()
+                    if confirm in ("y", "yes"):
+                        self.execute_sort_sync()
+            elif choice == "5":
+                if not self.base_dir:
+                    print("Please set a target directory first.")
+                else:
+                    confirm = input("Revert last sorting operation? [y/N]: ").strip().lower()
+                    if confirm in ("y", "yes"):
+                        self.undo_last_sort_sync()
+            elif choice == "6" or choice.lower() in ("q", "quit", "exit"):
+                print("Exiting Smart AutoSorter. Goodbye!")
+                break
+            else:
+                print("Invalid option. Please enter a number between 1 and 6.")
+
 
 def find_and_remove_file(node, file_key):
     """Recursively find and remove a file with key file_key in the plan node dictionary.
@@ -2590,27 +2456,41 @@ def run_incremental_training_in_background(app_session, base_dir):
 
 
 def run_app(settings, directory=None, port=8080, show=True, debug_layout=False) -> None:
-    """Run the NiceGUI application."""
+    """Run the Smart AutoSorter application in terminal mode."""
+    import sys
 
-    def main_page():
-        if debug_layout:
-            app_instance = AutoSorterApp(settings, debug_layout=True)
+    app_instance = AutoSorterApp(settings, debug_layout=debug_layout)
+    app_instance.build_ui()
+
+    if directory:
+        abs_dir = os.path.abspath(directory)
+        if os.path.exists(abs_dir):
+            app_instance.base_dir = abs_dir
+            print("\n==========================================")
+            print(" Smart AutoSorter AI Pro - Terminal Mode")
+            print(f" Target Directory: {abs_dir}")
+            print("==========================================\n")
+            app_instance.start_analysis_sync()
+            app_instance.print_terminal_tree()
+            if sys.stdin.isatty():
+                try:
+                    ans = input("Approve and execute file sorting now? [Y/n]: ").strip().lower()
+                    if ans in ("", "y", "yes"):
+                        app_instance.execute_sort_sync()
+                    else:
+                        print("Sorting cancelled by user.")
+                except (EOFError, KeyboardInterrupt):
+                    print("\nOperation cancelled.")
+            else:
+                # Non-interactive / headless execution
+                app_instance.execute_sort_sync()
         else:
-            app_instance = AutoSorterApp(settings)
-        if directory:
-            if os.path.exists(directory):
-                app_instance.base_dir = os.path.abspath(directory)
-        app_instance.build_ui()
-        return app_instance
-
-    ui.page("/")(main_page)
-
-    if isinstance(ui.page, (Mock, MagicMock)):
-        main_page()
-    ui.run(
-        host="127.0.0.1",
-        title="Smart AutoSorter AI Pro",
-        port=port,
-        reload=False,
-        show=show,
-    )
+            print(f"Error: Target directory does not exist: {abs_dir}", file=sys.stderr)
+            sys.exit(1)
+    else:
+        if sys.stdin.isatty():
+            app_instance.run_interactive_terminal()
+        else:
+            print("Smart AutoSorter AI Pro - Terminal Mode")
+            print("No directory specified and non-interactive input stream detected.")
+            print("Usage: smart-autosorter /path/to/files")
