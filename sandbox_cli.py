@@ -141,8 +141,8 @@ def analyze_all(json_output=False):
         print("-" * 40)
 
 
-def main():
-    """Execute the main CLI logic for the sandbox tool."""
+def build_parser():
+    """Build and return argument parser for sandbox CLI tool."""
     parser = argparse.ArgumentParser(
         prog="sandbox_cli.py",
         description="Sandbox CLI Tool for ML Accuracy Verification",
@@ -169,7 +169,12 @@ def main():
         action="store_true",
         help="Output raw JSON without decorative borders",
     )
+    return parser
 
+
+def main():
+    """Execute the main CLI logic for the sandbox tool."""
+    parser = build_parser()
     args = parser.parse_args()
 
     if args.command == "reset":

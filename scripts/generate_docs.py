@@ -240,24 +240,38 @@ def generate_admin_guide():
 
         f.write("## Maintenance Scripts and CLI Commands\n\n")
 
+        # app/main.py
+        f.write("### `app/main.py`\n")
+        import argparse
+
+        from app.main import build_parser
+
+        main_parser = build_parser()
+        f.write("Main command-line interface for Smart AutoSorter AI Pro.\n\n")
+        f.write("#### Top-Level Usage\n```text\n")
+        f.write(main_parser.format_help().replace("\r\n", "\n"))
+        f.write("```\n\n")
+
+        subparsers_action = None
+        for action in main_parser._actions:
+            if isinstance(action, argparse._SubParsersAction):
+                subparsers_action = action
+                break
+
+        if subparsers_action:
+            f.write("#### Subcommands\n\n")
+            for sub_name, sub_parser in subparsers_action.choices.items():
+                f.write(f"##### `{sub_name}`\n```text\n")
+                f.write(sub_parser.format_help().replace("\r\n", "\n"))
+                f.write("```\n\n")
+
         # sandbox_cli.py
         f.write("### `sandbox_cli.py`\n")
         import sandbox_cli
 
         f.write(f"{sandbox_cli.__doc__}\n\n")
         f.write("#### Usage\n```text\n")
-        import subprocess
-
-        env = os.environ.copy()
-        env["COLUMNS"] = "80"
-        result = subprocess.run(
-            ["uv", "run", "python", "sandbox_cli.py", "--help"],
-            capture_output=True,
-            text=True,
-            check=True,
-            env=env,
-        )
-        f.write(result.stdout.replace("\r\n", "\n"))
+        f.write(sandbox_cli.build_parser().format_help().replace("\r\n", "\n"))
         f.write("```\n\n")
 
         # scripts/prepare_offline.py
