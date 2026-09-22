@@ -331,7 +331,22 @@ class IncrementalAnalyzer:
         cancel_check=None,
         fast_path_only: bool = False,
     ) -> dict:
-        """Generate a sorting plan based on the current model state."""
+        """Generate a sorting plan mapping file paths to destination paths based on current model state.
+
+        Args:
+            base_dir: Absolute path to the source root directory.
+            runtime_settings: Optional application settings or keyword/learned rule overrides.
+            locked_files: Dict mapping file paths to manually assigned target folder paths.
+            cancel_check: Optional callable `Callable[[], bool]` invoked periodically during plan
+                assembly loops. If `cancel_check()` returns `True`, execution aborts immediately
+                and returns an empty dictionary `{}` to honor token cancellation.
+            fast_path_only: If `True`, skips hierarchical ML strategy execution and generates plan using
+                rules and policies only.
+
+        Returns
+        -------
+            Dict mapping relative file paths to target folder categories or absolute paths.
+        """
         if locked_files:
             from app.core.policy_engine import PolicyEngine
 
@@ -652,17 +667,27 @@ class IncrementalAnalyzer:
                         cols = []
                         data = []
 
-                        for filepath, term, tf in doc_terms:
-                            norm_fp = filepath.replace("\\", "/")
-                            if norm_fp in filepath_to_row_idx:
-                                row_idx = filepath_to_row_idx[norm_fp]
-                                if term in vocab:
-                                    col_idx = vocab[term]
-                                    tf_weight = 1.0 + math.log(max(1, tf))
-                                    weight = tf_weight * idf_weights[term]
-                                    rows.append(row_idx)
-                                    cols.append(col_idx)
+                        cached_matrix_rows = self.db.get_tfidf_matrix_cache(base_dir)
+                        if cached_matrix_rows:
+                            for filepath, term, weight in cached_matrix_rows:
+                                norm_fp = filepath.replace("\\", "/")
+                                if norm_fp in filepath_to_row_idx and term in vocab:
+                                    rows.append(filepath_to_row_idx[norm_fp])
+                                    cols.append(vocab[term])
                                     data.append(weight)
+                        else:
+                            for filepath, term, tf in doc_terms:
+                                norm_fp = filepath.replace("\\", "/")
+                                if norm_fp in filepath_to_row_idx:
+                                    row_idx = filepath_to_row_idx[norm_fp]
+                                    if term in vocab:
+                                        col_idx = vocab[term]
+                                        tf_weight = 1.0 + math.log(max(1, tf))
+                                        weight = tf_weight * idf_weights[term]
+                                        rows.append(row_idx)
+                                        cols.append(col_idx)
+                                        data.append(weight)
+                            self.db.update_tfidf_matrix_cache(base_dir)
 
                         num_rows = len(historical_docs)
                         num_cols = len(vocab)

@@ -103,6 +103,21 @@ class Database:
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_tfidf_doc_terms_path ON tfidf_doc_terms (base_dir, filepath)"
             )
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS tfidf_matrix_cache (
+                    base_dir TEXT,
+                    filepath TEXT,
+                    term TEXT,
+                    weight REAL,
+                    PRIMARY KEY (base_dir, filepath, term)
+                )
+            """)
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_tfidf_matrix_cache_base ON tfidf_matrix_cache (base_dir)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_tfidf_matrix_cache_file ON tfidf_matrix_cache (base_dir, filepath)"
+            )
 
             # Purge existing audio-derived or non-eligible index terms from legacy databases
             try:
@@ -710,6 +725,8 @@ class Database:
                     [(base_dir, t) for t in existing_terms],
                 )
 
+        self._update_tfidf_matrix_cache_conn(conn, base_dir)
+
     def set_document_rating(self, base_dir: str, filepath: str, rating: str | None):
         """Record the quality feedback rating associated with a document path."""
         filepath = filepath.replace("\\", "/")
@@ -972,10 +989,14 @@ class Database:
                     conn.execute(
                         "DELETE FROM tfidf_doc_terms WHERE base_dir = ?", (base_dir,)
                     )
+                    conn.execute(
+                        "DELETE FROM tfidf_matrix_cache WHERE base_dir = ?", (base_dir,)
+                    )
                 else:
                     conn.execute("DELETE FROM documents")
                     conn.execute("DELETE FROM tfidf_vocab")
                     conn.execute("DELETE FROM tfidf_doc_terms")
+                    conn.execute("DELETE FROM tfidf_matrix_cache")
             self.invalidate_cache()
 
         self.worker.execute_write(_write)
@@ -1018,6 +1039,75 @@ class Database:
             }
 
             return N, top_terms, doc_terms, doc_metadata
+
+    def get_tfidf_matrix_cache(self, base_dir: str):
+        """Retrieve pre-computed TF-IDF term weights directly from the cache table in under 10ms."""
+        conn = get_db_connection(self.db_path)
+        with conn:
+            cursor = conn.execute(
+                "SELECT filepath, term, weight FROM tfidf_matrix_cache WHERE base_dir = ?",
+                (base_dir,),
+            )
+            return cursor.fetchall()
+
+    def update_tfidf_matrix_cache(self, base_dir: str):
+        """Recompute and refresh pre-computed TF-IDF matrix weights for a workspace base directory."""
+        def _write():
+            conn = get_db_connection(self.db_path)
+            with conn:
+                self._update_tfidf_matrix_cache_conn(conn, base_dir)
+
+        self.worker.execute_write(_write)
+
+    def _update_tfidf_matrix_cache_conn(self, conn, base_dir: str):
+        if not base_dir:
+            return
+        import math
+        cursor = conn.execute(
+            "SELECT COUNT(DISTINCT filepath) FROM tfidf_doc_terms WHERE base_dir = ?",
+            (base_dir,),
+        )
+        N = cursor.fetchone()[0] or 0
+        conn.execute("DELETE FROM tfidf_matrix_cache WHERE base_dir = ?", (base_dir,))
+        if N == 0:
+            return
+
+        cursor = conn.execute(
+            """
+            SELECT t.term, v.df FROM (
+                SELECT term, SUM(tf) as total_tf FROM tfidf_doc_terms WHERE base_dir = ? GROUP BY term
+            ) t INNER JOIN tfidf_vocab v ON t.term = v.term WHERE v.base_dir = ? ORDER BY t.total_tf DESC LIMIT 1000
+            """,
+            (base_dir, base_dir),
+        )
+        top_terms = cursor.fetchall()
+        if not top_terms:
+            return
+
+        vocab_terms = {term for term, df in top_terms}
+        idf_weights = {
+            term: math.log((1 + N) / (1 + df)) + 1
+            for term, df in top_terms
+        }
+
+        cursor = conn.execute(
+            "SELECT filepath, term, tf FROM tfidf_doc_terms WHERE base_dir = ?",
+            (base_dir,),
+        )
+        doc_terms = cursor.fetchall()
+
+        cache_rows = []
+        for filepath, term, tf in doc_terms:
+            if term in vocab_terms:
+                tf_weight = 1.0 + math.log(max(1, tf))
+                weight = tf_weight * idf_weights[term]
+                cache_rows.append((base_dir, filepath, term, weight))
+
+        if cache_rows:
+            conn.executemany(
+                "INSERT OR REPLACE INTO tfidf_matrix_cache (base_dir, filepath, term, weight) VALUES (?, ?, ?, ?)",
+                cache_rows,
+            )
 
     def get_model_metadata(self, key: str) -> str | None:
         """Get model metadata value for a given key."""

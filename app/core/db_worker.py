@@ -2,17 +2,22 @@
 
 import queue
 import threading
+from concurrent.futures import ThreadPoolExecutor
 
 from app.core.db_conn import clear_connection_cache
 
 
 class DBWorker:
-    """A worker that sequentially executes database write operations on a background thread."""
+    """A worker that sequentially executes database write operations and manages background enrichment tasks."""
 
     def __init__(self):
         self.q = queue.Queue()
         self._stopped = False
         self._lock = threading.Lock()
+        self._listeners = []
+        self._bg_pool = ThreadPoolExecutor(
+            max_workers=2, thread_name_prefix="AsyncEnrichmentWorker"
+        )
         from app.core.shared_registry import ContextPropagatingThread
 
         self.thread = ContextPropagatingThread(
@@ -115,12 +120,56 @@ class DBWorker:
                 pass
             self.q.put((func, args, kwargs, None, in_pool))
 
+    def submit_background_job(self, func, *args, **kwargs):
+        """Submit a heavy background job (VLM, EasyOCR, GGUF naming, decryption) off main thread with max 2 workers."""
+        with self._lock:
+            if self._stopped:
+                return None
+        future = self._bg_pool.submit(func, *args, **kwargs)
+
+        def _on_done(fut):
+            try:
+                res = fut.result()
+                self.notify_listeners("job_complete", res)
+            except Exception as e:
+                self.notify_listeners("job_error", e)
+
+        future.add_done_callback(_on_done)
+        return future
+
+    def register_listener(self, callback):
+        """Register a callback listener for background job status updates."""
+        with self._lock:
+            if callback not in self._listeners:
+                self._listeners.append(callback)
+
+    def unregister_listener(self, callback):
+        """Unregister a callback listener."""
+        with self._lock:
+            if callback in self._listeners:
+                self._listeners.remove(callback)
+
+    def notify_listeners(self, event_type: str, data=None):
+        """Notify registered listeners of background worker events."""
+        with self._lock:
+            listeners = list(self._listeners)
+        for cb in listeners:
+            try:
+                cb(event_type, data)
+            except Exception:
+                pass
+
     def stop(self):
         """Gracefully stop the worker thread and wait for it to finish."""
         try:
             from app.core.semantic_embeddings import SemanticEmbeddingManager
 
             SemanticEmbeddingManager.stop_all()
+        except Exception:
+            pass
+
+        try:
+            self._bg_pool.shutdown(wait=False)
         except Exception:
             pass
 
