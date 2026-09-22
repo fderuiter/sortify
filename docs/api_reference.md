@@ -2,6 +2,18 @@
 
 This document is automatically generated. Do not edit manually.
 
+## Core Architecture Diagram
+
+```mermaid
+flowchart TD
+    A[app.main] --> B[app.core.session]
+    B --> C[app.core.extractor]
+    B --> D[app.core.analyzer]
+    B --> E[app.core.verifier]
+    C --> F[app.core.sanitizer]
+    D --> G[app.core.analyzer_strategies]
+```
+
 ## `app.config`
 
 ::: app.config

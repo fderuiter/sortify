@@ -2,6 +2,19 @@
 
 Welcome to the Smart AutoSorter AI Pro troubleshooting guide. If you are experiencing issues during setup, particularly with downloading the AI model, please consult the sections below.
 
+```mermaid
+flowchart TD
+    A[Setup Wizard Download Triggered] --> B{Network Connection OK?}
+    B -->|No| C[Check Firewall & Disconnected Status]
+    C --> D[Fallback to Offline Non-Semantic Mode]
+    B -->|Yes| E{Sufficient Disk Space >= 200MB?}
+    E -->|No| F[Clear Free Disk Space]
+    F --> G[Retry Model Download via Settings]
+    E -->|Yes| H[Download 80MB AI Model]
+    H --> I[Enable Semantic AI Sorting]
+    G --> B
+```
+
 ## Common Network Failure Messages
 
 ### 1. "Download failed: Cannot connect to host" or "Connection timeout"
