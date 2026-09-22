@@ -1,8 +1,51 @@
 """Policy Engine module for evaluating compliance policies and validating lock paths."""
 
 import os
+from typing import Any, Dict
+
+from pydantic import BaseModel, ConfigDict
 
 from app.core.path_utils import validate_target_path
+
+
+class PolicyEvaluationResult(BaseModel):
+    """Structured Pydantic model for policy evaluation result."""
+
+    type: str = ""
+    expression: str = ""
+    target_path: str = ""
+    priority: int = 0
+    halting: bool = False
+    halt_evaluation: bool = False
+
+    model_config = ConfigDict(extra="allow")
+
+    def dict(self, *args, **kwargs) -> Dict[str, Any]:
+        """Backward compatibility method for legacy Pydantic v1 callers."""
+        return self.model_dump(*args, **kwargs)
+
+    def __getitem__(self, item: str) -> Any:
+        """Support item lookup via bracket syntax for dictionary compatibility."""
+        if hasattr(self, item):
+            return getattr(self, item)
+        extra = getattr(self, "__pydantic_extra__", None)
+        if extra and item in extra:
+            return extra[item]
+        raise KeyError(item)
+
+    def get(self, item: str, default: Any = None) -> Any:
+        """Support dictionary get method."""
+        try:
+            return self[item]
+        except KeyError:
+            return default
+
+    def __contains__(self, item: str) -> bool:
+        """Check if key exists in attributes or extra fields."""
+        return hasattr(self, item) or (
+            getattr(self, "__pydantic_extra__", None) is not None
+            and item in self.__pydantic_extra__
+        )
 
 
 class PolicyEngine:
@@ -22,8 +65,8 @@ class PolicyEngine:
         rule: dict, file_path: str, doc_text: str, status_match: str
     ) -> bool:
         """Evaluate a single compliance policy rule against a file."""
-        rule_type = rule.get("type", "").lower()
-        expression = rule.get("expression", "").lower()
+        rule_type = rule.get("type", "").lower() if isinstance(rule, dict) else getattr(rule, "type", "").lower()
+        expression = rule.get("expression", "").lower() if isinstance(rule, dict) else getattr(rule, "expression", "").lower()
 
         fn_only = os.path.basename(file_path).lower()
         dl_lower = doc_text.lower() if doc_text else ""
@@ -52,12 +95,12 @@ class PolicyEngine:
         status_match: str,
         policies: list[dict],
         return_halting: bool = False,
-    ) -> dict | None | tuple[dict | None, bool]:
+    ) -> PolicyEvaluationResult | None | tuple[PolicyEvaluationResult | None, bool]:
         """Find the highest priority matching compliance policy rule for a file."""
         if not policies:
             return (None, False) if return_halting else None
         sorted_policies = sorted(
-            policies, key=lambda x: x.get("priority", 0), reverse=True
+            policies, key=lambda x: x.get("priority", 0) if isinstance(x, dict) else getattr(x, "priority", 0), reverse=True
         )
         matched_policy = None
         halt_evaluation = False
@@ -66,12 +109,20 @@ class PolicyEngine:
                 matched_policy = rule
                 break
             else:
-                if rule.get("halting", False):
+                is_halting = rule.get("halting", False) if isinstance(rule, dict) else getattr(rule, "halting", False)
+                if is_halting:
                     halt_evaluation = True
                     break
+
+        matched_result = None
+        if matched_policy:
+            raw_data = dict(matched_policy) if isinstance(matched_policy, dict) else matched_policy.model_dump()
+            raw_data["halt_evaluation"] = halt_evaluation
+            matched_result = PolicyEvaluationResult.model_validate(raw_data)
+
         if return_halting:
-            return matched_policy, halt_evaluation
-        return matched_policy
+            return matched_result, halt_evaluation
+        return matched_result
 
     @staticmethod
     def validate_lock_path(lock_path: str, file_path: str = None) -> None:

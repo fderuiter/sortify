@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "1b4e4488be6f9abd7f98c8b52d8124098b46e6118d5a1236210b668aa2989dac"
+    "checksum": "9c7a3bc783db7cc64a50d5ac0aa6a60f6325b63532d44cf7b1326d64c00f94b0"
   },
   "cli": {
     "app/main.py": [
@@ -566,7 +566,7 @@
                   "name": "fast_path_only"
                 }
               ],
-              "returns": "dict"
+              "returns": "SortingPlan"
             },
             {
               "async": false,
@@ -626,6 +626,173 @@
                 }
               ],
               "returns": null
+            }
+          ]
+        },
+        {
+          "class_name": "SortingPlan",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "__init__",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "Optional[Dict[str, Any]]",
+                  "default": "None",
+                  "name": "plan"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "**kwargs"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "dict",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "*args"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "**kwargs"
+                }
+              ],
+              "returns": "Dict[str, Any]"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "model_dump",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "*args"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "**kwargs"
+                }
+              ],
+              "returns": "Dict[str, Any]"
+            },
+            {
+              "async": false,
+              "decorators": [
+                "@classmethod"
+              ],
+              "name": "model_validate",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "cls"
+                },
+                {
+                  "annotation": "Any",
+                  "default": null,
+                  "name": "obj"
+                }
+              ],
+              "returns": "'SortingPlan'"
+            }
+          ]
+        },
+        {
+          "class_name": "SortingPlanNode",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "dict",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "*args"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "**kwargs"
+                }
+              ],
+              "returns": "Dict[str, Any]"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "model_dump",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "*args"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "**kwargs"
+                }
+              ],
+              "returns": "Dict[str, Any]"
+            },
+            {
+              "async": false,
+              "decorators": [
+                "@classmethod"
+              ],
+              "name": "model_validate",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "cls"
+                },
+                {
+                  "annotation": "Any",
+                  "default": null,
+                  "name": "obj"
+                }
+              ],
+              "returns": "'SortingPlanNode'"
             }
           ]
         }
@@ -1417,7 +1584,7 @@
                   "name": "base_dir"
                 }
               ],
-              "returns": "Dict[str, Any]"
+              "returns": "ClinicalComplianceResult"
             },
             {
               "async": false,
@@ -1430,7 +1597,7 @@
                   "name": "self"
                 },
                 {
-                  "annotation": "Dict[str, Any]",
+                  "annotation": "Union[ClinicalComplianceResult, Dict[str, Any]]",
                   "default": null,
                   "name": "compliance_data"
                 },
@@ -1464,6 +1631,162 @@
                 }
               ],
               "returns": "str"
+            }
+          ]
+        },
+        {
+          "class_name": "ClinicalComplianceResult",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "dict",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "*args"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "**kwargs"
+                }
+              ],
+              "returns": "Dict[str, Any]"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "get",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "item"
+                },
+                {
+                  "annotation": "Any",
+                  "default": "None",
+                  "name": "default"
+                }
+              ],
+              "returns": "Any"
+            }
+          ]
+        },
+        {
+          "class_name": "FoundEssentialDocument",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "dict",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "*args"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "**kwargs"
+                }
+              ],
+              "returns": "Dict[str, Any]"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "get",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "item"
+                },
+                {
+                  "annotation": "Any",
+                  "default": "None",
+                  "name": "default"
+                }
+              ],
+              "returns": "Any"
+            }
+          ]
+        },
+        {
+          "class_name": "MissingEssentialDocument",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "dict",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "*args"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "**kwargs"
+                }
+              ],
+              "returns": "Dict[str, Any]"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "get",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "item"
+                },
+                {
+                  "annotation": "Any",
+                  "default": "None",
+                  "name": "default"
+                }
+              ],
+              "returns": "Any"
             }
           ]
         }
@@ -3979,7 +4302,93 @@
       ]
     },
     "app/core/extractor.py": {
-      "classes": [],
+      "classes": [
+        {
+          "class_name": "ExtractionResult",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "dict",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "*args"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "**kwargs"
+                }
+              ],
+              "returns": "Dict[str, Any]"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "get",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "item"
+                },
+                {
+                  "annotation": "Any",
+                  "default": "None",
+                  "name": "default"
+                }
+              ],
+              "returns": "Any"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "startswith",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "prefix"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "*args"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "**kwargs"
+                }
+              ],
+              "returns": "bool"
+            }
+          ]
+        },
+        {
+          "class_name": "ExtractionStatus",
+          "decorators": [],
+          "methods": []
+        }
+      ],
       "functions": [
         {
           "async": false,
@@ -4118,7 +4527,7 @@
               "name": "base_dir"
             }
           ],
-          "returns": "str"
+          "returns": "ExtractionResult"
         },
         {
           "async": false,
@@ -6088,7 +6497,7 @@
                   "name": "return_halting"
                 }
               ],
-              "returns": "dict | None | tuple[dict | None, bool]"
+              "returns": "PolicyEvaluationResult | None | tuple[PolicyEvaluationResult | None, bool]"
             },
             {
               "async": false,
@@ -6154,6 +6563,58 @@
                 }
               ],
               "returns": "bool"
+            }
+          ]
+        },
+        {
+          "class_name": "PolicyEvaluationResult",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "dict",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "*args"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "**kwargs"
+                }
+              ],
+              "returns": "Dict[str, Any]"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "get",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "item"
+                },
+                {
+                  "annotation": "Any",
+                  "default": "None",
+                  "name": "default"
+                }
+              ],
+              "returns": "Any"
             }
           ]
         }

@@ -167,5 +167,7 @@ def test_downstream_topic_analysis_with_truncated_tabular_text(tmp_path):
     plan = analyzer.generate_sorting_plan(str(tmp_path))
 
     # Plan should successfully partition without raising any exception
-    assert isinstance(plan, dict)
+    from app.core.analyzer import SortingPlan
+
+    assert isinstance(plan, (SortingPlan, dict))
     assert len(analyzer.corpus) == 2
