@@ -559,6 +559,12 @@ def recursive_kmeans_worker_main(
             pass
         pre_fetched_corpus = None
         key = None
+        if out_q is not None:
+            try:
+                out_q.close()
+                out_q.join_thread()
+            except Exception:
+                pass
         if is_ipc or is_pipe:
             import os
 
