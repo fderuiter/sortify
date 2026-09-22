@@ -652,17 +652,27 @@ class IncrementalAnalyzer:
                         cols = []
                         data = []
 
-                        for filepath, term, tf in doc_terms:
-                            norm_fp = filepath.replace("\\", "/")
-                            if norm_fp in filepath_to_row_idx:
-                                row_idx = filepath_to_row_idx[norm_fp]
-                                if term in vocab:
-                                    col_idx = vocab[term]
-                                    tf_weight = 1.0 + math.log(max(1, tf))
-                                    weight = tf_weight * idf_weights[term]
-                                    rows.append(row_idx)
-                                    cols.append(col_idx)
+                        cached_matrix_rows = self.db.get_tfidf_matrix_cache(base_dir)
+                        if cached_matrix_rows:
+                            for filepath, term, weight in cached_matrix_rows:
+                                norm_fp = filepath.replace("\\", "/")
+                                if norm_fp in filepath_to_row_idx and term in vocab:
+                                    rows.append(filepath_to_row_idx[norm_fp])
+                                    cols.append(vocab[term])
                                     data.append(weight)
+                        else:
+                            for filepath, term, tf in doc_terms:
+                                norm_fp = filepath.replace("\\", "/")
+                                if norm_fp in filepath_to_row_idx:
+                                    row_idx = filepath_to_row_idx[norm_fp]
+                                    if term in vocab:
+                                        col_idx = vocab[term]
+                                        tf_weight = 1.0 + math.log(max(1, tf))
+                                        weight = tf_weight * idf_weights[term]
+                                        rows.append(row_idx)
+                                        cols.append(col_idx)
+                                        data.append(weight)
+                            self.db.update_tfidf_matrix_cache(base_dir)
 
                         num_rows = len(historical_docs)
                         num_cols = len(vocab)

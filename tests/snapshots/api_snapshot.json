@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "2ffc65a28c7d0c6cf6333e7071ccb4abc3d404241d2cf77f68daebd7f12e8655"
+    "checksum": "bbe51105a20597b82ef32c05104234aefd9f5b2822d3176ee19ff3dc9b357f7b"
   },
   "cli": {
     "app/main.py": [
@@ -2610,6 +2610,24 @@
             {
               "async": false,
               "decorators": [],
+              "name": "get_tfidf_matrix_cache",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "base_dir"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
               "name": "get_tfidf_stats",
               "parameters": [
                 {
@@ -2934,6 +2952,24 @@
             {
               "async": false,
               "decorators": [],
+              "name": "update_tfidf_matrix_cache",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "base_dir"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
               "name": "upsert_document",
               "parameters": [
                 {
@@ -3131,12 +3167,81 @@
             {
               "async": false,
               "decorators": [],
+              "name": "notify_listeners",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "event_type"
+                },
+                {
+                  "annotation": null,
+                  "default": "None",
+                  "name": "data"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "register_listener",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "callback"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
               "name": "stop",
               "parameters": [
                 {
                   "annotation": null,
                   "default": null,
                   "name": "self"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "submit_background_job",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "func"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "*args"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "**kwargs"
                 }
               ],
               "returns": null
@@ -3165,6 +3270,24 @@
                   "annotation": null,
                   "default": null,
                   "name": "**kwargs"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "unregister_listener",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "callback"
                 }
               ],
               "returns": null
@@ -3653,6 +3776,49 @@
               "annotation": null,
               "default": "None",
               "name": "cancel_check"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "fast_triage"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "db"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "name": "base_dir"
+            }
+          ],
+          "returns": "str"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "fast_triage_extract",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "file_path"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "settings"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "db"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "name": "base_dir"
             }
           ],
           "returns": "str"
