@@ -405,26 +405,6 @@ class AppSettings:
 
         self.load()
 
-    def _notify_observers(self, key: str, value: Any) -> None:
-        """Notify registered setting change observers synchronously with updated configuration."""
-        callbacks = []
-        with AppSettings._class_observer_lock:
-            callbacks.extend(AppSettings._class_observers.get(key, []))
-            callbacks.extend(AppSettings._class_observers.get("*", []))
-
-        if hasattr(self, "_observer_lock") and hasattr(self, "_observers"):
-            with self._observer_lock:
-                callbacks.extend(self._observers.get(key, []))
-                callbacks.extend(self._observers.get("*", []))
-
-        unique_callbacks = []
-        for cb in callbacks:
-            if cb not in unique_callbacks:
-                unique_callbacks.append(cb)
-
-        for cb in unique_callbacks:
-            _dispatch_observer_callback(cb, key, value)
-
     def load(self):
         """Load settings from the configuration file."""
         self._validation_errors = []
