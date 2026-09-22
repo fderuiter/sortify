@@ -11,6 +11,7 @@ def run_command(command, expected_args):
     try:
         env = os.environ.copy()
         env["COLUMNS"] = "80"
+        env.setdefault("PYTHON_KEYRING_BACKEND", "keyring.backends.fail.Keyring")
 
         # Add repository root to PYTHONPATH
         repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -50,6 +51,7 @@ def run_command(command, expected_args):
 
 def main():
     """Run all CLI smoke tests."""
+    os.environ.setdefault("PYTHON_KEYRING_BACKEND", "keyring.backends.fail.Keyring")
     success = True
 
     # Debugging info

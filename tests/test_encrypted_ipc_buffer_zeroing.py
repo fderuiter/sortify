@@ -279,3 +279,29 @@ def test_parallel_vs_inline_clustering_identical_outputs():
         assert err_parallel == pytest.approx(err_inline)
     finally:
         os.environ.pop("FORCE_MULTIPROCESSING_CLUSTERING", None)
+
+
+def test_malicious_pickled_payload_rejection():
+    """Verify that attempting to deserialize pickled Python bytecode or malicious class payloads raises json.JSONDecodeError."""
+    import json
+    import pickle
+
+    from cryptography.fernet import Fernet
+
+    session_crypto = EphemeralSessionCrypto()
+    session_key = session_crypto.session_key
+    cipher = Fernet(session_key)
+
+    class Exploit:
+        def __reduce__(self):
+            return (eval, ("1 + 1",))
+
+    pickled_payload = pickle.dumps(Exploit())
+    encrypted_pickled_bytes = cipher.encrypt(pickled_payload)
+
+    with pytest.raises(json.JSONDecodeError):
+        session_crypto.decrypt_payload(encrypted_pickled_bytes)
+
+    with pytest.raises(json.JSONDecodeError):
+        decrypt_ipc_payload(encrypted_pickled_bytes, session_key)
+
