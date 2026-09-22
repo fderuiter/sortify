@@ -39,6 +39,7 @@ class StudyDisambiguator:
 
     def extract_site_number(self, text: str, path: str) -> Optional[str]:
         """Extract clinical trial site number from text or file path."""
+        text = str(text or "")
         match = re.search(
             r"\bsite\s*(?:id|number|no\.?|#)?\s*[:\s]*(\d{2,5})\b", text, re.IGNORECASE
         )

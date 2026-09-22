@@ -272,10 +272,10 @@ class ForensicScanner:
 
         # Text extraction
         if pre_extracted_text is not None:
-            text = pre_extracted_text
+            text = str(pre_extracted_text)
         else:
             try:
-                text = extract_file_text(actual_file_path) or ""
+                text = str(extract_file_text(actual_file_path) or "")
             except Exception as e:
                 logger.warning(f"Extraction error for {actual_file_path}: {e}")
                 text = ""

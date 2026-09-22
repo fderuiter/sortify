@@ -4,6 +4,7 @@ This module provides utilities to read text from various file formats.
 """
 
 import concurrent.futures
+import inspect
 import logging
 import os
 from enum import Enum
@@ -13,6 +14,7 @@ import pypdf.errors
 from pydantic import BaseModel, ConfigDict
 
 from app.core.extractor_strategies import registry
+from app.core.text_utils import sanitize_text
 
 
 class ExtractionStatus(str, Enum):
@@ -120,8 +122,6 @@ def extract_file_text(
     file_path: str, settings=None, progress_callback=None, cancel_check=None
 ) -> ExtractionResult:
     """Extract text content from a given file."""
-    import inspect
-
     ext = os.path.splitext(file_path)[1].lower()
     try:
         extractor = registry.get_extractor(ext)
@@ -137,8 +137,6 @@ def extract_file_text(
                 kwargs["cancel_check"] = cancel_check
 
             raw_text = extractor.extract(file_path, **kwargs)
-            from app.core.text_utils import sanitize_text
-
             text = sanitize_text(raw_text)
             if not text.strip():
                 return ExtractionResult(text="", status=ExtractionStatus.EMPTY)
