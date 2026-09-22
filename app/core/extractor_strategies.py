@@ -15,7 +15,36 @@ def get_ocr_reader():
     return SharedModelRegistry.get_instance().get_ocr_reader()
 
 
-def extract_text_from_image(image, settings=None, file_path=None) -> str:
+def _emit_progress(progress_callback, pct: float = 0.0, stage: str | None = None) -> None:
+    """Safely invoke a progress callback with ratio and optional stage description."""
+    if not progress_callback:
+        return
+    try:
+        if stage is not None:
+            try:
+                progress_callback(pct, stage)
+                return
+            except TypeError:
+                pass
+        try:
+            progress_callback(pct)
+            return
+        except TypeError:
+            pass
+        if stage is not None:
+            try:
+                progress_callback(stage)
+                return
+            except TypeError:
+                pass
+        progress_callback()
+    except Exception as e:
+        logging.debug(f"Error invoking progress callback: {e}")
+
+
+def extract_text_from_image(
+    image, settings=None, file_path=None, progress_callback=None
+) -> str:
     """Extract character-level text from an image using configured vision engine with dynamic OCR fallback."""
     if settings is None:
         from app.config import AppSettings
@@ -70,8 +99,10 @@ def extract_text_from_image(image, settings=None, file_path=None) -> str:
         try:
             from app.core.shared_registry import SharedModelRegistry
 
+            _emit_progress(progress_callback, 0.2, "Initializing Florence-2 VLM model...")
             proc = SharedModelRegistry.get_instance().get_florence_processor()
             if proc is not None:
+                _emit_progress(progress_callback, 0.5, "Extracting visual text...")
                 res = proc.process_image(image, task_prompt="<OCR>")
                 extracted = res.get("sanitized_text", "") or res.get("raw_output", "")
                 if extracted and extracted.strip():
@@ -82,6 +113,7 @@ def extract_text_from_image(image, settings=None, file_path=None) -> str:
             )
 
     # Fallback to standard OCR (EasyOCR)
+    _emit_progress(progress_callback, 0.3, "Initializing EasyOCR model...")
     reader = get_ocr_reader()
     if reader is None:
         return ""
@@ -90,6 +122,7 @@ def extract_text_from_image(image, settings=None, file_path=None) -> str:
         import numpy as np
 
         img_np = np.array(image)
+        _emit_progress(progress_callback, 0.6, "Extracting visual text...")
         results = reader.readtext(img_np)
         extracted_text = " ".join([res[1] for res in results])
         return extracted_text.strip()
@@ -294,13 +327,21 @@ class XlsxExtractor:
 class PdfExtractor:
     """Extractor for PDF documents."""
 
-    def extract(self, file_path: str, settings=None) -> str:
+    def extract(self, file_path: str, settings=None, progress_callback=None) -> str:
         """Extract text from a .pdf file."""
         text = ""
         try:
             with open(file_path, "rb") as f:
                 reader = pypdf.PdfReader(f)
-                for page in reader.pages:
+                total_pages = len(reader.pages)
+                for idx, page in enumerate(reader.pages):
+                    if progress_callback and total_pages > 0:
+                        pct = (idx + 1) / total_pages
+                        _emit_progress(
+                            progress_callback,
+                            pct,
+                            f"Extracting text from page {idx + 1} of {total_pages}",
+                        )
                     text += page.extract_text() or ""
         except Exception as e:
             logging.error(f"Failed standard text extraction for {file_path}: {e}")
@@ -313,12 +354,25 @@ class PdfExtractor:
 
                 with open(file_path, "rb") as f:
                     pdf_reader = pypdf.PdfReader(f)
-                    for page in pdf_reader.pages:
+                    total_pages = len(pdf_reader.pages)
+                    for idx, page in enumerate(pdf_reader.pages):
+                        page_num = idx + 1
+                        if progress_callback and total_pages > 0:
+                            pct = (idx + 0.5) / total_pages
+                            _emit_progress(
+                                progress_callback,
+                                pct,
+                                f"OCR Fallback: Running EasyOCR on page {page_num} of {total_pages}",
+                            )
+
                         for img in page.images:
                             try:
                                 pil_image = Image.open(io.BytesIO(img.data))
                                 extracted = extract_text_from_image(
-                                    pil_image, settings=settings, file_path=file_path
+                                    pil_image,
+                                    settings=settings,
+                                    file_path=file_path,
+                                    progress_callback=progress_callback,
                                 )
                                 if extracted and extracted != "[STATUS:SKIPPED]":
                                     visual_text += extracted + " "
@@ -338,8 +392,10 @@ class PdfExtractor:
 class ImageExtractor:
     """Extractor for image files."""
 
-    def extract(self, file_path: str, settings=None) -> str:
+    def extract(self, file_path: str, settings=None, progress_callback=None) -> str:
         """Extract literal text from an image using local character recognition."""
+        if progress_callback:
+            _emit_progress(progress_callback, 0.05, "Opening image file...")
         try:
             from PIL import Image
 
@@ -352,7 +408,10 @@ class ImageExtractor:
 
         try:
             extracted_text = extract_text_from_image(
-                image, settings=settings, file_path=file_path
+                image,
+                settings=settings,
+                file_path=file_path,
+                progress_callback=progress_callback,
             )
             if not extracted_text:
                 return "[STATUS:ERROR: Vision Model Offline]"
