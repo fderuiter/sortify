@@ -121,7 +121,9 @@ def process_item_worker(
                 # Skip extraction if unchanged
                 return item, doc["extracted_text"], file_hash
 
-            text = extract_file_text(item_path, settings=settings)
+            text = extract_file_text(
+                item_path, settings=settings, progress_callback=progress_callback
+            )
             return item, text, file_hash
         elif os.path.isdir(item_path):
             return item, item, ""

@@ -4095,6 +4095,11 @@
                   "annotation": null,
                   "default": "None",
                   "name": "settings"
+                },
+                {
+                  "annotation": null,
+                  "default": "None",
+                  "name": "progress_callback"
                 }
               ],
               "returns": "str"
@@ -4124,6 +4129,11 @@
                   "annotation": null,
                   "default": "None",
                   "name": "settings"
+                },
+                {
+                  "annotation": null,
+                  "default": "None",
+                  "name": "progress_callback"
                 }
               ],
               "returns": "str"
@@ -4209,6 +4219,11 @@
               "annotation": null,
               "default": "None",
               "name": "file_path"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "progress_callback"
             }
           ],
           "returns": "str"

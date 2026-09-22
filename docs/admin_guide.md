@@ -204,6 +204,147 @@ To resolve a blocked-save state, follow these recovery options:
 
 ## Maintenance Scripts and CLI Commands
 
+### `app/main.py`
+Main command-line interface for Smart AutoSorter AI Pro.
+
+#### Top-Level Usage
+```text
+usage: app/main.py [-h] [--demo] [--smoke-test] [--update-snapshots]
+                   [--daemon] [--debug-layout] [--tui] [--gui]
+                   {sort,scan,config,daemon} ...
+
+Smart AutoSorter AI Pro
+
+positional arguments:
+  {sort,scan,config,daemon}
+                        Available subcommands
+    sort                Run document sorting in headless batch processing mode
+    scan                Run directory scanning and analysis without moving
+                        files
+    config              View or update application configuration settings
+    daemon              Launch the persistent directory-watching daemon
+
+options:
+  -h, --help            show this help message and exit
+  --demo                Run interactive CLI demo mode
+  --smoke-test          Run automated database smoke test and exit
+  --update-snapshots    Regenerate reference baseline snapshots across all
+                        covered views
+  --daemon              Launch the persistent directory-watching daemon
+  --debug-layout        Enable visual debug outlines for UI elements in dev
+                        mode
+  --tui                 Launch full-screen Textual TUI interface
+  --gui                 Force launch graphical web interface
+```
+
+#### Subcommands
+
+##### `sort`
+```text
+usage: app/main.py sort [-h] [--json] [--dest-dir DEST_DIR] [--dry-run]
+                        [--max-folders MAX_FOLDERS]
+                        [--strategy {default,generative,clinical_tmf,clinical_isf}]
+                        [--conflict-policy {skip,rename}]
+                        [--contextual-renaming] [--no-contextual-renaming]
+                        directory
+
+positional arguments:
+  directory             Target directory to sort
+
+options:
+  -h, --help            show this help message and exit
+  --json                Output result in structured JSON format
+  --dest-dir DEST_DIR   Destination directory for sorted files
+  --dry-run             Perform dry run analysis without executing physical
+                        moves
+  --max-folders MAX_FOLDERS
+                        Maximum number of generated subfolders
+  --strategy {default,generative,clinical_tmf,clinical_isf}
+                        Sorting strategy
+  --conflict-policy {skip,rename}
+                        Conflict resolution policy
+  --contextual-renaming
+                        Enable AI contextual renaming
+  --no-contextual-renaming
+                        Disable AI contextual renaming
+```
+
+##### `scan`
+```text
+usage: app/main.py scan [-h] [--json] [--max-folders MAX_FOLDERS]
+                        [--strategy {default,generative,clinical_tmf,clinical_isf}]
+                        [--conflict-policy {skip,rename}]
+                        [--contextual-renaming] [--no-contextual-renaming]
+                        directory
+
+positional arguments:
+  directory             Target directory to scan
+
+options:
+  -h, --help            show this help message and exit
+  --json                Output scan plan in structured JSON format
+  --max-folders MAX_FOLDERS
+                        Maximum number of generated subfolders
+  --strategy {default,generative,clinical_tmf,clinical_isf}
+                        Sorting strategy
+  --conflict-policy {skip,rename}
+                        Conflict resolution policy
+  --contextual-renaming
+                        Enable AI contextual renaming
+  --no-contextual-renaming
+                        Disable AI contextual renaming
+```
+
+##### `config`
+```text
+usage: app/main.py config [-h] [--show] [--json] [--set KEY VALUE]
+                          [--max-folders MAX_FOLDERS]
+                          [--strategy {default,generative,clinical_tmf,clinical_isf}]
+                          [--conflict-policy {skip,rename}]
+                          [--contextual-renaming] [--no-contextual-renaming]
+
+options:
+  -h, --help            show this help message and exit
+  --show                Display current configuration settings
+  --json                Output configuration as JSON
+  --set KEY VALUE       Set configuration KEY to VALUE
+  --max-folders MAX_FOLDERS
+                        Maximum number of generated subfolders
+  --strategy {default,generative,clinical_tmf,clinical_isf}
+                        Sorting strategy
+  --conflict-policy {skip,rename}
+                        Conflict resolution policy
+  --contextual-renaming
+                        Enable AI contextual renaming
+  --no-contextual-renaming
+                        Disable AI contextual renaming
+```
+
+##### `daemon`
+```text
+usage: app/main.py daemon [-h] [--max-folders MAX_FOLDERS]
+                          [--strategy {default,generative,clinical_tmf,clinical_isf}]
+                          [--conflict-policy {skip,rename}]
+                          [--contextual-renaming] [--no-contextual-renaming]
+                          [directory]
+
+positional arguments:
+  directory             Directory to watch
+
+options:
+  -h, --help            show this help message and exit
+  --max-folders MAX_FOLDERS
+                        Maximum number of generated subfolders
+  --strategy {default,generative,clinical_tmf,clinical_isf}
+                        Sorting strategy
+  --conflict-policy {skip,rename}
+                        Conflict resolution policy
+  --contextual-renaming
+                        Enable AI contextual renaming
+  --no-contextual-renaming
+                        Disable AI contextual renaming
+```
+
 ### `sandbox_cli.py`
 CLI tool for testing ML extraction and analysis in an isolated sandbox environment.
 
