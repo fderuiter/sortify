@@ -1,3 +1,4 @@
+import hashlib
 import os
 import tempfile
 import threading
@@ -11,6 +12,7 @@ from app.core.downloader import (
     NetworkError,
     run_background_download,
 )
+from app.core.shared_registry import SharedModelRegistry
 
 
 @pytest.fixture
@@ -133,9 +135,6 @@ def test_ui_settings_mutation_hot_reloads_proxy(temp_settings_path):
 
 
 def test_active_download_adopts_updated_proxy_on_retry(temp_settings_path):
-    import hashlib
-    from app.core.shared_registry import SharedModelRegistry
-
     mock_data = b"downloaded"
     expected_hash = hashlib.sha256(mock_data).hexdigest()
     SharedModelRegistry.get_instance().register_expected_hashes(

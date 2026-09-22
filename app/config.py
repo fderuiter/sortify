@@ -569,7 +569,7 @@ class AppSettings:
                 cls._class_observers[key].remove(callback)
 
     def _notify_observers(self, key: str, value: Any) -> None:
-        """Synchronously notify registered setting change observers for `key`."""
+        """Notify registered setting change observers for `key`."""
         callbacks = []
         if hasattr(self, "_observer_lock") and hasattr(self, "_observers"):
             with self._observer_lock:
