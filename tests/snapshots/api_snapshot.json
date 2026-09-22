@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "b5ae91038f92ec9b508d3e490ac5fed2eafe8ee1e4498560278a361d4b1d7fad"
+    "checksum": "2644b28858d02d0563a923fc0c1f23a09622d40c496037214730d6777bde1d48"
   },
   "cli": {
     "app/main.py": [
@@ -3327,6 +3327,11 @@
                   "annotation": null,
                   "default": null,
                   "name": "self"
+                },
+                {
+                  "annotation": null,
+                  "default": "None",
+                  "name": "settings"
                 }
               ],
               "returns": null
@@ -3424,6 +3429,24 @@
                   "annotation": "str",
                   "default": "''",
                   "name": "proxy"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "update_proxy",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "proxy_str"
                 }
               ],
               "returns": null
@@ -3528,6 +3551,11 @@
               "annotation": null,
               "default": "None",
               "name": "cancel_event"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "download_manager"
             }
           ],
           "returns": null

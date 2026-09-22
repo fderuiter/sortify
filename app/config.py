@@ -9,6 +9,7 @@ import logging
 import os
 import sys
 import threading
+from collections import defaultdict
 from pathlib import Path
 from typing import Annotated, Any, Callable, Literal
 
@@ -384,36 +385,8 @@ class Settings(BaseSettings):
 class AppSettings:
     """A registry for application settings that provides persistence and validation."""
 
-    _class_observers: dict = {}
+    _class_observers = defaultdict(list)
     _class_observer_lock = threading.Lock()
-
-    @classmethod
-    def add_observer(cls, key: str, callback: Callable) -> None:
-        """Register a thread-safe observer callback for setting mutation events.
-
-        Supports both class-level (AppSettings.add_observer) and instance-level invocations.
-        """
-        with cls._class_observer_lock:
-            if key not in cls._class_observers:
-                cls._class_observers[key] = []
-            if callback not in cls._class_observers[key]:
-                cls._class_observers[key].append(callback)
-
-    @classmethod
-    def remove_observer(cls, key: str, callback: Callable) -> None:
-        """Remove a previously registered setting observer callback."""
-        with cls._class_observer_lock:
-            if key in cls._class_observers and callback in cls._class_observers[key]:
-                cls._class_observers[key].remove(callback)
-
-    @classmethod
-    def clear_observers(cls, key: str = None) -> None:
-        """Clear all registered observers or observers for a specific key."""
-        with cls._class_observer_lock:
-            if key is None:
-                cls._class_observers.clear()
-            elif key in cls._class_observers:
-                cls._class_observers[key].clear()
 
     def __init__(self, filepath=None):
         self._filepath = filepath or str(get_app_dir() / "settings.json")
@@ -421,7 +394,7 @@ class AppSettings:
         self._lock = threading.Lock()
         self._raw_encrypted_proxy = None
         self._validation_errors = []
-        self._observers = {}
+        self._observers = defaultdict(list)
         self._observer_lock = threading.Lock()
 
         try:
@@ -632,6 +605,80 @@ class AppSettings:
             self._validation_errors = errors
             return False
 
+    @classmethod
+    def add_observer(cls, key: str, callback: Callable) -> None:
+        """Register a callback to be notified when setting `key` changes."""
+        with cls._class_observer_lock:
+            if callback not in cls._class_observers[key]:
+                cls._class_observers[key].append(callback)
+
+    @classmethod
+    def remove_observer(cls, key: str, callback: Callable) -> None:
+        """Unregister a setting change callback."""
+        with cls._class_observer_lock:
+            if callback in cls._class_observers[key]:
+                cls._class_observers[key].remove(callback)
+
+    @classmethod
+    def clear_observers(cls, key: str = None) -> None:
+        """Clear all registered observers or observers for a specific key."""
+        with cls._class_observer_lock:
+            if key is None:
+                cls._class_observers.clear()
+            elif key in cls._class_observers:
+                cls._class_observers[key].clear()
+
+    def _notify_observers(self, key: str, value: Any) -> None:
+        """Notify registered setting change observers for `key`."""
+        callbacks = []
+        if hasattr(self, "_observer_lock") and hasattr(self, "_observers"):
+            with self._observer_lock:
+                callbacks.extend(self._observers.get(key, []))
+                callbacks.extend(self._observers.get("*", []))
+        with AppSettings._class_observer_lock:
+            callbacks.extend(AppSettings._class_observers.get(key, []))
+            callbacks.extend(AppSettings._class_observers.get("*", []))
+
+        seen = set()
+        unique_callbacks = []
+        for cb in callbacks:
+            cb_id = id(cb)
+            if cb_id not in seen:
+                seen.add(cb_id)
+                unique_callbacks.append(cb)
+
+        for cb in unique_callbacks:
+            try:
+                self._invoke_observer_callback(cb, key, value)
+            except Exception as e:
+                logging.error(
+                    f"Error executing setting observer callback for '{key}': {e}",
+                    exc_info=True,
+                )
+
+    def _invoke_observer_callback(
+        self, callback: Callable, key: str, value: Any
+    ) -> None:
+        import inspect
+
+        try:
+            sig = inspect.signature(callback)
+            params_count = len(sig.parameters)
+            if params_count == 0:
+                callback()
+            elif params_count == 1:
+                callback(value)
+            else:
+                callback(key, value)
+        except Exception:
+            try:
+                callback(value)
+            except TypeError:
+                try:
+                    callback(key, value)
+                except TypeError:
+                    callback()
+
     def __getattr__(self, name):
         """Get attribute dynamically from the settings model."""
         if name == "MAX_AUDIO_WORKERS":
@@ -663,4 +710,5 @@ class AppSettings:
                 super().__setattr__("_raw_encrypted_proxy", None)
             setattr(self._settings_model, name, value)
             self.revalidate()
-            self._notify_observers(name, value)
+            new_val = getattr(self._settings_model, name, value)
+            self._notify_observers(name, new_val)

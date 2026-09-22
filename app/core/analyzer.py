@@ -331,7 +331,22 @@ class IncrementalAnalyzer:
         cancel_check=None,
         fast_path_only: bool = False,
     ) -> dict:
-        """Generate a sorting plan based on the current model state."""
+        """Generate a sorting plan mapping file paths to destination paths based on current model state.
+
+        Args:
+            base_dir: Absolute path to the source root directory.
+            runtime_settings: Optional application settings or keyword/learned rule overrides.
+            locked_files: Dict mapping file paths to manually assigned target folder paths.
+            cancel_check: Optional callable `Callable[[], bool]` invoked periodically during plan
+                assembly loops. If `cancel_check()` returns `True`, execution aborts immediately
+                and returns an empty dictionary `{}` to honor token cancellation.
+            fast_path_only: If `True`, skips hierarchical ML strategy execution and generates plan using
+                rules and policies only.
+
+        Returns
+        -------
+            Dict mapping relative file paths to target folder categories or absolute paths.
+        """
         if locked_files:
             from app.core.policy_engine import PolicyEngine
 

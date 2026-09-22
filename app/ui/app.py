@@ -714,7 +714,11 @@ class AutoSorterApp:
             ui.notify(f"Preset path does not exist: {abs_path}", type="warning")
 
     def start_analysis(self):
-        """Start the background analysis of the selected directory."""
+        """Start the background analysis workflow for the selected directory.
+
+        Resets session state and schedules `_scan_and_process_worker` as an
+        asynchronous task on the active asyncio event loop using `asyncio.create_task`.
+        """
         self.stop_watcher()
         try:
             self.loop = asyncio.get_running_loop()
@@ -739,6 +743,13 @@ class AutoSorterApp:
         asyncio.create_task(self._scan_and_process_worker())
 
     async def _scan_and_process_worker(self):
+        """Execute the asynchronous background directory scanning and document processing workflow.
+
+        Runs as an asyncio task on the main event loop. Delegates blocking I/O and CPU-bound operations
+        (file extraction, scanning, metadata processing, and incremental model fitting via `partial_fit`)
+        to worker threads using `asyncio.to_thread`. Dispatches thread-safe UI updates back to the event
+        loop using `loop.call_soon_threadsafe` and checks `_cancel_analysis_flag` for user cancellation.
+        """
         try:
             if not self.app_session:
                 from app.core.session import AppSession
@@ -1106,6 +1117,14 @@ class AutoSorterApp:
         dialog.open()
 
     def _rebuild_plan_async(self):
+        """Schedule a debounced, cancellable background plan recalculation task on the asyncio event loop.
+
+        Cancels any existing pending debounce task (`self._debounce_task.cancel()`) and sets its
+        `threading.Event` cancellation token. Spawns a new asyncio task that sleeps for 0.5s before
+        offloading CPU-bound plan recalculation (`generate_sorting_plan`) to a worker thread via
+        `asyncio.to_thread`. Passes a `check_cancel` callback bound to `token.is_set()` to allow early
+        cancellation on the background thread.
+        """
         if not self.app_session or not self.base_dir:
             return
 
