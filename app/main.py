@@ -777,7 +777,7 @@ def main():
     if getattr(args, "daemon", False) is True:
         from app.core.daemon import start_daemon
 
-        start_daemon(settings, args.directory)
+        start_daemon(settings, getattr(args, "directory", None))
     elif args.demo:
         from app.demo import run_demo
 
@@ -787,7 +787,7 @@ def main():
     ):
         from app.ui.tui import run_tui
 
-        run_tui(settings, args.directory)
+        run_tui(settings, getattr(args, "directory", None))
     else:
         try:
             from app.ui.app import run_app
@@ -801,9 +801,9 @@ def main():
 
         debug_layout = getattr(args, "debug_layout", False) is True
         if debug_layout:
-            run_app(settings, args.directory, debug_layout=True)
+            run_app(settings, getattr(args, "directory", None), debug_layout=True)
         else:
-            run_app(settings, args.directory)
+            run_app(settings, getattr(args, "directory", None))
 
 
 if __name__ == "__main__":

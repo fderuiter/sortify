@@ -35,13 +35,14 @@ def test_build_script_headless_flag():
 
     test_args = ["build.py", "--lite", "--headless"]
     with patch.object(sys, "argv", test_args):
-        with patch("PyInstaller.__main__.run") as mock_pyi_run:
-            with patch.object(build, "update_binaries_and_manifest"):
-                with patch.object(build, "download_and_prepare_weights"):
-                    with patch("importlib.util.find_spec", return_value=MagicMock()):
-                        build.main()
-                        assert os.environ.get("HEADLESS_BUILD") == "1"
-                        mock_pyi_run.assert_called_once()
+        with patch.dict(os.environ, {}, clear=False):
+            with patch("PyInstaller.__main__.run") as mock_pyi_run:
+                with patch.object(build, "update_binaries_and_manifest"):
+                    with patch.object(build, "download_and_prepare_weights"):
+                        with patch("importlib.util.find_spec", return_value=MagicMock()):
+                            build.main()
+                            assert os.environ.get("HEADLESS_BUILD") == "1"
+                            mock_pyi_run.assert_called_once()
 
 
 def test_spec_headless_asset_exclusion():
@@ -93,7 +94,7 @@ def test_main_gui_missing_nicegui_error(capsys):
 
     test_args = ["smart-autosorter", "--gui"]
     with patch.object(sys, "argv", test_args):
-        with patch.dict("sys.modules", {"app.ui.app": None}):
+        with patch.dict(sys.modules, {"app.ui.app": None}):
             with pytest.raises(SystemExit) as exc_info:
                 main.main()
             assert exc_info.value.code == 1
