@@ -23,7 +23,7 @@ def reset_sandbox():
     except Exception:
         pass
 
-    db_path = os.path.join(SANDBOX_DIR, "sandbox.db")
+    db_path = SANDBOX_DB_PATH
     try:
         from app.core.path_utils import resolve_db_crypto
 
