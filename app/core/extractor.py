@@ -25,12 +25,31 @@ def get_file_hash(file_path: str) -> str:
 
 
 def extract_file_text(
-    file_path: str, settings=None, progress_callback=None, cancel_check=None
+    file_path: str,
+    settings=None,
+    progress_callback=None,
+    cancel_check=None,
+    fast_triage: bool = False,
+    db=None,
+    base_dir: str | None = None,
 ) -> str:
     """Extract text content from a given file."""
     import inspect
 
     ext = os.path.splitext(file_path)[1].lower()
+
+    if fast_triage and ext in (".png", ".jpg", ".jpeg", ".bmp", ".tiff"):
+        if db and hasattr(db, "worker") and db.worker:
+            def _bg_visual_job():
+                full_text = extract_file_text(file_path, settings=settings, fast_triage=False)
+                if base_dir:
+                    rel_path = os.path.relpath(file_path, base_dir).replace("\\", "/")
+                    f_hash = get_file_hash(file_path)
+                    db.upsert_document(base_dir, rel_path, f_hash, full_text)
+                    db.update_tfidf_matrix_cache(base_dir)
+            db.worker.submit_background_job(_bg_visual_job)
+        return "[STATUS:PROVISIONAL]"
+
     text = ""
     try:
         extractor = registry.get_extractor(ext)
@@ -46,6 +65,19 @@ def extract_file_text(
                 kwargs["cancel_check"] = cancel_check
 
             text = extractor.extract(file_path, **kwargs)
+
+            if fast_triage and ext == ".pdf" and not text.strip():
+                if db and hasattr(db, "worker") and db.worker:
+                    def _bg_pdf_job():
+                        full_text = extractor.extract(file_path, **kwargs)
+                        if base_dir:
+                            rel_path = os.path.relpath(file_path, base_dir).replace("\\", "/")
+                            f_hash = get_file_hash(file_path)
+                            db.upsert_document(base_dir, rel_path, f_hash, full_text)
+                            db.update_tfidf_matrix_cache(base_dir)
+                    db.worker.submit_background_job(_bg_pdf_job)
+                return "[STATUS:PROVISIONAL]"
+
             from app.core.text_utils import sanitize_text
 
             text = sanitize_text(text)
@@ -61,6 +93,15 @@ def extract_file_text(
         )
         text = "[STATUS:FAILED]"
     return text
+
+
+def fast_triage_extract(
+    file_path: str, settings=None, db=None, base_dir: str | None = None
+) -> str:
+    """Fast-tier synchronous extractor for native text and metadata (<50ms)."""
+    return extract_file_text(
+        file_path, settings=settings, fast_triage=True, db=db, base_dir=base_dir
+    )
 
 
 def process_item_worker(
