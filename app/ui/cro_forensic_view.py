@@ -72,7 +72,8 @@ class CROForensicView:
 
                     async def pick_source():
                         path = await ask_directory_async(
-                            title="Select Source Storage Drive"
+                            title="Select Source Storage Drive",
+                            initial_dir=self.source_dir,
                         )
                         if path:
                             self.source_dir = path
@@ -96,7 +97,8 @@ class CROForensicView:
 
                     async def pick_target():
                         path = await ask_directory_async(
-                            title="Select Target Binders Directory"
+                            title="Select Target Binders Directory",
+                            initial_dir=self.target_dir,
                         )
                         if path:
                             self.target_dir = path

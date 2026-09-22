@@ -439,7 +439,12 @@ class AutoSorterApp:
                             export_input.set_value(path)
 
                     ask_directory_async(
-                        None, "Select Export Folder", on_dir_selected, None, None
+                        None,
+                        "Select Export Folder",
+                        on_dir_selected,
+                        None,
+                        None,
+                        initial_dir=default_export_path,
                     )
 
                 with ui.row().classes("w-full items-center gap-2"):
@@ -686,7 +691,14 @@ class AutoSorterApp:
                     self.path_input.set_value(path)
                 self.start_analysis()
 
-        ask_directory_async(None, "Select Directory", on_selected, None, None)
+        ask_directory_async(
+            None,
+            "Select Directory",
+            on_selected,
+            None,
+            None,
+            initial_dir=getattr(self, "base_dir", None),
+        )
 
     def on_scan_clicked(self):
         """Handle click on Scan & Organize button."""
