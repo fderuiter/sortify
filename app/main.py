@@ -107,10 +107,43 @@ if sys.platform == "win32" and is_packaged():
 
 import argparse
 import logging
+import os
+import re
 from pathlib import Path
 
 from app.config import AppSettings
 from app.log_filter import LogScrubbingFilter
+
+ANSI_ESCAPE_REGEX = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
+
+
+def strip_ansi_codes(text: str) -> str:
+    """Strip ANSI escape sequences from text string."""
+    if not text:
+        return text
+    return ANSI_ESCAPE_REGEX.sub("", text)
+
+
+class ANSIStrippingWriter:
+    """Stream wrapper that strips ANSI escape sequences before writing."""
+
+    def __init__(self, stream):
+        """Initialize stream wrapper."""
+        self.stream = stream
+
+    def write(self, text):
+        """Strip ANSI codes and write text to wrapped stream."""
+        if text:
+            self.stream.write(strip_ansi_codes(text))
+
+    def flush(self):
+        """Flush the wrapped stream if flush method is available."""
+        if hasattr(self.stream, "flush"):
+            self.stream.flush()
+
+    def isatty(self):
+        """Return isatty status of wrapped stream."""
+        return getattr(self.stream, "isatty", lambda: False)()
 
 
 def write_smoke_test_error(message, include_traceback=False):
@@ -391,13 +424,15 @@ def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
                 "summary": summary,
             }
 
+        quiet = getattr(args, "quiet", False)
         if args.json:
             sys.stdout.write(json.dumps(result, indent=2) + "\n")
             sys.stdout.flush()
         else:
-            print(f"Batch sorting completed successfully for '{target_path}'.")
-            if args.dry_run:
-                print("Dry-run mode: no files were moved.")
+            if not quiet:
+                print(f"Batch sorting completed successfully for '{target_path}'.")
+                if args.dry_run:
+                    print("Dry-run mode: no files were moved.")
             print(json.dumps(plan, indent=2))
 
         sys.exit(0)
@@ -458,13 +493,15 @@ def handle_scan_command(args: argparse.Namespace, settings: AppSettings):
             "plan": plan,
         }
 
+        quiet = getattr(args, "quiet", False)
         if args.json:
             sys.stdout.write(json.dumps(result, indent=2) + "\n")
             sys.stdout.flush()
         else:
-            print(
-                f"Scan analysis completed for '{target_path}'. Scanned {len(files)} files."
-            )
+            if not quiet:
+                print(
+                    f"Scan analysis completed for '{target_path}'. Scanned {len(files)} files."
+                )
             print(json.dumps(plan, indent=2))
 
         sys.exit(0)
@@ -510,12 +547,14 @@ def handle_config_command(args: argparse.Namespace, settings: AppSettings):
                 )
                 sys.exit(1)
 
+    quiet = getattr(args, "quiet", False)
     settings_dict = settings._settings_model.model_dump(mode="json")
     if args.json:
         sys.stdout.write(json.dumps(settings_dict, indent=2) + "\n")
         sys.stdout.flush()
     else:
-        print("Application Settings:")
+        if not quiet:
+            print("Application Settings:")
         for k, v in settings_dict.items():
             print(f"  {k}: {v}")
 
@@ -547,6 +586,19 @@ def handle_daemon_command(args: argparse.Namespace, settings: AppSettings):
 def build_parser(prog: str | None = "app/main.py") -> argparse.ArgumentParser:
     """Build and return the main command-line argument parser for Smart AutoSorter AI Pro."""
     parser = argparse.ArgumentParser(prog=prog, description="Smart AutoSorter AI Pro")
+    parser.add_argument(
+        "-q",
+        "--quiet",
+        action="store_true",
+        dest="quiet",
+        help="Suppress informational prints and non-essential progress output",
+    )
+    parser.add_argument(
+        "--no-color",
+        action="store_true",
+        dest="no_color",
+        help="Disable ANSI color and style formatting",
+    )
     parser.add_argument(
         "--demo", action="store_true", help="Run interactive CLI demo mode"
     )
@@ -584,6 +636,21 @@ def build_parser(prog: str | None = "app/main.py") -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="subcommand", help="Available subcommands")
 
     def add_common_override_args(subparser):
+        subparser.add_argument(
+            "-q",
+            "--quiet",
+            action="store_true",
+            dest="quiet",
+            default=argparse.SUPPRESS,
+            help="Suppress informational prints and non-essential progress output",
+        )
+        subparser.add_argument(
+            "--no-color",
+            action="store_true",
+            dest="no_color",
+            default=argparse.SUPPRESS,
+            help="Disable ANSI color and style formatting",
+        )
         subparser.add_argument(
             "--max-folders",
             type=int,
@@ -710,6 +777,18 @@ def main():
     args = parser.parse_args()
     if legacy_directory and not getattr(args, "directory", None):
         args.directory = legacy_directory
+
+    if not hasattr(args, "quiet"):
+        args.quiet = False
+    if not hasattr(args, "no_color"):
+        args.no_color = False
+
+    no_color = getattr(args, "no_color", False) or bool(os.environ.get("NO_COLOR"))
+    if no_color:
+        if sys.stdout is not None:
+            sys.stdout = ANSIStrippingWriter(sys.stdout)
+        if sys.stderr is not None:
+            sys.stderr = ANSIStrippingWriter(sys.stderr)
 
     if getattr(args, "update_snapshots", False) is True:
         import pytest

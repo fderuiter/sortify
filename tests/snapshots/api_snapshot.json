@@ -1,9 +1,34 @@
 {
   "_metadata": {
-    "checksum": "bbe51105a20597b82ef32c05104234aefd9f5b2822d3176ee19ff3dc9b357f7b"
+    "checksum": "22d2c0c092a69c5fe3eb57f855bd1f5ae9ee5f73b9ae2d17bc39b2086adf87a6"
   },
   "cli": {
     "app/main.py": [
+      {
+        "args": [
+          "-q",
+          "--quiet"
+        ],
+        "caller": "parser",
+        "keywords": {
+          "action": "store_true",
+          "dest": "quiet",
+          "help": "Suppress informational prints and non-essential progress output"
+        },
+        "method": "add_argument"
+      },
+      {
+        "args": [
+          "--no-color"
+        ],
+        "caller": "parser",
+        "keywords": {
+          "action": "store_true",
+          "dest": "no_color",
+          "help": "Disable ANSI color and style formatting"
+        },
+        "method": "add_argument"
+      },
       {
         "args": [
           "--demo"
@@ -240,6 +265,33 @@
       },
       {
         "args": [
+          "-q",
+          "--quiet"
+        ],
+        "caller": "subparser",
+        "keywords": {
+          "action": "store_true",
+          "default": "argparse.SUPPRESS",
+          "dest": "quiet",
+          "help": "Suppress informational prints and non-essential progress output"
+        },
+        "method": "add_argument"
+      },
+      {
+        "args": [
+          "--no-color"
+        ],
+        "caller": "subparser",
+        "keywords": {
+          "action": "store_true",
+          "default": "argparse.SUPPRESS",
+          "dest": "no_color",
+          "help": "Disable ANSI color and style formatting"
+        },
+        "method": "add_argument"
+      },
+      {
+        "args": [
           "--max-folders"
         ],
         "caller": "subparser",
@@ -312,6 +364,31 @@
     "sandbox_cli.py": [
       {
         "args": [
+          "-q",
+          "--quiet"
+        ],
+        "caller": "parser",
+        "keywords": {
+          "action": "store_true",
+          "dest": "quiet",
+          "help": "Suppress informational prints"
+        },
+        "method": "add_argument"
+      },
+      {
+        "args": [
+          "--no-color"
+        ],
+        "caller": "parser",
+        "keywords": {
+          "action": "store_true",
+          "dest": "no_color",
+          "help": "Disable ANSI color output"
+        },
+        "method": "add_argument"
+      },
+      {
+        "args": [
           "reset"
         ],
         "caller": "subparsers",
@@ -350,6 +427,33 @@
           "help": "Run the analysis pipeline on all sandbox files"
         },
         "method": "add_parser"
+      },
+      {
+        "args": [
+          "-q",
+          "--quiet"
+        ],
+        "caller": "parser_analyze",
+        "keywords": {
+          "action": "store_true",
+          "default": "argparse.SUPPRESS",
+          "dest": "quiet",
+          "help": "Suppress informational prints"
+        },
+        "method": "add_argument"
+      },
+      {
+        "args": [
+          "--no-color"
+        ],
+        "caller": "parser_analyze",
+        "keywords": {
+          "action": "store_true",
+          "default": "argparse.SUPPRESS",
+          "dest": "no_color",
+          "help": "Disable ANSI color output"
+        },
+        "method": "add_argument"
       },
       {
         "args": [

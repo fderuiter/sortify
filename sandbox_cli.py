@@ -147,6 +147,19 @@ def build_parser():
         prog="sandbox_cli.py",
         description="Sandbox CLI Tool for ML Accuracy Verification",
     )
+    parser.add_argument(
+        "-q",
+        "--quiet",
+        action="store_true",
+        dest="quiet",
+        help="Suppress informational prints",
+    )
+    parser.add_argument(
+        "--no-color",
+        action="store_true",
+        dest="no_color",
+        help="Disable ANSI color output",
+    )
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
     # reset command
@@ -163,6 +176,21 @@ def build_parser():
     # analyze command
     parser_analyze = subparsers.add_parser(
         "analyze", help="Run the analysis pipeline on all sandbox files"
+    )
+    parser_analyze.add_argument(
+        "-q",
+        "--quiet",
+        action="store_true",
+        dest="quiet",
+        default=argparse.SUPPRESS,
+        help="Suppress informational prints",
+    )
+    parser_analyze.add_argument(
+        "--no-color",
+        action="store_true",
+        dest="no_color",
+        default=argparse.SUPPRESS,
+        help="Disable ANSI color output",
     )
     parser_analyze.add_argument(
         "--json",
