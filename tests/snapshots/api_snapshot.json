@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "2ffc65a28c7d0c6cf6333e7071ccb4abc3d404241d2cf77f68daebd7f12e8655"
+    "checksum": "5fd1d3bdf71534ef87f60ca2f0821338f39998dc91c601c52c9e266b0520b312"
   },
   "cli": {
     "app/main.py": [
@@ -3929,6 +3929,11 @@
                   "annotation": null,
                   "default": "None",
                   "name": "settings"
+                },
+                {
+                  "annotation": null,
+                  "default": "None",
+                  "name": "progress_callback"
                 }
               ],
               "returns": "str"
@@ -3958,6 +3963,11 @@
                   "annotation": null,
                   "default": "None",
                   "name": "settings"
+                },
+                {
+                  "annotation": null,
+                  "default": "None",
+                  "name": "progress_callback"
                 }
               ],
               "returns": "str"
@@ -4043,6 +4053,11 @@
               "annotation": null,
               "default": "None",
               "name": "file_path"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "progress_callback"
             }
           ],
           "returns": "str"
