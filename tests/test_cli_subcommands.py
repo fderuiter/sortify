@@ -195,6 +195,56 @@ def test_sandbox_cli_json():
 
 
 @pytest.mark.xdist_group(name="cli_subcommands")
+def test_quiet_flag_suppresses_informational_prints():
+    """Test that --quiet / -q flag silences non-essential progress and banner prints."""
+    with tempfile.TemporaryDirectory() as src_dir:
+        create_sample_corpus(src_dir)
+
+        # Test sort with --quiet
+        code, stdout, stderr = run_cli(["sort", src_dir, "--quiet", "--dry-run"])
+        assert code == 0, f"Expected exit code 0, got {code}. Stderr: {stderr}"
+        assert "Batch sorting completed successfully" not in stdout
+        assert "Dry-run mode" not in stdout
+        assert "finance_doc.txt" in stdout
+
+        # Test scan with -q
+        code, stdout, stderr = run_cli(["scan", src_dir, "-q"])
+        assert code == 0, f"Expected exit code 0, got {code}. Stderr: {stderr}"
+        assert "Scan analysis completed" not in stdout
+        assert "finance_doc.txt" in stdout
+
+        # Test config with --quiet
+        code, stdout, stderr = run_cli(["config", "--show", "--quiet"])
+        assert code == 0, f"Expected exit code 0, got {code}. Stderr: {stderr}"
+        assert "Application Settings:" not in stdout
+        assert "MAX_FOLDERS" in stdout
+
+
+@pytest.mark.xdist_group(name="cli_subcommands")
+def test_no_color_flag_and_env_var_strips_ansi():
+    """Test that --no-color flag and NO_COLOR env var strip ANSI escape sequences."""
+    from app.main import strip_ansi_codes
+
+    ansi_text = "\x1b[31mRed Alert\x1b[0m \x1b[1mBold Text\x1b[0m"
+    assert strip_ansi_codes(ansi_text) == "Red Alert Bold Text"
+
+    with tempfile.TemporaryDirectory() as src_dir:
+        create_sample_corpus(src_dir)
+
+        # Test with --no-color flag
+        code, stdout, stderr = run_cli(["scan", src_dir, "--no-color", "--json"])
+        assert code == 0
+        assert "\x1b[" not in stdout
+        assert "\x1b[" not in stderr
+
+        # Test with NO_COLOR env var
+        code, stdout, stderr = run_cli(["scan", src_dir, "--json"], env={"NO_COLOR": "1"})
+        assert code == 0
+        assert "\x1b[" not in stdout
+        assert "\x1b[" not in stderr
+
+
+@pytest.mark.xdist_group(name="cli_subcommands")
 def test_build_parser_factory():
     """Test that build_parser() returns a fully configured ArgumentParser instance."""
     import argparse
