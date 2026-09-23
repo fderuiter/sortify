@@ -23,7 +23,7 @@ def is_ml_available() -> bool:
         import torch  # noqa: F401
 
         return True
-    except ImportError:
+    except (ImportError, Exception):
         return False
 
 
