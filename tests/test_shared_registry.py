@@ -686,7 +686,11 @@ def test_check_ai_status_local_offline_bundle(tmp_path, monkeypatch):
         assert warn_msg is None
 
         # Verify that get_ocr_reader also correctly resolves the directory
+        import sys
+
         registry = SharedModelRegistry.get_instance()
+        mock_easyocr = MagicMock()
+        monkeypatch.setitem(sys.modules, "easyocr", mock_easyocr)
         registry.get_ocr_reader()
         _, kwargs = mock_easyocr.Reader.call_args
         assert "offline_bundle" in kwargs.get("model_storage_directory", "")
