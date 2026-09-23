@@ -3,6 +3,7 @@
 This module contains the AppSettings for managing dynamic configuration.
 """
 
+import inspect
 import json
 import logging
 import os
@@ -34,6 +35,33 @@ def _get_schema_validator():
                     except Exception as e:
                         logging.error(f"Failed to load config schema: {e}")
     return _SCHEMA_VALIDATOR
+
+
+def _dispatch_observer_callback(cb: Any, key: str, value: Any) -> None:
+    try:
+        sig = inspect.signature(cb)
+        params = [
+            p
+            for p in sig.parameters.values()
+            if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
+        ]
+        has_var_args = any(p.kind == p.VAR_POSITIONAL for p in sig.parameters.values())
+
+        if len(params) == 0 and not has_var_args:
+            cb()
+        elif len(params) == 1:
+            cb(value)
+        elif len(params) == 2:
+            cb(key, value)
+        elif has_var_args:
+            cb(value)
+        else:
+            cb(value)
+    except Exception as e:
+        logging.error(
+            f"Error executing config observer callback for key '{key}': {e}",
+            exc_info=True,
+        )
 
 
 def get_app_dir() -> Path:
@@ -460,6 +488,9 @@ class AppSettings:
             if needs_migration and not has_validation_errors:
                 self._trigger_save()
 
+            if hasattr(self._settings_model, "PROXY"):
+                self._notify_observers("PROXY", getattr(self._settings_model, "PROXY"))
+
         except Exception as e:
             logging.warning(f"Failed to load settings, using defaults: {e}")
             # If JSON is corrupted, we don't want to overwrite either
@@ -554,27 +585,28 @@ class AppSettings:
             self._validation_errors = errors
             return False
 
-    def add_observer(self_or_cls, key: str, callback: Callable) -> None:
+    @classmethod
+    def add_observer(cls, key: str, callback: Callable) -> None:
         """Register a callback to be notified when setting `key` changes."""
-        if isinstance(self_or_cls, type):
-            with self_or_cls._class_observer_lock:
-                if callback not in self_or_cls._class_observers[key]:
-                    self_or_cls._class_observers[key].append(callback)
-        else:
-            with self_or_cls._observer_lock:
-                if callback not in self_or_cls._observers[key]:
-                    self_or_cls._observers[key].append(callback)
+        with cls._class_observer_lock:
+            if callback not in cls._class_observers[key]:
+                cls._class_observers[key].append(callback)
 
-    def remove_observer(self_or_cls, key: str, callback: Callable) -> None:
+    @classmethod
+    def remove_observer(cls, key: str, callback: Callable) -> None:
         """Unregister a setting change callback."""
-        if isinstance(self_or_cls, type):
-            with self_or_cls._class_observer_lock:
-                if callback in self_or_cls._class_observers[key]:
-                    self_or_cls._class_observers[key].remove(callback)
-        else:
-            with self_or_cls._observer_lock:
-                if callback in self_or_cls._observers[key]:
-                    self_or_cls._observers[key].remove(callback)
+        with cls._class_observer_lock:
+            if callback in cls._class_observers[key]:
+                cls._class_observers[key].remove(callback)
+
+    @classmethod
+    def clear_observers(cls, key: str = None) -> None:
+        """Clear all registered observers or observers for a specific key."""
+        with cls._class_observer_lock:
+            if key is None:
+                cls._class_observers.clear()
+            elif key in cls._class_observers:
+                cls._class_observers[key].clear()
 
     def _notify_observers(self, key: str, value: Any) -> None:
         """Notify registered setting change observers for `key`."""

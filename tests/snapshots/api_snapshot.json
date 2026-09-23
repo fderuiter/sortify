@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "bbe51105a20597b82ef32c05104234aefd9f5b2822d3176ee19ff3dc9b357f7b"
+    "checksum": "8de6de5a6b90aefd374ffac1af8ca6a8d9735dc9f32c364678245427bd60ab06"
   },
   "cli": {
     "app/main.py": [
@@ -3396,6 +3396,26 @@
                   "annotation": null,
                   "default": null,
                   "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": "None",
+                  "name": "proxy"
+                }
+              ],
+              "returns": "urllib.request.OpenerDirector"
+            },
+            {
+              "async": false,
+              "decorators": [
+                "@classmethod"
+              ],
+              "name": "reset_instance",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "cls"
                 }
               ],
               "returns": null
