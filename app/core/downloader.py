@@ -81,7 +81,27 @@ class DownloadManager:
         with cls._lock:
             if cls._instance is None:
                 cls._instance = cls()
+            else:
+                try:
+                    from app.config import AppSettings
+
+                    AppSettings.add_observer("PROXY", cls._instance._on_proxy_changed)
+                except Exception:
+                    pass
             return cls._instance
+
+    @classmethod
+    def reset_instance(cls):
+        """Reset the singleton instance of DownloadManager."""
+        with cls._lock:
+            if cls._instance is not None:
+                try:
+                    from app.config import AppSettings
+
+                    AppSettings.remove_observer("PROXY", cls._instance._on_proxy_changed)
+                except Exception:
+                    pass
+                cls._instance = None
 
     def __init__(self, settings=None):
         self.state = ThreadSafeState(
@@ -104,6 +124,18 @@ class DownloadManager:
 
         self._initialize_proxy_observer()
 
+    @property
+    def _current_proxy(self):
+        return self._proxy
+
+    @_current_proxy.setter
+    def _current_proxy(self, val):
+        self._proxy = val or ""
+
+    @property
+    def _active_proxy_str(self):
+        return self._proxy
+
     def _initialize_proxy_observer(self):
         """Subscribe DownloadManager to AppSettings proxy configuration changes."""
         try:
@@ -115,7 +147,7 @@ class DownloadManager:
             initial_proxy = getattr(self._settings, "PROXY", "")
             self.update_proxy(initial_proxy)
 
-            # Requirement 3: Register setting change listener during initialization
+            # Register setting change listener during initialization
             self._settings.add_observer("PROXY", self._on_proxy_changed)
         except Exception as e:
             logger.warning(
@@ -139,21 +171,40 @@ class DownloadManager:
                 p_str = self._proxy.strip()
                 if "<DECRYPTION_FAILED>" in p_str:
                     self._proxy_error = "Invalid proxy configuration: decryption failed."
+                    self._opener = None
                 else:
                     handlers.append(
                         urllib.request.ProxyHandler({"http": p_str, "https": p_str})
                     )
+                    self._opener = urllib.request.build_opener(*handlers)
+            else:
+                handlers.append(urllib.request.ProxyHandler({}))
+                self._opener = urllib.request.build_opener(*handlers)
+
+    def get_opener(self, proxy: str = None) -> urllib.request.OpenerDirector:
+        """Retrieve the active cached opener or raise NetworkError if proxy configuration is invalid."""
+        with self._opener_lock:
+            if proxy is not None and proxy != "":
+                p_str = str(proxy).strip()
+                if "<DECRYPTION_FAILED>" in p_str:
+                    raise NetworkError("Invalid proxy configuration: decryption failed.")
+                handlers = [urllib.request.ProxyHandler({"http": p_str, "https": p_str})]
+                return urllib.request.build_opener(*handlers)
+
+            if self._proxy_error or "<DECRYPTION_FAILED>" in self._proxy:
+                raise NetworkError(
+                    self._proxy_error or "Invalid proxy configuration: decryption failed."
+                )
+
+            handlers = []
+            if self._proxy and self._proxy.strip():
+                p_str = self._proxy.strip()
+                handlers.append(
+                    urllib.request.ProxyHandler({"http": p_str, "https": p_str})
+                )
             else:
                 handlers.append(urllib.request.ProxyHandler({}))
             self._opener = urllib.request.build_opener(*handlers)
-
-    def get_opener(self):
-        """Retrieve the active cached opener or raise NetworkError if proxy configuration is invalid."""
-        with self._opener_lock:
-            if self._proxy_error:
-                raise NetworkError(self._proxy_error)
-            if self._opener is None:
-                self.update_proxy(self._proxy)
             return self._opener
 
     def start_download(self, url: str, model_dir: str, proxy: str = ""):
@@ -382,8 +433,8 @@ def run_background_download(
                     dm = None
 
             def get_current_opener():
-                if download_manager is not None:
-                    return download_manager.get_opener()
+                if dm is not None:
+                    return dm.get_opener(proxy)
                 p_str = (proxy or "").strip()
                 if p_str and "<DECRYPTION_FAILED>" in p_str:
                     raise NetworkError(

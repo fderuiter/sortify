@@ -166,9 +166,13 @@ def cleanup_db_connections():
 
 @pytest.fixture(autouse=True)
 def reset_shared_registry():
-    """Reset the SharedModelRegistry and SharedWorkerPool singletons before and after each test to prevent test pollution."""
+    """Reset singletons (SharedModelRegistry, SharedWorkerPool, DownloadManager) and AppSettings observers before and after each test to prevent test pollution."""
+    from app.config import AppSettings
+    from app.core.downloader import DownloadManager
     from app.core.shared_registry import SharedModelRegistry, SharedWorkerPool
 
+    AppSettings.clear_observers()
+    DownloadManager.reset_instance()
     SharedModelRegistry._instance = None
     if SharedWorkerPool._instance is not None:
         try:
@@ -177,6 +181,8 @@ def reset_shared_registry():
             pass
         SharedWorkerPool._instance = None
     yield
+    AppSettings.clear_observers()
+    DownloadManager.reset_instance()
     SharedModelRegistry._instance = None
     if SharedWorkerPool._instance is not None:
         try:

@@ -3719,6 +3719,26 @@
                   "annotation": null,
                   "default": null,
                   "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": "None",
+                  "name": "proxy"
+                }
+              ],
+              "returns": "urllib.request.OpenerDirector"
+            },
+            {
+              "async": false,
+              "decorators": [
+                "@classmethod"
+              ],
+              "name": "reset_instance",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "cls"
                 }
               ],
               "returns": null
