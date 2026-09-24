@@ -2,6 +2,7 @@
 """
 
 import concurrent.futures
+import os
 import time
 from unittest.mock import MagicMock, patch
 
@@ -12,6 +13,16 @@ from app.config import AppSettings, Settings
 from app.core.extractor import extract_file_text
 from app.core.extractor_strategies import AudioExtractor
 from app.core.shared_registry import AudioConcurrencyGuard
+
+
+def _is_ci_or_parallel() -> bool:
+    return (
+        "PYTEST_XDIST_WORKER" in os.environ
+        or "CI" in os.environ
+        or os.environ.get("GITHUB_ACTIONS") == "true"
+        or "COV_CORE_DATAFILE" in os.environ
+        or "COVERAGE_RUN" in os.environ
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -170,14 +181,17 @@ def test_non_audio_files_not_blocked_by_audio_guard(tmp_path):
         txt_path = tmp_path / "sample.txt"
         txt_path.write_text("Hello world text file", encoding="utf-8")
 
-        start_time = time.time()
+        start_time = time.perf_counter()
         # Extract text file while audio guard slot is fully saturated
         res = extract_file_text(str(txt_path))
-        elapsed = time.time() - start_time
+        elapsed = time.perf_counter() - start_time
 
         assert res == "Hello world text file"
-        # Must complete immediately (< 0.5s) without waiting on audio guard
-        assert elapsed < 0.5
+        # Must complete immediately without waiting on audio guard slot
+        threshold = 2.0 if _is_ci_or_parallel() else 0.5
+        assert (
+            elapsed < threshold
+        ), f"Expected non-audio extraction elapsed time < {threshold}s, got {elapsed:.2f}s"
     finally:
         guard.release_slot()
 
