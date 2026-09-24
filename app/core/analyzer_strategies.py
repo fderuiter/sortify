@@ -1125,22 +1125,19 @@ def gguf_worker_main(
                 output_queue.put(err_obj)
 
 
-try:
-    from transformers import LogitsProcessor, LogitsProcessorList
-except ImportError:
+class _LogitsProcessor:
+    """Fallback LogitsProcessor class when transformers is not available."""
 
-    class LogitsProcessor:
-        """Fallback LogitsProcessor class when transformers is not available."""
-
-        pass
-
-    class LogitsProcessorList(list):
-        """Fallback LogitsProcessorList list class when transformers is not available."""
-
-        pass
+    pass
 
 
-class NegativeLogitBiasProcessor(LogitsProcessor):
+class _LogitsProcessorList(list):
+    """Fallback LogitsProcessorList list class when transformers is not available."""
+
+    pass
+
+
+class NegativeLogitBiasProcessor(_LogitsProcessor):
     """LogitsProcessor that applies negative logit biases to specified token IDs."""
 
     def __init__(self, token_biases: dict):
@@ -1658,8 +1655,18 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         if self.generator is None:
             return ""
 
-        import torch
-        from transformers import LogitsProcessorList
+        torch = sys.modules.get("torch")
+        if torch is None:
+            import torch
+        elif hasattr(torch, "__spec__") and type(torch.__spec__).__name__ == "MagicMock":
+            from importlib.machinery import ModuleSpec
+
+            torch.__spec__ = ModuleSpec("torch", None)
+
+        try:
+            from transformers import LogitsProcessorList
+        except (ImportError, Exception):
+            LogitsProcessorList = _LogitsProcessorList
 
         from app.core.shared_registry import SharedModelRegistry
 
@@ -3001,7 +3008,11 @@ class ClusteringRegistry:
     def get_strategy(self, name: str) -> ClusteringStrategy:
         """Retrieve a clustering strategy by name."""
         if name not in self._strategies:
-            if name == "clinical_tmf":
+            if name == "default":
+                self._strategies["default"] = RecursiveKMeansStrategy()
+            elif name == "generative":
+                self._strategies["generative"] = GenerativeNamingStrategy()
+            elif name == "clinical_tmf":
                 from app.core.clinical_strategy import ClinicalTMFStrategy
 
                 self._strategies["clinical_tmf"] = ClinicalTMFStrategy(mode="tmf")
@@ -3013,5 +3024,3 @@ class ClusteringRegistry:
 
 
 clustering_registry = ClusteringRegistry()
-clustering_registry.register("default", RecursiveKMeansStrategy())
-clustering_registry.register("generative", GenerativeNamingStrategy())

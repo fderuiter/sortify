@@ -13,7 +13,6 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Annotated, Any, Callable, Literal
 
-import jsonschema
 from pydantic import Field, ValidationError, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -29,6 +28,8 @@ def _get_schema_validator():
                 schema_path = Path(__file__).parent / "config_schema.json"
                 if schema_path.exists():
                     try:
+                        import jsonschema
+
                         with open(schema_path, "r", encoding="utf-8") as sf:
                             schema = json.load(sf)
                         _SCHEMA_VALIDATOR = jsonschema.Draft202012Validator(schema)
@@ -439,13 +440,8 @@ class AppSettings:
                         needs_migration = True
 
             # Validate against static schema file if it exists
-            schema_path = Path(__file__).parent / "config_schema.json"
-            if schema_path.exists():
-                import jsonschema
-
-                with open(schema_path, "r", encoding="utf-8") as sf:
-                    schema = json.load(sf)
-                validator = jsonschema.Draft202012Validator(schema)
+            validator = _get_schema_validator()
+            if validator is not None:
                 errors = sorted(validator.iter_errors(data), key=lambda e: e.path)
                 for error in errors:
                     has_validation_errors = True
