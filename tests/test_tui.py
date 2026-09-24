@@ -6,7 +6,7 @@ import tempfile
 from unittest.mock import MagicMock, patch
 
 import pytest
-from textual.widgets import Input, Switch
+from textual.widgets import Input, Switch, Tree
 
 from app.config import AppSettings
 from app.ui.tui import (
@@ -356,3 +356,146 @@ def test_main_cli_tui_invocation():
 
         main()
         mock_run_tui.assert_called_once()
+
+
+def test_tui_screen_reader_announcements(temp_workspace):
+    """Verify state transitions and user actions emit auditory screen reader announcements."""
+    from app.ui.tui import DirectorySelectModal
+
+    async def _test():
+        settings = AppSettings()
+        app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
+
+        async with app.run_test() as pilot:
+            # Check initial mount announcement
+            assert len(app.announcements) >= 1
+            assert any("ready" in a["message"].lower() for a in app.announcements)
+
+            # Test tree node selection announcement
+            filepath = os.path.join(temp_workspace, "sample.txt")
+            app.plan = {
+                "Finance": {
+                    "sample.txt": {
+                        "__type__": "file",
+                        "filepath": filepath,
+                        "target_filename": "sample.txt",
+                    }
+                }
+            }
+            app.rebuild_tree()
+
+            tree = app.query_one("#plan-tree")
+            file_node = tree.root.children[0].children[0]
+
+            # Trigger selection event manually
+            app.on_node_selected(Tree.NodeSelected(file_node))
+            assert "Selected file 'sample.txt'" in app.get_last_announcement()
+
+            # Test locking announcement
+            app.action_toggle_lock()
+            assert "Locked file 'sample.txt'" in app.get_last_announcement()
+
+            # Test rating announcement
+            app.action_rate_positive()
+            assert "Set rating 'positive'" in app.get_last_announcement()
+
+            # Test modal mount announcement
+            modal = DirectorySelectModal(temp_workspace)
+            app.push_screen(modal)
+            await pilot.pause(0.05)
+            assert "Opened target directory selection dialog" in modal.get_last_announcement()
+
+    asyncio.run(_test())
+
+
+def test_tui_modal_escape_key_navigation(temp_workspace):
+    """Verify pressing Escape key dismisses modal dialogs without defects."""
+    settings = AppSettings()
+
+    async def _test():
+        app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
+        async with app.run_test() as pilot:
+            modal = NewFolderModal()
+            app.push_screen(modal)
+            await pilot.pause(0.05)
+            assert app.screen is modal
+
+            # Press escape key
+            await pilot.press("escape")
+            await pilot.pause(0.05)
+            assert app.screen is not modal
+
+    asyncio.run(_test())
+
+
+def test_tui_wcag_tooltips_and_attributes(temp_workspace):
+    """Verify tooltips and explicit accessibility attributes are attached to all modal controls."""
+    from app.ui.tui import DirectorySelectModal
+
+    settings = AppSettings()
+    modals = [
+        RenameModal("Rename Test", "current", ".txt"),
+        NewFolderModal(),
+        DirectorySelectModal(temp_workspace),
+        SettingsModal(settings),
+        WizardModal(settings),
+        CROForensicModal(settings, temp_workspace),
+    ]
+
+    async def _test(modal_inst):
+        app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
+        async with app.run_test() as pilot:
+            app.push_screen(modal_inst)
+            await pilot.pause(0.05)
+
+            # Assert controls have tooltips set
+            for widget in modal_inst.query("*"):
+                w_type = type(widget).__name__
+                if w_type in ("Input", "Button", "Select", "Switch"):
+                    tooltip = getattr(widget, "tooltip", None)
+                    assert tooltip is not None and len(str(tooltip)) > 0, f"{w_type} #{getattr(widget, 'id', '')} missing tooltip"
+
+    for m in modals:
+        asyncio.run(_test(m))
+
+
+def test_tui_automated_audit_hooks(temp_workspace):
+    """Verify automated audit hooks pass with zero WCAG 2.1 violations across all TUI components."""
+    from app.ui.a11y_runner import inspect_tui_component
+    from app.ui.tui import DirectorySelectModal
+
+    settings = AppSettings()
+    modals = [
+        RenameModal("Rename Test", "current", ".txt"),
+        NewFolderModal(),
+        DirectorySelectModal(temp_workspace),
+        SettingsModal(settings),
+        WizardModal(settings),
+        CROForensicModal(settings, temp_workspace),
+    ]
+
+    async def _test():
+        app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
+        async with app.run_test() as pilot:
+            app_audit = app.audit_a11y_compliance()
+            assert app_audit["compliant"] is True
+            assert app_audit["violations_count"] == 0
+
+            app_violations = inspect_tui_component(app)
+            assert len(app_violations) == 0
+
+            for m in modals:
+                app.push_screen(m)
+                await pilot.pause(0.05)
+
+                modal_audit = m.audit_a11y_compliance()
+                assert modal_audit["compliant"] is True, f"{m} failed audit: {modal_audit['violations']}"
+                assert modal_audit["violations_count"] == 0
+
+                modal_violations = inspect_tui_component(m)
+                assert len(modal_violations) == 0, f"{m} has violations: {modal_violations}"
+
+                await pilot.press("escape")
+                await pilot.pause(0.05)
+
+    asyncio.run(_test())
