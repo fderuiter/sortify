@@ -608,6 +608,16 @@ class IncrementalAnalyzer:
                             matched = True
                             break
 
+                if not matched and (status_match or ext not in supported_exts):
+                    from app.core.metadata import get_extension_category_target
+
+                    cat_target = get_extension_category_target(f, runtime_settings)
+                    if cat_target:
+                        keyword_plan_files.append(
+                            (f, cat_target, ext, "extension_category", status_match)
+                        )
+                        matched = True
+
                 if not matched:
                     if status_match:
                         unsupported_files.append((f, status_match))
@@ -824,7 +834,9 @@ class IncrementalAnalyzer:
                         # Vectorizing Active Candidate Documents
                         from app.core.text_utils import sanitize_text
 
-                        safe_ai_documents = [sanitize_text(d or "") for d in ai_documents]
+                        safe_ai_documents = [
+                            sanitize_text(d or "") for d in ai_documents
+                        ]
                         counts = count_vectorizer.transform(safe_ai_documents)
                         new_docs_vectors = transformer.transform(counts)
 
@@ -1270,7 +1282,11 @@ class IncrementalAnalyzer:
                         db=self.db,
                         embedding_manager=getattr(self, "embedding_manager", None),
                     )
-                    docs_map = {d[0]: d[1] for d in docs if len(d) > 1 and d[1]} if docs else {}
+                    docs_map = (
+                        {d[0]: d[1] for d in docs if len(d) > 1 and d[1]}
+                        if docs
+                        else {}
+                    )
                     renamer.process_sorting_plan(
                         clean_plan,
                         documents_map=docs_map,

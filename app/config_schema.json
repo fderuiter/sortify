@@ -64,6 +64,11 @@
       "title": "Learned Rules",
       "type": "object"
     },
+    "EXTENSION_CATEGORIES": {
+      "additionalProperties": true,
+      "title": "Extension Categories",
+      "type": "object"
+    },
     "POLICIES": {
       "items": {
         "additionalProperties": true,

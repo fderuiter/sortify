@@ -3,7 +3,6 @@
 import logging
 import os
 
-from app.core.extractor_strategies import registry
 from app.core.link_manager import LinkManager
 from app.core.path_utils import is_junction_entry
 
@@ -24,7 +23,9 @@ def get_files_recursively(
                 if not include_hidden and entry.name.startswith("."):
                     continue
                 # Quarantine isolation: unreleased files in _Quarantine_Staging must remain inaccessible to standard scans
-                if entry.name == "_Quarantine_Staging" or entry.name.startswith("_Quarantine_Staging"):
+                if entry.name == "_Quarantine_Staging" or entry.name.startswith(
+                    "_Quarantine_Staging"
+                ):
                     continue
                 entry_rel_path = (
                     os.path.join(rel_path, entry.name) if rel_path else entry.name
@@ -45,12 +46,7 @@ def get_files_recursively(
                         )
                     )
                 else:
-                    _, ext = os.path.splitext(entry.name)
-                    if registry.is_supported(ext):
-                        files.append(entry_rel_path)
-                    elif include_hidden:
-                        # Include all files if we are searching hidden directories (often no extension check needed, but let's include all to be safe for cyclic renames)
-                        files.append(entry_rel_path)
+                    files.append(entry_rel_path)
     except Exception as e:
         logging.error(
             f"Failed to scan directory {os.path.join(base, rel_path)}: {e}",
