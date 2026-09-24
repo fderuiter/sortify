@@ -25,6 +25,8 @@ def scrub_pii_from_text(text: Any) -> str:
         return ""
     import re
 
+    from app.core.text_utils import sanitize_secret_patterns
+
     text_str = str(text)
 
     # Standard prompt extract redaction
@@ -38,6 +40,9 @@ def scrub_pii_from_text(text: Any) -> str:
     redacted = re.sub(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b", "[REDACTED_EMAIL]", redacted)
     # Clinical/PII Sensitive phrases
     redacted = re.sub(r"(?i)(Confidential Medical Report|Subject \d+|Diagnosis:[^\n]*)", "[REDACTED_PII]", redacted)
+
+    # Centralized secret pattern redaction (API keys, JWT tokens, Bearer tokens, private keys, high-entropy secrets)
+    redacted = sanitize_secret_patterns(redacted, replacement="[REDACTED_SECRET]")
 
     return redacted
 

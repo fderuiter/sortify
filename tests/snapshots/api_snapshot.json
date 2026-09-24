@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "93fc4e3a3ec57952e40bab0b51a671a679955a98405359e9731cc44e83448d93"
+    "checksum": "73088c3a921904455177fded9cb687df2811bb1218ee886fa6be406edf1440bb"
   },
   "cli": {
     "app/main.py": [
@@ -6667,6 +6667,21 @@
             {
               "async": false,
               "decorators": [
+                "@staticmethod"
+              ],
+              "name": "contains_secrets",
+              "parameters": [
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "text"
+                }
+              ],
+              "returns": "bool"
+            },
+            {
+              "async": false,
+              "decorators": [
                 "@classmethod"
               ],
               "name": "evaluate_policies",
@@ -8446,6 +8461,50 @@
     "app/core/text_utils.py": {
       "classes": [],
       "functions": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "calculate_shannon_entropy",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "text"
+            }
+          ],
+          "returns": "float"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "contains_secrets",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "text"
+            }
+          ],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "sanitize_secret_patterns",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "text"
+            },
+            {
+              "annotation": "str",
+              "default": "''",
+              "name": "replacement"
+            }
+          ],
+          "returns": "str"
+        },
         {
           "async": false,
           "decorators": [],
