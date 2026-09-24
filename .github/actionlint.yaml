@@ -1,3 +1,7 @@
 # Configuration for actionlint
+self-hosted-runner:
+  labels:
+    - macos-13
+
 ignore:
   - 'runtime "node20" is deprecated'
