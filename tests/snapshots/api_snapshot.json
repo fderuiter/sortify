@@ -2183,6 +2183,24 @@
             },
             {
               "async": false,
+              "decorators": [],
+              "name": "enqueue_event",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "FileChangeEvent",
+                  "default": null,
+                  "name": "change_event"
+                }
+              ],
+              "returns": "bool"
+            },
+            {
+              "async": false,
               "decorators": [
                 "@property"
               ],
@@ -2367,6 +2385,13 @@
               "returns": null
             }
           ]
+        },
+        {
+          "class_name": "FileChangeEvent",
+          "decorators": [
+            "@dataclass"
+          ],
+          "methods": []
         }
       ],
       "functions": [
