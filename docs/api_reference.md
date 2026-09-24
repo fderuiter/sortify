@@ -122,6 +122,10 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.core.policy_engine
 
+## `app.core.quarantine_interceptor`
+
+::: app.core.quarantine_interceptor
+
 ## `app.core.resilient_file_ops`
 
 ::: app.core.resilient_file_ops

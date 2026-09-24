@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "03e6a2f41b8383b73e614981a0ffeffa81de41dddb6e5a1c69d07fba3df816c6"
+    "checksum": "1b4e4488be6f9abd7f98c8b52d8124098b46e6118d5a1236210b668aa2989dac"
   },
   "cli": {
     "app/main.py": [
@@ -2555,6 +2555,19 @@
             {
               "async": false,
               "decorators": [],
+              "name": "get_all_quarantine_records",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": "list[dict]"
+            },
+            {
+              "async": false,
+              "decorators": [],
               "name": "get_corrupted_vectors_by_base_dir",
               "parameters": [
                 {
@@ -2735,6 +2748,47 @@
                 }
               ],
               "returns": "str | None"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "get_quarantine_record",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "job_id"
+                }
+              ],
+              "returns": "dict | None"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "get_quarantine_records_by_base_dir",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "base_dir"
+                },
+                {
+                  "annotation": "str | None",
+                  "default": "None",
+                  "name": "status"
+                }
+              ],
+              "returns": "list[dict]"
             },
             {
               "async": false,
@@ -3030,6 +3084,49 @@
             {
               "async": false,
               "decorators": [],
+              "name": "stage_quarantine_record",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "job_id"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "base_dir"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "original_filepath"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "staged_filepath"
+                },
+                {
+                  "annotation": "str | None",
+                  "default": "None",
+                  "name": "file_hash"
+                },
+                {
+                  "annotation": "str | None",
+                  "default": "None",
+                  "name": "policy_action"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
               "name": "track_corrupted_vector",
               "parameters": [
                 {
@@ -3074,6 +3171,44 @@
                   "annotation": null,
                   "default": null,
                   "name": "new_filepath"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "update_quarantine_status",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "job_id"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "status"
+                },
+                {
+                  "annotation": "str | None",
+                  "default": "None",
+                  "name": "policy_action"
+                },
+                {
+                  "annotation": "str | None",
+                  "default": "None",
+                  "name": "error_message"
+                },
+                {
+                  "annotation": "dict | str | None",
+                  "default": "None",
+                  "name": "audit_entry"
                 }
               ],
               "returns": null
@@ -6004,11 +6139,135 @@
                 }
               ],
               "returns": "None"
+            },
+            {
+              "async": false,
+              "decorators": [
+                "@staticmethod"
+              ],
+              "name": "validate_policy_action",
+              "parameters": [
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "action"
+                }
+              ],
+              "returns": "bool"
             }
           ]
         }
       ],
       "functions": []
+    },
+    "app/core/quarantine_interceptor.py": {
+      "classes": [
+        {
+          "class_name": "QuarantineInterceptorService",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "__init__",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "Database",
+                  "default": null,
+                  "name": "db"
+                },
+                {
+                  "annotation": "Optional[List[Dict[str, Any]]]",
+                  "default": "None",
+                  "name": "policies"
+                },
+                {
+                  "annotation": "float",
+                  "default": "300.0",
+                  "name": "worker_timeout"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "process_quarantine_job",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "job_id"
+                },
+                {
+                  "annotation": "Optional[float]",
+                  "default": "None",
+                  "name": "timeout_override"
+                }
+              ],
+              "returns": "Dict[str, Any]"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "stage_incoming_file",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "source_path"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "base_dir"
+                },
+                {
+                  "annotation": "Optional[str]",
+                  "default": "None",
+                  "name": "original_relative_path"
+                },
+                {
+                  "annotation": "Optional[str]",
+                  "default": "None",
+                  "name": "policy_action"
+                }
+              ],
+              "returns": "Dict[str, Any]"
+            }
+          ]
+        }
+      ],
+      "functions": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "scrub_pii_from_text",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "text"
+            }
+          ],
+          "returns": "str"
+        }
+      ]
     },
     "app/core/resilient_file_ops.py": {
       "classes": [],

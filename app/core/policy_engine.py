@@ -6,7 +6,16 @@ from app.core.path_utils import validate_target_path
 
 
 class PolicyEngine:
-    """Standalone evaluation engine for enforcing compliance overrides on folder locks."""
+    """Standalone evaluation engine for enforcing compliance overrides on folder locks and lifecycle policy actions."""
+
+    SUPPORTED_ACTIONS = {"archive", "retain", "quarantine", "redact"}
+
+    @staticmethod
+    def validate_policy_action(action: str) -> bool:
+        """Validate whether an action directive is supported by the extended policy engine."""
+        if not action or not isinstance(action, str):
+            return False
+        return action.lower() in PolicyEngine.SUPPORTED_ACTIONS
 
     @staticmethod
     def match_policy(
@@ -19,9 +28,12 @@ class PolicyEngine:
         fn_only = os.path.basename(file_path).lower()
         dl_lower = doc_text.lower() if doc_text else ""
 
-        if rule_type == "keyword":
-            text_to_search = fn_only if status_match else (fn_only + " " + dl_lower)
-            return expression in text_to_search
+        if rule_type in ("keyword", "action", "compliance", ""):
+            if expression:
+                text_to_search = fn_only if status_match else (fn_only + " " + dl_lower)
+                return expression in text_to_search
+            # If no expression is given but an action directive exists, match unconditionally
+            return bool(rule.get("action"))
         elif rule_type == "pattern":
             return expression in fn_only
         elif rule_type == "override":
