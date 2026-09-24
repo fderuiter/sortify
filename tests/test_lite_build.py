@@ -427,3 +427,55 @@ def test_update_binaries_and_manifest_win32_dll_detection(tmp_path):
             assert "sqlcipher3/sqlite3.dll" in manifest["windows"]
     finally:
         os.chdir(original_cwd)
+
+
+def test_spec_file_dual_target_executables():
+    """Verify smart-autosorter.spec defines exe_cli and exe_gui targets correctly in COLLECT."""
+    spec_path = os.path.join(
+        os.path.dirname(os.path.dirname(__file__)), "smart-autosorter.spec"
+    )
+    assert os.path.exists(spec_path)
+
+    with open(spec_path, "r", encoding="utf-8") as f:
+        spec_content = f.read()
+
+    mock_exe = MagicMock()
+    mock_collect = MagicMock()
+    mock_globals = {
+        "Analysis": MagicMock(),
+        "PYZ": MagicMock(),
+        "EXE": mock_exe,
+        "COLLECT": mock_collect,
+        "__file__": spec_path,
+    }
+
+    mock_hooks = MagicMock()
+    mock_hooks.collect_all.return_value = ([], [], [])
+
+    with patch.dict(
+        sys.modules,
+        {
+            "PyInstaller": MagicMock(),
+            "PyInstaller.utils": MagicMock(),
+            "PyInstaller.utils.hooks": mock_hooks,
+        },
+    ):
+        exec(spec_content, mock_globals)
+
+    assert "exe_cli" in mock_globals
+    assert "exe_gui" in mock_globals
+
+    exe_calls = mock_exe.call_args_list
+    assert len(exe_calls) >= 2
+
+    exe_kwargs = [call.kwargs for call in exe_calls]
+    names_and_consoles = [(kw.get("name"), kw.get("console")) for kw in exe_kwargs]
+
+    assert ("smart-autosorter", True) in names_and_consoles
+    assert ("smart-autosorter-gui", False) in names_and_consoles
+
+    assert mock_collect.called
+    collect_args = mock_collect.call_args.args
+    assert mock_globals["exe_cli"] in collect_args
+    assert mock_globals["exe_gui"] in collect_args
+
