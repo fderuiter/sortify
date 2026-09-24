@@ -50,6 +50,10 @@ The following parameters are extracted directly from the application's configura
 - **Default**: `PydanticUndefined`
 - **Required**: `False`
 
+### `EXTENSION_CATEGORIES`
+- **Default**: `PydanticUndefined`
+- **Required**: `False`
+
 ### `POLICIES`
 - **Default**: `PydanticUndefined`
 - **Required**: `False`
