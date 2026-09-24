@@ -14,6 +14,7 @@ import pypdf.errors
 from pydantic import BaseModel, ConfigDict
 
 from app.core.extractor_strategies import registry
+from app.core.progress import emit_progress
 from app.core.text_utils import sanitize_text
 
 
@@ -249,8 +250,13 @@ def process_item_worker(
             f"General worker failure processing item: {item}. Error: {str(e)}"
         )
     finally:
-        if progress_callback:
-            progress_callback()
+        emit_progress(
+            progress_callback,
+            progress_or_update=1.0,
+            stage=f"Completed extraction for {item}",
+            unit_count=1,
+            unit_type="files",
+        )
 
     return item, "", ""
 

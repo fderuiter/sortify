@@ -8,6 +8,8 @@ import threading
 import urllib.error
 import urllib.request
 
+from app.core.progress import ProgressUpdate, emit_progress
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_MODEL_URL = "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/onnx/model.onnx"
@@ -238,18 +240,13 @@ class DownloadManager:
                     self.state["is_downloading"] = False
                     self.current_thread = None
 
-            def progress_callback_wrapper(downloaded, total):
-                if total > 0:
-                    pct = (downloaded / total) * 100
-                    self.state["progress"] = downloaded / total
-                    self.state["status_text"] = (
-                        f"Downloaded {downloaded / (1024 * 1024):.2f}MB of {total / (1024 * 1024):.2f}MB ({pct:.1f}%)"
-                    )
+            def progress_callback_wrapper(update: ProgressUpdate):
+                self.state["progress"] = update.progress
+                if update.stage:
+                    self.state["status_text"] = update.stage
                 else:
-                    self.state["progress"] = 0.0
-                    self.state["status_text"] = (
-                        f"Downloaded {downloaded / (1024 * 1024):.2f}MB..."
-                    )
+                    dl_mb = (update.unit_count or 0) / (1024 * 1024)
+                    self.state["status_text"] = f"Downloaded {dl_mb:.2f}MB..."
 
             self.current_thread = run_background_download(
                 url=url,
@@ -516,11 +513,19 @@ def run_background_download(
                                     ) from e
 
                                 bytes_downloaded += len(chunk)
-                                if progress_callback:
-                                    try:
-                                        progress_callback(bytes_downloaded, total_size)
-                                    except Exception:
-                                        pass
+                                ratio = (bytes_downloaded / total_size) if total_size > 0 else 0.0
+                                msg = (
+                                    f"Downloaded {bytes_downloaded / (1024 * 1024):.2f}MB of {total_size / (1024 * 1024):.2f}MB ({ratio * 100:.1f}%)"
+                                    if total_size > 0
+                                    else f"Downloaded {bytes_downloaded / (1024 * 1024):.2f}MB..."
+                                )
+                                emit_progress(
+                                    progress_callback,
+                                    progress_or_update=ratio,
+                                    stage=msg,
+                                    unit_count=bytes_downloaded,
+                                    unit_type="bytes",
+                                )
                     # Download succeeded
                     break
 

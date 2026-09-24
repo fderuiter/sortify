@@ -5,6 +5,7 @@ import logging
 import os
 from unittest.mock import MagicMock
 
+from app.core.progress import ProgressUpdate
 from app.core.session import AppSession
 from app.ui.dialog_helper import ask_directory_async, get_dialog_card_classes
 from app.ui.tokens import TOKENS
@@ -791,26 +792,9 @@ class AutoSorterApp:
             bypassed_set = set(bypassed_files)
             items_to_sort = [f for f in files if f not in bypassed_set]
 
-            def file_progress_cb(pct=0.0, stage=None, *args, **kwargs):
-                pct_val = 0.0
-                stage_text = None
-
-                if isinstance(pct, (int, float)):
-                    pct_val = float(pct)
-                    if stage and isinstance(stage, str):
-                        stage_text = stage
-                    elif args and isinstance(args[0], str):
-                        stage_text = args[0]
-                elif isinstance(pct, str):
-                    stage_text = pct
-                    if stage and isinstance(stage, (int, float)):
-                        pct_val = float(stage)
-
-                if not stage_text:
-                    if "stage" in kwargs and isinstance(kwargs["stage"], str):
-                        stage_text = kwargs["stage"]
-                    elif "message" in kwargs and isinstance(kwargs["message"], str):
-                        stage_text = kwargs["message"]
+            def file_progress_cb(update: ProgressUpdate):
+                pct_val = update.progress
+                stage_text = update.stage
 
                 def update_ui():
                     if hasattr(self, "file_progress_bar"):

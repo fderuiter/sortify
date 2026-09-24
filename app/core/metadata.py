@@ -4,6 +4,7 @@ import logging
 import os
 
 from app.core.extractor import get_file_hash
+from app.core.progress import emit_progress
 
 
 class MetadataPass:
@@ -105,8 +106,13 @@ class MetadataPass:
             if matched_target:
                 bypassed_files.append(item)
                 docs_to_upsert.append((base_dir, item, file_hash, "[STATUS:BYPASSED]"))
-                if callback:
-                    callback()
+                emit_progress(
+                    callback,
+                    progress_or_update=1.0,
+                    stage=f"Bypassed {item} via rule match",
+                    unit_count=1,
+                    unit_type="files",
+                )
 
         if docs_to_upsert and db:
             db.upsert_documents(docs_to_upsert)

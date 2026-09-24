@@ -210,27 +210,12 @@ def test_app_file_progress_cb():
     app.file_progress_bar = DummyControl()
     app.file_progress_label = DummyControl()
 
+    from app.core.progress import ProgressUpdate, emit_progress
+
     # Re-create file_progress_cb using exact pattern in app.py
-    def file_progress_cb(pct=0.0, stage=None, *args, **kwargs):
-        pct_val = 0.0
-        stage_text = None
-
-        if isinstance(pct, (int, float)):
-            pct_val = float(pct)
-            if stage and isinstance(stage, str):
-                stage_text = stage
-            elif args and isinstance(args[0], str):
-                stage_text = args[0]
-        elif isinstance(pct, str):
-            stage_text = pct
-            if stage and isinstance(stage, (int, float)):
-                pct_val = float(stage)
-
-        if not stage_text:
-            if "stage" in kwargs and isinstance(kwargs["stage"], str):
-                stage_text = kwargs["stage"]
-            elif "message" in kwargs and isinstance(kwargs["message"], str):
-                stage_text = kwargs["message"]
+    def file_progress_cb(update: ProgressUpdate):
+        pct_val = update.progress
+        stage_text = update.stage
 
         def update_ui():
             if hasattr(app, "file_progress_bar"):
@@ -250,17 +235,22 @@ def test_app_file_progress_cb():
             except RuntimeError:
                 pass
 
-    # Call with (0.2, "OCR Fallback: Running EasyOCR on page 1 of 3")
-    file_progress_cb(0.2, "OCR Fallback: Running EasyOCR on page 1 of 3")
+    # Call with emit_progress and ProgressUpdate
+    emit_progress(
+        file_progress_cb, 0.2, "OCR Fallback: Running EasyOCR on page 1 of 3"
+    )
     assert len(scheduled_callbacks) == 1
     scheduled_callbacks.pop()()
 
     assert app.file_progress_bar.visible is True
     assert app.file_progress_bar.value == 0.2
     assert app.file_progress_label.visible is True
-    assert app.file_progress_label.text == "Active file progress: 20.0% - OCR Fallback: Running EasyOCR on page 1 of 3"
+    assert (
+        app.file_progress_label.text
+        == "Active file progress: 20.0% - OCR Fallback: Running EasyOCR on page 1 of 3"
+    )
 
     # Call with ratio only
-    file_progress_cb(0.5)
+    emit_progress(file_progress_cb, 0.5)
     scheduled_callbacks.pop()()
     assert app.file_progress_label.text == "Active file progress: 50.0%"

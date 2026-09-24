@@ -24,6 +24,8 @@ from textual.widgets import (
 )
 from textual.widgets.tree import TreeNode
 
+from app.core.progress import ProgressUpdate
+
 logger = logging.getLogger(__name__)
 
 
@@ -754,7 +756,9 @@ class CROForensicModal(A11yMixin, ModalScreen[None]):
                 smart_renaming=getattr(self.settings, "CLINICAL_SMART_RENAMING", True),
             )
 
-            def progress_cb(pct: int, msg: str) -> None:
+            def progress_cb(update: ProgressUpdate) -> None:
+                pct = int(update.progress * 100)
+                msg = update.stage or ""
                 log_w.write_line(f"[{pct}%] {msg}")
 
             result = pipeline.run_pipeline(

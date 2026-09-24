@@ -7,6 +7,8 @@ from typing import Protocol
 
 import pypdf
 
+from app.core.progress import emit_progress
+
 
 def get_ocr_reader():
     """Lazily load and return the EasyOCR Reader instance configured for CPU execution."""
@@ -16,30 +18,8 @@ def get_ocr_reader():
 
 
 def _emit_progress(progress_callback, pct: float = 0.0, stage: str | None = None) -> None:
-    """Safely invoke a progress callback with ratio and optional stage description."""
-    if not progress_callback:
-        return
-    try:
-        if stage is not None:
-            try:
-                progress_callback(pct, stage)
-                return
-            except TypeError:
-                pass
-        try:
-            progress_callback(pct)
-            return
-        except TypeError:
-            pass
-        if stage is not None:
-            try:
-                progress_callback(stage)
-                return
-            except TypeError:
-                pass
-        progress_callback()
-    except Exception as e:
-        logging.debug(f"Error invoking progress callback: {e}")
+    """Safely invoke a progress callback with ratio and optional stage description using central emitter."""
+    emit_progress(progress_callback, progress_or_update=pct, stage=stage)
 
 
 def extract_text_from_image(
@@ -745,8 +725,7 @@ class AudioExtractor:
                     if pct_match:
                         try:
                             val = float(pct_match.group(1)) / 100.0
-                            if progress_callback:
-                                progress_callback(val)
+                            emit_progress(progress_callback, val, stage="Transcribing audio...")
                         except Exception:
                             pass
                     else:
@@ -761,8 +740,7 @@ class AudioExtractor:
                                     + int(ms) / (10 ** len(ms))
                                 )
                                 val = min(1.0, max(0.0, current_sec / total_duration))
-                                if progress_callback:
-                                    progress_callback(val)
+                                emit_progress(progress_callback, val, stage="Transcribing audio...")
                             except Exception:
                                 pass
                         else:
@@ -776,8 +754,7 @@ class AudioExtractor:
                                     val = min(
                                         1.0, max(0.0, current_sec / total_duration)
                                     )
-                                    if progress_callback:
-                                        progress_callback(val)
+                                    emit_progress(progress_callback, val, stage="Transcribing audio...")
                                 except Exception:
                                     pass
 

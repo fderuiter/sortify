@@ -18,6 +18,7 @@ from app.core.clinical_strategy import ClinicalTMFStrategy
 from app.core.forensic_scanner import ForensicScanner
 from app.core.mover import get_safe_path
 from app.core.path_utils import sanitize_name
+from app.core.progress import ProgressUpdate, emit_progress
 from app.core.study_disambiguator import StudyDisambiguator
 
 logger = logging.getLogger(__name__)
@@ -80,14 +81,16 @@ class CROMultiStudyPipeline:
 
         try:
             # 1. Forensic Scan & Archive Extraction
-            if progress_callback:
-                progress_callback(5, "Scanning source storage volume...")
+            emit_progress(progress_callback, 0.05, "Scanning source storage volume...")
+
+            def scan_cb(update: ProgressUpdate) -> None:
+                c = update.unit_count or 0
+                ratio = min(0.40, 0.05 + c * 0.005)
+                emit_progress(progress_callback, ratio, update.stage or "Scanning source storage volume...")
 
             discovered_docs = self.scanner.scan_drive(
                 source_root,
-                progress_callback=lambda c, m: (
-                    progress_callback(min(40, 5 + c), m) if progress_callback else None
-                ),
+                progress_callback=scan_cb,
                 cancel_check=cancel_check,
             )
 
@@ -108,10 +111,11 @@ class CROMultiStudyPipeline:
                 )
 
             # 2. Study Disambiguation & Entity Resolution
-            if progress_callback:
-                progress_callback(
-                    45, "Resolving clinical study entities and investigator networks..."
-                )
+            emit_progress(
+                progress_callback,
+                0.45,
+                "Resolving clinical study entities and investigator networks...",
+            )
 
             study_partitions = self.disambiguator.discover_and_partition_studies(
                 discovered_docs
@@ -133,11 +137,12 @@ class CROMultiStudyPipeline:
                 study_target_dir = os.path.join(target_root, study_folder_name)
                 os.makedirs(study_target_dir, exist_ok=True)
 
-                if progress_callback:
-                    progress_callback(
-                        50 + int((p_idx / max(1, total_partitions)) * 40),
-                        f"Organizing {study_id} ({len(docs)} files)...",
-                    )
+                ratio = 0.50 + ((p_idx / max(1, total_partitions)) * 0.40)
+                emit_progress(
+                    progress_callback,
+                    ratio,
+                    f"Organizing {study_id} ({len(docs)} files)...",
+                )
 
                 strategy = ClinicalTMFStrategy(
                     mode=self.mode,
@@ -284,8 +289,7 @@ class CROMultiStudyPipeline:
             with open(manifest_path, "w", encoding="utf-8") as f:
                 json.dump(master_manifest, f, indent=2)
 
-            if progress_callback:
-                progress_callback(100, "CRO Multi-Study Ingestion complete!")
+            emit_progress(progress_callback, 1.0, "CRO Multi-Study Ingestion complete!")
 
             return MasterPipelineResult(
                 source_root=source_root,
