@@ -275,3 +275,30 @@ def run_all_catalog_scans(
                 all_violations.extend(violations)
 
     return total_scans, all_violations
+
+
+def inspect_tui_component(component: Any) -> List[A11yViolation]:
+    """Inspect a TUI App or Modal component for WCAG 2.1 accessibility compliance.
+
+    Leverages the component's internal audit hook method 'audit_a11y_compliance'
+    to perform programmatic verification.
+    """
+    violations: List[A11yViolation] = []
+    comp_name = type(component).__name__
+
+    if hasattr(component, "audit_a11y_compliance") and callable(component.audit_a11y_compliance):
+        res = component.audit_a11y_compliance()
+        for v in res.get("violations", []):
+            violations.append(
+                A11yViolation(
+                    rule_id=v.get("rule", "A11Y_UNKNOWN"),
+                    component_id=comp_name,
+                    component_name=comp_name,
+                    viewport_name="terminal",
+                    viewport_width=80,
+                    locator=v.get("widget_id", comp_name),
+                    message=v.get("message", "A11y violation detected"),
+                )
+            )
+
+    return violations
