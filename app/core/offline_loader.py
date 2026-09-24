@@ -158,7 +158,7 @@ class OfflineModelLoader:
     ) -> Any:
         """Execute the loading callable within the restricted network sandbox.
 
-        Automatically injects `local_files_only=True` if supported.
+        Automatically injects `local_files_only=True` and enforces `trust_remote_code=False`.
 
         Parameters
         ----------
@@ -179,8 +179,15 @@ class OfflineModelLoader:
         Raises
         ------
         OfflineModelLoadError
-            If loading fails due to network sandboxing or errors during initialization.
+            If loading fails due to network sandboxing or errors during initialization,
+            or if trust_remote_code=True is requested.
         """
+        # Reject attempts to enable trust_remote_code
+        if kwargs.get("trust_remote_code"):
+            raise OfflineModelLoadError(
+                f"Execution of remote code (trust_remote_code=True) is strictly prohibited for model '{model_id}'."
+            )
+
         # 1. Resolve path first
         try:
             model_path = cls.resolve_model_path(model_id)
@@ -188,11 +195,13 @@ class OfflineModelLoader:
             logger.error(f"Failed to resolve path for offline model '{model_id}': {e}")
             raise
 
-        # 2. Automatically inject local_files_only=True if applicable
+        # 2. Automatically inject local_files_only=True and trust_remote_code=False if applicable
         sig = inspect.signature(loader_fn)
         has_kwargs = any(
             p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
         )
+        if "trust_remote_code" in sig.parameters or has_kwargs:
+            kwargs["trust_remote_code"] = False
         if "local_files_only" in sig.parameters or has_kwargs:
             kwargs["local_files_only"] = True
 
@@ -245,10 +254,10 @@ class Florence2VisualProcessor:
         if self.model is not None and self.processor is not None:
             return
 
-        # Register Florence-2 standard configuration files and architecture scripts
+        # Register Florence-2 standard configuration files and model weights
         OfflineModelLoader.register_model(
             self.model_id,
-            ["config.json", "processing_florence2.py", "modeling_florence2.py"],
+            ["config.json", "model.safetensors"],
         )
 
         try:
@@ -274,7 +283,10 @@ class Florence2VisualProcessor:
 
         def load_florence_model(path: str, **kwargs: Any) -> Any:
             import torch
-            from transformers import AutoModelForCausalLM
+            from transformers import (
+                AutoModelForCausalLM,
+                Florence2ForConditionalGeneration,
+            )
 
             from app.core.shared_registry import SharedModelRegistry
 
@@ -285,14 +297,20 @@ class Florence2VisualProcessor:
             except Exception:
                 pass
 
-            kwargs["trust_remote_code"] = True
-            return AutoModelForCausalLM.from_pretrained(path, **kwargs)
+            kwargs["trust_remote_code"] = False
+            try:
+                return Florence2ForConditionalGeneration.from_pretrained(path, **kwargs)
+            except Exception:
+                return AutoModelForCausalLM.from_pretrained(path, **kwargs)
 
         def load_florence_processor(path: str, **kwargs: Any) -> Any:
-            from transformers import AutoProcessor
+            from transformers import AutoProcessor, Florence2Processor
 
-            kwargs["trust_remote_code"] = True
-            return AutoProcessor.from_pretrained(path, **kwargs)
+            kwargs["trust_remote_code"] = False
+            try:
+                return Florence2Processor.from_pretrained(path, **kwargs)
+            except Exception:
+                return AutoProcessor.from_pretrained(path, **kwargs)
 
         try:
             self.model = OfflineModelLoader.load_model(

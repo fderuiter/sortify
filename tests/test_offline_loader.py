@@ -199,7 +199,7 @@ def test_offline_sandboxing_enforced_dns():
 
 
 def test_automatic_injection_of_local_files_only():
-    """Verify that OfflineModelLoader.load_model automatically injects local_files_only=True."""
+    """Verify that OfflineModelLoader.load_model automatically injects local_files_only=True and trust_remote_code=False."""
     OfflineModelLoader._registered_models.clear()
     OfflineModelLoader.register_model("auto-inject-model")
 
@@ -213,10 +213,33 @@ def test_automatic_injection_of_local_files_only():
         result = OfflineModelLoader.load_model("auto-inject-model", mock_loader)
 
         assert result == "success_model"
-        # Assert loader called with local_files_only=True
+        # Assert loader called with local_files_only=True and trust_remote_code=False
         mock_loader.assert_called_once()
         _, kwargs = mock_loader.call_args
         assert kwargs.get("local_files_only") is True
+        assert kwargs.get("trust_remote_code") is False
+
+
+def test_offline_loader_rejects_trust_remote_code_true():
+    """Verify that OfflineModelLoader.load_model raises OfflineModelLoadError if trust_remote_code=True is supplied."""
+    OfflineModelLoader._registered_models.clear()
+    OfflineModelLoader.register_model("test-remote-code-model")
+
+    mock_loader = MagicMock()
+
+    with (
+        patch("os.path.exists", return_value=True),
+        patch("os.path.isdir", return_value=True),
+        patch("os.listdir", return_value=["weights.bin"]),
+    ):
+        with pytest.raises(
+            OfflineModelLoadError, match="trust_remote_code=True"
+        ):
+            OfflineModelLoader.load_model(
+                "test-remote-code-model", mock_loader, trust_remote_code=True
+            )
+
+        mock_loader.assert_not_called()
 
 
 def test_florence2_coordinate_normalization_and_scaling():
@@ -283,12 +306,12 @@ def test_florence2_visual_processor_mock_load_and_run(mocker):
     mock_model = MagicMock()
     mock_processor = MagicMock()
 
-    # Mock from_pretrained on the classes directly
+    # Mock from_pretrained on native HF classes
     mock_from_pretrained_model = mocker.patch(
-        "transformers.AutoModelForCausalLM.from_pretrained", return_value=mock_model
+        "transformers.Florence2ForConditionalGeneration.from_pretrained", return_value=mock_model
     )
     mock_from_pretrained_processor = mocker.patch(
-        "transformers.AutoProcessor.from_pretrained", return_value=mock_processor
+        "transformers.Florence2Processor.from_pretrained", return_value=mock_processor
     )
 
     # Mock file path resolution
@@ -304,9 +327,13 @@ def test_florence2_visual_processor_mock_load_and_run(mocker):
     assert f2.model == mock_model
     assert f2.processor == mock_processor
 
-    # Assert load was done offline/sandboxed
+    # Assert load was done offline/sandboxed with trust_remote_code=False
     mock_from_pretrained_model.assert_called_once()
     mock_from_pretrained_processor.assert_called_once()
+    _, model_kwargs = mock_from_pretrained_model.call_args
+    _, proc_kwargs = mock_from_pretrained_processor.call_args
+    assert model_kwargs.get("trust_remote_code") is False
+    assert proc_kwargs.get("trust_remote_code") is False
 
     # Now mock run_image
     mock_image = MagicMock()
@@ -348,15 +375,15 @@ def test_shared_registry_get_florence_processor(mocker):
 
 
 def test_florence2_hashes_registry_registration():
-    """Verify that required Florence-2 model files are registered in HASHES dictionary."""
+    """Verify that required Florence-2 model files are registered in HASHES dictionary without script files."""
     from app.core.hashes_registry import HASHES
 
     assert "florence-2" in HASHES
     florence_hashes = HASHES["florence-2"]
     assert "config.json" in florence_hashes
-    assert "processing_florence2.py" in florence_hashes
-    assert "modeling_florence2.py" in florence_hashes
     assert "model.safetensors" in florence_hashes
+    assert "processing_florence2.py" not in florence_hashes
+    assert "modeling_florence2.py" not in florence_hashes
 
 
 def test_florence2_pre_execution_integrity_valid_bundle(tmp_path, mocker):
@@ -364,18 +391,12 @@ def test_florence2_pre_execution_integrity_valid_bundle(tmp_path, mocker):
     import hashlib
 
     f1_content = b'{"model_type": "florence2"}'
-    f2_content = b"# processing_florence2.py"
-    f3_content = b"# modeling_florence2.py"
     f4_content = b"model_weights"
 
     (tmp_path / "config.json").write_bytes(f1_content)
-    (tmp_path / "processing_florence2.py").write_bytes(f2_content)
-    (tmp_path / "modeling_florence2.py").write_bytes(f3_content)
     (tmp_path / "model.safetensors").write_bytes(f4_content)
 
     h1 = hashlib.sha256(f1_content).hexdigest()
-    h2 = hashlib.sha256(f2_content).hexdigest()
-    h3 = hashlib.sha256(f3_content).hexdigest()
     h4 = hashlib.sha256(f4_content).hexdigest()
 
     SharedModelRegistry._instance = None
@@ -384,8 +405,6 @@ def test_florence2_pre_execution_integrity_valid_bundle(tmp_path, mocker):
         "florence-2",
         {
             "config.json": h1,
-            "processing_florence2.py": h2,
-            "modeling_florence2.py": h3,
             "model.safetensors": h4,
         },
     )
@@ -397,10 +416,10 @@ def test_florence2_pre_execution_integrity_valid_bundle(tmp_path, mocker):
     mock_model = MagicMock()
     mock_processor = MagicMock()
     mock_from_model = mocker.patch(
-        "transformers.AutoModelForCausalLM.from_pretrained", return_value=mock_model
+        "transformers.Florence2ForConditionalGeneration.from_pretrained", return_value=mock_model
     )
     mock_from_processor = mocker.patch(
-        "transformers.AutoProcessor.from_pretrained", return_value=mock_processor
+        "transformers.Florence2Processor.from_pretrained", return_value=mock_processor
     )
 
     processor = Florence2VisualProcessor()
@@ -417,17 +436,14 @@ def test_florence2_pre_execution_integrity_tampered_bundle_aborts(tmp_path, mock
     import hashlib
 
     f1_content = b'{"model_type": "florence2"}'
-    f2_content = b"# processing_florence2.py - original"
-    f3_content = b"# modeling_florence2.py"
+    f4_content = b"model_weights_original"
 
     (tmp_path / "config.json").write_bytes(f1_content)
     # Tampered file content!
-    (tmp_path / "processing_florence2.py").write_bytes(b"# TAMPERED CODE EXPLOIT")
-    (tmp_path / "modeling_florence2.py").write_bytes(f3_content)
+    (tmp_path / "model.safetensors").write_bytes(b"TAMPERED_WEIGHTS")
 
     h1 = hashlib.sha256(f1_content).hexdigest()
-    h2_expected = hashlib.sha256(f2_content).hexdigest()
-    h3 = hashlib.sha256(f3_content).hexdigest()
+    h4_expected = hashlib.sha256(f4_content).hexdigest()
 
     SharedModelRegistry._instance = None
     registry = SharedModelRegistry.get_instance()
@@ -435,8 +451,7 @@ def test_florence2_pre_execution_integrity_tampered_bundle_aborts(tmp_path, mock
         "florence-2",
         {
             "config.json": h1,
-            "processing_florence2.py": h2_expected,
-            "modeling_florence2.py": h3,
+            "model.safetensors": h4_expected,
         },
     )
 
@@ -444,13 +459,13 @@ def test_florence2_pre_execution_integrity_tampered_bundle_aborts(tmp_path, mock
         "app.core.offline_loader.OfflineModelLoader.resolve_model_path",
         return_value=str(tmp_path),
     )
-    mock_from_model = mocker.patch("transformers.AutoModelForCausalLM.from_pretrained")
-    mock_from_processor = mocker.patch("transformers.AutoProcessor.from_pretrained")
+    mock_from_model = mocker.patch("transformers.Florence2ForConditionalGeneration.from_pretrained")
+    mock_from_processor = mocker.patch("transformers.Florence2Processor.from_pretrained")
 
     processor = Florence2VisualProcessor()
 
     with pytest.raises(
-        OfflineModelLoadError, match="Integrity check failed for processing_florence2.py"
+        OfflineModelLoadError, match="Integrity check failed for model.safetensors"
     ):
         processor.load()
 
@@ -465,7 +480,7 @@ def test_florence2_chunked_hash_verification(tmp_path):
 
     # Create a file larger than 64KB (128KB)
     large_data = b"X" * (128 * 1024)
-    file_path = tmp_path / "modeling_florence2.py"
+    file_path = tmp_path / "model.safetensors"
     file_path.write_bytes(large_data)
 
     expected_hash = hashlib.sha256(large_data).hexdigest()
@@ -473,7 +488,7 @@ def test_florence2_chunked_hash_verification(tmp_path):
     SharedModelRegistry._instance = None
     registry = SharedModelRegistry.get_instance()
     registry.register_expected_hashes(
-        "florence-2", {"modeling_florence2.py": expected_hash}
+        "florence-2", {"model.safetensors": expected_hash}
     )
 
     # Valid check
