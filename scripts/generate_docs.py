@@ -95,6 +95,13 @@ def generate_api_docs():
             f.write(f"::: {module_name}\n\n")
 
 
+def compile_diagram_assets():
+    """Compile diagram specifications into SVG/PNG visual assets and Mermaid files."""
+    from scripts.diagram_toolchain import build_diagrams
+
+    build_diagrams(force=False, verify_only=False)
+
+
 def generate_ui_docs():
     """Generate UI Reference from app/ui/*.py."""
     app_dir = os.path.join("app", "ui")
@@ -103,6 +110,29 @@ def generate_ui_docs():
     with open(output_file, "w", encoding="utf-8", newline="\n") as f:
         f.write("# UI API Reference\n\n")
         f.write("This document is automatically generated. Do not edit manually.\n\n")
+
+        f.write("## Component Architecture & Catalog Diagrams\n\n")
+
+        f.write("### Catalog Interactive Workbench Workflow\n\n")
+        f.write(
+            "![Component Catalog Workflow](assets/diagrams/catalog_workflow.svg)\n\n"
+        )
+        from app.ui.diagram_schema import (
+            CATALOG_WORKFLOW_SPEC,
+            UI_COMPONENT_HIERARCHY_SPEC,
+        )
+
+        f.write("```mermaid\n")
+        f.write(CATALOG_WORKFLOW_SPEC.to_mermaid())
+        f.write("```\n\n")
+
+        f.write("### UI Component Hierarchy\n\n")
+        f.write(
+            "![UI Component Hierarchy](assets/diagrams/ui_component_hierarchy.svg)\n\n"
+        )
+        f.write("```mermaid\n")
+        f.write(UI_COMPONENT_HIERARCHY_SPEC.to_mermaid())
+        f.write("```\n\n")
 
         py_files = glob.glob(os.path.join(app_dir, "*.py"))
         py_files = [p for p in py_files if not p.endswith("__init__.py")]
@@ -600,6 +630,7 @@ def main():
 
     # 2. Run documentation generation
     tasks = [
+        ("compile_diagram_assets", compile_diagram_assets),
         ("generate_tutorial_docs", generate_tutorial_docs),
         ("generate_api_docs", generate_api_docs),
         ("generate_ui_docs", generate_ui_docs),

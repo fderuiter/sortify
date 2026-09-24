@@ -299,6 +299,45 @@ def test_tui_cro_forensic_modal(temp_workspace):
     asyncio.run(_test())
 
 
+def test_tui_modals_render_on_small_viewports(temp_workspace):
+    """Verify all six TUI modal screens render without errors on 70x20 and 80x24 viewports."""
+    from app.ui.tui import DirectorySelectModal
+
+    settings = AppSettings()
+
+    # Verify CSS definitions enforce fluid 90% width, max-width 80, max-height 90%, overflow-y auto
+    modals = [
+        RenameModal("Rename Test", "current", ".txt"),
+        NewFolderModal(),
+        DirectorySelectModal(temp_workspace),
+        SettingsModal(settings),
+        WizardModal(settings),
+        CROForensicModal(settings, temp_workspace),
+    ]
+
+    for modal in modals:
+        assert "width: 90%" in modal.CSS
+        assert "max-width: 80" in modal.CSS
+        assert "max-height: 90%" in modal.CSS
+        assert "overflow-y: auto" in modal.CSS
+
+    async def _test(size, modal_factory):
+        app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
+        async with app.run_test(size=size) as pilot:
+            modal = modal_factory()
+            app.push_screen(modal)
+            await pilot.pause(0.05)
+            assert app.screen is modal
+
+    for size in [(80, 24), (70, 20)]:
+        asyncio.run(_test(size, lambda: RenameModal("Rename Test", "current", ".txt")))
+        asyncio.run(_test(size, NewFolderModal))
+        asyncio.run(_test(size, lambda: DirectorySelectModal(temp_workspace)))
+        asyncio.run(_test(size, lambda: SettingsModal(settings)))
+        asyncio.run(_test(size, lambda: WizardModal(settings)))
+        asyncio.run(_test(size, lambda: CROForensicModal(settings, temp_workspace)))
+
+
 def test_main_cli_tui_invocation():
     """Verify app/main.py launches run_tui when --tui argument is supplied."""
     from app.main import main

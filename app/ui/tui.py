@@ -38,8 +38,11 @@ class RenameModal(ModalScreen[Optional[str]]):
         padding: 1 2;
         background: $panel;
         border: thick $primary;
-        width: 60;
+        width: 90%;
+        max-width: 80;
         height: auto;
+        max-height: 90%;
+        overflow-y: auto;
     }
     .modal-title {
         text-style: bold;
@@ -107,8 +110,11 @@ class NewFolderModal(ModalScreen[Optional[str]]):
         padding: 1 2;
         background: $panel;
         border: thick $primary;
-        width: 60;
+        width: 90%;
+        max-width: 80;
         height: auto;
+        max-height: 90%;
+        overflow-y: auto;
     }
     .modal-title {
         text-style: bold;
@@ -164,8 +170,11 @@ class DirectorySelectModal(ModalScreen[Optional[str]]):
         padding: 1 2;
         background: $panel;
         border: thick $primary;
-        width: 70;
+        width: 90%;
+        max-width: 80;
         height: auto;
+        max-height: 90%;
+        overflow-y: auto;
     }
     .modal-title {
         text-style: bold;
@@ -195,9 +204,9 @@ class DirectorySelectModal(ModalScreen[Optional[str]]):
             yield Input(value=self.current_dir, placeholder="Enter absolute directory path...", id="input-dir")
             yield Label("Quick Presets:")
             with Horizontal(classes="preset-row"):
-                yield Button("Demo Workspace", id="preset-demo", variant="outline")
-                yield Button("Downloads", id="preset-downloads", variant="outline")
-                yield Button("Documents", id="preset-documents", variant="outline")
+                yield Button("Demo Workspace", id="preset-demo", variant="default")
+                yield Button("Downloads", id="preset-downloads", variant="default")
+                yield Button("Documents", id="preset-documents", variant="default")
             with Horizontal(classes="button-row"):
                 yield Button("Cancel", id="btn-cancel", variant="default")
                 yield Button("Select", id="btn-confirm", variant="primary")
@@ -250,9 +259,11 @@ class SettingsModal(ModalScreen[Optional[Dict[str, Any]]]):
         padding: 1 2;
         background: $panel;
         border: thick $primary;
-        width: 72;
+        width: 90%;
+        max-width: 80;
         height: auto;
         max-height: 90%;
+        overflow-y: auto;
     }
     .modal-title {
         text-style: bold;
@@ -356,8 +367,11 @@ class WizardModal(ModalScreen[None]):
         padding: 1 2;
         background: $panel;
         border: thick $primary;
-        width: 70;
+        width: 90%;
+        max-width: 80;
         height: auto;
+        max-height: 90%;
+        overflow-y: auto;
     }
     .modal-title {
         text-style: bold;
@@ -422,8 +436,11 @@ class CROForensicModal(ModalScreen[None]):
         padding: 1 2;
         background: $panel;
         border: thick $primary;
-        width: 85;
-        height: 24;
+        width: 90%;
+        max-width: 80;
+        height: auto;
+        max-height: 90%;
+        overflow-y: auto;
     }
     .modal-title {
         text-style: bold;
@@ -431,7 +448,9 @@ class CROForensicModal(ModalScreen[None]):
         margin-bottom: 1;
     }
     .log-area {
-        height: 10;
+        height: auto;
+        max-height: 6;
+        min-height: 3;
         margin-top: 1;
         border: solid $secondary;
     }

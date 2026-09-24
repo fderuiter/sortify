@@ -61,6 +61,7 @@ def test_main_strict_flag():
     """Verify that --strict (default) and --no-strict set mkdocs arguments correctly."""
     with patch("sys.argv", ["generate_docs.py", "--no-strict"]):
         with (
+            patch("scripts.generate_docs.compile_diagram_assets") as mock_diag,
             patch("scripts.generate_docs.generate_tutorial_docs") as mock_tut,
             patch("scripts.generate_docs.generate_api_docs") as mock_api,
             patch("scripts.generate_docs.generate_ui_docs") as mock_ui,
@@ -73,6 +74,7 @@ def test_main_strict_flag():
             main()
 
             # Verify generators are called
+            mock_diag.assert_called_once()
             mock_tut.assert_called_once()
             mock_api.assert_called_once()
             mock_ui.assert_called_once()
@@ -90,6 +92,7 @@ def test_main_default_strict():
     """Verify that by default mkdocs is run with --strict."""
     with patch("sys.argv", ["generate_docs.py"]):
         with (
+            patch("scripts.generate_docs.compile_diagram_assets") as mock_diag,
             patch("scripts.generate_docs.generate_tutorial_docs") as mock_tut,
             patch("scripts.generate_docs.generate_api_docs") as mock_api,
             patch("scripts.generate_docs.generate_ui_docs") as mock_ui,
@@ -101,6 +104,7 @@ def test_main_default_strict():
 
             main()
 
+            mock_diag.assert_called_once()
             mock_tut.assert_called_once()
             mock_run.assert_called_once()
             args, kwargs = mock_run.call_args
@@ -113,6 +117,7 @@ def test_main_detects_unsynced_files_on_check():
     original_open = open
     with patch("sys.argv", ["generate_docs.py", "--check"]):
         with (
+            patch("scripts.generate_docs.compile_diagram_assets"),
             patch("scripts.generate_docs.generate_tutorial_docs"),
             patch("scripts.generate_docs.generate_api_docs"),
             patch("scripts.generate_docs.generate_ui_docs"),
@@ -190,6 +195,7 @@ def test_main_clean_on_check():
     original_open = open
     with patch("sys.argv", ["generate_docs.py", "--check"]):
         with (
+            patch("scripts.generate_docs.compile_diagram_assets"),
             patch("scripts.generate_docs.generate_tutorial_docs"),
             patch("scripts.generate_docs.generate_api_docs"),
             patch("scripts.generate_docs.generate_ui_docs"),
@@ -260,3 +266,71 @@ def test_main_clean_on_check():
             main()
 
             mock_exit.assert_not_called()
+
+
+def test_component_diagram_spec_serialization():
+    from app.ui.diagram_schema import (
+        ComponentDiagramSpec,
+        DiagramEdge,
+        DiagramNode,
+        DiagramSubgraph,
+    )
+
+    spec = ComponentDiagramSpec(
+        id="test_spec",
+        title="Test Diagram Spec",
+        diagram_type="graph",
+        direction="TD",
+        subgraphs=[DiagramSubgraph(id="sub1", title="Sub Group 1", nodes=["n1"])],
+        nodes=[
+            DiagramNode(id="n1", label="Node 1", shape="round"),
+            DiagramNode(id="n2", label="Node 2", shape="database"),
+        ],
+        edges=[
+            DiagramEdge(source="n1", target="n2", label="connects"),
+        ],
+    )
+
+    mmd = spec.to_mermaid()
+    assert "graph TD" in mmd
+    assert 'subgraph sub1 ["Sub Group 1"]' in mmd
+    assert 'n1("Node 1")' in mmd
+    assert 'n2[("Node 2")]' in mmd
+    assert "n1 -->|connects| n2" in mmd
+
+
+def test_diagram_toolchain_build_and_verify(tmp_path):
+    from scripts.diagram_toolchain import build_diagrams
+
+    with patch("scripts.diagram_toolchain.render_diagram_artifact", return_value=True):
+        # Test build mode
+        success = build_diagrams(output_dir=tmp_path, force=True, verify_only=False)
+        assert success is True
+        assert (tmp_path / "architecture_dataflow.mmd").exists()
+        assert (tmp_path / ".build_cache.json").exists()
+
+        # Test verify mode
+        success_verify = build_diagrams(
+            output_dir=tmp_path, force=False, verify_only=True
+        )
+        assert success_verify is True
+
+
+def test_diagram_toolchain_cli_main_verify():
+    import scripts.diagram_toolchain as dt
+
+    with (
+        patch("sys.argv", ["diagram_toolchain.py", "--verify"]),
+        patch("scripts.diagram_toolchain.build_diagrams", return_value=True),
+        patch("sys.exit") as mock_exit,
+    ):
+        dt.main()
+        mock_exit.assert_called_once_with(0)
+
+
+def test_find_mmdc_executable():
+    from scripts.diagram_toolchain import find_mmdc_executable
+
+    cmd = find_mmdc_executable()
+    if cmd and any("npx" in arg for arg in cmd):
+        assert "--yes" in cmd
