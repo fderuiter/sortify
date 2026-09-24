@@ -133,3 +133,66 @@ def test_rollback_cyclic_collision(test_history_env):
 
     docB = db.get_document(base_dir, "B.txt")
     assert docB["file_hash"] == "hashB"
+
+
+def test_age_based_snapshot_pruning(test_history_env):
+    base_dir, db, cache, history_manager, db_worker = test_history_env
+    import time
+
+    from app.core.db_conn import get_db_connection
+
+    now = time.time()
+    day_sec = 86400
+
+    conn = get_db_connection(history_manager.db_path)
+    with conn:
+        # Session 1: 10 days old (within default 30-day retention window)
+        conn.execute(
+            "INSERT INTO sessions (session_id, timestamp, base_dir, status) VALUES (?, ?, ?, 'completed')",
+            ("session-recent", now - (10 * day_sec), base_dir),
+        )
+        # Session 2: 40 days old (expired)
+        conn.execute(
+            "INSERT INTO sessions (session_id, timestamp, base_dir, status) VALUES (?, ?, ?, 'completed')",
+            ("session-expired", now - (40 * day_sec), base_dir),
+        )
+
+    with conn:
+        history_manager._prune_snapshots(conn, retention_days=30)
+
+    sessions = history_manager.get_sessions()
+    session_ids = [s["session_id"] for s in sessions]
+
+    assert "session-recent" in session_ids
+    assert "session-expired" not in session_ids
+
+
+def test_divergent_branch_protection_from_pruning(test_history_env):
+    base_dir, db, cache, history_manager, db_worker = test_history_env
+    import time
+
+    from app.core.db_conn import get_db_connection
+
+    now = time.time()
+    day_sec = 86400
+
+    expired_id = "session-expired-branch"
+    branch_dir = os.path.join(base_dir, ".branches", expired_id)
+    os.makedirs(branch_dir, exist_ok=True)
+    with open(os.path.join(branch_dir, "unmerged.txt"), "w") as f:
+        f.write("unmerged branch data")
+
+    conn = get_db_connection(history_manager.db_path)
+    with conn:
+        conn.execute(
+            "INSERT INTO sessions (session_id, timestamp, base_dir, status) VALUES (?, ?, ?, 'completed')",
+            (expired_id, now - (50 * day_sec), base_dir),
+        )
+
+    with conn:
+        history_manager._prune_snapshots(conn, retention_days=30)
+
+    sessions = history_manager.get_sessions()
+    session_ids = [s["session_id"] for s in sessions]
+
+    assert expired_id in session_ids

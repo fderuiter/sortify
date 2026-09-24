@@ -300,8 +300,8 @@ class HistoryManager:
                     docs,
                 )
 
-            # Prune old snapshots to prevent excessive growth (keep last 10)
-            self._prune_snapshots(conn, limit=10)
+            # Prune expired snapshots based on configured age retention limit
+            self._prune_snapshots(conn)
 
         return session_id
 
@@ -313,10 +313,20 @@ class HistoryManager:
 
         return self.db.worker.execute_write(_write)
 
-    def _prune_snapshots(self, conn, limit=10):
+    def _prune_snapshots(self, conn, retention_days=None, limit=None):
+        if retention_days is None:
+            try:
+                from app.config import AppSettings
+
+                app_settings = AppSettings()
+                retention_days = getattr(app_settings, "SNAPSHOT_RETENTION_DAYS", 30)
+            except Exception:
+                retention_days = 30
+
+        cutoff_timestamp = time.time() - (float(retention_days) * 86400.0)
         cur = conn.execute(
-            "SELECT session_id, base_dir FROM sessions ORDER BY timestamp DESC LIMIT -1 OFFSET ?",
-            (limit,),
+            "SELECT session_id, base_dir FROM sessions WHERE timestamp IS NOT NULL AND timestamp < ? AND (status IS NULL OR status != 'active')",
+            (cutoff_timestamp,),
         )
         old_sessions = cur.fetchall()
         for sid, base_dir in old_sessions:
