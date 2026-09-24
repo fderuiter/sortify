@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "31aaefa05546884ccbf2884cfeb362f71f47a6d8a58a5563bb26fa5a9f579373"
+    "checksum": "03e6a2f41b8383b73e614981a0ffeffa81de41dddb6e5a1c69d07fba3df816c6"
   },
   "cli": {
     "app/main.py": [
@@ -2183,6 +2183,24 @@
             },
             {
               "async": false,
+              "decorators": [],
+              "name": "enqueue_event",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "FileChangeEvent",
+                  "default": null,
+                  "name": "change_event"
+                }
+              ],
+              "returns": "bool"
+            },
+            {
+              "async": false,
               "decorators": [
                 "@property"
               ],
@@ -2367,6 +2385,13 @@
               "returns": null
             }
           ]
+        },
+        {
+          "class_name": "FileChangeEvent",
+          "decorators": [
+            "@dataclass"
+          ],
+          "methods": []
         }
       ],
       "functions": [

@@ -155,7 +155,11 @@ async def test_asynchronous_background_scan_loads(test_env):
     app.verify_current_plan = mock_verify
 
     # Mock scanning methods to bypass heavy logic
-    app.app_session.process_items_async = MagicMock()
+    async def mock_process_items(*args, **kwargs):
+        if False:
+            yield
+
+    app.app_session.process_items_async = mock_process_items
     app.app_session.generate_sorting_plan = MagicMock(return_value={})
 
     with patch("app.core.scanner.get_files_recursively", return_value=[]):
