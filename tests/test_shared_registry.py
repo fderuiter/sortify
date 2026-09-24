@@ -664,6 +664,14 @@ def test_check_ai_status_local_offline_bundle(tmp_path, monkeypatch):
     )
     monkeypatch.setattr("os.getcwd", lambda: str(base_dir))
 
+    import sys
+
+    mock_easyocr = MagicMock()
+    mock_torch = MagicMock()
+
+    monkeypatch.setitem(sys.modules, "easyocr", mock_easyocr)
+    monkeypatch.setitem(sys.modules, "torch", mock_torch)
+
     # Mock is_ml_available to True
     with (
         patch("app.core.verifier.is_ml_available", return_value=True),
@@ -679,8 +687,7 @@ def test_check_ai_status_local_offline_bundle(tmp_path, monkeypatch):
 
         # Verify that get_ocr_reader also correctly resolves the directory
         registry = SharedModelRegistry.get_instance()
-        with patch("easyocr.Reader") as mock_reader:
-            registry.get_ocr_reader()
-            _, kwargs = mock_reader.call_args
-            assert "offline_bundle" in kwargs.get("model_storage_directory", "")
-            assert "easyocr" in kwargs.get("model_storage_directory", "")
+        registry.get_ocr_reader()
+        _, kwargs = mock_easyocr.Reader.call_args
+        assert "offline_bundle" in kwargs.get("model_storage_directory", "")
+        assert "easyocr" in kwargs.get("model_storage_directory", "")
