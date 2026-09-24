@@ -168,6 +168,21 @@ System settings modified during runtime are dynamically saved to the local JSON 
 
 ## Compliance Policies & Routing Rules
 
+### Policy Evaluation Flowchart
+
+```mermaid
+flowchart TD
+    A[Incoming Document] --> B[Sort Rules by Priority High to Low]
+    B --> C{Evaluate Next Rule}
+    C -->|Override Rule Match| D[Route Document via Override Path]
+    C -->|Keyword Rule Match| E[Route Document via Keyword Category]
+    C -->|Pattern Rule Match| F[Route Document via Pattern Category]
+    C -->|No Match & Halt on Mismatch Enabled| G[Stop Processing & Halt Evaluation]
+    C -->|No Match & Halt Disabled| H{More Rules Remaining?}
+    H -->|Yes| C
+    H -->|No| I[Proceed to General Classification / AI Sorting]
+```
+
 ### Rule Syntax & Types
 
 Compliance policies categorize and sort documents based on three rule types:

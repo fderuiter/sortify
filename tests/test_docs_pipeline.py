@@ -1,7 +1,37 @@
 import os
 from unittest.mock import MagicMock, patch
 
-from scripts.generate_docs import audit_handwritten_docs, get_handwritten_docs, main
+from scripts.generate_docs import (
+    audit_handwritten_docs,
+    get_handwritten_docs,
+    main,
+    validate_mermaid_diagrams,
+)
+
+
+def test_validate_mermaid_diagrams_clean():
+    errors = validate_mermaid_diagrams()
+    assert errors == []
+
+
+def test_validate_mermaid_diagrams_detects_invalid_type(tmp_path):
+    bad_doc = tmp_path / "bad_mermaid.md"
+    bad_doc.write_text("```mermaid\nunknownDiagramType\nA --> B\n```\n")
+
+    with patch("os.walk", return_value=[(str(tmp_path), [], ["bad_mermaid.md"])]):
+        errors = validate_mermaid_diagrams()
+        assert len(errors) == 1
+        assert "unknown diagram type 'unknownDiagramType'" in errors[0]
+
+
+def test_validate_mermaid_diagrams_detects_unbalanced_brackets(tmp_path):
+    bad_doc = tmp_path / "bad_brackets.md"
+    bad_doc.write_text("```mermaid\nflowchart TD\nA[Unclosed bracket --> B\n```\n")
+
+    with patch("os.walk", return_value=[(str(tmp_path), [], ["bad_brackets.md"])]):
+        errors = validate_mermaid_diagrams()
+        assert len(errors) == 1
+        assert "unbalanced brackets" in errors[0]
 
 
 def test_get_handwritten_docs():

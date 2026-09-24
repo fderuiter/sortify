@@ -75,6 +75,17 @@ def generate_api_docs():
         f.write("# API Reference\n\n")
         f.write("This document is automatically generated. Do not edit manually.\n\n")
 
+        f.write("## Core Architecture Diagram\n\n")
+        f.write("```mermaid\n")
+        f.write("flowchart TD\n")
+        f.write("    A[app.main] --> B[app.core.session]\n")
+        f.write("    B --> C[app.core.extractor]\n")
+        f.write("    B --> D[app.core.analyzer]\n")
+        f.write("    B --> E[app.core.verifier]\n")
+        f.write("    C --> F[app.core.sanitizer]\n")
+        f.write("    D --> G[app.core.analyzer_strategies]\n")
+        f.write("```\n\n")
+
         # Find all python files except ui and binaries
         py_files = glob.glob(os.path.join(app_dir, "**", "*.py"), recursive=True)
         py_files = [
@@ -196,6 +207,25 @@ def generate_admin_guide():
         )
 
         f.write("## Compliance Policies & Routing Rules\n\n")
+        f.write("### Policy Evaluation Flowchart\n\n")
+        f.write("```mermaid\n")
+        f.write("flowchart TD\n")
+        f.write("    A[Incoming Document] --> B[Sort Rules by Priority High to Low]\n")
+        f.write("    B --> C{Evaluate Next Rule}\n")
+        f.write("    C -->|Override Rule Match| D[Route Document via Override Path]\n")
+        f.write(
+            "    C -->|Keyword Rule Match| E[Route Document via Keyword Category]\n"
+        )
+        f.write(
+            "    C -->|Pattern Rule Match| F[Route Document via Pattern Category]\n"
+        )
+        f.write(
+            "    C -->|No Match & Halt on Mismatch Enabled| G[Stop Processing & Halt Evaluation]\n"
+        )
+        f.write("    C -->|No Match & Halt Disabled| H{More Rules Remaining?}\n")
+        f.write("    H -->|Yes| C\n")
+        f.write("    H -->|No| I[Proceed to General Classification / AI Sorting]\n")
+        f.write("```\n\n")
         f.write("### Rule Syntax & Types\n\n")
         f.write(
             "Compliance policies categorize and sort documents based on three rule types:\n\n"
@@ -565,6 +595,134 @@ def audit_handwritten_docs():
     return errors
 
 
+def validate_mermaid_diagrams():
+    """Validate Mermaid diagrams across all core documentation and notebook tutorial files."""
+    import json
+    import re
+
+    doc_files = []
+    if os.path.exists("docs"):
+        for root, dirs, files in os.walk("docs"):
+            for f in sorted(files):
+                if f.endswith(".md"):
+                    doc_files.append(Path(root, f).as_posix())
+
+    if os.path.exists("notebooks"):
+        for root, dirs, files in os.walk("notebooks"):
+            dirs[:] = [d for d in dirs if not d.startswith(".")]
+            for f in sorted(files):
+                if f.endswith(".ipynb"):
+                    doc_files.append(Path(root, f).as_posix())
+
+    valid_types = {
+        "flowchart",
+        "graph",
+        "sequenceDiagram",
+        "stateDiagram",
+        "stateDiagram-v2",
+        "classDiagram",
+        "classDiagram-v2",
+        "erDiagram",
+        "gantt",
+        "pie",
+        "gitGraph",
+        "mindmap",
+        "timeline",
+        "architecture",
+        "C4Context",
+    }
+
+    errors = []
+
+    for file_path in sorted(list(set(doc_files))):
+        if not os.path.exists(file_path):
+            continue
+
+        markdown_texts = []
+        try:
+            if file_path.endswith(".ipynb"):
+                with open(file_path, "r", encoding="utf-8") as f:
+                    raw_content = f.read()
+                try:
+                    nb = json.loads(raw_content)
+                    for cell in nb.get("cells", []):
+                        if cell.get("cell_type") == "markdown":
+                            src = cell.get("source", [])
+                            if isinstance(src, list):
+                                markdown_texts.append("".join(src))
+                            else:
+                                markdown_texts.append(str(src))
+                except Exception:
+                    markdown_texts.append(raw_content)
+            else:
+                with open(file_path, "r", encoding="utf-8") as f:
+                    markdown_texts.append(f.read())
+        except Exception as e:
+            errors.append(f"Could not read file {file_path}: {e}")
+            continue
+
+        full_text = "\n\n".join(markdown_texts)
+        blocks = re.findall(r"```mermaid\s*([\s\S]*?)```", full_text)
+
+        for idx, block in enumerate(blocks, start=1):
+            lines = [
+                line.strip() for line in block.strip().splitlines() if line.strip()
+            ]
+            if not lines:
+                errors.append(f"Empty Mermaid diagram block #{idx} in {file_path}.")
+                continue
+
+            header = None
+            for line in lines:
+                if not line.startswith("%%"):
+                    header = line
+                    break
+
+            if not header:
+                errors.append(
+                    f"Invalid Mermaid diagram block #{idx} in {file_path}: contains only comments."
+                )
+                continue
+
+            first_word = header.split()[0]
+            if first_word not in valid_types:
+                errors.append(
+                    f"Invalid Mermaid diagram block #{idx} in {file_path}: unknown diagram type '{first_word}'."
+                )
+                continue
+
+            bracket_counts = {"[": 0, "]": 0, "(": 0, ")": 0, "{": 0, "}": 0}
+            for line in lines:
+                if line.startswith("%%"):
+                    continue
+                line_code = line.split("%%")[0].strip()
+                if not line_code:
+                    continue
+                in_quotes = False
+                escaped = False
+                for char in line_code:
+                    if char == '"' and not escaped:
+                        in_quotes = not in_quotes
+                    elif not in_quotes:
+                        if char in bracket_counts:
+                            bracket_counts[char] += 1
+                    escaped = (char == "\\") and not escaped
+
+            if (
+                bracket_counts["["] != bracket_counts["]"]
+                or bracket_counts["("] != bracket_counts[")"]
+                or bracket_counts["{"] != bracket_counts["}"]
+            ):
+                errors.append(
+                    f"Invalid Mermaid diagram block #{idx} in {file_path}: unbalanced brackets "
+                    f"(Square: {bracket_counts['[']}/{bracket_counts[']']}, "
+                    f"Paren: {bracket_counts['(']}/{bracket_counts[')']}, "
+                    f"Curly: {bracket_counts['{']}/{bracket_counts['}']})."
+                )
+
+    return errors
+
+
 def main():
     import argparse
     import subprocess
@@ -653,6 +811,16 @@ def main():
             sys.stderr.write(f"--- Error in {name} ---\n")
             traceback.print_exception(*exc_info, file=sys.stderr)
             sys.stderr.write("\n")
+        sys.exit(1)
+
+    # Validate Mermaid diagram syntax across documentation files
+    mermaid_validation_errors = validate_mermaid_diagrams()
+    if mermaid_validation_errors:
+        sys.stderr.write(
+            "\nError: Mermaid diagram syntax validation failed with the following issues:\n"
+        )
+        for err in mermaid_validation_errors:
+            sys.stderr.write(f"  - {err}\n")
         sys.exit(1)
 
     # 3. Check for unsynced files and audit handwritten docs if requested

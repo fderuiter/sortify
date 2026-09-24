@@ -6,6 +6,16 @@ Welcome to the User Guides for Smart AutoSorter AI Pro.
 
 When you launch Smart AutoSorter AI Pro for the first time, you will be presented with the **Privacy & Data Setup Wizard**. The AI features require a small, one-time 80MB model download from Hugging Face.
 
+```mermaid
+flowchart TD
+    A[Launch Application] --> B{First-Run Setup Wizard}
+    B -->|Accept & Download| C[Download 80MB Model from Hugging Face]
+    C -->|Download Successful| D[Enable Semantic AI Sorting]
+    C -->|Network Error or Offline| E[Fallback to Offline Non-Semantic Mode]
+    B -->|Decline| E
+    B -->|Help| F[Open User Guide]
+```
+
 1. **Accept & Download:** Click this to download the 80MB model and enable Smart AutoSorter's semantic sorting. This connects to Hugging Face only once.
 2. **Decline (Offline Mode):** Skip the download and run the application entirely offline in flat non-semantic sorting mode.
 3. **Help:** View this user guide to learn more about the implications of your choice.
@@ -36,6 +46,21 @@ To keep your output directory organized, you can enable **Cleanup Empty Folders*
 ## Background Folder Monitoring
 
 Smart AutoSorter AI Pro provides continuous background directory monitoring to track target folders for real-time file additions and modifications.
+
+```mermaid
+stateDiagram-v2
+    [*] --> Idle: Watchdog Active
+    Idle --> EventDetected: Directory Change Event
+    EventDetected --> CheckTransient: Inspect File Extension
+    CheckTransient --> TransientIgnored: Extension in (.crdownload, .tmp, .download)
+    TransientIgnored --> Idle: Drop Transient Event
+    CheckTransient --> StartDebounce: Valid File Extension
+    StartDebounce --> AggregatingEvents: Standard Debounce Timer (0.6s)
+    AggregatingEvents --> AggregatingEvents: New Event Received (Reset 0.6s Timer)
+    AggregatingEvents --> TriggerSorting: Debounce Timer Expires (0.6s)
+    AggregatingEvents --> TriggerSorting: Max Debounce Limit Reached (5.0s)
+    TriggerSorting --> Idle: Execute Sorting Pipeline
+```
 
 ### Continuous Watchdog Monitoring
 When background folder monitoring is active, the system continuously tracks target directories for file events. When new files are added or existing files are modified, background monitoring automatically triggers sorting and reorganization without requiring manual intervention.

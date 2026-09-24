@@ -104,6 +104,20 @@ sequenceDiagram
     deactivate UI
 ```
 
+### Directory Watchdog Monitoring State Machine
+
+```mermaid
+stateDiagram-v2
+    [*] --> Monitoring: Active Watchdog Service
+    Monitoring --> FilterTransient: Directory File Modification
+    FilterTransient --> Monitoring: Ignore (.crdownload, .tmp, .download)
+    FilterTransient --> DebounceActive: Valid File Event Received
+    DebounceActive --> DebounceActive: Reset Timer on Rapid Writes (0.6s)
+    DebounceActive --> DispatchPipeline: Standard Debounce Timeout (0.6s)
+    DebounceActive --> DispatchPipeline: Max Delay Cap Reached (5.0s)
+    DispatchPipeline --> Monitoring: Pipeline Executed & UI Refreshed
+```
+
 ## Centralized System Utilities & Architectural Guardrails
 
 To prevent redundant patterns, platform-specific path bugs, and visual/functional defects across application scopes, we consolidate all system packaging checks, path character validations, and database directory setups / encryption key lookups.

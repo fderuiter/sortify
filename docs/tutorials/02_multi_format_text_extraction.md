@@ -9,6 +9,27 @@ We will explore:
 2. **Multi-Format Text Extraction**: Writing programmatically supported formats (`.txt`, `.csv`, `.docx`, `.xlsx`) to disk and extracting their text content safely.
 3. **Database Inspection**: Inspecting the internal SQLite databases to verify that file text, hashes, and schemas are correctly registered in the system's storage layer.
 
+### Extraction Pipeline Flow
+```mermaid
+sequenceDiagram
+    autonumber
+    participant FS as FileScanner
+    participant EX as Extractor Engine
+    participant SN as Text Sanitizer
+    participant CG as Corpus Generator
+    
+    FS->>EX: Scan target directory for supported files
+    activate EX
+    EX->>EX: Extract raw content per format
+    EX->>SN: Pass raw text payload
+    activate SN
+    SN->>SN: Sanitize text payload and filter stop words
+    SN-->>EX: Return sanitized text yield
+    deactivate SN
+    EX-->>CG: Yield processed text chunk to corpus generator
+    deactivate EX
+```
+
 ```python
 import csv
 import os

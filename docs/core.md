@@ -6,6 +6,26 @@ This document outlines the core internal workflow and architecture of the Smart 
 
 The system uses a two-phase pipeline to convert documents into structured sorting plans:
 
+```mermaid
+sequenceDiagram
+    autonumber
+    participant FS as FileScanner
+    participant EX as Extractor Engine
+    participant SN as Text Sanitizer
+    participant CG as Corpus Generator
+    
+    FS->>EX: Scan target directory for supported files
+    activate EX
+    EX->>EX: Extract raw text payload per format
+    EX->>SN: Pass raw text payload
+    activate SN
+    SN->>SN: Sanitize text and filter stop words
+    SN-->>EX: Return sanitized text yield
+    deactivate SN
+    EX-->>CG: Yield document text chunk
+    deactivate EX
+```
+
 1. **Extraction (`app.core.extractor`)**:
     - The extractor reads raw files across multiple supported formats (TXT, CSV, PDF, DOCX, XLSX).
     - It maps each file to its raw text payload using robust exception-handling to ensure that a failure in one document does not crash the entire run.
