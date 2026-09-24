@@ -9,6 +9,7 @@ from app.core.cro_multi_study_pipeline import (
     CROMultiStudyPipeline,
     MasterPipelineResult,
 )
+from app.core.progress import ProgressUpdate
 from app.ui.dialog_helper import ask_directory_async, get_dialog_card_classes
 from app.ui.tokens import TOKENS
 from app.ui.toolbar import OverflowToolbar
@@ -192,9 +193,11 @@ class CROForensicView:
         self.status_label.set_visibility(True)
         self.results_container.clear()
 
-        def update_progress(pct: int, msg: str):
-            self.progress_bar.set_value(pct / 100.0)
-            self.status_label.set_text(f"{pct}% - {msg}")
+        def update_progress(update: ProgressUpdate):
+            pct_pct = int(update.progress * 100)
+            self.progress_bar.set_value(update.progress)
+            msg = update.stage or ""
+            self.status_label.set_text(f"{pct_pct}% - {msg}" if msg else f"{pct_pct}%")
 
         pipeline = CROMultiStudyPipeline(
             mode=self.mode,

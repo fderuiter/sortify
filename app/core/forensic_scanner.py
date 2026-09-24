@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from typing import Callable, Dict, List, Optional
 
 from app.core.extractor import extract_file_text
+from app.core.progress import emit_progress
 from app.core.resilient_file_ops import resilient_rmtree
 
 logger = logging.getLogger(__name__)
@@ -155,7 +156,7 @@ class ForensicScanner:
     def scan_drive(
         self,
         source_root: str,
-        progress_callback: Optional[Callable[[int, str], None]] = None,
+        progress_callback: Optional[Callable[..., None]] = None,
         cancel_check: Optional[Callable[[], bool]] = None,
     ) -> List[DiscoveredDocument]:
         """Perform comprehensive forensic scan of a source drive or directory."""
@@ -195,10 +196,12 @@ class ForensicScanner:
                                     archive_origin=rel_path,
                                 )
                                 count += 1
-                                if progress_callback:
-                                    progress_callback(
-                                        count, f"Unpacked: {os.path.basename(ext_file)}"
-                                    )
+                                emit_progress(
+                                    progress_callback,
+                                    stage=f"Unpacked: {os.path.basename(ext_file)}",
+                                    unit_count=count,
+                                    unit_type="items",
+                                )
 
                 # 2. Handle EML Emails
                 elif ext_lower == ".eml":
@@ -229,8 +232,12 @@ class ForensicScanner:
                             archive_origin=rel_path,
                         )
                         count += 1
-                    if progress_callback:
-                        progress_callback(count, f"Email parsed: {file}")
+                    emit_progress(
+                        progress_callback,
+                        stage=f"Email parsed: {file}",
+                        unit_count=count,
+                        unit_type="items",
+                    )
 
                 # 3. Handle Standard Supported Documents
                 elif ext_lower in SUPPORTED_DOC_EXTENSIONS:
@@ -240,8 +247,13 @@ class ForensicScanner:
                         rel_path=rel_path,
                     )
                     count += 1
-                    if progress_callback and count % 5 == 0:
-                        progress_callback(count, f"Discovered: {file}")
+                    if count % 5 == 0:
+                        emit_progress(
+                            progress_callback,
+                            stage=f"Discovered: {file}",
+                            unit_count=count,
+                            unit_type="items",
+                        )
 
         return self.discovered_documents
 

@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "5474a8cbd5a82ce88ff7aaa9083d34a0cdbbd44dc9d087f7d358768dee164065"
+    "checksum": "5f3f7d8bf41432ef1eaecb5c47e676bd3ad2ce351ba51dfe743b41617c72feae"
   },
   "cli": {
     "app/main.py": [
@@ -5293,7 +5293,7 @@
                   "name": "source_root"
                 },
                 {
-                  "annotation": "Optional[Callable[[int, str], None]]",
+                  "annotation": "Optional[Callable[..., None]]",
                   "default": "None",
                   "name": "progress_callback"
                 },
@@ -6806,6 +6806,57 @@
         }
       ],
       "functions": []
+    },
+    "app/core/progress.py": {
+      "classes": [
+        {
+          "class_name": "ProgressUpdate",
+          "decorators": [
+            "@dataclass"
+          ],
+          "methods": []
+        }
+      ],
+      "functions": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "emit_progress",
+          "parameters": [
+            {
+              "annotation": "Optional[Callable[..., Any]]",
+              "default": null,
+              "name": "callback"
+            },
+            {
+              "annotation": "Union[ProgressUpdate, float, int, str, None]",
+              "default": "0.0",
+              "name": "progress_or_update"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "stage"
+            },
+            {
+              "annotation": "Optional[int]",
+              "default": "None",
+              "name": "unit_count"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "unit_type"
+            },
+            {
+              "annotation": "Any",
+              "default": null,
+              "name": "**kwargs"
+            }
+          ],
+          "returns": "None"
+        }
+      ]
     },
     "app/core/quarantine_interceptor.py": {
       "classes": [
