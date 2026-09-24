@@ -4,15 +4,25 @@
 
 The system relies on an automated, pipelined data flow from the moment the user selects a directory to the generation of the final sorting plan.
 
+![Architecture Data Flow](assets/diagrams/architecture_dataflow.svg)
+
 ```mermaid
 graph TD
-    A[Directory Selection] --> B[File Extraction & Generator]
-    B --> C[Chunked Yielding]
-    C --> D[Incremental Analyzer (partial_fit)]
-    D --> E[TF-IDF & NMF Clustering]
-    E --> F[Recursive Topic Grouping]
-    F --> G[Generate Sorting Plan]
-    G --> H[UI Tree Rendering]
+    A("Directory Selection")
+    B["File Extraction & Generator"]
+    C["Chunked Yielding"]
+    D["Incremental Analyzer (partial_fit)"]
+    E["TF-IDF & NMF Clustering"]
+    F["Recursive Topic Grouping"]
+    G["Generate Sorting Plan"]
+    H("UI Tree Rendering")
+    A --> B
+    B --> C
+    C --> D
+    D --> E
+    E --> F
+    F --> G
+    G --> H
 ```
 
 ### 1. Data Extraction

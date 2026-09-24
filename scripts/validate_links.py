@@ -34,6 +34,8 @@ DEFAULT_BYPASS_DOMAINS = {
     "127.0.0.1",
     "host",
     "dummy",
+    "w3.org",
+    "www.w3.org",
 }
 
 
