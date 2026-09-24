@@ -1,0 +1,35 @@
+{
+  "architecture_dataflow": {
+    "sha256": "d89945fe68db3468a576b1f4e51b8a22d22ca5f8521933b142274116bad0adf4"
+  },
+  "catalog_workflow": {
+    "sha256": "fb6af4e70ac679c43b4dc66c4adf2e15f7173bd38755bec8ff31cf98e5dffe80"
+  },
+  "ui_component_hierarchy": {
+    "sha256": "6c304873f8b0b2fa835a391de3b2eebd536519007678ac411449cce7cf920f08"
+  },
+  "header_bar_spec": {
+    "sha256": "fe3f90cb91b2f4b793aeb5c0572b0f0e96c40578ca2f2639e18004c47a907a1e"
+  },
+  "directory_selection_spec": {
+    "sha256": "d337f99a4122faa0385b3f71bf1f49136cc7e88d66af29899e3ea5c543da6e22"
+  },
+  "plan_treeview_spec": {
+    "sha256": "e114fe701915861f3fe7d259de746382c4860bb1e3e5c6a60f387235d7fa64bb"
+  },
+  "settings_modal_spec": {
+    "sha256": "466f0f87c269949bb889df31ff930e83c0b8e765159b4de5508d447c974d04c0"
+  },
+  "setup_wizard_spec": {
+    "sha256": "d5bcc390da9a9335bb9371b9c145336b9dca106570b277483f3e50d6e7781fbd"
+  },
+  "cro_forensic_spec": {
+    "sha256": "cf341cc8fd28a0eb98413bc4bc7edf64d703b072249d4678d7af41b41ea09dc5"
+  },
+  "help_modal_spec": {
+    "sha256": "ba63f02c5cd52b6336b5750c5b162a92ea456e7a965e5c8317110e6ceb759540"
+  },
+  "status_progress_spec": {
+    "sha256": "3e09096a2b1c52f473096ec36014395430c9a57fd11060d11db19a9222c1cf20"
+  }
+}

@@ -1,0 +1,16 @@
+graph TD
+    A("Directory Selection")
+    B["File Extraction & Generator"]
+    C["Chunked Yielding"]
+    D["Incremental Analyzer (partial_fit)"]
+    E["TF-IDF & NMF Clustering"]
+    F["Recursive Topic Grouping"]
+    G["Generate Sorting Plan"]
+    H("UI Tree Rendering")
+    A --> B
+    B --> C
+    C --> D
+    D --> E
+    E --> F
+    F --> G
+    G --> H
