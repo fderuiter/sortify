@@ -460,7 +460,7 @@ class IncrementalAnalyzer:
             locked_files: Dict mapping file paths to manually assigned target folder paths.
             cancel_check: Optional callable `Callable[[], bool]` invoked periodically during plan
                 assembly loops. If `cancel_check()` returns `True`, execution aborts immediately
-                and returns an empty dictionary `{}` to honor token cancellation.
+                and returns an empty SortingPlan object to honor token cancellation.
             fast_path_only: If `True`, skips hierarchical ML strategy execution and generates plan using
                 rules and policies only.
 
