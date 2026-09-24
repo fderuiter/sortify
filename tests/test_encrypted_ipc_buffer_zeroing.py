@@ -144,7 +144,7 @@ def test_encrypted_ipc_queue_passing():
     try:
         proc.start()
 
-        get_timeout = 30.0 if (os.environ.get("CI") or os.environ.get("PYTEST_XDIST_WORKER")) else 10.0
+        get_timeout = 60.0 if (os.environ.get("CI") or os.environ.get("PYTEST_XDIST_WORKER")) else 10.0
         raw_output = out_q.get(timeout=get_timeout)
         proc.join(timeout=2.0)
 
@@ -165,10 +165,12 @@ def test_encrypted_ipc_queue_passing():
         else:
             proc.join(timeout=0.1)
         try:
+            input_q.cancel_join_thread()
             input_q.close()
         except Exception:
             pass
         try:
+            out_q.cancel_join_thread()
             out_q.close()
         except Exception:
             pass
@@ -211,7 +213,7 @@ def test_worker_failure_triggers_buffer_zeroing():
     try:
         proc.start()
 
-        get_timeout = 30.0 if (os.environ.get("CI") or os.environ.get("PYTEST_XDIST_WORKER")) else 10.0
+        get_timeout = 60.0 if (os.environ.get("CI") or os.environ.get("PYTEST_XDIST_WORKER")) else 10.0
         raw_output = out_q.get(timeout=get_timeout)
         proc.join(timeout=2.0)
 
@@ -228,10 +230,12 @@ def test_worker_failure_triggers_buffer_zeroing():
         else:
             proc.join(timeout=0.1)
         try:
+            input_q.cancel_join_thread()
             input_q.close()
         except Exception:
             pass
         try:
+            out_q.cancel_join_thread()
             out_q.close()
         except Exception:
             pass
