@@ -20,8 +20,6 @@ HASHES = {
     },
     "florence-2": {
         "config.json": "7135149f7cffa1a573466c6e4d8423ed73b62fd2332c575bf738a0d033f70df7",
-        "processing_florence2.py": "2a829e19e07507bb0b812f6c99c3629b3a3225ee473a24128f72922ef6806536",
-        "modeling_florence2.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
         "model.safetensors": "759c3cd2b7fe7e93933ad23c4c9181b7396442a2ed746ec7c1d46192c469c46e",
     },
 }
