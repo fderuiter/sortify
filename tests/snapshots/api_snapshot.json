@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "351671a4be820d79a99b29d93577bfaba9014ec498458750d21ce40961336244"
+    "checksum": "5474a8cbd5a82ce88ff7aaa9083d34a0cdbbd44dc9d087f7d358768dee164065"
   },
   "cli": {
     "app/main.py": [
@@ -5947,7 +5947,100 @@
       "functions": []
     },
     "app/core/mover.py": {
-      "classes": [],
+      "classes": [
+        {
+          "class_name": "AsyncMoveEngine",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "__init__",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "int",
+                  "default": "None",
+                  "name": "max_workers"
+                },
+                {
+                  "annotation": "int",
+                  "default": "None",
+                  "name": "chunk_size"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "execute",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "base_dir"
+                },
+                {
+                  "annotation": "dict",
+                  "default": null,
+                  "name": "plan"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "db"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "history_manager"
+                },
+                {
+                  "annotation": null,
+                  "default": "None",
+                  "name": "runtime_settings"
+                },
+                {
+                  "annotation": "bool",
+                  "default": "False",
+                  "name": "resume"
+                },
+                {
+                  "annotation": "int",
+                  "default": "50",
+                  "name": "batch_size"
+                },
+                {
+                  "annotation": null,
+                  "default": "None",
+                  "name": "cancel_check"
+                },
+                {
+                  "annotation": null,
+                  "default": "None",
+                  "name": "cancel_event"
+                },
+                {
+                  "annotation": null,
+                  "default": "None",
+                  "name": "cancellation_token"
+                }
+              ],
+              "returns": "dict"
+            }
+          ]
+        }
+      ],
       "functions": [
         {
           "async": false,
@@ -5988,6 +6081,99 @@
               "annotation": "int",
               "default": "50",
               "name": "batch_size"
+            },
+            {
+              "annotation": "int",
+              "default": "None",
+              "name": "chunk_size"
+            },
+            {
+              "annotation": "int",
+              "default": "None",
+              "name": "max_workers"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "cancel_check"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "cancel_event"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "cancellation_token"
+            }
+          ],
+          "returns": "dict"
+        },
+        {
+          "async": true,
+          "decorators": [],
+          "name": "execute_moves_async",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": "dict",
+              "default": null,
+              "name": "plan"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "db"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "history_manager"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "runtime_settings"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "resume"
+            },
+            {
+              "annotation": "int",
+              "default": "50",
+              "name": "batch_size"
+            },
+            {
+              "annotation": "int",
+              "default": "None",
+              "name": "chunk_size"
+            },
+            {
+              "annotation": "int",
+              "default": "None",
+              "name": "max_workers"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "cancel_check"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "cancel_event"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "cancellation_token"
             }
           ],
           "returns": "dict"
@@ -7191,6 +7377,21 @@
                   "annotation": null,
                   "default": "False",
                   "name": "resume"
+                },
+                {
+                  "annotation": null,
+                  "default": "None",
+                  "name": "cancel_check"
+                },
+                {
+                  "annotation": null,
+                  "default": "None",
+                  "name": "chunk_size"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "**kwargs"
                 }
               ],
               "returns": null

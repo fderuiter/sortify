@@ -1,7 +1,6 @@
 import asyncio
 import os
 import threading
-import pytest
 
 from app.core.mover import AsyncMoveEngine, execute_moves, execute_moves_async
 

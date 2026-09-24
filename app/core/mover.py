@@ -4,7 +4,6 @@ This module is responsible for safely moving files to new directories.
 """
 
 import asyncio
-from concurrent.futures import ThreadPoolExecutor
 import json
 import logging
 import os
@@ -12,6 +11,7 @@ import shutil  # noqa: F401
 import threading
 import unicodedata
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 
 from app.core.link_manager import LinkManager
 from app.core.path_utils import is_junction_path
@@ -927,7 +927,7 @@ def _process_move_item(
         import unittest.mock
 
         if (
-            isinstance(shutil.move, unittest.mock.Mock)
+            isinstance(shutil.move, (unittest.mock.Mock, unittest.mock.NonCallableMock))
             or hasattr(shutil.move, "mock_add_spec")
             or getattr(shutil.move, "__name__", "") == "mock_move"
             or getattr(shutil.move, "__module__", "") != "shutil"
@@ -1139,7 +1139,7 @@ class AsyncMoveEngine:
             import unittest.mock
 
             if (
-                isinstance(_execute_moves_recursive, unittest.mock.Mock)
+                isinstance(_execute_moves_recursive, (unittest.mock.Mock, unittest.mock.NonCallableMock))
                 or hasattr(_execute_moves_recursive, "mock_add_spec")
                 or getattr(_execute_moves_recursive, "__name__", "") != "_execute_moves_recursive"
             ):
@@ -1250,7 +1250,9 @@ class AsyncMoveEngine:
                                 if src_path and (
                                     is_junction_path(src_path) or os.path.islink(src_path)
                                 ):
-                                    from app.core.resilient_file_ops import resilient_remove
+                                    from app.core.resilient_file_ops import (
+                                        resilient_remove,
+                                    )
 
                                     resilient_remove(src_path)
                                     summary["deleted_folders"] += 1
@@ -1259,7 +1261,9 @@ class AsyncMoveEngine:
                                     and os.path.isdir(src_path)
                                     and not os.listdir(src_path)
                                 ):
-                                    from app.core.resilient_file_ops import resilient_remove
+                                    from app.core.resilient_file_ops import (
+                                        resilient_remove,
+                                    )
 
                                     resilient_remove(src_path)
                                     summary["deleted_folders"] += 1
