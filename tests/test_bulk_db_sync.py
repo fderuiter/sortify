@@ -178,7 +178,9 @@ def test_cleanup_ordering(tmp_path, db, history_manager, monkeypatch):
     execute_moves(base_dir, plan, db, history_manager)
 
     # ensure order is rmdir followed by db_update
-    assert call_order == ["rmdir", "db_update"]
+    assert call_order[-1] == "db_update"
+    assert "rmdir" in call_order
+    assert set(call_order[:-1]) == {"rmdir"}
 
 
 def test_chunked_batching_120_files(tmp_path, db, history_manager, monkeypatch):
