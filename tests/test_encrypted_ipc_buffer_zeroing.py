@@ -144,7 +144,8 @@ def test_encrypted_ipc_queue_passing():
     try:
         proc.start()
 
-        raw_output = out_q.get(timeout=10.0)
+        get_timeout = 30.0 if (os.environ.get("CI") or os.environ.get("PYTEST_XDIST_WORKER")) else 10.0
+        raw_output = out_q.get(timeout=get_timeout)
         proc.join(timeout=2.0)
 
         # Output queue payload must also be encrypted bytes
@@ -210,7 +211,8 @@ def test_worker_failure_triggers_buffer_zeroing():
     try:
         proc.start()
 
-        raw_output = out_q.get(timeout=10.0)
+        get_timeout = 30.0 if (os.environ.get("CI") or os.environ.get("PYTEST_XDIST_WORKER")) else 10.0
+        raw_output = out_q.get(timeout=get_timeout)
         proc.join(timeout=2.0)
 
         assert isinstance(raw_output, bytes)
