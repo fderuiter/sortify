@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "9c7a3bc783db7cc64a50d5ac0aa6a60f6325b63532d44cf7b1326d64c00f94b0"
+    "checksum": "351671a4be820d79a99b29d93577bfaba9014ec498458750d21ce40961336244"
   },
   "cli": {
     "app/main.py": [
@@ -6721,7 +6721,7 @@
           "name": "scrub_pii_from_text",
           "parameters": [
             {
-              "annotation": "str",
+              "annotation": "Any",
               "default": null,
               "name": "text"
             }

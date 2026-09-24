@@ -69,7 +69,8 @@ class PolicyEngine:
         expression = rule.get("expression", "").lower() if isinstance(rule, dict) else getattr(rule, "expression", "").lower()
 
         fn_only = os.path.basename(file_path).lower()
-        dl_lower = doc_text.lower() if doc_text else ""
+        doc_text_str = str(doc_text) if doc_text else ""
+        dl_lower = doc_text_str.lower()
 
         if rule_type in ("keyword", "action", "compliance", ""):
             if expression:
