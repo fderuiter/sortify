@@ -410,8 +410,6 @@ def test_tui_screen_reader_announcements(temp_workspace):
 
 def test_tui_modal_escape_key_navigation(temp_workspace):
     """Verify pressing Escape key dismisses modal dialogs without defects."""
-    from app.ui.tui import DirectorySelectModal
-
     settings = AppSettings()
 
     async def _test():
