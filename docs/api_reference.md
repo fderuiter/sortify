@@ -134,6 +134,10 @@ flowchart TD
 
 ::: app.core.policy_engine
 
+## `app.core.progress`
+
+::: app.core.progress
+
 ## `app.core.quarantine_interceptor`
 
 ::: app.core.quarantine_interceptor
