@@ -98,8 +98,10 @@ def test_generate_sorting_plan():
     analyzer.partial_fit("dummy_base", corpus)
     plan = analyzer.generate_sorting_plan("dummy_base")
 
+    from app.core.analyzer import SortingPlan
+
     # Check that there are at least some folders created or files added
-    assert isinstance(plan, dict)
+    assert isinstance(plan, (SortingPlan, dict))
     assert len(plan) > 0
 
 

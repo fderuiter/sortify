@@ -3,9 +3,136 @@
 import html
 import json
 import os
-from typing import Any, Dict, List, Set
+from typing import Any, Dict, List, Set, Union
+
+from pydantic import BaseModel, ConfigDict
 
 from app.core.clinical_taxonomy import ICH_GCP_ESSENTIAL_CHECKLIST
+
+
+class FoundEssentialDocument(BaseModel):
+    """Model representing a found essential clinical document."""
+
+    key: str
+    title: str
+    artifact_id: str
+    importance: str
+    gcp_ref: str
+    files: List[str]
+    count: int
+
+    model_config = ConfigDict(extra="allow")
+
+    def dict(self, *args, **kwargs) -> Dict[str, Any]:
+        """Backward compatibility method for legacy callers."""
+        return self.model_dump(*args, **kwargs)
+
+    def __getitem__(self, item: str) -> Any:
+        """Support item lookup via bracket syntax for dictionary compatibility."""
+        if hasattr(self, item):
+            return getattr(self, item)
+        extra = getattr(self, "__pydantic_extra__", None)
+        if extra and item in extra:
+            return extra[item]
+        raise KeyError(item)
+
+    def get(self, item: str, default: Any = None) -> Any:
+        """Support dictionary get method."""
+        try:
+            return self[item]
+        except KeyError:
+            return default
+
+    def __contains__(self, item: str) -> bool:
+        """Check if key exists in attributes or extra fields."""
+        return hasattr(self, item) or (
+            getattr(self, "__pydantic_extra__", None) is not None
+            and item in self.__pydantic_extra__
+        )
+
+
+class MissingEssentialDocument(BaseModel):
+    """Model representing a missing essential clinical document."""
+
+    key: str
+    title: str
+    artifact_id: str
+    importance: str
+    gcp_ref: str
+
+    model_config = ConfigDict(extra="allow")
+
+    def dict(self, *args, **kwargs) -> Dict[str, Any]:
+        """Backward compatibility method for legacy callers."""
+        return self.model_dump(*args, **kwargs)
+
+    def __getitem__(self, item: str) -> Any:
+        """Support item lookup via bracket syntax for dictionary compatibility."""
+        if hasattr(self, item):
+            return getattr(self, item)
+        extra = getattr(self, "__pydantic_extra__", None)
+        if extra and item in extra:
+            return extra[item]
+        raise KeyError(item)
+
+    def get(self, item: str, default: Any = None) -> Any:
+        """Support dictionary get method."""
+        try:
+            return self[item]
+        except KeyError:
+            return default
+
+    def __contains__(self, item: str) -> bool:
+        """Check if key exists in attributes or extra fields."""
+        return hasattr(self, item) or (
+            getattr(self, "__pydantic_extra__", None) is not None
+            and item in self.__pydantic_extra__
+        )
+
+
+class ClinicalComplianceResult(BaseModel):
+    """Structured Pydantic model for clinical compliance evaluation results."""
+
+    total_files_scanned: int
+    total_essential_required: int
+    total_essential_found: int
+    total_essential_missing: int
+    compliance_score_percent: float
+    audit_readiness_status: str
+    found_essential_documents: List[FoundEssentialDocument]
+    missing_essential_documents: List[MissingEssentialDocument]
+    ancillary_documents: List[str]
+    unclassified_documents: List[str]
+    base_dir: str = ""
+
+    model_config = ConfigDict(extra="allow")
+
+    def dict(self, *args, **kwargs) -> Dict[str, Any]:
+        """Backward compatibility method for legacy callers."""
+        return self.model_dump(*args, **kwargs)
+
+    def __getitem__(self, item: str) -> Any:
+        """Support item lookup via bracket syntax for dictionary compatibility."""
+        if hasattr(self, item):
+            return getattr(self, item)
+        extra = getattr(self, "__pydantic_extra__", None)
+        if extra and item in extra:
+            return extra[item]
+        raise KeyError(item)
+
+    def get(self, item: str, default: Any = None) -> Any:
+        """Support dictionary get method."""
+        try:
+            return self[item]
+        except KeyError:
+            return default
+
+    def __contains__(self, item: str) -> bool:
+        """Check if key exists in attributes or extra fields."""
+        return hasattr(self, item) or (
+            getattr(self, "__pydantic_extra__", None) is not None
+            and item in self.__pydantic_extra__
+        )
 
 
 class ClinicalComplianceEngine:
@@ -19,7 +146,7 @@ class ClinicalComplianceEngine:
         classified_artifacts: Dict[str, str],  # filename -> artifact_id
         all_filenames: List[str],
         base_dir: str = "",
-    ) -> Dict[str, Any]:
+    ) -> ClinicalComplianceResult:
         """Perform gap analysis and compute regulatory compliance metrics."""
         found_artifact_ids: Set[str] = set(classified_artifacts.values())
 
@@ -36,25 +163,25 @@ class ClinicalComplianceEngine:
             if req_art_id in found_artifact_ids:
                 matched_files = artifact_to_files.get(req_art_id, [])
                 found_items.append(
-                    {
-                        "key": item["key"],
-                        "title": item["title"],
-                        "artifact_id": req_art_id,
-                        "importance": item["importance"],
-                        "gcp_ref": item["gcp_ref"],
-                        "files": matched_files,
-                        "count": len(matched_files),
-                    }
+                    FoundEssentialDocument(
+                        key=item["key"],
+                        title=item["title"],
+                        artifact_id=req_art_id,
+                        importance=item["importance"],
+                        gcp_ref=item["gcp_ref"],
+                        files=matched_files,
+                        count=len(matched_files),
+                    )
                 )
             else:
                 missing_items.append(
-                    {
-                        "key": item["key"],
-                        "title": item["title"],
-                        "artifact_id": req_art_id,
-                        "importance": item["importance"],
-                        "gcp_ref": item["gcp_ref"],
-                    }
+                    MissingEssentialDocument(
+                        key=item["key"],
+                        title=item["title"],
+                        artifact_id=req_art_id,
+                        importance=item["importance"],
+                        gcp_ref=item["gcp_ref"],
+                    )
                 )
 
         total_req = len(self.checklist)
@@ -73,34 +200,35 @@ class ClinicalComplianceEngine:
             if art_id == "unclassified"
         ]
 
-        result = {
-            "total_files_scanned": len(all_filenames),
-            "total_essential_required": total_req,
-            "total_essential_found": total_found,
-            "total_essential_missing": len(missing_items),
-            "compliance_score_percent": compliance_pct,
-            "audit_readiness_status": (
+        result = ClinicalComplianceResult(
+            total_files_scanned=len(all_filenames),
+            total_essential_required=total_req,
+            total_essential_found=total_found,
+            total_essential_missing=len(missing_items),
+            compliance_score_percent=compliance_pct,
+            audit_readiness_status=(
                 "AUDIT_READY"
                 if compliance_pct >= 90
                 else "GAPS_DETECTED"
                 if compliance_pct >= 60
                 else "NON_COMPLIANT"
             ),
-            "found_essential_documents": found_items,
-            "missing_essential_documents": missing_items,
-            "ancillary_documents": ancillary_files,
-            "unclassified_documents": unclassified_files,
-            "base_dir": base_dir,
-        }
+            found_essential_documents=found_items,
+            missing_essential_documents=missing_items,
+            ancillary_documents=ancillary_files,
+            unclassified_documents=unclassified_files,
+            base_dir=base_dir,
+        )
         return result
 
     def export_json_report(
-        self, compliance_data: Dict[str, Any], output_path: str
+        self, compliance_data: Union[ClinicalComplianceResult, Dict[str, Any]], output_path: str
     ) -> str:
         """Export compliance audit analysis as a JSON report."""
         os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+        data = compliance_data.model_dump() if isinstance(compliance_data, BaseModel) else compliance_data
         with open(output_path, "w", encoding="utf-8") as f:
-            json.dump(compliance_data, f, indent=2)
+            json.dump(data, f, indent=2)
         return output_path
 
     def generate_html_report(

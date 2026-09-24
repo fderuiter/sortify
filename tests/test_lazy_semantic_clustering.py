@@ -138,7 +138,9 @@ def test_semantic_clustering_lazy_generation_and_caching(temp_env):
 
             # 4. Verify that the sorting plan grouped related documents semantically
             # "pizza receipt" files should be clustered together, "consulting invoice" files together
-            assert isinstance(plan, dict)
+            from app.core.analyzer import SortingPlan
+
+            assert isinstance(plan, (SortingPlan, dict))
             assert len(plan) > 0
         finally:
             analyzer.close()

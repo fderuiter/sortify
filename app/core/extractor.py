@@ -4,13 +4,108 @@ This module provides utilities to read text from various file formats.
 """
 
 import concurrent.futures
+import inspect
 import logging
 import os
-from typing import Callable, Tuple
+from enum import Enum
+from typing import Any, Callable, Dict, Optional, Tuple
 
 import pypdf.errors
+from pydantic import BaseModel, ConfigDict
 
 from app.core.extractor_strategies import registry
+from app.core.text_utils import sanitize_text
+
+
+class ExtractionStatus(str, Enum):
+    """Enumeration of document extraction statuses."""
+
+    SUCCESS = "SUCCESS"
+    EMPTY = "EMPTY"
+    UNSUPPORTED = "UNSUPPORTED"
+    ENCRYPTED = "ENCRYPTED"
+    FAILED = "FAILED"
+    TIMEOUT = "TIMEOUT"
+    SKIPPED = "SKIPPED"
+    CANCELLED = "CANCELLED"
+    ERROR = "ERROR"
+    PROVISIONAL = "PROVISIONAL"
+
+
+class ExtractionResult(BaseModel):
+    """Structured result model for document text extraction."""
+
+    text: str = ""
+    status: ExtractionStatus = ExtractionStatus.SUCCESS
+    error_message: Optional[str] = None
+
+    model_config = ConfigDict(extra="allow")
+
+    def dict(self, *args, **kwargs) -> Dict[str, Any]:
+        """Backward compatibility method for legacy Pydantic v1 callers."""
+        return self.model_dump(*args, **kwargs)
+
+    def __str__(self) -> str:
+        """Return raw text if successful, or string status marker if non-successful."""
+        if self.status == ExtractionStatus.SUCCESS:
+            return self.text
+        if self.error_message and self.status == ExtractionStatus.ERROR:
+            return f"[STATUS:{self.error_message}]"
+        return f"[STATUS:{self.status.value}]"
+
+    def __len__(self) -> int:
+        """Return length of string representation."""
+        return len(str(self))
+
+    def __contains__(self, item: Any) -> bool:
+        """Check substring or attribute membership."""
+        if isinstance(item, str):
+            if hasattr(self, item) or (
+                getattr(self, "__pydantic_extra__", None) is not None
+                and item in self.__pydantic_extra__
+            ):
+                return True
+            return item in str(self)
+        return False
+
+    def __eq__(self, other: Any) -> bool:
+        """Evaluate equality against ExtractionResult or string representation."""
+        if isinstance(other, ExtractionResult):
+            return self.text == other.text and self.status == other.status
+        if isinstance(other, str):
+            return str(self) == other or (
+                self.status != ExtractionStatus.SUCCESS
+                and other == f"[STATUS:{self.status.value}]"
+            )
+        return False
+
+    def __getitem__(self, item: str) -> Any:
+        """Support item lookup via bracket syntax for dictionary compatibility."""
+        if item == "text":
+            return self.text
+        if item == "status":
+            return self.status
+        if item == "error_message":
+            return self.error_message
+        extra = getattr(self, "__pydantic_extra__", None)
+        if extra and item in extra:
+            return extra[item]
+        raise KeyError(item)
+
+    def get(self, item: str, default: Any = None) -> Any:
+        """Support dictionary get method."""
+        try:
+            return self[item]
+        except KeyError:
+            return default
+
+    def startswith(self, prefix: str, *args, **kwargs) -> bool:
+        """Check if string representation starts with prefix."""
+        return str(self).startswith(prefix, *args, **kwargs)
+
+    def __bool__(self) -> bool:
+        """Evaluate truthiness based on text presence or success status."""
+        return bool(self.text) or self.status == ExtractionStatus.SUCCESS
 
 
 def get_file_hash(file_path: str) -> str:
@@ -32,25 +127,22 @@ def extract_file_text(
     fast_triage: bool = False,
     db=None,
     base_dir: str | None = None,
-) -> str:
+) -> ExtractionResult:
     """Extract text content from a given file."""
-    import inspect
-
     ext = os.path.splitext(file_path)[1].lower()
 
     if fast_triage and ext in (".png", ".jpg", ".jpeg", ".bmp", ".tiff"):
         if db and hasattr(db, "worker") and db.worker:
             def _bg_visual_job():
-                full_text = extract_file_text(file_path, settings=settings, fast_triage=False)
+                full_text = str(extract_file_text(file_path, settings=settings, fast_triage=False))
                 if base_dir:
                     rel_path = os.path.relpath(file_path, base_dir).replace("\\", "/")
                     f_hash = get_file_hash(file_path)
                     db.upsert_document(base_dir, rel_path, f_hash, full_text)
                     db.update_tfidf_matrix_cache(base_dir)
             db.worker.submit_background_job(_bg_visual_job)
-        return "[STATUS:PROVISIONAL]"
+        return ExtractionResult(text="", status=ExtractionStatus.PROVISIONAL)
 
-    text = ""
     try:
         extractor = registry.get_extractor(ext)
         if extractor:
@@ -64,35 +156,59 @@ def extract_file_text(
             if "cancel_check" in sig.parameters:
                 kwargs["cancel_check"] = cancel_check
 
-            text = extractor.extract(file_path, **kwargs)
-
-            if fast_triage and ext == ".pdf" and not text.strip():
+            raw_text = extractor.extract(file_path, **kwargs)
+            if fast_triage and ext == ".pdf" and not raw_text.strip():
                 if db and hasattr(db, "worker") and db.worker:
                     def _bg_pdf_job():
-                        full_text = extractor.extract(file_path, **kwargs)
+                        full_text = str(extractor.extract(file_path, **kwargs))
                         if base_dir:
                             rel_path = os.path.relpath(file_path, base_dir).replace("\\", "/")
                             f_hash = get_file_hash(file_path)
                             db.upsert_document(base_dir, rel_path, f_hash, full_text)
                             db.update_tfidf_matrix_cache(base_dir)
                     db.worker.submit_background_job(_bg_pdf_job)
-                return "[STATUS:PROVISIONAL]"
-
-            from app.core.text_utils import sanitize_text
-
-            text = sanitize_text(text)
+                return ExtractionResult(text="", status=ExtractionStatus.PROVISIONAL)
+            text = sanitize_text(raw_text)
             if not text.strip():
-                text = "[STATUS:EMPTY]"
+                return ExtractionResult(text="", status=ExtractionStatus.EMPTY)
+
+            if text.startswith("[STATUS:"):
+                tag = text[8:-1] if text.endswith("]") else text[8:]
+                status_enum = ExtractionStatus.FAILED
+                if tag == "EMPTY":
+                    status_enum = ExtractionStatus.EMPTY
+                elif tag == "UNSUPPORTED":
+                    status_enum = ExtractionStatus.UNSUPPORTED
+                elif tag == "ENCRYPTED":
+                    status_enum = ExtractionStatus.ENCRYPTED
+                elif tag == "TIMEOUT":
+                    status_enum = ExtractionStatus.TIMEOUT
+                elif tag == "SKIPPED":
+                    status_enum = ExtractionStatus.SKIPPED
+                elif tag == "CANCELLED":
+                    status_enum = ExtractionStatus.CANCELLED
+                elif tag == "PROVISIONAL":
+                    status_enum = ExtractionStatus.PROVISIONAL
+                elif tag.startswith("ERROR"):
+                    status_enum = ExtractionStatus.ERROR
+                return ExtractionResult(
+                    text="",
+                    status=status_enum,
+                    error_message=tag if status_enum == ExtractionStatus.ERROR else None,
+                )
+
+            return ExtractionResult(text=text, status=ExtractionStatus.SUCCESS)
         else:
-            text = "[STATUS:UNSUPPORTED]"
+            return ExtractionResult(text="", status=ExtractionStatus.UNSUPPORTED)
     except pypdf.errors.FileNotDecryptedError:
-        text = "[STATUS:ENCRYPTED]"
+        return ExtractionResult(text="", status=ExtractionStatus.ENCRYPTED)
     except Exception as e:
         logging.error(
             f"Failed to extract text from {file_path}. Error: {str(e)}", exc_info=True
         )
-        text = "[STATUS:FAILED]"
-    return text
+        return ExtractionResult(
+            text="", status=ExtractionStatus.FAILED, error_message=str(e)
+        )
 
 
 def fast_triage_extract(
@@ -121,9 +237,10 @@ def process_item_worker(
                 # Skip extraction if unchanged
                 return item, doc["extracted_text"], file_hash
 
-            text = extract_file_text(
+            res = extract_file_text(
                 item_path, settings=settings, progress_callback=progress_callback
             )
+            text = str(res)
             return item, text, file_hash
         elif os.path.isdir(item_path):
             return item, item, ""
@@ -291,10 +408,11 @@ def build_corpus_generator(
                         # Already processed and unchanged, no need to yield to analyzer
                         continue
 
+                    item_text_str = str(item_text)
                     chunk[item_name] = {
-                        "text": item_text
-                        if item_text.startswith("[STATUS:")
-                        else item_name + " " + item_text,
+                        "text": item_text_str
+                        if item_text_str.startswith("[STATUS:")
+                        else item_name + " " + item_text_str,
                         "hash": file_hash,
                     }
                 if chunk:
@@ -340,10 +458,11 @@ def build_corpus_generator(
                     if doc and doc["file_hash"] == file_hash:
                         continue
 
+                    item_text_str = str(item_text)
                     chunk[item_name] = {
-                        "text": item_text
-                        if item_text.startswith("[STATUS:")
-                        else item_name + " " + item_text,
+                        "text": item_text_str
+                        if item_text_str.startswith("[STATUS:")
+                        else item_name + " " + item_text_str,
                         "hash": file_hash,
                     }
 

@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from app.core.analyzer import IncrementalAnalyzer
+from app.core.analyzer import IncrementalAnalyzer, SortingPlan, SortingPlanNode
 from app.core.cache import CacheManager
 from app.core.db import Database
 from app.core.db_worker import DBWorker
@@ -84,16 +84,16 @@ def test_full_workflow_simulation():
     plan = analyzer.generate_sorting_plan(CORPUS_DIR)
 
     # We should have some sorted categories and files
-    assert isinstance(plan, dict)
+    assert isinstance(plan, (SortingPlan, dict))
 
     # Assert specific semantic outcomes (e.g., finance files together, tech together)
     # The output folder names are based on extracted words (e.g. Finance-money, Technology-software)
     # We will search the nested dictionary to find our files.
     def find_file_folder(p, filename, current_path=""):
-        if not isinstance(p, dict) or p.get("__type__") == "file":
+        if not isinstance(p, (SortingPlan, SortingPlanNode, dict)) or p.get("__type__") == "file":
             return None
         for k, v in p.items():
-            if v is None or (isinstance(v, dict) and v.get("__type__") == "file"):
+            if v is None or ((isinstance(v, (SortingPlanNode, dict))) and v.get("__type__") == "file"):
                 if k == filename:
                     return current_path
             else:
@@ -151,7 +151,7 @@ def test_empty_files_handling():
     plan = analyzer.generate_sorting_plan("dummy")
 
     # Since text is empty, topic indices might just fallback
-    assert isinstance(plan, dict)
+    assert isinstance(plan, (SortingPlan, dict))
     # Check if empty files are handled without crash
 
 
@@ -187,15 +187,15 @@ def test_concurrent_large_volume():
 
         # Verify
         assert progress_callback.call_count == 25
-        assert isinstance(plan, dict)
+        assert isinstance(plan, (SortingPlan, dict))
 
         # Verify all 25 files are present
         def get_all_files(p):
             result = []
-            if not isinstance(p, dict) or p.get("__type__") == "file":
+            if not isinstance(p, (SortingPlan, SortingPlanNode, dict)) or p.get("__type__") == "file":
                 return result
             for k, v in p.items():
-                if v is None or (isinstance(v, dict) and v.get("__type__") == "file"):
+                if v is None or ((isinstance(v, (SortingPlanNode, dict))) and v.get("__type__") == "file"):
                     result.append(k)
                 else:
                     result.extend(get_all_files(v))

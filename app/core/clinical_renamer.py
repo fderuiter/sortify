@@ -17,6 +17,7 @@ class ClinicalRenamer:
     @staticmethod
     def extract_protocol_id(text: str, filename: str) -> Optional[str]:
         """Extract study/protocol identifier from text or filename."""
+        text = str(text or "")
         # Check filename first
         fn_match = re.search(
             r"(?:^|[^A-Za-z0-9])([A-Z]{2,6}[-_][0-9]{3,6}(?:[-_][A-Za-z0-9]+)?)(?:[^A-Za-z0-9]|$)",
@@ -50,6 +51,7 @@ class ClinicalRenamer:
     @staticmethod
     def extract_investigator_name(text: str) -> Optional[str]:
         """Extract Principal Investigator / Physician name from document text."""
+        text = str(text or "")
         patterns = [
             r"principal\s+investigator\s*[:\s]+(?:Dr\.?\s+)?([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)",
             r"investigator\s+name\s*[:\s]+(?:Dr\.?\s+)?([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)",
@@ -66,6 +68,7 @@ class ClinicalRenamer:
     @staticmethod
     def extract_date_or_version(text: str, filename: str) -> Optional[str]:
         """Extract date (YYYYMMDD or YYYY-MM-DD) or version string from text or filename."""
+        text = str(text or "")
         # Version pattern
         v_match = re.search(
             r"(?:^|[^a-zA-Z0-9])(v(?:ersion)?[-_\s]?\d+(?:\.\d+)?)(?:[^a-zA-Z0-9]|$)",

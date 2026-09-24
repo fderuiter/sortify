@@ -19,14 +19,16 @@ from app.core.resilient_file_ops import resilient_file_hash, resilient_move
 logger = logging.getLogger(__name__)
 
 
-def scrub_pii_from_text(text: str) -> str:
+def scrub_pii_from_text(text: Any) -> str:
     """Scrub PII, sensitive keywords, and cryptographic tokens from document text."""
     if not text:
         return ""
     import re
 
+    text_str = str(text)
+
     # Standard prompt extract redaction
-    redacted = redact_sensitive_text(text)
+    redacted = redact_sensitive_text(text_str)
 
     # SSN pattern
     redacted = re.sub(r"\b\d{3}-\d{2}-\d{4}\b", "[REDACTED_SSN]", redacted)
@@ -323,7 +325,7 @@ class QuarantineInterceptorService:
                     },
                 )
                 final_hash = resilient_file_hash(dest_file_path) if os.path.exists(dest_file_path) else record["file_hash"]
-                self.db.upsert_document(base_dir, os.path.relpath(dest_file_path, base_dir), final_hash, extracted_text)
+                self.db.upsert_document(base_dir, os.path.relpath(dest_file_path, base_dir), final_hash, str(extracted_text))
 
             return self.db.get_quarantine_record(job_id)
 
