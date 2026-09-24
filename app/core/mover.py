@@ -12,6 +12,7 @@ import threading
 import unicodedata
 import uuid
 from concurrent.futures import ThreadPoolExecutor
+from typing import Any
 
 from app.core.link_manager import LinkManager
 from app.core.path_utils import is_junction_path
@@ -180,6 +181,58 @@ def _is_cross_volume(src: str, dst: str) -> bool:
     return False
 
 
+def _get_node_mtime(
+    base_dir: str,
+    key: str,
+    content: Any,
+    active_parent_path: str = "",
+    depth: int = 0,
+) -> float:
+    """Recursively calculate the minimum modification timestamp (st_mtime) for a plan node."""
+    if content is None or (
+        isinstance(content, dict)
+        and content.get("__type__") in ("file", "directory")
+    ):
+        if isinstance(content, dict) and content.get("__type__") == "directory":
+            return float("inf")
+
+        if depth > 0:
+            if not isinstance(content, dict) or "relative_source" not in content:
+                rel_src = key
+            else:
+                rel_src = content["relative_source"]
+            rel_src_with_parent = os.path.join(active_parent_path, rel_src)
+            source_path = os.path.normpath(
+                os.path.join(base_dir, rel_src_with_parent)
+            )
+        else:
+            if isinstance(content, dict) and "relative_source" in content:
+                relative_source = content["relative_source"]
+                source_path = os.path.normpath(
+                    os.path.join(base_dir, relative_source)
+                )
+            else:
+                source_path = os.path.normpath(os.path.join(base_dir, key))
+
+        try:
+            if os.path.lexists(source_path):
+                return os.stat(source_path).st_mtime
+        except OSError:
+            pass
+        return float("inf")
+    elif isinstance(content, dict):
+        min_mtime = float("inf")
+        sub_parent = os.path.join(active_parent_path, key)
+        for sub_key, sub_content in content.items():
+            m = _get_node_mtime(
+                base_dir, sub_key, sub_content, sub_parent, depth + 1
+            )
+            if m < min_mtime:
+                min_mtime = m
+        return min_mtime
+    return float("inf")
+
+
 def _execute_moves_recursive(
     base_dir: str,
     plan: dict,
@@ -209,7 +262,14 @@ def _execute_moves_recursive(
     if not isinstance(plan, dict) or plan.get("__type__") in ("file", "directory"):
         return
 
-    for key, content in plan.items():
+    sorted_plan_items = sorted(
+        plan.items(),
+        key=lambda item: _get_node_mtime(
+            base_dir, item[0], item[1], active_parent_path, depth
+        ),
+    )
+
+    for key, content in sorted_plan_items:
         if content is None or (
             isinstance(content, dict)
             and content.get("__type__") in ("file", "directory")
@@ -634,7 +694,14 @@ def _collect_move_items(
     if not isinstance(plan, dict) or plan.get("__type__") in ("file", "directory"):
         return items
 
-    for key, content in plan.items():
+    sorted_plan_items = sorted(
+        plan.items(),
+        key=lambda item: _get_node_mtime(
+            base_dir, item[0], item[1], active_parent_path, depth
+        ),
+    )
+
+    for key, content in sorted_plan_items:
         if content is None or (
             isinstance(content, dict)
             and content.get("__type__") in ("file", "directory")
@@ -690,6 +757,19 @@ def _collect_move_items(
                     depth + 1,
                 )
             )
+
+    if depth == 0:
+        def _get_item_mtime(item):
+            src = item.get("source_path")
+            if src:
+                try:
+                    if os.path.lexists(src):
+                        return os.stat(src).st_mtime
+                except OSError:
+                    pass
+            return float("inf")
+
+        items.sort(key=_get_item_mtime)
 
     return items
 

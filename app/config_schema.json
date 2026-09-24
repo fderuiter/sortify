@@ -102,6 +102,12 @@
       "title": "Model Threads",
       "type": "integer"
     },
+    "SNAPSHOT_RETENTION_DAYS": {
+      "default": 30,
+      "exclusiveMinimum": 0,
+      "title": "Snapshot Retention Days",
+      "type": "integer"
+    },
     "PROTECTED_PATHS": {
       "items": {
         "type": "string"

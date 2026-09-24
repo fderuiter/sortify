@@ -103,6 +103,7 @@ class Settings(BaseSettings):
     IMAGE_MAX_DIMENSION: int = Field(default=1000, gt=0)
     IMAGE_SKIP_THRESHOLD: int = Field(default=3000, gt=0)
     MODEL_THREADS: int = Field(default=2, ge=1, le=32)
+    SNAPSHOT_RETENTION_DAYS: int = Field(default=30, gt=0)
     PROTECTED_PATHS: list[str] = Field(default_factory=list)
     PROXY: str = Field(default="")
     OCR_GPU_ENABLED: bool = Field(default=False)
