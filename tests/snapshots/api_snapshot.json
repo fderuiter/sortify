@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "5f3f7d8bf41432ef1eaecb5c47e676bd3ad2ce351ba51dfe743b41617c72feae"
+    "checksum": "93fc4e3a3ec57952e40bab0b51a671a679955a98405359e9731cc44e83448d93"
   },
   "cli": {
     "app/main.py": [
@@ -5944,7 +5944,26 @@
           ]
         }
       ],
-      "functions": []
+      "functions": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_extension_category_target",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "item"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "settings"
+            }
+          ],
+          "returns": "str | None"
+        }
+      ]
     },
     "app/core/mover.py": {
       "classes": [

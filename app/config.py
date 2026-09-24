@@ -97,6 +97,7 @@ class Settings(BaseSettings):
     EXPLORER_INTEGRATION: bool = Field(default=False)
     KEYWORD_RULES: dict = Field(default_factory=dict)
     LEARNED_RULES: dict = Field(default_factory=dict)
+    EXTENSION_CATEGORIES: dict = Field(default_factory=dict)
     POLICIES: list[dict] = Field(default_factory=list)
     VISUAL_TIMEOUT: int = Field(default=30, gt=0)
     IMAGE_MAX_DIMENSION: int = Field(default=1000, gt=0)
@@ -116,6 +117,7 @@ class Settings(BaseSettings):
     @MAX_AUDIO_WORKERS.setter
     def MAX_AUDIO_WORKERS(self, val: int) -> None:
         self.AUDIO_MAX_WORKERS = val
+
     OCR_LANGUAGES: str = Field(default="en")
     VISION_ENGINE: Literal["easyocr", "florence-2"] = Field(default="easyocr")
     CONFLICT_POLICY: Literal["skip", "rename"] = Field(default="rename")
@@ -548,7 +550,9 @@ class AppSettings:
         validator = _get_schema_validator()
         if validator is not None:
             try:
-                schema_errors = sorted(validator.iter_errors(data), key=lambda e: e.path)
+                schema_errors = sorted(
+                    validator.iter_errors(data), key=lambda e: e.path
+                )
                 for error in schema_errors:
                     path = (
                         ".".join([str(p) for p in error.path]) if error.path else "root"
@@ -566,7 +570,10 @@ class AppSettings:
                     loc = err.get("loc", [])
                     path = ".".join([str(p) for p in loc]) if loc else "root"
                     msg = err.get("msg", str(err))
-                    if not any(item["field"] == path and item["message"] == msg for item in errors):
+                    if not any(
+                        item["field"] == path and item["message"] == msg
+                        for item in errors
+                    ):
                         errors.append({"field": path, "message": msg})
             else:
                 errors.append({"field": "model", "message": str(e)})
