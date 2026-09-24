@@ -218,3 +218,79 @@ def test_build_script_cpu_profile_scan_fails_if_gpu_binaries_exist():
                     "Standalone bundle contains GPU/CUDA/cuDNN binaries"
                     in printed_messages
                 )
+
+
+def test_build_script_dual_target_verification_missing_executable(tmp_path):
+    """Verify that build fails if dist directory exists but is missing target executables."""
+    import os
+
+    dist_dir = tmp_path / "dist" / "smart-autosorter"
+    dist_dir.mkdir(parents=True, exist_ok=True)
+    # Create only cli target, omit gui target
+    exe_ext = ".exe" if sys.platform == "win32" else ""
+    (dist_dir / f"smart-autosorter{exe_ext}").write_text("mock_cli")
+
+    original_cwd = os.getcwd()
+    os.chdir(tmp_path)
+
+    mock_pyinstaller_main.run.reset_mock()
+    try:
+        with patch("sys.argv", ["build.py", "--lite"]):
+            with (
+                patch("importlib.util.find_spec") as mock_find_spec,
+                patch("sys.exit", side_effect=SystemExit) as mock_exit,
+                patch("builtins.print") as mock_print,
+            ):
+                mock_spec = MagicMock()
+                mock_spec.submodule_search_locations = ["/some/path"]
+                mock_find_spec.return_value = mock_spec
+
+                with pytest.raises(SystemExit):
+                    main()
+
+                mock_exit.assert_called_once_with(1)
+                printed_messages = "".join(
+                    [call.args[0] for call in mock_print.call_args_list if call.args]
+                )
+                assert "Missing expected executable target(s)" in printed_messages
+                assert f"smart-autosorter-gui{exe_ext}" in printed_messages
+    finally:
+        os.chdir(original_cwd)
+
+
+def test_build_script_dual_target_verification_success(tmp_path):
+    """Verify that build passes when both executables exist and shortcuts are generated."""
+    import os
+
+    dist_dir = tmp_path / "dist" / "smart-autosorter"
+    dist_dir.mkdir(parents=True, exist_ok=True)
+    exe_ext = ".exe" if sys.platform == "win32" else ""
+    (dist_dir / f"smart-autosorter{exe_ext}").write_text("mock_cli")
+    (dist_dir / f"smart-autosorter-gui{exe_ext}").write_text("mock_gui")
+
+    original_cwd = os.getcwd()
+    os.chdir(tmp_path)
+
+    mock_pyinstaller_main.run.reset_mock()
+    try:
+        with patch("sys.argv", ["build.py", "--lite"]):
+            with (
+                patch("importlib.util.find_spec") as mock_find_spec,
+                patch("sys.exit", side_effect=SystemExit) as mock_exit,
+                patch("builtins.print") as mock_print,
+            ):
+                mock_spec = MagicMock()
+                mock_spec.submodule_search_locations = ["/some/path"]
+                mock_find_spec.return_value = mock_spec
+
+                main()
+
+                mock_exit.assert_not_called()
+                printed_messages = "".join(
+                    [call.args[0] for call in mock_print.call_args_list if call.args]
+                )
+                assert "Verification passed" in printed_messages
+                assert (dist_dir / "smart-autosorter.desktop").exists()
+    finally:
+        os.chdir(original_cwd)
+

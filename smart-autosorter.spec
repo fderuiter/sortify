@@ -410,7 +410,7 @@ a.datas = [x for x in a.datas if not is_tcl_tk_asset(x[0]) and not is_prunable_a
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
-exe = EXE(
+exe_cli = EXE(
     pyz,
     a.scripts,
     [],
@@ -420,7 +420,25 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,
-    console=True if os.environ.get("LITE_BUILD") == "1" else False,  # enabled for debugging/smoke testing on GHA
+    console=True,
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+)
+
+exe_gui = EXE(
+    pyz,
+    a.scripts,
+    [],
+    exclude_binaries=True,
+    name='smart-autosorter-gui',
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=False,
+    console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
@@ -429,7 +447,8 @@ exe = EXE(
 )
 
 coll = COLLECT(
-    exe,
+    exe_cli,
+    exe_gui,
     a.binaries,
     a.zipfiles,
     a.datas,

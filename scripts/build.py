@@ -436,6 +436,39 @@ def download_and_prepare_weights():
     )
 
 
+def create_desktop_shortcuts(dist_dir):
+    """Create desktop and menu shortcut configuration files pointing to smart-autosorter-gui."""
+    try:
+        desktop_file_path = os.path.join(dist_dir, "smart-autosorter.desktop")
+        desktop_content = """[Desktop Entry]
+Name=Smart AutoSorter GUI
+Comment=Local-first AI document triage and auto-sorting application
+Exec=smart-autosorter-gui
+Icon=smart-autosorter
+Terminal=false
+Type=Application
+Categories=Utility;FileTools;
+"""
+        with open(desktop_file_path, "w", encoding="utf-8") as f:
+            f.write(desktop_content)
+        print(f"Created Linux desktop shortcut: {desktop_file_path}")
+    except Exception as e:
+        print(f"Warning: Could not create .desktop file: {e}")
+
+    if sys.platform == "win32":
+        try:
+            url_shortcut_path = os.path.join(dist_dir, "Smart AutoSorter GUI.url")
+            gui_exe_path = os.path.abspath(
+                os.path.join(dist_dir, "smart-autosorter-gui.exe")
+            )
+            url_content = f"[InternetShortcut]\nURL=file:///{gui_exe_path.replace(os.sep, '/')}\nIconIndex=0\nIconFile={gui_exe_path.replace(os.sep, '/')}\n"
+            with open(url_shortcut_path, "w", encoding="utf-8") as f:
+                f.write(url_content)
+            print(f"Created Windows desktop shortcut: {url_shortcut_path}")
+        except Exception as e:
+            print(f"Warning: Could not create Windows desktop shortcut: {e}")
+
+
 def main():
     """Build the standalone executable."""
     import importlib.util
@@ -528,9 +561,34 @@ def main():
 
     PyInstaller.__main__.run(cmd)
 
+    dist_dir = os.path.join("dist", "smart-autosorter")
+    if os.path.exists(dist_dir):
+        exe_ext = ".exe" if sys.platform == "win32" else ""
+        cli_exe = os.path.join(dist_dir, f"smart-autosorter{exe_ext}")
+        gui_exe = os.path.join(dist_dir, f"smart-autosorter-gui{exe_ext}")
+        missing = []
+        if not os.path.exists(cli_exe):
+            missing.append(f"smart-autosorter{exe_ext}")
+        if not os.path.exists(gui_exe):
+            missing.append(f"smart-autosorter-gui{exe_ext}")
+        if missing:
+            print(
+                f"Error: Missing expected executable target(s) in {dist_dir}: {', '.join(missing)}"
+            )
+            sys.exit(1)
+
+        create_desktop_shortcuts(dist_dir)
+
+        print(
+            f"Verification passed: Verified both executable targets (smart-autosorter{exe_ext}, smart-autosorter-gui{exe_ext}) in {dist_dir}"
+        )
+    else:
+        print(
+            f"Warning: Standalone bundle directory {dist_dir} not found for post-build verification."
+        )
+
     if is_cpu:
         print("Scanning standalone package for GPU/CUDA/cuDNN binaries...")
-        dist_dir = "dist/smart-autosorter"
         if os.path.exists(dist_dir):
             gpu_terms = [
                 "cuda",
