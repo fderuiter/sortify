@@ -196,3 +196,85 @@ def test_divergent_branch_protection_from_pruning(test_history_env):
     session_ids = [s["session_id"] for s in sessions]
 
     assert expired_id in session_ids
+
+
+def test_snapshot_pruning_preserves_sessions_within_age_limit_across_many_runs(test_history_env):
+    base_dir, db, cache, history_manager, db_worker = test_history_env
+    import time
+    from app.core.db_conn import get_db_connection
+
+    now = time.time()
+    day_sec = 86400
+
+    conn = get_db_connection(history_manager.db_path)
+    created_ids = []
+    with conn:
+        # Create 15 sessions spread across the last 80 days (within 90-day retention limit)
+        for i in range(15):
+            sid = f"session-recent-{i}"
+            created_ids.append(sid)
+            ts = now - ((i + 1) * 5 * day_sec)  # 5, 10, ..., 75 days ago
+            conn.execute(
+                "INSERT INTO sessions (session_id, timestamp, base_dir, status) VALUES (?, ?, ?, 'completed')",
+                (sid, ts, base_dir),
+            )
+        # Create 1 expired session (100 days old)
+        conn.execute(
+            "INSERT INTO sessions (session_id, timestamp, base_dir, status) VALUES (?, ?, ?, 'completed')",
+            ("session-old-100", now - (100 * day_sec), base_dir),
+        )
+
+    with conn:
+        history_manager._prune_snapshots(conn, retention_days=90)
+
+    sessions = history_manager.get_sessions()
+    session_ids = [s["session_id"] for s in sessions]
+
+    # Verify all 15 sessions within the retention age limit stay
+    for sid in created_ids:
+        assert sid in session_ids
+    assert "session-old-100" not in session_ids
+
+
+def test_snapshot_pruning_respects_policy_engine_actions(test_history_env):
+    base_dir, db, cache, history_manager, db_worker = test_history_env
+    import time
+    from app.core.db_conn import get_db_connection
+
+    now = time.time()
+    day_sec = 86400
+
+    conn = get_db_connection(history_manager.db_path)
+    with conn:
+        # Session 1: Status 'retain'
+        conn.execute(
+            "INSERT INTO sessions (session_id, timestamp, base_dir, status) VALUES (?, ?, ?, 'retain')",
+            ("session-status-retain", now - (60 * day_sec), base_dir),
+        )
+        # Session 2: Session with policy-matched file 'compliance_doc.pdf'
+        conn.execute(
+            "INSERT INTO sessions (session_id, timestamp, base_dir, status) VALUES (?, ?, ?, 'completed')",
+            ("session-policy-matched", now - (60 * day_sec), base_dir),
+        )
+        conn.execute(
+            "INSERT INTO snapshot_files (session_id, original_rel_path, inode, size, mtime) VALUES (?, ?, 1, 100, ?)",
+            ("session-policy-matched", "compliance_doc.pdf", now - (60 * day_sec)),
+        )
+        # Session 3: Ordinary expired session
+        conn.execute(
+            "INSERT INTO sessions (session_id, timestamp, base_dir, status) VALUES (?, ?, ?, 'completed')",
+            ("session-ordinary-expired", now - (60 * day_sec), base_dir),
+        )
+
+    policies = [{"type": "compliance", "expression": "compliance_doc.pdf", "action": "retain"}]
+
+    with conn:
+        history_manager._prune_snapshots(conn, retention_days=30, policies=policies)
+
+    sessions = history_manager.get_sessions()
+    session_ids = [s["session_id"] for s in sessions]
+
+    assert "session-status-retain" in session_ids
+    assert "session-policy-matched" in session_ids
+    assert "session-ordinary-expired" not in session_ids
+

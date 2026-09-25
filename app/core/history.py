@@ -301,7 +301,17 @@ class HistoryManager:
                 )
 
             # Prune expired snapshots based on configured age retention limit
-            self._prune_snapshots(conn)
+            policies = None
+            try:
+                from app.config import AppSettings
+
+                app_settings = AppSettings()
+                policies = getattr(
+                    app_settings, "UNIFIED_POLICIES", None
+                ) or getattr(app_settings, "POLICIES", None)
+            except Exception:
+                pass
+            self._prune_snapshots(conn, policies=policies)
 
         return session_id
 
@@ -313,7 +323,7 @@ class HistoryManager:
 
         return self.db.worker.execute_write(_write)
 
-    def _prune_snapshots(self, conn, retention_days=None, limit=None):
+    def _prune_snapshots(self, conn, retention_days=None, limit=None, policies=None):
         if retention_days is None:
             try:
                 from app.config import AppSettings
@@ -325,15 +335,62 @@ class HistoryManager:
 
         cutoff_timestamp = time.time() - (float(retention_days) * 86400.0)
         cur = conn.execute(
-            "SELECT session_id, base_dir FROM sessions WHERE timestamp IS NOT NULL AND timestamp < ? AND (status IS NULL OR status != 'active')",
+            "SELECT session_id, base_dir, status FROM sessions WHERE timestamp IS NOT NULL AND timestamp < ?",
             (cutoff_timestamp,),
         )
         old_sessions = cur.fetchall()
-        for sid, base_dir in old_sessions:
+        for sid, base_dir, status in old_sessions:
+            if status and str(status).lower() in (
+                "active",
+                "retain",
+                "retained",
+                "archive",
+                "archived",
+            ):
+                continue
+
             # Never prune divergent history branches that contain unmerged user data
             branch_dir = os.path.join(base_dir, ".branches", sid)
             if os.path.exists(branch_dir) and os.listdir(branch_dir):
                 continue
+
+            if policies:
+                retained_by_policy = False
+                try:
+                    from app.core.policy_engine import PolicyEngine
+
+                    cur_files = conn.execute(
+                        "SELECT original_rel_path FROM snapshot_files WHERE session_id = ?",
+                        (sid,),
+                    ).fetchall()
+                    file_paths = [r[0] for r in cur_files] or [base_dir]
+
+                    for rule in policies:
+                        act = (
+                            rule.get("action", "").lower()
+                            if isinstance(rule, dict)
+                            else getattr(rule, "action", "").lower()
+                        )
+                        if act in ("retain", "archive"):
+                            expr = (
+                                rule.get("expression", "")
+                                if isinstance(rule, dict)
+                                else getattr(rule, "expression", "")
+                            )
+                            if not expr:
+                                continue
+                            for fp in file_paths:
+                                if PolicyEngine.match_policy(rule, fp, "", ""):
+                                    retained_by_policy = True
+                                    break
+                        if retained_by_policy:
+                            break
+                except Exception as ex:
+                    logging.warning(
+                        f"Error evaluating policies during snapshot pruning: {ex}"
+                    )
+                if retained_by_policy:
+                    continue
 
             conn.execute("DELETE FROM snapshot_files WHERE session_id = ?", (sid,))
             conn.execute("DELETE FROM snapshot_cache WHERE session_id = ?", (sid,))
