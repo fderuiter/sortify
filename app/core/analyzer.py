@@ -451,6 +451,7 @@ class IncrementalAnalyzer:
         locked_files: dict = None,
         cancel_check=None,
         fast_path_only: bool = False,
+        target_paths: Optional[list[str]] = None,
     ) -> SortingPlan:
         """Generate a sorting plan mapping file paths to destination paths based on current model state.
 
@@ -463,6 +464,7 @@ class IncrementalAnalyzer:
                 and returns an empty SortingPlan object to honor token cancellation.
             fast_path_only: If `True`, skips hierarchical ML strategy execution and generates plan using
                 rules and policies only.
+            target_paths: Optional list of specific relative or absolute file paths to restrict plan generation to.
 
         Returns
         -------
@@ -475,8 +477,26 @@ class IncrementalAnalyzer:
                 if lock_path:
                     PolicyEngine.validate_lock_path(lock_path, file_path=f)
 
+        norm_target_paths = None
+        if target_paths is not None:
+            norm_target_paths = set()
+            for p in target_paths:
+                if not p:
+                    continue
+                if os.path.isabs(p) and base_dir and p.startswith(base_dir):
+                    rel = os.path.relpath(p, base_dir).replace("\\", "/")
+                else:
+                    rel = p.replace("\\", "/")
+                norm_target_paths.add(rel)
+                norm_target_paths.add(os.path.normpath(rel).replace("\\", "/"))
+
         try:
-            docs = self.db.get_all_documents(base_dir)
+            docs = self.db.get_all_documents(base_dir, target_paths=norm_target_paths)
+            if norm_target_paths is not None and docs:
+                docs = [
+                    d for d in docs
+                    if d[0] in norm_target_paths or os.path.normpath(d[0]).replace("\\", "/") in norm_target_paths
+                ]
             if not docs:
                 return SortingPlan()
 

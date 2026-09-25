@@ -96,9 +96,6 @@ class DaemonFolderHandler(FileSystemEventHandler):
         )
         self.daemon.enqueue_event(change_event)
 
-        # Trigger sorting recalculation (thread-safe and debounced for legacy fallback)
-        self.daemon.trigger_recalculation()
-
 
 class ContinuousWatchdogDaemon:
     """Daemon that continuously monitors a folder using an async queue pipeline."""
@@ -527,6 +524,7 @@ class ContinuousWatchdogDaemon:
     async def _triage_file_path(self, abs_path: str):
         """Targeted triage on a single item path without whole-directory file listing utilities."""
         if not os.path.exists(abs_path):
+            logger.debug(f"Target file missing before triage: {abs_path}")
             return
 
         rel_path = (
@@ -553,7 +551,9 @@ class ContinuousWatchdogDaemon:
         if cancel_check():
             return
 
-        fast_path_plan = app_session.generate_sorting_plan(fast_path_only=True)
+        fast_path_plan = app_session.generate_sorting_plan(
+            fast_path_only=True, target_paths=[rel_path]
+        )
         if fast_path_plan:
             with self.scoped_move_phase(plan=fast_path_plan):
                 summary = app_session.execute_moves(fast_path_plan)
@@ -566,6 +566,7 @@ class ContinuousWatchdogDaemon:
             return
 
         if not os.path.exists(abs_path):
+            logger.debug(f"Target file missing before triage: {abs_path}")
             return
 
         # Phase 2: Text Extraction & Incremental Model Training
@@ -582,7 +583,9 @@ class ContinuousWatchdogDaemon:
         if cancel_check():
             return
 
-        slow_path_plan = app_session.generate_sorting_plan(fast_path_only=False)
+        slow_path_plan = app_session.generate_sorting_plan(
+            fast_path_only=False, target_paths=[rel_path]
+        )
         if slow_path_plan:
             with self.scoped_move_phase(plan=slow_path_plan):
                 summary = app_session.execute_moves(slow_path_plan)
