@@ -3,9 +3,19 @@
 import collections
 import json
 import logging
-import sqlite3
 import threading
 import time
+
+try:
+    import sqlite3
+except Exception:
+    try:
+        from sqlcipher3 import dbapi2 as sqlite3
+    except Exception:
+        import types
+
+        sqlite3 = types.ModuleType("sqlite3")
+        sqlite3.Error = Exception
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
