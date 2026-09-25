@@ -61,6 +61,13 @@ class PolicyEngine:
         return action.lower() in PolicyEngine.SUPPORTED_ACTIONS
 
     @staticmethod
+    def contains_secrets(text: str) -> bool:
+        """Check whether text contains secret tokens or credentials."""
+        from app.core.text_utils import contains_secrets
+
+        return contains_secrets(text)
+
+    @staticmethod
     def match_policy(
         rule: dict, file_path: str, doc_text: str, status_match: str
     ) -> bool:
@@ -71,6 +78,9 @@ class PolicyEngine:
         fn_only = os.path.basename(file_path).lower()
         doc_text_str = str(doc_text) if doc_text else ""
         dl_lower = doc_text_str.lower()
+
+        if rule_type in ("secret", "credential") or expression in ("secret", "credential"):
+            return PolicyEngine.contains_secrets(file_path) or PolicyEngine.contains_secrets(doc_text_str)
 
         if rule_type in ("keyword", "action", "compliance", ""):
             if expression:

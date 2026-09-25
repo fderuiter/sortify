@@ -2977,6 +2977,12 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
 
                 name = name.strip(string.punctuation).strip()
 
+                # Centralized secret pattern sanitization before final OS path sanitization
+                from app.core.text_utils import sanitize_secret_patterns
+
+                name = sanitize_secret_patterns(name)
+                name = " ".join(name.split()).strip(string.punctuation).strip()
+
                 if not name or len(name) < 2:
                     return super()._get_cluster_keywords(documents)
 
