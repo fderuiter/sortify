@@ -2,7 +2,6 @@
 
 import queue
 import threading
-from concurrent.futures import ThreadPoolExecutor
 
 from app.core.db_conn import clear_connection_cache
 
@@ -15,9 +14,6 @@ class DBWorker:
         self._stopped = False
         self._lock = threading.Lock()
         self._listeners = []
-        self._bg_pool = ThreadPoolExecutor(
-            max_workers=2, thread_name_prefix="AsyncEnrichmentWorker"
-        )
         from app.core.shared_registry import ContextPropagatingThread
 
         self.thread = ContextPropagatingThread(
@@ -121,11 +117,14 @@ class DBWorker:
             self.q.put((func, args, kwargs, None, in_pool))
 
     def submit_background_job(self, func, *args, **kwargs):
-        """Submit a heavy background job (VLM, EasyOCR, GGUF naming, decryption) off main thread with max 2 workers."""
+        """Submit a heavy background job (VLM, EasyOCR, GGUF naming, decryption) off main thread via SharedWorkerPool."""
         with self._lock:
             if self._stopped:
                 return None
-        future = self._bg_pool.submit(func, *args, **kwargs)
+        from app.core.shared_registry import SharedWorkerPool
+
+        pool = SharedWorkerPool.get_instance()
+        future = pool.submit(func, *args, **kwargs)
 
         def _on_done(fut):
             try:
@@ -165,11 +164,6 @@ class DBWorker:
             from app.core.semantic_embeddings import SemanticEmbeddingManager
 
             SemanticEmbeddingManager.stop_all()
-        except Exception:
-            pass
-
-        try:
-            self._bg_pool.shutdown(wait=False)
         except Exception:
             pass
 
