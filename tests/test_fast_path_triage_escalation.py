@@ -4,13 +4,12 @@ import os
 import time
 from pathlib import Path
 
-import pytest
 from PIL import Image
 
 from app.core.cache import SparseMatrixLRUCache
 from app.core.db import Database
 from app.core.db_worker import DBWorker
-from app.core.extractor import ExtractionStatus, evaluate_text_confidence, fast_triage_extract
+from app.core.extractor import evaluate_text_confidence, fast_triage_extract
 
 
 def _is_ci_or_parallel() -> bool:
