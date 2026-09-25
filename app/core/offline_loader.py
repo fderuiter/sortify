@@ -13,6 +13,7 @@ import socket
 import sys
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from app.core.exceptions import OfflineLoaderError
 from app.core.shared_registry import block_external_network
 from app.core.text_utils import sanitize_text
 
@@ -25,7 +26,7 @@ LOC_BOX_PATTERN = re.compile(
 )
 
 
-class OfflineModelLoadError(Exception):
+class OfflineModelLoadError(OfflineLoaderError):
     """Base exception for all offline model loading errors."""
 
     pass
@@ -114,8 +115,8 @@ class OfflineModelLoader:
             workspace_base_path = os.path.join(base_dir, "offline_bundle", model_id)
             if workspace_base_path not in searched_paths:
                 searched_paths.append(workspace_base_path)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Could not resolve base path for model '{model_id}': {e}")
 
         # Precedence 4: User home directory fallback
         home_path = os.path.expanduser(f"~/.smart-autosorter/offline_bundle/{model_id}")
@@ -147,8 +148,8 @@ class OfflineModelLoader:
                     try:
                         if os.listdir(path):
                             return path
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug(f"Could not list directory '{path}': {e}")
 
         raise ModelWeightsNotFoundError(model_id, unique_paths)
 

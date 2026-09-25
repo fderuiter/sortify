@@ -78,6 +78,10 @@ flowchart TD
 
 ::: app.core.env_helper
 
+## `app.core.exceptions`
+
+::: app.core.exceptions
+
 ## `app.core.extractor`
 
 ::: app.core.extractor
@@ -105,6 +109,10 @@ flowchart TD
 ## `app.core.integration`
 
 ::: app.core.integration
+
+## `app.core.jev_classifier`
+
+::: app.core.jev_classifier
 
 ## `app.core.ledger`
 

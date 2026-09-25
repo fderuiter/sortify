@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "784d3f2501c6ce753684dcffd3ca0828d6758775a45999cdc03dbc008dd2c2ea"
+    "checksum": "c15f1e6c68be448bbad5007c1fdce545224d9093efde589a320befc8765bf68e"
   },
   "cli": {
     "app/main.py": [
@@ -569,6 +569,11 @@
                   "annotation": "Optional[list[str]]",
                   "default": "None",
                   "name": "target_paths"
+                },
+                {
+                  "annotation": "Optional[Dict[str, Any]]",
+                  "default": "None",
+                  "name": "jev_results"
                 }
               ],
               "returns": "SortingPlan"
@@ -4412,6 +4417,41 @@
         }
       ]
     },
+    "app/core/exceptions.py": {
+      "classes": [
+        {
+          "class_name": "CacheError",
+          "decorators": [],
+          "methods": []
+        },
+        {
+          "class_name": "CryptoError",
+          "decorators": [],
+          "methods": []
+        },
+        {
+          "class_name": "DownloaderError",
+          "decorators": [],
+          "methods": []
+        },
+        {
+          "class_name": "OfflineLoaderError",
+          "decorators": [],
+          "methods": []
+        },
+        {
+          "class_name": "SemanticEmbeddingError",
+          "decorators": [],
+          "methods": []
+        },
+        {
+          "class_name": "SortifyBaseError",
+          "decorators": [],
+          "methods": []
+        }
+      ],
+      "functions": []
+    },
     "app/core/extractor.py": {
       "classes": [
         {
@@ -5768,6 +5808,156 @@
         }
       ]
     },
+    "app/core/jev_classifier.py": {
+      "classes": [
+        {
+          "class_name": "JevClassificationResult",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "dict",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "*args"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "**kwargs"
+                }
+              ],
+              "returns": "Dict[str, Any]"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "get",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "item"
+                },
+                {
+                  "annotation": "Any",
+                  "default": "None",
+                  "name": "default"
+                }
+              ],
+              "returns": "Any"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "model_dump",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "*args"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "**kwargs"
+                }
+              ],
+              "returns": "Dict[str, Any]"
+            }
+          ]
+        },
+        {
+          "class_name": "JevClassifierEngine",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "__init__",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "float",
+                  "default": "0.5",
+                  "name": "confidence_threshold"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "classify",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "file_path"
+                },
+                {
+                  "annotation": "Optional[str]",
+                  "default": "None",
+                  "name": "text_content"
+                }
+              ],
+              "returns": "JevClassificationResult"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "classify_file",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "file_path"
+                },
+                {
+                  "annotation": "Optional[str]",
+                  "default": "None",
+                  "name": "text_content"
+                }
+              ],
+              "returns": "JevClassificationResult"
+            }
+          ]
+        }
+      ],
+      "functions": []
+    },
     "app/core/ledger.py": {
       "classes": [
         {
@@ -6772,6 +6962,19 @@
         {
           "async": false,
           "decorators": [],
+          "name": "scrub_pii_from_filename",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "name"
+            }
+          ],
+          "returns": "str"
+        },
+        {
+          "async": false,
+          "decorators": [],
           "name": "setup_session_directory",
           "parameters": [
             {
@@ -7644,6 +7847,11 @@
                   "annotation": "Optional[list[str]]",
                   "default": "None",
                   "name": "target_paths"
+                },
+                {
+                  "annotation": "Optional[Dict[str, Any]]",
+                  "default": "None",
+                  "name": "jev_results"
                 }
               ],
               "returns": null
@@ -8067,6 +8275,19 @@
                   "annotation": null,
                   "default": null,
                   "name": "cls"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "get_jev_classifier",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
                 }
               ],
               "returns": null

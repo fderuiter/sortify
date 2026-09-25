@@ -2,12 +2,14 @@
 
 import json
 import logging
+import sqlite3
 import threading
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from app.core.db_conn import get_db_connection
 from app.core.db_worker import DBWorker
+from app.core.exceptions import CacheError
 
 
 class SparseMatrixLRUCache:
@@ -107,9 +109,12 @@ class CacheManager:
                     conn.execute(
                         "ALTER TABLE directory_cache ADD COLUMN manual_folders TEXT"
                     )
-                except Exception:
-                    pass
-        except Exception:
+                except Exception as alter_err:
+                    logging.debug(f"Column manual_folders alter execution skipped or failed: {alter_err}")
+        except Exception as e:
+            logging.error(f"Failed to initialize directory cache database: {e}", exc_info=True)
+            if not isinstance(e, CacheError):
+                raise CacheError(f"Failed to initialize cache database: {e}") from e
             raise
 
     def load_cache(self, source_directory: str):
@@ -132,6 +137,14 @@ class CacheManager:
                     set(json.loads(manual_folders_raw)) if manual_folders_raw else set()
                 )
                 return corpus, locked_files, index_to_word, manual_folders
+        except (sqlite3.Error, json.JSONDecodeError) as e:
+            logging.error(
+                f"Query or JSON parsing error loading cache for directory '{source_directory}': {e}",
+                exc_info=True,
+            )
         except Exception as e:
-            logging.error(f"Failed to load cache: {e}")
+            logging.error(
+                f"Failed to load cache for directory '{source_directory}': {e}",
+                exc_info=True,
+            )
         return None, None, None, None
