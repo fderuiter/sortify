@@ -36,6 +36,12 @@ class _SortingPlanNodeSchema(BaseModel):
     is_conflicted: Optional[bool] = None
     compliance_path: Optional[str] = None
     new_filename: Optional[str] = None
+    category: Optional[str] = None
+    sensitivity_rating: Optional[str] = None
+    sensitivity_score: Optional[float] = None
+    archival_priority: Optional[Union[int, float]] = None
+    archival_priority_score: Optional[float] = None
+    confidence: Optional[float] = None
 
     model_config = ConfigDict(populate_by_name=True, extra="allow")
 
@@ -452,6 +458,7 @@ class IncrementalAnalyzer:
         cancel_check=None,
         fast_path_only: bool = False,
         target_paths: Optional[list[str]] = None,
+        jev_results: Optional[Dict[str, Any]] = None,
     ) -> SortingPlan:
         """Generate a sorting plan mapping file paths to destination paths based on current model state.
 
@@ -465,6 +472,7 @@ class IncrementalAnalyzer:
             fast_path_only: If `True`, skips hierarchical ML strategy execution and generates plan using
                 rules and policies only.
             target_paths: Optional list of specific relative or absolute file paths to restrict plan generation to.
+            jev_results: Optional dictionary mapping file paths to Jev classification results.
 
         Returns
         -------
@@ -491,14 +499,16 @@ class IncrementalAnalyzer:
                 norm_target_paths.add(os.path.normpath(rel).replace("\\", "/"))
 
         try:
-            docs = self.db.get_all_documents(base_dir, target_paths=norm_target_paths)
+            docs = self.db.get_all_documents(base_dir, target_paths=norm_target_paths) if self.db else []
             if norm_target_paths is not None and docs:
                 docs = [
                     d for d in docs
                     if d[0] in norm_target_paths or os.path.normpath(d[0]).replace("\\", "/") in norm_target_paths
                 ]
-            if not docs:
+            if not docs and not jev_results:
                 return SortingPlan()
+            if docs is None:
+                docs = []
 
             from app.core.extractor_strategies import registry
 
@@ -525,6 +535,7 @@ class IncrementalAnalyzer:
             ai_documents = []
             policy_plan_files = []
             keyword_plan_files = []
+            jev_plan_files = []
             unsupported_files = []
             historical_overrides = {}
             matched_policies_map = {}
@@ -601,7 +612,43 @@ class IncrementalAnalyzer:
                         continue
 
                 matched = False
-                if keyword_rules:
+                if jev_results:
+                    jev_res = None
+                    norm_f = f.replace("\\", "/")
+                    base_fn = os.path.basename(f)
+                    for k_jev, v_jev in jev_results.items():
+                        norm_k = str(k_jev).replace("\\", "/")
+                        if (
+                            norm_k == norm_f
+                            or norm_k == base_fn
+                            or norm_f.endswith(norm_k)
+                            or norm_k.endswith(norm_f)
+                        ):
+                            jev_res = v_jev
+                            break
+
+                    if jev_res:
+                        is_classified = (
+                            getattr(jev_res, "is_classified", False)
+                            if not isinstance(jev_res, dict)
+                            else jev_res.get("is_classified", False)
+                        )
+                        confidence = (
+                            getattr(jev_res, "confidence", 0.0)
+                            if not isinstance(jev_res, dict)
+                            else jev_res.get("confidence", 0.0)
+                        )
+                        cat = (
+                            getattr(jev_res, "category", "Unclassified")
+                            if not isinstance(jev_res, dict)
+                            else jev_res.get("category", "Unclassified")
+                        )
+
+                        if is_classified and confidence > 0.0 and cat != "Unclassified":
+                            jev_plan_files.append((f, cat, jev_res, status_match))
+                            matched = True
+
+                if not matched and keyword_rules:
                     for keyword, target_folder in keyword_rules.items():
                         if not keyword.strip():
                             continue
@@ -644,6 +691,33 @@ class IncrementalAnalyzer:
                     else:
                         ai_filenames.append(f)
                         ai_documents.append(doc)
+
+            if jev_results:
+                processed_files = {f for f, _, _, _ in jev_plan_files}
+                for k_jev, v_jev in jev_results.items():
+                    f_path = str(k_jev)
+                    if (
+                        f_path not in processed_files
+                        and os.path.basename(f_path) not in processed_files
+                    ):
+                        is_classified = (
+                            getattr(v_jev, "is_classified", False)
+                            if not isinstance(v_jev, dict)
+                            else v_jev.get("is_classified", False)
+                        )
+                        confidence = (
+                            getattr(v_jev, "confidence", 0.0)
+                            if not isinstance(v_jev, dict)
+                            else v_jev.get("confidence", 0.0)
+                        )
+                        cat = (
+                            getattr(v_jev, "category", "Unclassified")
+                            if not isinstance(v_jev, dict)
+                            else v_jev.get("category", "Unclassified")
+                        )
+                        if is_classified and confidence > 0.0 and cat != "Unclassified":
+                            jev_plan_files.append((f_path, cat, v_jev, None))
+                            processed_files.add(f_path)
 
             if fast_path_only:
                 ai_filenames = []
@@ -1070,6 +1144,66 @@ class IncrementalAnalyzer:
                     else:
                         current = current[part]
 
+            # Inject Jev routed files back into the plan
+            for f, target_folder, jev_res, ext_status in jev_plan_files:
+                if cancel_check and cancel_check():
+                    return {}
+                parts = target_folder.replace("\\", "/").split("/")
+                current = plan
+                for i, part in enumerate(parts):
+                    if part not in current:
+                        current[part] = {}
+                    if not isinstance(current[part], dict):
+                        current[part] = {"_original": current[part]}
+                    if i == len(parts) - 1:
+                        cat_val = (
+                            getattr(jev_res, "category", None)
+                            if not isinstance(jev_res, dict)
+                            else jev_res.get("category")
+                        )
+                        sens_val = (
+                            getattr(jev_res, "sensitivity_rating", None)
+                            if not isinstance(jev_res, dict)
+                            else jev_res.get("sensitivity_rating")
+                        )
+                        sens_score = (
+                            getattr(jev_res, "sensitivity_score", None)
+                            if not isinstance(jev_res, dict)
+                            else jev_res.get("sensitivity_score")
+                        )
+                        arch_prio = (
+                            getattr(jev_res, "archival_priority", None)
+                            if not isinstance(jev_res, dict)
+                            else jev_res.get("archival_priority")
+                        )
+                        arch_score = (
+                            getattr(jev_res, "archival_priority_score", None)
+                            if not isinstance(jev_res, dict)
+                            else jev_res.get("archival_priority_score")
+                        )
+                        conf_val = (
+                            getattr(jev_res, "confidence", None)
+                            if not isinstance(jev_res, dict)
+                            else jev_res.get("confidence")
+                        )
+
+                        node_data = {
+                            "__type__": "file",
+                            "routed_by": "jev_classifier",
+                            "extraction_status": ext_status,
+                            "category": cat_val,
+                            "sensitivity_rating": sens_val,
+                            "sensitivity_score": sens_score,
+                            "archival_priority": arch_prio,
+                            "archival_priority_score": arch_score,
+                            "confidence": conf_val,
+                        }
+                        current[part][f] = {
+                            k: v for k, v in node_data.items() if v is not None
+                        }
+                    else:
+                        current = current[part]
+
             if unsupported_files:
                 if "Miscellaneous" not in plan:
                     plan["Miscellaneous"] = {}
@@ -1352,3 +1486,6 @@ class IncrementalAnalyzer:
                         strategy.clear_isolated_state()
             except Exception:
                 pass
+
+
+FileAnalyzer = IncrementalAnalyzer
