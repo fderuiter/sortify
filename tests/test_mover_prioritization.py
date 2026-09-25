@@ -66,3 +66,81 @@ def test_recursive_move_execution_order_by_mtime(test_history_env):
 
     # Executed order must be old.txt -> mid.txt -> new.txt
     assert executed_sources == ["old.txt", "mid.txt", "new.txt"]
+
+
+def test_collect_move_items_age_tier_sorting(tmp_path):
+    base_dir = str(tmp_path)
+    now = time.time()
+    day_sec = 86400
+
+    f_new = os.path.join(base_dir, "new_file.txt")
+    f_stale = os.path.join(base_dir, "stale_file.txt")
+    f_archival = os.path.join(base_dir, "archival_file.txt")
+
+    for p in (f_new, f_stale, f_archival):
+        with open(p, "w") as f:
+            f.write("content")
+
+    # new (<30 days), stale (100 days), archival (400 days)
+    os.utime(f_new, (now - 5 * day_sec, now - 5 * day_sec))
+    os.utime(f_stale, (now - 100 * day_sec, now - 100 * day_sec))
+    os.utime(f_archival, (now - 400 * day_sec, now - 400 * day_sec))
+
+    plan = {
+        "new_file.txt": {"__type__": "file", "relative_source": "new_file.txt", "target_filename": "dest_new.txt"},
+        "stale_file.txt": {"__type__": "file", "relative_source": "stale_file.txt", "target_filename": "dest_stale.txt"},
+        "archival_file.txt": {"__type__": "file", "relative_source": "archival_file.txt", "target_filename": "dest_archival.txt"},
+    }
+
+    items = _collect_move_items(base_dir, plan, priority="age_tier")
+    assert len(items) == 3
+    filenames = [item["filename"] for item in items]
+    assert filenames == ["dest_archival.txt", "dest_stale.txt", "dest_new.txt"]
+
+
+def test_async_move_engine_executes_priority_chunks_first(test_history_env):
+    from app.core.mover import AsyncMoveEngine
+
+    base_dir, db, cache, history_manager, db_worker = test_history_env
+    now = time.time()
+    day_sec = 86400
+
+    f_recent = os.path.join(base_dir, "recent_doc.txt")
+    f_archival = os.path.join(base_dir, "archival_doc.txt")
+
+    for p in (f_recent, f_archival):
+        with open(p, "w") as f:
+            f.write("content")
+
+    os.utime(f_recent, (now, now))
+    os.utime(f_archival, (now - 500 * day_sec, now - 500 * day_sec))
+
+    plan = {
+        "recent_doc.txt": {
+            "__type__": "file",
+            "relative_source": "recent_doc.txt",
+            "target_filename": "out_recent.txt",
+            "user_confirmed": True,
+            "status": "confirmed",
+        },
+        "archival_doc.txt": {
+            "__type__": "file",
+            "relative_source": "archival_doc.txt",
+            "target_filename": "out_archival.txt",
+            "user_confirmed": True,
+            "status": "confirmed",
+        },
+    }
+
+    engine = AsyncMoveEngine(max_workers=1, chunk_size=1)
+    summary = engine.execute(
+        base_dir=base_dir,
+        plan=plan,
+        db=db,
+        history_manager=history_manager,
+        priority="age_tier",
+    )
+
+    assert os.path.exists(os.path.join(base_dir, "out_archival.txt"))
+    assert os.path.exists(os.path.join(base_dir, "out_recent.txt"))
+

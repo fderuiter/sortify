@@ -6182,6 +6182,11 @@
                   "annotation": null,
                   "default": "None",
                   "name": "cancellation_token"
+                },
+                {
+                  "annotation": "str",
+                  "default": "None",
+                  "name": "priority"
                 }
               ],
               "returns": "dict"
@@ -6254,6 +6259,11 @@
               "annotation": null,
               "default": "None",
               "name": "cancellation_token"
+            },
+            {
+              "annotation": "str",
+              "default": "None",
+              "name": "priority"
             }
           ],
           "returns": "dict"
@@ -6322,6 +6332,11 @@
               "annotation": null,
               "default": "None",
               "name": "cancellation_token"
+            },
+            {
+              "annotation": "str",
+              "default": "None",
+              "name": "priority"
             }
           ],
           "returns": "dict"
