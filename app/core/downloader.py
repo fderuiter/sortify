@@ -8,6 +8,7 @@ import threading
 import urllib.error
 import urllib.request
 
+from app.core.exceptions import DownloaderError
 from app.core.progress import ProgressUpdate, emit_progress
 
 logger = logging.getLogger(__name__)
@@ -15,7 +16,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_MODEL_URL = "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/onnx/model.onnx"
 
 
-class DownloadError(Exception):
+class DownloadError(DownloaderError):
     """Base class for download exceptions."""
 
     pass
@@ -332,7 +333,7 @@ def verify_temp_file_hash(temp_path: str, target_path: str) -> bool:
     except OSError as e:
         raise ModelVerificationError(
             f"Failed to read temporary file during hash calculation: {e}"
-        )
+        ) from e
 
     # Requirement 2: Validate computed hash against central registry
     from app.core.shared_registry import SharedModelRegistry
@@ -542,12 +543,9 @@ def run_background_download(
                         raise
                     retries += 1
                     if retries > max_retries:
-                        err = (
-                            net_err
-                            if isinstance(net_err, DownloadError)
-                            else NetworkError(str(net_err))
-                        )
-                        raise err
+                        if isinstance(net_err, DownloadError):
+                            raise net_err
+                        raise NetworkError(str(net_err)) from net_err
                     logger.info(
                         f"Retrying download operation ({retries}/{max_retries}) using updated proxy opener: {net_err}"
                     )
@@ -603,10 +601,16 @@ def run_background_download(
             if os.path.exists(temp_path):
                 try:
                     os.remove(temp_path)
-                except Exception:
-                    pass
+                except Exception as cleanup_err:
+                    logger.warning(
+                        f"Failed to clean up temporary file {temp_path}: {cleanup_err}"
+                    )
             # Wrap as NetworkError if not already a subclass of DownloadError
-            err = e if isinstance(e, DownloadError) else NetworkError(str(e))
+            if isinstance(e, DownloadError):
+                err = e
+            else:
+                err = NetworkError(str(e))
+                err.__cause__ = e
             if on_failure:
                 on_failure(err)
 

@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "903dfe6409a6650f9c9cb79b3dc836d2cb313fd453c1ba333f0b01d63d7e041e"
+    "checksum": "9df2b20f08510b9563970378f13c92cba71bb6c8a8b2de8b68565fd6abf86fa6"
   },
   "cli": {
     "app/main.py": [
@@ -4411,6 +4411,41 @@
           "returns": null
         }
       ]
+    },
+    "app/core/exceptions.py": {
+      "classes": [
+        {
+          "class_name": "CacheError",
+          "decorators": [],
+          "methods": []
+        },
+        {
+          "class_name": "CryptoError",
+          "decorators": [],
+          "methods": []
+        },
+        {
+          "class_name": "DownloaderError",
+          "decorators": [],
+          "methods": []
+        },
+        {
+          "class_name": "OfflineLoaderError",
+          "decorators": [],
+          "methods": []
+        },
+        {
+          "class_name": "SemanticEmbeddingError",
+          "decorators": [],
+          "methods": []
+        },
+        {
+          "class_name": "SortifyBaseError",
+          "decorators": [],
+          "methods": []
+        }
+      ],
+      "functions": []
     },
     "app/core/extractor.py": {
       "classes": [
