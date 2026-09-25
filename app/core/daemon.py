@@ -14,6 +14,8 @@ from watchdog.observers import Observer
 
 from app.config import AppSettings
 from app.core.metadata import MetadataPass
+from app.core.quarantine_interceptor import QuarantineInterceptorService
+from app.core.resilient_file_ops import resilient_remove
 from app.core.scanner import get_files_recursively
 from app.core.session import AppSession
 
@@ -322,6 +324,7 @@ class ContinuousWatchdogDaemon:
             "__pycache__",
             "settings.json",
             "autosorter.log",
+            "_Quarantine_Staging",
         ]
 
         for pattern in ignored_patterns:
@@ -522,9 +525,12 @@ class ContinuousWatchdogDaemon:
                     self._active_triage_paths.discard(norm_p)
 
     async def _triage_file_path(self, abs_path: str):
-        """Targeted triage on a single item path without whole-directory file listing utilities."""
+        """Targeted triage on a single item path using QuarantineInterceptorService staging and compliance policy evaluation."""
         if not os.path.exists(abs_path):
             logger.debug(f"Target file missing before triage: {abs_path}")
+            return
+
+        if self.should_ignore_path(abs_path):
             return
 
         rel_path = (
@@ -543,7 +549,79 @@ class ContinuousWatchdogDaemon:
         except Exception:
             pass
 
-        # Phase 1: Fast-Path Rule Evaluation
+        if cancel_check():
+            return
+
+        # Phase 0: Quarantine Interceptor Staging & Compliance Policy Evaluation
+        policies = getattr(self.settings, "POLICIES", [])
+        worker_timeout = getattr(self.settings, "WORKER_TIMEOUT", 300.0)
+        interceptor = QuarantineInterceptorService(
+            db=app_session.db,
+            policies=policies,
+            worker_timeout=worker_timeout,
+        )
+
+        try:
+            staged_info = interceptor.stage_incoming_file(
+                source_path=abs_path,
+                base_dir=self.base_dir,
+                original_relative_path=rel_path,
+            )
+        except Exception as e:
+            logger.error(
+                f"Failed to stage incoming file {abs_path} in quarantine: {e}",
+                exc_info=True,
+            )
+            return
+
+        job_id = staged_info["job_id"]
+        staged_filepath = staged_info.get("staged_filepath")
+
+        # Unlink/remove original unisolated file from base_dir post-staging
+        if staged_filepath and os.path.abspath(abs_path) != os.path.abspath(staged_filepath):
+            if os.path.exists(abs_path):
+                resilient_remove(abs_path)
+
+        if cancel_check():
+            return
+
+        # Execute deep forensic inspection, PII redaction, and compliance policy evaluation off-thread
+        quarantine_record = await asyncio.to_thread(
+            interceptor.process_quarantine_job, job_id
+        )
+
+        if cancel_check():
+            return
+
+        status = (
+            quarantine_record.get("status")
+            if isinstance(quarantine_record, dict)
+            else None
+        )
+        policy_action = (
+            quarantine_record.get("policy_action")
+            if isinstance(quarantine_record, dict)
+            else None
+        )
+
+        # If file was quarantined, archived, or routed to DLQ / manual review, triage is complete
+        if status in ("QUARANTINED", "ARCHIVED", "MANUAL_REVIEW_REQUIRED", "DEAD_LETTER_QUEUE"):
+            logger.info(
+                f"Quarantine interceptor completed for {rel_path} with status {status}"
+            )
+            return
+
+        # If a compliance action (redact, archive, quarantine, retain) was executed, triage is complete
+        if policy_action in ("redact", "archive", "quarantine", "retain"):
+            logger.info(
+                f"Quarantine interceptor compliance action {policy_action} executed for {rel_path}"
+            )
+            return
+
+        # Phase 1: Fast-Path Rule Evaluation for released / non-sensitive files
+        if not os.path.exists(abs_path):
+            return
+
         MetadataPass.run(
             self.base_dir, [rel_path], self.settings, app_session.db, None, cancel_check
         )
