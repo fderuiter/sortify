@@ -12,6 +12,8 @@ class DummySettings:
         self.CONFLICT_POLICY = "rename"
         self.MAX_FOLDERS = 10
         self.STOP_WORDS = set()
+        self.AI_CONSENT_GRANTED = False
+        self.POLICIES = []
 
     def load(self):
         self.loaded_ok = True
@@ -132,3 +134,143 @@ def test_daemon_execution_flow(tmp_path):
             {"invoice.txt": "dest/invoice.txt"}
         )
         mock_app_session_inst.close.assert_called_once()
+
+
+@pytest.mark.anyio
+async def test_daemon_triage_file_path_stages_and_redacts(tmp_path):
+    from app.core.db_conn import clear_connection_cache
+
+    try:
+        src_dir = tmp_path / "src"
+        src_dir.mkdir()
+
+        sensitive_file = src_dir / "patient_report.txt"
+        sensitive_file.write_text(
+            "Confidential Medical Report for Subject 101 with SSN 123-45-6789",
+            encoding="utf-8",
+        )
+
+        class CustomSettings(DummySettings):
+            def __init__(self):
+                super().__init__()
+                self.POLICIES = [
+                    {
+                        "type": "keyword",
+                        "expression": "subject",
+                        "action": "redact",
+                        "target_path": "Clean_Out",
+                        "priority": 100,
+                    }
+                ]
+                self.WORKER_TIMEOUT = 300.0
+
+        settings = CustomSettings()
+        daemon = ContinuousWatchdogDaemon(settings, str(src_dir))
+        daemon._is_running = True
+
+        await daemon._triage_file_path(str(sensitive_file))
+
+        assert not sensitive_file.exists()
+
+        db = daemon._get_or_create_session().db
+        records = db.get_quarantine_records_by_base_dir(str(src_dir))
+        assert len(records) == 1
+        rec = records[0]
+        assert rec["status"] == "RELEASED"
+        assert rec["policy_action"] == "redact"
+
+        statuses = [entry["status"] for entry in rec["audit_log"]]
+        assert "STAGED" in statuses
+        assert "IN_INSPECTION" in statuses
+        assert "REDACTED" in statuses
+        assert "RELEASED" in statuses
+
+        released_file = src_dir / "Clean_Out" / "patient_report.txt"
+        assert released_file.exists()
+        released_text = released_file.read_text(encoding="utf-8")
+        assert "123-45-6789" not in released_text
+        assert "[REDACTED" in released_text
+
+        daemon.stop()
+    finally:
+        clear_connection_cache()
+
+
+@pytest.mark.anyio
+async def test_daemon_triage_file_path_quarantine_action(tmp_path):
+    from app.core.db_conn import clear_connection_cache
+
+    try:
+        src_dir = tmp_path / "src"
+        src_dir.mkdir()
+
+        malicious_file = src_dir / "restricted_file.txt"
+        malicious_file.write_text("This contains restricted content", encoding="utf-8")
+
+        class CustomSettings(DummySettings):
+            def __init__(self):
+                super().__init__()
+                self.POLICIES = [
+                    {
+                        "type": "keyword",
+                        "expression": "restricted",
+                        "action": "quarantine",
+                        "target_path": "_Quarantine_Staging",
+                        "priority": 100,
+                    }
+                ]
+
+        settings = CustomSettings()
+        daemon = ContinuousWatchdogDaemon(settings, str(src_dir))
+        daemon._is_running = True
+
+        await daemon._triage_file_path(str(malicious_file))
+
+        assert not malicious_file.exists()
+
+        db = daemon._get_or_create_session().db
+        records = db.get_quarantine_records_by_base_dir(str(src_dir))
+        assert len(records) == 1
+        rec = records[0]
+        assert rec["status"] == "QUARANTINED"
+        assert rec["policy_action"] == "quarantine"
+
+        daemon.stop()
+    finally:
+        clear_connection_cache()
+
+
+@pytest.mark.anyio
+async def test_daemon_triage_file_path_timeout_to_dlq(tmp_path):
+    from app.core.db_conn import clear_connection_cache
+
+    try:
+        src_dir = tmp_path / "src"
+        src_dir.mkdir()
+
+        heavy_file = src_dir / "heavy.txt"
+        heavy_file.write_text("Heavy processing data", encoding="utf-8")
+
+        class CustomSettings(DummySettings):
+            def __init__(self):
+                super().__init__()
+                self.POLICIES = []
+                self.WORKER_TIMEOUT = 0.00001
+
+        settings = CustomSettings()
+        daemon = ContinuousWatchdogDaemon(settings, str(src_dir))
+        daemon._is_running = True
+
+        await daemon._triage_file_path(str(heavy_file))
+
+        db = daemon._get_or_create_session().db
+        records = db.get_quarantine_records_by_base_dir(str(src_dir))
+        assert len(records) == 1
+        rec = records[0]
+        assert rec["status"] == "MANUAL_REVIEW_REQUIRED"
+        assert "timeout" in rec["error_message"].lower()
+
+        daemon.stop()
+    finally:
+        clear_connection_cache()
+
