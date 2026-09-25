@@ -1,15 +1,215 @@
-"""Persistent SQLite cache for application analysis data."""
+"""Persistent SQLite cache for application analysis data and bounded memory cache utilities."""
 
+import collections
 import json
 import logging
 import sqlite3
 import threading
+import time
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Dict,
+    Generic,
+    Iterator,
+    List,
+    Optional,
+    Tuple,
+    TypeVar,
+)
 
 from app.core.db_conn import get_db_connection
-from app.core.db_worker import DBWorker
 from app.core.exceptions import CacheError
+
+if TYPE_CHECKING:
+    from app.core.db_worker import DBWorker
+
+_MISSING = object()
+
+K = TypeVar("K")
+V = TypeVar("V")
+
+
+class BoundedMemoryCache(Generic[K, V]):
+    """Thread-safe bounded in-memory LRU cache with optional TTL expiration and eviction callbacks."""
+
+    def __init__(
+        self,
+        max_size: int = 1000,
+        ttl: float | None = None,
+        on_evict: Callable[[K, V], None] | None = None,
+    ):
+        if max_size <= 0:
+            raise ValueError("max_size must be greater than 0")
+        self.max_size = max_size
+        self.ttl = ttl
+        self.on_evict = on_evict
+        self._cache: collections.OrderedDict[K, tuple[V, float | None]] = (
+            collections.OrderedDict()
+        )
+        self._lock = threading.RLock()
+
+    def _is_expired(self, expire_time: float | None) -> bool:
+        if expire_time is None:
+            return False
+        return time.monotonic() >= expire_time
+
+    def _purge_expired(self) -> None:
+        now = time.monotonic()
+        for k in list(self._cache.keys()):
+            _, exp = self._cache[k]
+            if exp is not None and now >= exp:
+                self._remove_item(k, call_on_evict=True)
+
+    def _remove_item(self, key: K, call_on_evict: bool = True) -> None:
+        if key in self._cache:
+            val, _ = self._cache.pop(key)
+            if call_on_evict and self.on_evict:
+                try:
+                    self.on_evict(key, val)
+                except Exception as e:
+                    logging.error(f"Error in on_evict callback for key {key}: {e}")
+
+    def get(self, key: K, default: Any = None) -> Any:
+        """Retrieve an item from the cache, updating its LRU position if valid."""
+        with self._lock:
+            if key not in self._cache:
+                return default
+            val, expire_time = self._cache[key]
+            if self._is_expired(expire_time):
+                self._remove_item(key, call_on_evict=True)
+                return default
+            self._cache.move_to_end(key)
+            return val
+
+    def set(self, key: K, value: V, ttl: float | None = None) -> None:
+        """Store an item in the cache with optional entry-specific TTL."""
+        with self._lock:
+            ttl_val = ttl if ttl is not None else self.ttl
+            expire_time = (time.monotonic() + ttl_val) if ttl_val is not None else None
+
+            if key in self._cache:
+                self._cache.pop(key)
+
+            self._cache[key] = (value, expire_time)
+            self._cache.move_to_end(key)
+
+            while len(self._cache) > self.max_size:
+                evicted_key, (evicted_val, _) = self._cache.popitem(last=False)
+                if self.on_evict:
+                    try:
+                        self.on_evict(evicted_key, evicted_val)
+                    except Exception as e:
+                        logging.error(
+                            f"Error in on_evict callback for key {evicted_key}: {e}"
+                        )
+
+    def put(self, key: K, value: V, ttl: float | None = None) -> None:
+        """Alias for set."""
+        self.set(key, value, ttl=ttl)
+
+    def invalidate(self, key: K) -> bool:
+        """Explicitly purge a specific key from the cache. Returns True if found."""
+        with self._lock:
+            if key in self._cache:
+                self._remove_item(key, call_on_evict=True)
+                return True
+            return False
+
+    def pop(self, key: K, default: Any = None) -> Any:
+        """Remove and return an item from the cache."""
+        with self._lock:
+            if key in self._cache:
+                val, expire_time = self._cache[key]
+                self._remove_item(key, call_on_evict=False)
+                if self._is_expired(expire_time):
+                    return default
+                return val
+            return default
+
+    def clear(self) -> None:
+        """Clear all entries in the cache, calling on_evict for each item if defined."""
+        with self._lock:
+            if self.on_evict:
+                for key, (val, _) in list(self._cache.items()):
+                    try:
+                        self.on_evict(key, val)
+                    except Exception as e:
+                        logging.error(f"Error in on_evict callback during clear: {e}")
+            self._cache.clear()
+
+    def keys(self) -> list[K]:
+        """Return a list of non-expired cache keys."""
+        with self._lock:
+            self._purge_expired()
+            return list(self._cache.keys())
+
+    def values(self) -> list[V]:
+        """Return a list of non-expired cache values."""
+        with self._lock:
+            self._purge_expired()
+            res: list[V] = []
+            for k in list(self._cache.keys()):
+                val, exp = self._cache[k]
+                if self._is_expired(exp):
+                    self._remove_item(k, call_on_evict=True)
+                else:
+                    res.append(val)
+            return res
+
+    def items(self) -> list[tuple[K, V]]:
+        """Return a list of non-expired (key, value) pairs."""
+        with self._lock:
+            self._purge_expired()
+            res: list[tuple[K, V]] = []
+            for k in list(self._cache.keys()):
+                val, exp = self._cache[k]
+                if self._is_expired(exp):
+                    self._remove_item(k, call_on_evict=True)
+                else:
+                    res.append((k, val))
+            return res
+
+    def __getitem__(self, key: K) -> V:
+        """Retrieve an item by key or raise KeyError."""
+        val = self.get(key, _MISSING)
+        if val is _MISSING:
+            raise KeyError(key)
+        return val
+
+    def __setitem__(self, key: K, value: V) -> None:
+        """Store an item by key."""
+        self.set(key, value)
+
+    def __delitem__(self, key: K) -> None:
+        """Remove an item by key or raise KeyError."""
+        if not self.invalidate(key):
+            raise KeyError(key)
+
+    def __contains__(self, key: object) -> bool:
+        """Check if non-expired key is present in cache."""
+        with self._lock:
+            if key not in self._cache:
+                return False
+            val, expire_time = self._cache[key]  # type: ignore[index]
+            if self._is_expired(expire_time):
+                self._remove_item(key, call_on_evict=True)  # type: ignore[arg-type]
+                return False
+            return True
+
+    def __len__(self) -> int:
+        """Return count of non-expired items in cache."""
+        with self._lock:
+            self._purge_expired()
+            return len(self._cache)
+
+    def __iter__(self) -> Iterator[V]:
+        """Iterate over non-expired cache values (supporting document row iteration)."""
+        with self._lock:
+            self._purge_expired()
+            return iter(self.values())
 
 
 class SparseMatrixLRUCache:
@@ -82,13 +282,15 @@ class SparseMatrixLRUCache:
 class CacheManager:
     """Manages the persistence of cached extraction data to an SQLite database."""
 
-    def __init__(self, db_path: str, worker: DBWorker):
+    def __init__(self, db_path: str, worker: "DBWorker | Any"):
         self.db_path = db_path
         self.worker = worker
         self._init_db()
 
     def _get_conn(self):
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
+        from app.core.db_conn import get_db_connection
+
         conn = get_db_connection(self.db_path)
         return conn
 

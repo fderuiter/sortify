@@ -1500,6 +1500,212 @@
     "app/core/cache.py": {
       "classes": [
         {
+          "class_name": "BoundedMemoryCache",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "__init__",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "int",
+                  "default": "1000",
+                  "name": "max_size"
+                },
+                {
+                  "annotation": "float | None",
+                  "default": "None",
+                  "name": "ttl"
+                },
+                {
+                  "annotation": "Callable[[K, V], None] | None",
+                  "default": "None",
+                  "name": "on_evict"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "clear",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": "None"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "get",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "K",
+                  "default": null,
+                  "name": "key"
+                },
+                {
+                  "annotation": "Any",
+                  "default": "None",
+                  "name": "default"
+                }
+              ],
+              "returns": "Any"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "invalidate",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "K",
+                  "default": null,
+                  "name": "key"
+                }
+              ],
+              "returns": "bool"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "items",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": "list[tuple[K, V]]"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "keys",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": "list[K]"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "pop",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "K",
+                  "default": null,
+                  "name": "key"
+                },
+                {
+                  "annotation": "Any",
+                  "default": "None",
+                  "name": "default"
+                }
+              ],
+              "returns": "Any"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "put",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "K",
+                  "default": null,
+                  "name": "key"
+                },
+                {
+                  "annotation": "V",
+                  "default": null,
+                  "name": "value"
+                },
+                {
+                  "annotation": "float | None",
+                  "default": "None",
+                  "name": "ttl"
+                }
+              ],
+              "returns": "None"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "set",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "K",
+                  "default": null,
+                  "name": "key"
+                },
+                {
+                  "annotation": "V",
+                  "default": null,
+                  "name": "value"
+                },
+                {
+                  "annotation": "float | None",
+                  "default": "None",
+                  "name": "ttl"
+                }
+              ],
+              "returns": "None"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "values",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": "list[V]"
+            }
+          ]
+        },
+        {
           "class_name": "CacheManager",
           "decorators": [],
           "methods": [
@@ -1519,7 +1725,7 @@
                   "name": "db_path"
                 },
                 {
-                  "annotation": "DBWorker",
+                  "annotation": "'DBWorker | Any'",
                   "default": null,
                   "name": "worker"
                 }

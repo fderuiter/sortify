@@ -5,6 +5,8 @@ import os
 import sys
 import threading
 
+from app.core.cache import BoundedMemoryCache
+
 logger = logging.getLogger(__name__)
 
 # Run user-space bootstrapping to download, register, and verify precompiled native binaries
@@ -57,7 +59,15 @@ except Exception:
         sqlite3 = sqlite3_mock
 
 # Global connection cache and lock
-_connection_cache = {}
+def _close_evicted_connection(key, conn):
+    if conn:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+_connection_cache = BoundedMemoryCache(max_size=50, on_evict=_close_evicted_connection)
 _cache_lock = threading.Lock()
 _disable_pytest_win_fallback = False
 
