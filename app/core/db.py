@@ -41,6 +41,8 @@ class Database:
         self._cached_documents = None
         self.corrupted_vectors = set()
         self._corrupted_vectors_lock = threading.Lock()
+        from app.core.cache import SparseMatrixLRUCache
+        self.matrix_lru_cache = SparseMatrixLRUCache(max_documents=500)
         self.init_db()
 
     def init_db(self):
@@ -1049,11 +1051,13 @@ class Database:
                     conn.execute(
                         "DELETE FROM tfidf_matrix_cache WHERE base_dir = ?", (base_dir,)
                     )
+                    self.matrix_lru_cache.invalidate(base_dir)
                 else:
                     conn.execute("DELETE FROM documents")
                     conn.execute("DELETE FROM tfidf_vocab")
                     conn.execute("DELETE FROM tfidf_doc_terms")
                     conn.execute("DELETE FROM tfidf_matrix_cache")
+                    self.matrix_lru_cache.invalidate(None)
             self.invalidate_cache()
 
         self.worker.execute_write(_write)
@@ -1098,14 +1102,23 @@ class Database:
             return N, top_terms, doc_terms, doc_metadata
 
     def get_tfidf_matrix_cache(self, base_dir: str):
-        """Retrieve pre-computed TF-IDF term weights directly from the cache table in under 10ms."""
+        """Retrieve pre-computed TF-IDF term weights directly from the in-memory LRU cache or cache table in under 5ms."""
+        if not base_dir:
+            return []
+        cached = self.matrix_lru_cache.get(base_dir)
+        if cached is not None:
+            return cached
+
         conn = get_db_connection(self.db_path)
         with conn:
             cursor = conn.execute(
                 "SELECT filepath, term, weight FROM tfidf_matrix_cache WHERE base_dir = ?",
                 (base_dir,),
             )
-            return cursor.fetchall()
+            rows = cursor.fetchall()
+            if rows:
+                self.matrix_lru_cache.put(base_dir, rows)
+            return rows
 
     def update_tfidf_matrix_cache(self, base_dir: str):
         """Recompute and refresh pre-computed TF-IDF matrix weights for a workspace base directory."""
@@ -1126,6 +1139,7 @@ class Database:
         )
         N = cursor.fetchone()[0] or 0
         conn.execute("DELETE FROM tfidf_matrix_cache WHERE base_dir = ?", (base_dir,))
+        self.matrix_lru_cache.invalidate(base_dir)
         if N == 0:
             return
 
@@ -1165,6 +1179,8 @@ class Database:
                 "INSERT OR REPLACE INTO tfidf_matrix_cache (base_dir, filepath, term, weight) VALUES (?, ?, ?, ?)",
                 cache_rows,
             )
+            formatted_rows = [(row[1], row[2], row[3]) for row in cache_rows]
+            self.matrix_lru_cache.put(base_dir, formatted_rows)
 
     def get_model_metadata(self, key: str) -> str | None:
         """Get model metadata value for a given key."""

@@ -120,6 +120,45 @@ def get_file_hash(file_path: str) -> str:
     return resilient_file_hash(file_path, skip_media_tags=True)
 
 
+def evaluate_text_confidence(text: str, ext: str) -> float:
+    """Evaluate extraction confidence for fast-path triage decisions.
+
+    Returns a float score in [0.0, 1.0]. Scores >= 0.8 represent high confidence,
+    allowing fast-path triage to bypass heavy models (Florence-2, EasyOCR, GGUF).
+    Scores < 0.8 escalate documents to asynchronous background worker queues.
+    """
+    ext = ext.lower()
+    if ext in (".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".webp"):
+        return 0.0
+
+    if not text or not text.strip():
+        return 0.0
+
+    if text.startswith("[STATUS:"):
+        return 0.0
+
+    # Native text and tabular formats
+    if ext in (".txt", ".csv", ".md", ".json", ".log", ".tsv", ".xml", ".html", ".rst"):
+        stripped = text.strip()
+        if len(stripped) > 0:
+            return 1.0
+        return 0.0
+
+    # Complex document formats (PDF, DOCX, etc.)
+    stripped = text.strip()
+    words = [w for w in stripped.split() if any(c.isalnum() for c in w)]
+    if len(words) < 3:
+        return 0.3
+
+    alphanumeric_chars = sum(1 for c in stripped if c.isalnum() or c.isspace())
+    total_chars = len(stripped)
+    ratio = alphanumeric_chars / max(1, total_chars)
+
+    if ratio >= 0.75 and len(words) >= 3:
+        return 0.9
+    return 0.4
+
+
 def extract_file_text(
     file_path: str,
     settings=None,
@@ -132,7 +171,7 @@ def extract_file_text(
     """Extract text content from a given file."""
     ext = os.path.splitext(file_path)[1].lower()
 
-    if fast_triage and ext in (".png", ".jpg", ".jpeg", ".bmp", ".tiff"):
+    if fast_triage and ext in (".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".webp"):
         if db and hasattr(db, "worker") and db.worker:
             def _bg_visual_job():
                 full_text = str(extract_file_text(file_path, settings=settings, fast_triage=False))
@@ -158,18 +197,22 @@ def extract_file_text(
                 kwargs["cancel_check"] = cancel_check
 
             raw_text = extractor.extract(file_path, **kwargs)
-            if fast_triage and ext == ".pdf" and not raw_text.strip():
-                if db and hasattr(db, "worker") and db.worker:
-                    def _bg_pdf_job():
-                        full_text = str(extractor.extract(file_path, **kwargs))
-                        if base_dir:
-                            rel_path = os.path.relpath(file_path, base_dir).replace("\\", "/")
-                            f_hash = get_file_hash(file_path)
-                            db.upsert_document(base_dir, rel_path, f_hash, full_text)
-                            db.update_tfidf_matrix_cache(base_dir)
-                    db.worker.submit_background_job(_bg_pdf_job)
-                return ExtractionResult(text="", status=ExtractionStatus.PROVISIONAL)
             text = sanitize_text(raw_text)
+
+            if fast_triage:
+                confidence = evaluate_text_confidence(text, ext)
+                if confidence < 0.8:
+                    if db and hasattr(db, "worker") and db.worker:
+                        def _bg_escalation_job():
+                            full_text = str(extractor.extract(file_path, **kwargs))
+                            if base_dir:
+                                rel_path = os.path.relpath(file_path, base_dir).replace("\\", "/")
+                                f_hash = get_file_hash(file_path)
+                                db.upsert_document(base_dir, rel_path, f_hash, full_text)
+                                db.update_tfidf_matrix_cache(base_dir)
+                        db.worker.submit_background_job(_bg_escalation_job)
+                    return ExtractionResult(text="", status=ExtractionStatus.PROVISIONAL)
+
             if not text.strip():
                 return ExtractionResult(text="", status=ExtractionStatus.EMPTY)
 
