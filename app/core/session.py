@@ -3,6 +3,7 @@
 import json
 import os
 import shutil
+from typing import Optional
 
 try:
     import sqlite3
@@ -265,7 +266,9 @@ class AppSession:
             return
         self.analyzer.partial_fit(self.base_dir, chunk, self.settings)
 
-    def generate_sorting_plan(self, fast_path_only: bool = False):
+    def generate_sorting_plan(
+        self, fast_path_only: bool = False, target_paths: Optional[list[str]] = None
+    ):
         """Generate sorting plan from analyzer."""
         if not self.base_dir:
             return {}
@@ -275,6 +278,7 @@ class AppSession:
             self.settings,
             locked_files=locked,
             fast_path_only=fast_path_only,
+            target_paths=target_paths,
         )
 
     def rollback(self, session_id, ignore_missing=False):

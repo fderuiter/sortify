@@ -1,5 +1,6 @@
 """Local database management for autosorter."""
 
+import os
 from pathlib import Path
 
 from app.core.db_conn import get_db_connection
@@ -392,20 +393,56 @@ class Database:
 
         self.worker.execute_write(_write)
 
-    def get_all_documents(self, base_dir):
-        """Retrieve all valid documents for a given base directory."""
-        self._populate_cache_if_needed(base_dir)
+    def get_all_documents(self, base_dir, target_paths=None):
+        """Retrieve valid documents for a given base directory, optionally restricted by target_paths."""
+        if not base_dir:
+            return []
+
+        norm_targets = None
+        if target_paths is not None:
+            norm_targets = set()
+            for p in target_paths:
+                if not p:
+                    continue
+                if os.path.isabs(p) and base_dir and p.startswith(base_dir):
+                    rel = os.path.relpath(p, base_dir).replace("\\", "/")
+                else:
+                    rel = p.replace("\\", "/")
+                norm_targets.add(rel)
+                norm_targets.add(os.path.normpath(rel).replace("\\", "/"))
+
         with self._cache_lock:
             if self._cached_base_dir == base_dir and self._cached_documents is not None:
+                if norm_targets is not None:
+                    return [
+                        d
+                        for d in self._cached_documents
+                        if d[0] in norm_targets
+                        or os.path.normpath(d[0]).replace("\\", "/") in norm_targets
+                    ]
                 return list(self._cached_documents)
 
-        # Fallback to DB query directly if cache was invalidated concurrently
+        # Fallback to DB query directly if cache was invalidated concurrently or target_paths is requested
         conn = get_db_connection(self.db_path)
         with conn:
-            cursor = conn.execute(
-                "SELECT filepath, extracted_text, file_hash, user_verified_target_path FROM documents WHERE base_dir = ?",
-                (base_dir,),
-            )
+            if norm_targets is not None:
+                if not norm_targets:
+                    return []
+                targets_list = list(norm_targets)
+                placeholders = ",".join(["?"] * len(targets_list))
+                cursor = conn.execute(
+                    f"SELECT filepath, extracted_text, file_hash, user_verified_target_path FROM documents WHERE base_dir = ? AND filepath IN ({placeholders})",
+                    (base_dir, *targets_list),
+                )
+            else:
+                self._populate_cache_if_needed(base_dir)
+                with self._cache_lock:
+                    if self._cached_base_dir == base_dir and self._cached_documents is not None:
+                        return list(self._cached_documents)
+                cursor = conn.execute(
+                    "SELECT filepath, extracted_text, file_hash, user_verified_target_path FROM documents WHERE base_dir = ?",
+                    (base_dir,),
+                )
             rows = cursor.fetchall()
 
             from app.core.shared_registry import SharedWorkerPool

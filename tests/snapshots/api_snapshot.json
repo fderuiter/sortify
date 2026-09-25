@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "73088c3a921904455177fded9cb687df2811bb1218ee886fa6be406edf1440bb"
+    "checksum": "adff30158b88ce9b68d32e29c25b98812e15a2708b8796c708923c9f425073cd"
   },
   "cli": {
     "app/main.py": [
@@ -564,6 +564,11 @@
                   "annotation": "bool",
                   "default": "False",
                   "name": "fast_path_only"
+                },
+                {
+                  "annotation": "Optional[list[str]]",
+                  "default": "None",
+                  "name": "target_paths"
                 }
               ],
               "returns": "SortingPlan"
@@ -2871,6 +2876,11 @@
                   "annotation": null,
                   "default": null,
                   "name": "base_dir"
+                },
+                {
+                  "annotation": null,
+                  "default": "None",
+                  "name": "target_paths"
                 }
               ],
               "returns": null
@@ -7495,6 +7505,11 @@
                   "annotation": "bool",
                   "default": "False",
                   "name": "fast_path_only"
+                },
+                {
+                  "annotation": "Optional[list[str]]",
+                  "default": "None",
+                  "name": "target_paths"
                 }
               ],
               "returns": null

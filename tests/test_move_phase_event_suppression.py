@@ -1,5 +1,6 @@
 """Unit tests for Scoped Move Phase Event Suppression in ContinuousWatchdogDaemon."""
 
+import asyncio
 import threading
 import time
 from unittest import mock
@@ -60,17 +61,19 @@ def test_event_suppression_during_active_move_phase(tmp_path):
     daemon.stop()
 
 
-def test_events_outside_move_phase_trigger_recalculation(tmp_path):
+def test_events_outside_move_phase_enqueue_change_event(tmp_path):
     settings = DummySettings()
     daemon = ContinuousWatchdogDaemon(settings, str(tmp_path))
     daemon._is_running = True
+    daemon._event_queue = asyncio.Queue()
     handler = DaemonFolderHandler(daemon)
 
-    # When not in move phase, event must trigger recalculation
+    # When not in move phase, event must enqueue FileChangeEvent without legacy global recalculation
     event = FileModifiedEvent(str(tmp_path / "new_file.txt"))
     handler.on_any_event(event)
 
-    assert daemon._debounce_timer is not None
+    assert daemon._event_queue.qsize() == 1
+    assert daemon._debounce_timer is None
 
     daemon.stop()
 
@@ -90,12 +93,13 @@ def test_exception_handling_releases_move_phase_flag(tmp_path):
     # Flag must be released even after an exception
     assert daemon.is_moving is False
 
-    # Subsequent event must trigger recalculation properly
+    # Subsequent event must enqueue FileChangeEvent properly
+    daemon._event_queue = asyncio.Queue()
     handler = DaemonFolderHandler(daemon)
     event = FileModifiedEvent(str(tmp_path / "file_after_error.txt"))
     handler.on_any_event(event)
 
-    assert daemon._debounce_timer is not None
+    assert daemon._event_queue.qsize() == 1
 
     daemon.stop()
 

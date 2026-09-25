@@ -1,3 +1,4 @@
+import asyncio
 import threading
 from unittest import mock
 
@@ -251,6 +252,7 @@ def test_observer_thread_non_blocking_during_events(tmp_path):
     daemon = ContinuousWatchdogDaemon(settings, str(tmp_path))
     daemon._is_running = True
 
+    daemon._event_queue = asyncio.Queue()
     handler = DaemonFolderHandler(daemon)
     event = mock.MagicMock()
     event.src_path = str(tmp_path / "test.txt")
@@ -258,5 +260,5 @@ def test_observer_thread_non_blocking_during_events(tmp_path):
     # Fire event through observer handler
     handler.on_any_event(event)
 
-    assert daemon._debounce_timer is not None
+    assert daemon._event_queue.qsize() == 1
     daemon.stop()
