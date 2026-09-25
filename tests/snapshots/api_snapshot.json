@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "adff30158b88ce9b68d32e29c25b98812e15a2708b8796c708923c9f425073cd"
+    "checksum": "744752691ca7b0c7605af1c3315a7569612077999bbb1c795c559945b363bc37"
   },
   "cli": {
     "app/main.py": [
@@ -6063,6 +6063,11 @@
                   "annotation": null,
                   "default": "None",
                   "name": "cancellation_token"
+                },
+                {
+                  "annotation": "str",
+                  "default": "None",
+                  "name": "priority"
                 }
               ],
               "returns": "dict"
@@ -6135,6 +6140,11 @@
               "annotation": null,
               "default": "None",
               "name": "cancellation_token"
+            },
+            {
+              "annotation": "str",
+              "default": "None",
+              "name": "priority"
             }
           ],
           "returns": "dict"
@@ -6203,6 +6213,11 @@
               "annotation": null,
               "default": "None",
               "name": "cancellation_token"
+            },
+            {
+              "annotation": "str",
+              "default": "None",
+              "name": "priority"
             }
           ],
           "returns": "dict"

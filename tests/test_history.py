@@ -1,5 +1,6 @@
 import os
 import shutil
+import time
 from unittest.mock import patch
 
 import pytest
@@ -200,8 +201,6 @@ def test_divergent_branch_protection_from_pruning(test_history_env):
 
 def test_snapshot_pruning_preserves_sessions_within_age_limit_across_many_runs(test_history_env):
     base_dir, db, cache, history_manager, db_worker = test_history_env
-    import time
-    from app.core.db_conn import get_db_connection
 
     now = time.time()
     day_sec = 86400
@@ -238,8 +237,6 @@ def test_snapshot_pruning_preserves_sessions_within_age_limit_across_many_runs(t
 
 def test_snapshot_pruning_respects_policy_engine_actions(test_history_env):
     base_dir, db, cache, history_manager, db_worker = test_history_env
-    import time
-    from app.core.db_conn import get_db_connection
 
     now = time.time()
     day_sec = 86400
