@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "adff30158b88ce9b68d32e29c25b98812e15a2708b8796c708923c9f425073cd"
+    "checksum": "aef9d328669947b04f86c82b04a80d36763d4c9d6812f91bf7087e1e4c8e2d3c"
   },
   "cli": {
     "app/main.py": [
@@ -6634,6 +6634,19 @@
             }
           ],
           "returns": "tuple[dict, list[str]]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "scrub_pii_from_filename",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "name"
+            }
+          ],
+          "returns": "str"
         },
         {
           "async": false,
