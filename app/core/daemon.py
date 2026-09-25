@@ -533,6 +533,9 @@ class ContinuousWatchdogDaemon:
         if self.should_ignore_path(abs_path):
             return
 
+        if self.should_ignore_path(abs_path):
+            return
+
         rel_path = (
             os.path.relpath(abs_path, self.base_dir).replace("\\", "/")
             if self.base_dir and abs_path.startswith(self.base_dir)
