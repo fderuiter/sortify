@@ -78,6 +78,10 @@ flowchart TD
 
 ::: app.core.env_helper
 
+## `app.core.exceptions`
+
+::: app.core.exceptions
+
 ## `app.core.extractor`
 
 ::: app.core.extractor
