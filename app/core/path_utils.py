@@ -34,6 +34,39 @@ RESERVED_NAMES = {
 ILLEGAL_PATH_CHARS_SET = set('<>:"|?*')
 ILLEGAL_NAME_CHARS_SET = ILLEGAL_PATH_CHARS_SET | set("/\\")
 
+_BOUND_LEFT = r"(?:^|(?<=[\s_\-/,;:()\[\]{}.]))"
+_BOUND_RIGHT = r"(?:$|(?=[\s_\-/,;:()\[\]{}.]))"
+
+PII_FILENAME_PATTERNS = [
+    # SSN pattern
+    re.compile(_BOUND_LEFT + r"\d{3}[-.\s]?\d{2}[-.\s]?\d{4}" + _BOUND_RIGHT),
+    # Credit Card pattern
+    re.compile(_BOUND_LEFT + r"(?:\d[ -]*?){13,16}" + _BOUND_RIGHT),
+    # Email pattern
+    re.compile(_BOUND_LEFT + r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}" + _BOUND_RIGHT),
+    # Phone number pattern
+    re.compile(_BOUND_LEFT + r"(?:\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}" + _BOUND_RIGHT),
+    # Health ID / Patient ID / Medical Record patterns
+    re.compile(r"(?i)" + _BOUND_LEFT + r"(?:MRN|PATIENT[ _-]?ID|SUBJECT[ _-]?ID|MED[ _-]?REC|HCID)[ _-]?#?:?\s*[A-Za-z0-9-]+" + _BOUND_RIGHT),
+    re.compile(r"(?i)" + _BOUND_LEFT + r"(?:PATIENT|SUBJECT)[ _-]?\d+" + _BOUND_RIGHT),
+    re.compile(r"(?i)(Confidential Medical Report|Diagnosis:[^\n]*)"),
+]
+
+
+def scrub_pii_from_filename(name: str) -> str:
+    """Scrub PII expressions (SSN, credit card, email, phone number, health/patient IDs) from a filename or folder name."""
+    if not isinstance(name, str) or not name:
+        return name if isinstance(name, str) else ""
+
+    result = name
+    for pattern in PII_FILENAME_PATTERNS:
+        result = pattern.sub(" ", result)
+
+    result = re.sub(r"_[ \t]*_", "_", result)
+    result = re.sub(r"[ \t]+", " ", result).strip()
+    result = re.sub(r"_{2,}", "_", result)
+    return result
+
 
 def is_packaged() -> bool:
     """Check if the application is running in a frozen/packaged bundle (e.g., PyInstaller)."""
@@ -123,10 +156,14 @@ def validate_target_path(target_path: str, keyword: str = None) -> None:
 def sanitize_name(name: str) -> str:
     """Sanitize a file or folder name for Windows.
 
-    Strips illegal characters and appends _safe to reserved names.
+    Strips PII expressions, illegal characters, and appends _safe to reserved names.
     """
     if not name:
         return name
+
+    name = scrub_pii_from_filename(name)
+    if not name:
+        return "Unnamed_safe"
 
     import unicodedata
 
@@ -167,9 +204,9 @@ def sanitize_name(name: str) -> str:
 def sanitize_folder_key(key: str) -> tuple[str, bool]:
     """Sanitize a folder hierarchy key to be OS-safe and clean.
 
-    Strips path traversal elements, removes null bytes, replaces illegal
-    filesystem characters and slashes with safe delimiters, strips trailing
-    dots/spaces, and maps OS-reserved names to safe variants.
+    Strips PII expressions, path traversal elements, removes null bytes,
+    replaces illegal filesystem characters and slashes with safe delimiters,
+    strips trailing dots/spaces, and maps OS-reserved names to safe variants.
 
     Returns (safe_key, transformed).
     """
@@ -179,6 +216,8 @@ def sanitize_folder_key(key: str) -> tuple[str, bool]:
     import unicodedata
 
     orig_key = key
+    key = scrub_pii_from_filename(key)
+
     s = unicodedata.normalize("NFC", key)
 
     # Remove null bytes and replace control characters

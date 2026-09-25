@@ -2136,18 +2136,28 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                             )
                             import string
 
-                            from app.core.path_utils import sanitize_name
+                            from app.core.path_utils import (
+                                sanitize_name,
+                                scrub_pii_from_filename,
+                            )
                             from app.core.text_utils import sanitize_secret_patterns
 
                             clean_match = sanitize_secret_patterns(best_match_folder)
+                            clean_match = scrub_pii_from_filename(clean_match)
                             clean_match = (
                                 " ".join(clean_match.split())
                                 .strip(string.punctuation)
                                 .strip()
                             )
-                            if not clean_match or len(clean_match) < 2:
-                                return super()._get_cluster_keywords(documents)
-                            return sanitize_name(clean_match)
+                            if clean_match and len(clean_match) >= 2:
+                                safe_match = sanitize_name(clean_match)
+                                if (
+                                    safe_match
+                                    and len(safe_match) >= 2
+                                    and safe_match != "Unnamed_safe"
+                                ):
+                                    return safe_match
+                            return super()._get_cluster_keywords(documents)
 
                         if best_match_similarity < 0.3:
                             logging.info(
@@ -3000,20 +3010,20 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                 name = name.strip(string.punctuation).strip()
 
                 # Centralized secret pattern sanitization before final OS path sanitization
+                from app.core.path_utils import sanitize_name, scrub_pii_from_filename
                 from app.core.text_utils import sanitize_secret_patterns
 
                 name = sanitize_secret_patterns(name)
+                name = scrub_pii_from_filename(name)
                 name = " ".join(name.split()).strip(string.punctuation).strip()
 
                 if not name or len(name) < 2:
                     return super()._get_cluster_keywords(documents)
 
                 # Final OS-level path sanitization
-                from app.core.path_utils import sanitize_name
-
                 name = sanitize_name(name)
 
-                if not name or len(name) < 2:
+                if not name or len(name) < 2 or name == "Unnamed_safe":
                     return super()._get_cluster_keywords(documents)
 
                 return name
