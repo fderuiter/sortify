@@ -76,6 +76,8 @@ def calculate_shannon_entropy(text: str) -> float:
 
 def _is_high_entropy_token(token: str) -> bool:
     """Check if a single word/token exhibits high Shannon entropy indicative of secret credentials."""
+    if "<USER_HOME>" in token or "REDACTED" in token or "[STATUS:" in token:
+        return False
     clean_token = token.strip(".,;:\"'()[]{}<>!@#$%^&*+=/")
     if len(clean_token) < 20:
         return False
