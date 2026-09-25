@@ -4417,6 +4417,41 @@
         }
       ]
     },
+    "app/core/exceptions.py": {
+      "classes": [
+        {
+          "class_name": "CacheError",
+          "decorators": [],
+          "methods": []
+        },
+        {
+          "class_name": "CryptoError",
+          "decorators": [],
+          "methods": []
+        },
+        {
+          "class_name": "DownloaderError",
+          "decorators": [],
+          "methods": []
+        },
+        {
+          "class_name": "OfflineLoaderError",
+          "decorators": [],
+          "methods": []
+        },
+        {
+          "class_name": "SemanticEmbeddingError",
+          "decorators": [],
+          "methods": []
+        },
+        {
+          "class_name": "SortifyBaseError",
+          "decorators": [],
+          "methods": []
+        }
+      ],
+      "functions": []
+    },
     "app/core/extractor.py": {
       "classes": [
         {

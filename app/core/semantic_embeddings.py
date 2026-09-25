@@ -11,14 +11,16 @@ import weakref
 
 import numpy as np
 
+from app.core.exceptions import SemanticEmbeddingError
 
-class DimensionMismatchError(ValueError):
+
+class DimensionMismatchError(SemanticEmbeddingError, ValueError):
     """Raised when there is a dimension mismatch between model and vector."""
 
     pass
 
 
-class ModelValidationError(ValueError):
+class ModelValidationError(SemanticEmbeddingError, ValueError):
     """Raised when the active model configuration contract or SHA-256 validation fails."""
 
     pass
@@ -322,7 +324,7 @@ class SemanticEmbeddingManager:
         except Exception as e:
             raise ModelValidationError(
                 f"Failed to read or compute SHA-256 signature of ONNX model: {e}"
-            )
+            ) from e
 
         # 4. Check signature against hashes registry
         from app.core.hashes_registry import HASHES

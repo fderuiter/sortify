@@ -2,9 +2,18 @@
 
 import hashlib
 import json
+import logging
 import os
 import struct
+from pathlib import Path
 from typing import Any
+
+import keyring
+from cryptography.fernet import Fernet
+
+from app.core.exceptions import CryptoError
+
+logger = logging.getLogger(__name__)
 
 try:
     import numpy as np
@@ -18,10 +27,6 @@ except Exception:
         from sqlcipher3 import dbapi2 as sqlite3
     except Exception:
         sqlite3 = None
-from pathlib import Path
-
-import keyring
-from cryptography.fernet import Fernet
 
 
 def get_fallback_keys_dir() -> Path:
@@ -40,7 +45,8 @@ def get_fallback_keys_dir() -> Path:
     if not home:
         try:
             home = str(Path.home())
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Path.home() resolution failed in get_fallback_keys_dir: {e}")
             home = os.path.expanduser("~")
     return Path(home) / ".sortify" / "keys"
 
@@ -58,14 +64,15 @@ def secure_delete_file(file_path: Path):
                     f.flush()
                     try:
                         os.fsync(f.fileno())
-                    except Exception:
-                        pass
+                    except OSError as fsync_err:
+                        logger.debug(f"fsync failed during secure file deletion of '{file_path}': {fsync_err}")
             file_path.unlink()
-    except Exception:
+    except Exception as e:
+        logger.warning(f"Failed to overwrite file '{file_path}' during secure deletion: {e}")
         try:
             file_path.unlink()
-        except Exception:
-            pass
+        except OSError as unlink_err:
+            logger.warning(f"Failed to unlink file '{file_path}' after overwrite failure: {unlink_err}")
 
 
 def secure_delete_dir(dir_path: Path):
@@ -79,7 +86,8 @@ def secure_delete_dir(dir_path: Path):
             elif item.is_dir():
                 secure_delete_dir(item)
         dir_path.rmdir()
-    except Exception:
+    except Exception as e:
+        logger.warning(f"Failed to securely delete directory '{dir_path}', using rmtree fallback: {e}")
         import shutil
 
         shutil.rmtree(dir_path, ignore_errors=True)
@@ -126,16 +134,16 @@ class SessionCrypto:
             key_str = keyring.get_password(self.keyring_service, self.keyring_account)
             if key_str:
                 key = key_str.encode("utf-8")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"Keyring lookup failed for account '{self.keyring_account}': {e}")
 
         # 2. Centralized Fallback Key Lookup
         if key is None and self.isolated_key_path.exists():
             try:
                 with open(self.isolated_key_path, "rb") as f:
                     key = f.read().strip()
-            except Exception:
-                pass
+            except OSError as e:
+                logger.warning(f"Failed to read isolated key at '{self.isolated_key_path}': {e}")
 
         # 3. Legacy Fallback Migration and Cleanup
         legacy_key = None
@@ -143,8 +151,8 @@ class SessionCrypto:
             try:
                 with open(self.legacy_isolated_key_path, "rb") as f:
                     legacy_key = f.read().strip()
-            except Exception:
-                pass
+            except OSError as e:
+                logger.warning(f"Failed to read legacy isolated key at '{self.legacy_isolated_key_path}': {e}")
 
         if (
             legacy_key is None
@@ -159,17 +167,17 @@ class SessionCrypto:
                                 legacy_key = f.read().strip()
                                 if legacy_key:
                                     break
-                        except Exception:
-                            pass
-            except Exception:
-                pass
+                        except OSError as e:
+                            logger.debug(f"Failed to read legacy key candidate '{p}': {e}")
+            except OSError as e:
+                logger.warning(f"Failed to iterate legacy isolated key directory '{self.legacy_isolated_dir}': {e}")
 
         if legacy_key is None and self.key_path.exists():
             try:
                 with open(self.key_path, "rb") as f:
                     legacy_key = f.read().strip()
-            except Exception:
-                pass
+            except OSError as e:
+                logger.warning(f"Failed to read key path '{self.key_path}': {e}")
 
         if legacy_key:
             # If we didn't find a key in the keyring or centralized store, use the legacy key.
@@ -180,8 +188,8 @@ class SessionCrypto:
             self.isolated_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
             try:
                 os.chmod(self.isolated_dir, 0o700)
-            except Exception:
-                pass
+            except OSError as chmod_err:
+                logger.debug(f"Failed to set permissions on isolated directory '{self.isolated_dir}': {chmod_err}")
 
             try:
                 fd = os.open(
@@ -191,13 +199,14 @@ class SessionCrypto:
                 )
                 with os.fdopen(fd, "wb") as f:
                     f.write(legacy_key)
-            except Exception:
+            except OSError as e:
+                logger.warning(f"fdopen failed writing key to '{self.isolated_key_path}', falling back to open: {e}")
                 with open(self.isolated_key_path, "wb") as f:
                     f.write(legacy_key)
                 try:
                     os.chmod(self.isolated_key_path, 0o600)
-                except Exception:
-                    pass
+                except OSError as chmod_err:
+                    logger.debug(f"Failed to set permissions on key file '{self.isolated_key_path}': {chmod_err}")
 
             # Try to migrate to keyring
             try:
@@ -206,15 +215,15 @@ class SessionCrypto:
                     self.keyring_account,
                     legacy_key.decode("utf-8"),
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"Failed to set keyring password during legacy migration: {e}")
 
         # Always clean up legacy fallback keys if they exist (even if they weren't used to load the key)
         if self.legacy_isolated_dir.exists():
             try:
                 secure_delete_dir(self.legacy_isolated_dir)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"Failed to clean up legacy key directory '{self.legacy_isolated_dir}': {e}")
 
         # 4. Database Guard Check
         if key is None:
@@ -244,13 +253,13 @@ class SessionCrypto:
                                 if d_row and d_row[0] > 0:
                                     has_docs = True
                     if has_docs:
-                        raise RuntimeError("Database accessed but key file is missing.")
+                        raise CryptoError("Database accessed but key file is missing.")
                 except sqlite3.DatabaseError:
                     # If it's encrypted with SQLCipher, sqlite3 will fail with "file is not a database"
                     # which means it's an existing DB! We cannot read it without a key.
-                    raise RuntimeError("Database accessed but key file is missing.")
-                except sqlite3.Error:
-                    pass
+                    raise CryptoError("Database accessed but key file is missing.")
+                except sqlite3.Error as e:
+                    logger.debug(f"SQLite error checking unencrypted database guard: {e}")
 
             # 5. New Key Generation
             key = Fernet.generate_key()
@@ -264,16 +273,16 @@ class SessionCrypto:
                 )
                 if verify_str and verify_str.encode("utf-8") == key:
                     saved_to_keyring = True
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"Failed to store generated key in OS keyring: {e}")
 
             if not saved_to_keyring:
                 # Fallback to isolated fallback key path with secure permissions
                 self.isolated_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
                 try:
                     os.chmod(self.isolated_dir, 0o700)
-                except Exception:
-                    pass
+                except OSError as chmod_err:
+                    logger.debug(f"Failed to set permissions on isolated directory '{self.isolated_dir}': {chmod_err}")
 
                 try:
                     fd = os.open(
@@ -283,23 +292,24 @@ class SessionCrypto:
                     )
                     with os.fdopen(fd, "wb") as f:
                         f.write(key)
-                except Exception:
+                except OSError as e:
+                    logger.warning(f"fdopen failed writing generated key to '{self.isolated_key_path}', falling back to open: {e}")
                     with open(self.isolated_key_path, "wb") as f:
                         f.write(key)
                     try:
                         os.chmod(self.isolated_key_path, 0o600)
-                    except Exception:
-                        pass
+                    except OSError as chmod_err:
+                        logger.debug(f"Failed to set permissions on key file '{self.isolated_key_path}': {chmod_err}")
 
         if key is None:
-            raise RuntimeError("Database accessed but key file is missing.")
+            raise CryptoError("Database accessed but key file is missing.")
 
         try:
             self._key = key
             self._cipher = Fernet(key)
             return self._cipher
         except Exception as e:
-            raise RuntimeError(
+            raise CryptoError(
                 "Database accessed but key file is missing or invalid."
             ) from e
 
@@ -315,20 +325,20 @@ class SessionCrypto:
             key_str = keyring.get_password(self.keyring_service, self.keyring_account)
             if key_str:
                 key = key_str.encode("utf-8")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"Keyring lookup failed in get_raw_key: {e}")
         if key is None and self.isolated_key_path.exists():
             try:
                 with open(self.isolated_key_path, "rb") as f:
                     key = f.read().strip()
-            except Exception:
-                pass
+            except OSError as e:
+                logger.warning(f"Failed to read isolated key in get_raw_key: {e}")
         if key is None and self.key_path.exists():
             try:
                 with open(self.key_path, "rb") as f:
                     key = f.read().strip()
-            except Exception:
-                pass
+            except OSError as e:
+                logger.warning(f"Failed to read key_path in get_raw_key: {e}")
         return key.decode("utf-8") if key else None
 
     def encrypt_text(self, text: str) -> bytes:
@@ -348,7 +358,7 @@ class SessionCrypto:
                 cipher_bytes = cipher_bytes.encode("utf-8")
             return cipher.decrypt(cipher_bytes).decode("utf-8")
         except Exception as e:
-            raise RuntimeError("Failed to decrypt text") from e
+            raise CryptoError("Failed to decrypt text") from e
 
     def encrypt_vector(self, text: str) -> bytes:
         """Encrypt a vector string and return bytes."""
@@ -367,7 +377,7 @@ class SessionCrypto:
         try:
             return cipher.decrypt(cipher_bytes).decode("utf-8")
         except Exception as e:
-            raise RuntimeError("Failed to decrypt vector") from e
+            raise CryptoError("Failed to decrypt vector") from e
 
     def decrypt_and_parse_vector(self, cipher_bytes: bytes):
         """Decrypt vector bytes, parse as JSON, and return list of floats."""
@@ -391,7 +401,8 @@ class SessionCrypto:
                     self._vector_parsed_cache.pop(next(iter(self._vector_parsed_cache)))
                 self._vector_parsed_cache[cipher_bytes] = parsed
             return parsed
-        except Exception:
+        except Exception as e:
+            logger.warning(f"Failed to decrypt or parse vector: {e}")
             return None
 
 
