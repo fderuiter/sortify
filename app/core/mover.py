@@ -11,7 +11,6 @@ import shutil  # noqa: F401
 import threading
 import unicodedata
 import uuid
-from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from app.core.link_manager import LinkManager
@@ -1239,48 +1238,50 @@ class AsyncMoveEngine:
                     history_manager=history_manager,
                 )
             else:
-                with ThreadPoolExecutor(max_workers=effective_max_workers) as executor:
-                    for chunk_idx, chunk in enumerate(chunks):
-                        if _is_cancelled(cancel_token):
-                            logging.info(
-                                f"Cancellation requested before scheduling chunk {chunk_idx}. Halting worker scheduling."
-                            )
-                            summary["cancelled"] = True
-                            break
+                from app.core.shared_registry import SharedWorkerPool
 
-                        futures = [
-                            executor.submit(
-                                _process_move_item,
-                                base_dir,
-                                item,
-                                db,
-                                path_map,
-                                runtime_settings,
-                                session_id,
-                                ledger,
-                                history_manager,
-                                db_lock,
-                                step_counter,
-                                db_updates_batch,
-                            )
-                            for item in chunk
-                        ]
+                pool = SharedWorkerPool.get_instance(max_workers=effective_max_workers)
+                for chunk_idx, chunk in enumerate(chunks):
+                    if _is_cancelled(cancel_token):
+                        logging.info(
+                            f"Cancellation requested before scheduling chunk {chunk_idx}. Halting worker scheduling."
+                        )
+                        summary["cancelled"] = True
+                        break
 
-                        for fut in futures:
-                            fut.result()
+                    futures = [
+                        pool.submit(
+                            _process_move_item,
+                            base_dir,
+                            item,
+                            db,
+                            path_map,
+                            runtime_settings,
+                            session_id,
+                            ledger,
+                            history_manager,
+                            db_lock,
+                            step_counter,
+                            db_updates_batch,
+                        )
+                        for item in chunk
+                    ]
 
-                        with db_lock:
-                            if db_updates_batch and hasattr(db, "execute_batch_updates"):
-                                db.execute_batch_updates(list(db_updates_batch))
-                                db_updates_batch.clear()
-                                has_flushed_db = True
+                    for fut in futures:
+                        fut.result()
 
-                        if _is_cancelled(cancel_token):
-                            logging.info(
-                                f"Cancellation requested after chunk {chunk_idx}. Stopping pipeline execution."
-                            )
-                            summary["cancelled"] = True
-                            break
+                    with db_lock:
+                        if db_updates_batch and hasattr(db, "execute_batch_updates"):
+                            db.execute_batch_updates(list(db_updates_batch))
+                            db_updates_batch.clear()
+                            has_flushed_db = True
+
+                    if _is_cancelled(cancel_token):
+                        logging.info(
+                            f"Cancellation requested after chunk {chunk_idx}. Stopping pipeline execution."
+                        )
+                        summary["cancelled"] = True
+                        break
 
             if not summary["cancelled"]:
                 cleanup_enabled = (
