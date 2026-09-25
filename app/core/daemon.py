@@ -647,6 +647,39 @@ class ContinuousWatchdogDaemon:
             logger.debug(f"Target file missing before triage: {abs_path}")
             return
 
+        # Phase 1.5: Inline Non-Generative Jev Triage Phase
+        try:
+            from app.core.shared_registry import SharedModelRegistry
+
+            jev_engine = SharedModelRegistry.get_instance().get_jev_classifier()
+            jev_res = jev_engine.classify(abs_path)
+            if (
+                jev_res
+                and getattr(jev_res, "is_classified", False)
+                and getattr(jev_res, "confidence", 0.0) >= 0.5
+            ):
+                jev_plan = app_session.generate_sorting_plan(
+                    fast_path_only=True,
+                    jev_results={rel_path: jev_res, abs_path: jev_res},
+                )
+                if jev_plan:
+                    with self.scoped_move_phase(plan=jev_plan):
+                        summary = app_session.execute_moves(jev_plan)
+                    logger.info(
+                        f"Targeted Jev Fast-Path triage completed for {rel_path}: {summary}"
+                    )
+                    return
+        except Exception as e:
+            logger.warning(
+                f"Jev fast-path triage failed for {rel_path}: {e}. Falling back to slow-path AI processing."
+            )
+
+        if cancel_check():
+            return
+
+        if not os.path.exists(abs_path):
+            return
+
         # Phase 2: Text Extraction & Incremental Model Training
         async for item, text, file_hash, was_skipped in app_session.process_items_async(
             [rel_path], cancel_check

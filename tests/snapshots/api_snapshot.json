@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "903dfe6409a6650f9c9cb79b3dc836d2cb313fd453c1ba333f0b01d63d7e041e"
+    "checksum": "e640052a977db6706e34882b7659b7e26a62058644cfd8172c4ce7a888eaf687"
   },
   "cli": {
     "app/main.py": [
@@ -569,6 +569,11 @@
                   "annotation": "Optional[list[str]]",
                   "default": "None",
                   "name": "target_paths"
+                },
+                {
+                  "annotation": "Optional[Dict[str, Any]]",
+                  "default": "None",
+                  "name": "jev_results"
                 }
               ],
               "returns": "SortingPlan"
@@ -5768,6 +5773,156 @@
         }
       ]
     },
+    "app/core/jev_classifier.py": {
+      "classes": [
+        {
+          "class_name": "JevClassificationResult",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "dict",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "*args"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "**kwargs"
+                }
+              ],
+              "returns": "Dict[str, Any]"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "get",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "item"
+                },
+                {
+                  "annotation": "Any",
+                  "default": "None",
+                  "name": "default"
+                }
+              ],
+              "returns": "Any"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "model_dump",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "*args"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "**kwargs"
+                }
+              ],
+              "returns": "Dict[str, Any]"
+            }
+          ]
+        },
+        {
+          "class_name": "JevClassifierEngine",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "__init__",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "float",
+                  "default": "0.5",
+                  "name": "confidence_threshold"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "classify",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "file_path"
+                },
+                {
+                  "annotation": "Optional[str]",
+                  "default": "None",
+                  "name": "text_content"
+                }
+              ],
+              "returns": "JevClassificationResult"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "classify_file",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "file_path"
+                },
+                {
+                  "annotation": "Optional[str]",
+                  "default": "None",
+                  "name": "text_content"
+                }
+              ],
+              "returns": "JevClassificationResult"
+            }
+          ]
+        }
+      ],
+      "functions": []
+    },
     "app/core/ledger.py": {
       "classes": [
         {
@@ -7657,6 +7812,11 @@
                   "annotation": "Optional[list[str]]",
                   "default": "None",
                   "name": "target_paths"
+                },
+                {
+                  "annotation": "Optional[Dict[str, Any]]",
+                  "default": "None",
+                  "name": "jev_results"
                 }
               ],
               "returns": null
@@ -8080,6 +8240,19 @@
                   "annotation": null,
                   "default": null,
                   "name": "cls"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "get_jev_classifier",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
                 }
               ],
               "returns": null
