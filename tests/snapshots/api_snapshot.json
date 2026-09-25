@@ -6807,6 +6807,19 @@
         {
           "async": false,
           "decorators": [],
+          "name": "scrub_pii_from_filename",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "name"
+            }
+          ],
+          "returns": "str"
+        },
+        {
+          "async": false,
+          "decorators": [],
           "name": "setup_session_directory",
           "parameters": [
             {
