@@ -106,6 +106,10 @@ flowchart TD
 
 ::: app.core.integration
 
+## `app.core.jev_classifier`
+
+::: app.core.jev_classifier
+
 ## `app.core.ledger`
 
 ::: app.core.ledger

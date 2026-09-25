@@ -860,6 +860,16 @@ class SharedModelRegistry:
                     raise e
             return self._models.get(model_id, (None, None, None))
 
+    def get_jev_classifier(self):
+        """Lazily load and return the cached singleton JevClassifierEngine instance."""
+        with self._lock:
+            model_id = "jev_classifier"
+            if model_id not in self._models or self._models[model_id] is None:
+                from app.core.jev_classifier import JevClassifierEngine
+
+                self._models[model_id] = JevClassifierEngine()
+            return self._models[model_id]
+
     def get_florence_processor(self):
         """Lazily load and return the Florence-2 visual processor wrapper from registry."""
         with self._lock:
