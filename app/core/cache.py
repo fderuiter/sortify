@@ -20,7 +20,6 @@ from typing import (
     TypeVar,
 )
 
-from app.core.db_conn import get_db_connection
 from app.core.exceptions import CacheError
 
 if TYPE_CHECKING:

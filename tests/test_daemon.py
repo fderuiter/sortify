@@ -255,7 +255,7 @@ async def test_daemon_triage_file_path_timeout_to_dlq(tmp_path):
             def __init__(self):
                 super().__init__()
                 self.POLICIES = []
-                self.WORKER_TIMEOUT = 0.00001
+                self.WORKER_TIMEOUT = 0.0
 
         settings = CustomSettings()
         daemon = ContinuousWatchdogDaemon(settings, str(src_dir))
