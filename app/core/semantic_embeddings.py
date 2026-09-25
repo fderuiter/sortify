@@ -11,6 +11,7 @@ import weakref
 
 import numpy as np
 
+from app.core.cache import BoundedMemoryCache
 from app.core.exceptions import SemanticEmbeddingError
 
 
@@ -94,7 +95,7 @@ def _parse_onnx_type(node_type_str) -> "np.dtype":
     return np.int64
 
 
-_model_properties_cache = {}
+_model_properties_cache = BoundedMemoryCache(max_size=500)
 _model_properties_cache_lock = threading.Lock()
 
 

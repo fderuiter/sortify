@@ -212,7 +212,7 @@ def test_worker_timeout_and_dead_letter_queue():
 
     # Process job with forced 0 second timeout override
     time.sleep(0.01)  # Ensure time elapsed > 0.001s
-    result = service.process_quarantine_job(job_id, timeout_override=0.0001)
+    result = service.process_quarantine_job(job_id, timeout_override=0.0)
 
     assert result["status"] == "DEAD_LETTER_QUEUE" or result["status"] == "MANUAL_REVIEW_REQUIRED"
     assert len(service.dlq_records) >= 1
