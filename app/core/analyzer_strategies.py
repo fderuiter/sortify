@@ -137,10 +137,6 @@ def scrub_prompt_text(text: str) -> str:
 
     text = redact_sensitive_text(text)
 
-    from app.core.text_utils import sanitize_secret_patterns
-
-    text = sanitize_secret_patterns(text, replacement="[REDACTED_SECRET]")
-
     try:
         home_dir = str(Path.home())
     except Exception:
@@ -151,6 +147,10 @@ def scrub_prompt_text(text: str) -> str:
         home_dir_back = home_dir.replace("/", "\\")
         text = text.replace(home_dir_fwd, "<USER_HOME>")
         text = text.replace(home_dir_back, "<USER_HOME>")
+
+    from app.core.text_utils import sanitize_secret_patterns
+
+    text = sanitize_secret_patterns(text, replacement="[REDACTED_SECRET]")
 
     return text
 
