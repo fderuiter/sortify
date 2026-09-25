@@ -137,6 +137,10 @@ def scrub_prompt_text(text: str) -> str:
 
     text = redact_sensitive_text(text)
 
+    from app.core.text_utils import sanitize_secret_patterns
+
+    text = sanitize_secret_patterns(text, replacement="[REDACTED_SECRET]")
+
     try:
         home_dir = str(Path.home())
     except Exception:
@@ -833,7 +837,12 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
         try:
             from sklearn.feature_extraction.text import TfidfVectorizer
 
-            sanitized_docs = [sanitize_text(doc) if doc else "" for doc in documents]
+            from app.core.text_utils import sanitize_secret_patterns
+
+            sanitized_docs = [
+                sanitize_secret_patterns(sanitize_text(doc)) if doc else ""
+                for doc in documents
+            ]
 
             vectorizer = TfidfVectorizer(
                 stop_words=list(self.stop_words), max_features=self.max_features
@@ -2125,7 +2134,20 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                             logging.info(
                                 f"High-confidence match: {best_match_folder} (similarity {best_match_similarity:.4f} >= 0.85). Bypassing generative."
                             )
-                            return best_match_folder
+                            import string
+
+                            from app.core.path_utils import sanitize_name
+                            from app.core.text_utils import sanitize_secret_patterns
+
+                            clean_match = sanitize_secret_patterns(best_match_folder)
+                            clean_match = (
+                                " ".join(clean_match.split())
+                                .strip(string.punctuation)
+                                .strip()
+                            )
+                            if not clean_match or len(clean_match) < 2:
+                                return super()._get_cluster_keywords(documents)
+                            return sanitize_name(clean_match)
 
                         if best_match_similarity < 0.3:
                             logging.info(
