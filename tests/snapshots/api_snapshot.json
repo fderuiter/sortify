@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "aef9d328669947b04f86c82b04a80d36763d4c9d6812f91bf7087e1e4c8e2d3c"
+    "checksum": "903dfe6409a6650f9c9cb79b3dc836d2cb313fd453c1ba333f0b01d63d7e041e"
   },
   "cli": {
     "app/main.py": [
@@ -1535,6 +1535,107 @@
                   "annotation": "str",
                   "default": null,
                   "name": "source_directory"
+                }
+              ],
+              "returns": null
+            }
+          ]
+        },
+        {
+          "class_name": "SparseMatrixLRUCache",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "__init__",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "int",
+                  "default": "500",
+                  "name": "max_documents"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "doc_count",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "Optional[str]",
+                  "default": "None",
+                  "name": "base_dir"
+                }
+              ],
+              "returns": "int"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "get",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "base_dir"
+                }
+              ],
+              "returns": "Optional[List[Tuple[str, str, float]]]"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "invalidate",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "Optional[str]",
+                  "default": "None",
+                  "name": "base_dir"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "put",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "base_dir"
+                },
+                {
+                  "annotation": "List[Tuple[str, str, float]]",
+                  "default": null,
+                  "name": "rows"
                 }
               ],
               "returns": null
@@ -4499,6 +4600,24 @@
         {
           "async": false,
           "decorators": [],
+          "name": "evaluate_text_confidence",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "text"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "ext"
+            }
+          ],
+          "returns": "float"
+        },
+        {
+          "async": false,
+          "decorators": [],
           "name": "extract_file_text",
           "parameters": [
             {
@@ -6063,6 +6182,11 @@
                   "annotation": null,
                   "default": "None",
                   "name": "cancellation_token"
+                },
+                {
+                  "annotation": "str",
+                  "default": "None",
+                  "name": "priority"
                 }
               ],
               "returns": "dict"
@@ -6135,6 +6259,11 @@
               "annotation": null,
               "default": "None",
               "name": "cancellation_token"
+            },
+            {
+              "annotation": "str",
+              "default": "None",
+              "name": "priority"
             }
           ],
           "returns": "dict"
@@ -6203,6 +6332,11 @@
               "annotation": null,
               "default": "None",
               "name": "cancellation_token"
+            },
+            {
+              "annotation": "str",
+              "default": "None",
+              "name": "priority"
             }
           ],
           "returns": "dict"

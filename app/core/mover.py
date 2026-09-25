@@ -680,12 +680,43 @@ def _is_cancelled(token) -> bool:
     return False
 
 
+def _get_item_mtime(item):
+    src = item.get("source_path")
+    if src:
+        try:
+            if os.path.lexists(src):
+                return os.stat(src).st_mtime
+        except OSError:
+            pass
+    return float("inf")
+
+
+def _get_item_age_tier(item):
+    mtime = _get_item_mtime(item)
+    if mtime == float("inf"):
+        return (999, float("inf"))
+    import time
+
+    now = time.time()
+    age_days = (now - mtime) / 86400.0
+    if age_days >= 365:
+        tier = 0  # > 365 days (Archival)
+    elif age_days >= 90:
+        tier = 1  # 90-365 days (Stale)
+    elif age_days >= 30:
+        tier = 2  # 30-90 days (Recent)
+    else:
+        tier = 3  # < 30 days (New)
+    return (tier, mtime)
+
+
 def _collect_move_items(
     base_dir: str,
     plan: dict,
     current_dest: str = "",
     active_parent_path: str = "",
     depth: int = 0,
+    priority: str = None,
 ) -> list:
     """Traverse relocation plan and collect flat list of file move items."""
     base_dir = os.path.normpath(base_dir)
@@ -755,21 +786,24 @@ def _collect_move_items(
                     os.path.join(current_dest, key),
                     os.path.join(active_parent_path, key),
                     depth + 1,
+                    priority=priority,
                 )
             )
 
     if depth == 0:
-        def _get_item_mtime(item):
-            src = item.get("source_path")
-            if src:
-                try:
-                    if os.path.lexists(src):
-                        return os.stat(src).st_mtime
-                except OSError:
-                    pass
-            return float("inf")
-
-        items.sort(key=_get_item_mtime)
+        p_mode = (
+            priority.strip().lower() if isinstance(priority, str) else None
+        ) or "mtime"
+        if p_mode in ("age_tier", "tier", "age_tier_desc"):
+            items.sort(key=_get_item_age_tier)
+        elif p_mode in ("mtime", "age", "oldest_first"):
+            items.sort(key=_get_item_mtime)
+        elif p_mode in ("newest_first", "recent"):
+            items.sort(key=lambda x: -_get_item_mtime(x))
+        elif p_mode in ("standard", "traversal", "none"):
+            pass
+        else:
+            items.sort(key=_get_item_mtime)
 
     return items
 
@@ -1132,6 +1166,7 @@ class AsyncMoveEngine:
         cancel_check=None,
         cancel_event=None,
         cancellation_token=None,
+        priority: str = None,
     ) -> dict:
         """Partition relocation plan into bounded worker chunks and execute off-thread."""
         base_dir = os.path.normpath(base_dir)
@@ -1203,7 +1238,14 @@ class AsyncMoveEngine:
             or 1
         )
 
-        move_items = _collect_move_items(base_dir, plan)
+        effective_priority = (
+            priority
+            or getattr(runtime_settings, "priority", None)
+            or getattr(runtime_settings, "MOVE_PRIORITY", None)
+            or getattr(runtime_settings, "PRIORITY", None)
+        )
+
+        move_items = _collect_move_items(base_dir, plan, priority=effective_priority)
         chunks = [
             move_items[i : i + effective_chunk_size]
             for i in range(0, len(move_items), effective_chunk_size)
@@ -1424,6 +1466,7 @@ def execute_moves(
     cancel_check=None,
     cancel_event=None,
     cancellation_token=None,
+    priority: str = None,
 ) -> dict:
     """Create directories and safely move files using chunked asynchronous execution."""
     engine = AsyncMoveEngine(max_workers=max_workers, chunk_size=chunk_size)
@@ -1438,6 +1481,7 @@ def execute_moves(
         cancel_check=cancel_check,
         cancel_event=cancel_event,
         cancellation_token=cancellation_token,
+        priority=priority,
     )
 
 
@@ -1454,6 +1498,7 @@ async def execute_moves_async(
     cancel_check=None,
     cancel_event=None,
     cancellation_token=None,
+    priority: str = None,
 ) -> dict:
     """Asynchronously execute move operations off the main event loop thread."""
     return await asyncio.to_thread(
@@ -1470,4 +1515,5 @@ async def execute_moves_async(
         cancel_check=cancel_check,
         cancel_event=cancel_event,
         cancellation_token=cancellation_token,
+        priority=priority,
     )

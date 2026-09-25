@@ -2,10 +2,79 @@
 
 import json
 import logging
+import threading
 from pathlib import Path
+from typing import Dict, List, Optional, Tuple
 
 from app.core.db_conn import get_db_connection
 from app.core.db_worker import DBWorker
+
+
+class SparseMatrixLRUCache:
+    """In-memory LRU cache for precomputed sparse matrix rows bounded by total documents (default 500)."""
+
+    def __init__(self, max_documents: int = 500):
+        self.max_documents = max_documents
+        self._cache: Dict[str, List[Tuple[str, str, float]]] = {}
+        self._doc_counts: Dict[str, int] = {}
+        self._access_order: List[str] = []
+        self._lock = threading.Lock()
+
+    def get(self, base_dir: str) -> Optional[List[Tuple[str, str, float]]]:
+        """Serve precomputed matrix rows from in-memory cache in under 5ms."""
+        with self._lock:
+            if base_dir in self._cache:
+                if base_dir in self._access_order:
+                    self._access_order.remove(base_dir)
+                self._access_order.append(base_dir)
+                return self._cache[base_dir]
+            return None
+
+    def put(self, base_dir: str, rows: List[Tuple[str, str, float]]):
+        """Store matrix rows in LRU cache if document capacity allows, evicting LRU items as needed."""
+        with self._lock:
+            distinct_docs = len({r[0] for r in rows}) if rows else 0
+            if distinct_docs > self.max_documents:
+                # Exceeds max documents threshold; fall back to uncached behavior
+                self._invalidate_unlocked(base_dir)
+                return
+
+            current_total = sum(self._doc_counts.values()) - self._doc_counts.get(base_dir, 0)
+            while self._access_order and (current_total + distinct_docs > self.max_documents):
+                lru_key = self._access_order.pop(0)
+                if lru_key != base_dir:
+                    self._cache.pop(lru_key, None)
+                    evicted_count = self._doc_counts.pop(lru_key, 0)
+                    current_total -= evicted_count
+
+            self._cache[base_dir] = rows
+            self._doc_counts[base_dir] = distinct_docs
+            if base_dir in self._access_order:
+                self._access_order.remove(base_dir)
+            self._access_order.append(base_dir)
+
+    def invalidate(self, base_dir: Optional[str] = None):
+        """Invalidate cache entries for a given base_dir or clear entire cache if base_dir is None."""
+        with self._lock:
+            self._invalidate_unlocked(base_dir)
+
+    def _invalidate_unlocked(self, base_dir: Optional[str] = None):
+        if base_dir is None:
+            self._cache.clear()
+            self._doc_counts.clear()
+            self._access_order.clear()
+        else:
+            self._cache.pop(base_dir, None)
+            self._doc_counts.pop(base_dir, None)
+            if base_dir in self._access_order:
+                self._access_order.remove(base_dir)
+
+    def doc_count(self, base_dir: Optional[str] = None) -> int:
+        """Return total cached document count, or count for specific base_dir."""
+        with self._lock:
+            if base_dir is not None:
+                return self._doc_counts.get(base_dir, 0)
+            return sum(self._doc_counts.values())
 
 
 class CacheManager:
