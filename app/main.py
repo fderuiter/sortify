@@ -430,9 +430,9 @@ def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
             sys.stdout.flush()
         else:
             if not quiet:
-                print(f"Batch sorting completed successfully for '{target_path}'.")
+                print(f"Batch sorting completed successfully for '{target_path}'.", file=sys.stderr)
                 if args.dry_run:
-                    print("Dry-run mode: no files were moved.")
+                    print("Dry-run mode: no files were moved.", file=sys.stderr)
             print(json.dumps(plan, indent=2))
 
         sys.exit(0)
@@ -500,7 +500,8 @@ def handle_scan_command(args: argparse.Namespace, settings: AppSettings):
         else:
             if not quiet:
                 print(
-                    f"Scan analysis completed for '{target_path}'. Scanned {len(files)} files."
+                    f"Scan analysis completed for '{target_path}'. Scanned {len(files)} files.",
+                    file=sys.stderr,
                 )
             print(json.dumps(plan, indent=2))
 
@@ -554,7 +555,7 @@ def handle_config_command(args: argparse.Namespace, settings: AppSettings):
         sys.stdout.flush()
     else:
         if not quiet:
-            print("Application Settings:")
+            print("Application Settings:", file=sys.stderr)
         for k, v in settings_dict.items():
             print(f"  {k}: {v}")
 
