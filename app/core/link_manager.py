@@ -3,6 +3,7 @@
 import logging
 import os
 
+from app.core.cache import BoundedMemoryCache
 from app.core.path_utils import is_junction_path
 
 try:
@@ -14,7 +15,7 @@ except ImportError:
 class LinkManager:
     """Manager for symbolic, junction, and shortcut links."""
 
-    _registry = {}
+    _registry = BoundedMemoryCache(max_size=10000)
 
     @classmethod
     def register_link(cls, base_dir: str, rel_path: str):

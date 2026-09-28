@@ -261,6 +261,10 @@ class Database:
         """Invalidate the in-memory decrypted documents cache."""
         with self._cache_lock:
             self._cached_base_dir = None
+            if self._cached_documents is not None and hasattr(
+                self._cached_documents, "clear"
+            ):
+                self._cached_documents.clear()
             self._cached_documents = None
 
     def _populate_cache_if_needed(self, base_dir):
@@ -296,8 +300,14 @@ class Database:
                 pool = SharedWorkerPool.get_instance()
                 results = list(pool.map(_decrypt_row, rows))
 
+            from app.core.cache import BoundedMemoryCache
+
+            doc_cache = BoundedMemoryCache(max_size=10000)
+            for row in results:
+                doc_cache[row[0]] = row
+
             self._cached_base_dir = base_dir
-            self._cached_documents = results
+            self._cached_documents = doc_cache
 
     def get_document(self, base_dir, filepath):
         """Retrieve a document by its base directory and filepath."""
@@ -305,13 +315,24 @@ class Database:
         self._populate_cache_if_needed(base_dir)
         with self._cache_lock:
             if self._cached_base_dir == base_dir and self._cached_documents is not None:
-                for row in self._cached_documents:
-                    if row[0] == filepath:
+                if hasattr(self._cached_documents, "get") and not isinstance(
+                    self._cached_documents, list
+                ):
+                    row = self._cached_documents.get(filepath)
+                    if row is not None:
                         return {
                             "file_hash": row[2],
                             "extracted_text": row[1],
                         }
-                return None
+                    return None
+                else:
+                    for row in self._cached_documents:
+                        if row[0] == filepath:
+                            return {
+                                "file_hash": row[2],
+                                "extracted_text": row[1],
+                            }
+                    return None
 
         # Fallback to DB
         conn = get_db_connection(self.db_path)
@@ -466,13 +487,18 @@ class Database:
         """Record the historical folder assignment for a specific document hash."""
         with self._cache_lock:
             if self._cached_base_dir == base_dir and self._cached_documents is not None:
-                new_docs = []
-                for row in self._cached_documents:
-                    if row[2] == file_hash:
-                        new_docs.append((row[0], row[1], row[2], target_path))
-                    else:
-                        new_docs.append(row)
-                self._cached_documents = new_docs
+                if hasattr(self._cached_documents, "items"):
+                    for fp, row in list(self._cached_documents.items()):
+                        if row[2] == file_hash:
+                            self._cached_documents[fp] = (row[0], row[1], row[2], target_path)
+                elif isinstance(self._cached_documents, list):
+                    new_docs = []
+                    for row in self._cached_documents:
+                        if row[2] == file_hash:
+                            new_docs.append((row[0], row[1], row[2], target_path))
+                        else:
+                            new_docs.append(row)
+                    self._cached_documents = new_docs
 
         def _write():
             conn = get_db_connection(self.db_path)
@@ -529,13 +555,27 @@ class Database:
 
         with self._cache_lock:
             if self._cached_base_dir == base_dir and self._cached_documents is not None:
-                new_docs = []
-                for row in self._cached_documents:
-                    if row[0] == old_filepath:
-                        new_docs.append((new_filepath, row[1], row[2], new_dir))
-                    else:
-                        new_docs.append(row)
-                self._cached_documents = new_docs
+                if (
+                    hasattr(self._cached_documents, "pop")
+                    and hasattr(self._cached_documents, "__setitem__")
+                    and not isinstance(self._cached_documents, list)
+                ):
+                    row = self._cached_documents.pop(old_filepath, None)
+                    if row is not None:
+                        self._cached_documents[new_filepath] = (
+                            new_filepath,
+                            row[1],
+                            row[2],
+                            new_dir,
+                        )
+                elif isinstance(self._cached_documents, list):
+                    new_docs = []
+                    for row in self._cached_documents:
+                        if row[0] == old_filepath:
+                            new_docs.append((new_filepath, row[1], row[2], new_dir))
+                        else:
+                            new_docs.append(row)
+                    self._cached_documents = new_docs
 
         def _write():
             conn = get_db_connection(self.db_path)
@@ -596,13 +636,25 @@ class Database:
         filepath = filepath.replace("\\", "/")
         with self._cache_lock:
             if self._cached_base_dir == base_dir and self._cached_documents is not None:
-                new_docs = []
-                for row in self._cached_documents:
-                    if row[0] == filepath:
-                        new_docs.append((row[0], row[1], row[2], target_path))
-                    else:
-                        new_docs.append(row)
-                self._cached_documents = new_docs
+                if hasattr(self._cached_documents, "get") and not isinstance(
+                    self._cached_documents, list
+                ):
+                    row = self._cached_documents.get(filepath)
+                    if row is not None:
+                        self._cached_documents[filepath] = (
+                            row[0],
+                            row[1],
+                            row[2],
+                            target_path,
+                        )
+                elif isinstance(self._cached_documents, list):
+                    new_docs = []
+                    for row in self._cached_documents:
+                        if row[0] == filepath:
+                            new_docs.append((row[0], row[1], row[2], target_path))
+                        else:
+                            new_docs.append(row)
+                    self._cached_documents = new_docs
 
         def _write():
             conn = get_db_connection(self.db_path)
