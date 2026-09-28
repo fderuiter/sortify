@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "3d0e84baf26f7f6d0810df8824b5bc01d0d8779721b5fbdc74827813c2b6dcb5"
+    "checksum": "48b6cd70276c3d1246959b9b3134f41c463c4f8b75872e6c2da6092782161cf4"
   },
   "cli": {
     "app/main.py": [
@@ -102,7 +102,7 @@
         "caller": "parser",
         "keywords": {
           "action": "store_true",
-          "help": "Force launch graphical web interface"
+          "help": "Force launch graphical web interface (Deprecated: launches terminal interface)"
         },
         "method": "add_argument"
       },

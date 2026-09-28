@@ -385,8 +385,12 @@ def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
 
         plan = session.generate_sorting_plan()
 
-        if args.dest_dir:
-            dest_base = Path(args.dest_dir).resolve()
+        dest_dir = getattr(args, "dest_dir", None)
+        dry_run = getattr(args, "dry_run", False)
+        json_output = getattr(args, "json", False)
+
+        if dest_dir:
+            dest_base = Path(dest_dir).resolve()
             dest_base.mkdir(parents=True, exist_ok=True)
             re_rooted_plan = {}
             for k, v in plan.items():
@@ -397,14 +401,14 @@ def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
                     re_rooted_plan[new_key] = v
             plan = re_rooted_plan
 
-        if args.dry_run:
+        if dry_run:
             result = {
                 "status": "success",
                 "dry_run": True,
                 "target_directory": str(target_path),
                 "destination_directory": (
-                    str(Path(args.dest_dir).resolve())
-                    if args.dest_dir
+                    str(Path(dest_dir).resolve())
+                    if dest_dir
                     else str(target_path)
                 ),
                 "plan": plan,
@@ -416,8 +420,8 @@ def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
                 "dry_run": False,
                 "target_directory": str(target_path),
                 "destination_directory": (
-                    str(Path(args.dest_dir).resolve())
-                    if args.dest_dir
+                    str(Path(dest_dir).resolve())
+                    if dest_dir
                     else str(target_path)
                 ),
                 "plan": plan,
@@ -425,13 +429,13 @@ def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
             }
 
         quiet = getattr(args, "quiet", False)
-        if args.json:
+        if json_output:
             sys.stdout.write(json.dumps(result, indent=2) + "\n")
             sys.stdout.flush()
         else:
             if not quiet:
                 print(f"Batch sorting completed successfully for '{target_path}'.", file=sys.stderr)
-                if args.dry_run:
+                if dry_run:
                     print("Dry-run mode: no files were moved.", file=sys.stderr)
             print(json.dumps(plan, indent=2))
 
@@ -494,7 +498,7 @@ def handle_scan_command(args: argparse.Namespace, settings: AppSettings):
         }
 
         quiet = getattr(args, "quiet", False)
-        if args.json:
+        if getattr(args, "json", False):
             sys.stdout.write(json.dumps(result, indent=2) + "\n")
             sys.stdout.flush()
         else:
@@ -631,7 +635,7 @@ def build_parser(prog: str | None = "app/main.py") -> argparse.ArgumentParser:
     parser.add_argument(
         "--gui",
         action="store_true",
-        help="Force launch graphical web interface",
+        help="Force launch graphical web interface (Deprecated: launches terminal interface)",
     )
 
     subparsers = parser.add_subparsers(dest="subcommand", help="Available subcommands")
@@ -862,20 +866,18 @@ def main():
         from app.demo import run_demo
 
         run_demo(settings)
-    elif getattr(args, "tui", False) is True or (
-        sys.stdin.isatty() and not getattr(args, "gui", False) and not os.environ.get("FORCE_GUI")
-    ):
+    elif not sys.stdin.isatty() and getattr(args, "directory", None) and not getattr(args, "tui", False):
+        handle_sort_command(args, settings)
+    else:
         from app.ui.tui import run_tui
 
-        run_tui(settings, args.directory)
-    else:
-        from app.ui.app import run_app
+        if getattr(args, "gui", False) or os.environ.get("FORCE_GUI"):
+            print(
+                "Notice: Web GUI interface is deprecated. Launching native terminal TUI interface...",
+                file=sys.stderr,
+            )
 
-        debug_layout = getattr(args, "debug_layout", False) is True
-        if debug_layout:
-            run_app(settings, args.directory, debug_layout=True)
-        else:
-            run_app(settings, args.directory)
+        run_tui(settings, args.directory)
 
 
 if __name__ == "__main__":

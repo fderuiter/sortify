@@ -1,4 +1,4 @@
-"""Main application GUI module using NiceGUI."""
+"""Main application module for the terminal interface."""
 
 import asyncio
 import logging
@@ -81,7 +81,7 @@ class TerminalControl:
 
 
 class AutoSorterApp:
-    """Main application class for the NiceGUI interface."""
+    """Main application class for the terminal interface."""
 
     def __init__(self, settings, debug_layout=False):
         self.settings = settings
@@ -1062,9 +1062,7 @@ class AutoSorterApp:
                 if report_html and os.path.exists(report_html):
 
                     def open_report():
-                        import webbrowser
-
-                        webbrowser.open(f"file://{report_html}")
+                        logger.info(f"Compliance audit report saved to {report_html}")
 
                     ui.button("Open Full HTML Dossier", on_click=open_report).props(
                         'color="primary" outline'

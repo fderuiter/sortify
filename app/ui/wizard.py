@@ -1,4 +1,4 @@
-"""Setup wizard module using NiceGUI."""
+"""Setup wizard module for terminal interface."""
 
 import threading
 from unittest.mock import MagicMock
