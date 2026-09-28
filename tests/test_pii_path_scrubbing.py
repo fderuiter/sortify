@@ -87,7 +87,9 @@ def test_generative_naming_strategy_scrubs_pii_and_retains_descriptive_name():
 
     documents = ["Medical tax statements for 2023", "Hospital visit records"]
 
-    with patch.object(strategy, "_run_prompt", return_value="Medical Tax Statements 123-45-6789"):
+    with patch.object(
+        strategy, "_run_prompt", return_value="Medical Tax Statements 123-45-6789"
+    ):
         folder_name = strategy._get_cluster_keywords(documents)
         assert "123-45-6789" not in folder_name
         assert "Medical Tax Statements" in folder_name
@@ -100,10 +102,15 @@ def test_generative_naming_strategy_over_scrubbed_fallback():
     strategy.max_features = 3
     strategy.generator = MagicMock()
 
-    documents = ["Healthcare report for annual checkup", "Medical laboratory assessment"]
+    documents = [
+        "Healthcare report for annual checkup",
+        "Medical laboratory assessment",
+    ]
 
     # Prompt returns candidate that consists entirely of PII
-    with patch.object(strategy, "_run_prompt", return_value="john.doe@example.com 123-45-6789"):
+    with patch.object(
+        strategy, "_run_prompt", return_value="john.doe@example.com 123-45-6789"
+    ):
         folder_name = strategy._get_cluster_keywords(documents)
         # Should fall back to super()._get_cluster_keywords(documents) (TF-IDF extraction)
         assert "john.doe@example.com" not in folder_name

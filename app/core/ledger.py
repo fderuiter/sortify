@@ -176,7 +176,9 @@ class TransactionLedger:
                     try:
                         if file_hash and hasattr(db, "set_user_verified_target"):
                             db.set_user_verified_target(
-                                base_dir, file_hash, (current_dest or "").replace("\\", "/")
+                                base_dir,
+                                file_hash,
+                                (current_dest or "").replace("\\", "/"),
                             )
                         if hasattr(db, "update_document_path"):
                             db.update_document_path(base_dir, source_rel, dest_rel)
@@ -205,7 +207,9 @@ class TransactionLedger:
                         try:
                             if file_hash and hasattr(db, "set_user_verified_target"):
                                 db.set_user_verified_target(
-                                    base_dir, file_hash, (current_dest or "").replace("\\", "/")
+                                    base_dir,
+                                    file_hash,
+                                    (current_dest or "").replace("\\", "/"),
                                 )
                             if hasattr(db, "update_document_path"):
                                 db.update_document_path(base_dir, source_rel, dest_rel)
@@ -223,7 +227,9 @@ class TransactionLedger:
                     if db:
                         try:
                             if hasattr(db, "update_document_path"):
-                                db.update_document_path(base_dir, source_rel, source_rel)
+                                db.update_document_path(
+                                    base_dir, source_rel, source_rel
+                                )
                         except Exception:
                             pass
                 self.update_status(entry_id, "COMPLETED")
@@ -235,5 +241,7 @@ class TransactionLedger:
                 reconciled_count += 1
 
         self.purge_completed()
-        logger.info(f"Headless reconciliation complete. {reconciled_count} entries reconciled.")
+        logger.info(
+            f"Headless reconciliation complete. {reconciled_count} entries reconciled."
+        )
         return reconciled_count

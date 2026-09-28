@@ -17,7 +17,9 @@ def get_ocr_reader():
     return SharedModelRegistry.get_instance().get_ocr_reader()
 
 
-def _emit_progress(progress_callback, pct: float = 0.0, stage: str | None = None) -> None:
+def _emit_progress(
+    progress_callback, pct: float = 0.0, stage: str | None = None
+) -> None:
     """Safely invoke a progress callback with ratio and optional stage description using central emitter."""
     emit_progress(progress_callback, progress_or_update=pct, stage=stage)
 
@@ -52,8 +54,12 @@ def extract_text_from_image(
                 pass
 
         if isinstance(width, (int, float)) and isinstance(height, (int, float)):
-            skip_threshold = getattr(settings, "IMAGE_SKIP_THRESHOLD", 3000) if settings else 3000
-            max_dimension = getattr(settings, "IMAGE_MAX_DIMENSION", 1000) if settings else 1000
+            skip_threshold = (
+                getattr(settings, "IMAGE_SKIP_THRESHOLD", 3000) if settings else 3000
+            )
+            max_dimension = (
+                getattr(settings, "IMAGE_MAX_DIMENSION", 1000) if settings else 1000
+            )
 
             if max(width, height) > skip_threshold:
                 name = file_path if file_path else "In-memory image"
@@ -74,12 +80,16 @@ def extract_text_from_image(
     except Exception as e:
         logging.error(f"Failed preprocessing image: {e}")
 
-    vision_engine = getattr(settings, "VISION_ENGINE", "easyocr") if settings else "easyocr"
+    vision_engine = (
+        getattr(settings, "VISION_ENGINE", "easyocr") if settings else "easyocr"
+    )
     if vision_engine == "florence-2":
         try:
             from app.core.shared_registry import SharedModelRegistry
 
-            _emit_progress(progress_callback, 0.2, "Initializing Florence-2 VLM model...")
+            _emit_progress(
+                progress_callback, 0.2, "Initializing Florence-2 VLM model..."
+            )
             proc = SharedModelRegistry.get_instance().get_florence_processor()
             if proc is not None:
                 _emit_progress(progress_callback, 0.5, "Extracting visual text...")
@@ -249,7 +259,9 @@ class XlsxExtractor:
 
                         added_len = len(row_str) + (1 if extracted_lines else 0)
                         if total_chars + added_len > max_chars:
-                            remaining = max_chars - total_chars - (1 if extracted_lines else 0)
+                            remaining = (
+                                max_chars - total_chars - (1 if extracted_lines else 0)
+                            )
                             if remaining > 0:
                                 extracted_lines.append(row_str[:remaining])
                             total_chars = max_chars
@@ -725,7 +737,9 @@ class AudioExtractor:
                     if pct_match:
                         try:
                             val = float(pct_match.group(1)) / 100.0
-                            emit_progress(progress_callback, val, stage="Transcribing audio...")
+                            emit_progress(
+                                progress_callback, val, stage="Transcribing audio..."
+                            )
                         except Exception:
                             pass
                     else:
@@ -740,7 +754,11 @@ class AudioExtractor:
                                     + int(ms) / (10 ** len(ms))
                                 )
                                 val = min(1.0, max(0.0, current_sec / total_duration))
-                                emit_progress(progress_callback, val, stage="Transcribing audio...")
+                                emit_progress(
+                                    progress_callback,
+                                    val,
+                                    stage="Transcribing audio...",
+                                )
                             except Exception:
                                 pass
                         else:
@@ -754,7 +772,11 @@ class AudioExtractor:
                                     val = min(
                                         1.0, max(0.0, current_sec / total_duration)
                                     )
-                                    emit_progress(progress_callback, val, stage="Transcribing audio...")
+                                    emit_progress(
+                                        progress_callback,
+                                        val,
+                                        stage="Transcribing audio...",
+                                    )
                                 except Exception:
                                     pass
 

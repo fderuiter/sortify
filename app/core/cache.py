@@ -250,8 +250,12 @@ class SparseMatrixLRUCache:
                 self._invalidate_unlocked(base_dir)
                 return
 
-            current_total = sum(self._doc_counts.values()) - self._doc_counts.get(base_dir, 0)
-            while self._access_order and (current_total + distinct_docs > self.max_documents):
+            current_total = sum(self._doc_counts.values()) - self._doc_counts.get(
+                base_dir, 0
+            )
+            while self._access_order and (
+                current_total + distinct_docs > self.max_documents
+            ):
                 lru_key = self._access_order.pop(0)
                 if lru_key != base_dir:
                     self._cache.pop(lru_key, None)
@@ -321,9 +325,13 @@ class CacheManager:
                         "ALTER TABLE directory_cache ADD COLUMN manual_folders TEXT"
                     )
                 except Exception as alter_err:
-                    logging.debug(f"Column manual_folders alter execution skipped or failed: {alter_err}")
+                    logging.debug(
+                        f"Column manual_folders alter execution skipped or failed: {alter_err}"
+                    )
         except Exception as e:
-            logging.error(f"Failed to initialize directory cache database: {e}", exc_info=True)
+            logging.error(
+                f"Failed to initialize directory cache database: {e}", exc_info=True
+            )
             if not isinstance(e, CacheError):
                 raise CacheError(f"Failed to initialize cache database: {e}") from e
             raise

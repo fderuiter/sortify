@@ -58,7 +58,9 @@ def test_extract_text_from_image_emits_stages(tmp_path):
         mock_reader.readtext.return_value = [([], "Sample Text", 0.9)]
         mock_get_ocr.return_value = mock_reader
 
-        result = extract_text_from_image(img, file_path=img_path, progress_callback=progress_cb)
+        result = extract_text_from_image(
+            img, file_path=img_path, progress_callback=progress_cb
+        )
         assert result == "Sample Text"
 
     stages = [stage for _, stage in progress_calls if stage is not None]
@@ -108,7 +110,9 @@ def test_image_extractor_passes_progress_callback(tmp_path):
 
     extractor = ImageExtractor()
 
-    with patch("app.core.extractor_strategies.extract_text_from_image") as mock_extract_img:
+    with patch(
+        "app.core.extractor_strategies.extract_text_from_image"
+    ) as mock_extract_img:
         mock_extract_img.return_value = "Image Text"
 
         res = extractor.extract(img_path, progress_callback=progress_cb)
@@ -141,7 +145,9 @@ def test_pdf_extractor_ocr_fallback_stages(tmp_path):
 
     pdf_extractor = PdfExtractor()
 
-    with patch("app.core.extractor_strategies.extract_text_from_image") as mock_extract_img:
+    with patch(
+        "app.core.extractor_strategies.extract_text_from_image"
+    ) as mock_extract_img:
         mock_extract_img.return_value = "Extracted Fallback OCR Text"
 
         # Mock page images so visual fallback is triggered
@@ -151,7 +157,9 @@ def test_pdf_extractor_ocr_fallback_stages(tmp_path):
         with patch("pypdf.PdfReader") as mock_pdf_reader_cls:
             mock_reader_inst = MagicMock()
             mock_page = MagicMock()
-            mock_page.extract_text.return_value = ""  # Empty text triggers visual fallback
+            mock_page.extract_text.return_value = (
+                ""  # Empty text triggers visual fallback
+            )
             mock_page.images = [mock_img]
             mock_reader_inst.pages = [mock_page]
             mock_pdf_reader_cls.return_value = mock_reader_inst
@@ -236,9 +244,7 @@ def test_app_file_progress_cb():
                 pass
 
     # Call with emit_progress and ProgressUpdate
-    emit_progress(
-        file_progress_cb, 0.2, "OCR Fallback: Running EasyOCR on page 1 of 3"
-    )
+    emit_progress(file_progress_cb, 0.2, "OCR Fallback: Running EasyOCR on page 1 of 3")
     assert len(scheduled_callbacks) == 1
     scheduled_callbacks.pop()()
 

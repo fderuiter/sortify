@@ -345,4 +345,3 @@ def test_cro_pipeline_identical_source_and_target_physical_files():
         res2 = pipeline.run_pipeline(source_root=target_dir, target_root=target_dir)
         assert res2.total_scanned_files >= 1
         assert os.path.exists(first_dest_abs)
-

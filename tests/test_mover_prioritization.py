@@ -24,9 +24,21 @@ def test_collect_move_items_sorts_by_mtime(tmp_path):
 
     # Plan with keys out of order (recent first, archival last)
     plan = {
-        "recent.txt": {"__type__": "file", "relative_source": "recent.txt", "target_filename": "moved_recent.txt"},
-        "old.txt": {"__type__": "file", "relative_source": "old.txt", "target_filename": "moved_old.txt"},
-        "archival.txt": {"__type__": "file", "relative_source": "archival.txt", "target_filename": "moved_archival.txt"},
+        "recent.txt": {
+            "__type__": "file",
+            "relative_source": "recent.txt",
+            "target_filename": "moved_recent.txt",
+        },
+        "old.txt": {
+            "__type__": "file",
+            "relative_source": "old.txt",
+            "target_filename": "moved_old.txt",
+        },
+        "archival.txt": {
+            "__type__": "file",
+            "relative_source": "archival.txt",
+            "target_filename": "moved_archival.txt",
+        },
     }
 
     items = _collect_move_items(base_dir, plan)
@@ -54,15 +66,33 @@ def test_recursive_move_execution_order_by_mtime(test_history_env):
     os.utime(f1, (now, now))
 
     plan = {
-        "new.txt": {"__type__": "file", "relative_source": "new.txt", "target_filename": "target_new.txt"},
-        "mid.txt": {"__type__": "file", "relative_source": "mid.txt", "target_filename": "target_mid.txt"},
-        "old.txt": {"__type__": "file", "relative_source": "old.txt", "target_filename": "target_old.txt"},
+        "new.txt": {
+            "__type__": "file",
+            "relative_source": "new.txt",
+            "target_filename": "target_new.txt",
+        },
+        "mid.txt": {
+            "__type__": "file",
+            "relative_source": "mid.txt",
+            "target_filename": "target_mid.txt",
+        },
+        "old.txt": {
+            "__type__": "file",
+            "relative_source": "old.txt",
+            "target_filename": "target_old.txt",
+        },
     }
 
     db_updates_batch = []
-    _execute_moves_recursive(base_dir, plan, db, session_id="test-session", db_updates_batch=db_updates_batch)
+    _execute_moves_recursive(
+        base_dir, plan, db, session_id="test-session", db_updates_batch=db_updates_batch
+    )
 
-    executed_sources = [item["args"][3] for item in db_updates_batch if item.get("type") == "transaction_step"]
+    executed_sources = [
+        item["args"][3]
+        for item in db_updates_batch
+        if item.get("type") == "transaction_step"
+    ]
 
     # Executed order must be old.txt -> mid.txt -> new.txt
     assert executed_sources == ["old.txt", "mid.txt", "new.txt"]
@@ -87,9 +117,21 @@ def test_collect_move_items_age_tier_sorting(tmp_path):
     os.utime(f_archival, (now - 400 * day_sec, now - 400 * day_sec))
 
     plan = {
-        "new_file.txt": {"__type__": "file", "relative_source": "new_file.txt", "target_filename": "dest_new.txt"},
-        "stale_file.txt": {"__type__": "file", "relative_source": "stale_file.txt", "target_filename": "dest_stale.txt"},
-        "archival_file.txt": {"__type__": "file", "relative_source": "archival_file.txt", "target_filename": "dest_archival.txt"},
+        "new_file.txt": {
+            "__type__": "file",
+            "relative_source": "new_file.txt",
+            "target_filename": "dest_new.txt",
+        },
+        "stale_file.txt": {
+            "__type__": "file",
+            "relative_source": "stale_file.txt",
+            "target_filename": "dest_stale.txt",
+        },
+        "archival_file.txt": {
+            "__type__": "file",
+            "relative_source": "archival_file.txt",
+            "target_filename": "dest_archival.txt",
+        },
     }
 
     items = _collect_move_items(base_dir, plan, priority="age_tier")
@@ -143,4 +185,3 @@ def test_async_move_engine_executes_priority_chunks_first(test_history_env):
 
     assert os.path.exists(os.path.join(base_dir, "out_archival.txt"))
     assert os.path.exists(os.path.join(base_dir, "out_recent.txt"))
-

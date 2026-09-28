@@ -70,9 +70,22 @@ class JevClassifierEngine:
     CATEGORY_RULES = {
         "Financial": {
             "keywords": [
-                "invoice", "receipt", "tax", "statement", "w2", "financial",
-                "payroll", "accounting", "balance", "ledger", "audit",
-                "billing", "expense", "revenue", "invoice_", "receipt_"
+                "invoice",
+                "receipt",
+                "tax",
+                "statement",
+                "w2",
+                "financial",
+                "payroll",
+                "accounting",
+                "balance",
+                "ledger",
+                "audit",
+                "billing",
+                "expense",
+                "revenue",
+                "invoice_",
+                "receipt_",
             ],
             "extensions": [".csv", ".xlsx", ".xls"],
             "sensitivity_rating": "HIGH",
@@ -83,9 +96,20 @@ class JevClassifierEngine:
         },
         "Legal": {
             "keywords": [
-                "contract", "nda", "agreement", "patent", "compliance",
-                "legal", "terms", "license", "privacy", "lawsuit", "court",
-                "bylaws", "affidavit", "subpoena"
+                "contract",
+                "nda",
+                "agreement",
+                "patent",
+                "compliance",
+                "legal",
+                "terms",
+                "license",
+                "privacy",
+                "lawsuit",
+                "court",
+                "bylaws",
+                "affidavit",
+                "subpoena",
             ],
             "extensions": [".pdf", ".docx"],
             "sensitivity_rating": "HIGH",
@@ -96,9 +120,20 @@ class JevClassifierEngine:
         },
         "Medical": {
             "keywords": [
-                "patient", "clinical", "medical", "lab_report", "prescription",
-                "health", "doctor", "hipaa", "diagnosis", "hospital", "pharma",
-                "pathology", "radiology", "blood_work"
+                "patient",
+                "clinical",
+                "medical",
+                "lab_report",
+                "prescription",
+                "health",
+                "doctor",
+                "hipaa",
+                "diagnosis",
+                "hospital",
+                "pharma",
+                "pathology",
+                "radiology",
+                "blood_work",
             ],
             "extensions": [],
             "sensitivity_rating": "CRITICAL",
@@ -109,8 +144,15 @@ class JevClassifierEngine:
         },
         "Personal": {
             "keywords": [
-                "passport", "id_card", "driver_license", "resume", "cv",
-                "ssn", "tax_return", "personal", "birth_certificate"
+                "passport",
+                "id_card",
+                "driver_license",
+                "resume",
+                "cv",
+                "ssn",
+                "tax_return",
+                "personal",
+                "birth_certificate",
             ],
             "extensions": [],
             "sensitivity_rating": "HIGH",
@@ -121,10 +163,31 @@ class JevClassifierEngine:
         },
         "Technical": {
             "keywords": [
-                "log", "config", "spec", "build", "code", "readme",
-                "script", "source", "repo", "database", "schema", "api_spec"
+                "log",
+                "config",
+                "spec",
+                "build",
+                "code",
+                "readme",
+                "script",
+                "source",
+                "repo",
+                "database",
+                "schema",
+                "api_spec",
             ],
-            "extensions": [".py", ".js", ".json", ".yaml", ".yml", ".xml", ".log", ".sql", ".sh", ".bat"],
+            "extensions": [
+                ".py",
+                ".js",
+                ".json",
+                ".yaml",
+                ".yml",
+                ".xml",
+                ".log",
+                ".sql",
+                ".sh",
+                ".bat",
+            ],
             "sensitivity_rating": "LOW",
             "sensitivity_score": 0.20,
             "archival_priority": 4,
@@ -133,8 +196,17 @@ class JevClassifierEngine:
         },
         "Administrative": {
             "keywords": [
-                "memo", "agenda", "minutes", "report", "presentation",
-                "deck", "slides", "meeting", "notice", "schedule", "plan"
+                "memo",
+                "agenda",
+                "minutes",
+                "report",
+                "presentation",
+                "deck",
+                "slides",
+                "meeting",
+                "notice",
+                "schedule",
+                "plan",
             ],
             "extensions": [".pptx", ".ppt", ".key"],
             "sensitivity_rating": "MEDIUM",
@@ -389,10 +461,22 @@ class JevClassifierEngine:
                 # Read at most 4KB snippet if readable file and size < 10MB
                 try:
                     if os.path.getsize(file_path) <= 10 * 1024 * 1024 and ext in {
-                        ".txt", ".csv", ".json", ".xml", ".yaml", ".yml",
-                        ".log", ".md", ".py", ".js", ".html", ".htm"
+                        ".txt",
+                        ".csv",
+                        ".json",
+                        ".xml",
+                        ".yaml",
+                        ".yml",
+                        ".log",
+                        ".md",
+                        ".py",
+                        ".js",
+                        ".html",
+                        ".htm",
                     }:
-                        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                        with open(
+                            file_path, "r", encoding="utf-8", errors="ignore"
+                        ) as f:
                             snippet = f.read(4096).lower()
                 except Exception:
                     pass

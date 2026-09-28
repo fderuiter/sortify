@@ -67,7 +67,10 @@ async def test_undo_last_sort_success(tmp_path):
     assert not os.path.exists(test_file)
     assert os.path.exists(os.path.join(target_folder, "document.txt"))
 
-    with patch("app.ui.app.ui") as mock_ui, patch.object(app, "start_analysis") as mock_start_analysis:
+    with (
+        patch("app.ui.app.ui") as mock_ui,
+        patch.object(app, "start_analysis") as mock_start_analysis,
+    ):
         await app.undo_last_sort()
 
         # File should be restored to pre-sort location
@@ -97,7 +100,9 @@ async def test_undo_last_sort_failure_handling(tmp_path):
     session = AppSession(settings, base_dir)
     # Create fake session in history manager so get_sessions returns something
     session.history_manager.get_sessions = MagicMock(
-        return_value=[{"session_id": "fake_session", "base_dir": base_dir, "status": "active"}]
+        return_value=[
+            {"session_id": "fake_session", "base_dir": base_dir, "status": "active"}
+        ]
     )
     session.rollback = MagicMock(side_effect=RuntimeError("Simulated rollback error"))
     app.app_session = session

@@ -686,7 +686,9 @@ def inspect_tui_component(component: Any) -> List[A11yViolation]:
     violations: List[A11yViolation] = []
     comp_name = type(component).__name__
 
-    if hasattr(component, "audit_a11y_compliance") and callable(component.audit_a11y_compliance):
+    if hasattr(component, "audit_a11y_compliance") and callable(
+        component.audit_a11y_compliance
+    ):
         res = component.audit_a11y_compliance()
         for v in res.get("violations", []):
             violations.append(

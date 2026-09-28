@@ -57,6 +57,7 @@ def test_db_worker_background_job_routes_through_shared_pool():
 
     def background_task(arg):
         from app.core.shared_registry import _thread_local
+
         executed_threads.append(threading.current_thread().name)
         sandboxed_states.append(getattr(_thread_local, "sandboxed", False))
         return f"result_{arg}"
@@ -111,6 +112,7 @@ def test_mover_chunked_relocation_routes_through_shared_pool(tmp_path):
 
     executed_threads = set()
     from app.core import mover
+
     orig_process = mover._process_move_item
 
     def mock_process_move_item(*args, **kwargs):
@@ -154,7 +156,9 @@ def test_concurrent_high_load_thread_bound(tmp_path):
         assert len(results) == 20
 
         # Check that thread names starting with GlobalSharedWorker do not exceed max_workers
-        shared_worker_threads = {t for t in active_thread_names if t.startswith("GlobalSharedWorker")}
+        shared_worker_threads = {
+            t for t in active_thread_names if t.startswith("GlobalSharedWorker")
+        }
         assert len(shared_worker_threads) <= max_workers
     finally:
         db_worker.stop()

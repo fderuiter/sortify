@@ -50,7 +50,9 @@ def test_fast_triage_provisional_for_images_and_background_queue(tmp_path: Path)
 
         threshold = 200.0 if _is_ci_or_parallel() else 50.0
         assert res == "[STATUS:PROVISIONAL]"
-        assert elapsed_ms < threshold, f"Expected < {threshold}ms, got {elapsed_ms:.2f}ms"
+        assert elapsed_ms < threshold, (
+            f"Expected < {threshold}ms, got {elapsed_ms:.2f}ms"
+        )
 
         # Allow time for background enrichment job to process
         time.sleep(1.0)
@@ -92,8 +94,12 @@ def test_tfidf_matrix_cache_sub_10ms_retrieval(tmp_path: Path):
     file2 = "doc2.txt"
 
     try:
-        db.upsert_document(base_dir, file1, "hash1", "medical patient blood report clinical")
-        db.upsert_document(base_dir, file2, "hash2", "financial tax invoice payment clinical")
+        db.upsert_document(
+            base_dir, file1, "hash1", "medical patient blood report clinical"
+        )
+        db.upsert_document(
+            base_dir, file2, "hash2", "financial tax invoice payment clinical"
+        )
         db.set_user_verified_target_path(base_dir, file1, "Historical/doc1.txt")
         db.set_user_verified_target_path(base_dir, file2, "Historical/doc2.txt")
 
@@ -106,7 +112,9 @@ def test_tfidf_matrix_cache_sub_10ms_retrieval(tmp_path: Path):
 
         threshold = 200.0 if _is_ci_or_parallel() else 50.0
         assert len(cached_rows) > 0
-        assert elapsed_ms < threshold, f"Expected < {threshold}ms, got {elapsed_ms:.2f}ms"
+        assert elapsed_ms < threshold, (
+            f"Expected < {threshold}ms, got {elapsed_ms:.2f}ms"
+        )
 
         file_paths = {row[0] for row in cached_rows}
         terms = {row[1] for row in cached_rows}
@@ -114,4 +122,3 @@ def test_tfidf_matrix_cache_sub_10ms_retrieval(tmp_path: Path):
         assert "clinical" in terms
     finally:
         db_worker.stop()
-

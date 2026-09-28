@@ -306,9 +306,9 @@ class HistoryManager:
                 from app.config import AppSettings
 
                 app_settings = AppSettings()
-                policies = getattr(
-                    app_settings, "UNIFIED_POLICIES", None
-                ) or getattr(app_settings, "POLICIES", None)
+                policies = getattr(app_settings, "UNIFIED_POLICIES", None) or getattr(
+                    app_settings, "POLICIES", None
+                )
             except Exception:
                 pass
             self._prune_snapshots(conn, policies=policies)
@@ -605,7 +605,9 @@ class HistoryManager:
         def verify_hash(abs_path, expected_hash, expected_size=0):
             if not expected_hash:
                 return True
-            EMPTY_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            EMPTY_SHA256 = (
+                "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            )
             max_attempts = 30 if sys.platform == "win32" else 10
             sleep_time = 0.1 if sys.platform == "win32" else 0.05
 
@@ -616,6 +618,7 @@ class HistoryManager:
                         return True
                     if sys.platform == "win32":
                         import gc
+
                         gc.collect()
                         time.sleep(sleep_time)
                         continue
@@ -625,12 +628,14 @@ class HistoryManager:
                         and expected_size > 0
                     ):
                         import gc
+
                         gc.collect()
                         time.sleep(sleep_time)
                         continue
                     return False
                 except Exception:
                     import gc
+
                     gc.collect()
                     time.sleep(sleep_time)
             return False
@@ -926,14 +931,19 @@ class HistoryManager:
                     if file_hash and os.path.exists(source_path):
                         try:
                             from app.core.extractor import get_file_hash
+
                             _ = get_file_hash(source_path)
                         except Exception:
                             pass
 
                     if db and base_dir:
                         try:
-                            rel_target = os.path.relpath(target_path, base_dir).replace("\\", "/")
-                            rel_source = os.path.relpath(source_path, base_dir).replace("\\", "/")
+                            rel_target = os.path.relpath(target_path, base_dir).replace(
+                                "\\", "/"
+                            )
+                            rel_source = os.path.relpath(source_path, base_dir).replace(
+                                "\\", "/"
+                            )
                             db.update_document_path(base_dir, rel_target, rel_source)
                         except Exception:
                             pass
@@ -951,6 +961,7 @@ class HistoryManager:
                             pass
 
         from app.core.mover import _remove_empty_dirs
+
         for tdir in target_dirs_to_clean:
             if os.path.exists(tdir) and os.path.isdir(tdir):
                 _remove_empty_dirs(tdir)
@@ -967,8 +978,6 @@ class HistoryManager:
             db.invalidate_cache()
 
         return unwound_count
-
-
 
         # Clean up any leftover/orphaned files created during a failed transfer
         # but not present in the original snapshot files.
@@ -997,7 +1006,9 @@ class HistoryManager:
                             except OSError:
                                 pass
         except Exception as ex:
-            logging.warning(f"Failed cleaning leftover orphan files during step rollback: {ex}")
+            logging.warning(
+                f"Failed cleaning leftover orphan files during step rollback: {ex}"
+            )
 
         # Clean empty directories
         try:
@@ -1006,7 +1017,11 @@ class HistoryManager:
 
             app_settings = AppSettings()
             protected_paths = getattr(app_settings, "PROTECTED_PATHS", [])
-            protected_paths = [os.path.normpath(p) for p in protected_paths] if protected_paths else None
+            protected_paths = (
+                [os.path.normpath(p) for p in protected_paths]
+                if protected_paths
+                else None
+            )
             for entry in os.listdir(base_dir):
                 entry_path = os.path.join(base_dir, entry)
                 if os.path.isdir(entry_path):
@@ -1298,7 +1313,9 @@ class HistoryManager:
                             except OSError:
                                 pass
                         if is_symlink or link_type == "junction":
-                            symlinks_to_restore.append((target_abs, symlink_target, link_type))
+                            symlinks_to_restore.append(
+                                (target_abs, symlink_target, link_type)
+                            )
                         elif is_lnk:
                             shortcuts_to_restore.append(
                                 (
@@ -1514,8 +1531,14 @@ class HistoryManager:
 
                     # Restore symlinks and junctions after standard files
                     for target_abs, symlink_target, l_type in symlinks_to_restore:
-                        if os.path.exists(target_abs) or os.path.islink(target_abs) or is_junction_path(target_abs):
-                            if os.path.islink(target_abs) or is_junction_path(target_abs):
+                        if (
+                            os.path.exists(target_abs)
+                            or os.path.islink(target_abs)
+                            or is_junction_path(target_abs)
+                        ):
+                            if os.path.islink(target_abs) or is_junction_path(
+                                target_abs
+                            ):
                                 try:
                                     from app.core.resilient_file_ops import (
                                         resilient_remove,

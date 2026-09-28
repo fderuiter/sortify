@@ -72,15 +72,28 @@ class PolicyEngine:
         rule: dict, file_path: str, doc_text: str, status_match: str
     ) -> bool:
         """Evaluate a single compliance policy rule against a file."""
-        rule_type = rule.get("type", "").lower() if isinstance(rule, dict) else getattr(rule, "type", "").lower()
-        expression = rule.get("expression", "").lower() if isinstance(rule, dict) else getattr(rule, "expression", "").lower()
+        rule_type = (
+            rule.get("type", "").lower()
+            if isinstance(rule, dict)
+            else getattr(rule, "type", "").lower()
+        )
+        expression = (
+            rule.get("expression", "").lower()
+            if isinstance(rule, dict)
+            else getattr(rule, "expression", "").lower()
+        )
 
         fn_only = os.path.basename(file_path).lower()
         doc_text_str = str(doc_text) if doc_text else ""
         dl_lower = doc_text_str.lower()
 
-        if rule_type in ("secret", "credential") or expression in ("secret", "credential"):
-            return PolicyEngine.contains_secrets(file_path) or PolicyEngine.contains_secrets(doc_text_str)
+        if rule_type in ("secret", "credential") or expression in (
+            "secret",
+            "credential",
+        ):
+            return PolicyEngine.contains_secrets(
+                file_path
+            ) or PolicyEngine.contains_secrets(doc_text_str)
 
         if rule_type in ("keyword", "action", "compliance", ""):
             if expression:
@@ -111,7 +124,13 @@ class PolicyEngine:
         if not policies:
             return (None, False) if return_halting else None
         sorted_policies = sorted(
-            policies, key=lambda x: x.get("priority", 0) if isinstance(x, dict) else getattr(x, "priority", 0), reverse=True
+            policies,
+            key=lambda x: (
+                x.get("priority", 0)
+                if isinstance(x, dict)
+                else getattr(x, "priority", 0)
+            ),
+            reverse=True,
         )
         matched_policy = None
         halt_evaluation = False
@@ -120,14 +139,22 @@ class PolicyEngine:
                 matched_policy = rule
                 break
             else:
-                is_halting = rule.get("halting", False) if isinstance(rule, dict) else getattr(rule, "halting", False)
+                is_halting = (
+                    rule.get("halting", False)
+                    if isinstance(rule, dict)
+                    else getattr(rule, "halting", False)
+                )
                 if is_halting:
                     halt_evaluation = True
                     break
 
         matched_result = None
         if matched_policy:
-            raw_data = dict(matched_policy) if isinstance(matched_policy, dict) else matched_policy.model_dump()
+            raw_data = (
+                dict(matched_policy)
+                if isinstance(matched_policy, dict)
+                else matched_policy.model_dump()
+            )
             raw_data["halt_evaluation"] = halt_evaluation
             matched_result = PolicyEvaluationResult.model_validate(raw_data)
 

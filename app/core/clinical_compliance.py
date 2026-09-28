@@ -222,11 +222,17 @@ class ClinicalComplianceEngine:
         return result
 
     def export_json_report(
-        self, compliance_data: Union[ClinicalComplianceResult, Dict[str, Any]], output_path: str
+        self,
+        compliance_data: Union[ClinicalComplianceResult, Dict[str, Any]],
+        output_path: str,
     ) -> str:
         """Export compliance audit analysis as a JSON report."""
         os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
-        data = compliance_data.model_dump() if isinstance(compliance_data, BaseModel) else compliance_data
+        data = (
+            compliance_data.model_dump()
+            if isinstance(compliance_data, BaseModel)
+            else compliance_data
+        )
         with open(output_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
         return output_path

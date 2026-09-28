@@ -14,9 +14,7 @@ import os
 import sys
 
 # Compute project base directory (/app) based on script location
-BASE_DIR = os.path.realpath(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-)
+BASE_DIR = os.path.realpath(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SNAPSHOT_PATH = os.path.join(BASE_DIR, "tests", "snapshots", "api_snapshot.json")
 
 # Source files to parse
@@ -108,12 +106,8 @@ def extract_parameters(args_node):
         )
 
     for kwarg, default_node in zip(args_node.kwonlyargs, args_node.kw_defaults):
-        annotation_str = (
-            ast.unparse(kwarg.annotation) if kwarg.annotation else None
-        )
-        default_str = (
-            ast.unparse(default_node) if default_node is not None else None
-        )
+        annotation_str = ast.unparse(kwarg.annotation) if kwarg.annotation else None
+        default_str = ast.unparse(default_node) if default_node is not None else None
         params.append(
             {
                 "name": kwarg.arg,
@@ -142,9 +136,7 @@ def extract_function_signature(func_node):
     """Extract signature dictionary for a FunctionDef or AsyncFunctionDef node."""
     is_async = isinstance(func_node, ast.AsyncFunctionDef)
     params = extract_parameters(func_node.args)
-    return_annotation = (
-        ast.unparse(func_node.returns) if func_node.returns else None
-    )
+    return_annotation = ast.unparse(func_node.returns) if func_node.returns else None
     decorators = extract_decorators(func_node.decorator_list)
 
     return {
@@ -332,15 +324,17 @@ def extract_metadata_and_payload(snapshot_data: dict) -> tuple[dict | None, dict
     """Separate metadata header from the definitions payload dictionary."""
     metadata = None
     if isinstance(snapshot_data, dict):
-        if "_metadata" in snapshot_data and isinstance(snapshot_data["_metadata"], dict):
+        if "_metadata" in snapshot_data and isinstance(
+            snapshot_data["_metadata"], dict
+        ):
             metadata = snapshot_data["_metadata"]
-        elif "metadata" in snapshot_data and isinstance(snapshot_data["metadata"], dict):
+        elif "metadata" in snapshot_data and isinstance(
+            snapshot_data["metadata"], dict
+        ):
             metadata = snapshot_data["metadata"]
 
     payload = {
-        k: v
-        for k, v in snapshot_data.items()
-        if k not in ("_metadata", "metadata")
+        k: v for k, v in snapshot_data.items() if k not in ("_metadata", "metadata")
     }
     return metadata, payload
 

@@ -173,13 +173,17 @@ def extract_file_text(
 
     if fast_triage and ext in (".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".webp"):
         if db and hasattr(db, "worker") and db.worker:
+
             def _bg_visual_job():
-                full_text = str(extract_file_text(file_path, settings=settings, fast_triage=False))
+                full_text = str(
+                    extract_file_text(file_path, settings=settings, fast_triage=False)
+                )
                 if base_dir:
                     rel_path = os.path.relpath(file_path, base_dir).replace("\\", "/")
                     f_hash = get_file_hash(file_path)
                     db.upsert_document(base_dir, rel_path, f_hash, full_text)
                     db.update_tfidf_matrix_cache(base_dir)
+
             db.worker.submit_background_job(_bg_visual_job)
         return ExtractionResult(text="", status=ExtractionStatus.PROVISIONAL)
 
@@ -203,15 +207,23 @@ def extract_file_text(
                 confidence = evaluate_text_confidence(text, ext)
                 if confidence < 0.8:
                     if db and hasattr(db, "worker") and db.worker:
+
                         def _bg_escalation_job():
                             full_text = str(extractor.extract(file_path, **kwargs))
                             if base_dir:
-                                rel_path = os.path.relpath(file_path, base_dir).replace("\\", "/")
+                                rel_path = os.path.relpath(file_path, base_dir).replace(
+                                    "\\", "/"
+                                )
                                 f_hash = get_file_hash(file_path)
-                                db.upsert_document(base_dir, rel_path, f_hash, full_text)
+                                db.upsert_document(
+                                    base_dir, rel_path, f_hash, full_text
+                                )
                                 db.update_tfidf_matrix_cache(base_dir)
+
                         db.worker.submit_background_job(_bg_escalation_job)
-                    return ExtractionResult(text="", status=ExtractionStatus.PROVISIONAL)
+                    return ExtractionResult(
+                        text="", status=ExtractionStatus.PROVISIONAL
+                    )
 
             if not text.strip():
                 return ExtractionResult(text="", status=ExtractionStatus.EMPTY)
@@ -238,7 +250,9 @@ def extract_file_text(
                 return ExtractionResult(
                     text="",
                     status=status_enum,
-                    error_message=tag if status_enum == ExtractionStatus.ERROR else None,
+                    error_message=tag
+                    if status_enum == ExtractionStatus.ERROR
+                    else None,
                 )
 
             return ExtractionResult(text=text, status=ExtractionStatus.SUCCESS)
@@ -482,7 +496,9 @@ def build_corpus_generator(
                     )
                     for item in batch
                 }
-                timeout = getattr(settings, "VISUAL_TIMEOUT", None) if settings else None
+                timeout = (
+                    getattr(settings, "VISUAL_TIMEOUT", None) if settings else None
+                )
                 for item in batch:
                     if cancel_check and cancel_check():
                         # Attempt to cancel remaining futures in this batch
@@ -491,9 +507,7 @@ def build_corpus_generator(
                         break
                     future = item_to_future[item]
                     try:
-                        item_name, item_text, file_hash = future.result(
-                            timeout=timeout
-                        )
+                        item_name, item_text, file_hash = future.result(timeout=timeout)
                     except concurrent.futures.TimeoutError:
                         logging.warning(
                             f"Extraction of '{item}' timed out after {timeout} seconds."

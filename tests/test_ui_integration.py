@@ -41,7 +41,9 @@ async def test_terminal_autosorter_app_workflow(tmp_path):
 
     # 6. Test undo rollback
     await app.undo_last_sort_async()
-    assert file1.exists() or any(f.name == "invoice_2026.txt" for f in target_dir.rglob("*"))
+    assert file1.exists() or any(
+        f.name == "invoice_2026.txt" for f in target_dir.rglob("*")
+    )
 
 
 def test_run_app_headless_execution(tmp_path):

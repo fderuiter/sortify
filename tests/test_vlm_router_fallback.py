@@ -62,7 +62,10 @@ def test_vlm_router_florence2_image_extraction(mocker):
 
     mock_registry = MagicMock()
     mock_registry.get_florence_processor.return_value = mock_florence_proc
-    mocker.patch("app.core.shared_registry.SharedModelRegistry.get_instance", return_value=mock_registry)
+    mocker.patch(
+        "app.core.shared_registry.SharedModelRegistry.get_instance",
+        return_value=mock_registry,
+    )
 
     text = extract_file_text("document_photo.jpg", settings=mock_settings)
 
@@ -100,7 +103,10 @@ def test_vlm_router_florence2_scanned_pdf_extraction(mocker):
 
     mock_registry = MagicMock()
     mock_registry.get_florence_processor.return_value = mock_florence_proc
-    mocker.patch("app.core.shared_registry.SharedModelRegistry.get_instance", return_value=mock_registry)
+    mocker.patch(
+        "app.core.shared_registry.SharedModelRegistry.get_instance",
+        return_value=mock_registry,
+    )
 
     text = extract_file_text("scanned_invoice.pdf", settings=mock_settings)
 
@@ -123,18 +129,25 @@ def test_vlm_router_fallback_on_florence2_exception(mocker, caplog):
 
     # Florence-2 raises exception
     mock_florence_proc = MagicMock()
-    mock_florence_proc.process_image.side_effect = OfflineModelLoadError("Model weights corrupted or GPU OOM")
+    mock_florence_proc.process_image.side_effect = OfflineModelLoadError(
+        "Model weights corrupted or GPU OOM"
+    )
 
     mock_registry = MagicMock()
     mock_registry.get_florence_processor.return_value = mock_florence_proc
-    mocker.patch("app.core.shared_registry.SharedModelRegistry.get_instance", return_value=mock_registry)
+    mocker.patch(
+        "app.core.shared_registry.SharedModelRegistry.get_instance",
+        return_value=mock_registry,
+    )
 
     # EasyOCR mock for fallback
     mock_reader = MagicMock()
     mock_reader.readtext.return_value = [
         ([[0, 0], [10, 0], [10, 10], [0, 10]], "Fallback EasyOCR extracted text", 0.95)
     ]
-    mocker.patch("app.core.extractor_strategies.get_ocr_reader", return_value=mock_reader)
+    mocker.patch(
+        "app.core.extractor_strategies.get_ocr_reader", return_value=mock_reader
+    )
 
     text = extract_file_text("damaged_scan.png", settings=mock_settings)
 
@@ -148,7 +161,10 @@ def test_vlm_router_fallback_on_florence2_exception(mocker, caplog):
 @pytest.mark.anyio
 async def test_vlm_router_memory_unloading_after_batch(tmp_path, mocker):
     mock_registry = MagicMock()
-    mocker.patch("app.core.shared_registry.SharedModelRegistry.get_instance", return_value=mock_registry)
+    mocker.patch(
+        "app.core.shared_registry.SharedModelRegistry.get_instance",
+        return_value=mock_registry,
+    )
 
     mock_db = MagicMock()
     mock_db.get_document.return_value = None
@@ -164,12 +180,17 @@ async def test_vlm_router_memory_unloading_after_batch(tmp_path, mocker):
         results.append(item)
 
     # Verify model unloading in finally block
-    mock_registry.unload_model.assert_has_calls([call("easyocr"), call("florence-2")], any_order=True)
+    mock_registry.unload_model.assert_has_calls(
+        [call("easyocr"), call("florence-2")], any_order=True
+    )
 
 
 def test_vlm_router_memory_unloading_sync_generator(tmp_path, mocker):
     mock_registry = MagicMock()
-    mocker.patch("app.core.shared_registry.SharedModelRegistry.get_instance", return_value=mock_registry)
+    mocker.patch(
+        "app.core.shared_registry.SharedModelRegistry.get_instance",
+        return_value=mock_registry,
+    )
 
     mock_db = MagicMock()
     mock_db.get_document.return_value = None
@@ -180,8 +201,17 @@ def test_vlm_router_memory_unloading_sync_generator(tmp_path, mocker):
     items = [test_file.name]
     progress_cb = MagicMock()
 
-    gen = build_corpus_generator(str(tmp_path), items, progress_callback=progress_cb, max_workers=1, db=mock_db, sequential=True)
+    gen = build_corpus_generator(
+        str(tmp_path),
+        items,
+        progress_callback=progress_cb,
+        max_workers=1,
+        db=mock_db,
+        sequential=True,
+    )
     list(gen)
 
     # Verify model unloading in finally block
-    mock_registry.unload_model.assert_has_calls([call("easyocr"), call("florence-2")], any_order=True)
+    mock_registry.unload_model.assert_has_calls(
+        [call("easyocr"), call("florence-2")], any_order=True
+    )

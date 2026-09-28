@@ -157,7 +157,9 @@ class AutoSorterApp:
 
             session_info = abandoned[0]
 
-            if session_info.get("has_step_ledger") or session_info.get("uncommitted_batch"):
+            if session_info.get("has_step_ledger") or session_info.get(
+                "uncommitted_batch"
+            ):
                 self.base_dir = session_info["base_dir"]
                 self.app_session = AppSession(
                     self.settings, self.base_dir, session_id=session_info["session_id"]
@@ -168,7 +170,9 @@ class AutoSorterApp:
                         session_info["session_id"],
                         self.app_session.db,
                     )
-                    ui.notify("Automatic recovery completed: unwound interrupted batch move.")
+                    ui.notify(
+                        "Automatic recovery completed: unwound interrupted batch move."
+                    )
                 except Exception as e:
                     logger.error(f"Error during automatic recovery: {e}")
                 return
@@ -338,6 +342,7 @@ class AutoSorterApp:
 
             if os.path.exists(target_full_path):
                 from app.core.mover import get_safe_path
+
                 t_dir, t_name = os.path.split(target_full_path)
                 target_full_path = get_safe_path(t_dir, t_name)
 
@@ -543,7 +548,9 @@ class AutoSorterApp:
                             ui.label("Recovery completed with errors:").classes(
                                 "font-semibold text-sm text-red-500"
                             )
-                            with ui.scroll_area().classes(f"flex-1 {TOKENS.SIZING.CONTROL_HEIGHT_SM} max-h-48 w-full border p-2"):
+                            with ui.scroll_area().classes(
+                                f"flex-1 {TOKENS.SIZING.CONTROL_HEIGHT_SM} max-h-48 w-full border p-2"
+                            ):
                                 for err in errors:
                                     ui.label(err).classes("text-xs text-red-500")
                         else:
@@ -761,6 +768,7 @@ class AutoSorterApp:
         try:
             if not self.app_session:
                 from app.core.session import AppSession
+
                 self.app_session = AppSession(self.settings, self.base_dir)
 
             from app.core.scanner import get_files_recursively
@@ -991,7 +999,10 @@ class AutoSorterApp:
         with (
             ui.dialog() as dialog,
             ui.card().classes(
-                get_dialog_card_classes("lg", f"{TOKENS.SIZING.MAX_HEIGHT_DIALOG} flex flex-col overflow-y-auto")
+                get_dialog_card_classes(
+                    "lg",
+                    f"{TOKENS.SIZING.MAX_HEIGHT_DIALOG} flex flex-col overflow-y-auto",
+                )
             ),
         ):
             dialog.props('aria-label="Compliance Audit Checklist Dialog"')
@@ -1337,9 +1348,7 @@ class AutoSorterApp:
             insert_file_into_plan(self.plan, target_folder, file_key, file_info)
             self.render_tree()
             asyncio.create_task(self.verify_current_plan())
-            ui.notify(
-                f"Confirmed proposed rename for '{file_key}'", type="positive"
-            )
+            ui.notify(f"Confirmed proposed rename for '{file_key}'", type="positive")
 
     def show_rename_file_dialog(self, e):
         """Display dialog to manually rename a target file, locking the extension and validating OS rules."""
@@ -1387,9 +1396,9 @@ class AutoSorterApp:
             ).classes("text-xs text-slate-500 font-mono mb-2")
 
             with ui.row().classes("w-full items-center gap-2"):
-                name_input = ui.input(
-                    label="New File Name", value=curr_stem
-                ).classes("flex-1")
+                name_input = ui.input(label="New File Name", value=curr_stem).classes(
+                    "flex-1"
+                )
                 if orig_ext:
                     ui.label(orig_ext).classes(
                         "text-sm font-bold text-slate-600 bg-slate-100 px-2 py-1 rounded"
@@ -1404,7 +1413,7 @@ class AutoSorterApp:
                     return
 
                 if orig_ext and new_val.lower().endswith(orig_ext.lower()):
-                    new_val = new_val[:-len(orig_ext)]
+                    new_val = new_val[: -len(orig_ext)]
                 final_target = new_val + orig_ext
 
                 file_info["target_filename"] = final_target
@@ -1430,7 +1439,7 @@ class AutoSorterApp:
             def validate_input(val):
                 stem = val.strip()
                 if orig_ext and stem.lower().endswith(orig_ext.lower()):
-                    stem = stem[:-len(orig_ext)]
+                    stem = stem[: -len(orig_ext)]
                 proposed_filename = stem + orig_ext
 
                 if not stem:
@@ -1586,9 +1595,17 @@ class AutoSorterApp:
 
     def render_tree(self):
         """Render the tree view of the sorting plan and update folder/file badges."""
-        if not getattr(self, "_ratings_cache", None) and getattr(self, "app_session", None) and getattr(self, "base_dir", None):
+        if (
+            not getattr(self, "_ratings_cache", None)
+            and getattr(self, "app_session", None)
+            and getattr(self, "base_dir", None)
+        ):
             self.load_ratings_from_db()
-        if not getattr(self, "locked_files", None) and getattr(self, "app_session", None) and getattr(self, "base_dir", None):
+        if (
+            not getattr(self, "locked_files", None)
+            and getattr(self, "app_session", None)
+            and getattr(self, "base_dir", None)
+        ):
             self.load_locked_files_from_db()
         self.tree_nodes = []
         folder_count, file_count = self._flatten(self.plan, "", self.tree_nodes)
@@ -1734,11 +1751,7 @@ class AutoSorterApp:
                         icon = "error"
 
                 plan_errors = getattr(self, "plan_errors", {})
-                if (
-                    k in plan_errors
-                    or node_id in plan_errors
-                    or tgt_fn in plan_errors
-                ):
+                if k in plan_errors or node_id in plan_errors or tgt_fn in plan_errors:
                     err_msg = (
                         plan_errors.get(node_id)
                         or plan_errors.get(k)
@@ -1917,6 +1930,7 @@ class AutoSorterApp:
 
                 # Explicitly unload extraction OCR models before AI phase
                 from app.core.shared_registry import SharedModelRegistry
+
                 registry = SharedModelRegistry.get_instance()
                 registry.unload_model("easyocr")
                 registry.unload_model("florence-2")
@@ -2089,7 +2103,10 @@ class AutoSorterApp:
                     or "plan.json" in event.src_path
                 ):
                     return
-                if self.app.loop and not getattr(self.app.loop, "is_closed", lambda: False)():
+                if (
+                    self.app.loop
+                    and not getattr(self.app.loop, "is_closed", lambda: False)()
+                ):
                     try:
                         self.app.loop.call_soon_threadsafe(self.app._rebuild_plan_async)
                     except RuntimeError:
@@ -2332,6 +2349,7 @@ class AutoSorterApp:
 
         if not self.app_session:
             from app.core.session import AppSession
+
             self.app_session = AppSession(self.settings, self.base_dir)
 
         try:
@@ -2388,14 +2406,20 @@ class AutoSorterApp:
                 if not self.plan:
                     print("No plan available to execute. Please run a scan first.")
                 else:
-                    confirm = input("Approve and execute file sorting now? [y/N]: ").strip().lower()
+                    confirm = (
+                        input("Approve and execute file sorting now? [y/N]: ")
+                        .strip()
+                        .lower()
+                    )
                     if confirm in ("y", "yes"):
                         self.execute_sort_sync()
             elif choice == "5":
                 if not self.base_dir:
                     print("Please set a target directory first.")
                 else:
-                    confirm = input("Revert last sorting operation? [y/N]: ").strip().lower()
+                    confirm = (
+                        input("Revert last sorting operation? [y/N]: ").strip().lower()
+                    )
                     if confirm in ("y", "yes"):
                         self.undo_last_sort_sync()
             elif choice == "6" or choice.lower() in ("q", "quit", "exit"):
@@ -2561,7 +2585,11 @@ def run_app(settings, directory=None, port=8080, show=True, debug_layout=False) 
             app_instance.print_terminal_tree()
             if sys.stdin.isatty():
                 try:
-                    ans = input("Approve and execute file sorting now? [Y/n]: ").strip().lower()
+                    ans = (
+                        input("Approve and execute file sorting now? [Y/n]: ")
+                        .strip()
+                        .lower()
+                    )
                     if ans in ("", "y", "yes"):
                         app_instance.execute_sort_sync()
                     else:

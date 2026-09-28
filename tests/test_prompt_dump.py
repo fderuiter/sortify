@@ -161,7 +161,9 @@ def test_prompt_dump_blocked_when_debug_off(tmp_path, monkeypatch):
     strategy = GenerativeNamingStrategy()
     strategy._gguf_active = False
 
-    res = strategy._run_prompt("Test prompt body\nDocuments: confidential content\nFolder Name:", 15)
+    res = strategy._run_prompt(
+        "Test prompt body\nDocuments: confidential content\nFolder Name:", 15
+    )
     expected_path = get_debug_log_dir() / dump_file
     assert not expected_path.exists()
     assert res != "Mock Generated Folder Name"
@@ -196,6 +198,7 @@ def test_prompt_dump_success_under_debug(monkeypatch):
     # Clean up created debug log file
     expected_path.unlink(missing_ok=True)
 
+
 def test_prompt_dump_traversal_rejection_under_debug(monkeypatch, caplog):
     import logging
 
@@ -215,7 +218,9 @@ def test_prompt_dump_traversal_rejection_under_debug(monkeypatch, caplog):
     assert res == ""
 
 
-def test_get_cluster_keywords_succeeds_with_invalid_dump_path(tmp_path, monkeypatch, caplog):
+def test_get_cluster_keywords_succeeds_with_invalid_dump_path(
+    tmp_path, monkeypatch, caplog
+):
     import logging
 
     monkeypatch.setenv("DEBUG", "1")

@@ -165,7 +165,9 @@ async def test_asynchronous_background_scan_loads(test_env):
     with patch("app.core.scanner.get_files_recursively", return_value=[]):
         with patch("app.core.metadata.MetadataPass.run", return_value=[]):
             with patch("app.core.verifier.is_ml_available", return_value=True):
-                with patch("asyncio.to_thread", wraps=asyncio.to_thread) as mock_to_thread:
+                with patch(
+                    "asyncio.to_thread", wraps=asyncio.to_thread
+                ) as mock_to_thread:
                     await app._scan_and_process_worker()
 
                     # Verify that load_locked_files_from_db and load_ratings_from_db are wrapped in asyncio.to_thread

@@ -32,6 +32,7 @@ def test_env():
         yield tmp_dir, db, history_manager
         db_worker.stop()
         from app.core.db_conn import clear_connection_cache
+
         clear_connection_cache(only_current_and_inactive=False)
 
 
@@ -53,7 +54,7 @@ def test_ui_manual_rename_extension_immutability():
     for user_input in user_inputs:
         stem = user_input.strip()
         if orig_ext and stem.lower().endswith(orig_ext.lower()):
-            stem = stem[:-len(orig_ext)]
+            stem = stem[: -len(orig_ext)]
         elif os.path.splitext(stem)[1]:
             stem = os.path.splitext(stem)[0]
 
@@ -101,7 +102,9 @@ def test_plan_verification_flags_modified_or_deleted_extensions():
     assert result["success"] is False
     assert len(result["invalid_renames"]) == 1
     assert result["invalid_renames"][0]["type"] == "modified_extension"
-    assert any("modifies or deletes original file extension" in w for w in result["warnings"])
+    assert any(
+        "modifies or deletes original file extension" in w for w in result["warnings"]
+    )
 
 
 def test_plan_verification_and_execution_blocks_unconfirmed_renames(test_env):

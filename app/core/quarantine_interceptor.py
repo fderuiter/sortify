@@ -47,9 +47,17 @@ def scrub_pii_from_text(text: Any) -> str:
     # Credit Card pattern
     redacted = re.sub(r"\b(?:\d[ -]*?){13,16}\b", "[REDACTED_CARD]", redacted)
     # Email pattern
-    redacted = re.sub(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b", "[REDACTED_EMAIL]", redacted)
+    redacted = re.sub(
+        r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b",
+        "[REDACTED_EMAIL]",
+        redacted,
+    )
     # Clinical/PII Sensitive phrases
-    redacted = re.sub(r"(?i)(Confidential Medical Report|Subject \d+|Diagnosis:[^\n]*)", "[REDACTED_PII]", redacted)
+    redacted = re.sub(
+        r"(?i)(Confidential Medical Report|Subject \d+|Diagnosis:[^\n]*)",
+        "[REDACTED_PII]",
+        redacted,
+    )
 
     # Centralized secret pattern redaction (API keys, JWT tokens, Bearer tokens, private keys, high-entropy secrets)
     redacted = sanitize_secret_patterns(redacted, replacement="[REDACTED_SECRET]")
@@ -178,8 +186,13 @@ class QuarantineInterceptorService:
 
         try:
             # Check timeout guardrail
-            if effective_timeout <= 0 or (time.perf_counter() - start_time) >= effective_timeout:
-                raise TimeoutError(f"Forensic scanning job exceeded timeout of {effective_timeout}s")
+            if (
+                effective_timeout <= 0
+                or (time.perf_counter() - start_time) >= effective_timeout
+            ):
+                raise TimeoutError(
+                    f"Forensic scanning job exceeded timeout of {effective_timeout}s"
+                )
 
             # 2. Deep Forensic Scanning & Extraction
             extracted_text = ""
@@ -201,14 +214,23 @@ class QuarantineInterceptorService:
                     extracted_text = extract_file_text(staged_path) or ""
 
             # Re-check timeout guardrail
-            if effective_timeout <= 0 or (time.perf_counter() - start_time) >= effective_timeout:
-                raise TimeoutError(f"Forensic scanning job exceeded timeout of {effective_timeout}s")
+            if (
+                effective_timeout <= 0
+                or (time.perf_counter() - start_time) >= effective_timeout
+            ):
+                raise TimeoutError(
+                    f"Forensic scanning job exceeded timeout of {effective_timeout}s"
+                )
 
             # 3. Clinical Compliance Gap Analysis if relevant
-            if extracted_text and ("clinical" in orig_rel_path.lower() or "trial" in orig_rel_path.lower()):
+            if extracted_text and (
+                "clinical" in orig_rel_path.lower() or "trial" in orig_rel_path.lower()
+            ):
                 try:
                     _ = self.clinical_engine.evaluate_compliance(
-                        classified_artifacts={os.path.basename(orig_rel_path): "01.01.01"},
+                        classified_artifacts={
+                            os.path.basename(orig_rel_path): "01.01.01"
+                        },
                         all_filenames=[os.path.basename(orig_rel_path)],
                         base_dir=base_dir,
                     )
@@ -232,8 +254,13 @@ class QuarantineInterceptorService:
             target_subfolder = getattr(matched_rule, "target_path", None) or (matched_rule.get("target_path") if isinstance(matched_rule, dict) else None) if matched_rule else None
 
             # Re-check timeout guardrail before action execution
-            if effective_timeout <= 0 or (time.perf_counter() - start_time) >= effective_timeout:
-                raise TimeoutError(f"Forensic scanning job exceeded timeout of {effective_timeout}s")
+            if (
+                effective_timeout <= 0
+                or (time.perf_counter() - start_time) >= effective_timeout
+            ):
+                raise TimeoutError(
+                    f"Forensic scanning job exceeded timeout of {effective_timeout}s"
+                )
 
             # 5. Policy Lifecycle Action Execution
             if action == "redact":
@@ -291,14 +318,25 @@ class QuarantineInterceptorService:
                 )
 
                 # Upsert sanitized document record in DB
-                final_hash = resilient_file_hash(dest_file_path) if os.path.exists(dest_file_path) else record["file_hash"]
-                self.db.upsert_document(base_dir, os.path.relpath(dest_file_path, base_dir), final_hash, scrubbed_text)
+                final_hash = (
+                    resilient_file_hash(dest_file_path)
+                    if os.path.exists(dest_file_path)
+                    else record["file_hash"]
+                )
+                self.db.upsert_document(
+                    base_dir,
+                    os.path.relpath(dest_file_path, base_dir),
+                    final_hash,
+                    scrubbed_text,
+                )
 
             elif action == "archive":
                 archive_subfolder = target_subfolder or "Archive"
                 archive_dir = os.path.join(base_dir, archive_subfolder)
                 os.makedirs(archive_dir, exist_ok=True)
-                archive_file_path = os.path.join(archive_dir, os.path.basename(orig_rel_path))
+                archive_file_path = os.path.join(
+                    archive_dir, os.path.basename(orig_rel_path)
+                )
 
                 resilient_move(staged_path, archive_file_path)
 
@@ -347,7 +385,11 @@ class QuarantineInterceptorService:
             else:
                 # Default release to target destination or original base_dir
                 dest_subfolder = target_subfolder or ""
-                dest_dir = os.path.join(base_dir, dest_subfolder) if dest_subfolder else base_dir
+                dest_dir = (
+                    os.path.join(base_dir, dest_subfolder)
+                    if dest_subfolder
+                    else base_dir
+                )
                 os.makedirs(dest_dir, exist_ok=True)
                 dest_file_path = os.path.join(dest_dir, os.path.basename(orig_rel_path))
 
@@ -364,8 +406,17 @@ class QuarantineInterceptorService:
                         "details": f"Document released from quarantine to {dest_file_path}",
                     },
                 )
-                final_hash = resilient_file_hash(dest_file_path) if os.path.exists(dest_file_path) else record["file_hash"]
-                self.db.upsert_document(base_dir, os.path.relpath(dest_file_path, base_dir), final_hash, str(extracted_text))
+                final_hash = (
+                    resilient_file_hash(dest_file_path)
+                    if os.path.exists(dest_file_path)
+                    else record["file_hash"]
+                )
+                self.db.upsert_document(
+                    base_dir,
+                    os.path.relpath(dest_file_path, base_dir),
+                    final_hash,
+                    str(extracted_text),
+                )
 
             res = self.db.get_quarantine_record(job_id)
             if isinstance(res, dict):
@@ -397,7 +448,9 @@ class QuarantineInterceptorService:
             return validate_quarantine_record(fallback)
 
         except Exception as e:
-            logger.error(f"Error processing quarantine job {job_id}: {e}", exc_info=True)
+            logger.error(
+                f"Error processing quarantine job {job_id}: {e}", exc_info=True
+            )
             err_msg = str(e)
             self.db.update_quarantine_status(
                 job_id=job_id,
