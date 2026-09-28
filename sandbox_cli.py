@@ -47,26 +47,26 @@ def reset_sandbox():
             except Exception:
                 pass
     shutil.copytree(GOLDEN_DIR, SANDBOX_DIR)
-    print("Sandbox dataset has been reset to its original state.")
+    print("Sandbox dataset has been reset to its original state.", file=sys.stderr)
 
 
 def extract_file(filename):
     """Extract text from a specific sandbox file."""
     filepath = os.path.join(SANDBOX_DIR, filename)
     if not os.path.exists(filepath):
-        print(f"File not found: {filepath}")
-        return
+        print(f"File not found: {filepath}", file=sys.stderr)
+        sys.exit(1)
     text = extract_file_text(filepath)
-    print(f"--- Extracted Text for {filename} ---")
+    print(f"--- Extracted Text for {filename} ---", file=sys.stderr)
     print(text)
-    print("-" * 40)
+    print("-" * 40, file=sys.stderr)
 
 
 def analyze_all(json_output=False):
     """Run the analysis pipeline on all sandbox files."""
     if not os.path.exists(SANDBOX_DIR):
         print("Sandbox dataset not found. Run reset first.", file=sys.stderr)
-        return
+        sys.exit(1)
 
     class MockSettings:
         AI_CONSENT_GRANTED = False
@@ -136,9 +136,9 @@ def analyze_all(json_output=False):
     if json_output:
         print(json.dumps(plan, indent=2))
     else:
-        print("--- Analysis Sorting Plan ---")
+        print("--- Analysis Sorting Plan ---", file=sys.stderr)
         print(json.dumps(plan, indent=2))
-        print("-" * 40)
+        print("-" * 40, file=sys.stderr)
 
 
 def build_parser():
@@ -212,7 +212,8 @@ def main():
     elif args.command == "analyze":
         analyze_all(json_output=args.json)
     else:
-        parser.print_help()
+        parser.print_help(file=sys.stderr)
+        sys.exit(2)
 
 
 if __name__ == "__main__":

@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import logging
 import os
+import sys
 import threading
 import time
 from dataclasses import dataclass, field
@@ -781,7 +782,7 @@ class ContinuousWatchdogDaemon:
             self._active_triage_paths.clear()
 
         logger.info(f"Starting continuous watchdog daemon for: {self.base_dir}")
-        print(f"Starting continuous watchdog daemon for: {self.base_dir}")
+        print(f"Starting continuous watchdog daemon for: {self.base_dir}", file=sys.stderr)
 
         # Launch background asyncio event loop & worker pool
         self._start_pipeline_event_loop()
@@ -842,7 +843,7 @@ class ContinuousWatchdogDaemon:
                 self._app_session = None
 
         logger.info("Watchdog daemon stopped.")
-        print("Watchdog daemon stopped.")
+        print("Watchdog daemon stopped.", file=sys.stderr)
 
     def trigger_recalculation(self):
         """Thread-safe and debounced trigger for sorting run."""
@@ -906,7 +907,7 @@ class ContinuousWatchdogDaemon:
             return
 
         logger.info("Executing background sorting run...")
-        print("Executing background sorting run...")
+        print("Executing background sorting run...", file=sys.stderr)
 
         # Define the cancel check callback
         def cancel_check():
@@ -1022,13 +1023,13 @@ class ContinuousWatchdogDaemon:
             with self.scoped_move_phase(plan=slow_path_plan):
                 summary = app_session.execute_moves(slow_path_plan)
             logger.info(f"Phase 2 (Slow-Path AI) completed successfully: {summary}")
-            print(f"Silent move execution completed successfully: {summary}")
+            print(f"Silent move execution completed successfully: {summary}", file=sys.stderr)
 
         except Exception as e:
             logger.error(
                 f"Error during continuous watchdog execution run: {e}", exc_info=True
             )
-            print(f"Error during background sorting run: {e}")
+            print(f"Error during background sorting run: {e}", file=sys.stderr)
         finally:
             if app_session:
                 app_session.close()
