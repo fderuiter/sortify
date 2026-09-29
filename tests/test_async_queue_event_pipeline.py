@@ -54,14 +54,14 @@ def test_file_change_event_structure():
 
 
 def test_watchdog_handler_publishes_to_queue(tmp_path):
-    """Verify Watchdog event handlers publish FileChangeEvent directly to asynchronous FIFO queue."""
+    """Verify Watchdog event handlers publish FileChangeEvent directly to asynchronous PriorityQueue."""
     settings = DummySettings()
     daemon = ContinuousWatchdogDaemon(settings, str(tmp_path))
     daemon._is_running = True
 
     loop = asyncio.new_event_loop()
     daemon._event_loop = loop
-    daemon._event_queue = asyncio.Queue(maxsize=10)
+    daemon._event_queue = asyncio.PriorityQueue(maxsize=10)
 
     handler = DaemonFolderHandler(daemon)
     test_file = tmp_path / "stream_doc.pdf"
@@ -71,7 +71,8 @@ def test_watchdog_handler_publishes_to_queue(tmp_path):
     handler.on_any_event(event)
 
     assert daemon._event_queue.qsize() == 1
-    enqueued = daemon._event_queue.get_nowait()
+    raw_item = daemon._event_queue.get_nowait()
+    enqueued = raw_item[2] if isinstance(raw_item, tuple) else raw_item
     assert isinstance(enqueued, FileChangeEvent)
     assert enqueued.file_path == str(test_file)
     assert enqueued.event_type == "created"
@@ -86,7 +87,7 @@ def test_event_pipeline_deduplication(tmp_path):
     daemon = ContinuousWatchdogDaemon(settings, str(tmp_path))
     daemon._is_running = True
 
-    daemon._event_queue = asyncio.Queue(maxsize=10)
+    daemon._event_queue = asyncio.PriorityQueue(maxsize=10)
 
     file1 = str(tmp_path / "burst_file.txt")
     e1 = FileChangeEvent(event_type="created", file_path=file1)
@@ -109,15 +110,19 @@ def test_event_pipeline_max_queue_capacity(tmp_path):
 
     daemon = ContinuousWatchdogDaemon(settings, str(tmp_path))
     daemon._is_running = True
-    daemon._event_queue = asyncio.Queue(maxsize=3)
+    daemon._event_queue = asyncio.PriorityQueue(maxsize=3)
 
     for i in range(3):
-        ev = FileChangeEvent(event_type="created", file_path=str(tmp_path / f"file_{i}.txt"))
+        ev = FileChangeEvent(
+            event_type="created", file_path=str(tmp_path / f"file_{i}.txt")
+        )
         assert daemon.enqueue_event(ev) is True
 
     assert daemon._event_queue.full() is True
 
-    overflow_ev = FileChangeEvent(event_type="created", file_path=str(tmp_path / "overflow.txt"))
+    overflow_ev = FileChangeEvent(
+        event_type="created", file_path=str(tmp_path / "overflow.txt")
+    )
     assert daemon.enqueue_event(overflow_ev) is False
     assert daemon._event_queue.qsize() == 3
 
@@ -184,12 +189,13 @@ async def test_background_reconciliation_audit(tmp_path):
     settings.RECONCILIATION_INTERVAL = 0.1
     daemon = ContinuousWatchdogDaemon(settings, str(tmp_path))
     daemon._is_running = True
-    daemon._event_queue = asyncio.Queue(maxsize=10)
+    daemon._event_queue = asyncio.PriorityQueue(maxsize=10)
 
     # Execute reconciliation audit
     await daemon._run_reconciliation_audit()
 
     assert daemon._event_queue.qsize() == 1
-    enqueued = daemon._event_queue.get_nowait()
+    raw_item = daemon._event_queue.get_nowait()
+    enqueued = raw_item[2] if isinstance(raw_item, tuple) else raw_item
     assert enqueued.event_type == "reconciliation"
     assert os.path.basename(enqueued.file_path) == "untracked.pdf"
