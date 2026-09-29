@@ -323,14 +323,21 @@ def test_run_prompt_mandatory_inference_scrubbing(monkeypatch):
 
 def test_scrub_user_home_paths_cross_platform_variations(monkeypatch):
     monkeypatch.setenv("USERPROFILE", r"C:\Users\RunnerAdmin")
+    monkeypatch.setenv("HOMEPATH", r"\Users\RunnerAdmin")
 
     text_win_upper = r"File located at C:\Users\RunnerAdmin\documents\data.txt"
     text_win_lower = r"File located at c:\users\runneradmin\documents\data.txt"
     text_win_fwd = "File located at C:/Users/RunnerAdmin/documents/data.txt"
     text_posix_bash = "File located at /c/Users/RunnerAdmin/documents/data.txt"
+    text_no_drive = r"File located at \Users\RunnerAdmin\documents\data.txt"
+    text_exact_home = r"File located at C:\Users\RunnerAdmin"
+    text_non_matching = r"File located at C:\Users\RunnerAdminDocs\data.txt"
 
     assert _scrub_user_home_paths(text_win_upper) == r"File located at <USER_HOME>\documents\data.txt"
     assert _scrub_user_home_paths(text_win_lower) == r"File located at <USER_HOME>\documents\data.txt"
     assert _scrub_user_home_paths(text_win_fwd) == "File located at <USER_HOME>/documents/data.txt"
     assert _scrub_user_home_paths(text_posix_bash) == "File located at <USER_HOME>/documents/data.txt"
+    assert _scrub_user_home_paths(text_no_drive) == r"File located at <USER_HOME>\documents\data.txt"
+    assert _scrub_user_home_paths(text_exact_home) == "File located at <USER_HOME>"
+    assert _scrub_user_home_paths(text_non_matching) == r"File located at C:\Users\RunnerAdminDocs\data.txt"
 

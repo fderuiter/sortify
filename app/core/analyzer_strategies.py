@@ -184,29 +184,22 @@ def _scrub_user_home_paths(text: str) -> str:
         if not raw_parts:
             continue
 
-        has_drive = False
         if len(raw_parts[0]) == 2 and raw_parts[0][1] == ":":
-            has_drive = True
             body_parts = raw_parts[1:]
         elif len(raw_parts[0]) == 1 and raw_parts[0].isalpha() and (h.startswith("/") or h.startswith("\\")):
-            has_drive = True
             body_parts = raw_parts[1:]
-        elif h.startswith("/") or h.startswith("\\"):
-            has_drive = False
-            body_parts = raw_parts
         else:
-            has_drive = False
             body_parts = raw_parts
 
         if not body_parts:
             continue
 
-        if has_drive:
-            prefix = r"(?:[a-zA-Z]:[\/\\]*|[\/\\][a-zA-Z][\/\\]+)"
-        else:
-            prefix = r"[\/\\]*"
-
-        pattern = prefix + r"[\/\\]+".join([re.escape(p) for p in body_parts])
+        pattern = (
+            r"(?:[a-zA-Z]:[\/\\]*|[\/\\][a-zA-Z][\/\\]+)?"
+            + r"[\/\\]*"
+            + r"[\/\\]+".join([re.escape(p) for p in body_parts])
+            + r"(?=[\\/]|[^a-zA-Z0-9_.-]|$)"
+        )
         try:
             text = re.sub(pattern, "<USER_HOME>", text, flags=re.IGNORECASE)
         except Exception:
