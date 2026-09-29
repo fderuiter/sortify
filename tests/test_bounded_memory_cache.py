@@ -1,5 +1,5 @@
 import concurrent.futures
-import time
+from unittest.mock import patch
 
 from app.core.cache import BoundedMemoryCache
 from app.core.db import Database
@@ -67,23 +67,29 @@ def test_bounded_memory_cache_lru_eviction():
 
 
 def test_bounded_memory_cache_ttl_expiration():
-    cache = BoundedMemoryCache(max_size=10, ttl=0.1)
+    current_time = 1000.0
 
-    cache["temp1"] = "val1"
-    cache.set("temp2", "val2", ttl=0.5)
+    def mock_monotonic():
+        return current_time
 
-    assert cache.get("temp1") == "val1"
-    assert cache.get("temp2") == "val2"
+    with patch("app.core.cache.time.monotonic", side_effect=mock_monotonic):
+        cache = BoundedMemoryCache(max_size=10, ttl=0.1)
 
-    time.sleep(0.15)
+        cache["temp1"] = "val1"
+        cache.set("temp2", "val2", ttl=0.5)
 
-    # temp1 should be expired now, temp2 should still be valid
-    assert "temp1" not in cache
-    assert cache.get("temp1") is None
-    assert cache.get("temp2") == "val2"
+        assert cache.get("temp1") == "val1"
+        assert cache.get("temp2") == "val2"
 
-    time.sleep(0.4)
-    assert cache.get("temp2") is None
+        current_time += 0.15
+
+        # temp1 should be expired now, temp2 should still be valid
+        assert "temp1" not in cache
+        assert cache.get("temp1") is None
+        assert cache.get("temp2") == "val2"
+
+        current_time += 0.4
+        assert cache.get("temp2") is None
 
 
 def test_bounded_memory_cache_on_evict_exception_resilience():
