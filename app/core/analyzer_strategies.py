@@ -155,6 +155,29 @@ def scrub_prompt_text(text: str) -> str:
     return text
 
 
+def scrub_inference_prompt(text: str) -> str:
+    """Sanitize secret patterns and user home paths from prompt text before model execution without structural document redaction."""
+    if not isinstance(text, str) or not text:
+        return text if text is not None else ""
+
+    try:
+        home_dir = str(Path.home())
+    except Exception:
+        home_dir = None
+
+    if home_dir and home_dir != "/":
+        home_dir_fwd = home_dir.replace("\\", "/")
+        home_dir_back = home_dir.replace("/", "\\")
+        text = text.replace(home_dir_fwd, "<USER_HOME>")
+        text = text.replace(home_dir_back, "<USER_HOME>")
+
+    from app.core.text_utils import sanitize_secret_patterns
+
+    text = sanitize_secret_patterns(text, replacement="[REDACTED_SECRET]")
+
+    return text
+
+
 def get_decryption_executor():
     """Retrieve the central shared background worker pool instance for strategy decryption."""
     from app.core.shared_registry import SharedWorkerPool
@@ -1624,6 +1647,8 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                 logging.warning(
                     f"Failed to write prompt dump to '{dump_file}': {e}"
                 )
+
+        prompt = scrub_inference_prompt(prompt)
 
         if self._gguf_active and not self._gguf_failed:
             if not self._gguf_process or not self._gguf_process.is_alive():

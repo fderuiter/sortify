@@ -10,6 +10,7 @@ from app.core.analyzer_strategies import (
     is_debug_active,
     is_prompt_dump_enabled,
     redact_sensitive_text,
+    scrub_inference_prompt,
     scrub_prompt_text,
     validate_prompt_dump_path,
 )
@@ -239,3 +240,81 @@ def test_get_cluster_keywords_fallback_when_dump_disabled(monkeypatch):
 
     keywords = strategy._get_cluster_keywords(["doc1.txt", "doc2.txt"])
     assert keywords is not None
+
+
+def test_scrub_inference_prompt_preserves_narrative_context_and_scrubs_secrets():
+    home_dir = str(Path.home())
+    home_fwd = home_dir.replace("\\", "/")
+
+    prompt = (
+        f"Generate a folder name for documents at {home_fwd}/data/docs.\n"
+        "Here is secret key sk_live_1234567890abcdef12345678 and Bearer secrettoken123456789012.\n"
+        "SSN is 000-12-3456.\n"
+        "Documents: Patient blood pressure and lab diagnostic results\n"
+        "Folder Name:"
+    )
+
+    scrubbed = scrub_inference_prompt(prompt)
+
+    # Narrative context must be preserved
+    assert "Patient blood pressure and lab diagnostic results" in scrubbed
+    assert "[REDACTED_DOCUMENT_TEXT" not in scrubbed
+
+    # User home and secret tokens must be scrubbed
+    assert home_fwd not in scrubbed
+    assert "<USER_HOME>" in scrubbed
+    assert "sk_live_1234567890abcdef12345678" not in scrubbed
+    assert "000-12-3456" not in scrubbed
+    assert "[REDACTED_SECRET]" in scrubbed
+
+
+def test_run_prompt_mandatory_inference_scrubbing(monkeypatch):
+    monkeypatch.delenv("DEBUG", raising=False)
+
+    class DummyProcess:
+        def is_alive(self):
+            return True
+
+    class DummyQueue:
+        def __init__(self):
+            self.items = []
+
+        def put(self, item):
+            self.items.append(item)
+
+    queue = DummyQueue()
+
+    # Monkeypatch cooperative_queue_get to return mock text
+    monkeypatch.setattr(
+        "app.core.analyzer_strategies.cooperative_queue_get",
+        lambda q, timeout=8.0: {"text": "Scrubbed Folder Name"},
+    )
+
+    strategy = GenerativeNamingStrategy()
+    strategy._gguf_active = True
+    strategy._gguf_failed = False
+    strategy._gguf_process = DummyProcess()
+    strategy._gguf_input_queue = queue
+    strategy._gguf_output_queue = DummyQueue()
+
+    home_dir = str(Path.home())
+    raw_prompt = (
+        f"Path: {home_dir}/docs/file.txt\n"
+        "Key: ghp_1234567890abcdef1234567890abcdef123456\n"
+        "Documents: Medical trial audit findings\n"
+        "Folder Name:"
+    )
+
+    res = strategy._run_prompt(raw_prompt, 15)
+
+    assert res == "Scrubbed Folder Name"
+    assert len(queue.items) == 1
+    enqueued_prompt = queue.items[0]["prompt"]
+
+    # Confirm mandatory scrubbing occurred on the enqueued prompt
+    assert home_dir not in enqueued_prompt
+    assert "<USER_HOME>" in enqueued_prompt
+    assert "ghp_1234567890abcdef1234567890abcdef123456" not in enqueued_prompt
+    assert "[REDACTED_SECRET]" in enqueued_prompt
+    assert "Medical trial audit findings" in enqueued_prompt
+    assert "[REDACTED_DOCUMENT_TEXT" not in enqueued_prompt
