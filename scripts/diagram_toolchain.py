@@ -50,7 +50,7 @@ def is_browser_available(
     import tempfile
 
     try:
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
             test_mmd = Path(tmpdir) / "probe.mmd"
             test_svg = Path(tmpdir) / "probe.svg"
             test_mmd.write_text("graph TD\n  A --> B\n", encoding="utf-8")
@@ -99,7 +99,13 @@ def find_mmdc_executable(verify_browser: bool = True) -> Optional[List[str]]:
     else:
         npx_path = shutil.which("npx")
         if npx_path:
-            candidate = [npx_path, "--yes", "-p", "@mermaid-js/mermaid-cli", "mmdc"]
+            candidate = [
+                npx_path,
+                "--no-install",
+                "-p",
+                "@mermaid-js/mermaid-cli",
+                "mmdc",
+            ]
 
     if not candidate:
         return None

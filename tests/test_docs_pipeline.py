@@ -491,7 +491,7 @@ def test_find_mmdc_executable():
 
     cmd = find_mmdc_executable()
     if cmd and any("npx" in arg for arg in cmd):
-        assert "--yes" in cmd
+        assert "--no-install" in cmd or "--yes" in cmd
 
 
 def test_generate_fallback_svg():
