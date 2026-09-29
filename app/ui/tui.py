@@ -76,38 +76,17 @@ class A11yMixin:
                 pass
 
     def _get_speech_binary(self) -> Optional[str]:
-        """Resolve available speech synthesis executable based on host platform."""
+        """Resolve available speech synthesis executable based on host platform.
+
+        On macOS, returns native 'say' command path. On Linux, returns 'spd-say' or
+        'say' path. On Windows (win32), returns None as Linux/macOS speech binaries
+        do not exist natively, defaulting to visual status live region fallback.
+        """
         try:
             if sys.platform == "darwin":
                 return shutil.which("say")
             elif sys.platform == "win32":
-                bin_path = shutil.which("spd-say.exe") or shutil.which("spd-say")
-                if bin_path:
-                    norm = bin_path.replace("/", "\\").lower()
-                    if any(
-                        k in norm
-                        for k in (
-                            "usr",
-                            "git",
-                            "msys",
-                            "cygwin",
-                            "mingw",
-                            "bash",
-                            "wsl",
-                            "chocolatey",
-                            "npm",
-                            "strawberry",
-                            "runner",
-                            "actions",
-                            "hostedtoolcache",
-                            "windowsapps",
-                        )
-                    ):
-                        return None
-                    ext = os.path.splitext(bin_path)[1].lower()
-                    if ext not in (".exe", ".cmd", ".bat", ".com"):
-                        return None
-                return bin_path
+                return None
             else:
                 return shutil.which("spd-say") or shutil.which("say")
         except (FileNotFoundError, OSError):

@@ -2,7 +2,6 @@
 
 import asyncio
 import os
-import sys
 import tempfile
 from unittest.mock import MagicMock, patch
 
@@ -631,11 +630,11 @@ def test_tui_speech_binary_execution_exception_fallback(temp_workspace):
     """Verify announce handles subprocess execution exceptions without interrupting navigation."""
     from unittest.mock import patch
     settings = AppSettings()
-    mock_speech_bin = r"C:\Tools\spd-say.exe" if sys.platform == "win32" else "/usr/bin/spd-say"
+    mock_speech_bin = "/usr/bin/spd-say"
 
     async def _test():
         app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
-        with patch("shutil.which", return_value=mock_speech_bin), patch(
+        with patch("sys.platform", "linux"), patch("shutil.which", return_value=mock_speech_bin), patch(
             "subprocess.run", side_effect=OSError("Exec format error")
         ):
             async with app.run_test() as pilot:
@@ -653,11 +652,11 @@ def test_tui_speech_binary_available_and_audit(temp_workspace):
     """Verify speech binary execution attempt when available and verify audit compliance output."""
     from unittest.mock import patch
     settings = AppSettings()
-    mock_speech_bin = r"C:\Tools\spd-say.exe" if sys.platform == "win32" else "/usr/bin/spd-say"
+    mock_speech_bin = "/usr/bin/spd-say"
 
     async def _test():
         app1 = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
-        with patch("shutil.which", return_value=mock_speech_bin), patch(
+        with patch("sys.platform", "linux"), patch("shutil.which", return_value=mock_speech_bin), patch(
             "subprocess.run", return_value=None
         ):
             async with app1.run_test() as pilot:
@@ -682,20 +681,13 @@ def test_tui_speech_binary_available_and_audit(temp_workspace):
 
 
 def test_tui_speech_binary_windows_extension_filtering(temp_workspace):
-    """Verify _get_speech_binary filters out extensionless POSIX scripts on Windows."""
+    """Verify _get_speech_binary returns None on Windows (defaulting to visual live region status bar)."""
     from unittest.mock import patch
     settings = AppSettings()
     app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
 
-    with patch("sys.platform", "win32"), patch(
-        "shutil.which", return_value=r"C:\Program Files\Git\usr\bin\spd-say"
-    ):
+    with patch("sys.platform", "win32"):
         assert app._get_speech_binary() is None
-
-    with patch("sys.platform", "win32"), patch(
-        "shutil.which", return_value=r"C:\Tools\spd-say.exe"
-    ):
-        assert app._get_speech_binary() == r"C:\Tools\spd-say.exe"
 
 
 def test_tui_speech_binary_windows_posix_path_filtering(temp_workspace):
