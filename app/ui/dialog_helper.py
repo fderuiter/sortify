@@ -11,8 +11,11 @@ from app.ui.tokens import TOKENS
 
 try:
     from nicegui import ui
+
+    _NICEGUI_AVAILABLE = True
 except (ImportError, ModuleNotFoundError):
     ui = MagicMock()
+    _NICEGUI_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +44,13 @@ def _render_fallback_dialog(
     enable_ui_callback=None,
 ):
     """Render an accessible NiceGUI modal dialog as fallback for manual directory selection when native pickers fail."""
+    finished = False
+
     def _cleanup_and_finish(selected_path: str):
+        nonlocal finished
+        if finished:
+            return
+        finished = True
         if enable_ui_callback:
             enable_ui_callback()
         if callback:
@@ -136,10 +145,8 @@ def _render_fallback_dialog(
                     "bg-blue-600 text-white"
                 ).props('aria-label="Confirm Directory Selection"')
 
-        try:
-            dialog.open()
-        except Exception:
-            pass
+        # Remove inner try-except on dialog.open() so any open failure triggers fallback cleanup
+        dialog.open()
         return dialog
     except Exception as e:
         logger.warning(f"Failed to render fallback directory dialog: {e}")
