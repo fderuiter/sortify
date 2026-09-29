@@ -318,3 +318,65 @@ def test_worker_timeout_and_dead_letter_queue():
     record = db.get_quarantine_record(job_id)
     assert record["status"] == "MANUAL_REVIEW_REQUIRED"
     assert "timeout" in record["error_message"].lower()
+
+
+def test_resolve_safe_target_dir_validation_and_containment(caplog):
+    """Test resolve_safe_target_dir validates subfolder paths and enforces containment within base_dir."""
+    service = QuarantineInterceptorService(db=db)
+    base_workspace = os.path.join(_test_dir, "workspace")
+    os.makedirs(base_workspace, exist_ok=True)
+
+    # 1. Valid relative subfolders
+    valid_res = service.resolve_safe_target_dir(base_workspace, "Approved_Archive", default_subfolder="Default_Folder")
+    assert valid_res == os.path.join(base_workspace, "Approved_Archive")
+
+    valid_nested = service.resolve_safe_target_dir(base_workspace, "sub/folder", default_subfolder="Default_Folder")
+    assert valid_nested == os.path.join(base_workspace, "sub", "folder")
+
+    # 2. None or empty target_subfolder
+    none_res = service.resolve_safe_target_dir(base_workspace, None, default_subfolder="Default_Folder")
+    assert none_res == os.path.join(base_workspace, "Default_Folder")
+
+    empty_res = service.resolve_safe_target_dir(base_workspace, "", default_subfolder="Default_Folder")
+    assert empty_res == os.path.join(base_workspace, "Default_Folder")
+
+    # 3. Path traversal target_subfolder (e.g. "../../etc")
+    traversal_res = service.resolve_safe_target_dir(base_workspace, "../../etc", default_subfolder="Default_Folder")
+    assert traversal_res == os.path.join(base_workspace, "Default_Folder")
+    assert "Security warning" in caplog.text
+
+    # 4. Absolute path target_subfolder
+    abs_res = service.resolve_safe_target_dir(base_workspace, "/etc/passwd", default_subfolder="Default_Folder")
+    assert abs_res == os.path.join(base_workspace, "Default_Folder")
+
+
+def test_quarantine_job_sanitizes_traversal_target_path():
+    """Test policy execution with path traversal target_path safely falls back to default folders within base_dir."""
+    policies = [
+        {
+            "type": "keyword",
+            "expression": "malicious",
+            "action": "archive",
+            "target_path": "../../system_files",
+            "priority": 100,
+        }
+    ]
+    service = QuarantineInterceptorService(db=db, policies=policies)
+
+    sample_dir = os.path.join(_test_dir, "traversal_job_test")
+    os.makedirs(sample_dir, exist_ok=True)
+    file_path = os.path.join(sample_dir, "malicious_doc.txt")
+    with open(file_path, "w", encoding="utf-8") as f:
+        f.write("This document contains malicious keywords")
+
+    staged_info = service.stage_incoming_file(source_path=file_path, base_dir=sample_dir)
+    result = service.process_quarantine_job(staged_info["job_id"])
+
+    assert result["status"] == "ARCHIVED"
+    # File must be placed in fallback "Archive" directory inside sample_dir
+    expected_archived_file = os.path.join(sample_dir, "Archive", "malicious_doc.txt")
+    assert os.path.exists(expected_archived_file)
+
+    # File must NOT exist outside sample_dir
+    escaped_file = os.path.join(os.path.dirname(os.path.dirname(sample_dir)), "system_files", "malicious_doc.txt")
+    assert not os.path.exists(escaped_file)

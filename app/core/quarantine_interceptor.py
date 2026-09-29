@@ -14,6 +14,8 @@ from app.core.db import Database
 from app.core.domain_contracts import QuarantineRecordModel, validate_quarantine_record
 from app.core.extractor import extract_file_text
 from app.core.forensic_scanner import ForensicScanner
+from app.core.mover import is_subpath_or_equal
+from app.core.path_utils import validate_target_path
 from app.core.policy_engine import PolicyEngine
 from app.core.resilient_file_ops import resilient_file_hash, resilient_move
 
@@ -83,6 +85,53 @@ class QuarantineInterceptorService:
         self.forensic_scanner = ForensicScanner()
         self.clinical_engine = ClinicalComplianceEngine()
         self.dlq_records: List[Dict[str, Any]] = []
+
+    def resolve_safe_target_dir(
+        self,
+        base_dir: str,
+        target_subfolder: Optional[str],
+        default_subfolder: str = "",
+    ) -> str:
+        """Validate target subfolder and ensure containment within base_dir boundaries.
+
+        If validation fails or boundary containment fails, falls back to default_subfolder
+        inside base_dir and logs a security audit warning.
+        """
+        fallback_dir = (
+            os.path.join(base_dir, default_subfolder)
+            if default_subfolder
+            else base_dir
+        )
+
+        if not target_subfolder:
+            return fallback_dir
+
+        try:
+            validate_target_path(target_subfolder)
+        except Exception as e:
+            logger.warning(
+                f"Security warning: Target subfolder '{target_subfolder}' failed validation ({e}). "
+                f"Falling back to default directory '{fallback_dir}'."
+            )
+            return fallback_dir
+
+        candidate_dir = os.path.join(base_dir, target_subfolder)
+
+        try:
+            if not is_subpath_or_equal(candidate_dir, base_dir):
+                logger.warning(
+                    f"Security warning: Target directory '{candidate_dir}' escapes base directory '{base_dir}'. "
+                    f"Falling back to default directory '{fallback_dir}'."
+                )
+                return fallback_dir
+        except Exception as e:
+            logger.warning(
+                f"Security warning: Error checking boundary containment for '{candidate_dir}' ({e}). "
+                f"Falling back to default directory '{fallback_dir}'."
+            )
+            return fallback_dir
+
+        return candidate_dir
 
     def stage_incoming_file(
         self,
@@ -298,8 +347,12 @@ class QuarantineInterceptorService:
                 )
 
                 # Release document to target folder
-                dest_subfolder = target_subfolder or "Redacted_Documents"
-                dest_dir = os.path.join(base_dir, dest_subfolder)
+                dest_dir = self.resolve_safe_target_dir(
+                    base_dir, target_subfolder, default_subfolder="Redacted_Documents"
+                )
+                dest_subfolder = os.path.relpath(dest_dir, base_dir)
+                if dest_subfolder == ".":
+                    dest_subfolder = ""
                 os.makedirs(dest_dir, exist_ok=True)
                 dest_file_path = os.path.join(dest_dir, os.path.basename(orig_rel_path))
 
@@ -331,8 +384,12 @@ class QuarantineInterceptorService:
                 )
 
             elif action == "archive":
-                archive_subfolder = target_subfolder or "Archive"
-                archive_dir = os.path.join(base_dir, archive_subfolder)
+                archive_dir = self.resolve_safe_target_dir(
+                    base_dir, target_subfolder, default_subfolder="Archive"
+                )
+                archive_subfolder = os.path.relpath(archive_dir, base_dir)
+                if archive_subfolder == ".":
+                    archive_subfolder = ""
                 os.makedirs(archive_dir, exist_ok=True)
                 archive_file_path = os.path.join(
                     archive_dir, os.path.basename(orig_rel_path)
@@ -364,8 +421,12 @@ class QuarantineInterceptorService:
                 )
 
             elif action == "retain":
-                dest_subfolder = target_subfolder or "Retained_Documents"
-                dest_dir = os.path.join(base_dir, dest_subfolder)
+                dest_dir = self.resolve_safe_target_dir(
+                    base_dir, target_subfolder, default_subfolder="Retained_Documents"
+                )
+                dest_subfolder = os.path.relpath(dest_dir, base_dir)
+                if dest_subfolder == ".":
+                    dest_subfolder = ""
                 os.makedirs(dest_dir, exist_ok=True)
                 dest_file_path = os.path.join(dest_dir, os.path.basename(orig_rel_path))
 
@@ -384,12 +445,12 @@ class QuarantineInterceptorService:
 
             else:
                 # Default release to target destination or original base_dir
-                dest_subfolder = target_subfolder or ""
-                dest_dir = (
-                    os.path.join(base_dir, dest_subfolder)
-                    if dest_subfolder
-                    else base_dir
+                dest_dir = self.resolve_safe_target_dir(
+                    base_dir, target_subfolder, default_subfolder=""
                 )
+                dest_subfolder = os.path.relpath(dest_dir, base_dir)
+                if dest_subfolder == ".":
+                    dest_subfolder = ""
                 os.makedirs(dest_dir, exist_ok=True)
                 dest_file_path = os.path.join(dest_dir, os.path.basename(orig_rel_path))
 

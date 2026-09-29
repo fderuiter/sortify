@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "428026e2cfbde0c50183acf4c1135b35b64d9c0a8fb81004f2e8ee957117ffd5"
+    "checksum": "7e67ab7f596981dd418b8cd1793fe5364d00405bf149432fc7445507a288cdfa"
   },
   "cli": {
     "app/main.py": [
@@ -8305,6 +8305,34 @@
                 }
               ],
               "returns": "QuarantineRecordModel"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "resolve_safe_target_dir",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "base_dir"
+                },
+                {
+                  "annotation": "Optional[str]",
+                  "default": null,
+                  "name": "target_subfolder"
+                },
+                {
+                  "annotation": "str",
+                  "default": "''",
+                  "name": "default_subfolder"
+                }
+              ],
+              "returns": "str"
             },
             {
               "async": false,
