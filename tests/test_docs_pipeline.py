@@ -451,3 +451,149 @@ def test_diagram_toolchain_cli_verify_failure_on_bad_schema(tmp_path):
         dt.main()
         mock_exit.assert_called_once_with(1)
 
+
+def test_sequence_diagram_spec_serialization():
+    from app.ui.diagram_schema import (
+        SequenceActivation,
+        SequenceAlt,
+        SequenceAltBranch,
+        SequenceDiagramSpec,
+        SequenceLoop,
+        SequenceMessage,
+        SequenceNote,
+        SequenceOpt,
+        SequenceParticipant,
+    )
+
+    spec = SequenceDiagramSpec(
+        id="test_seq",
+        title="Test Sequence",
+        autonumber=True,
+        participants=[
+            SequenceParticipant(id="A", label="User", is_actor=True),
+            SequenceParticipant(id="B", label="System"),
+        ],
+        items=[
+            SequenceMessage(source="A", target="B", text="Request"),
+            SequenceActivation(target="B", action="activate"),
+            SequenceLoop(
+                label="Process",
+                items=[
+                    SequenceMessage(source="B", target="B", text="Self check"),
+                ],
+            ),
+            SequenceOpt(
+                label="Cache hit",
+                items=[
+                    SequenceMessage(source="B", target="A", text="Return cached"),
+                ],
+            ),
+            SequenceAlt(
+                branches=[
+                    SequenceAltBranch(
+                        label="Success",
+                        items=[
+                            SequenceMessage(
+                                source="B", target="A", text="OK", arrow_type="-->>"
+                            ),
+                        ],
+                    ),
+                    SequenceAltBranch(
+                        label="Error",
+                        items=[
+                            SequenceMessage(
+                                source="B", target="A", text="Fail", arrow_type="-->>"
+                            ),
+                        ],
+                    ),
+                ]
+            ),
+            SequenceNote(position="over", targets=["A", "B"], text="Done"),
+            SequenceActivation(target="B", action="deactivate"),
+        ],
+    )
+
+    mmd = spec.to_mermaid()
+    assert "sequenceDiagram" in mmd
+    assert "autonumber" in mmd
+    assert "actor A as User" in mmd
+    assert "participant B as System" in mmd
+    assert "A->>B: Request" in mmd
+    assert "activate B" in mmd
+    assert "loop Process" in mmd
+    assert "opt Cache hit" in mmd
+    assert "alt Success" in mmd
+    assert "else Error" in mmd
+    assert "note over A, B: Done" in mmd
+    assert "deactivate B" in mmd
+
+
+def test_state_diagram_spec_serialization():
+    from app.ui.diagram_schema import (
+        StateComposite,
+        StateDiagramSpec,
+        StateNode,
+        StateNote,
+        StateTransition,
+    )
+
+    spec = StateDiagramSpec(
+        id="test_state",
+        title="Test State",
+        diagram_type="stateDiagram-v2",
+        direction="LR",
+        states=[
+            StateNode(id="Idle", label="Active Service"),
+            StateNode(id="Choice1", is_choice=True),
+        ],
+        transitions=[
+            StateTransition(source="[*]", target="Idle", label="Start"),
+            StateTransition(source="Idle", target="Choice1"),
+        ],
+        composite_states=[
+            StateComposite(
+                id="Processing",
+                label="In Progress",
+                states=[StateNode(id="Sub1", label="Step 1")],
+                transitions=[StateTransition(source="[*]", target="Sub1")],
+            )
+        ],
+        notes=[
+            StateNote(position="left of", target="Idle", text="Watchdog note"),
+        ],
+    )
+
+    mmd = spec.to_mermaid()
+    assert "stateDiagram-v2" in mmd
+    assert "direction LR" in mmd
+    assert "state Choice1 <<choice>>" in mmd
+    assert "Idle: Active Service" in mmd
+    assert "[*] --> Idle: Start" in mmd
+    assert "state Processing [In Progress] {" in mmd
+    assert "Sub1: Step 1" in mmd
+    assert "note left of Idle: Watchdog note" in mmd
+
+
+def test_collect_all_specs_contains_sequence_and_state():
+    from app.ui.diagram_schema import SequenceDiagramSpec, StateDiagramSpec
+    from scripts.diagram_toolchain import collect_all_specs
+
+    specs = collect_all_specs()
+    has_seq = any(isinstance(s, SequenceDiagramSpec) for s in specs.values())
+    has_state = any(isinstance(s, StateDiagramSpec) for s in specs.values())
+    assert has_seq is True
+    assert has_state is True
+
+
+def test_check_no_raw_mermaid_in_docs_detects_blocks(tmp_path):
+    from scripts.diagram_toolchain import check_no_raw_mermaid_in_docs
+
+    # Clean directory
+    clean_doc = tmp_path / "clean.md"
+    clean_doc.write_text("# Clean doc\n![Image](assets/diagrams/spec.svg)\n")
+    assert check_no_raw_mermaid_in_docs(docs_dir=tmp_path) is True
+
+    # Bad directory with raw mermaid
+    bad_doc = tmp_path / "bad.md"
+    bad_doc.write_text("# Bad doc\n```mermaid\ngraph TD\nA-->B\n```\n")
+    assert check_no_raw_mermaid_in_docs(docs_dir=tmp_path) is False
