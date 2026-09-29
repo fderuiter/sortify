@@ -207,6 +207,9 @@ def sanitize_text(text: str) -> str:
     if TRUNCATED_TAG_PATTERN.search(text_rstrip):
         text = TRUNCATED_TAG_PATTERN.sub("", text_rstrip)
 
+    # Redact API keys, JWTs, Bearer tokens, private keys, SSNs, credit cards, and high-entropy secrets
+    text = sanitize_secret_patterns(text, replacement="[REDACTED_SECRET]")
+
     # Normalize horizontal whitespaces (spaces, tabs)
     text = HORIZONTAL_WHITESPACE_PATTERN.sub(" ", text)
 

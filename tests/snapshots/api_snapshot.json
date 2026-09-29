@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "48b6cd70276c3d1246959b9b3134f41c463c4f8b75872e6c2da6092782161cf4"
+    "checksum": "278f4cf6a23c22962537fda688d2cc96593bde936f1ba862d723ec07e3236e6c"
   },
   "cli": {
     "app/main.py": [
@@ -6109,6 +6109,21 @@
                   "annotation": "float",
                   "default": "0.5",
                   "name": "confidence_threshold"
+                },
+                {
+                  "annotation": "Optional[str]",
+                  "default": "None",
+                  "name": "db_path"
+                },
+                {
+                  "annotation": "Any",
+                  "default": "None",
+                  "name": "worker"
+                },
+                {
+                  "annotation": "int",
+                  "default": "1000",
+                  "name": "max_cache_size"
                 }
               ],
               "returns": null
@@ -6158,6 +6173,47 @@
                 }
               ],
               "returns": "JevClassificationResult"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "invalidate",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "file_path"
+                }
+              ],
+              "returns": "None"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "set_database",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "db_path"
+                },
+                {
+                  "annotation": "Any",
+                  "default": "None",
+                  "name": "worker"
+                }
+              ],
+              "returns": "None"
             }
           ]
         }
