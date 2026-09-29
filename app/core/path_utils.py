@@ -156,18 +156,19 @@ def validate_target_path(target_path: str, keyword: str = None) -> None:
         suffix = f" for keyword '{keyword}'" if keyword else ""
         raise ValueError(f"Target path{suffix} must be a string.")
 
-    # Check for illegal OS characters
-    if any(char in ILLEGAL_PATH_CHARS_SET for char in target_path):
-        raise ValueError(f"Target path '{target_path}' contains illegal characters.")
-
-    # Check for absolute path roots (/ or \) or platform-specific drive roots
+    # Check for absolute path roots (/ or \), platform-specific drive roots, or Windows drive prefixes
     if (
         target_path.startswith("/")
         or target_path.startswith("\\")
         or os.path.isabs(target_path)
         or Path(target_path).is_absolute()
+        or bool(re.match(r"^[a-zA-Z]:", target_path))
     ):
         raise ValueError(f"Target path '{target_path}' cannot be an absolute path.")
+
+    # Check for illegal OS characters
+    if any(char in ILLEGAL_PATH_CHARS_SET for char in target_path):
+        raise ValueError(f"Target path '{target_path}' contains illegal characters.")
 
     # Check for directory traversal segments (..)
     segments = target_path.replace("\\", "/").split("/")

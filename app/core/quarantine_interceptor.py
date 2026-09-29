@@ -350,7 +350,7 @@ class QuarantineInterceptorService:
                 dest_dir = self.resolve_safe_target_dir(
                     base_dir, target_subfolder, default_subfolder="Redacted_Documents"
                 )
-                dest_subfolder = os.path.relpath(dest_dir, base_dir)
+                dest_subfolder = os.path.relpath(dest_dir, base_dir).replace("\\", "/")
                 if dest_subfolder == ".":
                     dest_subfolder = ""
                 os.makedirs(dest_dir, exist_ok=True)
@@ -378,7 +378,7 @@ class QuarantineInterceptorService:
                 )
                 self.db.upsert_document(
                     base_dir,
-                    os.path.relpath(dest_file_path, base_dir),
+                    os.path.relpath(dest_file_path, base_dir).replace("\\", "/"),
                     final_hash,
                     scrubbed_text,
                 )
@@ -387,7 +387,7 @@ class QuarantineInterceptorService:
                 archive_dir = self.resolve_safe_target_dir(
                     base_dir, target_subfolder, default_subfolder="Archive"
                 )
-                archive_subfolder = os.path.relpath(archive_dir, base_dir)
+                archive_subfolder = os.path.relpath(archive_dir, base_dir).replace("\\", "/")
                 if archive_subfolder == ".":
                     archive_subfolder = ""
                 os.makedirs(archive_dir, exist_ok=True)
@@ -424,7 +424,7 @@ class QuarantineInterceptorService:
                 dest_dir = self.resolve_safe_target_dir(
                     base_dir, target_subfolder, default_subfolder="Retained_Documents"
                 )
-                dest_subfolder = os.path.relpath(dest_dir, base_dir)
+                dest_subfolder = os.path.relpath(dest_dir, base_dir).replace("\\", "/")
                 if dest_subfolder == ".":
                     dest_subfolder = ""
                 os.makedirs(dest_dir, exist_ok=True)
@@ -448,7 +448,7 @@ class QuarantineInterceptorService:
                 dest_dir = self.resolve_safe_target_dir(
                     base_dir, target_subfolder, default_subfolder=""
                 )
-                dest_subfolder = os.path.relpath(dest_dir, base_dir)
+                dest_subfolder = os.path.relpath(dest_dir, base_dir).replace("\\", "/")
                 if dest_subfolder == ".":
                     dest_subfolder = ""
                 os.makedirs(dest_dir, exist_ok=True)
@@ -474,7 +474,7 @@ class QuarantineInterceptorService:
                 )
                 self.db.upsert_document(
                     base_dir,
-                    os.path.relpath(dest_file_path, base_dir),
+                    os.path.relpath(dest_file_path, base_dir).replace("\\", "/"),
                     final_hash,
                     str(extracted_text),
                 )
