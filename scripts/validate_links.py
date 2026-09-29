@@ -101,7 +101,17 @@ def get_all_target_files(extensions=(".py", ".md")):
             d
             for d in dirs
             if not d.startswith(".")
-            and d not in ("venv", "env", "__pycache__", "node_modules", "site-packages")
+            and d
+            not in (
+                "venv",
+                ".venv",
+                "env",
+                "build",
+                "dist",
+                "__pycache__",
+                "node_modules",
+                "site-packages",
+            )
         ]
         for file in files:
             if any(file.endswith(ext) for ext in extensions):
