@@ -489,6 +489,7 @@ def sanitize_plan(plan: Any) -> tuple[dict, list[str]]:
                     )
                     if isinstance(file_content, dict) and "target_filename" in file_content:
                         file_content["target_filename"] = safe_file_key
+                        file_content["confirmed"] = True
 
                 sanitized_plan[safe_file_key] = file_content
             else:
