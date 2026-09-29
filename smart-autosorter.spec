@@ -113,6 +113,11 @@ if (platform.system().lower() == "windows" or sys.platform == "win32") and "pyte
             if os.path.isdir(p):
                 search_dirs.append(p)
                 
+    # Check packaged local binaries directory
+    app_bin_win = os.path.abspath(os.path.join("app", "binaries", "windows", "sqlcipher3"))
+    if os.path.isdir(app_bin_win) and app_bin_win not in search_dirs:
+        search_dirs.append(app_bin_win)
+
     # Finally, check executable directory
     exe_dir = os.path.dirname(sys.executable)
     if exe_dir and exe_dir not in search_dirs:
