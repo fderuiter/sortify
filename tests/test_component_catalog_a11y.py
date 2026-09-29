@@ -100,3 +100,22 @@ def test_a11y_violation_detection_rule_a11y004_label_overflow():
     assert violations[0].rule_id == "A11Y004_LABEL_OVERFLOW"
     assert "375px" in violations[0].message
 
+
+def test_ui_proxy_pickle_and_uninitialized_safety():
+    """Verify UIProxy supports pickling, unpickling, and safe uninitialized attribute access without RecursionError."""
+    import copy
+    import pickle
+    from app.ui.catalog import UIProxy
+
+    proxy = UIProxy(None)
+    serialized = pickle.dumps(proxy)
+    deserialized = pickle.loads(serialized)
+    assert deserialized._target is not None
+
+    uninit = UIProxy.__new__(UIProxy)
+    assert not hasattr(uninit, "nonexistent_attribute")
+
+    copied = copy.copy(ui)
+    assert copied._target is not None
+
+
