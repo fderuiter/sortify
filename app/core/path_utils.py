@@ -156,13 +156,16 @@ def validate_target_path(target_path: str, keyword: str = None) -> None:
 def sanitize_name(name: str) -> str:
     """Sanitize a file or folder name for Windows.
 
-    Strips PII expressions, illegal characters, and appends _safe to reserved names.
+    Strips secret patterns, PII expressions, illegal characters, and appends _safe to reserved names.
     """
     if not name:
         return name
 
+    from app.core.text_utils import sanitize_secret_patterns
+
+    name = sanitize_secret_patterns(name)
     name = scrub_pii_from_filename(name)
-    if not name:
+    if not name or not name.strip():
         return "Unnamed_safe"
 
     import unicodedata
@@ -195,7 +198,7 @@ def sanitize_name(name: str) -> str:
         parts[0] = parts[0] + "_safe"
         safe_name = ".".join(parts)
 
-    if not safe_name:
+    if not safe_name or not safe_name.strip(" ._"):
         safe_name = "Unnamed_safe"
 
     return safe_name
@@ -204,7 +207,7 @@ def sanitize_name(name: str) -> str:
 def sanitize_folder_key(key: str) -> tuple[str, bool]:
     """Sanitize a folder hierarchy key to be OS-safe and clean.
 
-    Strips PII expressions, path traversal elements, removes null bytes,
+    Strips secret patterns, PII expressions, path traversal elements, removes null bytes,
     replaces illegal filesystem characters and slashes with safe delimiters,
     strips trailing dots/spaces, and maps OS-reserved names to safe variants.
 
@@ -215,7 +218,10 @@ def sanitize_folder_key(key: str) -> tuple[str, bool]:
 
     import unicodedata
 
+    from app.core.text_utils import sanitize_secret_patterns
+
     orig_key = key
+    key = sanitize_secret_patterns(key)
     key = scrub_pii_from_filename(key)
 
     s = unicodedata.normalize("NFC", key)
@@ -248,7 +254,7 @@ def sanitize_folder_key(key: str) -> tuple[str, bool]:
         parts[0] = parts[0] + "_safe"
         s = ".".join(parts)
 
-    if not s:
+    if not s or not s.strip(" ._"):
         s = "Unnamed_safe"
 
     transformed = s != orig_key
