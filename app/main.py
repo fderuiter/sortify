@@ -839,9 +839,14 @@ def main():
         handle_daemon_command(args, settings)
 
     # Explicit Headless Guard for non-interactive streams without subcommands
+    is_gui_exe = (
+        "smart-autosorter-gui" in os.path.basename(sys.argv[0]).lower()
+        or "smart-autosorter-gui" in os.path.basename(sys.executable).lower()
+    )
     is_interactive = bool(sys.stdin and getattr(sys.stdin, "isatty", lambda: False)())
     is_explicit_ui = (
-        getattr(args, "gui", False)
+        is_gui_exe
+        or getattr(args, "gui", False)
         or bool(os.environ.get("FORCE_GUI"))
         or getattr(args, "tui", False)
         or getattr(args, "demo", False)

@@ -17,7 +17,7 @@ def mock_non_interactive_stdin():
     return patch("sys.stdin", mock_stdin)
 
 
-def run_cli(args, env=None):
+def run_cli(args, env=None, prog="main.py"):
     """Run app/main.py in-process and return (returncode, stdout, stderr)."""
     old_env = os.environ.copy()
     repo_root = str(Path(__file__).parent.parent.resolve())
@@ -28,7 +28,7 @@ def run_cli(args, env=None):
 
     stdout_cap = io.StringIO()
     stderr_cap = io.StringIO()
-    test_args = ["main.py"] + args
+    test_args = [prog] + args
 
     code = 0
     with patch("sys.argv", test_args), patch("sys.stdout", stdout_cap), patch("sys.stderr", stderr_cap):
@@ -333,5 +333,15 @@ def test_headless_no_color_guidance_strips_ansi():
         code, stdout, stderr = run_cli(["--no-color"])
         assert code == 2
         assert "\x1b[" not in stderr
+
+
+@pytest.mark.xdist_group(name="cli_subcommands")
+def test_headless_gui_exe_name_honored():
+    """Test non-interactive invocation via smart-autosorter-gui executable launches GUI app."""
+    with mock_non_interactive_stdin(), patch("app.ui.app.run_app") as mock_run_app:
+        code, stdout, stderr = run_cli([], prog="smart-autosorter-gui.exe")
+        assert code == 0
+        mock_run_app.assert_called_once()
+
 
 
