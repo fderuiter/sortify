@@ -6,25 +6,6 @@ The system relies on an automated, pipelined data flow from the moment the user 
 
 ![Architecture Data Flow](assets/diagrams/architecture_dataflow.svg)
 
-```mermaid
-graph TD
-    A("Directory Selection")
-    B["File Extraction & Generator"]
-    C["Chunked Yielding"]
-    D["Incremental Analyzer (partial_fit)"]
-    E["TF-IDF & NMF Clustering"]
-    F["Recursive Topic Grouping"]
-    G["Generate Sorting Plan"]
-    H("UI Tree Rendering")
-    A --> B
-    B --> C
-    C --> D
-    D --> E
-    E --> F
-    F --> G
-    G --> H
-```
-
 ### 1. Data Extraction
 When a directory is selected, `build_corpus_generator` scans and extracts text from supported files (PDFs, DOCX, CSV, Excel, TXT).
 
@@ -49,74 +30,11 @@ The application features a responsive user interface powered by an `asyncio` eve
 
 ### Background Processing & Debouncing Sequence Flow
 
-```mermaid
-sequenceDiagram
-    autonumber
-    actor User
-    participant UI as UI Event Loop
-    participant Worker as Async Worker (_scan_and_process_worker)
-    participant ThreadPool as Thread Pool Worker (asyncio.to_thread)
-    participant Analyzer as IncrementalAnalyzer
-
-    User->>UI: Selects Directory / Triggers Analysis
-    UI->>Worker: asyncio.create_task(_scan_and_process_worker())
-    
-    activate Worker
-    Worker->>ThreadPool: asyncio.to_thread(get_files_recursively)
-    ThreadPool-->>Worker: File list
-    
-    loop For each item
-        Worker->>ThreadPool: asyncio.to_thread(partial_fit, chunk)
-        ThreadPool-->>Worker: Model updated
-        Worker->>UI: loop.call_soon_threadsafe(update_progress)
-    end
-    
-    Worker->>ThreadPool: asyncio.to_thread(generate_sorting_plan)
-    ThreadPool-->>Worker: Initial Sorting Plan
-    Worker->>UI: Render Tree
-    deactivate Worker
-
-    note over User, Analyzer: Debounced Plan Recalculation Flow
-
-    User->>UI: Drag & Drop Move / Lock Toggle
-    UI->>UI: _rebuild_plan_async()
-    opt Active recalc token or debounce task running
-        UI->>UI: token.set() & debounce_task.cancel()
-    end
-    UI->>UI: Create new threading.Event token & asyncio.create_task(delayed_run)
-    
-    activate UI
-    UI->>UI: asyncio.sleep(0.5) [Debounce Delay]
-    alt Task Cancelled During Sleep
-        UI-->>User: Abort Recalculation
-    else Timer Expired
-        UI->>ThreadPool: asyncio.to_thread(generate_sorting_plan, check_cancel)
-        activate ThreadPool
-        loop Periodically
-            ThreadPool->>ThreadPool: check_cancel() -> token.is_set()
-        end
-        ThreadPool-->>Analyzer: generate_sorting_plan(...)
-        Analyzer-->>ThreadPool: Rebuilt Plan
-        ThreadPool-->>UI: Return Plan
-        deactivate ThreadPool
-        UI->>UI: render_tree()
-    end
-    deactivate UI
-```
+![Asynchronous Scanning and Recalculation Sequence](assets/diagrams/architecture_async_processing.svg)
 
 ### Directory Watchdog Monitoring State Machine
 
-```mermaid
-stateDiagram-v2
-    [*] --> Monitoring: Active Watchdog Service
-    Monitoring --> FilterTransient: Directory File Modification
-    FilterTransient --> Monitoring: Ignore (.crdownload, .tmp, .download)
-    FilterTransient --> DebounceActive: Valid File Event Received
-    DebounceActive --> DebounceActive: Reset Timer on Rapid Writes (0.6s)
-    DebounceActive --> DispatchPipeline: Standard Debounce Timeout (0.6s)
-    DebounceActive --> DispatchPipeline: Max Delay Cap Reached (5.0s)
-    DispatchPipeline --> Monitoring: Pipeline Executed & UI Refreshed
-```
+![Watchdog File Event State Machine](assets/diagrams/architecture_watchdog_state.svg)
 
 ## Centralized System Utilities & Architectural Guardrails
 
