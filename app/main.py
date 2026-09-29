@@ -1002,14 +1002,6 @@ def main():
         from app.demo import run_demo
 
         run_demo(settings)
-    elif (
-        sys.stdin is not None
-        and hasattr(sys.stdin, "isatty")
-        and not sys.stdin.isatty()
-        and getattr(args, "directory", None)
-        and not getattr(args, "tui", False)
-    ):
-        handle_sort_command(args, settings)
     else:
         from app.ui.tui import run_tui
 

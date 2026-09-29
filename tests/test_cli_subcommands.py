@@ -5,9 +5,16 @@ import json
 import os
 import tempfile
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
+
+
+def mock_non_interactive_stdin():
+    """Return patch for sys.stdin as a non-interactive stream."""
+    mock_stdin = MagicMock()
+    mock_stdin.isatty.return_value = False
+    return patch("sys.stdin", mock_stdin)
 
 
 def run_cli(args, env=None):
@@ -281,7 +288,7 @@ def test_build_parser_factory():
 @pytest.mark.xdist_group(name="cli_subcommands")
 def test_headless_no_args_exits_code_2_with_guidance():
     """Test non-interactive invocation without subcommands or path exits with code 2 and guidance."""
-    with patch("sys.stdin.isatty", return_value=False):
+    with mock_non_interactive_stdin():
         code, stdout, stderr = run_cli([])
         assert code == 2, f"Expected exit code 2, got {code}. Stderr: {stderr}"
         assert "usage:" in stderr or "subcommand" in stderr
@@ -293,7 +300,7 @@ def test_headless_positional_path_autoroutes_to_sort():
     """Test non-interactive invocation with target path auto-routes to batch sorting."""
     with tempfile.TemporaryDirectory() as src_dir:
         create_sample_corpus(src_dir)
-        with patch("sys.stdin.isatty", return_value=False):
+        with mock_non_interactive_stdin():
             code, stdout, stderr = run_cli([src_dir, "-q"])
             assert code == 0, f"Expected exit code 0, got {code}. Stderr: {stderr}"
             assert "finance_doc.txt" in stdout
@@ -302,7 +309,7 @@ def test_headless_positional_path_autoroutes_to_sort():
 @pytest.mark.xdist_group(name="cli_subcommands")
 def test_headless_gui_flag_honored():
     """Test non-interactive invocation with explicit --gui flag calls web server app launcher."""
-    with patch("sys.stdin.isatty", return_value=False), patch("app.ui.app.run_app") as mock_run_app:
+    with mock_non_interactive_stdin(), patch("app.ui.app.run_app") as mock_run_app:
         code, stdout, stderr = run_cli(["--gui"])
         assert code == 0
         mock_run_app.assert_called_once()
@@ -313,7 +320,7 @@ def test_headless_explicit_sort_subcommand():
     """Test non-interactive invocation with explicit sort subcommand executes batch sorting."""
     with tempfile.TemporaryDirectory() as src_dir:
         create_sample_corpus(src_dir)
-        with patch("sys.stdin.isatty", return_value=False):
+        with mock_non_interactive_stdin():
             code, stdout, stderr = run_cli(["sort", src_dir, "-q"])
             assert code == 0, f"Expected exit code 0, got {code}. Stderr: {stderr}"
             assert "finance_doc.txt" in stdout
@@ -322,7 +329,7 @@ def test_headless_explicit_sort_subcommand():
 @pytest.mark.xdist_group(name="cli_subcommands")
 def test_headless_no_color_guidance_strips_ansi():
     """Test non-interactive guidance output strips ANSI escape codes when --no-color is set."""
-    with patch("sys.stdin.isatty", return_value=False):
+    with mock_non_interactive_stdin():
         code, stdout, stderr = run_cli(["--no-color"])
         assert code == 2
         assert "\x1b[" not in stderr
