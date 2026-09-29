@@ -180,6 +180,31 @@ def _is_cross_volume(src: str, dst: str) -> bool:
     return False
 
 
+def _resolve_source_path(
+    base_dir: str,
+    key: str,
+    content: Any,
+    active_parent_path: str = "",
+    depth: int = 0,
+) -> str:
+    """Resolve normalized absolute source path for a plan node."""
+    if isinstance(content, dict) and "relative_source" in content:
+        rel_src = content["relative_source"]
+        cand1 = os.path.normpath(os.path.join(base_dir, rel_src))
+        if os.path.lexists(cand1):
+            return cand1
+        if active_parent_path:
+            cand2 = os.path.normpath(os.path.join(base_dir, active_parent_path, rel_src))
+            if os.path.lexists(cand2):
+                return cand2
+        return cand1
+
+    if depth > 0 and active_parent_path:
+        return os.path.normpath(os.path.join(base_dir, active_parent_path, key))
+
+    return os.path.normpath(os.path.join(base_dir, key))
+
+
 def _get_node_mtime(
     base_dir: str,
     key: str,
@@ -194,19 +219,9 @@ def _get_node_mtime(
         if isinstance(content, dict) and content.get("__type__") == "directory":
             return float("inf")
 
-        if depth > 0:
-            if not isinstance(content, dict) or "relative_source" not in content:
-                rel_src = key
-            else:
-                rel_src = content["relative_source"]
-            rel_src_with_parent = os.path.join(active_parent_path, rel_src)
-            source_path = os.path.normpath(os.path.join(base_dir, rel_src_with_parent))
-        else:
-            if isinstance(content, dict) and "relative_source" in content:
-                relative_source = content["relative_source"]
-                source_path = os.path.normpath(os.path.join(base_dir, relative_source))
-            else:
-                source_path = os.path.normpath(os.path.join(base_dir, key))
+        source_path = _resolve_source_path(
+            base_dir, key, content, active_parent_path, depth
+        )
 
         try:
             if os.path.lexists(source_path):
@@ -244,19 +259,9 @@ def _get_node_priority_key(
         if isinstance(content, dict) and content.get("__type__") == "directory":
             return (999, 0.0, float("inf"))
 
-        if depth > 0:
-            if not isinstance(content, dict) or "relative_source" not in content:
-                rel_src = key
-            else:
-                rel_src = content["relative_source"]
-            rel_src_with_parent = os.path.join(active_parent_path, rel_src)
-            source_path = os.path.normpath(os.path.join(base_dir, rel_src_with_parent))
-        else:
-            if isinstance(content, dict) and "relative_source" in content:
-                relative_source = content["relative_source"]
-                source_path = os.path.normpath(os.path.join(base_dir, relative_source))
-            else:
-                source_path = os.path.normpath(os.path.join(base_dir, key))
+        source_path = _resolve_source_path(
+            base_dir, key, content, active_parent_path, depth
+        )
 
         mtime = float("inf")
         try:
@@ -346,24 +351,15 @@ def _execute_moves_recursive(
                 # Even if already sorted, the target might have moved, so we still process links
                 pass
 
-            if depth > 0:
-                if not isinstance(content, dict) or "relative_source" not in content:
+            if depth > 0 and (not isinstance(content, dict) or "relative_source" not in content):
+                if content is not None and not isinstance(content, dict):
                     raise ValueError(
                         f"Missing required relative source metadata field for nested item '{key}'"
                     )
-                relative_source = content["relative_source"]
-                rel_src_with_parent = os.path.join(active_parent_path, relative_source)
-                source_path = os.path.normpath(
-                    os.path.join(base_dir, rel_src_with_parent)
-                )
-            else:
-                if isinstance(content, dict) and "relative_source" in content:
-                    relative_source = content["relative_source"]
-                    source_path = os.path.normpath(
-                        os.path.join(base_dir, relative_source)
-                    )
-                else:
-                    source_path = os.path.normpath(os.path.join(base_dir, key))
+
+            source_path = _resolve_source_path(
+                base_dir, key, content, active_parent_path, depth
+            )
 
             if not os.path.lexists(source_path):
                 continue
@@ -847,24 +843,15 @@ def _collect_move_items(
             if isinstance(content, dict) and content.get("status") == "Already Sorted":
                 pass
 
-            if depth > 0:
-                if not isinstance(content, dict) or "relative_source" not in content:
+            if depth > 0 and (not isinstance(content, dict) or "relative_source" not in content):
+                if content is not None and not isinstance(content, dict):
                     raise ValueError(
                         f"Missing required relative source metadata field for nested item '{key}'"
                     )
-                relative_source = content["relative_source"]
-                rel_src_with_parent = os.path.join(active_parent_path, relative_source)
-                source_path = os.path.normpath(
-                    os.path.join(base_dir, rel_src_with_parent)
-                )
-            else:
-                if isinstance(content, dict) and "relative_source" in content:
-                    relative_source = content["relative_source"]
-                    source_path = os.path.normpath(
-                        os.path.join(base_dir, relative_source)
-                    )
-                else:
-                    source_path = os.path.normpath(os.path.join(base_dir, key))
+
+            source_path = _resolve_source_path(
+                base_dir, key, content, active_parent_path, depth
+            )
 
             if isinstance(content, dict) and "target_filename" in content:
                 filename = content["target_filename"]
