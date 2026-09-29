@@ -77,10 +77,15 @@ def validate_prompt_dump_path(dump_file: str) -> Path:
 
     is_absolute = os.path.isabs(dump_file) or bool(re.match(r"^[a-zA-Z]:", normalized_path))
 
-    if is_absolute:
-        target_path = Path(dump_file).resolve()
-    else:
-        target_path = (debug_dir / dump_file).resolve()
+    try:
+        if is_absolute:
+            target_path = Path(dump_file).resolve()
+        else:
+            target_path = (debug_dir / dump_file).resolve()
+    except Exception as e:
+        raise ValueError(
+            f"Invalid prompt dump path '{dump_file}': failed to resolve path ({e})."
+        ) from e
 
     try:
         target_path.relative_to(debug_dir)
