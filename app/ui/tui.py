@@ -99,6 +99,18 @@ class A11yMixin:
                             "/bash",
                             "\\wsl",
                             "/wsl",
+                            "\\chocolatey",
+                            "/chocolatey",
+                            "\\npm",
+                            "/npm",
+                            "\\strawberry",
+                            "/strawberry",
+                            "\\actions-runner",
+                            "/actions-runner",
+                            "\\hostedtoolcache",
+                            "/hostedtoolcache",
+                            "\\usr\\",
+                            "/usr/",
                         )
                     ):
                         return None
@@ -131,39 +143,38 @@ class A11yMixin:
                 pass
 
         if not forwarded:
-            self.join_speech_thread(timeout=0.2)
-
             # Check speech binary presence via _get_speech_binary before launching subprocess
             speech_bin = self._get_speech_binary()
 
             if speech_bin:
-                try:
-                    def _speak():
-                        try:
-                            kwargs: Dict[str, Any] = {
-                                "timeout": 1.0,
-                                "stdin": subprocess.DEVNULL,
-                                "stdout": subprocess.DEVNULL,
-                                "stderr": subprocess.DEVNULL,
-                                "check": False,
-                            }
-                            if sys.platform == "win32":
-                                kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-                            subprocess.run(
-                                [speech_bin, message],
-                                **kwargs,
-                            )
-                        except BaseException as exc:
-                            logger.debug(f"Speech synthesis execution failed: {exc}")
-                        finally:
-                            if getattr(self, "_speech_thread", None) is threading.current_thread():
-                                self._speech_thread = None
+                if self._speech_thread is None or not self._speech_thread.is_alive():
+                    try:
+                        def _speak():
+                            try:
+                                kwargs: Dict[str, Any] = {
+                                    "timeout": 1.0,
+                                    "stdin": subprocess.DEVNULL,
+                                    "stdout": subprocess.DEVNULL,
+                                    "stderr": subprocess.DEVNULL,
+                                    "check": False,
+                                }
+                                if sys.platform == "win32":
+                                    kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+                                subprocess.run(
+                                    [speech_bin, message],
+                                    **kwargs,
+                                )
+                            except BaseException as exc:
+                                logger.debug(f"Speech synthesis execution failed: {exc}")
+                            finally:
+                                if getattr(self, "_speech_thread", None) is threading.current_thread():
+                                    self._speech_thread = None
 
-                    t = threading.Thread(target=_speak, daemon=True)
-                    t.start()
-                    self._speech_thread = t
-                except Exception as e:
-                    logger.debug(f"Speech binary execution failed: {e}")
+                        t = threading.Thread(target=_speak, daemon=True)
+                        t.start()
+                        self._speech_thread = t
+                    except Exception as e:
+                        logger.debug(f"Speech binary execution failed: {e}")
 
             # Fallback and update visual status region for every invocation
             if hasattr(self, "update_status") and callable(self.update_status):
