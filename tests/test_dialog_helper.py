@@ -397,6 +397,33 @@ async def test_ask_directory_async_windows_timeout():
         mock_run.assert_called_once()
 
 
+@pytest.mark.anyio
+async def test_ask_directory_async_windows_powershell_ci_check():
+    """Test Windows PowerShell dialog script includes CI environment checks."""
+    mock_run = mock.MagicMock()
+    mock_result = mock.MagicMock()
+    mock_result.stdout = "CANCEL:"
+    mock_run.return_value = mock_result
+
+    callback = mock.MagicMock()
+
+    with (
+        mock.patch("sys.platform", "win32"),
+        mock.patch("app.ui.dialog_helper.run_background_process", mock_run),
+    ):
+        ask_directory_async(None, "Select Folder", callback, None, None)
+        await asyncio.sleep(0.1)
+
+        mock_run.assert_called_once()
+        args, kwargs = mock_run.call_args
+        cmd = args[0]
+        assert "powershell" in cmd
+        script = cmd[-1]
+        assert "$isCI" in script
+        callback.assert_called_once_with("")
+
+
+
 
 
 

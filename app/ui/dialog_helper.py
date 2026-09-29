@@ -234,7 +234,8 @@ def ask_directory_async(
             elif sys.platform == "win32":
                 # Windows PowerShell
                 script = f"""
-if ([System.Environment]::UserInteractive) {{
+$isCI = $env:CI -eq 'true' -or $env:GITHUB_ACTIONS -eq 'true' -or $env:TF_BUILD -eq 'true'
+if ([System.Environment]::UserInteractive -and -not $isCI) {{
     [System.Reflection.Assembly]::LoadWithPartialName('System.windows.forms') | Out-Null;
     $objForm = New-Object System.Windows.Forms.FolderBrowserDialog;
     $objForm.Description = '{title}';
