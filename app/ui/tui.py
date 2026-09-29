@@ -1818,6 +1818,7 @@ class AutoSorterTUI(A11yMixin, App):
 def run_tui(settings, base_dir: Optional[str] = None) -> None:
     """Run the Textual full-screen terminal interface."""
     import shutil
+
     from app.core.path_utils import is_packaged
 
     if sys.platform == "win32" and is_packaged():
