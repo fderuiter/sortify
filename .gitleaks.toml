@@ -1,0 +1,11 @@
+title = "Gitleaks configuration"
+
+[allowlist]
+description = "Global allowlist for SHA256 checksum manifests and test mocks"
+paths = [
+    '''app/binaries/manifest.json''',
+    '''app/core/hf_manifest.json''',
+    '''app/core/hashes_registry.py''',
+    '''tests/test_secret_sanitization.py''',
+    '''tests/test_extraction_pii_scrubbing.py'''
+]
