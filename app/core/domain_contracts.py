@@ -42,7 +42,9 @@ class QuarantineRecordModel(BaseModel):
 
     def __contains__(self, item: str) -> bool:
         """Provide in containment check for dictionary backward compatibility."""
-        return hasattr(self, item) and getattr(self, item) is not None
+        return item in self.model_fields or (
+            self.__pydantic_extra__ is not None and item in self.__pydantic_extra__
+        )
 
     def dict(self, *args: Any, **kwargs: Any) -> Dict[str, Any]:
         """Provide dict conversion method for backward compatibility."""
@@ -109,6 +111,8 @@ class SortingPlanNodeModel(BaseModel):
 
     def __getitem__(self, item: str) -> Any:
         """Provide item lookup subscripting for dictionary backward compatibility."""
+        if item == "__type__":
+            return getattr(self, "node_type", "file")
         try:
             return getattr(self, item)
         except AttributeError:
@@ -116,14 +120,22 @@ class SortingPlanNodeModel(BaseModel):
 
     def get(self, item: str, default: Any = None) -> Any:
         """Provide dictionary get method for backward compatibility."""
+        if item == "__type__":
+            return getattr(self, "node_type", default if default is not None else "file")
         return getattr(self, item, default)
 
     def __contains__(self, item: str) -> bool:
         """Provide in containment check for dictionary backward compatibility."""
-        return hasattr(self, item) and getattr(self, item) is not None
+        if item == "__type__":
+            return True
+        return item in self.model_fields or (
+            self.__pydantic_extra__ is not None and item in self.__pydantic_extra__
+        )
 
     def dict(self, *args: Any, **kwargs: Any) -> Dict[str, Any]:
         """Provide dict conversion method for backward compatibility."""
+        if "by_alias" not in kwargs:
+            kwargs["by_alias"] = True
         return self.model_dump(*args, **kwargs)
 
 
@@ -138,9 +150,10 @@ class SortingPlanModel(BaseModel):
         """Provide item lookup subscripting for plan node dictionary compatibility."""
         if item in self.nodes:
             return self.nodes[item]
-        if hasattr(self, item):
+        try:
             return getattr(self, item)
-        raise KeyError(item)
+        except AttributeError:
+            raise KeyError(item) from None
 
     def get(self, item: str, default: Any = None) -> Any:
         """Provide dictionary get method for plan nodes."""
@@ -150,7 +163,9 @@ class SortingPlanModel(BaseModel):
 
     def __contains__(self, item: str) -> bool:
         """Provide in containment check for plan nodes."""
-        return item in self.nodes or hasattr(self, item)
+        if item in self.nodes or item in self.model_fields:
+            return True
+        return self.__pydantic_extra__ is not None and item in self.__pydantic_extra__
 
     def items(self) -> Any:
         """Return plan dictionary items."""
@@ -192,7 +207,9 @@ class CorpusExampleModel(BaseModel):
 
     def __contains__(self, item: str) -> bool:
         """Provide in containment check for dictionary backward compatibility."""
-        return hasattr(self, item) and getattr(self, item) is not None
+        return item in self.model_fields or (
+            self.__pydantic_extra__ is not None and item in self.__pydantic_extra__
+        )
 
     def dict(self, *args: Any, **kwargs: Any) -> Dict[str, Any]:
         """Provide dict conversion method for backward compatibility."""
@@ -233,7 +250,11 @@ class CorpusPreFetchBatchModel(BaseModel):
 
     def __contains__(self, item: str) -> bool:
         """Provide in containment check for batch attributes."""
-        return item in ("model_metadata", "examples") or hasattr(self, item)
+        if item in ("model_metadata", "examples"):
+            return True
+        return item in self.model_fields or (
+            self.__pydantic_extra__ is not None and item in self.__pydantic_extra__
+        )
 
     def dict(self, *args: Any, **kwargs: Any) -> Dict[str, Any]:
         """Provide dict conversion method for backward compatibility."""
@@ -251,25 +272,26 @@ class VectorBatchPayloadModel(BaseModel):
 
     def get(self, key: str, default: Any = None) -> Any:
         """Provide dictionary get method for vector payload keys."""
-        if key == "base_dir":
-            return self.base_dir
-        if key == "vectors":
-            return self.vectors
-        if key == "metadata":
-            return self.metadata
+        if key in ("base_dir", "vectors", "metadata"):
+            return getattr(self, key)
         return getattr(self, key, default)
 
     def __getitem__(self, item: str) -> Any:
         """Provide item lookup subscripting for vector payload keys."""
         if item in ("base_dir", "vectors", "metadata"):
             return getattr(self, item)
-        if hasattr(self, item):
+        try:
             return getattr(self, item)
-        raise KeyError(item)
+        except AttributeError:
+            raise KeyError(item) from None
 
     def __contains__(self, item: str) -> bool:
         """Provide in containment check for vector payload keys."""
-        return item in ("base_dir", "vectors", "metadata") or hasattr(self, item)
+        if item in ("base_dir", "vectors", "metadata"):
+            return True
+        return item in self.model_fields or (
+            self.__pydantic_extra__ is not None and item in self.__pydantic_extra__
+        )
 
     def dict(self, *args: Any, **kwargs: Any) -> Dict[str, Any]:
         """Provide dict conversion method for backward compatibility."""

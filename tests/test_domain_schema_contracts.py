@@ -191,8 +191,12 @@ def test_sorting_plan_node_and_plan_validation():
     node = validate_sorting_plan_node(node_payload)
     assert isinstance(node, SortingPlanNodeModel)
     assert node.node_type == "file"
+    assert node["__type__"] == "file"
+    assert node.get("__type__") == "file"
+    assert "__type__" in node
     assert node.category == "Financial"
     assert node["confidence"] == 0.92
+    assert node.dict()["__type__"] == "file"
 
     plan_payload = {"nodes": {"Financial": {"report.pdf": node.dict()}}}
 
