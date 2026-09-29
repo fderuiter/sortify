@@ -35,7 +35,7 @@ for pkg in ml_packages:
         print(f"Warning: Could not collect package {pkg}: {e}")
 
 # Bundle jsonschema, rfc3987 syntax, and pydantic schema data assets
-for schema_pkg in ('jsonschema', 'jsonschema_specifications', 'referencing', 'rfc3987_syntax', 'rfc3987', 'pydantic', 'pydantic_core', 'annotated_types'):
+for schema_pkg in ('jsonschema', 'jsonschema_specifications', 'referencing', 'rfc3987_syntax', 'rfc3987', 'pydantic', 'pydantic_core', 'annotated_types', 'typing_extensions'):
     try:
         s_datas, s_binaries, s_hiddenimports = collect_all(schema_pkg)
         datas.extend(s_datas)
@@ -49,6 +49,7 @@ hiddenimports.extend([
     'pydantic_core',
     'pydantic_core._pydantic_core',
     'annotated_types',
+    'typing_extensions',
 ])
 # Bundle secure database shared libraries directly from the active virtual environment
 sqlcipher_spec = importlib.util.find_spec("sqlcipher3")
@@ -268,7 +269,7 @@ def is_prunable_asset(name):
     parts = name_lower.split('/')
     
     # Safety Rule: Core weights, model files, and crucial bin targets must NEVER be pruned.
-    safety_keywords = ("weight", "bin", "model", "checkpoint", "offline_bundle", "easyocr", "user_guide")
+    safety_keywords = ("weight", "bin", "model", "checkpoint", "offline_bundle", "easyocr", "user_guide", "pydantic", "pydantic_core", "annotated_types")
     if any(sk in name_lower for sk in safety_keywords):
         return False
         
