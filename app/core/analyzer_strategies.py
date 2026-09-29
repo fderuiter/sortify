@@ -175,6 +175,8 @@ def _scrub_user_home_paths(text: str) -> str:
         except Exception:
             pass
 
+    home_dirs = sorted(home_dirs, key=len, reverse=True)
+
     for h in home_dirs:
         clean = h.strip("\\/ ")
         if not h or clean in ("", "/", "\\") or len(clean) <= 2:
@@ -198,7 +200,7 @@ def _scrub_user_home_paths(text: str) -> str:
             r"(?:[a-zA-Z]:[\/\\]*|[\/\\][a-zA-Z][\/\\]+)?"
             + r"[\/\\]*"
             + r"[\/\\]+".join([re.escape(p) for p in body_parts])
-            + r"(?=[\\/]|[^a-zA-Z0-9_.-]|$)"
+            + r"(?=[\\/]|[^a-zA-Z0-9_-]|$)"
         )
         try:
             text = re.sub(pattern, "<USER_HOME>", text, flags=re.IGNORECASE)

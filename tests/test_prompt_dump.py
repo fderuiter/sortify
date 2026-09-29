@@ -331,6 +331,7 @@ def test_scrub_user_home_paths_cross_platform_variations(monkeypatch):
     text_posix_bash = "File located at /c/Users/RunnerAdmin/documents/data.txt"
     text_no_drive = r"File located at \Users\RunnerAdmin\documents\data.txt"
     text_exact_home = r"File located at C:\Users\RunnerAdmin"
+    text_exact_home_period = r"File located at C:\Users\RunnerAdmin."
     text_non_matching = r"File located at C:\Users\RunnerAdminDocs\data.txt"
 
     assert _scrub_user_home_paths(text_win_upper) == r"File located at <USER_HOME>\documents\data.txt"
@@ -339,5 +340,6 @@ def test_scrub_user_home_paths_cross_platform_variations(monkeypatch):
     assert _scrub_user_home_paths(text_posix_bash) == "File located at <USER_HOME>/documents/data.txt"
     assert _scrub_user_home_paths(text_no_drive) == r"File located at <USER_HOME>\documents\data.txt"
     assert _scrub_user_home_paths(text_exact_home) == "File located at <USER_HOME>"
+    assert _scrub_user_home_paths(text_exact_home_period) == "File located at <USER_HOME>."
     assert _scrub_user_home_paths(text_non_matching) == r"File located at C:\Users\RunnerAdminDocs\data.txt"
 
