@@ -725,6 +725,109 @@ class IncrementalAnalyzer:
                             jev_plan_files.append((f_path, cat, v_jev, None))
                             processed_files.add(f_path)
 
+            # Internal Jev Classifier Fallback execution for unclassified candidate documents in fast-path
+            if fast_path_only and ai_filenames:
+                unclassified_docs_map = (
+                    {d[0]: d[1] for d in docs if len(d) > 1} if docs else {}
+                )
+                processed_jev_files = {
+                    str(f_item).replace("\\", "/")
+                    for f_item, _, _, _ in jev_plan_files
+                }
+                remaining_ai_files = []
+                remaining_ai_docs = []
+
+                for idx, f in enumerate(ai_filenames):
+                    norm_f = f.replace("\\", "/")
+                    base_fn = os.path.basename(norm_f)
+
+                    # Historical user assignments take precedence over internal Jev fallback
+                    if f in historical_overrides or norm_f in historical_overrides:
+                        remaining_ai_files.append(f)
+                        remaining_ai_docs.append(ai_documents[idx])
+                        continue
+
+                    is_in_caller_jev = False
+                    if jev_results:
+                        for k_jev in jev_results.keys():
+                            norm_k = str(k_jev).replace("\\", "/")
+                            if (
+                                norm_k == norm_f
+                                or norm_k == base_fn
+                                or norm_f.endswith(norm_k)
+                                or norm_k.endswith(norm_f)
+                            ):
+                                is_in_caller_jev = True
+                                break
+
+                    if not is_in_caller_jev and norm_f not in processed_jev_files:
+                        try:
+                            from app.core.shared_registry import SharedModelRegistry
+
+                            jev_engine = (
+                                SharedModelRegistry.get_instance().get_jev_classifier()
+                            )
+                            if jev_engine:
+                                abs_f = (
+                                    os.path.join(base_dir, f)
+                                    if base_dir and not os.path.isabs(f)
+                                    else f
+                                )
+                                doc_text = (
+                                    ai_documents[idx]
+                                    if idx < len(ai_documents)
+                                    else unclassified_docs_map.get(f)
+                                )
+                                fallback_res = jev_engine.classify(
+                                    abs_f, text_content=doc_text
+                                )
+                                if fallback_res:
+                                    is_classified = (
+                                        getattr(fallback_res, "is_classified", False)
+                                        if not isinstance(fallback_res, dict)
+                                        else fallback_res.get("is_classified", False)
+                                    )
+                                    confidence = (
+                                        getattr(fallback_res, "confidence", 0.0)
+                                        if not isinstance(fallback_res, dict)
+                                        else fallback_res.get("confidence", 0.0)
+                                    )
+                                    cat = (
+                                        getattr(
+                                            fallback_res, "category", "Unclassified"
+                                        )
+                                        if not isinstance(fallback_res, dict)
+                                        else fallback_res.get(
+                                            "category", "Unclassified"
+                                        )
+                                    )
+
+                                    if (
+                                        is_classified
+                                        and confidence > 0.0
+                                        and cat != "Unclassified"
+                                    ):
+                                        jev_plan_files.append(
+                                            (f, cat, fallback_res, None)
+                                        )
+                                        processed_jev_files.add(norm_f)
+                                        continue
+                        except Exception as e:
+                            logging.warning(
+                                f"Internal Jev classification fallback failed for '{f}': {e}"
+                            )
+
+                    remaining_ai_files.append(f)
+                    remaining_ai_docs.append(ai_documents[idx])
+
+                ai_filenames = remaining_ai_files
+                ai_documents = remaining_ai_docs
+
+            if fast_path_only:
+                ai_filenames = []
+                ai_documents = []
+                unsupported_files = []
+
             # Document-to-Document Content Similarity Matching Phase
             historical_docs = []
             for d in docs:
@@ -1001,102 +1104,6 @@ class IncrementalAnalyzer:
                         f"Failed during document-to-document similarity matching. Error: {str(e)}",
                         exc_info=True,
                     )
-
-            # Internal Jev Classifier Fallback execution for unclassified candidate documents
-            if ai_filenames:
-                unclassified_docs_map = (
-                    {d[0]: d[1] for d in docs if len(d) > 1} if docs else {}
-                )
-                processed_jev_files = {
-                    str(f_item).replace("\\", "/")
-                    for f_item, _, _, _ in jev_plan_files
-                }
-                remaining_ai_files = []
-                remaining_ai_docs = []
-
-                for idx, f in enumerate(ai_filenames):
-                    norm_f = f.replace("\\", "/")
-                    base_fn = os.path.basename(norm_f)
-                    is_in_caller_jev = False
-                    if jev_results:
-                        for k_jev in jev_results.keys():
-                            norm_k = str(k_jev).replace("\\", "/")
-                            if (
-                                norm_k == norm_f
-                                or norm_k == base_fn
-                                or norm_f.endswith(norm_k)
-                                or norm_k.endswith(norm_f)
-                            ):
-                                is_in_caller_jev = True
-                                break
-
-                    if not is_in_caller_jev and norm_f not in processed_jev_files:
-                        try:
-                            from app.core.shared_registry import SharedModelRegistry
-
-                            jev_engine = (
-                                SharedModelRegistry.get_instance().get_jev_classifier()
-                            )
-                            if jev_engine:
-                                abs_f = (
-                                    os.path.join(base_dir, f)
-                                    if base_dir and not os.path.isabs(f)
-                                    else f
-                                )
-                                doc_text = (
-                                    ai_documents[idx]
-                                    if idx < len(ai_documents)
-                                    else unclassified_docs_map.get(f)
-                                )
-                                fallback_res = jev_engine.classify(
-                                    abs_f, text_content=doc_text
-                                )
-                                if fallback_res:
-                                    is_classified = (
-                                        getattr(fallback_res, "is_classified", False)
-                                        if not isinstance(fallback_res, dict)
-                                        else fallback_res.get("is_classified", False)
-                                    )
-                                    confidence = (
-                                        getattr(fallback_res, "confidence", 0.0)
-                                        if not isinstance(fallback_res, dict)
-                                        else fallback_res.get("confidence", 0.0)
-                                    )
-                                    cat = (
-                                        getattr(
-                                            fallback_res, "category", "Unclassified"
-                                        )
-                                        if not isinstance(fallback_res, dict)
-                                        else fallback_res.get(
-                                            "category", "Unclassified"
-                                        )
-                                    )
-
-                                    if (
-                                        is_classified
-                                        and confidence > 0.0
-                                        and cat != "Unclassified"
-                                    ):
-                                        jev_plan_files.append(
-                                            (f, cat, fallback_res, None)
-                                        )
-                                        processed_jev_files.add(norm_f)
-                                        continue
-                        except Exception as e:
-                            logging.warning(
-                                f"Internal Jev classification fallback failed for '{f}': {e}"
-                            )
-
-                    remaining_ai_files.append(f)
-                    remaining_ai_docs.append(ai_documents[idx])
-
-                ai_filenames = remaining_ai_files
-                ai_documents = remaining_ai_docs
-
-            if fast_path_only:
-                ai_filenames = []
-                ai_documents = []
-                unsupported_files = []
 
             self._last_reconstruction_error = 0.0
 
