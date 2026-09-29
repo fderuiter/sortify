@@ -3,11 +3,107 @@
 This script imports and runs the main application GUI or CLI demo.
 """
 
+import argparse
+import logging
 import os
+import re
 import sys
+from pathlib import Path
+
+from app.config import AppSettings
 
 # Dynamic Windows DLL Path Injection
 from app.core.path_utils import is_packaged
+from app.log_filter import LogScrubbingFilter
+
+
+class NullWriter:
+    """A helper class that discards any written output to mimic a stream."""
+
+    encoding = "utf-8"
+    errors = "replace"
+
+    def write(self, text):
+        """Discard written text."""
+        return len(text) if text else 0
+
+    def writelines(self, lines):
+        """Discard written lines."""
+        pass
+
+    def flush(self):
+        """No-op flush to satisfy the stream interface."""
+        pass
+
+    def isatty(self):
+        """Return False for null stream."""
+        return False
+
+    def fileno(self):
+        """Raise OSError for missing file descriptor."""
+        raise OSError("NullWriter has no file descriptor")
+
+    def readable(self):
+        """Return False for write-only null stream."""
+        return False
+
+    def writable(self):
+        """Return True for null writer stream."""
+        return True
+
+    def seekable(self):
+        """Return False for null stream."""
+        return False
+
+    @property
+    def closed(self):
+        """Return False for active null stream."""
+        return False
+
+
+class NullReader:
+    """A helper class that discards input stream calls."""
+
+    encoding = "utf-8"
+    errors = "replace"
+
+    def read(self, *args, **kwargs):
+        """Return empty string."""
+        return ""
+
+    def readline(self, *args, **kwargs):
+        """Return empty string."""
+        return ""
+
+    def readlines(self, *args, **kwargs):
+        """Return empty list."""
+        return []
+
+    def isatty(self):
+        """Return False for null stream."""
+        return False
+
+    def fileno(self):
+        """Raise OSError for missing file descriptor."""
+        raise OSError("NullReader has no file descriptor")
+
+    def readable(self):
+        """Return True for null reader stream."""
+        return True
+
+    def writable(self):
+        """Return False for null reader stream."""
+        return False
+
+    def seekable(self):
+        """Return False for null stream."""
+        return False
+
+    @property
+    def closed(self):
+        """Return False for active null stream."""
+        return False
+
 
 if sys.platform == "win32" and is_packaged():
     # Attempt to allocate a console for windowed executables (console=False)
@@ -30,91 +126,6 @@ if sys.platform == "win32" and is_packaged():
                     pass
         except Exception:
             pass
-
-    # Safeguard standard streams to prevent crash on print when sys.stdout/err/in are None
-    class NullWriter:
-        """A helper class that discards any written output to mimic a stream."""
-
-        encoding = "utf-8"
-        errors = "replace"
-
-        def write(self, text):
-            """Discard written text."""
-            return len(text) if text else 0
-
-        def writelines(self, lines):
-            """Discard written lines."""
-            pass
-
-        def flush(self):
-            """No-op flush to satisfy the stream interface."""
-            pass
-
-        def isatty(self):
-            """Return False for null stream."""
-            return False
-
-        def fileno(self):
-            """Raise OSError for missing file descriptor."""
-            raise OSError("NullWriter has no file descriptor")
-
-        def readable(self):
-            """Return False for write-only null stream."""
-            return False
-
-        def writable(self):
-            """Return True for null writer stream."""
-            return True
-
-        def seekable(self):
-            """Return False for null stream."""
-            return False
-
-        def closed(self):
-            """Return False for active null stream."""
-            return False
-
-    class NullReader:
-        """A helper class that discards input stream calls."""
-
-        encoding = "utf-8"
-        errors = "replace"
-
-        def read(self, *args, **kwargs):
-            """Return empty string."""
-            return ""
-
-        def readline(self, *args, **kwargs):
-            """Return empty string."""
-            return ""
-
-        def readlines(self, *args, **kwargs):
-            """Return empty list."""
-            return []
-
-        def isatty(self):
-            """Return False for null stream."""
-            return False
-
-        def fileno(self):
-            """Raise OSError for missing file descriptor."""
-            raise OSError("NullReader has no file descriptor")
-
-        def readable(self):
-            """Return True for null reader stream."""
-            return True
-
-        def writable(self):
-            """Return False for null reader stream."""
-            return False
-
-        def seekable(self):
-            """Return False for null stream."""
-            return False
-
-        def closed(self):
-            """Return False for active null stream."""
-            return False
 
     if sys.stdout is None:
         sys.stdout = NullWriter()
@@ -195,15 +206,6 @@ if sys.platform == "win32" and is_packaged():
 
         os.environ["PATH"] = ";".join(unique_paths) + ";" + os.environ.get("PATH", "")
 
-import argparse
-import logging
-import os
-import re
-from pathlib import Path
-
-from app.config import AppSettings
-from app.log_filter import LogScrubbingFilter
-
 ANSI_ESCAPE_REGEX = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 
 
@@ -234,6 +236,10 @@ class ANSIStrippingWriter:
     def isatty(self):
         """Return isatty status of wrapped stream."""
         return getattr(self.stream, "isatty", lambda: False)()
+
+    def __getattr__(self, attr):
+        """Delegate missing stream attributes to wrapped stream."""
+        return getattr(self.stream, attr)
 
 
 def write_smoke_test_error(message, include_traceback=False):
