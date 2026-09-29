@@ -706,8 +706,11 @@ def test_tui_speech_binary_windows_posix_path_filtering(temp_workspace):
 
     for posix_path in [
         r"C:\Program Files\Git\usr\bin\spd-say.exe",
+        r"C:\Program Files\Git\mingw64\bin\spd-say.exe",
         r"C:\msys64\usr\bin\spd-say.exe",
         r"C:\cygwin64\bin\spd-say.exe",
+        r"C:\msys64\mingw64\bin\spd-say.exe",
+        r"C:\Windows\System32\wsl\spd-say.exe",
     ]:
         with patch("sys.platform", "win32"), patch("shutil.which", return_value=posix_path):
             assert app._get_speech_binary() is None

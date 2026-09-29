@@ -84,7 +84,23 @@ class A11yMixin:
                 bin_path = shutil.which("spd-say") or shutil.which("spd-say.exe")
                 if bin_path:
                     norm = bin_path.replace("/", "\\").lower()
-                    if any(p in norm for p in ("\\usr\\bin\\", "\\msys", "\\cygwin", "/usr/bin/")):
+                    if any(
+                        p in norm
+                        for p in (
+                            "\\usr\\bin\\",
+                            "\\msys",
+                            "\\cygwin",
+                            "/usr/bin/",
+                            "\\git\\",
+                            "/git/",
+                            "\\mingw",
+                            "/mingw",
+                            "\\bash",
+                            "/bash",
+                            "\\wsl",
+                            "/wsl",
+                        )
+                    ):
                         return None
                     ext = os.path.splitext(bin_path)[1].lower()
                     if ext not in (".exe", ".cmd", ".bat", ".com"):
@@ -124,12 +140,18 @@ class A11yMixin:
                 try:
                     def _speak():
                         try:
+                            kwargs: Dict[str, Any] = {
+                                "timeout": 1.0,
+                                "stdin": subprocess.DEVNULL,
+                                "stdout": subprocess.DEVNULL,
+                                "stderr": subprocess.DEVNULL,
+                                "check": False,
+                            }
+                            if sys.platform == "win32":
+                                kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
                             subprocess.run(
                                 [speech_bin, message],
-                                timeout=1.0,
-                                stdout=subprocess.DEVNULL,
-                                stderr=subprocess.DEVNULL,
-                                check=False,
+                                **kwargs,
                             )
                         except BaseException as exc:
                             logger.debug(f"Speech synthesis execution failed: {exc}")
