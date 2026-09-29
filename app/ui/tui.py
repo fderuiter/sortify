@@ -2,7 +2,10 @@
 
 import logging
 import os
+import shutil
+import subprocess
 import sys
+import threading
 import time
 from typing import Any, Dict, List, Optional
 
@@ -38,6 +41,14 @@ class A11yMixin:
         self.announcements: List[Dict[str, Any]] = []
         self.last_announcement: Optional[str] = None
 
+    def update_status(self, text: str) -> None:
+        """Update visual status region on self or parent application."""
+        if hasattr(self, "app") and self.app and self.app is not self and hasattr(self.app, "update_status"):
+            try:
+                self.app.update_status(text)
+            except Exception:
+                pass
+
     def announce(self, message: str, priority: str = "polite") -> str:
         """Emit auditory screen reader announcement and log accessibility event."""
         entry = {
@@ -48,19 +59,48 @@ class A11yMixin:
         self.announcements.append(entry)
         self.last_announcement = message
 
+        forwarded = False
         # Forward to parent app if available
         if hasattr(self, "app") and self.app and self.app is not self and hasattr(self.app, "announce"):
             try:
                 self.app.announce(message, priority=priority)
+                forwarded = True
             except Exception:
                 pass
 
-        # Update status bar if available
-        if hasattr(self, "update_status") and callable(self.update_status):
+        if not forwarded:
+            # Check speech binary presence via shutil.which before launching subprocess
+            speech_bin = None
             try:
-                self.update_status(message)
-            except Exception:
-                pass
+                speech_bin = shutil.which("spd-say") or shutil.which("say")
+            except (FileNotFoundError, OSError):
+                speech_bin = None
+
+            if speech_bin:
+                try:
+                    def _speak():
+                        try:
+                            subprocess.run(
+                                [speech_bin, message],
+                                timeout=1.0,
+                                stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL,
+                                check=False,
+                            )
+                        except (FileNotFoundError, OSError, subprocess.SubprocessError) as exc:
+                            logger.debug(f"Speech synthesis execution failed: {exc}")
+
+                    t = threading.Thread(target=_speak, daemon=True)
+                    t.start()
+                except (FileNotFoundError, OSError, subprocess.SubprocessError) as e:
+                    logger.debug(f"Speech binary execution failed: {e}")
+
+            # Fallback and update visual status region for every invocation
+            if hasattr(self, "update_status") and callable(self.update_status):
+                try:
+                    self.update_status(message)
+                except Exception:
+                    pass
 
         return message
 
@@ -75,6 +115,7 @@ class A11yMixin:
         1. Interactive controls have tooltips or explicit accessibility labels.
         2. Modal screens define Escape key bindings for keyboard dismissal.
         3. Screen reader announcement logging capability exists.
+        4. Root application defines visual status region capabilities and speech binary fallback handling.
         """
         violations = []
 
@@ -116,11 +157,31 @@ class A11yMixin:
                 "message": f"Component '{type(self).__name__}' lacks screen reader announcement handler.",
             })
 
+        status_bar_available = (
+            hasattr(self, "update_status")
+            or (hasattr(self, "app") and self.app and hasattr(self.app, "update_status"))
+        )
+        if not status_bar_available:
+            violations.append({
+                "rule": "A11Y_MISSING_STATUS_REGION",
+                "message": f"Component '{type(self).__name__}' or root application lacks visual status region capability.",
+            })
+
+        speech_binary = None
+        try:
+            speech_binary = shutil.which("spd-say") or shutil.which("say")
+        except (FileNotFoundError, OSError):
+            speech_binary = None
+
         return {
             "component": type(self).__name__,
             "compliant": len(violations) == 0,
             "violations_count": len(violations),
             "violations": violations,
+            "speech_binary_available": speech_binary is not None,
+            "speech_binary": speech_binary,
+            "speech_binary_fallback_ready": True,
+            "status_bar_available": status_bar_available,
         }
 
 

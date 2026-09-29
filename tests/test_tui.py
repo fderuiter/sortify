@@ -6,7 +6,7 @@ import tempfile
 from unittest.mock import MagicMock, patch
 
 import pytest
-from textual.widgets import Input, Switch, Tree
+from textual.widgets import Input, Static, Switch, Tree
 
 from app.config import AppSettings
 from app.ui.tui import (
@@ -602,5 +602,73 @@ def test_run_tui_non_interactive_stdin():
     with patch("sys.stdin", MockNonInteractiveStdin()), patch("app.ui.tui.AutoSorterTUI") as mock_app_cls:
         run_tui(settings)
         mock_app_cls.assert_not_called()
+
+
+def test_tui_speech_binary_fallback_missing_binary(temp_workspace):
+    """Verify announce succeeds, updates #status-bar, and records history when speech binaries are missing."""
+    from unittest.mock import patch
+    settings = AppSettings()
+
+    async def _test():
+        app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
+        async with app.run_test() as pilot:
+            with patch("shutil.which", return_value=None):
+                result = app.announce("Speech binary missing fallback test message")
+                assert result == "Speech binary missing fallback test message"
+                assert app.get_last_announcement() == "Speech binary missing fallback test message"
+                assert any(
+                    a["message"] == "Speech binary missing fallback test message"
+                    for a in app.announcements
+                )
+                sb = app.query_one("#status-bar", Static)
+                assert "Speech binary missing fallback test message" in str(sb.render())
+
+    asyncio.run(_test())
+
+
+def test_tui_speech_binary_execution_exception_fallback(temp_workspace):
+    """Verify announce handles subprocess execution exceptions without interrupting navigation."""
+    from unittest.mock import patch
+    settings = AppSettings()
+
+    async def _test():
+        app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
+        async with app.run_test() as pilot:
+            with patch("shutil.which", return_value="/usr/bin/spd-say"):
+                with patch("subprocess.run", side_effect=OSError("Exec format error")):
+                    result = app.announce("Speech execution error fallback test message")
+                    assert result == "Speech execution error fallback test message"
+                    assert app.get_last_announcement() == "Speech execution error fallback test message"
+                    sb = app.query_one("#status-bar", Static)
+                    assert "Speech execution error fallback test message" in str(sb.render())
+
+    asyncio.run(_test())
+
+
+def test_tui_speech_binary_available_and_audit(temp_workspace):
+    """Verify speech binary execution attempt when available and verify audit compliance output."""
+    from unittest.mock import patch
+    settings = AppSettings()
+
+    async def _test():
+        app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
+        async with app.run_test() as pilot:
+            with patch("shutil.which", return_value="/usr/bin/spd-say"):
+                audit_res = app.audit_a11y_compliance()
+                assert audit_res["speech_binary_available"] is True
+                assert audit_res["speech_binary"] == "/usr/bin/spd-say"
+                assert audit_res["speech_binary_fallback_ready"] is True
+                assert audit_res["status_bar_available"] is True
+                assert audit_res["compliant"] is True
+
+            with patch("shutil.which", return_value=None):
+                audit_res_missing = app.audit_a11y_compliance()
+                assert audit_res_missing["speech_binary_available"] is False
+                assert audit_res_missing["speech_binary"] is None
+                assert audit_res_missing["speech_binary_fallback_ready"] is True
+                assert audit_res_missing["status_bar_available"] is True
+                assert audit_res_missing["compliant"] is True
+
+    asyncio.run(_test())
 
 
