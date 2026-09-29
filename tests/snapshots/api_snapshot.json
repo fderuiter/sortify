@@ -1674,6 +1674,11 @@
                   "annotation": "Callable[[K, V], None] | None",
                   "default": "None",
                   "name": "on_evict"
+                },
+                {
+                  "annotation": "Callable[[], float]",
+                  "default": "time.monotonic",
+                  "name": "time_func"
                 }
               ],
               "returns": null
