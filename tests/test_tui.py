@@ -245,34 +245,35 @@ def test_tui_settings_modal(temp_workspace):
         settings = AppSettings()
         app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
 
-        async with app.run_test() as pilot:
-            app.action_open_settings()
-            await pilot.pause(0.1)
+        with patch.object(AppSettings, "_save", return_value=None):
+            async with app.run_test() as pilot:
+                app.action_open_settings()
+                await pilot.pause(0.1)
 
-            modal = app.screen
-            assert isinstance(modal, SettingsModal)
+                modal = app.screen
+                assert isinstance(modal, SettingsModal)
 
-            modal.query_one(
-                "#input-protected", Input
-            ).value = "/tmp/protected1, /tmp/protected2"
-            modal.query_one("#input-ignored", Input).value = ".tmp, .log, .bak"
-            modal.query_one("#input-concurrency", Input).value = "8"
+                modal.query_one(
+                    "#input-protected", Input
+                ).value = "/tmp/protected1, /tmp/protected2"
+                modal.query_one("#input-ignored", Input).value = ".tmp, .log, .bak"
+                modal.query_one("#input-concurrency", Input).value = "8"
 
-            modal.action_save()
-            await pilot.pause(0.1)
+                modal.action_save()
+                await pilot.pause(0.1)
 
-            assert getattr(app.settings, "PROTECTED_PATHS", None) == [
-                "/tmp/protected1",
-                "/tmp/protected2",
-            ] or getattr(app.settings, "PROTECTED_DIRECTORIES", None) == [
-                "/tmp/protected1",
-                "/tmp/protected2",
-            ]
-            assert app.settings.IGNORED_EXTENSIONS == [".tmp", ".log", ".bak"]
-            assert (
-                getattr(app.settings, "MAX_WORKERS", None) == 8
-                or getattr(app.settings, "WORKER_CONCURRENCY", None) == 8
-            )
+                assert getattr(app.settings, "PROTECTED_PATHS", None) == [
+                    "/tmp/protected1",
+                    "/tmp/protected2",
+                ] or getattr(app.settings, "PROTECTED_DIRECTORIES", None) == [
+                    "/tmp/protected1",
+                    "/tmp/protected2",
+                ]
+                assert app.settings.IGNORED_EXTENSIONS == [".tmp", ".log", ".bak"]
+                assert (
+                    getattr(app.settings, "MAX_WORKERS", None) == 8
+                    or getattr(app.settings, "WORKER_CONCURRENCY", None) == 8
+                )
 
     asyncio.run(_test())
 
@@ -767,8 +768,14 @@ def test_run_tui_guardrails():
 
     settings = AppSettings()
 
+    clean_env = {
+        k: v for k, v in os.environ.items()
+        if k not in ("FORCE_TUI", "IGNORE_TERMINAL_SIZE")
+    }
+
     # Test non-TTY exit
     with (
+        patch.dict("os.environ", clean_env, clear=True),
         patch("sys.stdin.isatty", return_value=False),
         pytest.raises(SystemExit) as exc1,
     ):
@@ -777,6 +784,7 @@ def test_run_tui_guardrails():
 
     # Test small dimensions exit
     with (
+        patch.dict("os.environ", clean_env, clear=True),
         patch("sys.stdin.isatty", return_value=True),
         patch("sys.stdout.isatty", return_value=True),
         patch("shutil.get_terminal_size", return_value=(70, 20)),
