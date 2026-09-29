@@ -16,6 +16,8 @@ from app.core.analyzer_strategies import (
     validate_prompt_dump_path,
 )
 
+pytestmark = pytest.mark.xdist_group(name="prompt_dump")
+
 
 def test_is_debug_active(monkeypatch):
     monkeypatch.delenv("DEBUG", raising=False)
