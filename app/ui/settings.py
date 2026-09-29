@@ -11,6 +11,174 @@ from app.ui.toolbar import OverflowToolbar
 ui = MagicMock()
 
 
+def create_accessible_slider(
+    min: float | int,
+    max: float | int,
+    value: float | int,
+    step: float | int = 1,
+    on_change: callable = None,
+    aria_label: str = None,
+    value_formatter: callable = None,
+    **kwargs,
+):
+    """Create a NiceGUI slider control with explicit ARIA range attributes and keyboard step navigation handlers.
+
+    Supports Arrow keys (Left/Right/Up/Down), Home, End, PageUp, and PageDown step adjustments.
+    """
+    min_val = min
+    max_val = max
+    current_val = [value]
+
+    def get_current_val():
+        v = getattr(slider, "value", None)
+        if isinstance(v, (int, float)):
+            return v
+        return current_val[0]
+
+    def format_val(val):
+        if val is None:
+            return ""
+        if value_formatter:
+            return str(value_formatter(val))
+        if isinstance(step, float) or isinstance(val, float):
+            if step < 0.1:
+                return f"{float(val):.2f}"
+            return f"{float(val):.1f}"
+        return f"{int(val)}"
+
+    def handle_change(e=None):
+        val = getattr(e, "value", e) if e is not None else get_current_val()
+        if isinstance(val, (int, float)):
+            current_val[0] = val
+        update_aria_props(val)
+        if on_change:
+            on_change(e)
+
+    slider = ui.slider(
+        min=min_val,
+        max=max_val,
+        value=value,
+        step=step,
+        on_change=handle_change,
+        **kwargs,
+    )
+
+    def update_aria_props(val):
+        if val is None:
+            return
+        f_val = format_val(val)
+        s_val = str(val)
+        s_fval = str(f_val)
+
+        if hasattr(slider, "_props") and isinstance(slider._props, dict):
+            slider._props["role"] = "slider"
+            slider._props["aria-valuemin"] = str(min_val)
+            slider._props["aria-valuemax"] = str(max_val)
+            slider._props["aria-valuenow"] = s_val
+            slider._props["aria-valuetext"] = s_fval
+            if aria_label:
+                slider._props["aria-label"] = aria_label
+
+        prop_str = (
+            f'role="slider" '
+            f'aria-valuemin="{min_val}" '
+            f'aria-valuemax="{max_val}" '
+            f'aria-valuenow="{s_val}" '
+            f'aria-valuetext="{s_fval}"'
+        )
+        if aria_label:
+            prop_str += f' aria-label="{aria_label}"'
+        if hasattr(slider, "props") and callable(slider.props):
+            try:
+                slider.props(prop_str)
+            except Exception:
+                pass
+
+    update_aria_props(value)
+
+    def extract_key_name(e):
+        if hasattr(e, "key") and e.key:
+            return str(e.key)
+        if hasattr(e, "args"):
+            args = e.args
+            if isinstance(args, dict):
+                return str(args.get("key") or args.get("code") or "")
+            elif isinstance(args, (list, tuple)) and len(args) > 0:
+                if isinstance(args[0], dict):
+                    return str(args[0].get("key") or args[0].get("code") or "")
+                return str(args[0])
+            elif isinstance(args, str):
+                return args
+        if isinstance(e, dict):
+            return str(e.get("key") or e.get("code") or "")
+        if isinstance(e, str):
+            return e
+        return ""
+
+    def handle_keydown(e):
+        key = extract_key_name(e)
+        if not key:
+            return
+
+        curr_val = get_current_val()
+
+        range_span = max_val - min_val
+        calc_large = range_span * 0.1 if range_span > 0 else step * 10
+        large_step = (step * 10) if (step * 10) > calc_large else calc_large
+
+        new_val = None
+        if key in ("ArrowRight", "Right", "ArrowUp", "Up"):
+            new_val = curr_val + step
+        elif key in ("ArrowLeft", "Left", "ArrowDown", "Down"):
+            new_val = curr_val - step
+        elif key == "Home":
+            new_val = min_val
+        elif key == "End":
+            new_val = max_val
+        elif key == "PageUp":
+            new_val = curr_val + large_step
+        elif key == "PageDown":
+            new_val = curr_val - large_step
+
+        if new_val is not None:
+            if new_val < min_val:
+                new_val = min_val
+            elif new_val > max_val:
+                new_val = max_val
+
+            if isinstance(step, float):
+                step_str = str(step)
+                decimals = len(step_str.split(".")[1]) if "." in step_str else 2
+                new_val = round(new_val, decimals)
+            else:
+                new_val = int(round(new_val))
+
+            current_val[0] = new_val
+            slider.value = new_val
+            update_aria_props(new_val)
+
+            class SliderChangeEvent:
+                def __init__(self, val, orig_e):
+                    self.value = val
+                    self.sender = slider
+                    self.args = getattr(orig_e, "args", None)
+
+            event_obj = SliderChangeEvent(new_val, e)
+            if on_change:
+                on_change(event_obj)
+
+    if hasattr(slider, "on") and callable(slider.on):
+        try:
+            slider.on("keydown", handle_keydown)
+        except Exception:
+            pass
+
+    slider._handle_keydown = handle_keydown
+    slider._update_aria_props = update_aria_props
+
+    return slider
+
+
 class ThreadSafeState:
     """A thread-safe state container.
 
@@ -560,14 +728,15 @@ def show_settings(parent_app, settings):
                     )
                     with ui.row().classes("w-full items-center gap-4"):
                         worker_slider = (
-                            ui.slider(
+                            create_accessible_slider(
                                 min=1,
                                 max=64,
                                 value=settings.MAX_WORKERS,
                                 step=1,
                                 on_change=on_worker_change,
+                                aria_label="Worker Concurrency Limit",
+                                value_formatter=lambda v: f"{int(v)}",
                             )
-                            .props('aria-label="Worker Concurrency Limit" label')
                             .classes("flex-grow")
                         )
                         ui.label().bind_text_from(
@@ -594,14 +763,15 @@ def show_settings(parent_app, settings):
                     )
                     with ui.row().classes("w-full items-center gap-4"):
                         audio_worker_slider = (
-                            ui.slider(
+                            create_accessible_slider(
                                 min=1,
                                 max=64,
                                 value=getattr(settings, "AUDIO_MAX_WORKERS", 2),
                                 step=1,
                                 on_change=on_audio_worker_change,
+                                aria_label="Audio Worker Concurrency Limit",
+                                value_formatter=lambda v: f"{int(v)}",
                             )
-                            .props('aria-label="Audio Worker Concurrency Limit" label')
                             .classes("flex-grow")
                         )
                         ui.label().bind_text_from(
@@ -627,14 +797,15 @@ def show_settings(parent_app, settings):
                     )
                     with ui.row().classes("w-full items-center gap-4"):
                         timeout_slider = (
-                            ui.slider(
+                            create_accessible_slider(
                                 min=1,
                                 max=300,
                                 value=settings.VISUAL_TIMEOUT,
                                 step=1,
                                 on_change=on_timeout_change,
+                                aria_label="Visual Layout Timeout",
+                                value_formatter=lambda v: f"{int(v)}",
                             )
-                            .props('aria-label="Visual Layout Timeout" label')
                             .classes("flex-grow")
                         )
                         ui.label().bind_text_from(
@@ -667,14 +838,15 @@ def show_settings(parent_app, settings):
                     )
                     with ui.row().classes("w-full items-center gap-4"):
                         debounce_slider = (
-                            ui.slider(
+                            create_accessible_slider(
                                 min=0.1,
                                 max=10.0,
                                 value=settings.DEBOUNCE_DELAY,
                                 step=0.1,
                                 on_change=on_debounce_delay_change,
+                                aria_label="Min Debounce Delay",
+                                value_formatter=lambda v: f"{float(v):.1f}",
                             )
-                            .props('aria-label="Min Debounce Delay" label')
                             .classes("flex-grow")
                         )
                         ui.label().bind_text_from(
@@ -711,14 +883,15 @@ def show_settings(parent_app, settings):
                     )
                     with ui.row().classes("w-full items-center gap-4"):
                         max_debounce_slider = (
-                            ui.slider(
+                            create_accessible_slider(
                                 min=0.5,
                                 max=30.0,
                                 value=settings.MAX_DEBOUNCE_DELAY,
                                 step=0.5,
                                 on_change=on_max_debounce_delay_change,
+                                aria_label="Max Debounce Delay",
+                                value_formatter=lambda v: f"{float(v):.1f}",
                             )
-                            .props('aria-label="Max Debounce Delay" label')
                             .classes("flex-grow")
                         )
                         ui.label().bind_text_from(
@@ -969,14 +1142,15 @@ def show_settings(parent_app, settings):
                     ui.label("ML Thread Count").classes("text-sm text-gray-700 mt-2")
                     with ui.row().classes("w-full items-center gap-4"):
                         threads_slider = (
-                            ui.slider(
+                            create_accessible_slider(
                                 min=1,
                                 max=32,
                                 value=settings.MODEL_THREADS,
                                 step=1,
                                 on_change=on_threads_change,
+                                aria_label="ML Thread Count",
+                                value_formatter=lambda v: f"{int(v)}",
                             )
-                            .props('aria-label="ML Thread Count" label')
                             .classes("flex-grow")
                         )
                         ui.label().bind_text_from(
@@ -1002,14 +1176,15 @@ def show_settings(parent_app, settings):
                     )
                     with ui.row().classes("w-full items-center gap-4"):
                         img_dim_slider = (
-                            ui.slider(
+                            create_accessible_slider(
                                 min=1,
                                 max=5000,
                                 value=settings.IMAGE_MAX_DIMENSION,
                                 step=1,
                                 on_change=on_img_dim_change,
+                                aria_label="Image Max Dimension",
+                                value_formatter=lambda v: f"{int(v)}",
                             )
-                            .props('aria-label="Image Max Dimension" label')
                             .classes("flex-grow")
                         )
                         ui.label().bind_text_from(
@@ -1037,14 +1212,15 @@ def show_settings(parent_app, settings):
                     )
                     with ui.row().classes("w-full items-center gap-4"):
                         img_skip_slider = (
-                            ui.slider(
+                            create_accessible_slider(
                                 min=1,
                                 max=10000,
                                 value=settings.IMAGE_SKIP_THRESHOLD,
                                 step=1,
                                 on_change=on_img_skip_change,
+                                aria_label="Image Skip Threshold",
+                                value_formatter=lambda v: f"{int(v)}",
                             )
-                            .props('aria-label="Image Skip Threshold" label')
                             .classes("flex-grow")
                         )
                         ui.label().bind_text_from(
@@ -1080,14 +1256,17 @@ def show_settings(parent_app, settings):
 
                     with ui.row().classes("w-full items-center gap-4"):
                         coherence_slider = (
-                            ui.slider(
+                            create_accessible_slider(
                                 min=0.0,
                                 max=1.0,
                                 value=getattr(settings, "COHERENCE_THRESHOLD", 0.5),
                                 step=0.01,
                                 on_change=on_coherence_change,
+                                aria_label="Coherence Threshold",
+                                value_formatter=lambda v: f"{float(v):.2f}"
+                                if v is not None
+                                else "0.50",
                             )
-                            .props('aria-label="Coherence Threshold" label')
                             .classes("flex-grow")
                         )
                         coherence_slider.tooltip(coherence_tooltip)
