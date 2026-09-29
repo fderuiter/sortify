@@ -2,10 +2,17 @@
 
 import asyncio
 import logging
+import os
 import sys
+from unittest.mock import MagicMock
 
 from app.core.env_helper import run_background_process
 from app.ui.tokens import TOKENS
+
+try:
+    from nicegui import ui
+except (ImportError, ModuleNotFoundError):
+    ui = MagicMock()
 
 logger = logging.getLogger(__name__)
 
@@ -28,12 +35,121 @@ def get_dialog_card_classes(size="md", extra=""):
     return base
 
 
+def _render_fallback_dialog(
+    title="Select Directory",
+    callback=None,
+    enable_ui_callback=None,
+):
+    """Render an accessible NiceGUI modal dialog as fallback for manual directory selection when native pickers fail."""
+    dialog = ui.dialog()
+    with dialog, ui.card().classes(get_dialog_card_classes("md")):
+        dialog.props("persistent")
+
+        dialog_title = title or "Select Directory"
+        ui.label(dialog_title).classes(
+            "text-lg font-bold text-gray-900 mb-1"
+        ).props('aria-label="Directory Selection Dialog"')
+
+        # Live region alert surfacing native directory picker failure
+        ui.label(
+            "Native folder picker unavailable. Please enter directory path manually."
+        ).classes(
+            "text-sm text-amber-700 bg-amber-50 p-2 rounded w-full mb-3"
+        ).props('role="alert" aria-live="polite"')
+
+        # Manual path input field with explicit label and aria-label
+        path_input = (
+            ui.input(
+                label="Enter Directory Path",
+                placeholder="/path/to/directory",
+            )
+            .classes("w-full mb-2")
+            .props('outlined dense autofocus aria-label="Enter Directory Path"')
+        )
+
+        # Inline validation message element
+        error_label = (
+            ui.label("")
+            .classes("text-xs text-red-600 font-medium hidden w-full mb-2")
+            .props('role="alert" aria-live="assertive"')
+        )
+
+        def _cleanup_and_finish(selected_path: str):
+            try:
+                dialog.close()
+            except Exception:
+                pass
+            if enable_ui_callback:
+                enable_ui_callback()
+            if callback:
+                callback(selected_path)
+
+        def _validate_and_submit():
+            raw_val = (
+                path_input.value
+                if hasattr(path_input, "value") and path_input.value
+                else ""
+            )
+            val = raw_val.strip() if isinstance(raw_val, str) else ""
+            if not val:
+                error_label.set_text("Directory path cannot be empty.")
+                error_label.classes(remove="hidden")
+                return
+
+            clean_path = os.path.abspath(val)
+            if not os.path.exists(clean_path):
+                error_label.set_text("The specified path does not exist.")
+                error_label.classes(remove="hidden")
+                return
+            if not os.path.isdir(clean_path):
+                error_label.set_text("The specified path is not a valid directory.")
+                error_label.classes(remove="hidden")
+                return
+
+            _cleanup_and_finish(clean_path)
+
+        def _on_cancel():
+            _cleanup_and_finish("")
+
+        # Focus elevation
+        if hasattr(path_input, "run_method"):
+            try:
+                path_input.run_method("focus")
+            except Exception:
+                pass
+        elif hasattr(path_input, "focus"):
+            try:
+                path_input.focus()
+            except Exception:
+                pass
+
+        # Action buttons
+        with ui.row().classes("w-full justify-end gap-2 mt-2"):
+            ui.button("Cancel", on_click=_on_cancel).classes(
+                "bg-gray-200 text-gray-800"
+            ).props('aria-label="Cancel Directory Selection"')
+            ui.button("Confirm", on_click=_validate_and_submit).classes(
+                "bg-blue-600 text-white"
+            ).props('aria-label="Confirm Directory Selection"')
+
+    try:
+        dialog.open()
+    except Exception:
+        pass
+    return dialog
+
+
 def ask_directory_async(
-    parent, title, callback, disable_ui_callback, enable_ui_callback
+    parent=None,
+    title="Select Directory",
+    callback=None,
+    disable_ui_callback=None,
+    enable_ui_callback=None,
 ):
     """Launch native OS directory selector asynchronously to prevent blocking the web UI execution thread.
 
     Force the native OS window manager to bring the newly opened folder picker window to the front.
+    If the native OS directory picker fails, render an accessible modal dialog as fallback.
     """
     if disable_ui_callback:
         disable_ui_callback()
@@ -42,6 +158,16 @@ def ask_directory_async(
         loop = asyncio.get_running_loop()
     except RuntimeError:
         loop = None
+
+    fut = None
+    if loop and callback is None:
+        fut = loop.create_future()
+
+        def _future_callback(p):
+            if not fut.done():
+                fut.set_result(p)
+
+        callback = _future_callback
 
     def _run_dialog():
         path = ""
@@ -153,14 +279,21 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {{
             success = False
 
         if not success:
-            # Fallback to manual path input using a dialog
+            # Fallback to manual path input using an accessible NiceGUI dialog
             def _fallback():
-                if enable_ui_callback:
-                    enable_ui_callback()
-                if callback:
-                    callback("")
+                _render_fallback_dialog(
+                    title=title,
+                    callback=callback,
+                    enable_ui_callback=enable_ui_callback,
+                )
 
-            _fallback()
+            if loop and not getattr(loop, "is_closed", lambda: False)():
+                try:
+                    loop.call_soon_threadsafe(_fallback)
+                except RuntimeError:
+                    _fallback()
+            else:
+                _fallback()
             return
 
         def _on_complete():
@@ -180,3 +313,5 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {{
     from app.core.shared_registry import ContextPropagatingThread
 
     ContextPropagatingThread(target=_run_dialog, daemon=True).start()
+    return fut
+
