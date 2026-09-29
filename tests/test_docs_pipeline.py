@@ -711,3 +711,64 @@ def test_check_no_raw_mermaid_in_docs_detects_blocks(tmp_path):
     bad_doc = tmp_path / "bad.md"
     bad_doc.write_text("# Bad doc\n```mermaid\ngraph TD\nA-->B\n```\n")
     assert check_no_raw_mermaid_in_docs(docs_dir=tmp_path) is False
+
+
+def test_validate_mermaid_syntax_pure_python():
+    from scripts.diagram_toolchain import validate_mermaid_syntax
+
+    # Valid diagram
+    valid_mmd = "graph TD\n  A[Start] --> B(Process)\n  subgraph Sub\n    B --> C{Decision}\n  end\n"
+    assert validate_mermaid_syntax(valid_mmd) == []
+
+    # Unknown diagram header type
+    invalid_header = "invalidGraph TD\n  A --> B\n"
+    errs = validate_mermaid_syntax(invalid_header)
+    assert len(errs) > 0
+    assert "Line 1" in errs[0]
+    assert "unknown diagram type 'invalidGraph'" in errs[0]
+
+    # Unbalanced brackets
+    invalid_brackets = "flowchart TD\n  Line 2: A[Unclosed Bracket\n  Line 3: B --> C\n"
+    errs = validate_mermaid_syntax(invalid_brackets)
+    assert len(errs) > 0
+    assert "Line 2" in errs[0]
+    assert "unbalanced brackets" in errs[0]
+
+    # Hanging relationship arrow
+    hanging_arrow = "graph TD\n  A --> B\n  C -->\n"
+    errs = validate_mermaid_syntax(hanging_arrow)
+    assert len(errs) > 0
+    assert "Line 3" in errs[0]
+    assert "Hanging relationship arrow" in errs[0]
+
+    # Unclosed subgraph
+    unclosed_subgraph = "graph TD\n  subgraph Group1\n  A --> B\n"
+    errs = validate_mermaid_syntax(unclosed_subgraph)
+    assert len(errs) > 0
+    assert "Unclosed structural block" in errs[0]
+
+
+def test_diagram_toolchain_cli_verify_failure_on_bad_syntax(tmp_path):
+    import scripts.diagram_toolchain as dt
+
+    class BadSyntaxSpec:
+        id = "bad_syntax_spec"
+        title = "Bad Syntax Spec"
+
+        def to_mermaid(self):
+            return "graph TD\n  A[Node A --> B\n"
+
+    dt.reset_browser_cache()
+    with (
+        patch(
+            "sys.argv",
+            ["diagram_toolchain.py", "verify", "--output-dir", str(tmp_path)],
+        ),
+        patch(
+            "scripts.diagram_toolchain.collect_all_specs",
+            return_value={"bad_syntax_spec": BadSyntaxSpec()},
+        ),
+        patch("sys.exit") as mock_exit,
+    ):
+        dt.main()
+        mock_exit.assert_called_once_with(1)
