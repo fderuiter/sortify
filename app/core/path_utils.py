@@ -142,7 +142,7 @@ def resolve_db_crypto(db_path: Path | str):
     """Resolve and return the standard SessionCrypto instance for a given database path."""
     from app.core.crypto import SessionCrypto
 
-    db_path_obj = Path(db_path)
+    db_path_obj = Path(db_path).resolve()
     key_path = db_path_obj.parent / "secret.key"
     return SessionCrypto(key_path, db_path_obj)
 
