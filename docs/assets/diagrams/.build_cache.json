@@ -1,36 +1,7 @@
 {
   "architecture_dataflow": {
-    "sha256": "d89945fe68db3468a576b1f4e51b8a22d22ca5f8521933b142274116bad0adf4"
-  },
-  "catalog_workflow": {
-    "sha256": "fb6af4e70ac679c43b4dc66c4adf2e15f7173bd38755bec8ff31cf98e5dffe80"
-  },
-  "ui_component_hierarchy": {
-    "sha256": "6c304873f8b0b2fa835a391de3b2eebd536519007678ac411449cce7cf920f08"
-  },
-  "header_bar_spec": {
-    "sha256": "fe3f90cb91b2f4b793aeb5c0572b0f0e96c40578ca2f2639e18004c47a907a1e"
-  },
-  "directory_selection_spec": {
-    "sha256": "d337f99a4122faa0385b3f71bf1f49136cc7e88d66af29899e3ea5c543da6e22"
-  },
-  "plan_treeview_spec": {
-    "sha256": "e114fe701915861f3fe7d259de746382c4860bb1e3e5c6a60f387235d7fa64bb"
-  },
-  "settings_modal_spec": {
-    "sha256": "466f0f87c269949bb889df31ff930e83c0b8e765159b4de5508d447c974d04c0"
-  },
-  "setup_wizard_spec": {
-    "sha256": "d5bcc390da9a9335bb9371b9c145336b9dca106570b277483f3e50d6e7781fbd"
-  },
-  "cro_forensic_spec": {
-    "sha256": "cf341cc8fd28a0eb98413bc4bc7edf64d703b072249d4678d7af41b41ea09dc5"
-  },
-  "help_modal_spec": {
-    "sha256": "ba63f02c5cd52b6336b5750c5b162a92ea456e7a965e5c8317110e6ceb759540"
-  },
-  "status_progress_spec": {
-    "sha256": "3e09096a2b1c52f473096ec36014395430c9a57fd11060d11db19a9222c1cf20"
+    "sha256": "89d07680b3161c5e93a955a1a61e80c605e71726ba8690d4cb67cc556c903b20",
+    "fallback": true
   },
   "architecture_async_processing": {
     "sha256": "0f3e202e7adfd8edf7e113ad27e47e67eab7c20eaf336478aa9e2772d69e0d63",
@@ -38,6 +9,18 @@
   },
   "architecture_watchdog_state": {
     "sha256": "623b9ab7007242b90a55abe3ec61caa0a2db866c7d78c985cf66d8e064892a6a",
+    "fallback": true
+  },
+  "catalog_workflow": {
+    "sha256": "4a9c047519486cc8127459c6782dc85420cda229bec2b98ea7503c750ec7495f",
+    "fallback": true
+  },
+  "ui_component_hierarchy": {
+    "sha256": "bd53c9d52fbafe9c25dd658eb88e4c843f2961e263506797dca24ca1e8d51a8f",
+    "fallback": true
+  },
+  "api_core_architecture": {
+    "sha256": "68014b24b46ca30f705166af7bddaedaf9f97d890228d1832e138112d7e0983c",
     "fallback": true
   },
   "core_text_extraction": {
@@ -65,19 +48,47 @@
     "fallback": true
   },
   "user_guide_setup_wizard": {
-    "sha256": "8bae30f22d5b8c62e714e82a8b1ee6db4037d92fe5514af845bf076bc1a25a7c",
+    "sha256": "5fb695bc5c2476f5e99f83228d7842988d266c3c46e1f27a978f6f0dffe1267c",
     "fallback": true
   },
   "user_guide_watchdog_state": {
     "sha256": "31841cdf6b18bed0ffaffc02a769a1588a8d767a0c65685c2962902f3ad868b6",
     "fallback": true
   },
-  "api_core_architecture": {
-    "sha256": "1ef040b61eafe2ece0352a5af6f685cbfe91f00c510571763baaf0b3eb465781",
-    "fallback": true
-  },
   "admin_policy_evaluation": {
     "sha256": "8fa2e31d89223dc224c717000b272a8a420392edb69d955cac7676db98400625",
+    "fallback": true
+  },
+  "header_bar_spec": {
+    "sha256": "fe3f90cb91b2f4b793aeb5c0572b0f0e96c40578ca2f2639e18004c47a907a1e",
+    "fallback": true
+  },
+  "directory_selection_spec": {
+    "sha256": "d337f99a4122faa0385b3f71bf1f49136cc7e88d66af29899e3ea5c543da6e22",
+    "fallback": true
+  },
+  "plan_treeview_spec": {
+    "sha256": "e114fe701915861f3fe7d259de746382c4860bb1e3e5c6a60f387235d7fa64bb",
+    "fallback": true
+  },
+  "settings_modal_spec": {
+    "sha256": "466f0f87c269949bb889df31ff930e83c0b8e765159b4de5508d447c974d04c0",
+    "fallback": true
+  },
+  "setup_wizard_spec": {
+    "sha256": "d5bcc390da9a9335bb9371b9c145336b9dca106570b277483f3e50d6e7781fbd",
+    "fallback": true
+  },
+  "cro_forensic_spec": {
+    "sha256": "cf341cc8fd28a0eb98413bc4bc7edf64d703b072249d4678d7af41b41ea09dc5",
+    "fallback": true
+  },
+  "help_modal_spec": {
+    "sha256": "ba63f02c5cd52b6336b5750c5b162a92ea456e7a965e5c8317110e6ceb759540",
+    "fallback": true
+  },
+  "status_progress_spec": {
+    "sha256": "3e09096a2b1c52f473096ec36014395430c9a57fd11060d11db19a9222c1cf20",
     "fallback": true
   }
 }

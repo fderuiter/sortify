@@ -2,8 +2,8 @@
   <rect width="100%" height="100%" fill="#f8fafc" rx="8" stroke="#cbd5e1" stroke-width="2"/>
   <text x="20" y="40" font-family="sans-serif" font-size="18" font-weight="bold" fill="#0f172a">Watchdog File Event State Machine</text>
   <text x="20" y="70" font-family="sans-serif" font-size="12" fill="#64748b">Mermaid Diagram Specification (Fallback View):</text>
-  <foreignObject x="20" y="90" width="760" height="290">
-    <pre xmlns="http://www.w3.org/1999/xhtml" style="font-family: monospace; font-size: 12px; color: #334155; background: #ffffff; padding: 12px; border-radius: 6px; border: 1px solid #e2e8f0; overflow: auto; height: 260px;">stateDiagram-v2
+  <foreignObject x="20" y="90" width="760" height="210">
+    <pre xmlns="http://www.w3.org/1999/xhtml" style="font-family: monospace; font-size: 12px; color: #334155; background: #ffffff; padding: 12px; border-radius: 6px; border: 1px solid #e2e8f0; overflow: auto; height: 180px;">stateDiagram-v2
 [*] --&gt; Monitoring: Active Watchdog Service
 Monitoring --&gt; FilterTransient: Directory File Modification
 FilterTransient --&gt; Monitoring: Ignore (.crdownload, .tmp, .download)
@@ -13,4 +13,5 @@ DebounceActive --&gt; DispatchPipeline: Standard Debounce Timeout (0.6s)
 DebounceActive --&gt; DispatchPipeline: Max Delay Cap Reached (5.0s)
 DispatchPipeline --&gt; Monitoring: Pipeline Executed &amp; UI Refreshed</pre>
   </foreignObject>
+
 </svg>
