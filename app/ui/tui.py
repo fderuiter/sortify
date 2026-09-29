@@ -79,7 +79,7 @@ class A11yMixin:
                 return shutil.which("say")
             elif sys.platform == "win32":
                 bin_path = shutil.which("spd-say") or shutil.which("spd-say.exe")
-                if bin_path and not bin_path.startswith("/"):
+                if bin_path:
                     ext = os.path.splitext(bin_path)[1].lower()
                     if ext not in (".exe", ".cmd", ".bat", ".com"):
                         return None

@@ -2,6 +2,7 @@
 
 import asyncio
 import os
+import sys
 import tempfile
 from unittest.mock import MagicMock, patch
 
@@ -630,10 +631,11 @@ def test_tui_speech_binary_execution_exception_fallback(temp_workspace):
     """Verify announce handles subprocess execution exceptions without interrupting navigation."""
     from unittest.mock import patch
     settings = AppSettings()
+    mock_speech_bin = r"C:\Tools\spd-say.exe" if sys.platform == "win32" else "/usr/bin/spd-say"
 
     async def _test():
         app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
-        with patch("shutil.which", return_value="/usr/bin/spd-say"), patch(
+        with patch("shutil.which", return_value=mock_speech_bin), patch(
             "subprocess.run", side_effect=OSError("Exec format error")
         ):
             async with app.run_test() as pilot:
@@ -651,16 +653,17 @@ def test_tui_speech_binary_available_and_audit(temp_workspace):
     """Verify speech binary execution attempt when available and verify audit compliance output."""
     from unittest.mock import patch
     settings = AppSettings()
+    mock_speech_bin = r"C:\Tools\spd-say.exe" if sys.platform == "win32" else "/usr/bin/spd-say"
 
     async def _test():
         app1 = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
-        with patch("shutil.which", return_value="/usr/bin/spd-say"), patch(
+        with patch("shutil.which", return_value=mock_speech_bin), patch(
             "subprocess.run", return_value=None
         ):
             async with app1.run_test() as pilot:
                 audit_res = app1.audit_a11y_compliance()
                 assert audit_res["speech_binary_available"] is True
-                assert audit_res["speech_binary"] == "/usr/bin/spd-say"
+                assert audit_res["speech_binary"] == mock_speech_bin
                 assert audit_res["speech_binary_fallback_ready"] is True
                 assert audit_res["status_bar_available"] is True
                 assert audit_res["compliant"] is True
