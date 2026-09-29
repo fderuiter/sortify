@@ -52,11 +52,14 @@ class A11yMixin:
 
     def join_speech_thread(self, timeout: float = 1.0) -> None:
         """Wait for active speech synthesis thread to finish."""
-        if self._speech_thread is not None and self._speech_thread.is_alive():
-            try:
-                self._speech_thread.join(timeout=timeout)
-            except Exception:
-                pass
+        if self._speech_thread is not None:
+            if self._speech_thread.is_alive():
+                try:
+                    self._speech_thread.join(timeout=timeout)
+                except Exception:
+                    pass
+            if not self._speech_thread.is_alive():
+                self._speech_thread = None
         if hasattr(self, "app") and self.app and self.app is not self and hasattr(self.app, "join_speech_thread"):
             try:
                 self.app.join_speech_thread(timeout=timeout)
@@ -80,6 +83,9 @@ class A11yMixin:
             elif sys.platform == "win32":
                 bin_path = shutil.which("spd-say") or shutil.which("spd-say.exe")
                 if bin_path:
+                    norm = bin_path.replace("/", "\\").lower()
+                    if any(p in norm for p in ("\\usr\\bin\\", "\\msys", "\\cygwin", "/usr/bin/")):
+                        return None
                     ext = os.path.splitext(bin_path)[1].lower()
                     if ext not in (".exe", ".cmd", ".bat", ".com"):
                         return None
@@ -127,6 +133,9 @@ class A11yMixin:
                             )
                         except BaseException as exc:
                             logger.debug(f"Speech synthesis execution failed: {exc}")
+                        finally:
+                            if getattr(self, "_speech_thread", None) is threading.current_thread():
+                                self._speech_thread = None
 
                     t = threading.Thread(target=_speak, daemon=True)
                     t.start()

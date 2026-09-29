@@ -698,4 +698,20 @@ def test_tui_speech_binary_windows_extension_filtering(temp_workspace):
         assert app._get_speech_binary() == r"C:\Tools\spd-say.exe"
 
 
+def test_tui_speech_binary_windows_posix_path_filtering(temp_workspace):
+    """Verify _get_speech_binary filters out MSYS2/Cygwin/Git POSIX binary paths on Windows."""
+    from unittest.mock import patch
+    settings = AppSettings()
+    app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
+
+    for posix_path in [
+        r"C:\Program Files\Git\usr\bin\spd-say.exe",
+        r"C:\msys64\usr\bin\spd-say.exe",
+        r"C:\cygwin64\bin\spd-say.exe",
+    ]:
+        with patch("sys.platform", "win32"), patch("shutil.which", return_value=posix_path):
+            assert app._get_speech_binary() is None
+
+
+
 
