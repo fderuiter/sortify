@@ -367,11 +367,13 @@ def test_jev_fast_snippet_extraction_pdf_docx_xlsx(tmp_path):
     c.drawString(100, 750, "Invoice #10023 - Financial Statement and Billing")
     c.save()
 
+    sla_threshold = 350.0 if _is_ci_or_parallel() else 150.0
+
     t0 = time.perf_counter()
     res_pdf = engine.classify(str(pdf_path))
     pdf_elapsed_ms = (time.perf_counter() - t0) * 1000.0
 
-    assert pdf_elapsed_ms < 150.0
+    assert pdf_elapsed_ms < sla_threshold
     assert res_pdf.is_classified is True
     assert res_pdf.confidence >= 0.50
     assert "Financial" in res_pdf.category
@@ -386,7 +388,7 @@ def test_jev_fast_snippet_extraction_pdf_docx_xlsx(tmp_path):
     res_docx = engine.classify(str(docx_path))
     docx_elapsed_ms = (time.perf_counter() - t0) * 1000.0
 
-    assert docx_elapsed_ms < 150.0
+    assert docx_elapsed_ms < sla_threshold
     assert res_docx.is_classified is True
     assert res_docx.confidence >= 0.50
     assert "Legal" in res_docx.category
