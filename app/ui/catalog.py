@@ -43,7 +43,29 @@ __all__ = [
     "main",
 ]
 
-ui = MagicMock()
+class UIProxy:
+    """Proxy object delegating ui builder calls to active harness or mock instance."""
+
+    def __init__(self, target):
+        self._target = target
+
+    def set_target(self, target):
+        self._target = target
+
+    def __getattr__(self, name):
+        target = self.__dict__.get("_target")
+        if target is None:
+            raise AttributeError(f"'UIProxy' object has no attribute '{name}'")
+        return getattr(target, name)
+
+    def __getstate__(self):
+        return {"_target": None}
+
+    def __setstate__(self, state):
+        self._target = state.get("_target") or MagicMock()
+
+
+ui = UIProxy(MagicMock())
 
 # --- COMPONENT CATALOG RENDERERS ---
 
