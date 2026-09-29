@@ -352,7 +352,7 @@ def update_security_md():
             d
             for d in dirs
             if not d.startswith(".")
-            and d not in ("venv", "env", "__pycache__", "node_modules", "site-packages")
+            and d not in ("venv", "env", "__pycache__", "node_modules", "site-packages", "build", "dist", "htmlcov")
         ]
         for file in files:
             if not file.endswith(".py"):
@@ -748,7 +748,7 @@ def main():
             if os.path.exists(filepath):
                 try:
                     with open(filepath, "r", encoding="utf-8") as f:
-                        initial_contents[filepath] = f.read()
+                        initial_contents[filepath] = f.read().replace("\r\n", "\n")
                 except Exception:
                     initial_contents[filepath] = None
             else:
@@ -799,7 +799,7 @@ def main():
             if os.path.exists(filepath):
                 try:
                     with open(filepath, "r", encoding="utf-8") as f:
-                        new_content = f.read()
+                        new_content = f.read().replace("\r\n", "\n")
                 except Exception:
                     pass
             if new_content != initial_contents.get(filepath):

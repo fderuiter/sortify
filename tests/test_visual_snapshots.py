@@ -31,8 +31,9 @@ def sanitize_svg(svg: str) -> str:
     svg = re.sub(r"terminal-\d+-", "terminal-test-", svg)
     svg = re.sub(r"\b\d{2}:\d{2}:\d{2}\b", "00:00:00", svg)
 
-    # Normalize Windows drive letters and leading slash/backslash for dummy test paths
-    svg = re.sub(r"(?:[A-Za-z]:)?[/\\]dummy", "/dummy", svg)
+    # Normalize Windows drive letters, backslashes, and HTML entities in test paths
+    svg = svg.replace("&#92;", "\\").replace("&bsol;", "\\")
+    svg = re.sub(r"(?:[A-Za-z]:)?[/\\]+dummy", "/dummy", svg)
     svg = re.sub(
         r"/dummy([^<\"]*)",
         lambda m: "/dummy" + m.group(1).replace("\\", "/"),

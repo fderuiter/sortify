@@ -27,7 +27,7 @@ def run_command(command, expected_args):
             check=True,
             env=env,
         )
-        output = result.stdout
+        output = result.stdout.replace("\r\n", "\n")
 
         missing = []
         for arg in expected_args:
