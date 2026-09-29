@@ -234,13 +234,17 @@ def ask_directory_async(
             elif sys.platform == "win32":
                 # Windows PowerShell
                 script = f"""
-[System.Reflection.Assembly]::LoadWithPartialName('System.windows.forms') | Out-Null;
-$objForm = New-Object System.Windows.Forms.FolderBrowserDialog;
-$objForm.Description = '{title}';
-$objForm.ShowNewFolderButton = $true;
-$result = $objForm.ShowDialog();
-if ($result -eq [System.Windows.Forms.DialogResult]::OK) {{
-    Write-Output "SUCCESS:$($objForm.SelectedPath)"
+if ([System.Environment]::UserInteractive) {{
+    [System.Reflection.Assembly]::LoadWithPartialName('System.windows.forms') | Out-Null;
+    $objForm = New-Object System.Windows.Forms.FolderBrowserDialog;
+    $objForm.Description = '{title}';
+    $objForm.ShowNewFolderButton = $true;
+    $result = $objForm.ShowDialog();
+    if ($result -eq [System.Windows.Forms.DialogResult]::OK) {{
+        Write-Output "SUCCESS:$($objForm.SelectedPath)"
+    }} else {{
+        Write-Output "CANCEL:"
+    }}
 }} else {{
     Write-Output "CANCEL:"
 }}
