@@ -2,9 +2,10 @@
 
 import logging
 import os
-import re
 import traceback
 from pathlib import Path
+
+from app.core.text_utils import sanitize_secret_patterns
 
 
 def scrub_diagnostic_text(text: str, home_dir: str = None) -> str:
@@ -37,18 +38,8 @@ def scrub_diagnostic_text(text: str, home_dir: str = None) -> str:
             text = text.replace(back, "<USER_HOME>")
             text = text.replace(fwd, "<USER_HOME>")
 
-    # Strip sensitive credential tokens and prefixes
-    # 1. Remove encrypted credential tokens and prefixes starting with 'enc:'
-    text = re.sub(r"\benc:[^\s,;'\"]*", "", text)
-    text = re.sub(r"enc:[^\s,;'\"]*", "", text)
-
-    # 2. Strip/mask Bearer tokens and sensitive key=value pairs (passwords, tokens, secrets, api keys)
-    text = re.sub(r"(?i)\b(bearer)\s+[a-zA-Z0-9._~+/-]+=*", "", text)
-    text = re.sub(
-        r"(?i)\b(password|passwd|secret|api_key|apikey|access_token|auth_token)\s*=\s*[^\s,;'\"]+",
-        r"\1=[REDACTED]",
-        text,
-    )
+    # Delegate secret credential scrubbing directly to app.core.text_utils
+    text = sanitize_secret_patterns(text)
 
     return text
 
