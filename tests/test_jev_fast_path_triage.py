@@ -183,3 +183,130 @@ async def test_daemon_triage_unclassified_fallback(tmp_path):
 
     # Execution should not throw error and fall through to slow path gracefully
     await daemon._triage_file_path(str(unclassified_file))
+
+
+def test_file_analyzer_internal_jev_fallback_when_jev_results_none(tmp_path):
+    """Verify FileAnalyzer.generate_sorting_plan executes internal Jev fallback when jev_results is None."""
+    from unittest.mock import Mock
+
+    invoice_file = tmp_path / "invoice_2026_q1.csv"
+    invoice_file.write_text("Invoice ID, Amount, Tax, Total\n1001, $500, $50, $550\n")
+
+    mock_db = Mock()
+    mock_db.get_model_metadata.return_value = None
+    mock_db.get_all_documents.return_value = [
+        ("invoice_2026_q1.csv", "Invoice ID, Amount, Tax, Total", "hash123", None)
+    ]
+
+    analyzer = FileAnalyzer(max_folders=5, stop_words=set(), db=mock_db)
+
+    # Call generate_sorting_plan with jev_results=None
+    plan = analyzer.generate_sorting_plan(
+        str(tmp_path), fast_path_only=True, jev_results=None
+    )
+
+    assert isinstance(plan, SortingPlan)
+    assert "Financial Reports" in plan
+    node = plan["Financial Reports"]["invoice_2026_q1.csv"]
+    assert node["routed_by"] == "jev_classifier"
+    assert node["category"] == "Financial Reports"
+    assert node["sensitivity_rating"] in ("HIGH", "CRITICAL")
+
+
+def test_file_analyzer_internal_jev_fallback_when_file_absent_from_jev_results(
+    tmp_path,
+):
+    """Verify FileAnalyzer.generate_sorting_plan executes internal Jev fallback for files absent from caller-provided jev_results."""
+    from unittest.mock import Mock
+
+    mock_db = Mock()
+    mock_db.get_model_metadata.return_value = None
+    mock_db.get_all_documents.return_value = [
+        ("explicit.txt", "Explicit file text", "hash1", None),
+        (
+            "nda_agreement.pdf",
+            "Non-disclosure agreement and legal terms",
+            "hash2",
+            None,
+        ),
+    ]
+
+    analyzer = FileAnalyzer(max_folders=5, stop_words=set(), db=mock_db)
+
+    explicit_res = JevClassificationResult(
+        category="Administrative Records",
+        is_classified=True,
+        confidence=0.9,
+    )
+    jev_results = {"explicit.txt": explicit_res}
+
+    plan = analyzer.generate_sorting_plan(
+        str(tmp_path), fast_path_only=True, jev_results=jev_results
+    )
+
+    assert isinstance(plan, SortingPlan)
+    # Explicitly provided item
+    assert "Administrative Records" in plan
+    assert (
+        plan["Administrative Records"]["explicit.txt"]["routed_by"] == "jev_classifier"
+    )
+
+    # Absent item should trigger internal Jev fallback and get classified as Legal Documents
+    assert "Legal Documents" in plan
+    node_legal = plan["Legal Documents"]["nda_agreement.pdf"]
+    assert node_legal["routed_by"] == "jev_classifier"
+    assert node_legal["category"] == "Legal Documents"
+
+
+def test_file_analyzer_internal_jev_fallback_precedence(tmp_path):
+    """Verify caller-provided jev_results take precedence over internal Jev fallback."""
+    from unittest.mock import Mock
+
+    mock_db = Mock()
+    mock_db.get_model_metadata.return_value = None
+    mock_db.get_all_documents.return_value = [
+        ("invoice_2026_q1.csv", "Invoice ID, Amount, Tax, Total", "hash123", None)
+    ]
+
+    analyzer = FileAnalyzer(max_folders=5, stop_words=set(), db=mock_db)
+
+    # Caller explicitly provides unclassified result for invoice_2026_q1.csv
+    caller_unclassified = JevClassificationResult(
+        category="Unclassified",
+        is_classified=False,
+        confidence=0.0,
+    )
+    jev_results = {"invoice_2026_q1.csv": caller_unclassified}
+
+    plan = analyzer.generate_sorting_plan(
+        str(tmp_path), fast_path_only=True, jev_results=jev_results
+    )
+
+    # Because caller provided explicit result (unclassified), internal fallback does NOT override caller's result
+    assert "Financial Reports" not in plan
+
+
+def test_file_analyzer_internal_jev_fallback_exception_handling(tmp_path, monkeypatch):
+    """Verify FileAnalyzer handles exceptions during internal Jev fallback gracefully."""
+    from unittest.mock import Mock
+
+    mock_db = Mock()
+    mock_db.get_model_metadata.return_value = None
+    mock_db.get_all_documents.return_value = [
+        ("invoice_2026.csv", "Invoice ID, Amount", "hash123", None)
+    ]
+
+    analyzer = FileAnalyzer(max_folders=5, stop_words=set(), db=mock_db)
+
+    # Mock JevClassifierEngine.classify to raise an exception
+    def faulty_classify(*args, **kwargs):
+        raise RuntimeError("Simulated Jev engine crash")
+
+    engine = SharedModelRegistry.get_instance().get_jev_classifier()
+    monkeypatch.setattr(engine, "classify", faulty_classify)
+
+    # Should log warning and not crash, falling through gracefully
+    plan = analyzer.generate_sorting_plan(
+        str(tmp_path), fast_path_only=True, jev_results=None
+    )
+    assert isinstance(plan, SortingPlan)
