@@ -107,8 +107,8 @@ class SessionCrypto:
     def __init__(self, key_path: Path, db_path: Path):
         import threading
 
-        self.db_path = Path(os.path.abspath(db_path))
-        self.key_path = Path(os.path.abspath(key_path))
+        self.db_path = Path(db_path).resolve()
+        self.key_path = Path(key_path).resolve()
         self._cipher = None
         self._key = None
         self.keyring_service = "AutoSorter"
