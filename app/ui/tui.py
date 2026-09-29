@@ -40,6 +40,7 @@ class A11yMixin:
         super().__init__(*args, **kwargs)
         self.announcements: List[Dict[str, Any]] = []
         self.last_announcement: Optional[str] = None
+        self._speech_thread: Optional[threading.Thread] = None
 
     def update_status(self, text: str) -> None:
         """Update visual status region on self or parent application."""
@@ -87,12 +88,13 @@ class A11yMixin:
                                 stderr=subprocess.DEVNULL,
                                 check=False,
                             )
-                        except (FileNotFoundError, OSError, subprocess.SubprocessError) as exc:
+                        except Exception as exc:
                             logger.debug(f"Speech synthesis execution failed: {exc}")
 
                     t = threading.Thread(target=_speak, daemon=True)
                     t.start()
-                except (FileNotFoundError, OSError, subprocess.SubprocessError) as e:
+                    self._speech_thread = t
+                except Exception as e:
                     logger.debug(f"Speech binary execution failed: {e}")
 
             # Fallback and update visual status region for every invocation

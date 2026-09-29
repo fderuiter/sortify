@@ -637,6 +637,8 @@ def test_tui_speech_binary_execution_exception_fallback(temp_workspace):
             with patch("shutil.which", return_value="/usr/bin/spd-say"):
                 with patch("subprocess.run", side_effect=OSError("Exec format error")):
                     result = app.announce("Speech execution error fallback test message")
+                    if getattr(app, "_speech_thread", None) is not None:
+                        app._speech_thread.join(timeout=1.0)
                     assert result == "Speech execution error fallback test message"
                     assert app.get_last_announcement() == "Speech execution error fallback test message"
                     sb = app.query_one("#status-bar", Static)
