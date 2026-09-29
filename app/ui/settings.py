@@ -1,6 +1,7 @@
 """Settings module for terminal interface."""
 
 import threading
+from typing import Callable
 from unittest.mock import MagicMock
 
 from app.core.path_utils import validate_target_path
@@ -16,9 +17,9 @@ def create_accessible_slider(
     max: float | int,
     value: float | int,
     step: float | int = 1,
-    on_change: callable = None,
-    aria_label: str = None,
-    value_formatter: callable = None,
+    on_change: Callable | None = None,
+    aria_label: str | None = None,
+    value_formatter: Callable | None = None,
     **kwargs,
 ):
     """Create a NiceGUI slider control with explicit ARIA range attributes and keyboard step navigation handlers.
@@ -30,9 +31,14 @@ def create_accessible_slider(
     current_val = [value]
 
     def get_current_val():
-        v = getattr(slider, "value", None)
-        if isinstance(v, (int, float)):
-            return v
+        try:
+            v = getattr(slider, "value", None)
+            if v is None and hasattr(slider, "_props") and isinstance(slider._props, dict):
+                v = slider._props.get("value")
+            if isinstance(v, (int, float)):
+                return v
+        except (NameError, UnboundLocalError):
+            pass
         return current_val[0]
 
     def format_val(val):
@@ -70,29 +76,32 @@ def create_accessible_slider(
         s_val = str(val)
         s_fval = str(f_val)
 
-        if hasattr(slider, "_props") and isinstance(slider._props, dict):
-            slider._props["role"] = "slider"
-            slider._props["aria-valuemin"] = str(min_val)
-            slider._props["aria-valuemax"] = str(max_val)
-            slider._props["aria-valuenow"] = s_val
-            slider._props["aria-valuetext"] = s_fval
-            if aria_label:
-                slider._props["aria-label"] = aria_label
+        try:
+            if hasattr(slider, "_props") and isinstance(slider._props, dict):
+                slider._props["role"] = "slider"
+                slider._props["aria-valuemin"] = str(min_val)
+                slider._props["aria-valuemax"] = str(max_val)
+                slider._props["aria-valuenow"] = s_val
+                slider._props["aria-valuetext"] = s_fval
+                if aria_label:
+                    slider._props["aria-label"] = aria_label
 
-        prop_str = (
-            f'role="slider" '
-            f'aria-valuemin="{min_val}" '
-            f'aria-valuemax="{max_val}" '
-            f'aria-valuenow="{s_val}" '
-            f'aria-valuetext="{s_fval}"'
-        )
-        if aria_label:
-            prop_str += f' aria-label="{aria_label}"'
-        if hasattr(slider, "props") and callable(slider.props):
-            try:
-                slider.props(prop_str)
-            except Exception:
-                pass
+            prop_str = (
+                f'role="slider" '
+                f'aria-valuemin="{min_val}" '
+                f'aria-valuemax="{max_val}" '
+                f'aria-valuenow="{s_val}" '
+                f'aria-valuetext="{s_fval}"'
+            )
+            if aria_label:
+                prop_str += f' aria-label="{aria_label}"'
+            if hasattr(slider, "props") and callable(slider.props):
+                try:
+                    slider.props(prop_str)
+                except Exception:
+                    pass
+        except (NameError, UnboundLocalError):
+            pass
 
     update_aria_props(value)
 

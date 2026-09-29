@@ -245,7 +245,10 @@ def is_rigid_width_class(cls_name: str, viewport_width: int) -> bool:
 
 
 def get_element_type_name(element: Any) -> str:
-    """Extract readable type name of a UI element."""
+    """Extract readable type name of a NiceGUI element."""
+    type_name = getattr(element, "_type_name", None)
+    if isinstance(type_name, str) and type_name:
+        return type_name
     return type(element).__name__
 
 
@@ -461,6 +464,14 @@ class _MockElement:
 
         if parent is not None and hasattr(parent, "children"):
             parent.children.append(self)
+
+    @property
+    def value(self):
+        return self._props.get("value")
+
+    @value.setter
+    def value(self, val):
+        self._props["value"] = val
 
     def props(self, *args, **kwargs):
         if args and isinstance(args[0], str):
