@@ -43,6 +43,13 @@ for schema_pkg in ('jsonschema', 'jsonschema_specifications', 'referencing', 'rf
         hiddenimports.extend(s_hiddenimports)
     except Exception as e:
         print(f"Warning: Could not collect package {schema_pkg}: {e}")
+
+hiddenimports.extend([
+    'pydantic',
+    'pydantic_core',
+    'pydantic_core._pydantic_core',
+    'annotated_types',
+])
 # Bundle secure database shared libraries directly from the active virtual environment
 sqlcipher_spec = importlib.util.find_spec("sqlcipher3")
 if sqlcipher_spec and sqlcipher_spec.submodule_search_locations:
