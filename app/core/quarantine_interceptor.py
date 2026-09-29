@@ -19,6 +19,15 @@ from app.core.resilient_file_ops import resilient_file_hash, resilient_move
 logger = logging.getLogger(__name__)
 
 
+def _set_posix_mode(path: str, mode: int) -> None:
+    """Apply POSIX permissions (mode) to a path gracefully across platforms."""
+    if os.name == "posix":
+        try:
+            os.chmod(path, mode)
+        except OSError as err:
+            logger.debug(f"Failed to set mode {oct(mode)} on '{path}': {err}")
+
+
 def scrub_pii_from_text(text: Any) -> str:
     """Scrub PII, sensitive keywords, and cryptographic tokens from document text."""
     if not text:
@@ -83,12 +92,14 @@ class QuarantineInterceptorService:
 
         quarantine_dir = os.path.join(base_dir, "_Quarantine_Staging")
         os.makedirs(quarantine_dir, exist_ok=True)
+        _set_posix_mode(quarantine_dir, 0o700)
 
         staged_file_name = f"{job_id}_{file_name}"
         staged_path = os.path.join(quarantine_dir, staged_file_name)
 
         # Copy file to quarantine staging area
         shutil.copy2(source_path, staged_path)
+        _set_posix_mode(staged_path, 0o600)
 
         file_hash = None
         try:
@@ -180,7 +191,8 @@ class QuarantineInterceptorService:
                     extracted_texts = []
                     for ef in extracted_files:
                         if os.path.isfile(ef):
-                            t = extract_file_text(ef) or ""
+                            _set_posix_mode(ef, 0o600)
+                            t = str(extract_file_text(ef) or "")
                             if t:
                                 extracted_texts.append(t)
                     extracted_text = "\n".join(extracted_texts)
@@ -232,6 +244,7 @@ class QuarantineInterceptorService:
                     try:
                         with open(staged_path, "w", encoding="utf-8") as f:
                             f.write(scrubbed_text)
+                        _set_posix_mode(staged_path, 0o600)
                     except Exception:
                         pass
 

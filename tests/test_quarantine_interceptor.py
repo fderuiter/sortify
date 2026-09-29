@@ -59,12 +59,84 @@ def test_quarantine_staging_ingestion():
     assert "_Quarantine_Staging" in res["staged_filepath"]
     assert os.path.exists(res["staged_filepath"])
 
+    # Verify POSIX permissions (0o700 for staging directory, 0o600 for staged file)
+    if os.name == "posix":
+        import stat
+
+        quarantine_dir = os.path.join(sample_dir, "_Quarantine_Staging")
+        dir_mode = stat.S_IMODE(os.stat(quarantine_dir).st_mode)
+        file_mode = stat.S_IMODE(os.stat(res["staged_filepath"]).st_mode)
+        assert dir_mode == 0o700
+        assert file_mode == 0o600
+
     # Verify DB record creation
     record = db.get_quarantine_record(res["job_id"])
     assert record is not None
     assert record["status"] == "STAGED"
     assert len(record["audit_log"]) >= 1
     assert record["audit_log"][0]["status"] == "STAGED"
+
+
+def test_quarantine_existing_directory_permissions_enforcement():
+    """Test that stage_incoming_file enforces 0o700 mode on existing pre-created staging directories."""
+    sample_dir = os.path.join(_test_dir, "existing_dir_sample")
+    os.makedirs(sample_dir, exist_ok=True)
+    quarantine_dir = os.path.join(sample_dir, "_Quarantine_Staging")
+    os.makedirs(quarantine_dir, exist_ok=True)
+
+    if os.name == "posix":
+        # Intentionally relax permissions on pre-existing staging directory
+        os.chmod(quarantine_dir, 0o777)
+
+    sample_file = os.path.join(sample_dir, "test_doc.txt")
+    with open(sample_file, "w", encoding="utf-8") as f:
+        f.write("Sample document content")
+
+    service = QuarantineInterceptorService(db=db)
+    res = service.stage_incoming_file(source_path=sample_file, base_dir=sample_dir)
+
+    if os.name == "posix":
+        import stat
+
+        dir_mode = stat.S_IMODE(os.stat(quarantine_dir).st_mode)
+        file_mode = stat.S_IMODE(os.stat(res["staged_filepath"]).st_mode)
+        assert dir_mode == 0o700
+        assert file_mode == 0o600
+
+
+def test_quarantine_archive_extraction_permissions():
+    """Test that archive contents unpacked during process_quarantine_job have 0o600 mode applied."""
+    import zipfile
+
+    sample_dir = os.path.join(_test_dir, "archive_perm_sample")
+    os.makedirs(sample_dir, exist_ok=True)
+
+    zip_path = os.path.join(sample_dir, "patient_archive.zip")
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr("sub_doc.txt", "Extracted sensitive patient notes")
+
+    policies = [
+        {
+            "type": "keyword",
+            "expression": "sensitive",
+            "action": "quarantine",
+            "priority": 100,
+        }
+    ]
+    service = QuarantineInterceptorService(db=db, policies=policies)
+    staged_info = service.stage_incoming_file(source_path=zip_path, base_dir=sample_dir)
+
+    result = service.process_quarantine_job(staged_info["job_id"])
+    assert result["status"] in ("QUARANTINED", "RELEASED", "REDACTED", "ARCHIVED")
+
+    if os.name == "posix":
+        import stat
+
+        quarantine_dir = os.path.join(sample_dir, "_Quarantine_Staging")
+        extracted_file = os.path.join(quarantine_dir, "sub_doc.txt")
+        assert os.path.exists(extracted_file)
+        extracted_mode = stat.S_IMODE(os.stat(extracted_file).st_mode)
+        assert extracted_mode == 0o600
 
 
 def test_quarantine_isolation_in_scanner():
