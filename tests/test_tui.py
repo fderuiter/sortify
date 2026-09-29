@@ -678,3 +678,21 @@ def test_tui_speech_binary_available_and_audit(temp_workspace):
     asyncio.run(_test())
 
 
+def test_tui_speech_binary_windows_extension_filtering(temp_workspace):
+    """Verify _get_speech_binary filters out extensionless POSIX scripts on Windows."""
+    from unittest.mock import patch
+    settings = AppSettings()
+    app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
+
+    with patch("sys.platform", "win32"), patch(
+        "shutil.which", return_value=r"C:\Program Files\Git\usr\bin\spd-say"
+    ):
+        assert app._get_speech_binary() is None
+
+    with patch("sys.platform", "win32"), patch(
+        "shutil.which", return_value=r"C:\Tools\spd-say.exe"
+    ):
+        assert app._get_speech_binary() == r"C:\Tools\spd-say.exe"
+
+
+

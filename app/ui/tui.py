@@ -78,7 +78,12 @@ class A11yMixin:
             if sys.platform == "darwin":
                 return shutil.which("say")
             elif sys.platform == "win32":
-                return shutil.which("spd-say")
+                bin_path = shutil.which("spd-say") or shutil.which("spd-say.exe")
+                if bin_path and not bin_path.startswith("/"):
+                    ext = os.path.splitext(bin_path)[1].lower()
+                    if ext not in (".exe", ".cmd", ".bat", ".com"):
+                        return None
+                return bin_path
             else:
                 return shutil.which("spd-say") or shutil.which("say")
         except (FileNotFoundError, OSError):
