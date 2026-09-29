@@ -349,6 +349,9 @@ def test_resolve_safe_target_dir_validation_and_containment(caplog):
     abs_res = service.resolve_safe_target_dir(base_workspace, "/etc/passwd", default_subfolder="Default_Folder")
     assert abs_res == os.path.join(base_workspace, "Default_Folder")
 
+    abs_win_res = service.resolve_safe_target_dir(base_workspace, "C:\\Windows\\System32", default_subfolder="Default_Folder")
+    assert abs_win_res == os.path.join(base_workspace, "Default_Folder")
+
 
 def test_quarantine_job_sanitizes_traversal_target_path():
     """Test policy execution with path traversal target_path safely falls back to default folders within base_dir."""

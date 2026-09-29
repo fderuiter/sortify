@@ -97,7 +97,7 @@ class QuarantineInterceptorService:
         If validation fails or boundary containment fails, falls back to default_subfolder
         inside base_dir and logs a security audit warning.
         """
-        fallback_dir = (
+        fallback_dir = os.path.normpath(
             os.path.join(base_dir, default_subfolder)
             if default_subfolder
             else base_dir
@@ -115,7 +115,7 @@ class QuarantineInterceptorService:
             )
             return fallback_dir
 
-        candidate_dir = os.path.join(base_dir, target_subfolder)
+        candidate_dir = os.path.normpath(os.path.join(base_dir, target_subfolder))
 
         try:
             if not is_subpath_or_equal(candidate_dir, base_dir):
