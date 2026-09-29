@@ -148,10 +148,32 @@ def _scrub_user_home_paths(text: str) -> str:
             home_dirs.append(eu)
     except Exception:
         pass
-    for env_var in ("USERPROFILE", "HOME"):
+    for env_var in ("USERPROFILE", "HOME", "HOMEPATH"):
         val = os.environ.get(env_var)
         if val and val not in home_dirs:
             home_dirs.append(val)
+
+    if os.environ.get("HOMEDRIVE") and os.environ.get("HOMEPATH"):
+        combined = os.environ.get("HOMEDRIVE") + os.environ.get("HOMEPATH")
+        if combined and combined not in home_dirs:
+            home_dirs.append(combined)
+
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            for h_dir in list(home_dirs):
+                buf = ctypes.create_unicode_buffer(500)
+                if ctypes.windll.kernel32.GetLongPathNameW(h_dir, buf, 500):
+                    long_p = buf.value
+                    if long_p and long_p not in home_dirs:
+                        home_dirs.append(long_p)
+                buf2 = ctypes.create_unicode_buffer(500)
+                if ctypes.windll.kernel32.GetShortPathNameW(h_dir, buf2, 500):
+                    short_p = buf2.value
+                    if short_p and short_p not in home_dirs:
+                        home_dirs.append(short_p)
+        except Exception:
+            pass
 
     for h in home_dirs:
         clean = h.strip("\\/ ")
@@ -162,15 +184,27 @@ def _scrub_user_home_paths(text: str) -> str:
         if not raw_parts:
             continue
 
+        has_drive = False
         if len(raw_parts[0]) == 2 and raw_parts[0][1] == ":":
-            prefix = r"[a-zA-Z]:[\/\\]*"
+            has_drive = True
+            body_parts = raw_parts[1:]
+        elif len(raw_parts[0]) == 1 and raw_parts[0].isalpha() and (h.startswith("/") or h.startswith("\\")):
+            has_drive = True
             body_parts = raw_parts[1:]
         elif h.startswith("/") or h.startswith("\\"):
-            prefix = r"[\/\\]*"
+            has_drive = False
             body_parts = raw_parts
         else:
-            prefix = ""
+            has_drive = False
             body_parts = raw_parts
+
+        if not body_parts:
+            continue
+
+        if has_drive:
+            prefix = r"(?:[a-zA-Z]:[\/\\]*|[\/\\][a-zA-Z][\/\\]+)"
+        else:
+            prefix = r"[\/\\]*"
 
         pattern = prefix + r"[\/\\]+".join([re.escape(p) for p in body_parts])
         try:

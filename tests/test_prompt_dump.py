@@ -327,8 +327,10 @@ def test_scrub_user_home_paths_cross_platform_variations(monkeypatch):
     text_win_upper = r"File located at C:\Users\RunnerAdmin\documents\data.txt"
     text_win_lower = r"File located at c:\users\runneradmin\documents\data.txt"
     text_win_fwd = "File located at C:/Users/RunnerAdmin/documents/data.txt"
+    text_posix_bash = "File located at /c/Users/RunnerAdmin/documents/data.txt"
 
     assert _scrub_user_home_paths(text_win_upper) == r"File located at <USER_HOME>\documents\data.txt"
     assert _scrub_user_home_paths(text_win_lower) == r"File located at <USER_HOME>\documents\data.txt"
     assert _scrub_user_home_paths(text_win_fwd) == "File located at <USER_HOME>/documents/data.txt"
+    assert _scrub_user_home_paths(text_posix_bash) == "File located at <USER_HOME>/documents/data.txt"
 
