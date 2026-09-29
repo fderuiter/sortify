@@ -214,7 +214,7 @@ def ask_directory_async(
                     "end try",
                 ]
                 result = run_background_process(
-                    cmd, sandbox=False, capture_output=True, text=True, check=True
+                    cmd, sandbox=False, capture_output=True, text=True, check=True, timeout=15
                 )
                 output = (
                     result.stdout.strip()
@@ -245,9 +245,9 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {{
     Write-Output "CANCEL:"
 }}
 """
-                cmd = ["powershell", "-Command", script]
+                cmd = ["powershell", "-NoProfile", "-NonInteractive", "-Command", script]
                 result = run_background_process(
-                    cmd, sandbox=False, capture_output=True, text=True
+                    cmd, sandbox=False, capture_output=True, text=True, timeout=15
                 )
                 output = (
                     result.stdout.strip()
@@ -279,7 +279,7 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {{
                         f"--title={title}",
                     ]
                     result = run_background_process(
-                        cmd, sandbox=False, capture_output=True, text=True
+                        cmd, sandbox=False, capture_output=True, text=True, timeout=15
                     )
                     output = result.stdout.strip()
                     if result.returncode == 0:
@@ -293,7 +293,7 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {{
                 elif kdialog_path:
                     cmd = ["kdialog", "--getexistingdirectory", ".", "--title", title]
                     result = run_background_process(
-                        cmd, sandbox=False, capture_output=True, text=True
+                        cmd, sandbox=False, capture_output=True, text=True, timeout=15
                     )
                     output = result.stdout.strip()
                     if result.returncode == 0:
