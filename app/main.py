@@ -10,26 +10,75 @@ import sys
 from app.core.path_utils import is_packaged
 
 if sys.platform == "win32" and is_packaged():
-    # Safeguard standard streams to prevent crash on print when sys.stdout/err are None
+    # Attempt to allocate a console for windowed executables (console=False)
+    if sys.stdout is None or sys.stderr is None or sys.stdin is None:
+        try:
+            import ctypes
+
+            if ctypes.windll.kernel32.AllocConsole():
+                try:
+                    sys.stdout = open("CONOUT$", "w", encoding="utf-8")
+                except Exception:
+                    pass
+                try:
+                    sys.stderr = open("CONERR$", "w", encoding="utf-8")
+                except Exception:
+                    pass
+                try:
+                    sys.stdin = open("CONIN$", "r", encoding="utf-8")
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    # Safeguard standard streams to prevent crash on print when sys.stdout/err/in are None
     class NullWriter:
         """A helper class that discards any written output to mimic a stream."""
 
-        def write(self, text):
-            """Discard written text.
+        encoding = "utf-8"
+        errors = "replace"
 
-            Parameters
-            ----------
-            text : str
-                The text to write.
-            """
+        def write(self, text):
+            """Discard written text."""
+            return len(text) if text else 0
+
+        def writelines(self, lines):
+            """Discard written lines."""
             pass
 
         def flush(self):
             """No-op flush to satisfy the stream interface."""
             pass
 
+        def isatty(self):
+            """Return False for null stream."""
+            return False
+
+        def fileno(self):
+            """Raise OSError for missing file descriptor."""
+            raise OSError("NullWriter has no file descriptor")
+
+        def readable(self):
+            """Return False for write-only null stream."""
+            return False
+
+        def writable(self):
+            """Return True for null writer stream."""
+            return True
+
+        def seekable(self):
+            """Return False for null stream."""
+            return False
+
+        def closed(self):
+            """Return False for active null stream."""
+            return False
+
     class NullReader:
         """A helper class that discards input stream calls."""
+
+        encoding = "utf-8"
+        errors = "replace"
 
         def read(self, *args, **kwargs):
             """Return empty string."""
@@ -39,8 +88,32 @@ if sys.platform == "win32" and is_packaged():
             """Return empty string."""
             return ""
 
+        def readlines(self, *args, **kwargs):
+            """Return empty list."""
+            return []
+
         def isatty(self):
             """Return False for null stream."""
+            return False
+
+        def fileno(self):
+            """Raise OSError for missing file descriptor."""
+            raise OSError("NullReader has no file descriptor")
+
+        def readable(self):
+            """Return True for null reader stream."""
+            return True
+
+        def writable(self):
+            """Return False for null reader stream."""
+            return False
+
+        def seekable(self):
+            """Return False for null stream."""
+            return False
+
+        def closed(self):
+            """Return False for active null stream."""
             return False
 
     if sys.stdout is None:

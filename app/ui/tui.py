@@ -2,6 +2,7 @@
 
 import logging
 import os
+import sys
 import time
 from typing import Any, Dict, List, Optional
 
@@ -1336,5 +1337,35 @@ class AutoSorterTUI(A11yMixin, App):
 
 def run_tui(settings, base_dir: Optional[str] = None) -> None:
     """Run the Textual full-screen terminal interface."""
+    from app.core.path_utils import is_packaged
+
+    if sys.platform == "win32" and is_packaged():
+        if sys.stdin is None or not hasattr(sys.stdin, "isatty") or not sys.stdin.isatty():
+            try:
+                import ctypes
+
+                if ctypes.windll.kernel32.AllocConsole():
+                    try:
+                        sys.stdout = open("CONOUT$", "w", encoding="utf-8")
+                    except Exception:
+                        pass
+                    try:
+                        sys.stderr = open("CONERR$", "w", encoding="utf-8")
+                    except Exception:
+                        pass
+                    try:
+                        sys.stdin = open("CONIN$", "r", encoding="utf-8")
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+    if sys.stdin is None or not hasattr(sys.stdin, "isatty") or not sys.stdin.isatty():
+        print(
+            "Notice: Terminal TUI requires an interactive TTY terminal.",
+            file=sys.stderr,
+        )
+        return
+
     app = AutoSorterTUI(settings=settings, base_dir=base_dir)
     app.run()
