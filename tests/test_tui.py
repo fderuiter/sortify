@@ -762,20 +762,17 @@ def test_main_cli_interactive_subcommand_flags():
             mock_run_tui.assert_called_once()
 
 
-def test_run_tui_guardrails():
+def test_run_tui_guardrails(monkeypatch):
     """Verify non-TTY and small terminal dimension guardrails in run_tui."""
     from app.ui.tui import run_tui
 
     settings = AppSettings()
 
-    clean_env = {
-        k: v for k, v in os.environ.items()
-        if k not in ("FORCE_TUI", "IGNORE_TERMINAL_SIZE")
-    }
+    monkeypatch.delenv("FORCE_TUI", raising=False)
+    monkeypatch.delenv("IGNORE_TERMINAL_SIZE", raising=False)
 
     # Test non-TTY exit
     with (
-        patch.dict("os.environ", clean_env, clear=True),
         patch("sys.stdin.isatty", return_value=False),
         pytest.raises(SystemExit) as exc1,
     ):
@@ -784,7 +781,6 @@ def test_run_tui_guardrails():
 
     # Test small dimensions exit
     with (
-        patch.dict("os.environ", clean_env, clear=True),
         patch("sys.stdin.isatty", return_value=True),
         patch("sys.stdout.isatty", return_value=True),
         patch("shutil.get_terminal_size", return_value=(70, 20)),
