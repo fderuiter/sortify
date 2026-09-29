@@ -105,100 +105,108 @@ def handle_ledger_command(args: argparse.Namespace, settings: AppSettings) -> bo
     quiet = getattr(args, "quiet", False)
     is_json = getattr(args, "json", False)
 
-    if ledger_cmd == "status":
-        session_id = getattr(args, "session_id", None)
-        pending = ledger.get_pending_entries(session_id=session_id)
+    db = None
+    try:
+        if ledger_cmd == "status":
+            session_id = getattr(args, "session_id", None)
+            pending = ledger.get_pending_entries(session_id=session_id)
 
-        res = {
-            "status": "success",
-            "count": len(pending),
-            "pending_entries": pending,
-        }
+            res = {
+                "status": "success",
+                "count": len(pending),
+                "pending_entries": pending,
+            }
 
-        if is_json:
-            sys.stdout.write(json.dumps(res, indent=2) + "\n")
-            sys.stdout.flush()
-        else:
-            if not quiet:
-                print(
-                    f"Transaction Ledger Status: {len(pending)} pending or incomplete entry(ies)."
+            if is_json:
+                sys.stdout.write(json.dumps(res, indent=2) + "\n")
+                sys.stdout.flush()
+            else:
+                if not quiet:
+                    print(
+                        f"Transaction Ledger Status: {len(pending)} pending or incomplete entry(ies)."
+                    )
+                for entry in pending:
+                    print(
+                        f"  [{entry.get('status')}] {entry.get('entry_id')} | "
+                        f"Source: {entry.get('source_path')} -> Dest: {entry.get('dest_path')}"
+                    )
+
+            sys.exit(0)
+
+        elif ledger_cmd == "reconcile":
+            try:
+                from app.core.db_worker import DBWorker
+
+                db = Database(get_app_dir() / "autosorter.db", DBWorker())
+            except Exception:
+                pass
+
+            reconciled_count = ledger.reconcile_incomplete_transactions(db=db)
+
+            res = {
+                "status": "success",
+                "reconciled_count": reconciled_count,
+            }
+
+            if is_json:
+                sys.stdout.write(json.dumps(res, indent=2) + "\n")
+                sys.stdout.flush()
+            else:
+                if not quiet:
+                    print(
+                        f"Transaction ledger reconciliation completed. Reconciled {reconciled_count} entry(ies).",
+                        file=sys.stderr,
+                    )
+
+            sys.exit(0)
+
+        elif ledger_cmd == "purge":
+            session_id = getattr(args, "session_id", None)
+            completed_only = getattr(args, "completed", False)
+            force = getattr(args, "force", False)
+
+            if not completed_only and not session_id and not force:
+                if not sys.stdin.isatty():
+                    print(
+                        "Error: Purging all ledger records requires explicit confirmation. Use --force or --completed.",
+                        file=sys.stderr,
+                    )
+                    sys.exit(1)
+                response = input(
+                    "Are you sure you want to purge transaction ledger records? [y/N]: "
                 )
-            for entry in pending:
-                print(
-                    f"  [{entry.get('status')}] {entry.get('entry_id')} | "
-                    f"Source: {entry.get('source_path')} -> Dest: {entry.get('dest_path')}"
-                )
+                if response.strip().lower() not in ("y", "yes"):
+                    print("Purge operation cancelled.", file=sys.stderr)
+                    sys.exit(1)
 
-        sys.exit(0)
+            if session_id:
+                ledger.purge_session(session_id)
+            else:
+                ledger.purge_completed()
 
-    elif ledger_cmd == "reconcile":
-        db = None
-        try:
-            from app.core.db_worker import DBWorker
+            res = {
+                "status": "success",
+                "message": "Transaction ledger records purged successfully.",
+                "session_id": session_id,
+                "completed_only": completed_only or not session_id,
+            }
 
-            db = Database(get_app_dir() / "autosorter.db", DBWorker())
-        except Exception:
-            pass
+            if is_json:
+                sys.stdout.write(json.dumps(res, indent=2) + "\n")
+                sys.stdout.flush()
+            else:
+                if not quiet:
+                    print(
+                        "Transaction ledger records purged successfully.", file=sys.stderr
+                    )
 
-        reconciled_count = ledger.reconcile_incomplete_transactions(db=db)
+            sys.exit(0)
 
-        res = {
-            "status": "success",
-            "reconciled_count": reconciled_count,
-        }
+    finally:
+        if db and hasattr(db, "worker") and db.worker:
+            db.worker.stop()
+        from app.core.db_conn import clear_connection_cache
 
-        if is_json:
-            sys.stdout.write(json.dumps(res, indent=2) + "\n")
-            sys.stdout.flush()
-        else:
-            if not quiet:
-                print(
-                    f"Transaction ledger reconciliation completed. Reconciled {reconciled_count} entry(ies).",
-                    file=sys.stderr,
-                )
-
-        sys.exit(0)
-
-    elif ledger_cmd == "purge":
-        session_id = getattr(args, "session_id", None)
-        completed_only = getattr(args, "completed", False)
-        force = getattr(args, "force", False)
-
-        if not completed_only and not session_id and not force:
-            if not sys.stdin.isatty():
-                print(
-                    "Error: Purging all ledger records requires explicit confirmation. Use --force or --completed.",
-                    file=sys.stderr,
-                )
-                sys.exit(1)
-            response = input(
-                "Are you sure you want to purge transaction ledger records? [y/N]: "
-            )
-            if response.strip().lower() not in ("y", "yes"):
-                print("Purge operation cancelled.", file=sys.stderr)
-                sys.exit(1)
-
-        if session_id:
-            ledger.purge_session(session_id)
-        else:
-            ledger.purge_completed()
-
-        res = {
-            "status": "success",
-            "message": "Transaction ledger records purged successfully.",
-            "session_id": session_id,
-            "completed_only": completed_only or not session_id,
-        }
-
-        if is_json:
-            sys.stdout.write(json.dumps(res, indent=2) + "\n")
-            sys.stdout.flush()
-        else:
-            if not quiet:
-                print(
-                    "Transaction ledger records purged successfully.", file=sys.stderr
-                )
-
-        sys.exit(0)
+        clear_connection_cache(only_current_and_inactive=False)
 
     return True
