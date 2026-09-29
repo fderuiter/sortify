@@ -8,14 +8,16 @@ import logging
 import os
 from typing import Any, Dict, Optional, Union
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.core.analyzer_strategies import clustering_registry
 
 _UNSPECIFIED = object()
 
 
-class _SortingPlanNodeSchema(BaseModel):
+class SortingPlanNode(BaseModel):
+    """Pydantic-validated BaseModel node representing a file or directory in a sorting plan."""
+
     node_type: str = Field(default="file", alias="__type__")
     relative_source: Optional[str] = None
     routed_by: Optional[str] = None
@@ -43,34 +45,70 @@ class _SortingPlanNodeSchema(BaseModel):
     archival_priority_score: Optional[float] = None
     confidence: Optional[float] = None
 
+    target_filename: Optional[str] = None
+    is_locked: Optional[bool] = None
+    confirmed: Optional[bool] = None
+    is_confirmed: Optional[bool] = None
+    user_confirmed: Optional[bool] = None
+    jev_category: Optional[str] = None
+
     model_config = ConfigDict(populate_by_name=True, extra="allow")
 
-
-class SortingPlanNode(dict):
-    """Pydantic-validated dict node representing a file or directory in a sorting plan."""
-
+    @field_validator("confidence", mode="before")
     @classmethod
-    def model_validate(cls, obj: Any) -> "SortingPlanNode":
-        """Validate and construct a SortingPlanNode from a dictionary or instance."""
-        if isinstance(obj, SortingPlanNode):
-            return obj
-        if isinstance(obj, dict):
-            # Validate with Pydantic schema
-            validated = _SortingPlanNodeSchema.model_validate(obj).model_dump(
-                by_alias=True, exclude_none=True
-            )
-            res = cls(obj)
-            res.update(validated)
-            return res
-        raise ValueError(f"Cannot validate {type(obj)} as SortingPlanNode")
+    def validate_confidence(cls, v: Any) -> Optional[float]:
+        """Validate and clamp confidence score between 0.0 and 1.0."""
+        if v is None:
+            return None
+        try:
+            val = float(v)
+            return max(0.0, min(1.0, val))
+        except (ValueError, TypeError):
+            return None
 
-    def model_dump(self, *args, **kwargs) -> Dict[str, Any]:
-        """Dump the node data as a standard dictionary."""
-        return dict(self)
+    @field_validator("node_type", mode="before")
+    @classmethod
+    def validate_node_type(cls, v: Any) -> str:
+        """Validate and ensure node_type defaults to 'file' if empty."""
+        if not v or not isinstance(v, str):
+            return "file"
+        return v
 
     def dict(self, *args, **kwargs) -> Dict[str, Any]:
         """Backward compatibility method for legacy callers."""
         return self.model_dump(*args, **kwargs)
+
+    def __getitem__(self, item: str) -> Any:
+        """Support item lookup via bracket syntax for dictionary compatibility."""
+        if item == "__type__":
+            return self.node_type
+        if hasattr(self, item):
+            val = getattr(self, item)
+            if val is not None:
+                return val
+        extra = getattr(self, "__pydantic_extra__", None)
+        if extra and item in extra:
+            return extra[item]
+        raise KeyError(item)
+
+    def get(self, item: str, default: Any = None) -> Any:
+        """Support dictionary get method."""
+        try:
+            return self[item]
+        except KeyError:
+            return default
+
+    def __contains__(self, item: str) -> bool:
+        """Check if key exists in attributes or extra fields."""
+        if item == "__type__":
+            return True
+        if hasattr(self, item) and getattr(self, item) is not None:
+            return True
+        extra = getattr(self, "__pydantic_extra__", None)
+        return bool(extra and item in extra)
+
+
+_SortingPlanNodeSchema = SortingPlanNode
 
 
 class SortingPlan(dict):
@@ -78,21 +116,32 @@ class SortingPlan(dict):
 
     def __init__(self, plan: Optional[Dict[str, Any]] = None, **kwargs):
         if plan is not None and isinstance(plan, dict):
-            super().__init__(plan)
+            validated = _validate_sorting_plan_nodes(plan)
+            super().__init__(validated)
+        elif kwargs and "plan" in kwargs and isinstance(kwargs["plan"], dict):
+            validated = _validate_sorting_plan_nodes(kwargs["plan"])
+            super().__init__(validated)
         elif kwargs:
-            super().__init__(kwargs)
+            validated = _validate_sorting_plan_nodes(kwargs)
+            super().__init__(validated)
         else:
             super().__init__()
 
     @classmethod
-    def model_validate(cls, obj: Any) -> "SortingPlan":
+    def model_validate(cls, obj: Any, *args, **kwargs) -> "SortingPlan":
         """Validate and construct a SortingPlan from a dictionary or instance."""
         if isinstance(obj, SortingPlan):
             return obj
         if isinstance(obj, dict):
-            validated_nodes = _validate_sorting_plan_nodes(obj)
-            return cls(validated_nodes)
+            if "plan" in obj and isinstance(obj["plan"], dict) and len(obj) == 1:
+                return cls(obj["plan"])
+            return cls(obj)
         raise ValueError(f"Cannot validate {type(obj)} as SortingPlan")
+
+    @property
+    def plan(self) -> Dict[str, Any]:
+        """Backward compatibility property returning the plan dictionary."""
+        return self
 
     def model_dump(self, *args, **kwargs) -> Dict[str, Any]:
         """Dump the complete plan as a standard dictionary."""
@@ -123,8 +172,8 @@ def _validate_sorting_plan_nodes(node: Dict[str, Any]) -> Dict[str, Any]:
     """Recursively validate all file dictionary nodes in the plan using SortingPlanNode."""
     validated = {}
     for k, v in node.items():
-        if isinstance(v, dict) or isinstance(v, SortingPlanNode):
-            v_dict = v.model_dump() if hasattr(v, "model_dump") else v
+        if isinstance(v, (dict, SortingPlanNode, BaseModel)):
+            v_dict = v.model_dump(by_alias=True) if hasattr(v, "model_dump") else v
             if (
                 v_dict.get("__type__") == "file"
                 or "relative_source" in v_dict
@@ -593,9 +642,9 @@ class IncrementalAnalyzer:
                     policy_plan_files.append(
                         (
                             f,
-                            matched_policy["target_path"],
-                            matched_policy["expression"],
-                            matched_policy["type"],
+                            matched_policy.target_path if hasattr(matched_policy, "target_path") else matched_policy["target_path"],
+                            matched_policy.expression if hasattr(matched_policy, "expression") else matched_policy["expression"],
+                            matched_policy.type if hasattr(matched_policy, "type") else matched_policy["type"],
                             status_match,
                         )
                     )
@@ -1183,6 +1232,8 @@ class IncrementalAnalyzer:
                         cancel_check=cancel_check,
                         pre_fetched_corpus=pre_fetched_corpus,
                     )
+                    if hasattr(plan, "plan") and isinstance(plan.plan, dict):
+                        plan = plan.plan
                     self._last_reconstruction_error = error
 
                     # Data Boundary Safeguard: Clear/Garbage collect pre_fetched_corpus decrypted data immediately
@@ -1426,8 +1477,8 @@ class IncrementalAnalyzer:
 
                 matched_pol = matched_policies_map.get(f)
                 if matched_pol:
-                    info["routed_by"] = matched_pol.get("type", "policy")
-                    info["match"] = matched_pol.get("expression")
+                    info["routed_by"] = getattr(matched_pol, "type", None) or (matched_pol.get("type", "policy") if isinstance(matched_pol, dict) else "policy")
+                    info["match"] = getattr(matched_pol, "expression", None) or (matched_pol.get("expression") if isinstance(matched_pol, dict) else None)
                 else:
                     info["routed_by"] = "historical"
                     info["match"] = "user assignment"

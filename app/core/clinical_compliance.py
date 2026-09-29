@@ -23,33 +23,6 @@ class FoundEssentialDocument(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    def dict(self, *args, **kwargs) -> Dict[str, Any]:
-        """Backward compatibility method for legacy callers."""
-        return self.model_dump(*args, **kwargs)
-
-    def __getitem__(self, item: str) -> Any:
-        """Support item lookup via bracket syntax for dictionary compatibility."""
-        if hasattr(self, item):
-            return getattr(self, item)
-        extra = getattr(self, "__pydantic_extra__", None)
-        if extra and item in extra:
-            return extra[item]
-        raise KeyError(item)
-
-    def get(self, item: str, default: Any = None) -> Any:
-        """Support dictionary get method."""
-        try:
-            return self[item]
-        except KeyError:
-            return default
-
-    def __contains__(self, item: str) -> bool:
-        """Check if key exists in attributes or extra fields."""
-        return hasattr(self, item) or (
-            getattr(self, "__pydantic_extra__", None) is not None
-            and item in self.__pydantic_extra__
-        )
-
 
 class MissingEssentialDocument(BaseModel):
     """Model representing a missing essential clinical document."""
@@ -61,33 +34,6 @@ class MissingEssentialDocument(BaseModel):
     gcp_ref: str
 
     model_config = ConfigDict(extra="allow")
-
-    def dict(self, *args, **kwargs) -> Dict[str, Any]:
-        """Backward compatibility method for legacy callers."""
-        return self.model_dump(*args, **kwargs)
-
-    def __getitem__(self, item: str) -> Any:
-        """Support item lookup via bracket syntax for dictionary compatibility."""
-        if hasattr(self, item):
-            return getattr(self, item)
-        extra = getattr(self, "__pydantic_extra__", None)
-        if extra and item in extra:
-            return extra[item]
-        raise KeyError(item)
-
-    def get(self, item: str, default: Any = None) -> Any:
-        """Support dictionary get method."""
-        try:
-            return self[item]
-        except KeyError:
-            return default
-
-    def __contains__(self, item: str) -> bool:
-        """Check if key exists in attributes or extra fields."""
-        return hasattr(self, item) or (
-            getattr(self, "__pydantic_extra__", None) is not None
-            and item in self.__pydantic_extra__
-        )
 
 
 class ClinicalComplianceResult(BaseModel):
@@ -106,33 +52,6 @@ class ClinicalComplianceResult(BaseModel):
     base_dir: str = ""
 
     model_config = ConfigDict(extra="allow")
-
-    def dict(self, *args, **kwargs) -> Dict[str, Any]:
-        """Backward compatibility method for legacy callers."""
-        return self.model_dump(*args, **kwargs)
-
-    def __getitem__(self, item: str) -> Any:
-        """Support item lookup via bracket syntax for dictionary compatibility."""
-        if hasattr(self, item):
-            return getattr(self, item)
-        extra = getattr(self, "__pydantic_extra__", None)
-        if extra and item in extra:
-            return extra[item]
-        raise KeyError(item)
-
-    def get(self, item: str, default: Any = None) -> Any:
-        """Support dictionary get method."""
-        try:
-            return self[item]
-        except KeyError:
-            return default
-
-    def __contains__(self, item: str) -> bool:
-        """Check if key exists in attributes or extra fields."""
-        return hasattr(self, item) or (
-            getattr(self, "__pydantic_extra__", None) is not None
-            and item in self.__pydantic_extra__
-        )
 
 
 class ClinicalComplianceEngine:
@@ -232,17 +151,18 @@ class ClinicalComplianceEngine:
         return output_path
 
     def generate_html_report(
-        self, compliance_data: Dict[str, Any], output_path: str
+        self, compliance_data: Union[ClinicalComplianceResult, Dict[str, Any]], output_path: str
     ) -> str:
         """Generate a standalone HTML compliance audit dossier."""
-        score = compliance_data["compliance_score_percent"]
-        status = compliance_data["audit_readiness_status"]
+        data = compliance_data.model_dump() if isinstance(compliance_data, BaseModel) else compliance_data
+        score = data["compliance_score_percent"]
+        status = data["audit_readiness_status"]
         status_color = (
             "#16a34a" if score >= 90 else "#d97706" if score >= 60 else "#dc2626"
         )
 
         found_rows = ""
-        for item in compliance_data["found_essential_documents"]:
+        for item in data["found_essential_documents"]:
             file_list = "<br>".join(
                 f"<code>{html.escape(f)}</code>" for f in item["files"]
             )
@@ -256,7 +176,7 @@ class ClinicalComplianceEngine:
             """
 
         missing_rows = ""
-        for item in compliance_data["missing_essential_documents"]:
+        for item in data["missing_essential_documents"]:
             missing_rows += f"""
             <tr style="border-bottom: 1px solid #fee2e2; background-color: #fef2f2;">
                 <td style="padding: 12px; font-weight: 600; color: #991b1b;">{html.escape(item["title"])}</td>
@@ -302,15 +222,15 @@ class ClinicalComplianceEngine:
                 <div class="metric-label">Compliance Score</div>
             </div>
             <div class="metric-card">
-                <div class="metric-val">{compliance_data["total_essential_found"]} / {compliance_data["total_essential_required"]}</div>
+                <div class="metric-val">{data["total_essential_found"]} / {data["total_essential_required"]}</div>
                 <div class="metric-label">Essential Docs Found</div>
             </div>
             <div class="metric-card">
-                <div class="metric-val" style="color: #dc2626;">{compliance_data["total_essential_missing"]}</div>
+                <div class="metric-val" style="color: #dc2626;">{data["total_essential_missing"]}</div>
                 <div class="metric-label">Missing Gaps</div>
             </div>
             <div class="metric-card">
-                <div class="metric-val">{compliance_data["total_files_scanned"]}</div>
+                <div class="metric-val">{data["total_files_scanned"]}</div>
                 <div class="metric-label">Total Files Evaluated</div>
             </div>
         </div>

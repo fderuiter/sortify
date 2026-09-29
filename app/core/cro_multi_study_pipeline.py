@@ -8,9 +8,10 @@ import json
 import logging
 import os
 import shutil
-from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional
+
+from pydantic import BaseModel, Field
 
 from app.core.clinical_compliance import ClinicalComplianceEngine
 from app.core.clinical_renamer import ClinicalRenamer
@@ -24,8 +25,7 @@ from app.core.study_disambiguator import StudyDisambiguator
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class StudyIngestSummary:
+class StudyIngestSummary(BaseModel):
     """Summary metrics for an individual clinical study."""
 
     study_id: str
@@ -38,8 +38,7 @@ class StudyIngestSummary:
     audit_report_html_path: str
 
 
-@dataclass
-class MasterPipelineResult:
+class MasterPipelineResult(BaseModel):
     """Complete result of a CRO Multi-Study forensic ingestion run."""
 
     source_root: str
@@ -49,7 +48,7 @@ class MasterPipelineResult:
     total_unique_documents: int
     total_duplicates_detected: int
     discovered_studies_count: int
-    studies_summary: List[StudyIngestSummary] = field(default_factory=list)
+    studies_summary: List[StudyIngestSummary] = Field(default_factory=list)
     chain_of_custody_manifest_path: str = ""
 
 
@@ -253,10 +252,10 @@ class CROMultiStudyPipeline:
                     StudyIngestSummary(
                         study_id=study_id,
                         total_documents=len(docs),
-                        compliance_score_percent=comp_eval["compliance_score_percent"],
-                        audit_readiness_status=comp_eval["audit_readiness_status"],
-                        missing_essential_count=comp_eval["total_essential_missing"],
-                        found_essential_count=comp_eval["total_essential_found"],
+                        compliance_score_percent=comp_eval.compliance_score_percent,
+                        audit_readiness_status=comp_eval.audit_readiness_status,
+                        missing_essential_count=comp_eval.total_essential_missing,
+                        found_essential_count=comp_eval.total_essential_found,
                         target_directory=study_target_dir,
                         audit_report_html_path=html_report_path,
                     )
@@ -282,7 +281,7 @@ class CROMultiStudyPipeline:
                     "total_duplicates_detected": dups_count,
                     "total_studies_discovered": len(self.disambiguator.studies),
                 },
-                "discovered_studies": [asdict(s) for s in studies_summary],
+                "discovered_studies": [s.model_dump() for s in studies_summary],
                 "document_manifest": manifest_records,
             }
 

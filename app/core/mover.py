@@ -13,6 +13,8 @@ import unicodedata
 import uuid
 from typing import Any
 
+from pydantic import BaseModel
+
 from app.core.link_manager import LinkManager
 from app.core.path_utils import is_junction_path
 from app.core.verifier import VerificationEngine
@@ -180,6 +182,17 @@ def _is_cross_volume(src: str, dst: str) -> bool:
     return False
 
 
+def _get_val(obj, attr, default=None):
+    """Safely retrieve attribute or key value from dictionary or domain model object."""
+    if hasattr(obj, attr):
+        val = getattr(obj, attr)
+        if val is not None:
+            return val
+    if isinstance(obj, dict):
+        return obj.get(attr, default)
+    return default
+
+
 def _resolve_source_path(
     base_dir: str,
     key: str,
@@ -188,9 +201,7 @@ def _resolve_source_path(
     depth: int = 0,
 ) -> str:
     """Resolve normalized absolute source path for a plan node."""
-    rel_src = key
-    if isinstance(content, dict) and "relative_source" in content:
-        rel_src = content["relative_source"]
+    rel_src = _get_val(content, "relative_source") or key
 
     if depth > 0 and active_parent_path:
         primary = os.path.normpath(os.path.join(base_dir, active_parent_path, rel_src))
@@ -212,10 +223,12 @@ def _get_node_mtime(
     depth: int = 0,
 ) -> float:
     """Recursively calculate the minimum modification timestamp (st_mtime) for a plan node."""
-    if content is None or (
-        isinstance(content, dict) and content.get("__type__") in ("file", "directory")
-    ):
-        if isinstance(content, dict) and content.get("__type__") == "directory":
+    node_type = _get_val(content, "node_type") or _get_val(content, "__type__")
+    rel_src = _get_val(content, "relative_source")
+    target_fn = _get_val(content, "target_filename")
+
+    if content is None or node_type in ("file", "directory") or rel_src is not None or target_fn is not None:
+        if node_type == "directory":
             return float("inf")
 
         source_path = _resolve_source_path(
@@ -228,10 +241,11 @@ def _get_node_mtime(
         except OSError:
             pass
         return float("inf")
-    elif isinstance(content, dict):
+    elif isinstance(content, dict) or hasattr(content, "items"):
+        items = content.items() if hasattr(content, "items") else getattr(content, "plan", {}).items()
         min_mtime = float("inf")
         sub_parent = os.path.join(active_parent_path, key)
-        for sub_key, sub_content in content.items():
+        for sub_key, sub_content in items:
             m = _get_node_mtime(base_dir, sub_key, sub_content, sub_parent, depth + 1)
             if m < min_mtime:
                 min_mtime = m
@@ -247,15 +261,12 @@ def _get_node_priority_key(
     depth: int = 0,
 ) -> tuple[int, float, float]:
     """Recursively calculate priority key tuple (archival_priority, -archival_priority_score, st_mtime) for a plan node."""
-    if content is None or (
-        isinstance(content, dict)
-        and (
-            content.get("__type__") in ("file", "directory")
-            or "relative_source" in content
-            or "target_filename" in content
-        )
-    ):
-        if isinstance(content, dict) and content.get("__type__") == "directory":
+    node_type = _get_val(content, "node_type") or _get_val(content, "__type__")
+    rel_src = _get_val(content, "relative_source")
+    target_fn = _get_val(content, "target_filename")
+
+    if content is None or node_type in ("file", "directory") or rel_src is not None or target_fn is not None:
+        if node_type == "directory":
             return (999, 0.0, float("inf"))
 
         source_path = _resolve_source_path(
@@ -271,26 +282,26 @@ def _get_node_priority_key(
 
         arch_prio = 5
         arch_score = 0.0
-        if isinstance(content, dict):
-            prio = content.get("archival_priority")
-            if prio is not None:
-                try:
-                    arch_prio = int(prio)
-                except (ValueError, TypeError):
-                    arch_prio = 5
-            score = content.get("archival_priority_score")
-            if score is not None:
-                try:
-                    arch_score = float(score)
-                except (ValueError, TypeError):
-                    arch_score = 0.0
+        prio = _get_val(content, "archival_priority")
+        if prio is not None:
+            try:
+                arch_prio = int(prio)
+            except (ValueError, TypeError):
+                arch_prio = 5
+        score = _get_val(content, "archival_priority_score")
+        if score is not None:
+            try:
+                arch_score = float(score)
+            except (ValueError, TypeError):
+                arch_score = 0.0
 
         return (arch_prio, -arch_score, mtime)
 
-    elif isinstance(content, dict):
+    elif isinstance(content, dict) or hasattr(content, "items"):
+        items = content.items() if hasattr(content, "items") else getattr(content, "plan", {}).items()
         child_keys = []
         sub_parent = os.path.join(active_parent_path, key)
-        for sub_key, sub_content in content.items():
+        for sub_key, sub_content in items:
             k = _get_node_priority_key(
                 base_dir, sub_key, sub_content, sub_parent, depth + 1
             )
@@ -328,30 +339,39 @@ def _execute_moves_recursive(
     if step_counter is None:
         step_counter = [1]
 
-    if not isinstance(plan, dict) or plan.get("__type__") in ("file", "directory"):
+    curr_plan = plan.plan if hasattr(plan, "plan") and isinstance(plan.plan, dict) else plan
+    if not isinstance(curr_plan, dict):
         return
 
+    def _get_val(obj, attr, default=None):
+        if hasattr(obj, attr):
+            val = getattr(obj, attr)
+            if val is not None:
+                return val
+        if isinstance(obj, dict):
+            return obj.get(attr, default)
+        return default
+
     sorted_plan_items = sorted(
-        plan.items(),
+        curr_plan.items(),
         key=lambda item: _get_node_priority_key(
             base_dir, item[0], item[1], active_parent_path, depth
         ),
     )
 
     for key, content in sorted_plan_items:
-        if content is None or (
-            isinstance(content, dict)
-            and content.get("__type__") in ("file", "directory")
-        ):
-            if isinstance(content, dict) and content.get("__type__") == "directory":
+        node_type = _get_val(content, "node_type") or _get_val(content, "__type__")
+        is_leaf = content is None or node_type in ("file", "directory") or isinstance(content, BaseModel)
+        if is_leaf:
+            if node_type == "directory":
                 continue
 
-            if isinstance(content, dict) and content.get("status") == "Already Sorted":
+            if _get_val(content, "status") == "Already Sorted":
                 # Even if already sorted, the target might have moved, so we still process links
                 pass
 
-            if depth > 0 and (not isinstance(content, dict) or "relative_source" not in content):
-                if content is not None and not isinstance(content, dict):
+            if depth > 0 and _get_val(content, "relative_source") is None:
+                if content is not None and not (isinstance(content, dict) or isinstance(content, BaseModel)):
                     raise ValueError(
                         f"Missing required relative source metadata field for nested item '{key}'"
                     )
@@ -363,8 +383,9 @@ def _execute_moves_recursive(
             if not os.path.lexists(source_path):
                 continue
 
-            if isinstance(content, dict) and "target_filename" in content:
-                filename = content["target_filename"]
+            tgt_fn = _get_val(content, "target_filename")
+            if tgt_fn is not None:
+                filename = tgt_fn
             else:
                 filename = os.path.basename(key)
 
@@ -821,27 +842,42 @@ def _collect_move_items(
     base_dir = os.path.normpath(base_dir)
     items = []
 
-    if not isinstance(plan, dict) or plan.get("__type__") in ("file", "directory"):
+    curr_plan = plan.plan if hasattr(plan, "plan") and isinstance(plan.plan, dict) else plan
+    if not isinstance(curr_plan, dict):
         return items
 
+    def _get_val(obj, attr, default=None):
+        if hasattr(obj, attr):
+            val = getattr(obj, attr)
+            if val is not None:
+                return val
+        if isinstance(obj, dict):
+            return obj.get(attr, default)
+        return default
+
     sorted_plan_items = sorted(
+<<<<<<< HEAD
         plan.items(),
         key=lambda item: _get_node_priority_key(
+=======
+        curr_plan.items(),
+        key=lambda item: _get_node_mtime(
+>>>>>>> 46d1ffa (feat(models): migrate domain models to Pydantic v2 schemas and preserve dictionary interface compatibility)
             base_dir, item[0], item[1], active_parent_path, depth
         ),
     )
 
     for key, content in sorted_plan_items:
-        if content is None or (
-            isinstance(content, dict)
-            and content.get("__type__") in ("file", "directory")
-        ):
-            if isinstance(content, dict) and content.get("__type__") == "directory":
+        node_type = _get_val(content, "node_type") or _get_val(content, "__type__")
+        is_leaf = content is None or node_type in ("file", "directory") or isinstance(content, BaseModel)
+        if is_leaf:
+            if node_type == "directory":
                 continue
 
-            if isinstance(content, dict) and content.get("status") == "Already Sorted":
+            if _get_val(content, "status") == "Already Sorted":
                 pass
 
+<<<<<<< HEAD
             if depth > 0 and (not isinstance(content, dict) or "relative_source" not in content):
                 if content is not None and not isinstance(content, dict):
                     raise ValueError(
@@ -851,9 +887,32 @@ def _collect_move_items(
             source_path = _resolve_source_path(
                 base_dir, key, content, active_parent_path, depth
             )
+=======
+            if depth > 0:
+                rel_src = _get_val(content, "relative_source")
+                if rel_src is None:
+                    raise ValueError(
+                        f"Missing required relative source metadata field for nested item '{key}'"
+                    )
+                relative_source = rel_src
+                rel_src_with_parent = os.path.join(active_parent_path, relative_source)
+                source_path = os.path.normpath(
+                    os.path.join(base_dir, rel_src_with_parent)
+                )
+            else:
+                rel_src = _get_val(content, "relative_source")
+                if rel_src is not None:
+                    relative_source = rel_src
+                    source_path = os.path.normpath(
+                        os.path.join(base_dir, relative_source)
+                    )
+                else:
+                    source_path = os.path.normpath(os.path.join(base_dir, key))
+>>>>>>> 46d1ffa (feat(models): migrate domain models to Pydantic v2 schemas and preserve dictionary interface compatibility)
 
-            if isinstance(content, dict) and "target_filename" in content:
-                filename = content["target_filename"]
+            tgt_fn = _get_val(content, "target_filename")
+            if tgt_fn is not None:
+                filename = tgt_fn
             else:
                 filename = os.path.basename(key)
 

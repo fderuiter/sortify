@@ -223,12 +223,12 @@ class QuarantineInterceptorService:
             )
 
             action = (
-                matched_rule.get("action", "").lower()
+                (getattr(matched_rule, "action", "") or (matched_rule.get("action", "") if isinstance(matched_rule, dict) else "")).lower()
                 if matched_rule
                 else (record.get("policy_action") or "").lower()
             )
 
-            target_subfolder = matched_rule.get("target_path") if matched_rule else None
+            target_subfolder = getattr(matched_rule, "target_path", None) or (matched_rule.get("target_path") if isinstance(matched_rule, dict) else None) if matched_rule else None
 
             # Re-check timeout guardrail before action execution
             if effective_timeout <= 0 or (time.perf_counter() - start_time) >= effective_timeout:

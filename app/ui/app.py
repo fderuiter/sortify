@@ -5,6 +5,9 @@ import logging
 import os
 from unittest.mock import MagicMock
 
+from pydantic import BaseModel
+
+from app.core.analyzer import SortingPlanNode
 from app.core.progress import ProgressUpdate
 from app.core.session import AppSession
 from app.ui.dialog_helper import ask_directory_async, get_dialog_card_classes
@@ -1004,11 +1007,15 @@ class AutoSorterApp:
                 dialog.open()
                 return
 
-            score = comp_data.get("compliance_score_percent", 0.0)
-            status = comp_data.get("audit_readiness_status", "UNKNOWN")
+            score = getattr(comp_data, "compliance_score_percent", 0.0) if not isinstance(comp_data, dict) else comp_data.get("compliance_score_percent", 0.0)
+            status = getattr(comp_data, "audit_readiness_status", "UNKNOWN") if not isinstance(comp_data, dict) else comp_data.get("audit_readiness_status", "UNKNOWN")
             badge_color = (
                 "positive" if score >= 90 else "warning" if score >= 60 else "negative"
             )
+
+            total_found = getattr(comp_data, "total_essential_found", 0) if not isinstance(comp_data, dict) else comp_data.get("total_essential_found", 0)
+            total_required = getattr(comp_data, "total_essential_required", 0) if not isinstance(comp_data, dict) else comp_data.get("total_essential_required", 0)
+            total_missing = getattr(comp_data, "total_essential_missing", 0) if not isinstance(comp_data, dict) else comp_data.get("total_essential_missing", 0)
 
             with ui.row().classes(
                 "w-full items-center gap-4 my-2 p-3 bg-gray-50 rounded border"
@@ -1017,40 +1024,45 @@ class AutoSorterApp:
                     "text-sm p-2"
                 )
                 ui.label(
-                    f"Essential Found: {comp_data.get('total_essential_found', 0)} / {comp_data.get('total_essential_required', 0)}"
+                    f"Essential Found: {total_found} / {total_required}"
                 ).classes("font-semibold")
                 ui.label(
-                    f"Missing Gaps: {comp_data.get('total_essential_missing', 0)}"
+                    f"Missing Gaps: {total_missing}"
                 ).classes("text-red-500 font-semibold")
 
-            missing_docs = comp_data.get("missing_essential_documents", [])
+            missing_docs = getattr(comp_data, "missing_essential_documents", []) if not isinstance(comp_data, dict) else comp_data.get("missing_essential_documents", [])
             if missing_docs:
                 ui.label(
                     "Missing Regulatory Essential Documents (Action Required):"
                 ).classes("text-sm font-bold text-red-600 mt-2")
                 with ui.column().classes("w-full gap-1 pl-2"):
                     for m in missing_docs:
+                        m_title = getattr(m, "title", None) or (m.get("title") if isinstance(m, dict) else "")
+                        m_gcp_ref = getattr(m, "gcp_ref", None) or (m.get("gcp_ref") if isinstance(m, dict) else "")
+                        m_importance = getattr(m, "importance", None) or (m.get("importance") if isinstance(m, dict) else "")
                         with ui.row().classes(
                             "items-center gap-2 text-xs text-red-700"
                         ):
                             ui.icon("warning", size="xs", color="red")
                             ui.label(
-                                f"{m['title']} ({m['gcp_ref']}) - {m['importance']}"
+                                f"{m_title} ({m_gcp_ref}) - {m_importance}"
                             )
 
-            found_docs = comp_data.get("found_essential_documents", [])
+            found_docs = getattr(comp_data, "found_essential_documents", []) if not isinstance(comp_data, dict) else comp_data.get("found_essential_documents", [])
             if found_docs:
                 ui.label("Verified & Present Documents:").classes(
                     "text-sm font-bold text-green-700 mt-3"
                 )
                 with ui.column().classes("w-full gap-1 pl-2"):
                     for f in found_docs:
+                        f_title = getattr(f, "title", None) or (f.get("title") if isinstance(f, dict) else "")
+                        f_count = getattr(f, "count", 0) if not isinstance(f, dict) else f.get("count", 0)
                         with ui.row().classes(
                             "items-center gap-2 text-xs text-green-800"
                         ):
                             ui.icon("check_circle", size="xs", color="green")
                             ui.label(
-                                f"{f['title']} ({f['count']} file{'s' if f['count'] > 1 else ''})"
+                                f"{f_title} ({f_count} file{'s' if f_count > 1 else ''})"
                             )
 
             with ui.row().classes("w-full justify-end mt-4 gap-2"):
@@ -1309,8 +1321,12 @@ class AutoSorterApp:
             self.plan, file_key
         )
         if file_info is not None:
-            file_info["confirmed"] = True
-            file_info["is_confirmed"] = True
+            if isinstance(file_info, BaseModel):
+                file_info.confirmed = True
+                file_info.is_confirmed = True
+            elif isinstance(file_info, dict):
+                file_info["confirmed"] = True
+                file_info["is_confirmed"] = True
             target_folder = ""
             if "/" in file_id:
                 target_folder = file_id.rsplit("/", 1)[0]
@@ -1335,28 +1351,26 @@ class AutoSorterApp:
 
         def _find(node):
             nonlocal file_info
-            if not isinstance(node, dict) or node.get("__type__") in (
-                "file",
-                "directory",
-            ):
+            curr_dict = node.plan if hasattr(node, "plan") and isinstance(node.plan, dict) else node
+            if not isinstance(curr_dict, dict):
                 return
-            for k, v in node.items():
+            for k, v in curr_dict.items():
                 if k == file_key or k == file_id:
-                    if isinstance(v, dict) and v.get("__type__") == "file":
+                    if isinstance(v, SortingPlanNode) or (isinstance(v, dict) and v.get("__type__") == "file") or (hasattr(v, "node_type") and getattr(v, "node_type") == "file"):
                         file_info = v
                         return
                     elif v is None:
-                        file_info = {"__type__": "file"}
-                        node[k] = file_info
+                        file_info = SortingPlanNode()
+                        curr_dict[k] = file_info
                         return
-                if isinstance(v, dict) and v.get("__type__") != "file":
+                if isinstance(v, (dict, BaseModel)) and not isinstance(v, SortingPlanNode):
                     _find(v)
 
         _find(self.plan)
         if file_info is None:
-            file_info = {"__type__": "file"}
+            file_info = SortingPlanNode()
 
-        current_target = file_info.get("target_filename") or file_key
+        current_target = getattr(file_info, "target_filename", None) or (file_info.get("target_filename") if isinstance(file_info, dict) else None) or file_key
         orig_stem, orig_ext = os.path.splitext(file_key)
         curr_stem, _ = os.path.splitext(current_target)
 
@@ -1498,9 +1512,14 @@ class AutoSorterApp:
                 file_info = find_and_remove_file(self.plan, file_key)
 
             if file_info is not None:
-                file_info["is_locked"] = True
-                file_info["status"] = "Locked"
-                file_info["routed_by"] = "manual"
+                if isinstance(file_info, BaseModel):
+                    file_info.is_locked = True
+                    file_info.status = "Locked"
+                    file_info.routed_by = "manual"
+                elif isinstance(file_info, dict):
+                    file_info["is_locked"] = True
+                    file_info["status"] = "Locked"
+                    file_info["routed_by"] = "manual"
 
                 insert_file_into_plan(self.plan, target_folder, file_key, file_info)
                 self.locked_files[file_key] = target_folder
@@ -1584,15 +1603,46 @@ class AutoSorterApp:
     def _flatten(self, node, current_path, nodes_list):
         folder_count = 0
         file_count = 0
-        for k, v in sorted(
-            node.items(),
+
+        if hasattr(node, "plan") and isinstance(node.plan, dict):
+            node_items = node.plan.items()
+        elif isinstance(node, dict):
+            node_items = node.items()
+        else:
+            node_items = []
+
+        def _get_val(obj, attr_name, default=None):
+            if hasattr(obj, attr_name):
+                val = getattr(obj, attr_name)
+                if val is not None:
+                    return val
+            if isinstance(obj, dict):
+                return obj.get(attr_name, default)
+            return default
+
+        def _is_file_node(obj):
+            if obj is None:
+                return True
+            if not isinstance(obj, (dict, BaseModel)):
+                return True
+            t = _get_val(obj, "node_type") or _get_val(obj, "__type__")
+            if t == "file":
+                return True
+            if t == "directory":
+                return False
+            return isinstance(obj, SortingPlanNode) or not isinstance(obj, dict)
+
+        sorted_items = sorted(
+            node_items,
             key=lambda x: (
-                1 if (isinstance(x[1], dict) and x[1].get("__type__") == "file") else 0,
+                1 if _is_file_node(x[1]) else 0,
                 x[0].lower(),
             ),
-        ):
+        )
+
+        for k, v in sorted_items:
             node_id = f"{current_path}/{k}" if current_path else k
-            if isinstance(v, dict) and v.get("__type__") != "file":
+            if not _is_file_node(v):
                 folder_count += 1
                 children = []
                 nodes_list.append(
@@ -1613,10 +1663,11 @@ class AutoSorterApp:
                 text = k
                 icon = "insert_drive_file"
                 locked_files = getattr(self, "locked_files", {})
+                v_is_locked = bool(_get_val(v, "is_locked"))
                 is_locked = (
                     k in locked_files
                     or node_id in locked_files
-                    or (isinstance(v, dict) and v.get("is_locked"))
+                    or v_is_locked
                 )
                 if is_locked:
                     icon = "lock"
@@ -1626,9 +1677,9 @@ class AutoSorterApp:
                 if is_locked:
                     badge = "Locked"
                     badge_color = "amber-8"
-                elif isinstance(v, dict):
-                    routed_by = v.get("routed_by")
-                    match_val = v.get("match")
+                elif isinstance(v, (dict, BaseModel)):
+                    routed_by = _get_val(v, "routed_by")
+                    match_val = _get_val(v, "match")
                     if routed_by == "keyword":
                         badge = f"Rule: {match_val}" if match_val else "Keyword Rule"
                         badge_color = "blue-8"
@@ -1642,32 +1693,23 @@ class AutoSorterApp:
                         badge = "AI Semantic"
                         badge_color = "emerald-8"
                     elif routed_by == "jev_classifier":
-                        category = v.get("category") or v.get("jev_category")
+                        category = _get_val(v, "category") or _get_val(v, "jev_category")
                         badge = f"Jev: {category}" if category else "Jev Fast-Path"
                         badge_color = "teal-8"
 
-                rel_src = (
-                    v.get("relative_source")
-                    if isinstance(v, dict) and "relative_source" in v
-                    else k
-                )
+                rel_src = _get_val(v, "relative_source") or k
                 src_fn = os.path.basename(rel_src)
-                tgt_fn = (
-                    v.get("target_filename")
-                    if isinstance(v, dict) and "target_filename" in v
-                    else k
-                )
+                tgt_fn = _get_val(v, "target_filename") or k
                 has_rename_proposal = bool(tgt_fn != src_fn)
-                is_confirmed = bool(
-                    isinstance(v, dict)
-                    and (
-                        v.get("confirmed")
-                        or v.get("is_confirmed")
-                        or v.get("user_confirmed")
-                        or v.get("is_locked")
-                        or v.get("status") in ("Confirmed", "Locked")
-                    )
+                status_val = _get_val(v, "status", "") or ""
+                v_confirmed = bool(
+                    _get_val(v, "confirmed")
+                    or _get_val(v, "is_confirmed")
+                    or _get_val(v, "user_confirmed")
+                    or _get_val(v, "is_locked")
+                    or status_val in ("Confirmed", "Locked")
                 )
+                is_confirmed = v_confirmed
 
                 if has_rename_proposal:
                     if tgt_fn != k:
@@ -1679,12 +1721,11 @@ class AutoSorterApp:
                         badge = "Unconfirmed Rename"
                         badge_color = "amber-9"
 
-                if isinstance(v, dict):
-                    status = v.get("status", "")
-                    if status and not is_locked:
-                        text += f" [{status}]"
+                if isinstance(v, (dict, BaseModel)):
+                    if status_val and not is_locked:
+                        text += f" [{status_val}]"
                     if not is_locked and (
-                        "error" in status.lower() or "locked" in status.lower()
+                        "error" in status_val.lower() or "locked" in status_val.lower()
                     ):
                         icon = "error"
 
@@ -1752,38 +1793,49 @@ class AutoSorterApp:
         slow_plan = {}
 
         def _split_node(src_node, fast_node, slow_node):
-            if not isinstance(src_node, dict) or src_node.get("__type__") in (
-                "file",
-                "directory",
-            ):
+            if hasattr(src_node, "plan") and isinstance(src_node.plan, dict):
+                src_dict = src_node.plan
+            elif isinstance(src_node, dict):
+                src_dict = src_node
+            else:
                 return
-            for k, v in src_node.items():
-                if isinstance(v, dict):
-                    if v.get("__type__") == "file":
-                        routed_by = v.get("routed_by")
-                        if routed_by in (
-                            "keyword",
-                            "override",
-                            "learned",
-                            "policy",
-                            "pattern",
-                            "historical",
-                            "jev_classifier",
-                        ):
-                            fast_node[k] = v
-                        else:
-                            slow_node[k] = v
-                    elif v.get("__type__") == "directory":
+
+            def _get_val(obj, attr_name, default=None):
+                if hasattr(obj, attr_name):
+                    val = getattr(obj, attr_name)
+                    if val is not None:
+                        return val
+                if isinstance(obj, dict):
+                    return obj.get(attr_name, default)
+                return default
+
+            for k, v in src_dict.items():
+                node_type = _get_val(v, "node_type") or _get_val(v, "__type__")
+                if node_type == "file" or isinstance(v, SortingPlanNode):
+                    routed_by = _get_val(v, "routed_by")
+                    if routed_by in (
+                        "keyword",
+                        "override",
+                        "learned",
+                        "policy",
+                        "pattern",
+                        "historical",
+                        "jev_classifier",
+                    ):
                         fast_node[k] = v
-                        slow_node[k] = v
                     else:
-                        sub_fast = {}
-                        sub_slow = {}
-                        _split_node(v, sub_fast, sub_slow)
-                        if sub_fast:
-                            fast_node[k] = sub_fast
-                        if sub_slow:
-                            slow_node[k] = sub_slow
+                        slow_node[k] = v
+                elif node_type == "directory":
+                    fast_node[k] = v
+                    slow_node[k] = v
+                elif isinstance(v, (dict, BaseModel)):
+                    sub_fast = {}
+                    sub_slow = {}
+                    _split_node(v, sub_fast, sub_slow)
+                    if sub_fast:
+                        fast_node[k] = sub_fast
+                    if sub_slow:
+                        slow_node[k] = sub_slow
                 else:
                     slow_node[k] = v
 
@@ -2352,17 +2404,27 @@ class AutoSorterApp:
 def find_and_remove_file(node, file_key):
     """Recursively find and remove a file with key file_key in the plan node dictionary.
 
-    Returns its value (the file info dict) or None if not found.
+    Returns its value (the file info dict or model) or None if not found.
     """
+    if hasattr(node, "plan") and isinstance(node.plan, dict):
+        node = node.plan
     if not isinstance(node, dict):
         return None
+
+    def _is_file(v):
+        if isinstance(v, SortingPlanNode):
+            return True
+        if hasattr(v, "node_type") and getattr(v, "node_type") == "file":
+            return True
+        if isinstance(v, dict):
+            return v.get("__type__") == "file"
+        return False
 
     # If file_key is a relative path with slashes, we can traverse/pop it specifically
     if "/" in file_key or "\\" in file_key:
         parts = file_key.replace("\\", "/").split("/")
         current = node
-        # We need to keep track of the path taken so we can clean up empty folders
-        path_nodes = [(current, None)]  # list of tuples (node, key_used_to_get_here)
+        path_nodes = [(current, None)]
         for part in parts[:-1]:
             if part in current and isinstance(current[part], dict):
                 next_node = current[part]
@@ -2373,32 +2435,25 @@ def find_and_remove_file(node, file_key):
                 break
         if current is not None:
             leaf_key = parts[-1]
-            if (
-                leaf_key in current
-                and isinstance(current[leaf_key], dict)
-                and current[leaf_key].get("__type__") == "file"
-            ):
+            if leaf_key in current and _is_file(current[leaf_key]):
                 val = current.pop(leaf_key)
                 # Clean up empty parent directories up the chain
                 for i in range(len(path_nodes) - 1, 0, -1):
                     p_node, p_key = path_nodes[i]
-                    if not p_node:
+                    if isinstance(p_node, dict) and not p_node:
                         parent_node, _ = path_nodes[i - 1]
-                        parent_node.pop(p_key, None)
+                        if isinstance(parent_node, dict):
+                            parent_node.pop(p_key, None)
                 return val
 
     # Fallback to the original logic
-    if (
-        file_key in node
-        and isinstance(node[file_key], dict)
-        and node[file_key].get("__type__") == "file"
-    ):
+    if file_key in node and _is_file(node[file_key]):
         return node.pop(file_key)
     for k, v in list(node.items()):
-        if isinstance(v, dict) and v.get("__type__") != "file":
+        if isinstance(v, (dict, BaseModel)) and not _is_file(v):
             res = find_and_remove_file(v, file_key)
             if res is not None:
-                if not v:
+                if isinstance(v, dict) and not v:
                     node.pop(k)
                 return res
     return None
@@ -2406,8 +2461,8 @@ def find_and_remove_file(node, file_key):
 
 def insert_file_into_plan(plan, target_folder, file_key, file_info):
     """Insert a file into the plan under a target folder path."""
-    parts = target_folder.replace("\\", "/").split("/")
-    current = plan
+    current = plan.plan if hasattr(plan, "plan") and isinstance(plan.plan, dict) else plan
+    parts = [p for p in target_folder.replace("\\", "/").split("/") if p]
     for part in parts:
         if part not in current or not isinstance(current[part], dict):
             current[part] = {}

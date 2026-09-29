@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "278f4cf6a23c22962537fda688d2cc96593bde936f1ba862d723ec07e3236e6c"
+    "checksum": "80e4122bb2ba9278e65232e37961f1c2c553903ad9e0e26b13e511a000cd3576"
   },
   "cli": {
     "app/main.py": [
@@ -728,9 +728,34 @@
                   "annotation": "Any",
                   "default": null,
                   "name": "obj"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "*args"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "**kwargs"
                 }
               ],
               "returns": "'SortingPlan'"
+            },
+            {
+              "async": false,
+              "decorators": [
+                "@property"
+              ],
+              "name": "plan",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": "Dict[str, Any]"
             }
           ]
         },
@@ -764,7 +789,7 @@
             {
               "async": false,
               "decorators": [],
-              "name": "model_dump",
+              "name": "get",
               "parameters": [
                 {
                   "annotation": null,
@@ -772,24 +797,25 @@
                   "name": "self"
                 },
                 {
-                  "annotation": null,
+                  "annotation": "str",
                   "default": null,
-                  "name": "*args"
+                  "name": "item"
                 },
                 {
-                  "annotation": null,
-                  "default": null,
-                  "name": "**kwargs"
+                  "annotation": "Any",
+                  "default": "None",
+                  "name": "default"
                 }
               ],
-              "returns": "Dict[str, Any]"
+              "returns": "Any"
             },
             {
               "async": false,
               "decorators": [
+                "@field_validator('confidence', mode='before')",
                 "@classmethod"
               ],
-              "name": "model_validate",
+              "name": "validate_confidence",
               "parameters": [
                 {
                   "annotation": null,
@@ -799,10 +825,31 @@
                 {
                   "annotation": "Any",
                   "default": null,
-                  "name": "obj"
+                  "name": "v"
                 }
               ],
-              "returns": "'SortingPlanNode'"
+              "returns": "Optional[float]"
+            },
+            {
+              "async": false,
+              "decorators": [
+                "@field_validator('node_type', mode='before')",
+                "@classmethod"
+              ],
+              "name": "validate_node_type",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "cls"
+                },
+                {
+                  "annotation": "Any",
+                  "default": null,
+                  "name": "v"
+                }
+              ],
+              "returns": "str"
             }
           ]
         }
@@ -1937,7 +1984,7 @@
                   "name": "self"
                 },
                 {
-                  "annotation": "Dict[str, Any]",
+                  "annotation": "Union[ClinicalComplianceResult, Dict[str, Any]]",
                   "default": null,
                   "name": "compliance_data"
                 },
@@ -1954,158 +2001,17 @@
         {
           "class_name": "ClinicalComplianceResult",
           "decorators": [],
-          "methods": [
-            {
-              "async": false,
-              "decorators": [],
-              "name": "dict",
-              "parameters": [
-                {
-                  "annotation": null,
-                  "default": null,
-                  "name": "self"
-                },
-                {
-                  "annotation": null,
-                  "default": null,
-                  "name": "*args"
-                },
-                {
-                  "annotation": null,
-                  "default": null,
-                  "name": "**kwargs"
-                }
-              ],
-              "returns": "Dict[str, Any]"
-            },
-            {
-              "async": false,
-              "decorators": [],
-              "name": "get",
-              "parameters": [
-                {
-                  "annotation": null,
-                  "default": null,
-                  "name": "self"
-                },
-                {
-                  "annotation": "str",
-                  "default": null,
-                  "name": "item"
-                },
-                {
-                  "annotation": "Any",
-                  "default": "None",
-                  "name": "default"
-                }
-              ],
-              "returns": "Any"
-            }
-          ]
+          "methods": []
         },
         {
           "class_name": "FoundEssentialDocument",
           "decorators": [],
-          "methods": [
-            {
-              "async": false,
-              "decorators": [],
-              "name": "dict",
-              "parameters": [
-                {
-                  "annotation": null,
-                  "default": null,
-                  "name": "self"
-                },
-                {
-                  "annotation": null,
-                  "default": null,
-                  "name": "*args"
-                },
-                {
-                  "annotation": null,
-                  "default": null,
-                  "name": "**kwargs"
-                }
-              ],
-              "returns": "Dict[str, Any]"
-            },
-            {
-              "async": false,
-              "decorators": [],
-              "name": "get",
-              "parameters": [
-                {
-                  "annotation": null,
-                  "default": null,
-                  "name": "self"
-                },
-                {
-                  "annotation": "str",
-                  "default": null,
-                  "name": "item"
-                },
-                {
-                  "annotation": "Any",
-                  "default": "None",
-                  "name": "default"
-                }
-              ],
-              "returns": "Any"
-            }
-          ]
+          "methods": []
         },
         {
           "class_name": "MissingEssentialDocument",
           "decorators": [],
-          "methods": [
-            {
-              "async": false,
-              "decorators": [],
-              "name": "dict",
-              "parameters": [
-                {
-                  "annotation": null,
-                  "default": null,
-                  "name": "self"
-                },
-                {
-                  "annotation": null,
-                  "default": null,
-                  "name": "*args"
-                },
-                {
-                  "annotation": null,
-                  "default": null,
-                  "name": "**kwargs"
-                }
-              ],
-              "returns": "Dict[str, Any]"
-            },
-            {
-              "async": false,
-              "decorators": [],
-              "name": "get",
-              "parameters": [
-                {
-                  "annotation": null,
-                  "default": null,
-                  "name": "self"
-                },
-                {
-                  "annotation": "str",
-                  "default": null,
-                  "name": "item"
-                },
-                {
-                  "annotation": "Any",
-                  "default": "None",
-                  "name": "default"
-                }
-              ],
-              "returns": "Any"
-            }
-          ]
+          "methods": []
         }
       ],
       "functions": []
@@ -2395,16 +2301,12 @@
         },
         {
           "class_name": "MasterPipelineResult",
-          "decorators": [
-            "@dataclass"
-          ],
+          "decorators": [],
           "methods": []
         },
         {
           "class_name": "StudyIngestSummary",
-          "decorators": [
-            "@dataclass"
-          ],
+          "decorators": [],
           "methods": []
         }
       ],
@@ -7214,7 +7116,7 @@
           "name": "sanitize_plan",
           "parameters": [
             {
-              "annotation": "dict",
+              "annotation": "Any",
               "default": null,
               "name": "plan"
             }
@@ -7398,54 +7300,7 @@
         {
           "class_name": "PolicyEvaluationResult",
           "decorators": [],
-          "methods": [
-            {
-              "async": false,
-              "decorators": [],
-              "name": "dict",
-              "parameters": [
-                {
-                  "annotation": null,
-                  "default": null,
-                  "name": "self"
-                },
-                {
-                  "annotation": null,
-                  "default": null,
-                  "name": "*args"
-                },
-                {
-                  "annotation": null,
-                  "default": null,
-                  "name": "**kwargs"
-                }
-              ],
-              "returns": "Dict[str, Any]"
-            },
-            {
-              "async": false,
-              "decorators": [],
-              "name": "get",
-              "parameters": [
-                {
-                  "annotation": null,
-                  "default": null,
-                  "name": "self"
-                },
-                {
-                  "annotation": "str",
-                  "default": null,
-                  "name": "item"
-                },
-                {
-                  "annotation": "Any",
-                  "default": "None",
-                  "name": "default"
-                }
-              ],
-              "returns": "Any"
-            }
-          ]
+          "methods": []
         }
       ],
       "functions": []
@@ -9229,7 +9084,7 @@
                   "name": "base_dir"
                 },
                 {
-                  "annotation": "dict",
+                  "annotation": "Any",
                   "default": null,
                   "name": "plan"
                 },
@@ -9279,7 +9134,7 @@
                   "name": "base_dir"
                 },
                 {
-                  "annotation": "dict",
+                  "annotation": "Any",
                   "default": null,
                   "name": "plan"
                 }
