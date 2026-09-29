@@ -28,10 +28,27 @@ if sys.platform == "win32" and is_packaged():
             """No-op flush to satisfy the stream interface."""
             pass
 
+    class NullReader:
+        """A helper class that discards input stream calls."""
+
+        def read(self, *args, **kwargs):
+            """Return empty string."""
+            return ""
+
+        def readline(self, *args, **kwargs):
+            """Return empty string."""
+            return ""
+
+        def isatty(self):
+            """Return False for null stream."""
+            return False
+
     if sys.stdout is None:
         sys.stdout = NullWriter()
     if sys.stderr is None:
         sys.stderr = NullWriter()
+    if sys.stdin is None:
+        sys.stdin = NullReader()
 
     base_dir = getattr(sys, "_MEIPASS", None)
     if base_dir:
@@ -871,7 +888,13 @@ def main():
         from app.demo import run_demo
 
         run_demo(settings)
-    elif not sys.stdin.isatty() and getattr(args, "directory", None) and not getattr(args, "tui", False):
+    elif (
+        sys.stdin is not None
+        and hasattr(sys.stdin, "isatty")
+        and not sys.stdin.isatty()
+        and getattr(args, "directory", None)
+        and not getattr(args, "tui", False)
+    ):
         handle_sort_command(args, settings)
     else:
         from app.ui.tui import run_tui
