@@ -1007,13 +1007,16 @@ class IncrementalAnalyzer:
                 unclassified_docs_map = (
                     {d[0]: d[1] for d in docs if len(d) > 1} if docs else {}
                 )
-                processed_jev_files = {f for f, _, _, _ in jev_plan_files}
+                processed_jev_files = {
+                    str(f_item).replace("\\", "/")
+                    for f_item, _, _, _ in jev_plan_files
+                }
                 remaining_ai_files = []
                 remaining_ai_docs = []
 
                 for idx, f in enumerate(ai_filenames):
                     norm_f = f.replace("\\", "/")
-                    base_fn = os.path.basename(f)
+                    base_fn = os.path.basename(norm_f)
                     is_in_caller_jev = False
                     if jev_results:
                         for k_jev in jev_results.keys():
@@ -1027,7 +1030,7 @@ class IncrementalAnalyzer:
                                 is_in_caller_jev = True
                                 break
 
-                    if not is_in_caller_jev and f not in processed_jev_files:
+                    if not is_in_caller_jev and norm_f not in processed_jev_files:
                         try:
                             from app.core.shared_registry import SharedModelRegistry
 
@@ -1077,7 +1080,7 @@ class IncrementalAnalyzer:
                                         jev_plan_files.append(
                                             (f, cat, fallback_res, None)
                                         )
-                                        processed_jev_files.add(f)
+                                        processed_jev_files.add(norm_f)
                                         continue
                         except Exception as e:
                             logging.warning(
@@ -1337,10 +1340,13 @@ class IncrementalAnalyzer:
             compliance_targets = {}
             for f, target_folder, expression, rule_type, status in policy_plan_files:
                 compliance_targets[f] = target_folder
+                compliance_targets[f.replace("\\", "/")] = target_folder
             for f, target_folder, keyword, routed_by, ext_status in keyword_plan_files:
                 compliance_targets[f] = target_folder
+                compliance_targets[f.replace("\\", "/")] = target_folder
             for f, target_folder, jev_res, ext_status in jev_plan_files:
                 compliance_targets[f] = target_folder
+                compliance_targets[f.replace("\\", "/")] = target_folder
 
             for f, target_folder, expression, rule_type, status in policy_plan_files:
                 if cancel_check and cancel_check():

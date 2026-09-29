@@ -310,3 +310,28 @@ def test_file_analyzer_internal_jev_fallback_exception_handling(tmp_path, monkey
         str(tmp_path), fast_path_only=True, jev_results=None
     )
     assert isinstance(plan, SortingPlan)
+
+
+def test_file_analyzer_internal_jev_fallback_windows_paths(tmp_path):
+    """Verify internal Jev fallback handles Windows-style backslash paths properly."""
+    from unittest.mock import Mock
+
+    mock_db = Mock()
+    mock_db.get_model_metadata.return_value = None
+    mock_db.get_all_documents.return_value = [
+        ("sub\\invoice_2026_win.csv", "Invoice ID, Amount, Tax, Total\n1001, $500, $50, $550\n", "hash_win", None)
+    ]
+
+    analyzer = FileAnalyzer(max_folders=5, stop_words=set(), db=mock_db)
+
+    plan = analyzer.generate_sorting_plan(
+        str(tmp_path), fast_path_only=True, jev_results=None
+    )
+
+    assert isinstance(plan, SortingPlan)
+    assert "Financial Reports" in plan
+    assert "sub\\invoice_2026_win.csv" in plan["Financial Reports"]
+    node = plan["Financial Reports"]["sub\\invoice_2026_win.csv"]
+    assert node["routed_by"] == "jev_classifier"
+    assert node["category"] == "Financial Reports"
+
