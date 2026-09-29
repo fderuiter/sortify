@@ -44,6 +44,18 @@ class DummyVar(DummyWidget):
         pass
 
 
+_ORIGINAL_MODULES = {}
+_MOCKED_MODULE_NAMES = [
+    "customtkinter",
+    "tkinter",
+    "tkinter.ttk",
+    "tkinter.filedialog",
+    "tkinter.messagebox",
+]
+
+for _name in _MOCKED_MODULE_NAMES:
+    _ORIGINAL_MODULES[_name] = sys.modules.get(_name)
+
 mock_ctk = MagicMock()
 mock_ctk.CTk = DummyCTk
 mock_ctk.CTkFrame = DummyWidget
@@ -69,13 +81,18 @@ sys.modules["tkinter.ttk"] = mock_ttk
 sys.modules["tkinter.filedialog"] = MagicMock()
 sys.modules["tkinter.messagebox"] = MagicMock()
 
+
+@pytest.fixture(scope="module", autouse=True)
+def restore_ui_modules():
+    yield
+    for name, orig in _ORIGINAL_MODULES.items():
+        if orig is None:
+            sys.modules.pop(name, None)
+        else:
+            sys.modules[name] = orig
+
 # Inject dummy settings
 from app.config import AppSettings  # noqa: E402
-
-dummy_settings = AppSettings()
-dummy_settings.AI_CONSENT_GRANTED = False
-sys.modules["app.config"].settings = dummy_settings
-
 from app.ui.app import AutoSorterApp  # noqa: E402
 
 SNAPSHOT_DIR = os.path.join(os.path.dirname(__file__), "snapshots")
@@ -103,11 +120,22 @@ def assert_snapshot(snapshot_name, actual_state):
 
 
 @pytest.fixture
-def headless_app():
+def headless_app(tmp_path):
+    dummy_settings = AppSettings(filepath=str(tmp_path / "settings.json"))
+    dummy_settings.AI_CONSENT_GRANTED = False
+    old_settings = getattr(sys.modules["app.config"], "settings", None)
+    sys.modules["app.config"].settings = dummy_settings
+
     app = AutoSorterApp(dummy_settings)
     app.plan = {}
     app.plan_errors = {}
     yield app
+
+    if old_settings is None:
+        if hasattr(sys.modules["app.config"], "settings"):
+            delattr(sys.modules["app.config"], "settings")
+    else:
+        sys.modules["app.config"].settings = old_settings
 
 
 def test_empty_plan_rendering(headless_app):

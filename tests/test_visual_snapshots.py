@@ -3,6 +3,7 @@
 import asyncio
 import os
 import re
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -96,9 +97,18 @@ def assert_svg_snapshot(snapshot_name: str, actual_svg: str) -> None:
 def isolated_app_dir(monkeypatch, tmp_path):
     """Ensure AppSettings is isolated from persistent disk configuration changes."""
     import app.config
+    import app.core.session
 
     monkeypatch.setenv("AUTOSORTER_APP_DIR", str(tmp_path))
     monkeypatch.setattr(app.config, "get_app_dir", lambda: tmp_path)
+    monkeypatch.setattr(
+        app.config.AppSettings, "_trigger_save", lambda self: self._save()
+    )
+    monkeypatch.setattr(
+        app.core.session,
+        "scan_abandoned_sessions_async",
+        AsyncMock(return_value=[]),
+    )
     monkeypatch.delenv("AUTOSORTER_PROTECTED_PATHS", raising=False)
     monkeypatch.delenv("AUTOSORTER_IGNORED_EXTENSIONS", raising=False)
 
