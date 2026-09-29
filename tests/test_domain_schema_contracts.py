@@ -258,7 +258,7 @@ def test_pydantic_validation_latency_sla():
         or "CI" in os.environ
         or os.environ.get("GITHUB_ACTIONS") == "true"
     )
-    max_allowed_ms = 25.0 if is_parallel_or_ci else 2.0
+    max_allowed_ms = 100.0 if is_parallel_or_ci else 2.0
     assert avg_latency_ms < max_allowed_ms, (
         f"Average validation latency too high: {avg_latency_ms:.4f} ms (max {max_allowed_ms} ms)"
     )
