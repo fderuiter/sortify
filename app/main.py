@@ -430,7 +430,10 @@ def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
             sys.stdout.flush()
         else:
             if not quiet:
-                print(f"Batch sorting completed successfully for '{target_path}'.", file=sys.stderr)
+                print(
+                    f"Batch sorting completed successfully for '{target_path}'.",
+                    file=sys.stderr,
+                )
                 if args.dry_run:
                     print("Dry-run mode: no files were moved.", file=sys.stderr)
             print(json.dumps(plan, indent=2))
@@ -804,6 +807,22 @@ def main():
 
     settings = AppSettings()
 
+    # Configure Centralized Logger
+    logging.basicConfig(
+        filename=settings.LOG_FILE,
+        level=logging.INFO,
+        format="%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s",
+    )
+
+    # Create and add the log scrubbing filter to the root logger
+    root_logger = logging.getLogger()
+
+    # Also apply to handlers to ensure child loggers are filtered
+    scrubber = LogScrubbingFilter(str(Path.home()))
+    root_logger.addFilter(scrubber)
+    for handler in root_logger.handlers:
+        handler.addFilter(scrubber)
+
     # Direct subcommand execution
     if getattr(args, "subcommand", None) == "sort":
         handle_sort_command(args, settings)
@@ -829,13 +848,6 @@ def main():
             )
             sys.exit(1)
 
-    # Configure Centralized Logger
-    logging.basicConfig(
-        filename=settings.LOG_FILE,
-        level=logging.ERROR,
-        format="%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s",
-    )
-
     # Automated headless startup reconciliation scan for incomplete file relocations
     try:
         from app.core.ledger import TransactionLedger
@@ -843,16 +855,9 @@ def main():
         ledger = TransactionLedger()
         ledger.reconcile_incomplete_transactions()
     except Exception as exc:
-        logging.warning(f"Headless transaction ledger reconciliation on startup failed: {exc}")
-
-    # Create and add the log scrubbing filter to the root logger
-    root_logger = logging.getLogger()
-
-    # Also apply to handlers to ensure child loggers are filtered
-    scrubber = LogScrubbingFilter(str(Path.home()))
-    root_logger.addFilter(scrubber)
-    for handler in root_logger.handlers:
-        handler.addFilter(scrubber)
+        logging.warning(
+            f"Headless transaction ledger reconciliation on startup failed: {exc}"
+        )
 
     if getattr(args, "daemon", False) is True:
         from app.core.daemon import start_daemon
@@ -863,7 +868,9 @@ def main():
 
         run_demo(settings)
     elif getattr(args, "tui", False) is True or (
-        sys.stdin.isatty() and not getattr(args, "gui", False) and not os.environ.get("FORCE_GUI")
+        sys.stdin.isatty()
+        and not getattr(args, "gui", False)
+        and not os.environ.get("FORCE_GUI")
     ):
         from app.ui.tui import run_tui
 

@@ -1,3 +1,4 @@
+import logging
 import threading
 from unittest import mock
 
@@ -274,3 +275,87 @@ async def test_daemon_triage_file_path_timeout_to_dlq(tmp_path):
     finally:
         clear_connection_cache()
 
+
+def test_daemon_lifecycle_logging_no_stderr(tmp_path, caplog, capsys):
+    """Verify that daemon start and stop operations emit via logging and do not write to sys.stderr."""
+    settings = DummySettings()
+    daemon = ContinuousWatchdogDaemon(settings, str(tmp_path))
+
+    with caplog.at_level(logging.INFO, logger="app.daemon"):
+        daemon.start()
+        daemon.stop()
+
+    captured = capsys.readouterr()
+    assert captured.err == "", f"Expected empty stderr, got: {captured.err}"
+
+    logs = caplog.text
+    assert "Starting continuous watchdog daemon for:" in logs
+    assert "Watchdog daemon stopped." in logs
+
+
+def test_daemon_sorting_sync_logging_no_stderr(tmp_path, caplog, capsys):
+    """Verify background sorting execution logs via module logger and produces no sys.stderr output."""
+    src_dir = tmp_path / "src"
+    src_dir.mkdir()
+    (src_dir / "invoice.txt").write_text("Invoice contents")
+
+    settings = DummySettings()
+    daemon = ContinuousWatchdogDaemon(settings, str(src_dir))
+    daemon._is_running = True
+
+    mock_app_session_class = mock.MagicMock()
+    mock_app_session_inst = mock.MagicMock()
+    mock_app_session_class.return_value = mock_app_session_inst
+
+    with (
+        mock.patch("app.core.daemon.AppSession", mock_app_session_class),
+        mock.patch(
+            "app.core.daemon.get_files_recursively", return_value=["invoice.txt"]
+        ),
+        mock.patch("app.core.daemon.MetadataPass.run", return_value=[]),
+        caplog.at_level(logging.INFO, logger="app.daemon"),
+    ):
+        mock_app_session_inst.generate_sorting_plan.side_effect = [
+            {},
+            {"invoice.txt": "dest/invoice.txt"},
+        ]
+        mock_app_session_inst.execute_moves.return_value = {"moved": 1}
+
+        cancel_event = threading.Event()
+        daemon._run_sorting_sync(cancel_event)
+
+    captured = capsys.readouterr()
+    assert captured.err == "", f"Expected empty stderr, got: {captured.err}"
+
+    logs = caplog.text
+    assert "Executing background sorting run..." in logs
+    assert "Phase 2 (Slow-Path AI) completed successfully:" in logs
+
+
+def test_daemon_sorting_sync_error_logging_no_stderr(tmp_path, caplog, capsys):
+    """Verify background sorting exceptions are logged via logger.error and produce no sys.stderr output."""
+    src_dir = tmp_path / "src"
+    src_dir.mkdir()
+
+    settings = DummySettings()
+    daemon = ContinuousWatchdogDaemon(settings, str(src_dir))
+    daemon._is_running = True
+
+    with (
+        mock.patch(
+            "app.core.daemon.AppSession",
+            side_effect=RuntimeError("Simulated sorting error"),
+        ),
+        caplog.at_level(logging.ERROR, logger="app.daemon"),
+    ):
+        cancel_event = threading.Event()
+        daemon._run_sorting_sync(cancel_event)
+
+    captured = capsys.readouterr()
+    assert captured.err == "", f"Expected empty stderr, got: {captured.err}"
+
+    logs = caplog.text
+    assert (
+        "Error during continuous watchdog execution run: Simulated sorting error"
+        in logs
+    )
