@@ -187,7 +187,10 @@ def test_settings_modal_snapshot():
         settings = AppSettings()
         app = AutoSorterTUI(settings=settings)
         async with app.run_test(size=(100, 35)) as pilot:
-            app.push_screen(SettingsModal(app.settings))
+            modal = SettingsModal(app.settings)
+            app.push_screen(modal)
+            await pilot.pause()
+            modal.scroll_home(animate=False)
             await pilot.pause()
             svg = app.export_screenshot()
             assert_svg_snapshot("settings_modal", svg)

@@ -120,7 +120,8 @@ def assert_snapshot(snapshot_name, actual_state):
 
 
 @pytest.fixture
-def headless_app(tmp_path):
+def headless_app(tmp_path, monkeypatch):
+    monkeypatch.setattr(AppSettings, "_trigger_save", lambda self: self._save())
     dummy_settings = AppSettings(filepath=str(tmp_path / "settings.json"))
     dummy_settings.AI_CONSENT_GRANTED = False
     old_settings = getattr(sys.modules["app.config"], "settings", None)

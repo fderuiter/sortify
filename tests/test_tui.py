@@ -20,6 +20,20 @@ from app.ui.tui import (
 )
 
 
+@pytest.fixture(autouse=True)
+def isolated_app_dir(monkeypatch, tmp_path):
+    """Ensure AppSettings is isolated from persistent disk configuration changes."""
+    import app.config
+
+    monkeypatch.setenv("AUTOSORTER_APP_DIR", str(tmp_path))
+    monkeypatch.setattr(app.config, "get_app_dir", lambda: tmp_path)
+    monkeypatch.setattr(
+        app.config.AppSettings, "_trigger_save", lambda self: self._save()
+    )
+    monkeypatch.delenv("AUTOSORTER_PROTECTED_PATHS", raising=False)
+    monkeypatch.delenv("AUTOSORTER_IGNORED_EXTENSIONS", raising=False)
+
+
 @pytest.fixture
 def temp_workspace():
     """Create a temporary workspace directory structure for TUI testing."""
