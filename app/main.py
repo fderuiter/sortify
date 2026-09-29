@@ -905,6 +905,11 @@ def build_parser(prog: str | None = "app/main.py") -> argparse.ArgumentParser:
     )
     add_common_override_args(parser_daemon)
 
+    # Register modular domain subcommands
+    from app.cli import register_cli_subcommands
+
+    register_cli_subcommands(subparsers)
+
     return parser
 
 
@@ -917,11 +922,21 @@ def main():
 
     parser = build_parser()
 
+    known_subcommands = (
+        "sort",
+        "scan",
+        "config",
+        "daemon",
+        "crypto",
+        "ledger",
+        "quarantine",
+        "cro",
+    )
     legacy_directory = None
     if (
         len(sys.argv) > 1
         and not sys.argv[1].startswith("-")
-        and sys.argv[1] not in ("sort", "scan", "config", "daemon")
+        and sys.argv[1] not in known_subcommands
     ):
         legacy_directory = sys.argv.pop(1)
 
@@ -981,6 +996,11 @@ def main():
         handle_config_command(args, settings)
     elif getattr(args, "subcommand", None) == "daemon":
         handle_daemon_command(args, settings)
+    else:
+        from app.cli import handle_cli_command
+
+        if handle_cli_command(args, settings):
+            return
 
     # Explicit Headless Guard for non-interactive streams without subcommands
     argv0 = sys.argv[0] if sys.argv and sys.argv[0] else ""

@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "686bf76720e0bbe77967255b450ac42df959ef1c9145b462f87df0ba51634574"
+    "checksum": "1ee9f0916d3c278da12f23c62861bf3b649fa30c860691737724d125023ef3b6"
   },
   "cli": {
     "app/main.py": [
@@ -3006,6 +3006,24 @@
                   "annotation": null,
                   "default": null,
                   "name": "self"
+                }
+              ],
+              "returns": "str"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "rotate_key",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str | None",
+                  "default": "None",
+                  "name": "new_key_str"
                 }
               ],
               "returns": "str"

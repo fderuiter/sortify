@@ -506,6 +506,75 @@ class SessionCrypto:
                 logger.warning(f"Failed to read key_path in get_raw_key: {e}")
         return key.decode("utf-8") if key else None
 
+    def rotate_key(self, new_key_str: str | None = None) -> str:
+        """Safely rotate the session encryption key and rekey any associated SQLCipher database.
+
+        Parameters
+        ----------
+        new_key_str : str | None
+            Optional new key string. If None, a new Fernet key is generated.
+
+        Returns
+        -------
+        str
+            The new raw encryption key string.
+        """
+        new_key_bytes = (
+            new_key_str.encode("utf-8") if new_key_str else Fernet.generate_key()
+        )
+        new_raw_key = new_key_bytes.decode("utf-8")
+
+        # 1. Rekey SQLCipher database if DB file exists
+        if self.db_path.exists() and self.db_path.stat().st_size > 0:
+            try:
+                from app.core.db_conn import clear_connection_cache, get_db_connection
+
+                clear_connection_cache(only_current_and_inactive=False)
+                conn = get_db_connection(str(self.db_path))
+                with conn:
+                    conn.execute(f"PRAGMA rekey = '{new_raw_key}'")
+                clear_connection_cache(only_current_and_inactive=False)
+            except Exception as e:
+                logger.warning(
+                    f"SQLCipher PRAGMA rekey failed during key rotation: {e}"
+                )
+
+        # 2. Update OS keyring if available
+        try:
+            keyring.set_password(
+                self.keyring_service, self.keyring_account, new_raw_key
+            )
+        except Exception as e:
+            logger.warning(f"Keyring update failed during key rotation: {e}")
+
+        # 3. Update isolated key file
+        self.isolated_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+        try:
+            os.chmod(self.isolated_dir, 0o700)
+        except OSError:
+            pass
+
+        try:
+            fd = os.open(
+                str(self.isolated_key_path),
+                os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+                0o600,
+            )
+            with os.fdopen(fd, "wb") as f:
+                f.write(new_key_bytes)
+        except OSError:
+            with open(self.isolated_key_path, "wb") as f:
+                f.write(new_key_bytes)
+            try:
+                os.chmod(self.isolated_key_path, 0o600)
+            except OSError:
+                pass
+
+        # 4. Update internal cipher state
+        self._key = new_key_bytes
+        self._cipher = Fernet(new_key_bytes)
+        return new_raw_key
+
     def encrypt_text(self, text: str) -> bytes:
         """Encrypt a string and return bytes."""
         if text is None:
