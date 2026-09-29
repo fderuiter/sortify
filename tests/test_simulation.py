@@ -90,10 +90,12 @@ def test_full_workflow_simulation():
     # The output folder names are based on extracted words (e.g. Finance-money, Technology-software)
     # We will search the nested dictionary to find our files.
     def find_file_folder(p, filename, current_path=""):
-        if not isinstance(p, (SortingPlan, SortingPlanNode, dict)) or p.get("__type__") == "file":
+        curr_dict = p.plan if hasattr(p, "plan") and isinstance(p.plan, dict) else p
+        if not isinstance(curr_dict, dict):
             return None
-        for k, v in p.items():
-            if v is None or ((isinstance(v, (SortingPlanNode, dict))) and v.get("__type__") == "file"):
+        for k, v in curr_dict.items():
+            is_file = v is None or isinstance(v, SortingPlanNode) or (hasattr(v, "node_type") and getattr(v, "node_type") == "file") or (isinstance(v, dict) and v.get("__type__") == "file")
+            if is_file:
                 if k == filename:
                     return current_path
             else:
@@ -134,9 +136,10 @@ def test_small_dataset_fallback():
     plan = analyzer.generate_sorting_plan("dummy")
 
     # Expect fallback to Miscellaneous
-    assert "Miscellaneous" in plan
-    assert "file1.txt" in plan["Miscellaneous"]
-    assert "file2.txt" in plan["Miscellaneous"]
+    plan_dict = plan.plan if hasattr(plan, "plan") else plan
+    assert "Miscellaneous" in plan_dict
+    assert "file1.txt" in plan_dict["Miscellaneous"]
+    assert "file2.txt" in plan_dict["Miscellaneous"]
 
 
 def test_empty_files_handling():
@@ -192,10 +195,12 @@ def test_concurrent_large_volume():
         # Verify all 25 files are present
         def get_all_files(p):
             result = []
-            if not isinstance(p, (SortingPlan, SortingPlanNode, dict)) or p.get("__type__") == "file":
+            curr_dict = p.plan if hasattr(p, "plan") and isinstance(p.plan, dict) else p
+            if not isinstance(curr_dict, dict):
                 return result
-            for k, v in p.items():
-                if v is None or ((isinstance(v, (SortingPlanNode, dict))) and v.get("__type__") == "file"):
+            for k, v in curr_dict.items():
+                is_file = v is None or isinstance(v, SortingPlanNode) or (hasattr(v, "node_type") and getattr(v, "node_type") == "file") or (isinstance(v, dict) and v.get("__type__") == "file")
+                if is_file:
                     result.append(k)
                 else:
                     result.extend(get_all_files(v))

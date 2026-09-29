@@ -20,13 +20,13 @@ def test_compliance_evaluation_full_and_partial():
     all_files = list(classified_partial.keys())
 
     res = engine.evaluate_compliance(classified_partial, all_files)
-    assert res["total_files_scanned"] == 4
-    assert res["total_essential_found"] == 2
-    assert res["total_essential_missing"] == len(engine.checklist) - 2
-    assert res["compliance_score_percent"] < 50.0
-    assert res["audit_readiness_status"] == "NON_COMPLIANT"
-    assert len(res["ancillary_documents"]) == 1
-    assert len(res["unclassified_documents"]) == 1
+    assert res.total_files_scanned == 4
+    assert res.total_essential_found == 2
+    assert res.total_essential_missing == len(engine.checklist) - 2
+    assert res.compliance_score_percent < 50.0
+    assert res.audit_readiness_status == "NON_COMPLIANT"
+    assert len(res.ancillary_documents) == 1
+    assert len(res.unclassified_documents) == 1
 
 
 def test_compliance_evaluation_all_found():
@@ -37,10 +37,10 @@ def test_compliance_evaluation_all_found():
         f"file_{item['key']}.pdf": item["artifact_id"] for item in engine.checklist
     }
     res = engine.evaluate_compliance(classified_all, list(classified_all.keys()))
-    assert res["total_essential_found"] == len(engine.checklist)
-    assert res["total_essential_missing"] == 0
-    assert res["compliance_score_percent"] == 100.0
-    assert res["audit_readiness_status"] == "AUDIT_READY"
+    assert res.total_essential_found == len(engine.checklist)
+    assert res.total_essential_missing == 0
+    assert res.compliance_score_percent == 100.0
+    assert res.audit_readiness_status == "AUDIT_READY"
 
 
 def test_export_json_and_html_reports():

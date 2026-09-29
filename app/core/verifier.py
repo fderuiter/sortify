@@ -1,6 +1,9 @@
 """Verification engine for proactive move validation."""
 
 import os
+from typing import Any
+
+from pydantic import BaseModel
 
 from app.core.link_manager import LinkManager
 
@@ -195,17 +198,24 @@ class VerificationEngine:
         return _sp(plan)
 
     @staticmethod
-    def verify_plan_integrity(base_dir: str, plan: dict) -> dict:
+    def verify_plan_integrity(base_dir: str, plan: Any) -> dict:
         """Run complete virtual filesystem simulation and integrity check."""
         try:
             from app.core.path_utils import sanitize_plan as _sp
 
             sanitized_plan, sanitization_warnings = _sp(plan)
-            plan.clear()
-            plan.update(sanitized_plan)
+            if isinstance(plan, dict):
+                plan.clear()
+                plan.update(sanitized_plan)
+                plan_dict = plan
+            elif hasattr(plan, "plan") and isinstance(getattr(plan, "plan"), dict):
+                plan.plan = sanitized_plan
+                plan_dict = plan.plan
+            else:
+                plan_dict = sanitized_plan
 
             tracker = VirtualFilesystemTracker()
-            result = tracker.verify_integrity(base_dir, plan)
+            result = tracker.verify_integrity(base_dir, plan_dict)
 
             all_warnings = sanitization_warnings + result.get("warnings", [])
             result["warnings"] = list(dict.fromkeys(all_warnings))
@@ -224,7 +234,7 @@ class VerificationEngine:
     @staticmethod
     def get_moves(
         base_dir: str,
-        plan: dict,
+        plan: Any,
         current_dest: str = "",
         active_parent_path: str = "",
         depth: int = 0,
@@ -232,23 +242,32 @@ class VerificationEngine:
         """Get a flat list of moves from the plan."""
         base_dir = os.path.normpath(base_dir)
         moves = []
+        if hasattr(plan, "plan") and isinstance(plan.plan, dict):
+            plan = plan.plan
+
+        def _get_val(obj, attr, default=None):
+            if hasattr(obj, attr):
+                val = getattr(obj, attr)
+                if val is not None:
+                    return val
+            if isinstance(obj, dict):
+                return obj.get(attr, default)
+            return default
+
         for key, content in plan.items():
-            if content is None or (
-                isinstance(content, dict)
-                and content.get("__type__") in ("file", "directory")
-            ):
-                if isinstance(content, dict) and content.get("__type__") == "directory":
+            node_type = _get_val(content, "node_type") or _get_val(content, "__type__")
+            is_node = content is None or node_type in ("file", "directory") or isinstance(content, BaseModel)
+            if is_node:
+                if node_type == "directory":
                     continue
 
                 if depth > 0:
-                    if (
-                        not isinstance(content, dict)
-                        or "relative_source" not in content
-                    ):
+                    rel_src_val = _get_val(content, "relative_source")
+                    if rel_src_val is None:
                         raise ValueError(
                             f"Missing required relative source metadata field for nested item '{key}'"
                         )
-                    relative_source = content["relative_source"]
+                    relative_source = rel_src_val
                     rel_src_with_parent = os.path.join(
                         active_parent_path, relative_source
                     )
@@ -256,16 +275,18 @@ class VerificationEngine:
                         os.path.join(base_dir, rel_src_with_parent)
                     )
                 else:
-                    if isinstance(content, dict) and "relative_source" in content:
-                        relative_source = content["relative_source"]
+                    rel_src_val = _get_val(content, "relative_source")
+                    if rel_src_val is not None:
+                        relative_source = rel_src_val
                         source_path = os.path.normpath(
                             os.path.join(base_dir, relative_source)
                         )
                     else:
                         source_path = os.path.normpath(os.path.join(base_dir, key))
 
-                if isinstance(content, dict) and "target_filename" in content:
-                    filename = content["target_filename"]
+                tgt_fn = _get_val(content, "target_filename")
+                if tgt_fn is not None:
+                    filename = tgt_fn
                 else:
                     filename = os.path.basename(key)
 
@@ -737,33 +758,30 @@ class VirtualFilesystemTracker:
         unconfirmed_renames = []
 
         def _inspect_node(node, current_dest=""):
-            if not isinstance(node, dict) or node.get("__type__") in (
-                "file",
-                "directory",
-            ):
+            curr_dict = node.plan if hasattr(node, "plan") and isinstance(node.plan, dict) else node
+            if not isinstance(curr_dict, dict):
                 return
-            for key, content in node.items():
-                if content is None or (
-                    isinstance(content, dict)
-                    and content.get("__type__") in ("file", "directory")
-                ):
-                    if (
-                        isinstance(content, dict)
-                        and content.get("__type__") == "directory"
-                    ):
+
+            def _get_val(obj, attr, default=None):
+                if hasattr(obj, attr):
+                    val = getattr(obj, attr)
+                    if val is not None:
+                        return val
+                if isinstance(obj, dict):
+                    return obj.get(attr, default)
+                return default
+
+            for key, content in curr_dict.items():
+                node_type = _get_val(content, "node_type") or _get_val(content, "__type__")
+                is_file_or_dir = content is None or node_type in ("file", "directory") or isinstance(content, BaseModel)
+                if is_file_or_dir:
+                    if node_type == "directory":
                         continue
 
-                    if isinstance(content, dict) and "relative_source" in content:
-                        rel_src = content["relative_source"]
-                    else:
-                        rel_src = key
-
+                    rel_src = _get_val(content, "relative_source") or key
                     src_filename = os.path.basename(rel_src)
 
-                    if isinstance(content, dict) and "target_filename" in content:
-                        target_filename = content["target_filename"]
-                    else:
-                        target_filename = os.path.basename(key)
+                    target_filename = _get_val(content, "target_filename") or os.path.basename(key)
 
                     # Check if target_filename differs from src_filename (rename proposal)
                     if target_filename != src_filename:
@@ -802,15 +820,14 @@ class VirtualFilesystemTracker:
                             )
                         # 3. Explicit user confirmation check
                         else:
-                            is_confirmed = False
-                            if isinstance(content, dict):
-                                is_confirmed = bool(
-                                    content.get("confirmed")
-                                    or content.get("is_confirmed")
-                                    or content.get("user_confirmed")
-                                    or content.get("is_locked")
-                                    or content.get("status") in ("Confirmed", "Locked")
-                                )
+                            status_val = _get_val(content, "status", "") or ""
+                            is_confirmed = bool(
+                                _get_val(content, "confirmed")
+                                or _get_val(content, "is_confirmed")
+                                or _get_val(content, "user_confirmed")
+                                or _get_val(content, "is_locked")
+                                or status_val in ("Confirmed", "Locked")
+                            )
 
                             if not is_confirmed:
                                 unconfirmed_renames.append(

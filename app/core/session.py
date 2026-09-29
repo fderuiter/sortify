@@ -304,8 +304,17 @@ class AppSession:
             return {}
 
         plan_path = self.session_dir / "plan.json"
+        def _make_json_serializable(obj):
+            if hasattr(obj, "model_dump"):
+                return obj.model_dump(mode="json")
+            if isinstance(obj, dict):
+                return {k: _make_json_serializable(v) for k, v in obj.items()}
+            if isinstance(obj, list):
+                return [_make_json_serializable(v) for v in obj]
+            return obj
+        serializable_plan = _make_json_serializable(plan)
         with open(plan_path, "w") as f:
-            json.dump(plan, f)
+            json.dump(serializable_plan, f)
 
         from app.core.mover import execute_moves
 

@@ -90,7 +90,7 @@ def test_policy_engine_secret_matching():
 
     rule_match = PolicyEngine.evaluate_policies("config.env", doc_with_secret, None, policies)
     assert rule_match is not None
-    assert rule_match["target_path"] == "Quarantine/Secrets"
+    assert rule_match.target_path == "Quarantine/Secrets"
 
     rule_no_match = PolicyEngine.evaluate_policies("readme.md", doc_clean, None, policies)
     assert rule_no_match is None

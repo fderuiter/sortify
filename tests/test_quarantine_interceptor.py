@@ -188,12 +188,12 @@ def test_extended_policy_engine_actions():
 
     rule1 = PolicyEngine.evaluate_policies("doc.txt", "This is confidential info", "", policies)
     assert rule1 is not None
-    assert rule1["action"] == "redact"
-    assert rule1["target_path"] == "Sanitized_Folder"
+    assert rule1.action == "redact"
+    assert rule1.target_path == "Sanitized_Folder"
 
     rule2 = PolicyEngine.evaluate_policies("old_file.txt", "This is legacy data", "", policies)
     assert rule2 is not None
-    assert rule2["action"] == "archive"
+    assert rule2.action == "archive"
 
 
 def test_pii_scrubbing_and_release_pipeline():

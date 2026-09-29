@@ -89,10 +89,16 @@ def test_find_and_remove_and_insert_helpers():
 
     # Insert file back
     insert_file_into_plan(plan, "Accounting/SubFolder", "invoice.pdf", file_info)
-    assert plan["Accounting"]["SubFolder"]["invoice.pdf"] == {
-        "__type__": "file",
-        "status": "Proposed",
-    }
+    node_val = plan["Accounting"]["SubFolder"]["invoice.pdf"]
+    if hasattr(node_val, "model_dump"):
+        dumped = node_val.model_dump()
+        assert dumped.get("node_type") == "file" or dumped.get("__type__") == "file"
+        assert dumped.get("status") == "Proposed"
+    else:
+        assert node_val == {
+            "__type__": "file",
+            "status": "Proposed",
+        }
 
 
 def test_analyzer_locked_files_override():
@@ -110,21 +116,23 @@ def test_analyzer_locked_files_override():
 
     # Case 1: normal routing (keyword matches)
     plan = analyzer.generate_sorting_plan("dummy_base", settings)
-    assert "KeywordFolder" in plan
-    assert "file1.txt" in plan["KeywordFolder"]
+    plan_dict = plan.plan if hasattr(plan, "plan") else plan
+    assert "KeywordFolder" in plan_dict
+    assert "file1.txt" in plan_dict["KeywordFolder"]
 
     # Case 2: locked_files override forces a different target folder, bypassing rules
     locked_files = {"file1.txt": "ManualOverrideFolder"}
     plan_with_override = analyzer.generate_sorting_plan(
         "dummy_base", settings, locked_files=locked_files
     )
+    override_dict = plan_with_override.plan if hasattr(plan_with_override, "plan") else plan_with_override
 
     assert (
-        "KeywordFolder" not in plan_with_override
-        or "file1.txt" not in plan_with_override.get("KeywordFolder", {})
+        "KeywordFolder" not in override_dict
+        or "file1.txt" not in override_dict.get("KeywordFolder", {})
     )
-    assert "ManualOverrideFolder" in plan_with_override
-    assert "file1.txt" in plan_with_override["ManualOverrideFolder"]
+    assert "ManualOverrideFolder" in override_dict
+    assert "file1.txt" in override_dict["ManualOverrideFolder"]
 
 
 def test_incremental_background_training():

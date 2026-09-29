@@ -8,7 +8,7 @@ import logging
 import os
 from typing import Any, Dict, Optional, Union
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.core.analyzer_strategies import clustering_registry
 
@@ -16,6 +16,8 @@ _UNSPECIFIED = object()
 
 
 class _SortingPlanNodeSchema(BaseModel):
+    """Pydantic V2 schema for validating node data."""
+
     node_type: str = Field(default="file", alias="__type__")
     relative_source: Optional[str] = None
     routed_by: Optional[str] = None
@@ -43,19 +45,45 @@ class _SortingPlanNodeSchema(BaseModel):
     archival_priority_score: Optional[float] = None
     confidence: Optional[float] = None
 
+    target_filename: Optional[str] = None
+    is_locked: Optional[bool] = None
+    confirmed: Optional[bool] = None
+    is_confirmed: Optional[bool] = None
+    user_confirmed: Optional[bool] = None
+    jev_category: Optional[str] = None
+
     model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+    @field_validator("confidence", mode="before")
+    @classmethod
+    def validate_confidence(cls, v: Any) -> Optional[float]:
+        """Validate and clamp confidence score between 0.0 and 1.0."""
+        if v is None:
+            return None
+        try:
+            val = float(v)
+            return max(0.0, min(1.0, val))
+        except (ValueError, TypeError):
+            return None
+
+    @field_validator("node_type", mode="before")
+    @classmethod
+    def validate_node_type(cls, v: Any) -> str:
+        """Validate and ensure node_type defaults to 'file' if empty."""
+        if not v or not isinstance(v, str):
+            return "file"
+        return v
 
 
 class SortingPlanNode(dict):
     """Pydantic-validated dict node representing a file or directory in a sorting plan."""
 
     @classmethod
-    def model_validate(cls, obj: Any) -> "SortingPlanNode":
+    def model_validate(cls, obj: Any, *args, **kwargs) -> "SortingPlanNode":
         """Validate and construct a SortingPlanNode from a dictionary or instance."""
         if isinstance(obj, SortingPlanNode):
             return obj
         if isinstance(obj, dict):
-            # Validate with Pydantic schema
             validated = _SortingPlanNodeSchema.model_validate(obj).model_dump(
                 by_alias=True, exclude_none=True
             )
@@ -72,27 +100,69 @@ class SortingPlanNode(dict):
         """Backward compatibility method for legacy callers."""
         return self.model_dump(*args, **kwargs)
 
+    def __getattr__(self, name: str) -> Any:
+        """Provide dynamic attribute lookup for schema fields and dictionary keys."""
+        if name.startswith("__") and name.endswith("__"):
+            raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
+        if name == "node_type":
+            return self.get("node_type") or self.get("__type__", "file")
+        if name in self:
+            return self[name]
+        if name in _SortingPlanNodeSchema.model_fields:
+            return self.get(name)
+        raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        """Provide dynamic attribute assignment mapping to dictionary entries."""
+        if name in ("node_type", "__type__"):
+            self["__type__"] = value
+            self["node_type"] = value
+        else:
+            self[name] = value
+
 
 class SortingPlan(dict):
     """Pydantic-validated dict representing a complete hierarchical sorting plan."""
 
     def __init__(self, plan: Optional[Dict[str, Any]] = None, **kwargs):
         if plan is not None and isinstance(plan, dict):
-            super().__init__(plan)
+            if "plan" in plan and isinstance(plan["plan"], dict) and len(plan) == 1:
+                target = plan["plan"]
+            else:
+                target = plan
+            validated = _validate_sorting_plan_nodes(target)
+            super().__init__(validated)
+        elif kwargs and "plan" in kwargs and isinstance(kwargs["plan"], dict) and len(kwargs) == 1:
+            validated = _validate_sorting_plan_nodes(kwargs["plan"])
+            super().__init__(validated)
         elif kwargs:
-            super().__init__(kwargs)
+            validated = _validate_sorting_plan_nodes(kwargs)
+            super().__init__(validated)
         else:
             super().__init__()
 
     @classmethod
-    def model_validate(cls, obj: Any) -> "SortingPlan":
+    def model_validate(cls, obj: Any, *args, **kwargs) -> "SortingPlan":
         """Validate and construct a SortingPlan from a dictionary or instance."""
         if isinstance(obj, SortingPlan):
             return obj
         if isinstance(obj, dict):
-            validated_nodes = _validate_sorting_plan_nodes(obj)
-            return cls(validated_nodes)
+            if "plan" in obj and isinstance(obj["plan"], dict) and len(obj) == 1:
+                return cls(obj["plan"])
+            return cls(obj)
         raise ValueError(f"Cannot validate {type(obj)} as SortingPlan")
+
+    @property
+    def plan(self) -> Dict[str, Any]:
+        """Backward compatibility property returning the plan dictionary."""
+        return self
+
+    @plan.setter
+    def plan(self, value: Dict[str, Any]) -> None:
+        """Backward compatibility setter for setting plan dictionary content."""
+        self.clear()
+        if isinstance(value, dict):
+            self.update(value)
 
     def model_dump(self, *args, **kwargs) -> Dict[str, Any]:
         """Dump the complete plan as a standard dictionary."""
@@ -123,8 +193,8 @@ def _validate_sorting_plan_nodes(node: Dict[str, Any]) -> Dict[str, Any]:
     """Recursively validate all file dictionary nodes in the plan using SortingPlanNode."""
     validated = {}
     for k, v in node.items():
-        if isinstance(v, dict) or isinstance(v, SortingPlanNode):
-            v_dict = v.model_dump() if hasattr(v, "model_dump") else v
+        if isinstance(v, (dict, SortingPlanNode, BaseModel)):
+            v_dict = v.model_dump(by_alias=True) if hasattr(v, "model_dump") else v
             if (
                 v_dict.get("__type__") == "file"
                 or "relative_source" in v_dict
@@ -593,9 +663,9 @@ class IncrementalAnalyzer:
                     policy_plan_files.append(
                         (
                             f,
-                            matched_policy["target_path"],
-                            matched_policy["expression"],
-                            matched_policy["type"],
+                            matched_policy.target_path if hasattr(matched_policy, "target_path") else matched_policy["target_path"],
+                            matched_policy.expression if hasattr(matched_policy, "expression") else matched_policy["expression"],
+                            matched_policy.type if hasattr(matched_policy, "type") else matched_policy["type"],
                             status_match,
                         )
                     )
@@ -1183,6 +1253,8 @@ class IncrementalAnalyzer:
                         cancel_check=cancel_check,
                         pre_fetched_corpus=pre_fetched_corpus,
                     )
+                    if hasattr(plan, "plan") and isinstance(plan.plan, dict):
+                        plan = plan.plan
                     self._last_reconstruction_error = error
 
                     # Data Boundary Safeguard: Clear/Garbage collect pre_fetched_corpus decrypted data immediately
@@ -1426,8 +1498,8 @@ class IncrementalAnalyzer:
 
                 matched_pol = matched_policies_map.get(f)
                 if matched_pol:
-                    info["routed_by"] = matched_pol.get("type", "policy")
-                    info["match"] = matched_pol.get("expression")
+                    info["routed_by"] = getattr(matched_pol, "type", None) or (matched_pol.get("type", "policy") if isinstance(matched_pol, dict) else "policy")
+                    info["match"] = getattr(matched_pol, "expression", None) or (matched_pol.get("expression") if isinstance(matched_pol, dict) else None)
                 else:
                     info["routed_by"] = "historical"
                     info["match"] = "user assignment"

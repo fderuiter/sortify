@@ -82,7 +82,7 @@ def test_generate_sorting_plan_empty():
         max_folders=3, stop_words={"the", "and"}, db=db, model_path="all-MiniLM-L6-v2"
     )
     plan = analyzer.generate_sorting_plan("dummy_base")
-    assert plan == {}
+    assert (plan.plan if hasattr(plan, "plan") else plan) == {}
 
 
 def test_generate_sorting_plan():
@@ -102,7 +102,8 @@ def test_generate_sorting_plan():
 
     # Check that there are at least some folders created or files added
     assert isinstance(plan, (SortingPlan, dict))
-    assert len(plan) > 0
+    plan_dict = plan.plan if isinstance(plan, SortingPlan) else plan
+    assert len(plan_dict) > 0
 
 
 def test_partial_fit_exception(mocker):
@@ -134,7 +135,7 @@ def test_generate_sorting_plan_exception(mocker):
     plan = analyzer.generate_sorting_plan("dummy_base")
 
     mock_logger.assert_called_once()
-    assert plan == {}
+    assert (plan.plan if hasattr(plan, "plan") else plan) == {}
 
 
 def test_naming_collision_resolution():
@@ -151,7 +152,8 @@ def test_naming_collision_resolution():
     analyzer.partial_fit("dummy_base", corpus)
     plan = analyzer.generate_sorting_plan("dummy_base")
 
-    folder_names = list(plan.keys())
+    plan_dict = plan.plan if hasattr(plan, "plan") else plan
+    folder_names = list(plan_dict.keys())
     assert "Miscellaneous" not in folder_names or len(folder_names) > 1
 
 
@@ -177,11 +179,12 @@ def test_conflict_detection():
     plan = analyzer.generate_sorting_plan("test_conflict_base", settings)
 
     # invoice_2025.txt should be in the plan under 'Archive' and flagged as conflicted
-    assert "Archive" in plan
-    file_info = plan["Archive"]["invoice_2025.txt"]
-    assert file_info.get("is_conflicted") is True
-    assert file_info.get("compliance_path") == "Accounting"
-    assert file_info.get("historical_path") == "Archive"
+    plan_dict = plan.plan if hasattr(plan, "plan") else plan
+    assert "Archive" in plan_dict
+    file_info = plan_dict["Archive"]["invoice_2025.txt"]
+    assert (getattr(file_info, "is_conflicted", None) or (file_info.get("is_conflicted") if isinstance(file_info, dict) else None)) is True
+    assert (getattr(file_info, "compliance_path", None) or (file_info.get("compliance_path") if isinstance(file_info, dict) else None)) == "Accounting"
+    assert (getattr(file_info, "historical_path", None) or (file_info.get("historical_path") if isinstance(file_info, dict) else None)) == "Archive"
 
 
 def test_conflict_resolution():
@@ -207,9 +210,10 @@ def test_conflict_resolution():
     )
 
     # Since it was resolved to 'Accounting', it should be in Accounting and no longer flagged as conflicted
-    assert "Accounting" in plan
-    file_info = plan["Accounting"]["invoice_2025.txt"]
-    assert file_info.get("is_conflicted", False) is False
+    plan_dict = plan.plan if hasattr(plan, "plan") else plan
+    assert "Accounting" in plan_dict
+    file_info = plan_dict["Accounting"]["invoice_2025.txt"]
+    assert (getattr(file_info, "is_conflicted", False) or False) is False
 
 
 def test_document_to_document_similarity_matching():
@@ -238,11 +242,13 @@ def test_document_to_document_similarity_matching():
     plan = analyzer.generate_sorting_plan(base_dir)
 
     # Verify that new_receipt.txt is automatically routed to "Receipts"
-    assert "Receipts" in plan
-    assert "new_receipt.txt" in plan["Receipts"]
-    file_info = plan["Receipts"]["new_receipt.txt"]
-    assert file_info["routed_by"] == "similarity"
-    assert "similarity >= 0.8" in file_info["match"]
+    plan_dict = plan.plan if hasattr(plan, "plan") else plan
+    assert "Receipts" in plan_dict
+    assert "new_receipt.txt" in plan_dict["Receipts"]
+    file_info = plan_dict["Receipts"]["new_receipt.txt"]
+    assert (getattr(file_info, "routed_by", None) or (file_info.get("routed_by") if isinstance(file_info, dict) else None)) == "similarity"
+    match_str = getattr(file_info, "match", None) or (file_info.get("match") if isinstance(file_info, dict) else "") or ""
+    assert "similarity >= 0.8" in match_str
 
 
 def test_document_similarity_no_dilution():
@@ -274,10 +280,11 @@ def test_document_similarity_no_dilution():
     plan = analyzer.generate_sorting_plan(base_dir)
 
     # Should match hist_cooking.txt individually and route to "SharedFolder"
-    assert "SharedFolder" in plan
-    assert "new_cooking.txt" in plan["SharedFolder"]
-    file_info = plan["SharedFolder"]["new_cooking.txt"]
-    assert file_info["routed_by"] == "similarity"
+    plan_dict = plan.plan if hasattr(plan, "plan") else plan
+    assert "SharedFolder" in plan_dict
+    assert "new_cooking.txt" in plan_dict["SharedFolder"]
+    file_info = plan_dict["SharedFolder"]["new_cooking.txt"]
+    assert (getattr(file_info, "routed_by", None) or (file_info.get("routed_by") if isinstance(file_info, dict) else None)) == "similarity"
 
 
 def test_document_similarity_guardrail_unverified():
@@ -303,7 +310,7 @@ def test_document_similarity_guardrail_unverified():
 
     # Since there are no verified historical documents, new_space.txt should NOT be matched
     # and the returned plan should be empty because we bypassed clustering.
-    assert plan == {}
+    assert (plan.plan if hasattr(plan, "plan") else plan) == {}
 
 
 def test_empty_files_bypassed_from_ai_clustering(mocker):
@@ -335,9 +342,11 @@ def test_empty_files_bypassed_from_ai_clustering(mocker):
     plan = analyzer.generate_sorting_plan(base_dir)
 
     # Assert that empty_file.txt was bypassed from AI clustering and routed to Miscellaneous
-    assert "Miscellaneous" in plan
-    assert "empty_file.txt" in plan["Miscellaneous"]
-    assert plan["Miscellaneous"]["empty_file.txt"]["extraction_status"] == "EMPTY"
+    plan_dict = plan.plan if hasattr(plan, "plan") else plan
+    assert "Miscellaneous" in plan_dict
+    assert "empty_file.txt" in plan_dict["Miscellaneous"]
+    empty_node = plan_dict["Miscellaneous"]["empty_file.txt"]
+    assert (getattr(empty_node, "extraction_status", None) or (empty_node.get("extraction_status") if isinstance(empty_node, dict) else None)) == "EMPTY"
 
     # Assert that generate_plan was called only with normal_file.txt
     mock_generate_plan.assert_called_once()
