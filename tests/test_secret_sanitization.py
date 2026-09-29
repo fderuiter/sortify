@@ -219,6 +219,22 @@ def test_verification_engine_plan_integrity_with_secrets():
     assert "Folder" in result["plan"]
     assert "doc.pdf" in result["plan"]["Folder"]
 
+    win_plan = {
+        "Folder": {
+            r"doc_sk_live_51Nxabc123XYZ4567890abcdef.pdf": {
+                "__type__": "file",
+                "relative_source": r"Folder\doc_sk_live_51Nxabc123XYZ4567890abcdef.pdf",
+                "target_filename": r"Folder\doc_sk_live_51Nxabc123XYZ4567890abcdef.pdf",
+            }
+        }
+    }
+
+    win_result = VerificationEngine.verify_plan_integrity(r"C:\base\dir", win_plan)
+    assert win_result["success"] is True
+    assert "Folder" in win_result["plan"]
+    assert "doc.pdf" in win_result["plan"]["Folder"]
+    assert win_result["plan"]["Folder"]["doc.pdf"]["target_filename"] == r"Folder\doc.pdf"
+
 
 def test_contextual_file_renamer_scrubs_secrets():
     """Verify ContextExtractor and FileRenamerEngine scrub secret tokens from document text and keywords."""

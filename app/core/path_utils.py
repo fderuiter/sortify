@@ -417,7 +417,7 @@ def sanitize_plan(plan: Any) -> tuple[dict, list[str]]:
             if isinstance(file_content, dict) and "target_filename" in file_content and file_content["target_filename"]:
                 old_tf = file_content["target_filename"]
                 if contains_secrets(old_tf) or scrub_pii_from_filename(old_tf) != old_tf:
-                    new_tf = sanitize_name(old_tf)
+                    new_tf, _ = _sanitize_plan_key(old_tf, is_file=True)
                     if new_tf != old_tf:
                         file_content["target_filename"] = new_tf
                         file_content["confirmed"] = True
@@ -473,7 +473,7 @@ def sanitize_plan(plan: Any) -> tuple[dict, list[str]]:
                 if isinstance(file_content, dict) and "target_filename" in file_content and file_content["target_filename"]:
                     old_tf = file_content["target_filename"]
                     if contains_secrets(old_tf) or scrub_pii_from_filename(old_tf) != old_tf:
-                        new_tf = sanitize_name(old_tf)
+                        new_tf, _ = _sanitize_plan_key(old_tf, is_file=True)
                         if new_tf != old_tf:
                             file_content["target_filename"] = new_tf
                             file_content["confirmed"] = True

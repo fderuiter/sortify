@@ -1,6 +1,7 @@
 """Verification engine for proactive move validation."""
 
 import os
+import re
 from typing import Any
 
 from pydantic import BaseModel
@@ -288,7 +289,7 @@ class VerificationEngine:
                 if tgt_fn is not None:
                     filename = tgt_fn
                 else:
-                    filename = os.path.basename(key)
+                    filename = re.split(r"[/\\]+", key)[-1]
 
                 dest_dir = os.path.join(base_dir, current_dest)
                 dest_path = os.path.normpath(os.path.join(dest_dir, filename))
@@ -779,9 +780,10 @@ class VirtualFilesystemTracker:
                         continue
 
                     rel_src = _get_val(content, "relative_source") or key
-                    src_filename = os.path.basename(rel_src)
+                    src_filename = re.split(r"[/\\]+", rel_src)[-1]
 
-                    target_filename = _get_val(content, "target_filename") or os.path.basename(key)
+                    raw_tf = _get_val(content, "target_filename") or key
+                    target_filename = re.split(r"[/\\]+", raw_tf)[-1]
 
                     # Check if target_filename differs from src_filename (rename proposal)
                     if target_filename != src_filename:
