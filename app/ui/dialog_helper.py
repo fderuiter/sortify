@@ -153,7 +153,7 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {{
             success = False
 
         if not success:
-            # Fallback to manual path input using a NiceGUI dialog
+            # Fallback to manual path input using a dialog
             def _fallback():
                 if enable_ui_callback:
                     enable_ui_callback()
