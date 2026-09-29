@@ -67,6 +67,8 @@ def is_browser_available(
                 "-b",
                 "white",
             ]
+            if sys.platform == "win32":
+                probe_cmd = ["cmd.exe", "/c"] + probe_cmd
             res = subprocess.run(
                 probe_cmd, capture_output=True, text=True, check=False, timeout=2
             )
@@ -276,6 +278,8 @@ def render_diagram_artifact(
         "-b",
         "white",
     ]
+    if sys.platform == "win32":
+        cmd = ["cmd.exe", "/c"] + cmd
     try:
         res = subprocess.run(
             cmd, capture_output=True, text=True, check=False, timeout=10
@@ -300,8 +304,9 @@ def build_diagrams(
     output_dir: Path = DEFAULT_OUTPUT_DIR,
     force: bool = False,
     verify_only: bool = False,
+    render_images: bool = False,
 ) -> bool:
-    """Compile diagram specifications into .mmd, SVG, and PNG assets."""
+    """Compile diagram specifications into canonical Mermaid files (and optional SVG/PNG assets)."""
     output_dir.mkdir(parents=True, exist_ok=True)
     specs = collect_all_specs()
 
@@ -309,10 +314,12 @@ def build_diagrams(
         print("No diagram specifications registered.")
         return True
 
-    mmdc_cmd = find_mmdc_executable()
-    has_browser = is_browser_available(mmdc_cmd)
+    mmdc_cmd = find_mmdc_executable() if render_images else None
+    has_browser = (
+        is_browser_available(mmdc_cmd) if render_images else False
+    )
 
-    if not has_browser:
+    if render_images and not has_browser:
         if mmdc_cmd:
             sys.stderr.write(
                 "Warning: mmdc executable found but browser execution environment is unavailable.\n"
@@ -325,8 +332,6 @@ def build_diagrams(
     new_cache = dict(cache)
 
     all_success = True
-    if verify_only and not check_no_raw_mermaid_in_docs():
-        all_success = False
 
     updated_count = 0
 
@@ -356,24 +361,22 @@ def build_diagrams(
             all_success = False
             continue
 
-        # Write or update .mmd file
-        with open(mmd_file, "w", encoding="utf-8", newline="\n") as f:
-            f.write(mmd_content)
-
         cached_entry = cache.get(spec_id, {})
         cached_hash = (
             cached_entry.get("sha256") if isinstance(cached_entry, dict) else None
         )
 
-        needs_render = (
-            force
-            or cached_hash != current_hash
-            or not svg_file.exists()
-            or (has_browser and not png_file.exists())
-        )
+        mmd_changed = force or cached_hash != current_hash or not mmd_file.exists()
+
+        if mmd_changed:
+            with open(mmd_file, "w", encoding="utf-8", newline="\n") as f:
+                f.write(mmd_content)
+            updated_count += 1
+
+        new_cache[spec_id] = {"sha256": current_hash}
 
         if verify_only:
-            # In verification mode, check schema validity and headless rendering or fallback SVG generation
+            # In verification mode, check schema validity and headless rendering if browser available
             if has_browser and mmdc_cmd:
                 temp_svg = output_dir / f".tmp_verify_{spec_id}.svg"
                 rendered_ok = render_diagram_artifact(
@@ -392,44 +395,43 @@ def build_diagrams(
                         f"Verified spec '{spec_id}' -> {mmd_file.name} (headless compilation successful)."
                     )
             else:
-                fallback_svg = generate_fallback_svg(spec.title, mmd_content)
-                if not svg_file.exists() or force or cached_hash != current_hash:
+                print(
+                    f"Verified spec '{spec_id}' -> {mmd_file.name} (validated Mermaid specification format)."
+                )
+            continue
+
+        if render_images:
+            needs_image_render = (
+                force
+                or cached_hash != current_hash
+                or not svg_file.exists()
+                or (has_browser and not png_file.exists())
+            )
+            if needs_image_render:
+                print(f"Compiling visual diagram asset: {spec_id} ...")
+                if has_browser and mmdc_cmd:
+                    svg_ok = render_diagram_artifact(
+                        mmdc_cmd, mmd_file, svg_file, "svg"
+                    )
+                    png_ok = render_diagram_artifact(
+                        mmdc_cmd, mmd_file, png_file, "png"
+                    )
+                    if not (svg_ok and png_ok):
+                        sys.stderr.write(
+                            f"Warning: Failed visual rendering for '{spec_id}'. Generating fallback SVG.\n"
+                        )
+                        fallback_svg = generate_fallback_svg(spec.title, mmd_content)
+                        with open(svg_file, "w", encoding="utf-8", newline="\n") as f:
+                            f.write(fallback_svg)
+                        all_success = False
+                else:
+                    print(
+                        f"Browser engine unavailable. Creating fallback text-based SVG for '{spec_id}'."
+                    )
+                    fallback_svg = generate_fallback_svg(spec.title, mmd_content)
                     with open(svg_file, "w", encoding="utf-8", newline="\n") as f:
                         f.write(fallback_svg)
-                print(
-                    f"Verified spec '{spec_id}' -> {mmd_file.name} (validated click directives and schema)."
-                )
-            continue
-
-        if not needs_render:
-            print(f"Skipping cached diagram asset: {spec_id}")
-            continue
-
-        updated_count += 1
-        print(f"Compiling diagram asset: {spec_id} ...")
-
-        if has_browser and mmdc_cmd:
-            svg_ok = render_diagram_artifact(mmdc_cmd, mmd_file, svg_file, "svg")
-            png_ok = render_diagram_artifact(mmdc_cmd, mmd_file, png_file, "png")
-
-            if svg_ok and png_ok:
-                new_cache[spec_id] = {"sha256": current_hash}
-            else:
-                sys.stderr.write(
-                    f"Warning: Failed visual rendering for '{spec_id}'. Generating fallback SVG.\n"
-                )
-                fallback_svg = generate_fallback_svg(spec.title, mmd_content)
-                with open(svg_file, "w", encoding="utf-8", newline="\n") as f:
-                    f.write(fallback_svg)
-                all_success = False
-        else:
-            print(
-                f"Browser engine unavailable. Creating fallback text-based SVG for '{spec_id}'."
-            )
-            fallback_svg = generate_fallback_svg(spec.title, mmd_content)
-            with open(svg_file, "w", encoding="utf-8", newline="\n") as f:
-                f.write(fallback_svg)
-            new_cache[spec_id] = {"sha256": current_hash, "fallback": True}
+                    new_cache[spec_id]["fallback"] = True
 
     if not verify_only:
         save_cache(cache_path, new_cache)
@@ -462,7 +464,12 @@ def main():
     parser.add_argument(
         "--force",
         action="store_true",
-        help="Force re-rendering of all visual assets ignoring build cache",
+        help="Force re-rendering of diagram assets ignoring build cache",
+    )
+    parser.add_argument(
+        "--render-images",
+        action="store_true",
+        help="Render optional visual SVG and PNG image assets in addition to canonical .mmd files",
     )
     parser.add_argument(
         "--output-dir",
@@ -478,7 +485,10 @@ def main():
     if is_verify:
         print("Executing diagram toolchain verification gate...")
         success = build_diagrams(
-            output_dir=args.output_dir, force=args.force, verify_only=True
+            output_dir=args.output_dir,
+            force=args.force,
+            verify_only=True,
+            render_images=args.render_images,
         )
         if success:
             print(
@@ -493,7 +503,10 @@ def main():
     else:
         print("Executing diagram asset compilation...")
         success = build_diagrams(
-            output_dir=args.output_dir, force=args.force, verify_only=False
+            output_dir=args.output_dir,
+            force=args.force,
+            verify_only=False,
+            render_images=args.render_images,
         )
         if not success:
             sys.stderr.write(

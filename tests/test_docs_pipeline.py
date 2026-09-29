@@ -528,11 +528,17 @@ def test_diagram_toolchain_browserless_verify_and_build(tmp_path):
         verify_ok = build_diagrams(output_dir=tmp_path, force=True, verify_only=True)
         assert verify_ok is True
 
-        # Test build mode in browserless environment
+        # Test standard client-side build mode (no static image files generated)
         build_ok = build_diagrams(output_dir=tmp_path, force=True, verify_only=False)
         assert build_ok is True
+        assert (tmp_path / "architecture_dataflow.mmd").exists()
+        assert len(list(tmp_path.glob("*.svg"))) == 0
 
-        # Verify fallback SVGs were generated
+        # Test optional image rendering mode generates fallback SVGs
+        render_ok = build_diagrams(
+            output_dir=tmp_path, force=True, verify_only=False, render_images=True
+        )
+        assert render_ok is True
         svg_files = list(tmp_path.glob("*.svg"))
         assert len(svg_files) > 0
         first_svg = svg_files[0].read_text(encoding="utf-8")
