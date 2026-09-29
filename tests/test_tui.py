@@ -690,23 +690,24 @@ def test_tui_expanded_settings_fields(temp_workspace):
         settings = AppSettings()
         app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
 
-        async with app.run_test() as pilot:
-            app.action_open_settings()
-            await pilot.pause(0.1)
+        with patch.object(AppSettings, "_save", return_value=None):
+            async with app.run_test() as pilot:
+                app.action_open_settings()
+                await pilot.pause(0.1)
 
-            modal = app.screen
-            assert isinstance(modal, SettingsModal)
+                modal = app.screen
+                assert isinstance(modal, SettingsModal)
 
-            modal.query_one("#input-max-folders", Input).value = "8"
-            modal.query_one("#switch-clinical-renaming", Switch).value = True
-            modal.query_one("#switch-contextual-renaming", Switch).value = True
+                modal.query_one("#input-max-folders", Input).value = "8"
+                modal.query_one("#switch-clinical-renaming", Switch).value = True
+                modal.query_one("#switch-contextual-renaming", Switch).value = True
 
-            modal.action_save()
-            await pilot.pause(0.1)
+                modal.action_save()
+                await pilot.pause(0.1)
 
-            assert app.settings.MAX_FOLDERS == 8
-            assert app.settings.CLINICAL_SMART_RENAMING is True
-            assert app.settings.CONTEXTUAL_RENAMING is True
+                assert app.settings.MAX_FOLDERS == 8
+                assert app.settings.CLINICAL_SMART_RENAMING is True
+                assert app.settings.CONTEXTUAL_RENAMING is True
 
     asyncio.run(_test())
 
