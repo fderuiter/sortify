@@ -14,15 +14,20 @@ block_cipher = None
 # Core machine learning and NLP dependencies required for offline processing
 is_lite = os.environ.get("LITE_BUILD") == "1"
 ml_packages = []
-if not is_lite:
+datas = []
+binaries = []
+hiddenimports = []
+
+if is_lite:
+    lite_marker_path = os.path.join(os.path.dirname(os.path.abspath(SPEC)), "LITE_BUILD") if 'SPEC' in locals() else os.path.join(os.getcwd(), "LITE_BUILD")
+    with open(lite_marker_path, "w", encoding="utf-8") as f:
+        f.write("1\n")
+    datas.append((os.path.abspath(lite_marker_path), "."))
+else:
     ml_packages = [
         'torch', 'easyocr', 'transformers', 'sklearn', 'llama_cpp',
         'onnxruntime', 'numpy', 'pandas', 'PIL'
     ]
-
-datas = []
-binaries = []
-hiddenimports = []
 
 # Collect all dynamic libraries, weights, and hidden imports for ML packages
 for pkg in ml_packages:

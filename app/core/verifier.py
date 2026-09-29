@@ -58,7 +58,25 @@ def check_ai_status(settings) -> tuple[bool, str | None]:
     is_sandboxed = is_packaged() or getattr(settings, "SANDBOXED", False)
 
     if not is_ml_available():
-        is_lite = os.environ.get("LITE_BUILD") == "1" or getattr(settings, "LITE_BUILD", False)
+        from app.core.path_utils import get_base_path
+
+        mei_lite = hasattr(sys, "_MEIPASS") and os.path.exists(
+            os.path.join(getattr(sys, "_MEIPASS", ""), "LITE_BUILD")
+        )
+        base_lite = False
+        try:
+            base_lite = os.path.exists(
+                os.path.join(get_base_path(__file__), "LITE_BUILD")
+            )
+        except Exception:
+            pass
+
+        is_lite = (
+            os.environ.get("LITE_BUILD") == "1"
+            or getattr(settings, "LITE_BUILD", False)
+            or mei_lite
+            or base_lite
+        )
         if is_sandboxed and not is_lite:
             raise ValueError(
                 "Machine learning dependencies (PyTorch/EasyOCR) are missing in sandboxed execution."
