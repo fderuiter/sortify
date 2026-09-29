@@ -1643,6 +1643,10 @@ class AutoSorterApp:
                     elif routed_by in ("ai", "semantic"):
                         badge = "AI Semantic"
                         badge_color = "emerald-8"
+                    elif routed_by == "jev_classifier":
+                        category = v.get("category") or v.get("jev_category")
+                        badge = f"Jev: {category}" if category else "Jev Fast-Path"
+                        badge_color = "teal-8"
 
                 rel_src = (
                     v.get("relative_source")
@@ -1766,6 +1770,7 @@ class AutoSorterApp:
                             "policy",
                             "pattern",
                             "historical",
+                            "jev_classifier",
                         ):
                             fast_node[k] = v
                         else:

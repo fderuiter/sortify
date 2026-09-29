@@ -499,3 +499,93 @@ def test_tui_automated_audit_hooks(temp_workspace):
                 await pilot.pause(0.05)
 
     asyncio.run(_test())
+
+
+def test_tui_jev_tree_node_tags_and_inspector(temp_workspace):
+    """Verify TUI formats Jev tags in tree nodes and renders detailed metadata in inspector panel."""
+    async def _test():
+        settings = AppSettings()
+        app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
+
+        async with app.run_test() as pilot:
+            filepath = os.path.join(temp_workspace, "tax_return.pdf")
+            app.plan = {
+                "Financial": {
+                    "tax_return.pdf": {
+                        "__type__": "file",
+                        "filepath": filepath,
+                        "target_filename": "tax_return.pdf",
+                        "routed_by": "jev_classifier",
+                        "category": "Financial",
+                        "sensitivity_rating": "HIGH",
+                        "sensitivity_score": 0.85,
+                        "archival_priority": 1,
+                        "archival_priority_score": 0.95,
+                        "confidence": 0.98,
+                    }
+                }
+            }
+            app.rebuild_tree()
+
+            tree = app.query_one("#plan-tree")
+            folder_node = tree.root.children[0]
+            file_node = folder_node.children[0]
+
+            # Verify tree label formatting
+            label_str = str(file_node.label)
+            assert "[JEV]" in label_str
+            assert "[SENS: HIGH]" in label_str
+            assert "[ARCH: P1]" in label_str
+
+            # Select file node and verify inspector panel updates
+            app.active_tree_node = file_node
+            inspector_text = app._update_inspector(file_node)
+
+            assert "Routing Source:" in inspector_text
+            assert "jev_classifier" in inspector_text
+            assert "Category:" in inspector_text
+            assert "Financial" in inspector_text
+            assert "Sensitivity Rating:" in inspector_text
+            assert "HIGH" in inspector_text
+            assert "Sensitivity Score:" in inspector_text
+            assert "0.85" in inspector_text
+            assert "Archival Priority:" in inspector_text
+            assert "P1" in inspector_text
+            assert "Archival Priority Score:" in inspector_text
+            assert "0.95" in inspector_text
+
+    asyncio.run(_test())
+
+
+def test_tui_jev_partial_metadata(temp_workspace):
+    """Verify TUI handles partial/missing Jev metadata without throwing exceptions."""
+    async def _test():
+        settings = AppSettings()
+        app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
+
+        async with app.run_test() as pilot:
+            filepath = os.path.join(temp_workspace, "partial.pdf")
+            app.plan = {
+                "Misc": {
+                    "partial.pdf": {
+                        "__type__": "file",
+                        "filepath": filepath,
+                        "target_filename": "partial.pdf",
+                        "routed_by": "jev_classifier",
+                    }
+                }
+            }
+            app.rebuild_tree()
+
+            tree = app.query_one("#plan-tree")
+            file_node = tree.root.children[0].children[0]
+
+            label_str = str(file_node.label)
+            assert "[JEV]" in label_str
+
+            inspector_text = app._update_inspector(file_node)
+            assert "Routing Source:" in inspector_text
+            assert "jev_classifier" in inspector_text
+
+    asyncio.run(_test())
+
