@@ -57,6 +57,11 @@ class A11yMixin:
                 self._speech_thread.join(timeout=timeout)
             except Exception:
                 pass
+        if hasattr(self, "app") and self.app and self.app is not self and hasattr(self.app, "join_speech_thread"):
+            try:
+                self.app.join_speech_thread(timeout=timeout)
+            except Exception:
+                pass
 
     def on_unmount(self) -> None:
         """Lifecycle hook called when component is unmounted from Textual app."""
@@ -107,7 +112,7 @@ class A11yMixin:
                                 stderr=subprocess.DEVNULL,
                                 check=False,
                             )
-                        except Exception as exc:
+                        except BaseException as exc:
                             logger.debug(f"Speech synthesis execution failed: {exc}")
 
                     t = threading.Thread(target=_speak, daemon=True)

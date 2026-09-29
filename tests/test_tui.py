@@ -611,8 +611,8 @@ def test_tui_speech_binary_fallback_missing_binary(temp_workspace):
 
     async def _test():
         app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
-        async with app.run_test() as pilot:
-            with patch("shutil.which", return_value=None):
+        with patch("shutil.which", return_value=None):
+            async with app.run_test() as pilot:
                 result = app.announce("Speech binary missing fallback test message")
                 assert result == "Speech binary missing fallback test message"
                 assert app.get_last_announcement() == "Speech binary missing fallback test message"
@@ -633,15 +633,16 @@ def test_tui_speech_binary_execution_exception_fallback(temp_workspace):
 
     async def _test():
         app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
-        async with app.run_test() as pilot:
-            with patch("shutil.which", return_value="/usr/bin/spd-say"):
-                with patch("subprocess.run", side_effect=OSError("Exec format error")):
-                    result = app.announce("Speech execution error fallback test message")
-                    app.join_speech_thread(timeout=1.0)
-                    assert result == "Speech execution error fallback test message"
-                    assert app.get_last_announcement() == "Speech execution error fallback test message"
-                    sb = app.query_one("#status-bar", Static)
-                    assert "Speech execution error fallback test message" in str(sb.render())
+        with patch("shutil.which", return_value="/usr/bin/spd-say"), patch(
+            "subprocess.run", side_effect=OSError("Exec format error")
+        ):
+            async with app.run_test() as pilot:
+                result = app.announce("Speech execution error fallback test message")
+                app.join_speech_thread(timeout=1.0)
+                assert result == "Speech execution error fallback test message"
+                assert app.get_last_announcement() == "Speech execution error fallback test message"
+                sb = app.query_one("#status-bar", Static)
+                assert "Speech execution error fallback test message" in str(sb.render())
 
     asyncio.run(_test())
 
@@ -652,18 +653,22 @@ def test_tui_speech_binary_available_and_audit(temp_workspace):
     settings = AppSettings()
 
     async def _test():
-        app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
-        async with app.run_test() as pilot:
-            with patch("shutil.which", return_value="/usr/bin/spd-say"):
-                audit_res = app.audit_a11y_compliance()
+        app1 = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
+        with patch("shutil.which", return_value="/usr/bin/spd-say"), patch(
+            "subprocess.run", return_value=None
+        ):
+            async with app1.run_test() as pilot:
+                audit_res = app1.audit_a11y_compliance()
                 assert audit_res["speech_binary_available"] is True
                 assert audit_res["speech_binary"] == "/usr/bin/spd-say"
                 assert audit_res["speech_binary_fallback_ready"] is True
                 assert audit_res["status_bar_available"] is True
                 assert audit_res["compliant"] is True
 
-            with patch("shutil.which", return_value=None):
-                audit_res_missing = app.audit_a11y_compliance()
+        app2 = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
+        with patch("shutil.which", return_value=None):
+            async with app2.run_test() as pilot:
+                audit_res_missing = app2.audit_a11y_compliance()
                 assert audit_res_missing["speech_binary_available"] is False
                 assert audit_res_missing["speech_binary"] is None
                 assert audit_res_missing["speech_binary_fallback_ready"] is True
