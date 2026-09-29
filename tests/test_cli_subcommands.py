@@ -277,3 +277,54 @@ def test_build_parser_factory():
     assert "--dest-dir" in sort_help
     assert "--dry-run" in sort_help
 
+
+@pytest.mark.xdist_group(name="cli_subcommands")
+def test_headless_no_args_exits_code_2_with_guidance():
+    """Test non-interactive invocation without subcommands or path exits with code 2 and guidance."""
+    with patch("sys.stdin.isatty", return_value=False):
+        code, stdout, stderr = run_cli([])
+        assert code == 2, f"Expected exit code 2, got {code}. Stderr: {stderr}"
+        assert "usage:" in stderr or "subcommand" in stderr
+        assert "sort" in stderr
+
+
+@pytest.mark.xdist_group(name="cli_subcommands")
+def test_headless_positional_path_autoroutes_to_sort():
+    """Test non-interactive invocation with target path auto-routes to batch sorting."""
+    with tempfile.TemporaryDirectory() as src_dir:
+        create_sample_corpus(src_dir)
+        with patch("sys.stdin.isatty", return_value=False):
+            code, stdout, stderr = run_cli([src_dir, "-q"])
+            assert code == 0, f"Expected exit code 0, got {code}. Stderr: {stderr}"
+            assert "finance_doc.txt" in stdout
+
+
+@pytest.mark.xdist_group(name="cli_subcommands")
+def test_headless_gui_flag_honored():
+    """Test non-interactive invocation with explicit --gui flag calls web server app launcher."""
+    with patch("sys.stdin.isatty", return_value=False), patch("app.ui.app.run_app") as mock_run_app:
+        code, stdout, stderr = run_cli(["--gui"])
+        assert code == 0
+        mock_run_app.assert_called_once()
+
+
+@pytest.mark.xdist_group(name="cli_subcommands")
+def test_headless_explicit_sort_subcommand():
+    """Test non-interactive invocation with explicit sort subcommand executes batch sorting."""
+    with tempfile.TemporaryDirectory() as src_dir:
+        create_sample_corpus(src_dir)
+        with patch("sys.stdin.isatty", return_value=False):
+            code, stdout, stderr = run_cli(["sort", src_dir, "-q"])
+            assert code == 0, f"Expected exit code 0, got {code}. Stderr: {stderr}"
+            assert "finance_doc.txt" in stdout
+
+
+@pytest.mark.xdist_group(name="cli_subcommands")
+def test_headless_no_color_guidance_strips_ansi():
+    """Test non-interactive guidance output strips ANSI escape codes when --no-color is set."""
+    with patch("sys.stdin.isatty", return_value=False):
+        code, stdout, stderr = run_cli(["--no-color"])
+        assert code == 2
+        assert "\x1b[" not in stderr
+
+
