@@ -34,8 +34,8 @@ for pkg in ml_packages:
     except Exception as e:
         print(f"Warning: Could not collect package {pkg}: {e}")
 
-# Bundle jsonschema and rfc3987 syntax data assets
-for schema_pkg in ('jsonschema', 'jsonschema_specifications', 'referencing', 'rfc3987_syntax', 'rfc3987'):
+# Bundle jsonschema, rfc3987 syntax, and pydantic schema data assets
+for schema_pkg in ('jsonschema', 'jsonschema_specifications', 'referencing', 'rfc3987_syntax', 'rfc3987', 'pydantic', 'pydantic_core', 'annotated_types'):
     try:
         s_datas, s_binaries, s_hiddenimports = collect_all(schema_pkg)
         datas.extend(s_datas)
