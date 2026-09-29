@@ -135,122 +135,127 @@ def handle_cro_command(args: argparse.Namespace, settings: AppSettings) -> bool:
     quiet = getattr(args, "quiet", False)
     is_json = getattr(args, "json", False)
 
-    if cro_cmd == "ingest":
-        source_dir = getattr(args, "source", None) or getattr(args, "source_pos", None)
-        target_dir = getattr(args, "target", None) or getattr(args, "target_pos", None)
+    try:
+        if cro_cmd == "ingest":
+            source_dir = getattr(args, "source", None) or getattr(args, "source_pos", None)
+            target_dir = getattr(args, "target", None) or getattr(args, "target_pos", None)
 
-        if not source_dir or not target_dir:
-            print(
-                "Error: Both source and target directories are required. Usage: sortify cro ingest <source> <target> [--mode tmf]",
-                file=sys.stderr,
+            if not source_dir or not target_dir:
+                print(
+                    "Error: Both source and target directories are required. Usage: sortify cro ingest <source> <target> [--mode tmf]",
+                    file=sys.stderr,
+                )
+                sys.exit(2)
+
+            source_path = Path(source_dir).resolve()
+            target_path = Path(target_dir).resolve()
+
+            if not source_path.exists() or not source_path.is_dir():
+                print(
+                    f"Error: Source directory '{source_dir}' does not exist or is not a directory.",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+
+            mode = getattr(args, "mode", "tmf")
+            smart_renaming = getattr(args, "smart_renaming", True)
+
+            pipeline = CROMultiStudyPipeline(mode=mode, smart_renaming=smart_renaming)
+
+            def progress_cb(ratio: float, stage: str) -> None:
+                if not quiet and not is_json:
+                    print(f"  [{int(ratio * 100)}%] {stage}", file=sys.stderr)
+
+            try:
+                result = pipeline.run_pipeline(
+                    source_root=str(source_path),
+                    target_root=str(target_path),
+                    progress_callback=progress_cb,
+                )
+
+                res_dict = dataclasses.asdict(result)
+                res = {
+                    "status": "success",
+                    "pipeline_result": res_dict,
+                }
+
+                if is_json:
+                    sys.stdout.write(json.dumps(res, indent=2) + "\n")
+                    sys.stdout.flush()
+                else:
+                    if not quiet:
+                        print(
+                            f"CRO Multi-Study Pipeline ingestion completed successfully for '{source_path}'.",
+                            file=sys.stderr,
+                        )
+                        print(
+                            f"Discovered Studies: {result.discovered_studies_count} | "
+                            f"Scanned Files: {result.total_scanned_files} | "
+                            f"Manifest: {result.chain_of_custody_manifest_path}",
+                            file=sys.stderr,
+                        )
+
+                sys.exit(0)
+
+            except Exception as e:
+                print(
+                    f"Error during CRO multi-study pipeline ingestion: {e}", file=sys.stderr
+                )
+                sys.exit(1)
+
+        elif cro_cmd == "manifest":
+            manifest_path_input = (
+                getattr(args, "manifest_path", None)
+                or getattr(args, "target", None)
+                or getattr(args, "target_pos", None)
             )
-            sys.exit(2)
 
-        source_path = Path(source_dir).resolve()
-        target_path = Path(target_dir).resolve()
+            if not manifest_path_input:
+                print(
+                    "Error: Target directory or manifest path is required.", file=sys.stderr
+                )
+                sys.exit(2)
 
-        if not source_path.exists() or not source_path.is_dir():
-            print(
-                f"Error: Source directory '{source_dir}' does not exist or is not a directory.",
-                file=sys.stderr,
-            )
-            sys.exit(1)
-
-        mode = getattr(args, "mode", "tmf")
-        smart_renaming = getattr(args, "smart_renaming", True)
-
-        pipeline = CROMultiStudyPipeline(mode=mode, smart_renaming=smart_renaming)
-
-        def progress_cb(ratio: float, stage: str) -> None:
-            if not quiet and not is_json:
-                print(f"  [{int(ratio * 100)}%] {stage}", file=sys.stderr)
-
-        try:
-            result = pipeline.run_pipeline(
-                source_root=str(source_path),
-                target_root=str(target_path),
-                progress_callback=progress_cb,
-            )
-
-            res_dict = dataclasses.asdict(result)
-            res = {
-                "status": "success",
-                "pipeline_result": res_dict,
-            }
-
-            if is_json:
-                sys.stdout.write(json.dumps(res, indent=2) + "\n")
-                sys.stdout.flush()
+            p = Path(manifest_path_input).resolve()
+            if p.is_dir():
+                manifest_file = p / "chain_of_custody_manifest.json"
             else:
-                if not quiet:
-                    print(
-                        f"CRO Multi-Study Pipeline ingestion completed successfully for '{source_path}'.",
-                        file=sys.stderr,
-                    )
-                    print(
-                        f"Discovered Studies: {result.discovered_studies_count} | "
-                        f"Scanned Files: {result.total_scanned_files} | "
-                        f"Manifest: {result.chain_of_custody_manifest_path}",
-                        file=sys.stderr,
-                    )
+                manifest_file = p
 
-            sys.exit(0)
+            if not manifest_file.exists():
+                print(
+                    f"Error: Chain-of-custody manifest not found at '{manifest_file}'.",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
 
-        except Exception as e:
-            print(
-                f"Error during CRO multi-study pipeline ingestion: {e}", file=sys.stderr
-            )
-            sys.exit(1)
+            try:
+                with open(manifest_file, "r", encoding="utf-8") as f:
+                    manifest_data = json.load(f)
 
-    elif cro_cmd == "manifest":
-        manifest_path_input = (
-            getattr(args, "manifest_path", None)
-            or getattr(args, "target", None)
-            or getattr(args, "target_pos", None)
-        )
+                res = {
+                    "status": "success",
+                    "manifest_path": str(manifest_file),
+                    "manifest": manifest_data,
+                }
 
-        if not manifest_path_input:
-            print(
-                "Error: Target directory or manifest path is required.", file=sys.stderr
-            )
-            sys.exit(2)
+                if is_json:
+                    sys.stdout.write(json.dumps(res, indent=2) + "\n")
+                    sys.stdout.flush()
+                else:
+                    print(f"Chain-of-Custody Manifest: {manifest_file}")
+                    print(json.dumps(manifest_data, indent=2))
 
-        p = Path(manifest_path_input).resolve()
-        if p.is_dir():
-            manifest_file = p / "chain_of_custody_manifest.json"
-        else:
-            manifest_file = p
+                sys.exit(0)
 
-        if not manifest_file.exists():
-            print(
-                f"Error: Chain-of-custody manifest not found at '{manifest_file}'.",
-                file=sys.stderr,
-            )
-            sys.exit(1)
+            except Exception as e:
+                print(
+                    f"Error reading manifest file '{manifest_file}': {e}", file=sys.stderr
+                )
+                sys.exit(1)
+    finally:
+        from app.core.db_conn import clear_connection_cache
 
-        try:
-            with open(manifest_file, "r", encoding="utf-8") as f:
-                manifest_data = json.load(f)
-
-            res = {
-                "status": "success",
-                "manifest_path": str(manifest_file),
-                "manifest": manifest_data,
-            }
-
-            if is_json:
-                sys.stdout.write(json.dumps(res, indent=2) + "\n")
-                sys.stdout.flush()
-            else:
-                print(f"Chain-of-Custody Manifest: {manifest_file}")
-                print(json.dumps(manifest_data, indent=2))
-
-            sys.exit(0)
-
-        except Exception as e:
-            print(
-                f"Error reading manifest file '{manifest_file}': {e}", file=sys.stderr
-            )
-            sys.exit(1)
+        clear_connection_cache(only_current_and_inactive=False)
 
     return True

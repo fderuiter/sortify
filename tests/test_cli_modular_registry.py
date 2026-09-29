@@ -49,84 +49,99 @@ def run_cli(args, env=None):
 def test_crypto_info():
     """Test 'sortify crypto info' command."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        db_path = Path(tmpdir) / "test_crypto.db"
+        db_path = Path(tmpdir).resolve() / "test_crypto.db"
 
-        # Standard text output
-        code, stdout, stderr = run_cli(["crypto", "info", "--db", str(db_path)])
-        assert code == 0, f"Expected 0 exit code, got {code}. Stderr: {stderr}"
-        assert "Encryption Key Path:" in stdout
-        assert "Storage Backend:" in stdout
+        try:
+            # Standard text output
+            code, stdout, stderr = run_cli(["crypto", "info", "--db", str(db_path)])
+            assert code == 0, f"Expected 0 exit code, got {code}. Stderr: {stderr}"
+            assert "Encryption Key Path:" in stdout
+            assert "Storage Backend:" in stdout
 
-        # JSON output
-        code_json, stdout_json, stderr_json = run_cli(
-            ["crypto", "info", "--db", str(db_path), "--json"]
-        )
-        assert code_json == 0, (
-            f"Expected 0 exit code, got {code_json}. Stderr: {stderr_json}"
-        )
-        data = json.loads(stdout_json)
-        assert data["status"] == "success"
-        assert "key_path" in data
-        assert "storage_backend" in data
-        assert Path(data["db_path"]).resolve() == db_path.resolve()
+            # JSON output
+            code_json, stdout_json, stderr_json = run_cli(
+                ["crypto", "info", "--db", str(db_path), "--json"]
+            )
+            assert code_json == 0, (
+                f"Expected 0 exit code, got {code_json}. Stderr: {stderr_json}"
+            )
+            data = json.loads(stdout_json)
+            assert data["status"] == "success"
+            assert "key_path" in data
+            assert "storage_backend" in data
+            assert Path(data["db_path"]).resolve() == db_path.resolve()
+        finally:
+            from app.core.db_conn import clear_connection_cache
+
+            clear_connection_cache(only_current_and_inactive=False)
 
 
 @pytest.mark.xdist_group(name="cli_registry")
 def test_crypto_rotate_key():
     """Test 'sortify crypto rotate-key' command."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        db_path = Path(tmpdir) / "test_crypto.db"
+        db_path = Path(tmpdir).resolve() / "test_crypto.db"
 
-        # Without --force in non-interactive environment should fail
-        code_fail, stdout_fail, stderr_fail = run_cli(
-            ["crypto", "rotate-key", "--db", str(db_path)]
-        )
-        assert code_fail == 1
-        assert "requires explicit confirmation" in stderr_fail
+        try:
+            # Without --force in non-interactive environment should fail
+            code_fail, stdout_fail, stderr_fail = run_cli(
+                ["crypto", "rotate-key", "--db", str(db_path)]
+            )
+            assert code_fail == 1
+            assert "requires explicit confirmation" in stderr_fail
 
-        # With --force and --json
-        code, stdout, stderr = run_cli(
-            ["crypto", "rotate-key", "--db", str(db_path), "--force", "--json"]
-        )
-        assert code == 0, f"Expected 0 exit code, got {code}. Stderr: {stderr}"
-        data = json.loads(stdout)
-        assert data["status"] == "success"
-        assert "rotated successfully" in data["message"]
+            # With --force and --json
+            code, stdout, stderr = run_cli(
+                ["crypto", "rotate-key", "--db", str(db_path), "--force", "--json"]
+            )
+            assert code == 0, f"Expected 0 exit code, got {code}. Stderr: {stderr}"
+            data = json.loads(stdout)
+            assert data["status"] == "success"
+            assert "rotated successfully" in data["message"]
+        finally:
+            from app.core.db_conn import clear_connection_cache
+
+            clear_connection_cache(only_current_and_inactive=False)
 
 
 @pytest.mark.xdist_group(name="cli_registry")
 def test_crypto_export_key():
     """Test 'sortify crypto export-key' command."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        db_path = Path(tmpdir) / "test_crypto.db"
-        out_file = Path(tmpdir) / "exported_secret.key"
+        db_path = Path(tmpdir).resolve() / "test_crypto.db"
+        out_file = Path(tmpdir).resolve() / "exported_secret.key"
 
-        # Export to file
-        code, stdout, stderr = run_cli(
-            [
-                "crypto",
-                "export-key",
-                "--db",
-                str(db_path),
-                "--output",
-                str(out_file),
-                "--json",
-            ]
-        )
-        assert code == 0, f"Expected 0 exit code, got {code}. Stderr: {stderr}"
-        data = json.loads(stdout)
-        assert data["status"] == "success"
-        assert Path(data["exported_to"]).resolve() == out_file.resolve()
-        assert out_file.exists()
-        assert len(out_file.read_text()) > 0
+        try:
+            # Export to file
+            code, stdout, stderr = run_cli(
+                [
+                    "crypto",
+                    "export-key",
+                    "--db",
+                    str(db_path),
+                    "--output",
+                    str(out_file),
+                    "--json",
+                ]
+            )
+            assert code == 0, f"Expected 0 exit code, got {code}. Stderr: {stderr}"
+            data = json.loads(stdout)
+            assert data["status"] == "success"
+            assert Path(data["exported_to"]).resolve() == out_file.resolve()
+            assert out_file.exists()
+            assert len(out_file.read_text()) > 0
 
-        # Export to stdout JSON
-        code_out, stdout_out, stderr_out = run_cli(
-            ["crypto", "export-key", "--db", str(db_path), "--json"]
-        )
-        assert code_out == 0
-        data_out = json.loads(stdout_out)
-        assert "key" in data_out
+            # Export to stdout JSON
+            code_out, stdout_out, stderr_out = run_cli(
+                ["crypto", "export-key", "--db", str(db_path), "--json"]
+            )
+            assert code_out == 0
+            data_out = json.loads(stdout_out)
+            assert "key" in data_out
+        finally:
+            from app.core.db_conn import clear_connection_cache
+
+            clear_connection_cache(only_current_and_inactive=False)
 
 
 @pytest.mark.xdist_group(name="cli_registry")
@@ -312,48 +327,54 @@ def test_cro_ingest_and_manifest():
         tempfile.TemporaryDirectory() as src_dir,
         tempfile.TemporaryDirectory() as target_dir,
     ):
-        # Create sample study documents in source
-        src_path = Path(src_dir)
-        (src_path / "Protocol_Study123.txt").write_text(
-            "Clinical trial protocol for Study Protocol-123."
-        )
-        (src_path / "Informed_Consent_01.txt").write_text(
-            "Subject consent form for Study Protocol-123."
-        )
+        try:
+            # Create sample study documents in source
+            src_path = Path(src_dir).resolve()
+            target_path = Path(target_dir).resolve()
+            (src_path / "Protocol_Study123.txt").write_text(
+                "Clinical trial protocol for Study Protocol-123."
+            )
+            (src_path / "Informed_Consent_01.txt").write_text(
+                "Subject consent form for Study Protocol-123."
+            )
 
-        # 1. CRO Ingest
-        code_ingest, stdout_ingest, stderr_ingest = run_cli(
-            [
-                "cro",
-                "ingest",
-                "--source",
-                src_dir,
-                "--target",
-                target_dir,
-                "--mode",
-                "tmf",
-                "--json",
-            ]
-        )
-        assert code_ingest == 0, (
-            f"Expected 0 exit code, got {code_ingest}. Stderr: {stderr_ingest}"
-        )
-        data_ingest = json.loads(stdout_ingest)
-        assert data_ingest["status"] == "success"
-        pipeline_res = data_ingest["pipeline_result"]
-        assert pipeline_res["total_scanned_files"] >= 2
-        assert Path(pipeline_res["chain_of_custody_manifest_path"]).exists()
+            # 1. CRO Ingest
+            code_ingest, stdout_ingest, stderr_ingest = run_cli(
+                [
+                    "cro",
+                    "ingest",
+                    "--source",
+                    str(src_path),
+                    "--target",
+                    str(target_path),
+                    "--mode",
+                    "tmf",
+                    "--json",
+                ]
+            )
+            assert code_ingest == 0, (
+                f"Expected 0 exit code, got {code_ingest}. Stderr: {stderr_ingest}"
+            )
+            data_ingest = json.loads(stdout_ingest)
+            assert data_ingest["status"] == "success"
+            pipeline_res = data_ingest["pipeline_result"]
+            assert pipeline_res["total_scanned_files"] >= 2
+            assert Path(pipeline_res["chain_of_custody_manifest_path"]).resolve().exists()
 
-        # 2. CRO Manifest
-        code_man, stdout_man, stderr_man = run_cli(
-            ["cro", "manifest", target_dir, "--json"]
-        )
-        assert code_man == 0, (
-            f"Expected 0 exit code, got {code_man}. Stderr: {stderr_man}"
-        )
-        data_man = json.loads(stdout_man)
-        assert data_man["status"] == "success"
-        assert "manifest" in data_man
+            # 2. CRO Manifest
+            code_man, stdout_man, stderr_man = run_cli(
+                ["cro", "manifest", str(target_path), "--json"]
+            )
+            assert code_man == 0, (
+                f"Expected 0 exit code, got {code_man}. Stderr: {stderr_man}"
+            )
+            data_man = json.loads(stdout_man)
+            assert data_man["status"] == "success"
+            assert "manifest" in data_man
+        finally:
+            from app.core.db_conn import clear_connection_cache
+
+            clear_connection_cache(only_current_and_inactive=False)
 
 
 @pytest.mark.xdist_group(name="cli_registry")
