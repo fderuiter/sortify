@@ -37,8 +37,8 @@ RESERVED_NAMES = {
 ILLEGAL_PATH_CHARS_SET = set('<>:"|?*')
 ILLEGAL_NAME_CHARS_SET = ILLEGAL_PATH_CHARS_SET | set("/\\")
 
-_BOUND_LEFT = r"(?:^|(?<=[\s_\-/,;:()\[\]{}.]))"
-_BOUND_RIGHT = r"(?:$|(?=[\s_\-/,;:()\[\]{}.]))"
+_BOUND_LEFT = r"(?:^|(?<=[\s_\-/\\,;:()\[\]{}.]))"
+_BOUND_RIGHT = r"(?:$|(?=[\s_\-/\\,;:()\[\]{}.]))"
 
 PII_FILENAME_PATTERNS = [
     # SSN pattern

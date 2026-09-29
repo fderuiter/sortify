@@ -25,8 +25,8 @@ TRUNCATED_TAG_PATTERN = re.compile(r"<[a-zA-Z0-9_\-:/]*$")
 HORIZONTAL_WHITESPACE_PATTERN = re.compile(r"[ \t]+")
 VERTICAL_WHITESPACE_PATTERN = re.compile(r"\s*\n\s*")
 
-_SECRET_BOUND_LEFT = r"(?:^|(?<=[\s_\-/,;:()\[\]{}.:=]))"
-_SECRET_BOUND_RIGHT = r"(?:$|(?=[\s_\-/,;:()\[\]{}.:=]))"
+_SECRET_BOUND_LEFT = r"(?:^|(?<=[\s_\-/\\,;:()\[\]{}.:=]))"
+_SECRET_BOUND_RIGHT = r"(?:$|(?=[\s_\-/\\,;:()\[\]{}.:=]))"
 
 # 6. Centralized Secret & Credential Patterns
 SECRET_KEY_PATTERNS = [
@@ -102,11 +102,11 @@ def _is_high_entropy_token(token: str) -> bool:
     """Check if a word/token exhibits high Shannon entropy indicative of secret credentials."""
     if "<USER_HOME>" in token or "REDACTED" in token or "[STATUS:" in token:
         return False
-    clean_token = token.strip(".,;:\"'()[]{}<>!@#$%^&*+=/")
+    clean_token = token.strip(".,;:\"'()[]{}<>!@#$%^&*+=/\\")
     if len(clean_token) < 20:
         return False
 
-    segments = [s for s in re.split(r"[_\-]+", clean_token) if s]
+    segments = [s for s in re.split(r"[_\-/\\:]+", clean_token) if s]
     if len(segments) > 1:
         return any(_is_high_entropy_single_token(s) for s in segments)
 

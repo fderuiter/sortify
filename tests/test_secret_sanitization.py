@@ -160,6 +160,13 @@ def test_sanitize_folder_key_removes_secrets_from_path_segments():
     assert "Folder" in safe_key1
     assert "Documents" in safe_key1
 
+    raw_win_key = r"Folder\sk_live_51Nxabc123XYZ4567890abcdef\Documents"
+    safe_win_key, transformed_win = sanitize_folder_key(raw_win_key)
+    assert transformed_win is True
+    assert "sk_live_" not in safe_win_key
+    assert "Folder" in safe_win_key
+    assert "Documents" in safe_win_key
+
     raw_key2 = "ghp_1234567890abcdef1234567890abcdef123456"
     safe_key2, transformed2 = sanitize_folder_key(raw_key2)
     assert transformed2 is True
