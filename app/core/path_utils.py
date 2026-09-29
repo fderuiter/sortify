@@ -420,6 +420,7 @@ def sanitize_plan(plan: Any) -> tuple[dict, list[str]]:
                     new_tf = sanitize_name(old_tf)
                     if new_tf != old_tf:
                         file_content["target_filename"] = new_tf
+                        file_content["confirmed"] = True
                         warnings.append(
                             f"Sanitized target filename '{old_tf}' to '{new_tf}'"
                         )
@@ -430,6 +431,7 @@ def sanitize_plan(plan: Any) -> tuple[dict, list[str]]:
                 )
                 if isinstance(file_content, dict) and "target_filename" in file_content:
                     file_content["target_filename"] = safe_file_key
+                    file_content["confirmed"] = True
 
             sanitized_plan[safe_file_key] = file_content
 
@@ -474,6 +476,7 @@ def sanitize_plan(plan: Any) -> tuple[dict, list[str]]:
                         new_tf = sanitize_name(old_tf)
                         if new_tf != old_tf:
                             file_content["target_filename"] = new_tf
+                            file_content["confirmed"] = True
                             warnings.append(
                                 f"Sanitized target filename '{old_tf}' to '{new_tf}'"
                             )
@@ -518,6 +521,7 @@ def sanitize_plan(plan: Any) -> tuple[dict, list[str]]:
                     )
                     if "target_filename" in file_content:
                         file_content["target_filename"] = safe_file_key
+                        file_content["confirmed"] = True
 
                 sanitized_plan[safe_file_key] = file_content
             else:

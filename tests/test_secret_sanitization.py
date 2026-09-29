@@ -195,8 +195,29 @@ def test_sanitize_plan_sanitizes_leaf_filenames_and_target_filenames():
     dir_content = sanitized["Unnamed_safe"]
     assert "doc.pdf" in dir_content
     assert dir_content["doc.pdf"]["target_filename"] == "doc.pdf"
+    assert dir_content["doc.pdf"].get("confirmed") is True
     assert "Unnamed_safe.docx" in dir_content
     assert len(warnings) > 0
+
+
+def test_verification_engine_plan_integrity_with_secrets():
+    """Verify VerificationEngine.verify_plan_integrity succeeds on plans containing secret target filenames."""
+    from app.core.verifier import VerificationEngine
+
+    plan = {
+        "Folder": {
+            "doc_sk_live_51Nxabc123XYZ4567890abcdef.pdf": {
+                "__type__": "file",
+                "relative_source": "doc_sk_live_51Nxabc123XYZ4567890abcdef.pdf",
+                "target_filename": "doc_sk_live_51Nxabc123XYZ4567890abcdef.pdf",
+            }
+        }
+    }
+
+    result = VerificationEngine.verify_plan_integrity("/base/dir", plan)
+    assert result["success"] is True
+    assert "Folder" in result["plan"]
+    assert "doc.pdf" in result["plan"]["Folder"]
 
 
 def test_contextual_file_renamer_scrubs_secrets():
