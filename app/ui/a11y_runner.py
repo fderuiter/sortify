@@ -73,7 +73,7 @@ def is_rigid_width_class(cls_name: str, viewport_width: int) -> bool:
 
 
 def get_element_type_name(element: Any) -> str:
-    """Extract readable type name of a NiceGUI element."""
+    """Extract readable type name of a UI element."""
     return type(element).__name__
 
 
@@ -109,7 +109,7 @@ def inspect_element_tree(
     viewport_name: str,
     viewport_width: int,
 ) -> List[A11yViolation]:
-    """Recursively inspect a NiceGUI element and its children for accessibility rule failures."""
+    """Recursively inspect a UI element and its children for accessibility rule failures."""
     violations: List[A11yViolation] = []
     type_name = get_element_type_name(element)
     props = getattr(element, "_props", {})

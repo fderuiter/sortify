@@ -17,14 +17,20 @@ class ClinicalRenamer:
     @staticmethod
     def extract_protocol_id(text: str, filename: str) -> Optional[str]:
         """Extract study/protocol identifier from text or filename."""
-        text = str(text or "")
+        from app.core.text_utils import contains_secrets, sanitize_secret_patterns
+
+        clean_fn = sanitize_secret_patterns(filename)
+        clean_text = sanitize_secret_patterns(str(text or ""))
+
         # Check filename first
         fn_match = re.search(
             r"(?:^|[^A-Za-z0-9])([A-Z]{2,6}[-_][0-9]{3,6}(?:[-_][A-Za-z0-9]+)?)(?:[^A-Za-z0-9]|$)",
-            filename,
+            clean_fn,
         )
         if fn_match:
-            return fn_match.group(1).upper().replace("-", "_")
+            candidate = fn_match.group(1).upper().replace("-", "_")
+            if not contains_secrets(candidate):
+                return candidate
 
         # Check text patterns
         patterns = [
@@ -34,7 +40,7 @@ class ClinicalRenamer:
             r"\bprotocol\s*[:#]\s*([A-Z0-9_\-]+)",
         ]
         for pat in patterns:
-            match = re.search(pat, text, re.IGNORECASE)
+            match = re.search(pat, clean_text, re.IGNORECASE)
             if match:
                 candidate = (
                     match.group(1).strip().strip(".,;:").upper().replace("-", "_")
@@ -44,6 +50,7 @@ class ClinicalRenamer:
                     and len(candidate) <= 25
                     and candidate
                     not in ("VERSION", "AMENDMENT", "SIGNATURE", "STUDY", "DESIGN")
+                    and not contains_secrets(candidate)
                 ):
                     return candidate
         return None
@@ -51,7 +58,9 @@ class ClinicalRenamer:
     @staticmethod
     def extract_investigator_name(text: str) -> Optional[str]:
         """Extract Principal Investigator / Physician name from document text."""
-        text = str(text or "")
+        from app.core.text_utils import contains_secrets, sanitize_secret_patterns
+
+        clean_text = sanitize_secret_patterns(str(text or ""))
         patterns = [
             r"principal\s+investigator\s*[:\s]+(?:Dr\.?\s+)?([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)",
             r"investigator\s+name\s*[:\s]+(?:Dr\.?\s+)?([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)",
@@ -59,20 +68,25 @@ class ClinicalRenamer:
             r"\bDr\.?\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b",
         ]
         for pat in patterns:
-            match = re.search(pat, text, re.IGNORECASE)
+            match = re.search(pat, clean_text, re.IGNORECASE)
             if match:
                 name = match.group(1).strip().replace(" ", "_")
-                return f"PI_{name}"
+                if not contains_secrets(name):
+                    return f"PI_{name}"
         return None
 
     @staticmethod
     def extract_date_or_version(text: str, filename: str) -> Optional[str]:
         """Extract date (YYYYMMDD or YYYY-MM-DD) or version string from text or filename."""
-        text = str(text or "")
+        from app.core.text_utils import sanitize_secret_patterns
+
+        clean_fn = sanitize_secret_patterns(filename)
+        clean_text = sanitize_secret_patterns(str(text or ""))
+
         # Version pattern
         v_match = re.search(
             r"(?:^|[^a-zA-Z0-9])(v(?:ersion)?[-_\s]?\d+(?:\.\d+)?)(?:[^a-zA-Z0-9]|$)",
-            filename,
+            clean_fn,
             re.IGNORECASE,
         )
         if v_match:
@@ -86,13 +100,13 @@ class ClinicalRenamer:
 
         # Date in filename
         d_match = re.search(
-            r"(?:^|[^0-9])(20\d{2}[-_]?[0-1]\d[-_]?[0-3]\d)(?:[^0-9]|$)", filename
+            r"(?:^|[^0-9])(20\d{2}[-_]?[0-1]\d[-_]?[0-3]\d)(?:[^0-9]|$)", clean_fn
         )
         if d_match:
             return d_match.group(1).replace("-", "").replace("_", "")
 
         # Date in text (e.g. 2024-05-12 or 2024/05/12)
-        iso_match = re.search(r"\b(202[0-9][-/][0-1][0-9][-/][0-3][0-9])\b", text)
+        iso_match = re.search(r"\b(202[0-9][-/][0-1][0-9][-/][0-3][0-9])\b", clean_text)
         if iso_match:
             return iso_match.group(1).replace("-", "").replace("/", "")
 
@@ -109,10 +123,13 @@ class ClinicalRenamer:
 
         Format: [ProtocolID]_[ArtifactType]_[PI/Site]_[Date/Version].[ext]
         """
+        from app.core.text_utils import sanitize_secret_patterns
+
         base, ext = os.path.splitext(original_filename)
 
+        clean_art = sanitize_secret_patterns(artifact_name)
         # Strip parentheses explanations e.g. "Form FDA 1572 (Statement of Investigator)" -> "Form FDA 1572"
-        clean_name = re.sub(r"\(.*?\)", "", artifact_name).strip()
+        clean_name = re.sub(r"\(.*?\)", "", clean_art).strip()
         # Normalize artifact name into a slug
         artifact_slug = re.sub(r"[^\w\s-]", "", clean_name).strip().replace(" ", "_")
         artifact_slug = re.sub(r"_+", "_", artifact_slug)
@@ -125,7 +142,8 @@ class ClinicalRenamer:
         if protocol_id:
             parts.append(protocol_id)
 
-        parts.append(artifact_slug)
+        if artifact_slug:
+            parts.append(artifact_slug)
 
         if pi_name:
             parts.append(pi_name)
@@ -135,7 +153,7 @@ class ClinicalRenamer:
 
         new_base = "_".join(parts)
         safe_base = sanitize_name(new_base)
-        if not safe_base or len(safe_base) < 3:
-            return original_filename
+        if not safe_base or len(safe_base) < 3 or safe_base == "Unnamed_safe":
+            return sanitize_name(original_filename)
 
         return f"{safe_base}{ext}"

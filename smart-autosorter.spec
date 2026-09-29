@@ -210,7 +210,11 @@ if (platform.system().lower() == "windows" or sys.platform == "win32") and "pyte
                     binaries.append((dll_path, 'sqlcipher3'))
 
 is_lite = os.environ.get("LITE_BUILD") == "1"
-excludes = ['tkinter', 'tcl', 'tk', '_tkinter', 'sqlite3', '_sqlite3']
+excludes = [
+    'tkinter', 'tcl', 'tk', '_tkinter', 'sqlite3', '_sqlite3',
+    'nicegui', 'fastapi', 'uvicorn', 'starlette', 'socketio', 'engineio',
+    'vbuild', 'httpx', 'websockets', 'watchfiles'
+]
 if is_lite:
     excludes.extend([
         'torch', 'torchvision', 'triton', 'nvidia', 'easyocr', 'scipy',
@@ -388,13 +392,27 @@ if "pytest" not in sys.modules:
                 if custom_sqlite3_dll:
                     break
 
+# Exclude Quasar framework files, Vue assets, HTML templates, and static web assets
+def is_web_asset(name):
+    name_lower = name.lower().replace('\\', '/')
+    parts = name_lower.split('/')
+    for p in parts:
+        if p in ('quasar', 'vue', 'nicegui', 'static_assets', 'templates', 'vbuild'):
+            return True
+        if 'quasar' in p or 'vue' in p or 'nicegui' in p:
+            return True
+    if name_lower.endswith(('.html', '.htm', '.css', '.js.map', '.ico')):
+        return True
+    return False
+
+
 new_binaries = []
 for x in a.binaries:
     dest_name, src_path = x[0], x[1]
     dest_lower = dest_name.lower().replace('\\', '/')
     src_lower = src_path.lower().replace('\\', '/')
     
-    if is_tcl_tk_asset(dest_name) or is_prunable_asset(dest_name):
+    if is_tcl_tk_asset(dest_name) or is_prunable_asset(dest_name) or is_web_asset(dest_name):
         continue
         
     # Redirect standard sqlite3.dll to our custom one instead of discarding it to satisfy pefile/dependency requirements
@@ -411,7 +429,7 @@ for x in a.binaries:
     new_binaries.append(x)
 
 a.binaries = new_binaries
-a.datas = [x for x in a.datas if not is_tcl_tk_asset(x[0]) and not is_prunable_asset(x[0])]
+a.datas = [x for x in a.datas if not is_tcl_tk_asset(x[0]) and not is_prunable_asset(x[0]) and not is_web_asset(x[0])]
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
