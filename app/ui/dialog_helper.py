@@ -9,12 +9,14 @@ from unittest.mock import MagicMock
 from app.core.env_helper import run_background_process
 from app.ui.tokens import TOKENS
 
+_dummy_ui = MagicMock()
+
 try:
     from nicegui import ui
 
     _NICEGUI_AVAILABLE = True
 except (ImportError, ModuleNotFoundError):
-    ui = MagicMock()
+    ui = _dummy_ui
     _NICEGUI_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
@@ -57,6 +59,11 @@ def _render_fallback_dialog(
             callback(selected_path)
 
     try:
+        if not _NICEGUI_AVAILABLE and ui is _dummy_ui:
+            logger.warning("NiceGUI is not available; skipping fallback dialog.")
+            _cleanup_and_finish("")
+            return None
+
         dialog = ui.dialog()
         with dialog, ui.card().classes(get_dialog_card_classes("md")):
             dialog.props("persistent")

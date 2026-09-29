@@ -339,4 +339,34 @@ async def test_ask_directory_async_fallback_render_exception():
         enable_ui.assert_called_once()
 
 
+@pytest.mark.anyio
+async def test_ask_directory_async_fallback_nicegui_unavailable():
+    """Test fallback when NiceGUI is unavailable (_NICEGUI_AVAILABLE=False and dummy ui)."""
+    mock_run = mock.MagicMock()
+    mock_result = mock.MagicMock()
+    mock_result.returncode = 1
+    mock_result.stdout = "Error"
+    mock_run.return_value = mock_result
+
+    enable_ui = mock.MagicMock()
+
+    from app.ui.dialog_helper import _dummy_ui
+
+    with (
+        mock.patch("sys.platform", "win32"),
+        mock.patch("app.ui.dialog_helper.run_background_process", mock_run),
+        mock.patch("app.ui.dialog_helper._NICEGUI_AVAILABLE", False),
+        mock.patch("app.ui.dialog_helper.ui", _dummy_ui),
+    ):
+        fut = ask_directory_async(
+            None,
+            "Select Folder",
+            enable_ui_callback=enable_ui,
+        )
+        res = await asyncio.wait_for(fut, timeout=1.0)
+        assert res == ""
+        enable_ui.assert_called_once()
+
+
+
 
