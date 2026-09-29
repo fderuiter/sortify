@@ -37,6 +37,33 @@ class StudyIngestSummary(BaseModel):
     target_directory: str
     audit_report_html_path: str
 
+    def dict(self, *args, **kwargs) -> Dict[str, Any]:
+        """Backward compatibility method for legacy callers."""
+        return self.model_dump(*args, **kwargs)
+
+    def __getitem__(self, item: str) -> Any:
+        """Support item lookup via bracket syntax for dictionary compatibility."""
+        if hasattr(self, item):
+            return getattr(self, item)
+        extra = getattr(self, "__pydantic_extra__", None)
+        if extra and item in extra:
+            return extra[item]
+        raise KeyError(item)
+
+    def get(self, item: str, default: Any = None) -> Any:
+        """Support dictionary get method."""
+        try:
+            return self[item]
+        except KeyError:
+            return default
+
+    def __contains__(self, item: str) -> bool:
+        """Check if key exists in attributes or extra fields."""
+        return hasattr(self, item) or (
+            getattr(self, "__pydantic_extra__", None) is not None
+            and item in self.__pydantic_extra__
+        )
+
 
 class MasterPipelineResult(BaseModel):
     """Complete result of a CRO Multi-Study forensic ingestion run."""
@@ -50,6 +77,33 @@ class MasterPipelineResult(BaseModel):
     discovered_studies_count: int
     studies_summary: List[StudyIngestSummary] = Field(default_factory=list)
     chain_of_custody_manifest_path: str = ""
+
+    def dict(self, *args, **kwargs) -> Dict[str, Any]:
+        """Backward compatibility method for legacy callers."""
+        return self.model_dump(*args, **kwargs)
+
+    def __getitem__(self, item: str) -> Any:
+        """Support item lookup via bracket syntax for dictionary compatibility."""
+        if hasattr(self, item):
+            return getattr(self, item)
+        extra = getattr(self, "__pydantic_extra__", None)
+        if extra and item in extra:
+            return extra[item]
+        raise KeyError(item)
+
+    def get(self, item: str, default: Any = None) -> Any:
+        """Support dictionary get method."""
+        try:
+            return self[item]
+        except KeyError:
+            return default
+
+    def __contains__(self, item: str) -> bool:
+        """Check if key exists in attributes or extra fields."""
+        return hasattr(self, item) or (
+            getattr(self, "__pydantic_extra__", None) is not None
+            and item in self.__pydantic_extra__
+        )
 
 
 class CROMultiStudyPipeline:

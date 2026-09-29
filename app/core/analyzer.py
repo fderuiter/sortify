@@ -102,10 +102,10 @@ class SortingPlanNode(dict):
 
     def __getattr__(self, name: str) -> Any:
         """Provide dynamic attribute lookup for schema fields and dictionary keys."""
+        if name.startswith("__") and name.endswith("__"):
+            raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
         if name == "node_type":
             return self.get("node_type") or self.get("__type__", "file")
-        if name == "__type__":
-            return self.get("__type__") or self.get("node_type", "file")
         if name in self:
             return self[name]
         if name in _SortingPlanNodeSchema.model_fields:
@@ -126,9 +126,13 @@ class SortingPlan(dict):
 
     def __init__(self, plan: Optional[Dict[str, Any]] = None, **kwargs):
         if plan is not None and isinstance(plan, dict):
-            validated = _validate_sorting_plan_nodes(plan)
+            if "plan" in plan and isinstance(plan["plan"], dict) and len(plan) == 1:
+                target = plan["plan"]
+            else:
+                target = plan
+            validated = _validate_sorting_plan_nodes(target)
             super().__init__(validated)
-        elif kwargs and "plan" in kwargs and isinstance(kwargs["plan"], dict):
+        elif kwargs and "plan" in kwargs and isinstance(kwargs["plan"], dict) and len(kwargs) == 1:
             validated = _validate_sorting_plan_nodes(kwargs["plan"])
             super().__init__(validated)
         elif kwargs:
@@ -152,6 +156,13 @@ class SortingPlan(dict):
     def plan(self) -> Dict[str, Any]:
         """Backward compatibility property returning the plan dictionary."""
         return self
+
+    @plan.setter
+    def plan(self, value: Dict[str, Any]) -> None:
+        """Backward compatibility setter for setting plan dictionary content."""
+        self.clear()
+        if isinstance(value, dict):
+            self.update(value)
 
     def model_dump(self, *args, **kwargs) -> Dict[str, Any]:
         """Dump the complete plan as a standard dictionary."""

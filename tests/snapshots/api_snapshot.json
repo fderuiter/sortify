@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "ecbb6de85366f7d103cc92b8dc1454b9faf17a18f21eabd0fbb0754a44c80590"
+    "checksum": "50833dfda66b3c18853c00c3e0f2c028c3ff81ba00bf0a2fc66d1c6e21e2e068"
   },
   "cli": {
     "app/main.py": [
@@ -756,6 +756,26 @@
                 }
               ],
               "returns": "Dict[str, Any]"
+            },
+            {
+              "async": false,
+              "decorators": [
+                "@plan.setter"
+              ],
+              "name": "plan",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "Dict[str, Any]",
+                  "default": null,
+                  "name": "value"
+                }
+              ],
+              "returns": "None"
             }
           ]
         },
@@ -1989,17 +2009,158 @@
         {
           "class_name": "ClinicalComplianceResult",
           "decorators": [],
-          "methods": []
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "dict",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "*args"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "**kwargs"
+                }
+              ],
+              "returns": "Dict[str, Any]"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "get",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "item"
+                },
+                {
+                  "annotation": "Any",
+                  "default": "None",
+                  "name": "default"
+                }
+              ],
+              "returns": "Any"
+            }
+          ]
         },
         {
           "class_name": "FoundEssentialDocument",
           "decorators": [],
-          "methods": []
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "dict",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "*args"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "**kwargs"
+                }
+              ],
+              "returns": "Dict[str, Any]"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "get",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "item"
+                },
+                {
+                  "annotation": "Any",
+                  "default": "None",
+                  "name": "default"
+                }
+              ],
+              "returns": "Any"
+            }
+          ]
         },
         {
           "class_name": "MissingEssentialDocument",
           "decorators": [],
-          "methods": []
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "dict",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "*args"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "**kwargs"
+                }
+              ],
+              "returns": "Dict[str, Any]"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "get",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "item"
+                },
+                {
+                  "annotation": "Any",
+                  "default": "None",
+                  "name": "default"
+                }
+              ],
+              "returns": "Any"
+            }
+          ]
         }
       ],
       "functions": []
@@ -2290,12 +2451,106 @@
         {
           "class_name": "MasterPipelineResult",
           "decorators": [],
-          "methods": []
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "dict",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "*args"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "**kwargs"
+                }
+              ],
+              "returns": "Dict[str, Any]"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "get",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "item"
+                },
+                {
+                  "annotation": "Any",
+                  "default": "None",
+                  "name": "default"
+                }
+              ],
+              "returns": "Any"
+            }
+          ]
         },
         {
           "class_name": "StudyIngestSummary",
           "decorators": [],
-          "methods": []
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "dict",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "*args"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "**kwargs"
+                }
+              ],
+              "returns": "Dict[str, Any]"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "get",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "item"
+                },
+                {
+                  "annotation": "Any",
+                  "default": "None",
+                  "name": "default"
+                }
+              ],
+              "returns": "Any"
+            }
+          ]
         }
       ],
       "functions": []
@@ -7288,7 +7543,54 @@
         {
           "class_name": "PolicyEvaluationResult",
           "decorators": [],
-          "methods": []
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "dict",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "*args"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "**kwargs"
+                }
+              ],
+              "returns": "Dict[str, Any]"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "get",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "item"
+                },
+                {
+                  "annotation": "Any",
+                  "default": "None",
+                  "name": "default"
+                }
+              ],
+              "returns": "Any"
+            }
+          ]
         }
       ],
       "functions": []

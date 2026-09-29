@@ -23,6 +23,33 @@ class FoundEssentialDocument(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
+    def dict(self, *args, **kwargs) -> Dict[str, Any]:
+        """Backward compatibility method for legacy callers."""
+        return self.model_dump(*args, **kwargs)
+
+    def __getitem__(self, item: str) -> Any:
+        """Support item lookup via bracket syntax for dictionary compatibility."""
+        if hasattr(self, item):
+            return getattr(self, item)
+        extra = getattr(self, "__pydantic_extra__", None)
+        if extra and item in extra:
+            return extra[item]
+        raise KeyError(item)
+
+    def get(self, item: str, default: Any = None) -> Any:
+        """Support dictionary get method."""
+        try:
+            return self[item]
+        except KeyError:
+            return default
+
+    def __contains__(self, item: str) -> bool:
+        """Check if key exists in attributes or extra fields."""
+        return hasattr(self, item) or (
+            getattr(self, "__pydantic_extra__", None) is not None
+            and item in self.__pydantic_extra__
+        )
+
 
 class MissingEssentialDocument(BaseModel):
     """Model representing a missing essential clinical document."""
@@ -34,6 +61,33 @@ class MissingEssentialDocument(BaseModel):
     gcp_ref: str
 
     model_config = ConfigDict(extra="allow")
+
+    def dict(self, *args, **kwargs) -> Dict[str, Any]:
+        """Backward compatibility method for legacy callers."""
+        return self.model_dump(*args, **kwargs)
+
+    def __getitem__(self, item: str) -> Any:
+        """Support item lookup via bracket syntax for dictionary compatibility."""
+        if hasattr(self, item):
+            return getattr(self, item)
+        extra = getattr(self, "__pydantic_extra__", None)
+        if extra and item in extra:
+            return extra[item]
+        raise KeyError(item)
+
+    def get(self, item: str, default: Any = None) -> Any:
+        """Support dictionary get method."""
+        try:
+            return self[item]
+        except KeyError:
+            return default
+
+    def __contains__(self, item: str) -> bool:
+        """Check if key exists in attributes or extra fields."""
+        return hasattr(self, item) or (
+            getattr(self, "__pydantic_extra__", None) is not None
+            and item in self.__pydantic_extra__
+        )
 
 
 class ClinicalComplianceResult(BaseModel):
@@ -52,6 +106,33 @@ class ClinicalComplianceResult(BaseModel):
     base_dir: str = ""
 
     model_config = ConfigDict(extra="allow")
+
+    def dict(self, *args, **kwargs) -> Dict[str, Any]:
+        """Backward compatibility method for legacy callers."""
+        return self.model_dump(*args, **kwargs)
+
+    def __getitem__(self, item: str) -> Any:
+        """Support item lookup via bracket syntax for dictionary compatibility."""
+        if hasattr(self, item):
+            return getattr(self, item)
+        extra = getattr(self, "__pydantic_extra__", None)
+        if extra and item in extra:
+            return extra[item]
+        raise KeyError(item)
+
+    def get(self, item: str, default: Any = None) -> Any:
+        """Support dictionary get method."""
+        try:
+            return self[item]
+        except KeyError:
+            return default
+
+    def __contains__(self, item: str) -> bool:
+        """Check if key exists in attributes or extra fields."""
+        return hasattr(self, item) or (
+            getattr(self, "__pydantic_extra__", None) is not None
+            and item in self.__pydantic_extra__
+        )
 
 
 class ClinicalComplianceEngine:
