@@ -30,6 +30,9 @@ class FileChangeEvent:
     file_path: str
     timestamp: float = field(default_factory=time.time)
     dest_path: Optional[str] = None
+    priority_key: Optional[tuple[int, float]] = None
+    archival_priority: int = 5
+    archival_priority_score: float = 0.0
 
 
 def _extract_plan_destinations(plan, base_dir=None, current_dest="", dests_set=None):
@@ -126,13 +129,14 @@ class ContinuousWatchdogDaemon:
 
         # Pipeline state
         self._event_loop: Optional[asyncio.AbstractEventLoop] = None
-        self._event_queue: Optional[asyncio.Queue[FileChangeEvent]] = None
+        self._event_queue: Optional[asyncio.PriorityQueue] = None
         self._recent_events: dict[str, float] = {}
         self._active_path_locks: dict[str, asyncio.Lock] = {}
         self._active_triage_paths: set[str] = set()
         self._worker_tasks: list[asyncio.Task] = []
         self._reconciliation_task: Optional[asyncio.Task] = None
         self._app_session: Optional[AppSession] = None
+        self._queue_sequence_counter: int = 0
 
         # We run the actual sorting loop on a dedicated background execution thread
         self._execution_thread = None
@@ -350,7 +354,7 @@ class ContinuousWatchdogDaemon:
         return False
 
     def enqueue_event(self, change_event: FileChangeEvent) -> bool:
-        """Publish a FileChangeEvent directly to the asynchronous FIFO queue with deduplication."""
+        """Publish a FileChangeEvent directly to the asynchronous PriorityQueue with deduplication."""
         if not change_event or not change_event.file_path:
             return False
 
@@ -360,6 +364,28 @@ class ContinuousWatchdogDaemon:
 
         norm_p = os.path.normcase(os.path.abspath(file_path))
         now = time.time()
+
+        if change_event.priority_key is None:
+            try:
+                from app.core.shared_registry import SharedModelRegistry
+
+                jev_engine = SharedModelRegistry.get_instance().get_jev_classifier()
+                jev_res = jev_engine.classify(file_path)
+                if jev_res:
+                    change_event.archival_priority = getattr(
+                        jev_res, "archival_priority", 5
+                    )
+                    change_event.archival_priority_score = getattr(
+                        jev_res, "archival_priority_score", 0.0
+                    )
+            except Exception:
+                change_event.archival_priority = 5
+                change_event.archival_priority_score = 0.0
+
+            change_event.priority_key = (
+                change_event.archival_priority,
+                -change_event.archival_priority_score,
+            )
 
         with self._lock:
             if not self._is_running:
@@ -383,6 +409,11 @@ class ContinuousWatchdogDaemon:
                     k: v for k, v in self._recent_events.items() if v > cutoff
                 }
 
+            self._queue_sequence_counter += 1
+            seq = self._queue_sequence_counter
+
+        queue_entry = (change_event.priority_key, seq, change_event)
+
         queue = self._event_queue
         loop = self._event_loop
 
@@ -395,12 +426,12 @@ class ContinuousWatchdogDaemon:
 
             if loop and loop.is_running():
                 loop.call_soon_threadsafe(
-                    lambda: queue.put_nowait(change_event) if not queue.full() else None
+                    lambda: queue.put_nowait(queue_entry) if not queue.full() else None
                 )
                 return True
             else:
                 try:
-                    queue.put_nowait(change_event)
+                    queue.put_nowait(queue_entry)
                     return True
                 except asyncio.QueueFull:
                     logger.warning(f"Queue full, dropping event: {file_path}")
@@ -432,7 +463,7 @@ class ContinuousWatchdogDaemon:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             self._event_loop = loop
-            self._event_queue = asyncio.Queue(maxsize=self.max_queue_capacity)
+            self._event_queue = asyncio.PriorityQueue(maxsize=self.max_queue_capacity)
 
             self._worker_tasks = [
                 loop.create_task(self._triage_worker(i))
@@ -478,9 +509,20 @@ class ContinuousWatchdogDaemon:
                 if self._event_queue is None:
                     await asyncio.sleep(0.05)
                     continue
-                event = await self._event_queue.get()
+                raw_item = await self._event_queue.get()
             except (asyncio.CancelledError, RuntimeError):
                 break
+
+            if (
+                isinstance(raw_item, tuple)
+                and len(raw_item) == 3
+                and isinstance(raw_item[2], FileChangeEvent)
+            ):
+                event = raw_item[2]
+            elif isinstance(raw_item, FileChangeEvent):
+                event = raw_item
+            else:
+                event = raw_item
 
             try:
                 await self._process_single_event(event)
@@ -773,6 +815,7 @@ class ContinuousWatchdogDaemon:
             if self._is_running:
                 return
             self._is_running = True
+            self._queue_sequence_counter = 0
             self._move_ref_count = 0
             self._pending_dirty = False
             self._active_move_paths.clear()

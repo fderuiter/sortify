@@ -190,7 +190,7 @@ class CROMultiStudyPipeline:
                             doc.file_name, art_name, doc.extracted_text
                         )
                     else:
-                        target_fn = doc.file_name
+                        target_fn = sanitize_name(doc.file_name)
 
                     src_to_copy = doc.staging_file_path or doc.source_path
                     dest_file_path = get_safe_path(

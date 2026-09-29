@@ -20,7 +20,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from app.ui.catalog import CATALOG_REGISTRY
 from app.ui.diagram_schema import (
     SYSTEM_DIAGRAM_SPECS,
-    ComponentDiagramSpec,
+    BaseDiagramSpec,
 )
 
 DEFAULT_OUTPUT_DIR = Path("docs/assets/diagrams")
@@ -102,9 +102,34 @@ def find_mmdc_executable() -> Optional[List[str]]:
     return None
 
 
-def collect_all_specs() -> Dict[str, ComponentDiagramSpec]:
+def check_no_raw_mermaid_in_docs(docs_dir: Path = Path("docs")) -> bool:
+    """Scan docs directory for raw inline ```mermaid code blocks and return False if any remain."""
+    import re
+
+    if not docs_dir.exists():
+        return True
+
+    found_raw_mermaid = False
+    for md_path in sorted(docs_dir.rglob("*.md")):
+        try:
+            content = md_path.read_text(encoding="utf-8")
+        except Exception as e:
+            sys.stderr.write(f"Warning: Could not read {md_path}: {e}\n")
+            continue
+
+        if re.search(r"```mermaid", content):
+            sys.stderr.write(
+                f"Verification FAILED: Found raw ```mermaid code block in '{md_path.as_posix()}'. "
+                f"All documentation diagrams must be registered schemas and linked as visual assets.\n"
+            )
+            found_raw_mermaid = True
+
+    return not found_raw_mermaid
+
+
+def collect_all_specs() -> Dict[str, BaseDiagramSpec]:
     """Collect all registered system and component diagram specifications."""
-    specs: Dict[str, ComponentDiagramSpec] = {}
+    specs: Dict[str, BaseDiagramSpec] = {}
 
     # System diagrams
     for key, spec in SYSTEM_DIAGRAM_SPECS.items():
@@ -112,9 +137,7 @@ def collect_all_specs() -> Dict[str, ComponentDiagramSpec]:
 
     # Catalog component specs
     for entry in CATALOG_REGISTRY:
-        if "diagram_spec" in entry and isinstance(
-            entry["diagram_spec"], ComponentDiagramSpec
-        ):
+        if "diagram_spec" in entry and hasattr(entry["diagram_spec"], "to_mermaid"):
             spec = entry["diagram_spec"]
             specs[spec.id] = spec
 
@@ -216,15 +239,16 @@ def build_diagrams(
                 "Warning: mmdc executable found but browser execution environment is unavailable.\n"
             )
         else:
-            sys.stderr.write(
-                "Warning: mmdc executable not found in PATH.\n"
-            )
+            sys.stderr.write("Warning: mmdc executable not found in PATH.\n")
 
     cache_path = output_dir / CACHE_FILE_NAME
     cache = load_cache(cache_path)
     new_cache = dict(cache)
 
     all_success = True
+    if verify_only and not check_no_raw_mermaid_in_docs():
+        all_success = False
+
     updated_count = 0
 
     for spec_id, spec in specs.items():

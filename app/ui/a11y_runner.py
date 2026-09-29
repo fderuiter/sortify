@@ -5,8 +5,180 @@ for WCAG accessibility violations, missing ARIA attributes, rigid layout sizes,
 and label overflow defects without requiring external Node.js dependencies.
 """
 
+import re
+import sys
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
+
+
+def parse_prop_str(prop_str: str) -> Dict[str, Any]:
+    """Parse space-delimited prop string containing key="val", key='val', key=val or boolean flags."""
+    props = {}
+    pattern = r'([a-zA-Z0-9_\-]+)(?:=(?:"([^"]*)"|\'([^\']*)\'|(\S+)))?'
+    for match in re.finditer(pattern, prop_str):
+        key = match.group(1)
+        val = match.group(2) if match.group(2) is not None else (
+            match.group(3) if match.group(3) is not None else (
+                match.group(4) if match.group(4) is not None else True
+            )
+        )
+        props[key] = val
+    return props
+
+
+class MockSlot:
+    """Mock container slot holding child elements."""
+
+    def __init__(self):
+        self.children = []
+
+
+class MockElement:
+    """Base mock NiceGUI element capturing attributes, properties, CSS classes, and child slots."""
+
+    def __init__(self, tag: str, *args, **kwargs):
+        self._tag = tag
+        self._props: Dict[str, Any] = {}
+        self._classes: List[str] = []
+        self._text: Optional[str] = None
+        self.slots = {"default": MockSlot()}
+        self._harness = kwargs.pop("_harness", None)
+
+        if args:
+            arg0 = args[0]
+            if isinstance(arg0, str):
+                if tag in ("button", "label", "switch", "checkbox", "markdown"):
+                    self._text = arg0
+                elif tag == "icon":
+                    self._props["icon"] = arg0
+                elif tag in ("input", "select"):
+                    self._props["label"] = arg0
+                elif tag == "image":
+                    self._props["source"] = arg0
+                else:
+                    self._text = arg0
+
+        for k, v in kwargs.items():
+            if k == "value":
+                if tag in ("switch", "checkbox"):
+                    pass
+                elif tag in ("input", "select", "linear_progress"):
+                    self._props["value"] = v
+            elif k in ("label", "placeholder", "icon", "alt", "src", "aria-label", "aria-labelledby", "aria-hidden"):
+                self._props[k] = v
+            elif k == "options":
+                self._props["options"] = v
+            else:
+                self._props[k] = v
+
+    def classes(self, *class_names):
+        """Append CSS classes to element."""
+        for item in class_names:
+            if isinstance(item, str):
+                for c in item.split():
+                    if c and c not in self._classes:
+                        self._classes.append(c)
+            elif isinstance(item, (list, tuple)):
+                for c in item:
+                    if isinstance(c, str):
+                        for sub_c in c.split():
+                            if sub_c and sub_c not in self._classes:
+                                self._classes.append(sub_c)
+        return self
+
+    def props(self, *prop_args, **prop_kwargs):
+        """Update property dictionary."""
+        for arg in prop_args:
+            if isinstance(arg, str):
+                parsed = parse_prop_str(arg)
+                self._props.update(parsed)
+        for k, v in prop_kwargs.items():
+            self._props[k] = str(v) if v is not None else ""
+        return self
+
+    def __enter__(self):
+        """Enter context manager block pushing element to harness stack."""
+        if self._harness:
+            self._harness.push(self)
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Exit context manager block popping element from harness stack."""
+        if self._harness:
+            self._harness.pop(self)
+
+
+_CLASS_CACHE: Dict[str, type] = {}
+
+
+def get_mock_element_class(tag: str) -> type:
+    """Dynamically get or create a MockElement subclass matching the NiceGUI component type name."""
+    if tag not in _CLASS_CACHE:
+        parts = tag.split("_")
+        class_name = "_".join(p.capitalize() for p in parts)
+        _CLASS_CACHE[tag] = type(class_name, (MockElement,), {})
+    return _CLASS_CACHE[tag]
+
+
+class MockUIHarness:
+    """Mock NiceGUI ui builder harness intercepting element construction calls during scanning."""
+
+    def __init__(self):
+        self.stack: List[MockElement] = []
+
+    def push(self, element: MockElement):
+        """Push container element onto harness stack."""
+        self.stack.append(element)
+
+    def pop(self, element: Optional[MockElement] = None):
+        """Pop container element from harness stack."""
+        if self.stack:
+            if element is None or self.stack[-1] is element:
+                self.stack.pop()
+            elif element in self.stack:
+                while self.stack and self.stack[-1] is not element:
+                    self.stack.pop()
+                if self.stack:
+                    self.stack.pop()
+
+    @property
+    def active_container(self) -> Optional[MockElement]:
+        """Get current active container element at top of stack."""
+        return self.stack[-1] if self.stack else None
+
+    @contextmanager
+    def active_context(self, root_element: MockElement):
+        """Context manager establishing active container root element on stack."""
+        prev_stack = list(self.stack)
+        self.stack = [root_element]
+        try:
+            yield
+        finally:
+            self.stack = prev_stack
+
+    def create_element(self, tag: str, *args, **kwargs) -> MockElement:
+        """Instantiate and attach new mock element to current active container."""
+        cls = get_mock_element_class(tag)
+        elem = cls(tag, *args, _harness=self, **kwargs)
+        parent = self.active_container
+        if parent:
+            parent.slots["default"].children.append(elem)
+        return elem
+
+    def element(self, tag: str, *args, **kwargs) -> MockElement:
+        """Create mock element for given tag name."""
+        return self.create_element(tag, *args, **kwargs)
+
+    def __getattr__(self, name: str):
+        """Dynamically construct element builder for unknown element tag names."""
+        if name.startswith("_"):
+            raise AttributeError(name)
+
+        def builder(*args, **kwargs):
+            return self.create_element(name, *args, **kwargs)
+
+        return builder
 
 
 @dataclass
@@ -73,7 +245,7 @@ def is_rigid_width_class(cls_name: str, viewport_width: int) -> bool:
 
 
 def get_element_type_name(element: Any) -> str:
-    """Extract readable type name of a NiceGUI element."""
+    """Extract readable type name of a UI element."""
     return type(element).__name__
 
 
@@ -109,7 +281,7 @@ def inspect_element_tree(
     viewport_name: str,
     viewport_width: int,
 ) -> List[A11yViolation]:
-    """Recursively inspect a NiceGUI element and its children for accessibility rule failures."""
+    """Recursively inspect a UI element and its children for accessibility rule failures."""
     violations: List[A11yViolation] = []
     type_name = get_element_type_name(element)
     props = getattr(element, "_props", {})
@@ -248,8 +420,64 @@ def scan_catalog_component(
     viewport_width: int,
     state: str = "default",
 ) -> List[A11yViolation]:
-    """Render a catalog component in a isolated slot context and scan for accessibility rule failures."""
-    return []
+    """Render a catalog component in an isolated slot context and scan for accessibility rule failures."""
+    component_id = component_entry.get("id", "unknown_component")
+    component_name = component_entry.get("name", component_id)
+    render_func = component_entry.get("render_func")
+
+    if not render_func or not callable(render_func):
+        return []
+
+    harness = MockUIHarness()
+    root_container = harness.create_element("container")
+
+    import app.ui.catalog as catalog_module
+
+    ui_obj = getattr(catalog_module, "ui", None)
+    has_proxy = hasattr(ui_obj, "set_target")
+    old_target = getattr(ui_obj, "_target", None) if has_proxy else None
+
+    if has_proxy:
+        ui_obj.set_target(harness)
+    else:
+        catalog_module.ui = harness
+
+    nicegui_ui = None
+    if "nicegui" in sys.modules and hasattr(sys.modules["nicegui"], "ui"):
+        nicegui_ui = sys.modules["nicegui"].ui
+        sys.modules["nicegui"].ui = harness
+
+    try:
+        with harness.active_context(root_container):
+            try:
+                render_func(root_container, state=state, viewport_width=viewport_width)
+            except TypeError:
+                try:
+                    render_func(root_container, state=state)
+                except TypeError:
+                    render_func(root_container)
+    finally:
+        if has_proxy and ui_obj is not None:
+            ui_obj.set_target(old_target)
+        elif ui_obj is not None:
+            catalog_module.ui = ui_obj
+        if nicegui_ui is not None:
+            sys.modules["nicegui"].ui = nicegui_ui
+
+    violations: List[A11yViolation] = []
+    for child in root_container.slots["default"].children:
+        violations.extend(
+            inspect_element_tree(
+                child,
+                ancestor_path=[],
+                component_id=component_id,
+                component_name=component_name,
+                viewport_name=viewport_name,
+                viewport_width=viewport_width,
+            )
+        )
+
+    return violations
 
 
 def run_all_catalog_scans(

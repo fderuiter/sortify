@@ -3,35 +3,136 @@
 This script imports and runs the main application GUI or CLI demo.
 """
 
+import argparse
+import logging
 import os
+import re
 import sys
+from pathlib import Path
+
+from app.config import AppSettings
 
 # Dynamic Windows DLL Path Injection
 from app.core.path_utils import is_packaged
+from app.log_filter import LogScrubbingFilter
+
+
+class NullWriter:
+    """A helper class that discards any written output to mimic a stream."""
+
+    encoding = "utf-8"
+    errors = "replace"
+
+    def write(self, text):
+        """Discard written text."""
+        return len(text) if text else 0
+
+    def writelines(self, lines):
+        """Discard written lines."""
+        pass
+
+    def flush(self):
+        """No-op flush to satisfy the stream interface."""
+        pass
+
+    def isatty(self):
+        """Return False for null stream."""
+        return False
+
+    def fileno(self):
+        """Raise OSError for missing file descriptor."""
+        raise OSError("NullWriter has no file descriptor")
+
+    def readable(self):
+        """Return False for write-only null stream."""
+        return False
+
+    def writable(self):
+        """Return True for null writer stream."""
+        return True
+
+    def seekable(self):
+        """Return False for null stream."""
+        return False
+
+    @property
+    def closed(self):
+        """Return False for active null stream."""
+        return False
+
+
+class NullReader:
+    """A helper class that discards input stream calls."""
+
+    encoding = "utf-8"
+    errors = "replace"
+
+    def read(self, *args, **kwargs):
+        """Return empty string."""
+        return ""
+
+    def readline(self, *args, **kwargs):
+        """Return empty string."""
+        return ""
+
+    def readlines(self, *args, **kwargs):
+        """Return empty list."""
+        return []
+
+    def isatty(self):
+        """Return False for null stream."""
+        return False
+
+    def fileno(self):
+        """Raise OSError for missing file descriptor."""
+        raise OSError("NullReader has no file descriptor")
+
+    def readable(self):
+        """Return True for null reader stream."""
+        return True
+
+    def writable(self):
+        """Return False for null reader stream."""
+        return False
+
+    def seekable(self):
+        """Return False for null stream."""
+        return False
+
+    @property
+    def closed(self):
+        """Return False for active null stream."""
+        return False
+
 
 if sys.platform == "win32" and is_packaged():
-    # Safeguard standard streams to prevent crash on print when sys.stdout/err are None
-    class NullWriter:
-        """A helper class that discards any written output to mimic a stream."""
+    # Attempt to allocate a console for windowed executables (console=False)
+    if sys.stdout is None or sys.stderr is None or sys.stdin is None:
+        try:
+            import ctypes
 
-        def write(self, text):
-            """Discard written text.
-
-            Parameters
-            ----------
-            text : str
-                The text to write.
-            """
-            pass
-
-        def flush(self):
-            """No-op flush to satisfy the stream interface."""
+            if ctypes.windll.kernel32.AllocConsole():
+                try:
+                    sys.stdout = open("CONOUT$", "w", encoding="utf-8")
+                except Exception:
+                    pass
+                try:
+                    sys.stderr = open("CONERR$", "w", encoding="utf-8")
+                except Exception:
+                    pass
+                try:
+                    sys.stdin = open("CONIN$", "r", encoding="utf-8")
+                except Exception:
+                    pass
+        except Exception:
             pass
 
     if sys.stdout is None:
         sys.stdout = NullWriter()
     if sys.stderr is None:
         sys.stderr = NullWriter()
+    if sys.stdin is None:
+        sys.stdin = NullReader()
 
     base_dir = getattr(sys, "_MEIPASS", None)
     if base_dir:
@@ -52,6 +153,8 @@ if sys.platform == "win32" and is_packaged():
         sqlcipher_dirs = [
             os.path.abspath(os.path.join(base_dir, "sqlcipher3")),
             os.path.abspath(os.path.join(base_dir, "_internal", "sqlcipher3")),
+            os.path.abspath(os.path.join(base_dir, "app", "binaries", "windows", "sqlcipher3")),
+            os.path.abspath(os.path.join(base_dir, "_internal", "app", "binaries", "windows", "sqlcipher3")),
         ]
         for sqlcipher_dir in sqlcipher_dirs:
             if os.path.isdir(sqlcipher_dir):
@@ -105,15 +208,6 @@ if sys.platform == "win32" and is_packaged():
 
         os.environ["PATH"] = ";".join(unique_paths) + ";" + os.environ.get("PATH", "")
 
-import argparse
-import logging
-import os
-import re
-from pathlib import Path
-
-from app.config import AppSettings
-from app.log_filter import LogScrubbingFilter
-
 ANSI_ESCAPE_REGEX = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 
 
@@ -144,6 +238,10 @@ class ANSIStrippingWriter:
     def isatty(self):
         """Return isatty status of wrapped stream."""
         return getattr(self.stream, "isatty", lambda: False)()
+
+    def __getattr__(self, attr):
+        """Delegate missing stream attributes to wrapped stream."""
+        return getattr(self.stream, attr)
 
 
 def write_smoke_test_error(message, include_traceback=False):
@@ -386,6 +484,9 @@ def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
         plan = session.generate_sorting_plan()
 
         dest_dir = getattr(args, "dest_dir", None)
+        dry_run = getattr(args, "dry_run", False)
+        json_output = getattr(args, "json", False)
+
         if dest_dir:
             dest_base = Path(dest_dir).resolve()
             dest_base.mkdir(parents=True, exist_ok=True)
@@ -397,9 +498,6 @@ def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
                     new_key = str(dest_base / k)
                     re_rooted_plan[new_key] = v
             plan = re_rooted_plan
-
-        dry_run = getattr(args, "dry_run", False)
-        json_output = getattr(args, "json", False)
         if dry_run:
             result = {
                 "status": "success",
@@ -500,7 +598,7 @@ def handle_scan_command(args: argparse.Namespace, settings: AppSettings):
         }
 
         quiet = getattr(args, "quiet", False)
-        if args.json:
+        if getattr(args, "json", False):
             sys.stdout.write(json.dumps(result, indent=2) + "\n")
             sys.stdout.flush()
         else:
@@ -637,7 +735,7 @@ def build_parser(prog: str | None = "app/main.py") -> argparse.ArgumentParser:
     parser.add_argument(
         "--gui",
         action="store_true",
-        help="Force launch graphical web interface",
+        help="Force launch graphical web interface (Deprecated: launches terminal interface)",
     )
 
     subparsers = parser.add_subparsers(dest="subcommand", help="Available subcommands")
@@ -902,22 +1000,16 @@ def main():
         from app.demo import run_demo
 
         run_demo(settings)
-    elif getattr(args, "tui", False) is True or (
-        is_interactive
-        and not getattr(args, "gui", False)
-        and not os.environ.get("FORCE_GUI")
-    ):
+    else:
         from app.ui.tui import run_tui
 
-        run_tui(settings, args.directory)
-    else:
-        from app.ui.app import run_app
+        if getattr(args, "gui", False) or os.environ.get("FORCE_GUI"):
+            print(
+                "Notice: Web GUI interface is deprecated. Launching native terminal TUI interface...",
+                file=sys.stderr,
+            )
 
-        debug_layout = getattr(args, "debug_layout", False) is True
-        if debug_layout:
-            run_app(settings, args.directory, debug_layout=True)
-        else:
-            run_app(settings, args.directory)
+        run_tui(settings, args.directory)
 
 
 if __name__ == "__main__":

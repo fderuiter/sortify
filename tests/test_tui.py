@@ -589,3 +589,18 @@ def test_tui_jev_partial_metadata(temp_workspace):
 
     asyncio.run(_test())
 
+
+def test_run_tui_non_interactive_stdin():
+    """Verify run_tui returns immediately without launching App when sys.stdin is non-interactive or None."""
+    from app.ui.tui import run_tui
+
+    class MockNonInteractiveStdin:
+        def isatty(self):
+            return False
+
+    settings = AppSettings()
+    with patch("sys.stdin", MockNonInteractiveStdin()), patch("app.ui.tui.AutoSorterTUI") as mock_app_cls:
+        run_tui(settings)
+        mock_app_cls.assert_not_called()
+
+

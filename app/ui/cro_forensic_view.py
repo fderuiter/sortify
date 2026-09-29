@@ -1,8 +1,8 @@
-"""CRO Forensic Multi-Study Ingest View and Dialog for NiceGUI."""
+"""CRO Forensic Multi-Study Ingest View and Dialog for Terminal Interface."""
 
 import asyncio
+import logging
 import os
-import webbrowser
 from unittest.mock import MagicMock
 
 from app.core.cro_multi_study_pipeline import (
@@ -304,7 +304,7 @@ class CROForensicView:
 
                                 def open_html(path=study.audit_report_html_path):
                                     if os.path.exists(path):
-                                        webbrowser.open(f"file://{path}")
+                                        logging.getLogger(__name__).info(f"Audit report generated: {path}")
 
                                 ui.button(
                                     "View Audit Dossier",
@@ -321,8 +321,8 @@ class CROForensicView:
                 ):
 
                     def open_manifest():
-                        webbrowser.open(
-                            f"file://{result.chain_of_custody_manifest_path}"
+                        logging.getLogger(__name__).info(
+                            f"Chain of Custody manifest generated: {result.chain_of_custody_manifest_path}"
                         )
 
                     ui.button(

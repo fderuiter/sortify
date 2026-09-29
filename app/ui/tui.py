@@ -2,6 +2,7 @@
 
 import logging
 import os
+import sys
 import time
 from typing import Any, Dict, List, Optional
 
@@ -853,7 +854,12 @@ class AutoSorterTUI(A11yMixin, App):
     def __init__(self, settings, base_dir: Optional[str] = None):
         super().__init__()
         self.settings = settings
-        self.base_dir = os.path.abspath(base_dir) if base_dir else ""
+        if base_dir and str(base_dir).startswith("/"):
+            self.base_dir = str(base_dir)
+        elif base_dir:
+            self.base_dir = os.path.abspath(base_dir)
+        else:
+            self.base_dir = ""
         self.plan: Dict[str, Any] = {}
         self.locked_files: Dict[str, str] = {}
         self._ratings_cache: Dict[str, str] = {}
@@ -1336,5 +1342,35 @@ class AutoSorterTUI(A11yMixin, App):
 
 def run_tui(settings, base_dir: Optional[str] = None) -> None:
     """Run the Textual full-screen terminal interface."""
+    from app.core.path_utils import is_packaged
+
+    if sys.platform == "win32" and is_packaged():
+        if sys.stdin is None or not hasattr(sys.stdin, "isatty") or not sys.stdin.isatty():
+            try:
+                import ctypes
+
+                if ctypes.windll.kernel32.AllocConsole():
+                    try:
+                        sys.stdout = open("CONOUT$", "w", encoding="utf-8")
+                    except Exception:
+                        pass
+                    try:
+                        sys.stderr = open("CONERR$", "w", encoding="utf-8")
+                    except Exception:
+                        pass
+                    try:
+                        sys.stdin = open("CONIN$", "r", encoding="utf-8")
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+    if sys.stdin is None or not hasattr(sys.stdin, "isatty") or not sys.stdin.isatty():
+        print(
+            "Notice: Terminal TUI requires an interactive TTY terminal.",
+            file=sys.stderr,
+        )
+        return
+
     app = AutoSorterTUI(settings=settings, base_dir=base_dir)
     app.run()
