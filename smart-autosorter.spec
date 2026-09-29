@@ -424,6 +424,8 @@ if "pytest" not in sys.modules:
 # Exclude Quasar framework files, Vue assets, HTML templates, and static web assets
 def is_web_asset(name):
     name_lower = name.lower().replace('\\', '/')
+    if 'textual' in name_lower:
+        return False
     parts = name_lower.split('/')
     for p in parts:
         if p in ('quasar', 'vue', 'nicegui', 'static_assets', 'templates', 'vbuild'):
