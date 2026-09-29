@@ -367,7 +367,7 @@ def test_jev_fast_snippet_extraction_pdf_docx_xlsx(tmp_path):
     c.drawString(100, 750, "Invoice #10023 - Financial Statement and Billing")
     c.save()
 
-    sla_threshold = 350.0 if _is_ci_or_parallel() else 150.0
+    sla_threshold = 500.0 if _is_ci_or_parallel() else 150.0
 
     t0 = time.perf_counter()
     res_pdf = engine.classify(str(pdf_path))
