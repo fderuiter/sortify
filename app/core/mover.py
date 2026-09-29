@@ -188,21 +188,20 @@ def _resolve_source_path(
     depth: int = 0,
 ) -> str:
     """Resolve normalized absolute source path for a plan node."""
+    rel_src = key
     if isinstance(content, dict) and "relative_source" in content:
         rel_src = content["relative_source"]
-        cand1 = os.path.normpath(os.path.join(base_dir, rel_src))
-        if os.path.lexists(cand1):
-            return cand1
-        if active_parent_path:
-            cand2 = os.path.normpath(os.path.join(base_dir, active_parent_path, rel_src))
-            if os.path.lexists(cand2):
-                return cand2
-        return cand1
 
     if depth > 0 and active_parent_path:
-        return os.path.normpath(os.path.join(base_dir, active_parent_path, key))
+        primary = os.path.normpath(os.path.join(base_dir, active_parent_path, rel_src))
+        if os.path.lexists(primary):
+            return primary
+        alt = os.path.normpath(os.path.join(base_dir, rel_src))
+        if os.path.lexists(alt):
+            return alt
+        return primary
 
-    return os.path.normpath(os.path.join(base_dir, key))
+    return os.path.normpath(os.path.join(base_dir, rel_src))
 
 
 def _get_node_mtime(
