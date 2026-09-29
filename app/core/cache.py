@@ -102,7 +102,7 @@ class BoundedMemoryCache(Generic[K, V]):
             expire_time = (self._time_func() + ttl_val) if ttl_val is not None else None
 
             if key in self._cache:
-                self._cache.pop(key)
+                self._remove_item(key, call_on_evict=True)
 
             self._cache[key] = (value, expire_time)
             self._cache.move_to_end(key)

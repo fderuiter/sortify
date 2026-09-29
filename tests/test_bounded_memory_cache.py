@@ -65,6 +65,21 @@ def test_bounded_memory_cache_lru_eviction():
     assert evicted_items[0] == ("key2", 20)
 
 
+def test_bounded_memory_cache_evicts_on_key_overwrite():
+    evicted_items = []
+
+    def on_evict(k, v):
+        evicted_items.append((k, v))
+
+    cache = BoundedMemoryCache(max_size=5, on_evict=on_evict)
+    cache["key1"] = "val1"
+    cache["key1"] = "val2"
+
+    assert len(evicted_items) == 1
+    assert evicted_items[0] == ("key1", "val1")
+    assert cache["key1"] == "val2"
+
+
 def test_bounded_memory_cache_ttl_expiration():
     current_time = 1000.0
 
