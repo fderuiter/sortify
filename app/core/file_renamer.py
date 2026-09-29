@@ -146,6 +146,16 @@ class ContextExtractor:
         if text.startswith("[STATUS:"):
             return []
 
+        from app.core.text_utils import (
+            _is_high_entropy_token,
+            contains_secrets,
+            sanitize_secret_patterns,
+        )
+
+        text = sanitize_secret_patterns(text)
+        if not text or not text.strip():
+            return []
+
         default_stops = {
             "the",
             "and",
@@ -195,7 +205,9 @@ class ContextExtractor:
 
         # Clean and tokenize text
         words = re.findall(r"\b[a-zA-Z]{3,20}\b", text.lower())
-        filtered_words = [w for w in words if w not in all_stop_words]
+        filtered_words = [
+            w for w in words if w not in all_stop_words and not _is_high_entropy_token(w)
+        ]
 
         if not filtered_words:
             return []
@@ -208,12 +220,19 @@ class ContextExtractor:
                 max_features=100,
                 token_pattern=r"\b[a-zA-Z]{3,20}\b",
             )
-            tfidf_matrix = vectorizer.fit_transform([text])
+            clean_doc = " ".join(filtered_words)
+            tfidf_matrix = vectorizer.fit_transform([clean_doc])
             feature_names = vectorizer.get_feature_names_out()
             scores = tfidf_matrix.toarray()[0]
 
             top_indices = scores.argsort()[::-1][:max_keywords]
-            top_terms = [feature_names[i] for i in top_indices if scores[i] > 0]
+            top_terms = [
+                feature_names[i]
+                for i in top_indices
+                if scores[i] > 0
+                and not _is_high_entropy_token(feature_names[i])
+                and not contains_secrets(feature_names[i])
+            ]
             if top_terms:
                 return top_terms
         except Exception as e:
@@ -223,7 +242,11 @@ class ContextExtractor:
         from collections import Counter
 
         counts = Counter(filtered_words)
-        return [w for w, _ in counts.most_common(max_keywords)]
+        return [
+            w
+            for w, _ in counts.most_common(max_keywords)
+            if not _is_high_entropy_token(w) and not contains_secrets(w)
+        ]
 
 
 def is_file_protected_or_locked(
@@ -280,7 +303,7 @@ class FileRenamerEngine:
         """
         base, ext = os.path.splitext(original_filename)
         if not text or text.startswith("[STATUS:"):
-            return original_filename
+            return sanitize_name(original_filename)
 
         ai_consent = (
             getattr(self.settings, "AI_CONSENT_GRANTED", None)
@@ -320,13 +343,13 @@ class FileRenamerEngine:
             )
 
         if not keywords:
-            return original_filename
+            return sanitize_name(original_filename)
 
         new_base = "_".join(keywords)
         safe_base = sanitize_name(new_base)
 
         if not safe_base or safe_base.lower() == base.lower():
-            return original_filename
+            return sanitize_name(original_filename)
 
         return f"{safe_base}{ext}"
 

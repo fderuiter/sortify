@@ -11,26 +11,7 @@ This safety check guarantees:
 3. **Safe Simulation**: Performing validation entirely in memory without actually writing, copying, or deleting any files on disk.
 
 ### Virtual Verification Pipeline Flow
-```mermaid
-sequenceDiagram
-    autonumber
-    participant UI as User Interface
-    participant VE as Verification Engine
-    participant FS as Local Filesystem Check
-    
-    UI->>VE: Submit proposed sorting plan
-    activate VE
-    VE->>VE: Verify disk space across target volumes
-    VE->>VE: Check path length restrictions
-    VE->>FS: Verify source file accessibility and locks
-    FS-->>VE: Return file status
-    alt Verification Succeeded
-        VE-->>UI: Return verified status (Safe to Execute)
-    else Verification Failed
-        VE-->>UI: Return error list and halt execution
-    end
-    deactivate VE
-```
+![Virtual Sorting Verification Sequence](../assets/diagrams/virtual_sorting_verification_seq.svg)
 
 ```python
 import json
