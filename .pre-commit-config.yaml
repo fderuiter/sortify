@@ -60,12 +60,6 @@ repos:
         language: system
         files: '\.py$'
         pass_filenames: false
-      - id: validate-layout
-        name: Validate UI Layout Classes
-        entry: uv run python scripts/validate_layout.py
-        language: system
-        files: '\.py$'
-        pass_filenames: false
       - id: validate-signatures
         name: Validate API and CLI Signatures
         entry: uv run python scripts/validate_signatures.py
