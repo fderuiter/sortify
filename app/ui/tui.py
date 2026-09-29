@@ -72,6 +72,18 @@ class A11yMixin:
             except Exception:
                 pass
 
+    def _get_speech_binary(self) -> Optional[str]:
+        """Resolve available speech synthesis executable based on host platform."""
+        try:
+            if sys.platform == "darwin":
+                return shutil.which("say")
+            elif sys.platform == "win32":
+                return shutil.which("spd-say")
+            else:
+                return shutil.which("spd-say") or shutil.which("say")
+        except (FileNotFoundError, OSError):
+            return None
+
     def announce(self, message: str, priority: str = "polite") -> str:
         """Emit auditory screen reader announcement and log accessibility event."""
         entry = {
@@ -94,12 +106,8 @@ class A11yMixin:
         if not forwarded:
             self.join_speech_thread(timeout=0.2)
 
-            # Check speech binary presence via shutil.which before launching subprocess
-            speech_bin = None
-            try:
-                speech_bin = shutil.which("spd-say") or shutil.which("say")
-            except (FileNotFoundError, OSError):
-                speech_bin = None
+            # Check speech binary presence via _get_speech_binary before launching subprocess
+            speech_bin = self._get_speech_binary()
 
             if speech_bin:
                 try:
@@ -193,11 +201,7 @@ class A11yMixin:
                 "message": f"Component '{type(self).__name__}' or root application lacks visual status region capability.",
             })
 
-        speech_binary = None
-        try:
-            speech_binary = shutil.which("spd-say") or shutil.which("say")
-        except (FileNotFoundError, OSError):
-            speech_binary = None
+        speech_binary = self._get_speech_binary()
 
         return {
             "component": type(self).__name__,
