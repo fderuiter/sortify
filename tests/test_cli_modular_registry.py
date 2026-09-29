@@ -133,14 +133,15 @@ def test_crypto_export_key():
 def test_ledger_status_and_reconcile():
     """Test 'sortify ledger status' and 'sortify ledger reconcile' commands."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        ledger_db = str(Path(tmpdir) / "ledger.db")
+        tmp_path = Path(tmpdir).resolve()
+        ledger_db = str(tmp_path / "ledger.db")
 
         try:
             # 1. Status empty
             code, stdout, stderr = run_cli(
                 ["ledger", "status", "--ledger-db", ledger_db, "--json"]
             )
-            assert code == 0
+            assert code == 0, f"Expected 0 exit code, got {code}. Stderr: {stderr}"
             data = json.loads(stdout)
             assert data["status"] == "success"
             assert data["count"] == 0
@@ -151,9 +152,9 @@ def test_ledger_status_and_reconcile():
             ledger_inst = TransactionLedger(db_path=ledger_db)
             entry_id = ledger_inst.log_intent(
                 session_id="sess_101",
-                base_dir=tmpdir,
-                source_path=str(Path(tmpdir) / "src.txt"),
-                dest_path=str(Path(tmpdir) / "dest.txt"),
+                base_dir=str(tmp_path),
+                source_path=str(tmp_path / "src.txt"),
+                dest_path=str(tmp_path / "dest.txt"),
                 source_rel_path="src.txt",
                 dest_rel_path="dest.txt",
             )
@@ -162,7 +163,9 @@ def test_ledger_status_and_reconcile():
             code_pend, stdout_pend, stderr_pend = run_cli(
                 ["ledger", "status", "--ledger-db", ledger_db, "--json"]
             )
-            assert code_pend == 0
+            assert code_pend == 0, (
+                f"Expected 0 exit code, got {code_pend}. Stderr: {stderr_pend}"
+            )
             data_pend = json.loads(stdout_pend)
             assert data_pend["count"] == 1
             assert data_pend["pending_entries"][0]["entry_id"] == entry_id
@@ -171,7 +174,9 @@ def test_ledger_status_and_reconcile():
             code_rec, stdout_rec, stderr_rec = run_cli(
                 ["ledger", "reconcile", "--ledger-db", ledger_db, "--json"]
             )
-            assert code_rec == 0
+            assert code_rec == 0, (
+                f"Expected 0 exit code, got {code_rec}. Stderr: {stderr_rec}"
+            )
             data_rec = json.loads(stdout_rec)
             assert data_rec["status"] == "success"
             assert data_rec["reconciled_count"] == 1
@@ -180,7 +185,9 @@ def test_ledger_status_and_reconcile():
             code_post, stdout_post, stderr_post = run_cli(
                 ["ledger", "status", "--ledger-db", ledger_db, "--json"]
             )
-            assert code_post == 0
+            assert code_post == 0, (
+                f"Expected 0 exit code, got {code_post}. Stderr: {stderr_post}"
+            )
             data_post = json.loads(stdout_post)
             assert data_post["count"] == 0
         finally:
@@ -193,14 +200,15 @@ def test_ledger_status_and_reconcile():
 def test_ledger_purge():
     """Test 'sortify ledger purge' command."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        ledger_db = str(Path(tmpdir) / "ledger.db")
+        tmp_path = Path(tmpdir).resolve()
+        ledger_db = str(tmp_path / "ledger.db")
 
         try:
             # Purge with --completed
             code, stdout, stderr = run_cli(
                 ["ledger", "purge", "--ledger-db", ledger_db, "--completed", "--json"]
             )
-            assert code == 0
+            assert code == 0, f"Expected 0 exit code, got {code}. Stderr: {stderr}"
             data = json.loads(stdout)
             assert data["status"] == "success"
         finally:
@@ -213,7 +221,8 @@ def test_ledger_purge():
 def test_quarantine_lifecycle():
     """Test 'sortify quarantine list', 'inspect', 'process', and 'release' commands."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        db_path = str(Path(tmpdir) / "quarantine.db")
+        tmp_path = Path(tmpdir).resolve()
+        db_path = str(tmp_path / "quarantine.db")
         from app.core.db import Database
         from app.core.db_worker import DBWorker
         from app.core.quarantine_interceptor import QuarantineInterceptorService
@@ -222,19 +231,21 @@ def test_quarantine_lifecycle():
 
         try:
             # Create source test file
-            src_file = Path(tmpdir) / "sample_quarantine_doc.txt"
+            src_file = tmp_path / "sample_quarantine_doc.txt"
             src_file.write_text("Confidential report with SSN 123-45-6789.")
 
             # Stage file
             service = QuarantineInterceptorService(db=db)
-            staged_info = service.stage_incoming_file(str(src_file), base_dir=tmpdir)
+            staged_info = service.stage_incoming_file(str(src_file), base_dir=str(tmp_path))
             job_id = staged_info["job_id"]
 
             # 1. List
             code_list, stdout_list, stderr_list = run_cli(
                 ["quarantine", "list", "--db-path", db_path, "--status", "STAGED", "--json"]
             )
-            assert code_list == 0
+            assert code_list == 0, (
+                f"Expected 0 exit code, got {code_list}. Stderr: {stderr_list}"
+            )
             data_list = json.loads(stdout_list)
             assert data_list["count"] == 1
             assert data_list["items"][0]["job_id"] == job_id
@@ -243,7 +254,9 @@ def test_quarantine_lifecycle():
             code_insp, stdout_insp, stderr_insp = run_cli(
                 ["quarantine", "inspect", job_id, "--db-path", db_path, "--json"]
             )
-            assert code_insp == 0
+            assert code_insp == 0, (
+                f"Expected 0 exit code, got {code_insp}. Stderr: {stderr_insp}"
+            )
             data_insp = json.loads(stdout_insp)
             assert data_insp["record"]["job_id"] == job_id
 
@@ -259,7 +272,9 @@ def test_quarantine_lifecycle():
                     "--json",
                 ]
             )
-            assert code_proc == 0
+            assert code_proc == 0, (
+                f"Expected 0 exit code, got {code_proc}. Stderr: {stderr_proc}"
+            )
             data_proc = json.loads(stdout_proc)
             assert data_proc["status"] == "success"
 
@@ -272,11 +287,13 @@ def test_quarantine_lifecycle():
                     "--db-path",
                     db_path,
                     "--dest-dir",
-                    tmpdir,
+                    str(tmp_path),
                     "--json",
                 ]
             )
-            assert code_rel == 0
+            assert code_rel == 0, (
+                f"Expected 0 exit code, got {code_rel}. Stderr: {stderr_rel}"
+            )
             data_rel = json.loads(stdout_rel)
             assert data_rel["status"] == "success"
             assert data_rel["status_code"] == "RELEASED"
