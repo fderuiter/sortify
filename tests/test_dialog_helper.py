@@ -423,6 +423,22 @@ async def test_ask_directory_async_windows_powershell_ci_check():
         callback.assert_called_once_with("")
 
 
+@pytest.mark.anyio
+async def test_render_fallback_dialog_ci_headless_mode():
+    """Test fallback dialog in CI headless mode cleanly finishes without hanging."""
+    callback = mock.MagicMock()
+    enable_ui = mock.MagicMock()
+
+    from app.ui.dialog_helper import _render_fallback_dialog
+
+    with mock.patch.dict("os.environ", {"CI": "true"}):
+        res = _render_fallback_dialog("Test Title", callback, enable_ui)
+        assert res is None
+        callback.assert_called_once_with("")
+        enable_ui.assert_called_once()
+
+
+
 
 
 

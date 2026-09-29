@@ -59,8 +59,19 @@ def _render_fallback_dialog(
             callback(selected_path)
 
     try:
-        if not _NICEGUI_AVAILABLE and ui is _dummy_ui:
-            logger.warning("NiceGUI is not available; skipping fallback dialog.")
+        is_ci = (
+            os.environ.get("CI", "").lower() == "true"
+            or os.environ.get("GITHUB_ACTIONS", "").lower() == "true"
+            or os.environ.get("TF_BUILD", "").lower() == "true"
+            or os.environ.get("HEADLESS_BUILD", "") == "1"
+        )
+        is_mock_ui = (
+            isinstance(ui, MagicMock)
+            or getattr(ui, "__module__", "").startswith("unittest.mock")
+        )
+
+        if (not _NICEGUI_AVAILABLE and ui is _dummy_ui) or (is_ci and not is_mock_ui):
+            logger.warning("NiceGUI is not available or running in headless CI mode; skipping fallback dialog.")
             _cleanup_and_finish("")
             return None
 
@@ -233,23 +244,24 @@ def ask_directory_async(
                         break
             elif sys.platform == "win32":
                 # Windows PowerShell
-                script = f"""
-$isCI = $env:CI -eq 'true' -or $env:GITHUB_ACTIONS -eq 'true' -or $env:TF_BUILD -eq 'true'
-if ([System.Environment]::UserInteractive -and -not $isCI) {{
-    [System.Reflection.Assembly]::LoadWithPartialName('System.windows.forms') | Out-Null;
-    $objForm = New-Object System.Windows.Forms.FolderBrowserDialog;
-    $objForm.Description = '{title}';
-    $objForm.ShowNewFolderButton = $true;
-    $result = $objForm.ShowDialog();
-    if ($result -eq [System.Windows.Forms.DialogResult]::OK) {{
-        Write-Output "SUCCESS:$($objForm.SelectedPath)"
-    }} else {{
-        Write-Output "CANCEL:"
-    }}
-}} else {{
-    Write-Output "CANCEL:"
-}}
-"""
+                safe_title = title.replace("'", "''")
+                script = (
+                    "$isCI = $env:CI -eq 'true' -or $env:GITHUB_ACTIONS -eq 'true' -or $env:TF_BUILD -eq 'true'; "
+                    "if ([System.Environment]::UserInteractive -and -not $isCI) { "
+                    "[System.Reflection.Assembly]::LoadWithPartialName('System.windows.forms') | Out-Null; "
+                    "$objForm = New-Object System.Windows.Forms.FolderBrowserDialog; "
+                    f"$objForm.Description = '{safe_title}'; "
+                    "$objForm.ShowNewFolderButton = $true; "
+                    "$result = $objForm.ShowDialog(); "
+                    "if ($result -eq [System.Windows.Forms.DialogResult]::OK) { "
+                    'Write-Output "SUCCESS:$($objForm.SelectedPath)" '
+                    "} else { "
+                    'Write-Output "CANCEL:" '
+                    "} "
+                    "} else { "
+                    'Write-Output "CANCEL:" '
+                    "}"
+                )
                 cmd = ["powershell", "-NoProfile", "-NonInteractive", "-Command", script]
                 result = run_background_process(
                     cmd, sandbox=False, capture_output=True, text=True, timeout=15
