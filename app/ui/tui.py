@@ -50,6 +50,23 @@ class A11yMixin:
             except Exception:
                 pass
 
+    def join_speech_thread(self, timeout: float = 1.0) -> None:
+        """Wait for active speech synthesis thread to finish."""
+        if self._speech_thread is not None and self._speech_thread.is_alive():
+            try:
+                self._speech_thread.join(timeout=timeout)
+            except Exception:
+                pass
+
+    def on_unmount(self) -> None:
+        """Lifecycle hook called when component is unmounted from Textual app."""
+        self.join_speech_thread(timeout=0.5)
+        if hasattr(super(), "on_unmount"):
+            try:
+                super().on_unmount()  # type: ignore[misc]
+            except Exception:
+                pass
+
     def announce(self, message: str, priority: str = "polite") -> str:
         """Emit auditory screen reader announcement and log accessibility event."""
         entry = {
@@ -70,6 +87,8 @@ class A11yMixin:
                 pass
 
         if not forwarded:
+            self.join_speech_thread(timeout=0.2)
+
             # Check speech binary presence via shutil.which before launching subprocess
             speech_bin = None
             try:
