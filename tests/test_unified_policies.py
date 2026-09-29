@@ -6,7 +6,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.config import Settings
-from app.core.analyzer import IncrementalAnalyzer
+from app.core.analyzer import IncrementalAnalyzer, SortingPlanNode
 from app.core.cache import CacheManager
 from app.core.db import Database
 from app.core.db_worker import DBWorker
@@ -205,10 +205,12 @@ def test_policy_priority_routing():
 
     # Extract file assignment
     def find_folder_for(filename, p, current_path=""):
-        if not isinstance(p, dict) or p.get("__type__") == "file":
+        curr_dict = p.plan if hasattr(p, "plan") and isinstance(p.plan, dict) else p
+        if not isinstance(curr_dict, dict):
             return None
-        for k, v in p.items():
-            if v is None or (isinstance(v, dict) and v.get("__type__") == "file"):
+        for k, v in curr_dict.items():
+            is_file = v is None or isinstance(v, SortingPlanNode) or (hasattr(v, "node_type") and getattr(v, "node_type") == "file") or (isinstance(v, dict) and v.get("__type__") == "file")
+            if is_file:
                 if k == filename:
                     return current_path
             else:
@@ -289,10 +291,12 @@ def test_policy_override_bypasses_historical_and_ml():
     # The file has a manual historical assignment to "Manual User Folder",
     # but the compliance policy must override manual moves.
     def find_folder_for(filename, p, current_path=""):
-        if not isinstance(p, dict) or p.get("__type__") == "file":
+        curr_dict = p.plan if hasattr(p, "plan") and isinstance(p.plan, dict) else p
+        if not isinstance(curr_dict, dict):
             return None
-        for k, v in p.items():
-            if v is None or (isinstance(v, dict) and v.get("__type__") == "file"):
+        for k, v in curr_dict.items():
+            is_file = v is None or isinstance(v, SortingPlanNode) or (hasattr(v, "node_type") and getattr(v, "node_type") == "file") or (isinstance(v, dict) and v.get("__type__") == "file")
+            if is_file:
                 if k == filename:
                     return current_path
             else:
@@ -306,10 +310,11 @@ def test_policy_override_bypasses_historical_and_ml():
     # Under the PolicyEngine architecture, compliance policies take absolute precedence,
     # overriding manual user decisions and routing the file to the compliance path while raising a conflict.
     assert find_folder_for("corp_restricted.xlsx", plan) == "Strict Compliance"
-    assert plan["Strict Compliance"]["corp_restricted.xlsx"]["is_conflicted"] is True
-    assert plan["Strict Compliance"]["corp_restricted.xlsx"]["is_corrected"] is True
+    node = plan.plan["Strict Compliance"]["corp_restricted.xlsx"] if hasattr(plan, "plan") else plan["Strict Compliance"]["corp_restricted.xlsx"]
+    assert (getattr(node, "is_conflicted", None) or (node.get("is_conflicted") if isinstance(node, dict) else None)) is True
+    assert (getattr(node, "is_corrected", None) or (node.get("is_corrected") if isinstance(node, dict) else None)) is True
     assert (
-        plan["Strict Compliance"]["corp_restricted.xlsx"]["original_lock_path"]
+        getattr(node, "original_lock_path", None) or (node.get("original_lock_path") if isinstance(node, dict) else None)
         == "Manual User Folder"
     )
 
@@ -354,10 +359,12 @@ def test_policy_halting_and_cascading():
     )
 
     def find_folder_for(filename, p, current_path=""):
-        if not isinstance(p, dict) or p.get("__type__") == "file":
+        curr_dict = p.plan if hasattr(p, "plan") and isinstance(p.plan, dict) else p
+        if not isinstance(curr_dict, dict):
             return None
-        for k, v in p.items():
-            if v is None or (isinstance(v, dict) and v.get("__type__") == "file"):
+        for k, v in curr_dict.items():
+            is_file = v is None or isinstance(v, SortingPlanNode) or (hasattr(v, "node_type") and getattr(v, "node_type") == "file") or (isinstance(v, dict) and v.get("__type__") == "file")
+            if is_file:
                 if k == filename:
                     return current_path
             else:

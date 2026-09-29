@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from app.core.analyzer import IncrementalAnalyzer
+from app.core.analyzer import IncrementalAnalyzer, SortingPlanNode
 from app.core.cache import CacheManager
 from app.core.db import Database
 from app.core.db_worker import DBWorker
@@ -81,10 +81,12 @@ def test_keyword_rules():
     print("Plan:", plan)
 
     def find_folder_for(filename, p, current_path=""):
-        if not isinstance(p, dict) or p.get("__type__") == "file":
+        curr_dict = p.plan if hasattr(p, "plan") and isinstance(p.plan, dict) else p
+        if not isinstance(curr_dict, dict):
             return None
-        for k, v in p.items():
-            if v is None or (isinstance(v, dict) and v.get("__type__") == "file"):
+        for k, v in curr_dict.items():
+            is_file = v is None or isinstance(v, SortingPlanNode) or (hasattr(v, "node_type") and getattr(v, "node_type") == "file") or (isinstance(v, dict) and v.get("__type__") == "file")
+            if is_file:
                 if k == filename:
                     return current_path
             else:
@@ -127,10 +129,12 @@ def test_empty_keyword_rules_ignored():
     plan = analyzer.generate_sorting_plan("dummy", runtime_settings=MockSettings())
 
     def find_folder_for(filename, p, current_path=""):
-        if not isinstance(p, dict) or p.get("__type__") == "file":
+        curr_dict = p.plan if hasattr(p, "plan") and isinstance(p.plan, dict) else p
+        if not isinstance(curr_dict, dict):
             return None
-        for k, v in p.items():
-            if v is None or (isinstance(v, dict) and v.get("__type__") == "file"):
+        for k, v in curr_dict.items():
+            is_file = v is None or isinstance(v, SortingPlanNode) or (hasattr(v, "node_type") and getattr(v, "node_type") == "file") or (isinstance(v, dict) and v.get("__type__") == "file")
+            if is_file:
                 if k == filename:
                     return current_path
             else:

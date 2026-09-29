@@ -441,6 +441,16 @@ def apply_config_overrides(settings: AppSettings, args: argparse.Namespace):
         settings.CONTEXTUAL_RENAMING = args.contextual_renaming
 
 
+def _make_json_serializable(obj):
+    if hasattr(obj, "model_dump"):
+        return obj.model_dump(mode="json")
+    if isinstance(obj, dict):
+        return {k: _make_json_serializable(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_make_json_serializable(v) for v in obj]
+    return obj
+
+
 def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
     """Execute non-interactive document batch sorting."""
     import json
@@ -491,13 +501,16 @@ def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
             dest_base = Path(dest_dir).resolve()
             dest_base.mkdir(parents=True, exist_ok=True)
             re_rooted_plan = {}
-            for k, v in plan.items():
+            plan_items = plan.plan.items() if hasattr(plan, "plan") and isinstance(plan.plan, dict) else plan.items()
+            for k, v in plan_items:
                 if os.path.isabs(k):
                     re_rooted_plan[k] = v
                 else:
                     new_key = str(dest_base / k)
                     re_rooted_plan[new_key] = v
             plan = re_rooted_plan
+
+        serializable_plan = _make_json_serializable(plan)
 
         if dry_run:
             result = {
@@ -509,7 +522,7 @@ def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
                     if dest_dir
                     else str(target_path)
                 ),
-                "plan": plan,
+                "plan": serializable_plan,
             }
         else:
             summary = session.execute_moves(plan)
@@ -522,7 +535,7 @@ def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
                     if dest_dir
                     else str(target_path)
                 ),
-                "plan": plan,
+                "plan": serializable_plan,
                 "summary": summary,
             }
 
@@ -538,7 +551,7 @@ def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
                 )
                 if dry_run:
                     print("Dry-run mode: no files were moved.", file=sys.stderr)
-            print(json.dumps(plan, indent=2))
+            print(json.dumps(serializable_plan, indent=2))
 
         sys.exit(0)
     except Exception as e:
@@ -590,12 +603,13 @@ def handle_scan_command(args: argparse.Namespace, settings: AppSettings):
             session.partial_fit(chunk)
 
         plan = session.generate_sorting_plan()
+        serializable_plan = _make_json_serializable(plan)
 
         result = {
             "status": "success",
             "target_directory": str(target_path),
             "files_scanned": len(files),
-            "plan": plan,
+            "plan": serializable_plan,
         }
 
         quiet = getattr(args, "quiet", False)
@@ -608,7 +622,7 @@ def handle_scan_command(args: argparse.Namespace, settings: AppSettings):
                     f"Scan analysis completed for '{target_path}'. Scanned {len(files)} files.",
                     file=sys.stderr,
                 )
-            print(json.dumps(plan, indent=2))
+            print(json.dumps(serializable_plan, indent=2))
 
         sys.exit(0)
     except Exception as e:

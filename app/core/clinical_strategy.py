@@ -9,6 +9,7 @@ import os
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
+from app.core.analyzer import SortingPlan, _validate_sorting_plan_nodes
 from app.core.analyzer_strategies import IsolatedStrategyMixin
 from app.core.clinical_compliance import ClinicalComplianceEngine
 from app.core.clinical_renamer import ClinicalRenamer
@@ -173,7 +174,8 @@ class ClinicalTMFStrategy(IsolatedStrategyMixin):
             except Exception as e:
                 logger.warning(f"Could not write audit reports to {base_dir_val}: {e}")
 
-        return plan, 0.0
+        validated_plan = _validate_sorting_plan_nodes(plan)
+        return SortingPlan(plan=validated_plan), 0.0
 
     def _insert_into_plan(
         self,

@@ -5,6 +5,9 @@ import re
 import sys
 import tempfile
 from pathlib import Path
+from typing import Any
+
+from pydantic import BaseModel
 
 RESERVED_NAMES = {
     "CON",
@@ -319,31 +322,52 @@ def _merge_plan_dicts(target_dict: dict, source_dict: dict) -> list[str]:
     return warnings
 
 
-def sanitize_plan(plan: dict) -> tuple[dict, list[str]]:
-    """Recursively sanitize folder keys in a plan dictionary.
+def sanitize_plan(plan: Any) -> tuple[dict, list[str]]:
+    """Recursively sanitize folder keys in a plan dictionary or SortingPlan.
 
     Returns (sanitized_plan, warnings).
     """
+    if hasattr(plan, "plan") and isinstance(plan.plan, dict):
+        plan = plan.plan
+    elif hasattr(plan, "model_dump") and not isinstance(plan, dict):
+        plan = plan.model_dump()
+
     if not isinstance(plan, dict):
         return plan, []
 
     sanitized_plan = {}
     warnings = []
 
+    def _is_file_node(obj):
+        if isinstance(obj, BaseModel):
+            t = getattr(obj, "node_type", None) or getattr(obj, "__type__", None)
+            return t == "file"
+        if isinstance(obj, dict):
+            return obj.get("__type__") == "file"
+        return False
+
+    def _is_dir_node(obj):
+        if isinstance(obj, BaseModel):
+            t = getattr(obj, "node_type", None) or getattr(obj, "__type__", None)
+            return t == "directory"
+        if isinstance(obj, dict):
+            return obj.get("__type__") == "directory"
+        return False
+
     for key, content in plan.items():
         if content is None:
             sanitized_plan[key] = None
-        elif isinstance(content, dict) and content.get("__type__") == "file":
-            sanitized_plan[key] = dict(content)
-        elif isinstance(content, dict) and content.get("__type__") == "directory":
+        elif _is_file_node(content):
+            sanitized_plan[key] = content
+        elif _is_dir_node(content):
             safe_key, transformed = sanitize_folder_key(key)
             if transformed:
                 warnings.append(f"Sanitized folder key '{key}' to '{safe_key}'")
 
-            dir_content = dict(content)
+            dir_content = content
             sanitized_plan[safe_key] = dir_content
 
-        elif isinstance(content, dict):
+        elif isinstance(content, (dict, BaseModel)):
             safe_key, transformed = sanitize_folder_key(key)
             if transformed:
                 warnings.append(f"Sanitized folder key '{key}' to '{safe_key}'")
@@ -354,8 +378,9 @@ def sanitize_plan(plan: dict) -> tuple[dict, list[str]]:
             if safe_key in sanitized_plan:
                 existing = sanitized_plan[safe_key]
                 if (
-                    isinstance(existing, dict)
-                    and existing.get("__type__") not in ("file", "directory")
+                    isinstance(existing, (dict, BaseModel))
+                    and not _is_file_node(existing)
+                    and not _is_dir_node(existing)
                 ):
                     merge_warns = _merge_plan_dicts(existing, sub_sanitized)
                     warnings.extend(merge_warns)

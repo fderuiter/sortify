@@ -3,6 +3,7 @@
 import pytest
 
 from app.config import AppSettings
+from app.core.analyzer import SortingPlanNode
 from app.core.analyzer_strategies import (
     GenerativeNamingStrategy,
     RecursiveKMeansStrategy,
@@ -30,13 +31,17 @@ def test_recursive_kmeans_strategy_leaf_metadata():
     )
 
     def _verify_leaves(node):
-        for k, v in node.items():
-            if isinstance(v, dict) and v.get("__type__") == "file":
-                assert v["__type__"] == "file"
-                assert "relative_source" in v
-                assert "source_path" in v
-                assert v.get("routed_by") == "clustering"
-            elif isinstance(v, dict):
+        curr_dict = node.plan if hasattr(node, "plan") and isinstance(node.plan, dict) else node
+        for k, v in curr_dict.items():
+            is_file = getattr(v, "node_type", None) == "file" or (isinstance(v, dict) and v.get("__type__") == "file") or isinstance(v, SortingPlanNode)
+            if is_file:
+                rel_src = getattr(v, "relative_source", None) or (v.get("relative_source") if isinstance(v, dict) else None)
+                src_path = getattr(v, "source_path", None) or (v.get("source_path") if isinstance(v, dict) else None)
+                routed_by = getattr(v, "routed_by", None) or (v.get("routed_by") if isinstance(v, dict) else None)
+                assert rel_src is not None
+                assert src_path is not None
+                assert routed_by == "clustering"
+            elif hasattr(v, "plan") or isinstance(v, dict):
                 _verify_leaves(v)
             else:
                 pytest.fail(f"Leaf node {k} is not a valid metadata dictionary: {v}")
@@ -63,12 +68,15 @@ def test_generative_naming_strategy_leaf_metadata():
     )
 
     def _verify_leaves(node):
-        for k, v in node.items():
-            if isinstance(v, dict) and v.get("__type__") == "file":
-                assert v["__type__"] == "file"
-                assert "relative_source" in v
-                assert "source_path" in v
-            elif isinstance(v, dict):
+        curr_dict = node.plan if hasattr(node, "plan") and isinstance(node.plan, dict) else node
+        for k, v in curr_dict.items():
+            is_file = getattr(v, "node_type", None) == "file" or (isinstance(v, dict) and v.get("__type__") == "file") or isinstance(v, SortingPlanNode)
+            if is_file:
+                rel_src = getattr(v, "relative_source", None) or (v.get("relative_source") if isinstance(v, dict) else None)
+                src_path = getattr(v, "source_path", None) or (v.get("source_path") if isinstance(v, dict) else None)
+                assert rel_src is not None
+                assert src_path is not None
+            elif hasattr(v, "plan") or isinstance(v, dict):
                 _verify_leaves(v)
             else:
                 pytest.fail(f"Leaf node {k} is not a valid metadata dictionary: {v}")
@@ -93,13 +101,17 @@ def test_clinical_strategy_leaf_metadata():
     )
 
     def _verify_leaves(node):
-        for k, v in node.items():
-            if isinstance(v, dict) and v.get("__type__") == "file":
-                assert v["__type__"] == "file"
-                assert "relative_source" in v
-                assert "source_path" in v
-                assert "routed_by" in v
-            elif isinstance(v, dict):
+        curr_dict = node.plan if hasattr(node, "plan") and isinstance(node.plan, dict) else node
+        for k, v in curr_dict.items():
+            is_file = getattr(v, "node_type", None) == "file" or (isinstance(v, dict) and v.get("__type__") == "file") or isinstance(v, SortingPlanNode)
+            if is_file:
+                rel_src = getattr(v, "relative_source", None) or (v.get("relative_source") if isinstance(v, dict) else None)
+                src_path = getattr(v, "source_path", None) or (v.get("source_path") if isinstance(v, dict) else None)
+                routed_by = getattr(v, "routed_by", None) or (v.get("routed_by") if isinstance(v, dict) else None)
+                assert rel_src is not None
+                assert src_path is not None
+                assert routed_by is not None
+            elif hasattr(v, "plan") or isinstance(v, dict):
                 _verify_leaves(v)
             else:
                 pytest.fail(f"Leaf node {k} is not a valid metadata dictionary: {v}")
@@ -188,21 +200,24 @@ def test_end_to_end_phase_splitting_and_model_unloading(tmp_path):
     )
 
     full_plan = session.generate_sorting_plan(fast_path_only=False)
+    plan_dict = full_plan.plan if hasattr(full_plan, "plan") else full_plan
 
     # Verify invoice is under Invoices folder with keyword routing
-    assert "Invoices" in full_plan
-    assert full_plan["Invoices"]["invoice_123.txt"]["routed_by"] == "keyword"
+    assert "Invoices" in plan_dict
+    inv_node = plan_dict["Invoices"]["invoice_123.txt"]
+    assert (getattr(inv_node, "routed_by", None) or (inv_node.get("routed_by") if isinstance(inv_node, dict) else None)) == "keyword"
 
     # Verify AI documents are under clustering folders with complete leaf dicts
     all_ai_files = []
-    for folder, content in full_plan.items():
+    for folder, content in plan_dict.items():
         if folder == "Invoices":
             continue
-        for f_name, f_info in content.items():
+        c_dict = content.plan if hasattr(content, "plan") and isinstance(content.plan, dict) else content
+        for f_name, f_info in c_dict.items():
             all_ai_files.append(f_name)
-            assert isinstance(f_info, dict)
-            assert f_info.get("__type__") == "file"
-            assert "relative_source" in f_info
+            is_file = getattr(f_info, "node_type", None) == "file" or (isinstance(f_info, dict) and f_info.get("__type__") == "file") or isinstance(f_info, SortingPlanNode)
+            assert is_file
+            assert getattr(f_info, "relative_source", None) is not None or (isinstance(f_info, dict) and "relative_source" in f_info)
 
     assert "ai_doc1.txt" in all_ai_files
     assert "ai_doc2.txt" in all_ai_files

@@ -1289,12 +1289,12 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
 
         def get_recursive_files(n):
             res = []
-            for key, val in n.items():
-                if (
-                    val is None
-                    or not isinstance(val, dict)
-                    or val.get("__type__") == "file"
-                ):
+            curr_dict = n.plan if hasattr(n, "plan") and isinstance(n.plan, dict) else n
+            if not isinstance(curr_dict, dict):
+                return res
+            for key, val in curr_dict.items():
+                is_file = val is None or not isinstance(val, dict) or (hasattr(val, "node_type") and getattr(val, "node_type") == "file") or (isinstance(val, dict) and val.get("__type__") == "file")
+                if is_file:
                     res.append(key)
                 else:
                     res.extend(get_recursive_files(val))
@@ -1307,12 +1307,12 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
             # Separate files and subfolders in this node
             files = []
             subfolders = {}
-            for k, v in node.items():
-                if (
-                    v is None
-                    or not isinstance(v, dict)
-                    or (isinstance(v, dict) and v.get("__type__") == "file")
-                ):
+            curr_node = node.plan if hasattr(node, "plan") and isinstance(node.plan, dict) else node
+            if not isinstance(curr_node, dict):
+                return new_node, low_confidence_files
+            for k, v in curr_node.items():
+                is_file = v is None or not isinstance(v, dict) or (hasattr(v, "node_type") and getattr(v, "node_type") == "file") or (isinstance(v, dict) and v.get("__type__") == "file")
+                if is_file:
                     files.append((k, v))
                 else:
                     subfolders[k] = v

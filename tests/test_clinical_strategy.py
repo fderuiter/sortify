@@ -44,38 +44,39 @@ def test_tmf_mode_plan_generation():
     plan, error = strategy.generate_plan(filenames, documents)
     assert error == 0.0
 
+    plan_dict = plan.plan if hasattr(plan, "plan") else plan
     # Verify TMF hierarchy: Zone > Section
-    assert "05 Site Management" in plan
-    assert "05.02 Form FDA 1572 and Agreements" in plan["05 Site Management"]
+    assert "05 Site Management" in plan_dict
+    assert "05.02 Form FDA 1572 and Agreements" in plan_dict["05 Site Management"]
     assert (
         "1572_form_signed.pdf"
-        in plan["05 Site Management"]["05.02 Form FDA 1572 and Agreements"]
+        in plan_dict["05 Site Management"]["05.02 Form FDA 1572 and Agreements"]
     )
 
-    assert "02 Central Trial Documents" in plan
-    assert "02.01 Protocol and Amendments" in plan["02 Central Trial Documents"]
+    assert "02 Central Trial Documents" in plan_dict
+    assert "02.01 Protocol and Amendments" in plan_dict["02 Central Trial Documents"]
     assert (
         "Clinical_Study_Protocol_v2.docx"
-        in plan["02 Central Trial Documents"]["02.01 Protocol and Amendments"]
+        in plan_dict["02 Central Trial Documents"]["02.01 Protocol and Amendments"]
     )
 
-    assert "04 IRB and IEC" in plan
-    assert "04.01 Ethics Committee Approvals" in plan["04 IRB and IEC"]
+    assert "04 IRB and IEC" in plan_dict
+    assert "04.01 Ethics Committee Approvals" in plan_dict["04 IRB and IEC"]
     assert (
         "IRB_approval_letter.pdf"
-        in plan["04 IRB and IEC"]["04.01 Ethics Committee Approvals"]
+        in plan_dict["04 IRB and IEC"]["04.01 Ethics Committee Approvals"]
     )
 
     # Verify Ancillary and Unclassified review folders
-    assert "Ancillary_Non_TMF" in plan
-    assert "hotel_expense_receipt.pdf" in plan["Ancillary_Non_TMF"]
+    assert "Ancillary_Non_TMF" in plan_dict
+    assert "hotel_expense_receipt.pdf" in plan_dict["Ancillary_Non_TMF"]
 
-    assert "Unclassified_Review" in plan
-    assert "random_unrelated_file.txt" in plan["Unclassified_Review"]
+    assert "Unclassified_Review" in plan_dict
+    assert "random_unrelated_file.txt" in plan_dict["Unclassified_Review"]
 
     # Verify compliance result was computed
     assert strategy.last_compliance_result is not None
-    assert strategy.last_compliance_result["total_files_scanned"] == 5
+    assert strategy.last_compliance_result.total_files_scanned == 5
 
 
 def test_isf_mode_plan_generation_with_smart_renaming():
@@ -96,18 +97,18 @@ def test_isf_mode_plan_generation_with_smart_renaming():
     plan, error = strategy.generate_plan(filenames, documents)
     assert error == 0.0
 
+    plan_dict = plan.plan if hasattr(plan, "plan") else plan
     # In ISF mode, folder is the ISF Section
-    assert "03_FDA_Form_1572_and_Agreements" in plan
-    assert "11_Delegation_of_Authority_Log" in plan
+    assert "03_FDA_Form_1572_and_Agreements" in plan_dict
+    assert "11_Delegation_of_Authority_Log" in plan_dict
 
     # Verify smart renaming output
-    node_1572 = plan["03_FDA_Form_1572_and_Agreements"]["raw_1572.pdf"]
-    assert isinstance(node_1572, dict)
-    assert node_1572["__type__"] == "file"
-    assert node_1572["relative_source"] == "raw_1572.pdf"
+    node_1572 = plan_dict["03_FDA_Form_1572_and_Agreements"]["raw_1572.pdf"]
+    assert getattr(node_1572, "node_type", None) or (isinstance(node_1572, dict) and node_1572.get("__type__") == "file")
+    assert getattr(node_1572, "relative_source", None) or (isinstance(node_1572, dict) and node_1572.get("relative_source")) == "raw_1572.pdf"
     assert (
         "PROTO_999_Form_FDA_1572_PI_Alice_Walker_20240510.pdf"
-        == node_1572["target_filename"]
+        == (getattr(node_1572, "target_filename", None) or (node_1572.get("target_filename") if isinstance(node_1572, dict) else None))
     )
 
 

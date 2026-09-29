@@ -113,12 +113,14 @@ def test_statistical_fallback_on_mock(db, temp_dir):
             ) as mock_reconstruct,
         ):
             plan = analyzer.generate_sorting_plan(base_dir)
+            plan_dict = plan.plan if hasattr(plan, "plan") else plan
 
             # 1. Similarity matching should have run using statistical TF-IDF similarity.
             # Since new_text and hist_text are extremely similar, it should match to "Space" (similarity >= 0.8)
-            assert "Space" in plan
-            assert "new_space.txt" in plan["Space"]
-            assert plan["Space"]["new_space.txt"]["routed_by"] == "similarity"
+            assert "Space" in plan_dict
+            assert "new_space.txt" in plan_dict["Space"]
+            node1 = plan_dict["Space"]["new_space.txt"]
+            assert (getattr(node1, "routed_by", None) or (node1.get("routed_by") if isinstance(node1, dict) else None)) == "similarity"
 
             # 2. Embedding generation & background vector reconstruction loops must NOT be triggered
             mock_gen.assert_not_called()
@@ -201,13 +203,15 @@ def test_dynamic_transition_to_semantic(db, temp_dir):
 
             # Now, call generate_sorting_plan. Since use_semantic is True, it should generate embeddings
             plan = analyzer.generate_sorting_plan(base_dir)
+            plan_dict = plan.plan if hasattr(plan, "plan") else plan
 
             # 1. generate_embedding should have been called for new_space.txt to perform the matching
             mock_gen.assert_called()
 
             # 2. It successfully resolves standard matching task via semantic vectors
-            assert "Space" in plan
-            assert "new_space.txt" in plan["Space"]
-            assert plan["Space"]["new_space.txt"]["routed_by"] == "similarity"
+            assert "Space" in plan_dict
+            assert "new_space.txt" in plan_dict["Space"]
+            node2 = plan_dict["Space"]["new_space.txt"]
+            assert (getattr(node2, "routed_by", None) or (node2.get("routed_by") if isinstance(node2, dict) else None)) == "similarity"
     finally:
         analyzer.close()
