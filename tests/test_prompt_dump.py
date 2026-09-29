@@ -7,6 +7,7 @@ import pytest
 from app.config import get_debug_log_dir
 from app.core.analyzer_strategies import (
     GenerativeNamingStrategy,
+    _scrub_user_home_paths,
     is_debug_active,
     is_prompt_dump_enabled,
     redact_sensitive_text,
@@ -318,3 +319,16 @@ def test_run_prompt_mandatory_inference_scrubbing(monkeypatch):
     assert "[REDACTED_SECRET]" in enqueued_prompt
     assert "Medical trial audit findings" in enqueued_prompt
     assert "[REDACTED_DOCUMENT_TEXT" not in enqueued_prompt
+
+
+def test_scrub_user_home_paths_cross_platform_variations(monkeypatch):
+    monkeypatch.setenv("USERPROFILE", r"C:\Users\RunnerAdmin")
+
+    text_win_upper = r"File located at C:\Users\RunnerAdmin\documents\data.txt"
+    text_win_lower = r"File located at c:\users\runneradmin\documents\data.txt"
+    text_win_fwd = "File located at C:/Users/RunnerAdmin/documents/data.txt"
+
+    assert _scrub_user_home_paths(text_win_upper) == r"File located at <USER_HOME>\documents\data.txt"
+    assert _scrub_user_home_paths(text_win_lower) == r"File located at <USER_HOME>\documents\data.txt"
+    assert _scrub_user_home_paths(text_win_fwd) == "File located at <USER_HOME>/documents/data.txt"
+

@@ -130,23 +130,64 @@ def redact_sensitive_text(text: str) -> str:
     return text
 
 
+def _scrub_user_home_paths(text: str) -> str:
+    """Replace all forms of the current user's home directory path with <USER_HOME>."""
+    if not isinstance(text, str) or not text:
+        return text if text is not None else ""
+
+    home_dirs = []
+    try:
+        ph = str(Path.home())
+        if ph:
+            home_dirs.append(ph)
+    except Exception:
+        pass
+    try:
+        eu = os.path.expanduser("~")
+        if eu and eu not in home_dirs:
+            home_dirs.append(eu)
+    except Exception:
+        pass
+    for env_var in ("USERPROFILE", "HOME"):
+        val = os.environ.get(env_var)
+        if val and val not in home_dirs:
+            home_dirs.append(val)
+
+    for h in home_dirs:
+        clean = h.strip("\\/ ")
+        if not h or clean in ("", "/", "\\") or len(clean) <= 2:
+            continue
+
+        raw_parts = [p for p in re.split(r"[\\/]+", h) if p]
+        if not raw_parts:
+            continue
+
+        if len(raw_parts[0]) == 2 and raw_parts[0][1] == ":":
+            prefix = r"[a-zA-Z]:[\/\\]*"
+            body_parts = raw_parts[1:]
+        elif h.startswith("/") or h.startswith("\\"):
+            prefix = r"[\/\\]*"
+            body_parts = raw_parts
+        else:
+            prefix = ""
+            body_parts = raw_parts
+
+        pattern = prefix + r"[\/\\]+".join([re.escape(p) for p in body_parts])
+        try:
+            text = re.sub(pattern, "<USER_HOME>", text, flags=re.IGNORECASE)
+        except Exception:
+            pass
+
+    return text
+
+
 def scrub_prompt_text(text: str) -> str:
     """Scrub user home directory paths and replace sensitive document text with placeholders prior to writing to disk."""
     if not isinstance(text, str) or not text:
         return text
 
     text = redact_sensitive_text(text)
-
-    try:
-        home_dir = str(Path.home())
-    except Exception:
-        home_dir = None
-
-    if home_dir and home_dir != "/":
-        home_dir_fwd = home_dir.replace("\\", "/")
-        home_dir_back = home_dir.replace("/", "\\")
-        text = text.replace(home_dir_fwd, "<USER_HOME>")
-        text = text.replace(home_dir_back, "<USER_HOME>")
+    text = _scrub_user_home_paths(text)
 
     from app.core.text_utils import sanitize_secret_patterns
 
@@ -160,16 +201,7 @@ def scrub_inference_prompt(text: str) -> str:
     if not isinstance(text, str) or not text:
         return text if text is not None else ""
 
-    try:
-        home_dir = str(Path.home())
-    except Exception:
-        home_dir = None
-
-    if home_dir and home_dir != "/":
-        home_dir_fwd = home_dir.replace("\\", "/")
-        home_dir_back = home_dir.replace("/", "\\")
-        text = text.replace(home_dir_fwd, "<USER_HOME>")
-        text = text.replace(home_dir_back, "<USER_HOME>")
+    text = _scrub_user_home_paths(text)
 
     from app.core.text_utils import sanitize_secret_patterns
 
