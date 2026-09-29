@@ -1,4 +1,4 @@
-import os
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from scripts.generate_docs import (
@@ -161,31 +161,33 @@ def test_main_detects_unsynced_files_on_check():
             mock_run.return_value = MagicMock(returncode=0)
 
             file_contents = {
-                os.path.join("notebooks", "01_ml_analyzer_clustering.ipynb"): [
+                Path("notebooks/01_ml_analyzer_clustering.ipynb").as_posix(): [
                     "nb1",
                     "nb1",
                 ],
-                os.path.join("notebooks", "02_multi_format_text_extraction.ipynb"): [
+                Path("notebooks/02_multi_format_text_extraction.ipynb").as_posix(): [
                     "nb2",
                     "nb2",
                 ],
-                os.path.join("notebooks", "03_virtual_sorting_verification.ipynb"): [
+                Path("notebooks/03_virtual_sorting_verification.ipynb").as_posix(): [
                     "nb3",
                     "nb3",
                 ],
-                os.path.join("docs", "tutorials", "01_ml_analyzer_clustering.md"): [
+                Path("docs/tutorials/01_ml_analyzer_clustering.md").as_posix(): [
                     "tut1",
                     "tut1",
                 ],
-                os.path.join(
-                    "docs", "tutorials", "02_multi_format_text_extraction.md"
-                ): ["tut2", "tut2"],
-                os.path.join(
-                    "docs", "tutorials", "03_virtual_sorting_verification.md"
-                ): ["tut3", "tut3"],
-                os.path.join("docs", "api_reference.md"): ["content1", "content1"],
-                os.path.join("docs", "ui.md"): ["content2", "different_content2"],
-                os.path.join("docs", "admin_guide.md"): ["content3", "content3"],
+                Path("docs/tutorials/02_multi_format_text_extraction.md").as_posix(): [
+                    "tut2",
+                    "tut2",
+                ],
+                Path("docs/tutorials/03_virtual_sorting_verification.md").as_posix(): [
+                    "tut3",
+                    "tut3",
+                ],
+                Path("docs/api_reference.md").as_posix(): ["content1", "content1"],
+                Path("docs/ui.md").as_posix(): ["content2", "different_content2"],
+                Path("docs/admin_guide.md").as_posix(): ["content3", "content3"],
                 "SECURITY.md": ["content4", "content4"],
             }
 
@@ -209,8 +211,13 @@ def test_main_detects_unsynced_files_on_check():
                     return file_contents[self.filepath][idx]
 
             def mock_open_side_effect(filepath, *args, **kwargs):
-                if filepath in file_contents:
-                    return MockFile(filepath)
+                key = (
+                    Path(filepath).as_posix()
+                    if isinstance(filepath, (str, Path))
+                    else str(filepath)
+                )
+                if key in file_contents:
+                    return MockFile(key)
                 return original_open(filepath, *args, **kwargs)
 
             mock_open.side_effect = mock_open_side_effect
@@ -239,31 +246,33 @@ def test_main_clean_on_check():
             mock_run.return_value = MagicMock(returncode=0)
 
             file_contents = {
-                os.path.join("notebooks", "01_ml_analyzer_clustering.ipynb"): [
+                Path("notebooks/01_ml_analyzer_clustering.ipynb").as_posix(): [
                     "nb1",
                     "nb1",
                 ],
-                os.path.join("notebooks", "02_multi_format_text_extraction.ipynb"): [
+                Path("notebooks/02_multi_format_text_extraction.ipynb").as_posix(): [
                     "nb2",
                     "nb2",
                 ],
-                os.path.join("notebooks", "03_virtual_sorting_verification.ipynb"): [
+                Path("notebooks/03_virtual_sorting_verification.ipynb").as_posix(): [
                     "nb3",
                     "nb3",
                 ],
-                os.path.join("docs", "tutorials", "01_ml_analyzer_clustering.md"): [
+                Path("docs/tutorials/01_ml_analyzer_clustering.md").as_posix(): [
                     "tut1",
                     "tut1",
                 ],
-                os.path.join(
-                    "docs", "tutorials", "02_multi_format_text_extraction.md"
-                ): ["tut2", "tut2"],
-                os.path.join(
-                    "docs", "tutorials", "03_virtual_sorting_verification.md"
-                ): ["tut3", "tut3"],
-                os.path.join("docs", "api_reference.md"): ["content1", "content1"],
-                os.path.join("docs", "ui.md"): ["content2", "content2"],
-                os.path.join("docs", "admin_guide.md"): ["content3", "content3"],
+                Path("docs/tutorials/02_multi_format_text_extraction.md").as_posix(): [
+                    "tut2",
+                    "tut2",
+                ],
+                Path("docs/tutorials/03_virtual_sorting_verification.md").as_posix(): [
+                    "tut3",
+                    "tut3",
+                ],
+                Path("docs/api_reference.md").as_posix(): ["content1", "content1"],
+                Path("docs/ui.md").as_posix(): ["content2", "content2"],
+                Path("docs/admin_guide.md").as_posix(): ["content3", "content3"],
                 "SECURITY.md": ["content4", "content4"],
             }
 
@@ -287,8 +296,13 @@ def test_main_clean_on_check():
                     return file_contents[self.filepath][idx]
 
             def mock_open_side_effect(filepath, *args, **kwargs):
-                if filepath in file_contents:
-                    return MockFile(filepath)
+                key = (
+                    Path(filepath).as_posix()
+                    if isinstance(filepath, (str, Path))
+                    else str(filepath)
+                )
+                if key in file_contents:
+                    return MockFile(key)
                 return original_open(filepath, *args, **kwargs)
 
             mock_open.side_effect = mock_open_side_effect
