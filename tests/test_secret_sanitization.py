@@ -127,3 +127,83 @@ def test_legitimate_vocabulary_preserved():
     for title in legitimate_titles:
         assert contains_secrets(title) is False
         assert sanitize_secret_patterns(title) == title
+
+
+def test_sanitize_name_removes_secrets_and_preserves_extensions():
+    """Verify sanitize_name removes Stripe, GitHub, AWS, Mailgun, Bearer, JWT, and private key strings from input names while preserving valid file extensions."""
+    from app.core.path_utils import sanitize_name
+
+    test_cases = [
+        ("Invoice_sk_live_51Nxabc123XYZ4567890abcdef_2026.pdf", "Invoice_2026.pdf"),
+        ("sk_live_51Nxabc123XYZ4567890abcdef.pdf", "Unnamed_safe.pdf"),
+        ("Project_ghp_1234567890abcdef1234567890abcdef123456_Notes.txt", "Project_Notes.txt"),
+        ("AKIAIOSFODNN7EXAMPLE.docx", "Unnamed_safe.docx"),
+        ("Mailgun_key-12345678901234567890123456789012_Config.json", "Mailgun_Config.json"),
+        ("Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c.pdf", "Unnamed_safe.pdf"),
+        ("-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC...\n-----END PRIVATE KEY-----", "Unnamed_safe"),
+    ]
+
+    for raw, expected in test_cases:
+        result = sanitize_name(raw)
+        assert result == expected, f"Expected '{expected}' for '{raw}', got '{result}'"
+        assert not contains_secrets(result), f"Sanitized result '{result}' still contains secrets!"
+
+
+def test_sanitize_folder_key_removes_secrets_from_path_segments():
+    """Verify sanitize_folder_key removes secret tokens from folder path segments and returns safe folder keys."""
+    from app.core.path_utils import sanitize_folder_key
+
+    raw_key1 = "Folder/sk_live_51Nxabc123XYZ4567890abcdef/Documents"
+    safe_key1, transformed1 = sanitize_folder_key(raw_key1)
+    assert transformed1 is True
+    assert "sk_live_" not in safe_key1
+    assert "Folder" in safe_key1
+    assert "Documents" in safe_key1
+
+    raw_key2 = "ghp_1234567890abcdef1234567890abcdef123456"
+    safe_key2, transformed2 = sanitize_folder_key(raw_key2)
+    assert transformed2 is True
+    assert safe_key2 == "Unnamed_safe"
+    assert not contains_secrets(safe_key2)
+
+
+def test_sanitize_plan_sanitizes_leaf_filenames_and_target_filenames():
+    """Verify sanitize_plan sanitizes leaf node filenames and target filename fields in sorting plans."""
+    from app.core.path_utils import sanitize_plan
+
+    plan = {
+        "sk_live_51Nxabc123XYZ4567890abcdef": {
+            "__type__": "directory",
+            "doc_sk_live_51Nxabc123XYZ4567890abcdef.pdf": {
+                "__type__": "file",
+                "target_filename": "doc_sk_live_51Nxabc123XYZ4567890abcdef.pdf",
+            },
+            "AKIAIOSFODNN7EXAMPLE.docx": None,
+        }
+    }
+
+    sanitized, warnings = sanitize_plan(plan)
+
+    assert "Unnamed_safe" in sanitized
+    dir_content = sanitized["Unnamed_safe"]
+    assert "doc.pdf" in dir_content
+    assert dir_content["doc.pdf"]["target_filename"] == "doc.pdf"
+    assert "Unnamed_safe.docx" in dir_content
+    assert len(warnings) > 0
+
+
+def test_contextual_file_renamer_scrubs_secrets():
+    """Verify ContextExtractor and FileRenamerEngine scrub secret tokens from document text and keywords."""
+    from app.core.file_renamer import ContextExtractor, FileRenamerEngine
+
+    text_with_secrets = "API key: sk_live_51Nxabc123XYZ4567890abcdef AWS: AKIAIOSFODNN7EXAMPLE Financial Quarter Report 2026"
+    keywords = ContextExtractor.extract_keywords_tfidf(text_with_secrets)
+    for kw in keywords:
+        assert not contains_secrets(kw)
+
+    renamer = FileRenamerEngine()
+    new_fn = renamer.generate_contextual_name("scan001.pdf", text_with_secrets)
+    assert not contains_secrets(new_fn)
+    assert "sk_live_" not in new_fn
+    assert "AKIA" not in new_fn
+
