@@ -511,7 +511,6 @@ def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
             plan = re_rooted_plan
 
         serializable_plan = _make_json_serializable(plan)
-
         if dry_run:
             result = {
                 "status": "success",
@@ -897,6 +896,8 @@ def main():
     args = parser.parse_args()
     if legacy_directory and not getattr(args, "directory", None):
         args.directory = legacy_directory
+    if not hasattr(args, "directory"):
+        args.directory = None
 
     if not hasattr(args, "quiet"):
         args.quiet = False
@@ -948,6 +949,23 @@ def main():
         handle_config_command(args, settings)
     elif getattr(args, "subcommand", None) == "daemon":
         handle_daemon_command(args, settings)
+
+    # Explicit Headless Guard for non-interactive streams without subcommands
+    is_interactive = bool(sys.stdin and getattr(sys.stdin, "isatty", lambda: False)())
+    is_explicit_ui = (
+        getattr(args, "gui", False)
+        or bool(os.environ.get("FORCE_GUI"))
+        or getattr(args, "tui", False)
+        or getattr(args, "demo", False)
+        or getattr(args, "daemon", False)
+    )
+
+    if not is_interactive and not is_explicit_ui:
+        if getattr(args, "directory", None):
+            handle_sort_command(args, settings)
+        else:
+            parser.print_help(sys.stderr)
+            sys.exit(2)
 
     # Verify embedded model integrity upfront if packaged / sandboxed
     if is_packaged():
