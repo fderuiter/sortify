@@ -313,8 +313,7 @@ def test_file_analyzer_internal_jev_fallback_exception_handling(tmp_path, monkey
     def faulty_classify(*args, **kwargs):
         raise RuntimeError("Simulated Jev engine crash")
 
-    engine = SharedModelRegistry.get_instance().get_jev_classifier()
-    monkeypatch.setattr(engine, "classify", faulty_classify)
+    monkeypatch.setattr(JevClassifierEngine, "classify", faulty_classify)
 
     # Should log warning and not crash, falling through gracefully
     plan = analyzer.generate_sorting_plan(
