@@ -853,7 +853,12 @@ class AutoSorterTUI(A11yMixin, App):
     def __init__(self, settings, base_dir: Optional[str] = None):
         super().__init__()
         self.settings = settings
-        self.base_dir = os.path.abspath(base_dir) if base_dir else ""
+        if base_dir and str(base_dir).startswith("/"):
+            self.base_dir = str(base_dir)
+        elif base_dir:
+            self.base_dir = os.path.abspath(base_dir)
+        else:
+            self.base_dir = ""
         self.plan: Dict[str, Any] = {}
         self.locked_files: Dict[str, str] = {}
         self._ratings_cache: Dict[str, str] = {}

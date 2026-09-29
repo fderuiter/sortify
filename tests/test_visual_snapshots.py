@@ -24,10 +24,21 @@ def sanitize_svg(svg: str) -> str:
     """Sanitize and canonicalize dynamic elements in Textual rendered SVG output.
 
     Normalizes Rich's auto-generated unique element ID prefixes, clock timestamps,
-    and sorts style declarations to ensure deterministic baseline snapshot comparisons.
+    Windows path separators, drive letters, and sorts style declarations to ensure
+    deterministic baseline snapshot comparisons across operating systems.
     """
+    svg = svg.replace("\r\n", "\n")
     svg = re.sub(r"terminal-\d+-", "terminal-test-", svg)
     svg = re.sub(r"\b\d{2}:\d{2}:\d{2}\b", "00:00:00", svg)
+
+    # Normalize Windows drive letters and backslashes in test paths
+    svg = re.sub(r"[A-Za-z]:[/\\]dummy", "/dummy", svg)
+    svg = re.sub(r"\\dummy\\", "/dummy/", svg)
+    svg = re.sub(
+        r"/dummy([^<\"]*)",
+        lambda m: "/dummy" + m.group(1).replace("\\", "/"),
+        svg,
+    )
 
     style_match = re.search(r"<style>(.*?)</style>", svg, re.DOTALL)
     if style_match:
@@ -65,7 +76,7 @@ def assert_svg_snapshot(snapshot_name: str, actual_svg: str) -> None:
     update_snapshots = os.environ.get("UPDATE_SNAPSHOTS") == "1"
 
     if not os.path.exists(snapshot_path) or update_snapshots:
-        with open(snapshot_path, "w", encoding="utf-8") as f:
+        with open(snapshot_path, "w", encoding="utf-8", newline="\n") as f:
             f.write(sanitized_actual)
         if not update_snapshots:
             pytest.fail(
@@ -73,12 +84,20 @@ def assert_svg_snapshot(snapshot_name: str, actual_svg: str) -> None:
             )
         return
 
-    with open(snapshot_path, "r", encoding="utf-8") as f:
-        expected_svg = f.read()
+    with open(snapshot_path, "r", encoding="utf-8", newline="\n") as f:
+        expected_svg = f.read().replace("\r\n", "\n")
 
     assert (
         sanitized_actual == expected_svg
     ), f"SVG visual snapshot mismatch for '{snapshot_name}'. Set UPDATE_SNAPSHOTS=1 to re-baseline."
+
+
+@pytest.fixture(autouse=True)
+def isolated_app_dir(monkeypatch, tmp_path):
+    """Ensure AppSettings is isolated from persistent disk configuration changes."""
+    monkeypatch.setenv("AUTOSORTER_APP_DIR", str(tmp_path))
+    monkeypatch.delenv("AUTOSORTER_PROTECTED_PATHS", raising=False)
+    monkeypatch.delenv("AUTOSORTER_IGNORED_EXTENSIONS", raising=False)
 
 
 def test_tui_main_screen_snapshot():
