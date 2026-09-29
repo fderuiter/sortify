@@ -41,102 +41,110 @@ def _render_fallback_dialog(
     enable_ui_callback=None,
 ):
     """Render an accessible NiceGUI modal dialog as fallback for manual directory selection when native pickers fail."""
-    dialog = ui.dialog()
-    with dialog, ui.card().classes(get_dialog_card_classes("md")):
-        dialog.props("persistent")
-
-        dialog_title = title or "Select Directory"
-        ui.label(dialog_title).classes(
-            "text-lg font-bold text-gray-900 mb-1"
-        ).props('aria-label="Directory Selection Dialog"')
-
-        # Live region alert surfacing native directory picker failure
-        ui.label(
-            "Native folder picker unavailable. Please enter directory path manually."
-        ).classes(
-            "text-sm text-amber-700 bg-amber-50 p-2 rounded w-full mb-3"
-        ).props('role="alert" aria-live="polite"')
-
-        # Manual path input field with explicit label and aria-label
-        path_input = (
-            ui.input(
-                label="Enter Directory Path",
-                placeholder="/path/to/directory",
-            )
-            .classes("w-full mb-2")
-            .props('outlined dense autofocus aria-label="Enter Directory Path"')
-        )
-
-        # Inline validation message element
-        error_label = (
-            ui.label("")
-            .classes("text-xs text-red-600 font-medium hidden w-full mb-2")
-            .props('role="alert" aria-live="assertive"')
-        )
-
-        def _cleanup_and_finish(selected_path: str):
-            try:
-                dialog.close()
-            except Exception:
-                pass
-            if enable_ui_callback:
-                enable_ui_callback()
-            if callback:
-                callback(selected_path)
-
-        def _validate_and_submit():
-            raw_val = (
-                path_input.value
-                if hasattr(path_input, "value") and path_input.value
-                else ""
-            )
-            val = raw_val.strip() if isinstance(raw_val, str) else ""
-            if not val:
-                error_label.set_text("Directory path cannot be empty.")
-                error_label.classes(remove="hidden")
-                return
-
-            clean_path = os.path.abspath(val)
-            if not os.path.exists(clean_path):
-                error_label.set_text("The specified path does not exist.")
-                error_label.classes(remove="hidden")
-                return
-            if not os.path.isdir(clean_path):
-                error_label.set_text("The specified path is not a valid directory.")
-                error_label.classes(remove="hidden")
-                return
-
-            _cleanup_and_finish(clean_path)
-
-        def _on_cancel():
-            _cleanup_and_finish("")
-
-        # Focus elevation
-        if hasattr(path_input, "run_method"):
-            try:
-                path_input.run_method("focus")
-            except Exception:
-                pass
-        elif hasattr(path_input, "focus"):
-            try:
-                path_input.focus()
-            except Exception:
-                pass
-
-        # Action buttons
-        with ui.row().classes("w-full justify-end gap-2 mt-2"):
-            ui.button("Cancel", on_click=_on_cancel).classes(
-                "bg-gray-200 text-gray-800"
-            ).props('aria-label="Cancel Directory Selection"')
-            ui.button("Confirm", on_click=_validate_and_submit).classes(
-                "bg-blue-600 text-white"
-            ).props('aria-label="Confirm Directory Selection"')
+    def _cleanup_and_finish(selected_path: str):
+        if enable_ui_callback:
+            enable_ui_callback()
+        if callback:
+            callback(selected_path)
 
     try:
-        dialog.open()
-    except Exception:
-        pass
-    return dialog
+        dialog = ui.dialog()
+        with dialog, ui.card().classes(get_dialog_card_classes("md")):
+            dialog.props("persistent")
+
+            dialog_title = title or "Select Directory"
+            ui.label(dialog_title).classes(
+                "text-lg font-bold text-gray-900 mb-1"
+            ).props('aria-label="Directory Selection Dialog"')
+
+            # Live region alert surfacing native directory picker failure
+            ui.label(
+                "Native folder picker unavailable. Please enter directory path manually."
+            ).classes(
+                "text-sm text-amber-700 bg-amber-50 p-2 rounded w-full mb-3"
+            ).props('role="alert" aria-live="polite"')
+
+            # Manual path input field with explicit label and aria-label
+            path_input = (
+                ui.input(
+                    label="Enter Directory Path",
+                    placeholder="/path/to/directory",
+                )
+                .classes("w-full mb-2")
+                .props('outlined dense autofocus aria-label="Enter Directory Path"')
+            )
+
+            # Inline validation message element
+            error_label = (
+                ui.label("")
+                .classes("text-xs text-red-600 font-medium hidden w-full mb-2")
+                .props('role="alert" aria-live="assertive"')
+            )
+
+            def _on_close(selected_path: str):
+                try:
+                    dialog.close()
+                except Exception:
+                    pass
+                _cleanup_and_finish(selected_path)
+
+            def _validate_and_submit():
+                raw_val = (
+                    path_input.value
+                    if hasattr(path_input, "value") and path_input.value
+                    else ""
+                )
+                val = raw_val.strip() if isinstance(raw_val, str) else ""
+                if not val:
+                    error_label.set_text("Directory path cannot be empty.")
+                    error_label.classes(remove="hidden")
+                    return
+
+                clean_path = os.path.abspath(val)
+                if not os.path.exists(clean_path):
+                    error_label.set_text("The specified path does not exist.")
+                    error_label.classes(remove="hidden")
+                    return
+                if not os.path.isdir(clean_path):
+                    error_label.set_text("The specified path is not a valid directory.")
+                    error_label.classes(remove="hidden")
+                    return
+
+                _on_close(clean_path)
+
+            def _on_cancel():
+                _on_close("")
+
+            # Focus elevation
+            if hasattr(path_input, "run_method"):
+                try:
+                    path_input.run_method("focus")
+                except Exception:
+                    pass
+            elif hasattr(path_input, "focus"):
+                try:
+                    path_input.focus()
+                except Exception:
+                    pass
+
+            # Action buttons
+            with ui.row().classes("w-full justify-end gap-2 mt-2"):
+                ui.button("Cancel", on_click=_on_cancel).classes(
+                    "bg-gray-200 text-gray-800"
+                ).props('aria-label="Cancel Directory Selection"')
+                ui.button("Confirm", on_click=_validate_and_submit).classes(
+                    "bg-blue-600 text-white"
+                ).props('aria-label="Confirm Directory Selection"')
+
+        try:
+            dialog.open()
+        except Exception:
+            pass
+        return dialog
+    except Exception as e:
+        logger.warning(f"Failed to render fallback directory dialog: {e}")
+        _cleanup_and_finish("")
+        return None
 
 
 def ask_directory_async(
@@ -194,15 +202,21 @@ def ask_directory_async(
                 result = run_background_process(
                     cmd, sandbox=False, capture_output=True, text=True, check=True
                 )
-                output = result.stdout.strip()
-                if output.startswith("SUCCESS:"):
-                    path = output[8:]
-                    success = True
-                elif output.startswith("CANCEL:"):
-                    path = ""
-                    success = True
-                else:
-                    success = False
+                output = (
+                    result.stdout.strip()
+                    if result and getattr(result, "stdout", None)
+                    else ""
+                )
+                lines = [line.strip() for line in output.splitlines() if line.strip()]
+                for line in lines:
+                    if line.startswith("SUCCESS:"):
+                        path = line[8:]
+                        success = True
+                        break
+                    elif line.startswith("CANCEL:"):
+                        path = ""
+                        success = True
+                        break
             elif sys.platform == "win32":
                 # Windows PowerShell
                 script = f"""
@@ -221,15 +235,21 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {{
                 result = run_background_process(
                     cmd, sandbox=False, capture_output=True, text=True
                 )
-                output = result.stdout.strip()
-                if output.startswith("SUCCESS:"):
-                    path = output[8:]
-                    success = True
-                elif output.startswith("CANCEL:"):
-                    path = ""
-                    success = True
-                else:
-                    success = False
+                output = (
+                    result.stdout.strip()
+                    if result and getattr(result, "stdout", None)
+                    else ""
+                )
+                lines = [line.strip() for line in output.splitlines() if line.strip()]
+                for line in lines:
+                    if line.startswith("SUCCESS:"):
+                        path = line[8:]
+                        success = True
+                        break
+                    elif line.startswith("CANCEL:"):
+                        path = ""
+                        success = True
+                        break
             elif sys.platform.startswith("linux"):
                 # Linux Zenity or KDialog native CLI wrappers
                 import shutil

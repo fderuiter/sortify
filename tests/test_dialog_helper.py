@@ -289,3 +289,54 @@ def test_render_fallback_dialog_cancel():
         enable_ui.assert_called_once()
 
 
+@pytest.mark.anyio
+async def test_ask_directory_async_windows_cancel_multiline():
+    """Test Windows PowerShell dialog returning multiline output containing CANCEL."""
+    mock_run = mock.MagicMock()
+    mock_result = mock.MagicMock()
+    mock_result.stdout = "GAC Assembly Load Warning\nCANCEL:\n"
+    mock_run.return_value = mock_result
+
+    callback = mock.MagicMock()
+
+    with (
+        mock.patch("sys.platform", "win32"),
+        mock.patch("app.ui.dialog_helper.run_background_process", mock_run),
+    ):
+        ask_directory_async(None, "Select Folder", callback, None, None)
+        await asyncio.sleep(0.1)
+
+        mock_run.assert_called_once()
+        callback.assert_called_once_with("")
+
+
+@pytest.mark.anyio
+async def test_ask_directory_async_fallback_render_exception():
+    """Test fallback dialog gracefully handling UI render exception by calling callbacks."""
+    mock_run = mock.MagicMock()
+    mock_result = mock.MagicMock()
+    mock_result.returncode = 1
+    mock_result.stdout = "Error"
+    mock_run.return_value = mock_result
+
+    enable_ui = mock.MagicMock()
+
+    with (
+        mock.patch("sys.platform", "win32"),
+        mock.patch("app.ui.dialog_helper.run_background_process", mock_run),
+        mock.patch(
+            "app.ui.dialog_helper.ui.dialog",
+            side_effect=RuntimeError("No page context"),
+        ),
+    ):
+        fut = ask_directory_async(
+            None,
+            "Select Folder",
+            enable_ui_callback=enable_ui,
+        )
+        res = await asyncio.wait_for(fut, timeout=1.0)
+        assert res == ""
+        enable_ui.assert_called_once()
+
+
+
