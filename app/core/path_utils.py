@@ -37,8 +37,8 @@ RESERVED_NAMES = {
 ILLEGAL_PATH_CHARS_SET = set('<>:"|?*')
 ILLEGAL_NAME_CHARS_SET = ILLEGAL_PATH_CHARS_SET | set("/\\")
 
-_BOUND_LEFT = r"(?:^|(?<=[\s_\-/\\,;:()\[\]{}.]))"
-_BOUND_RIGHT = r"(?:$|(?=[\s_\-/\\,;:()\[\]{}.]))"
+_BOUND_LEFT = r"(?:^|(?<=[^a-zA-Z0-9]))"
+_BOUND_RIGHT = r"(?:$|(?=[^a-zA-Z0-9]))"
 
 PII_FILENAME_PATTERNS = [
     # SSN pattern
@@ -60,9 +60,13 @@ def _split_name_ext(name: str) -> tuple[str, str, bool]:
     """Split a name into (stem, ext, valid_ext)."""
     if name.startswith(".") and re.match(r"^\.[a-zA-Z0-9]{1,5}$", name):
         return "", name, True
-    stem, ext = os.path.splitext(name)
+    last_component = re.split(r"[/\\]+", name)[-1]
+    _, ext = os.path.splitext(last_component)
     valid_ext = bool(ext and re.match(r"^\.[a-zA-Z0-9]{1,5}$", ext))
-    return stem, ext, valid_ext
+    if valid_ext:
+        stem = name[:-len(ext)]
+        return stem, ext, True
+    return name, "", False
 
 
 def scrub_pii_from_filename(name: str) -> str:
@@ -189,9 +193,6 @@ def sanitize_name(name: str) -> str:
 
     import unicodedata
 
-    from app.core.text_utils import sanitize_secret_patterns
-
-    name = sanitize_secret_patterns(name)
     name = scrub_pii_from_filename(name)
     if not name or not name.strip():
         return "Unnamed_safe"

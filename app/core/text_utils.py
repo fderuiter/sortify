@@ -25,8 +25,8 @@ TRUNCATED_TAG_PATTERN = re.compile(r"<[a-zA-Z0-9_\-:/]*$")
 HORIZONTAL_WHITESPACE_PATTERN = re.compile(r"[ \t]+")
 VERTICAL_WHITESPACE_PATTERN = re.compile(r"\s*\n\s*")
 
-_SECRET_BOUND_LEFT = r"(?:^|(?<=[\s_\-/\\,;:()\[\]{}.:=]))"
-_SECRET_BOUND_RIGHT = r"(?:$|(?=[\s_\-/\\,;:()\[\]{}.:=]))"
+_SECRET_BOUND_LEFT = r"(?:^|(?<=[^a-zA-Z0-9]))"
+_SECRET_BOUND_RIGHT = r"(?:$|(?=[^a-zA-Z0-9]))"
 
 # 6. Centralized Secret & Credential Patterns
 SECRET_KEY_PATTERNS = [
@@ -48,10 +48,11 @@ SECRET_KEY_PATTERNS = [
 ]
 
 BEARER_TOKEN_PATTERN = re.compile(
-    _SECRET_BOUND_LEFT + r"Bearer\s+[a-zA-Z0-9_\-\.=]{16,}" + _SECRET_BOUND_RIGHT, re.IGNORECASE
+    _SECRET_BOUND_LEFT + r"Bearer[\s_]+(?:eyJ[a-zA-Z0-9\-_=]+\.eyJ[a-zA-Z0-9\-_=]+\.[a-zA-Z0-9\-_=]{43,88}?|[a-zA-Z0-9_\-\.=]{16,})" + _SECRET_BOUND_RIGHT,
+    re.IGNORECASE,
 )
 JWT_PATTERN = re.compile(
-    _SECRET_BOUND_LEFT + r"eyJ[a-zA-Z0-9_\=-]+\.eyJ[a-zA-Z0-9_\=-]+\.[a-zA-Z0-9_\=-]+" + _SECRET_BOUND_RIGHT
+    _SECRET_BOUND_LEFT + r"eyJ[a-zA-Z0-9\-_=]+\.eyJ[a-zA-Z0-9\-_=]+\.[a-zA-Z0-9\-_=]{43,88}?" + _SECRET_BOUND_RIGHT
 )
 PRIVATE_KEY_PATTERN = re.compile(
     r"-----BEGIN\s+(?:[A-Z0-9_-]+\s+)?PRIVATE\s+KEY-----[\s\S]*?-----END\s+(?:[A-Z0-9_-]+\s+)?PRIVATE\s+KEY-----|"
