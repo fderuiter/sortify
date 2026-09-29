@@ -15,8 +15,8 @@ from app.core.analyzer_strategies import clustering_registry
 _UNSPECIFIED = object()
 
 
-class SortingPlanNode(BaseModel):
-    """Pydantic-validated BaseModel node representing a file or directory in a sorting plan."""
+class _SortingPlanNodeSchema(BaseModel):
+    """Pydantic V2 schema for validating node data."""
 
     node_type: str = Field(default="file", alias="__type__")
     relative_source: Optional[str] = None
@@ -74,41 +74,51 @@ class SortingPlanNode(BaseModel):
             return "file"
         return v
 
+
+class SortingPlanNode(dict):
+    """Pydantic-validated dict node representing a file or directory in a sorting plan."""
+
+    @classmethod
+    def model_validate(cls, obj: Any, *args, **kwargs) -> "SortingPlanNode":
+        """Validate and construct a SortingPlanNode from a dictionary or instance."""
+        if isinstance(obj, SortingPlanNode):
+            return obj
+        if isinstance(obj, dict):
+            validated = _SortingPlanNodeSchema.model_validate(obj).model_dump(
+                by_alias=True, exclude_none=True
+            )
+            res = cls(obj)
+            res.update(validated)
+            return res
+        raise ValueError(f"Cannot validate {type(obj)} as SortingPlanNode")
+
+    def model_dump(self, *args, **kwargs) -> Dict[str, Any]:
+        """Dump the node data as a standard dictionary."""
+        return dict(self)
+
     def dict(self, *args, **kwargs) -> Dict[str, Any]:
         """Backward compatibility method for legacy callers."""
         return self.model_dump(*args, **kwargs)
 
-    def __getitem__(self, item: str) -> Any:
-        """Support item lookup via bracket syntax for dictionary compatibility."""
-        if item == "__type__":
-            return self.node_type
-        if hasattr(self, item):
-            val = getattr(self, item)
-            if val is not None:
-                return val
-        extra = getattr(self, "__pydantic_extra__", None)
-        if extra and item in extra:
-            return extra[item]
-        raise KeyError(item)
+    def __getattr__(self, name: str) -> Any:
+        """Provide dynamic attribute lookup for schema fields and dictionary keys."""
+        if name == "node_type":
+            return self.get("node_type") or self.get("__type__", "file")
+        if name == "__type__":
+            return self.get("__type__") or self.get("node_type", "file")
+        if name in self:
+            return self[name]
+        if name in _SortingPlanNodeSchema.model_fields:
+            return self.get(name)
+        raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
 
-    def get(self, item: str, default: Any = None) -> Any:
-        """Support dictionary get method."""
-        try:
-            return self[item]
-        except KeyError:
-            return default
-
-    def __contains__(self, item: str) -> bool:
-        """Check if key exists in attributes or extra fields."""
-        if item == "__type__":
-            return True
-        if hasattr(self, item) and getattr(self, item) is not None:
-            return True
-        extra = getattr(self, "__pydantic_extra__", None)
-        return bool(extra and item in extra)
-
-
-_SortingPlanNodeSchema = SortingPlanNode
+    def __setattr__(self, name: str, value: Any) -> None:
+        """Provide dynamic attribute assignment mapping to dictionary entries."""
+        if name in ("node_type", "__type__"):
+            self["__type__"] = value
+            self["node_type"] = value
+        else:
+            self[name] = value
 
 
 class SortingPlan(dict):

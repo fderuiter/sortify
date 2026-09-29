@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "80e4122bb2ba9278e65232e37961f1c2c553903ad9e0e26b13e511a000cd3576"
+    "checksum": "ecbb6de85366f7d103cc92b8dc1454b9faf17a18f21eabd0fbb0754a44c80590"
   },
   "cli": {
     "app/main.py": [
@@ -789,7 +789,7 @@
             {
               "async": false,
               "decorators": [],
-              "name": "get",
+              "name": "model_dump",
               "parameters": [
                 {
                   "annotation": null,
@@ -797,25 +797,24 @@
                   "name": "self"
                 },
                 {
-                  "annotation": "str",
+                  "annotation": null,
                   "default": null,
-                  "name": "item"
+                  "name": "*args"
                 },
                 {
-                  "annotation": "Any",
-                  "default": "None",
-                  "name": "default"
+                  "annotation": null,
+                  "default": null,
+                  "name": "**kwargs"
                 }
               ],
-              "returns": "Any"
+              "returns": "Dict[str, Any]"
             },
             {
               "async": false,
               "decorators": [
-                "@field_validator('confidence', mode='before')",
                 "@classmethod"
               ],
-              "name": "validate_confidence",
+              "name": "model_validate",
               "parameters": [
                 {
                   "annotation": null,
@@ -825,31 +824,20 @@
                 {
                   "annotation": "Any",
                   "default": null,
-                  "name": "v"
-                }
-              ],
-              "returns": "Optional[float]"
-            },
-            {
-              "async": false,
-              "decorators": [
-                "@field_validator('node_type', mode='before')",
-                "@classmethod"
-              ],
-              "name": "validate_node_type",
-              "parameters": [
+                  "name": "obj"
+                },
                 {
                   "annotation": null,
                   "default": null,
-                  "name": "cls"
+                  "name": "*args"
                 },
                 {
-                  "annotation": "Any",
+                  "annotation": null,
                   "default": null,
-                  "name": "v"
+                  "name": "**kwargs"
                 }
               ],
-              "returns": "str"
+              "returns": "'SortingPlanNode'"
             }
           ]
         }
