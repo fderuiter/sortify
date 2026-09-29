@@ -95,7 +95,10 @@ def assert_svg_snapshot(snapshot_name: str, actual_svg: str) -> None:
 @pytest.fixture(autouse=True)
 def isolated_app_dir(monkeypatch, tmp_path):
     """Ensure AppSettings is isolated from persistent disk configuration changes."""
+    import app.config
+
     monkeypatch.setenv("AUTOSORTER_APP_DIR", str(tmp_path))
+    monkeypatch.setattr(app.config, "get_app_dir", lambda: tmp_path)
     monkeypatch.delenv("AUTOSORTER_PROTECTED_PATHS", raising=False)
     monkeypatch.delenv("AUTOSORTER_IGNORED_EXTENSIONS", raising=False)
 
