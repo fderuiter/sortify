@@ -69,7 +69,8 @@ def _extract_pdf_snippet(file_path: str) -> str:
     try:
         import pypdf
 
-        with pypdf.PdfReader(file_path) as reader:
+        with open(file_path, "rb") as f:
+            reader = pypdf.PdfReader(f)
             if reader.pages:
                 text = reader.pages[0].extract_text() or ""
                 return text[:4096].lower()
@@ -83,18 +84,19 @@ def _extract_docx_snippet(file_path: str) -> str:
     try:
         from docx import Document
 
-        doc = Document(file_path)
-        text_parts = []
-        curr_len = 0
-        for p in doc.paragraphs:
-            txt = p.text
-            if not txt:
-                continue
-            text_parts.append(txt)
-            curr_len += len(txt) + 1
-            if curr_len >= 4096:
-                break
-        return " ".join(text_parts)[:4096].lower()
+        with open(file_path, "rb") as f:
+            doc = Document(f)
+            text_parts = []
+            curr_len = 0
+            for p in doc.paragraphs:
+                txt = p.text
+                if not txt:
+                    continue
+                text_parts.append(txt)
+                curr_len += len(txt) + 1
+                if curr_len >= 4096:
+                    break
+            return " ".join(text_parts)[:4096].lower()
     except Exception as e:
         logger.debug(f"Fast DOCX snippet extraction failed for {file_path}: {e}")
     return ""
@@ -105,23 +107,24 @@ def _extract_xlsx_snippet(file_path: str) -> str:
     try:
         import openpyxl  # type: ignore[import-untyped]
 
-        wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
-        try:
-            if wb.sheetnames:
-                sheet = wb[wb.sheetnames[0]]
-                text_parts = []
-                curr_len = 0
-                for row in sheet.iter_rows(values_only=True):
-                    row_str = " ".join(str(cell) for cell in row if cell is not None).strip()
-                    if not row_str:
-                        continue
-                    text_parts.append(row_str)
-                    curr_len += len(row_str) + 1
-                    if curr_len >= 4096:
-                        break
-                return " ".join(text_parts)[:4096].lower()
-        finally:
-            wb.close()
+        with open(file_path, "rb") as f:
+            wb = openpyxl.load_workbook(f, read_only=True, data_only=True)
+            try:
+                if wb.sheetnames:
+                    sheet = wb[wb.sheetnames[0]]
+                    text_parts = []
+                    curr_len = 0
+                    for row in sheet.iter_rows(values_only=True):
+                        row_str = " ".join(str(cell) for cell in row if cell is not None).strip()
+                        if not row_str:
+                            continue
+                        text_parts.append(row_str)
+                        curr_len += len(row_str) + 1
+                        if curr_len >= 4096:
+                            break
+                    return " ".join(text_parts)[:4096].lower()
+            finally:
+                wb.close()
     except Exception as e:
         logger.debug(f"Fast XLSX snippet extraction failed for {file_path}: {e}")
     return ""
@@ -132,8 +135,8 @@ def _extract_xls_snippet(file_path: str) -> str:
     try:
         import xlrd  # type: ignore[import-untyped]
 
-        wb = xlrd.open_workbook(filename=file_path)
-        try:
+        with open(file_path, "rb") as f:
+            wb = xlrd.open_workbook(file_contents=f.read())
             if wb.nsheets > 0:
                 sheet = wb.sheet_by_index(0)
                 text_parts = []
@@ -148,9 +151,6 @@ def _extract_xls_snippet(file_path: str) -> str:
                     if curr_len >= 4096:
                         break
                 return " ".join(text_parts)[:4096].lower()
-        finally:
-            if hasattr(wb, "release_resources"):
-                wb.release_resources()
     except Exception as e:
         logger.debug(f"Fast XLS snippet extraction failed for {file_path}: {e}")
     return ""
@@ -161,19 +161,20 @@ def _extract_pptx_snippet(file_path: str) -> str:
     try:
         from pptx import Presentation  # type: ignore[import-not-found,import-untyped]
 
-        prs = Presentation(file_path)
-        text_parts = []
-        curr_len = 0
-        if prs.slides:
-            slide = prs.slides[0]
-            for shape in slide.shapes:
-                if hasattr(shape, "text") and shape.text:
-                    txt = shape.text
-                    text_parts.append(txt)
-                    curr_len += len(txt) + 1
-                    if curr_len >= 4096:
-                        break
-        return " ".join(text_parts)[:4096].lower()
+        with open(file_path, "rb") as f:
+            prs = Presentation(f)
+            text_parts = []
+            curr_len = 0
+            if prs.slides:
+                slide = prs.slides[0]
+                for shape in slide.shapes:
+                    if hasattr(shape, "text") and shape.text:
+                        txt = shape.text
+                        text_parts.append(txt)
+                        curr_len += len(txt) + 1
+                        if curr_len >= 4096:
+                            break
+            return " ".join(text_parts)[:4096].lower()
     except Exception as e:
         logger.debug(f"Fast PPTX snippet extraction failed for {file_path}: {e}")
     return ""
