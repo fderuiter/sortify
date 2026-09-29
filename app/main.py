@@ -890,7 +890,7 @@ def main():
 
         run_demo(settings)
     elif getattr(args, "tui", False) is True or (
-        sys.stdin.isatty()
+        is_interactive
         and not getattr(args, "gui", False)
         and not os.environ.get("FORCE_GUI")
     ):
