@@ -174,87 +174,150 @@ def handle_quarantine_command(args: argparse.Namespace, settings: AppSettings) -
             sys.exit(2)
         return job_id
 
-    if quarantine_cmd == "list":
-        base_dir = getattr(args, "base_dir", None)
-        status_filter = getattr(args, "status", None)
+    try:
+        if quarantine_cmd == "list":
+            base_dir = getattr(args, "base_dir", None)
+            status_filter = getattr(args, "status", None)
 
-        if base_dir:
-            records = db.get_quarantine_records_by_base_dir(
-                base_dir, status=status_filter
-            )
-        else:
-            records = db.get_all_quarantine_records()
-            if status_filter:
-                status_upper = status_filter.upper()
-                records = [r for r in records if r.get("status") == status_upper]
-
-        res = {
-            "status": "success",
-            "count": len(records),
-            "items": records,
-        }
-
-        if is_json:
-            sys.stdout.write(json.dumps(res, indent=2) + "\n")
-            sys.stdout.flush()
-        else:
-            if not quiet:
-                print(f"Quarantine Staging: {len(records)} record(s) found.")
-            for r in records:
-                print(
-                    f"  [{r.get('status')}] {r.get('job_id')} | "
-                    f"Original: {r.get('original_filepath')} | Staged: {r.get('staged_filepath')}"
+            if base_dir:
+                records = db.get_quarantine_records_by_base_dir(
+                    base_dir, status=status_filter
                 )
+            else:
+                records = db.get_all_quarantine_records()
+                if status_filter:
+                    status_upper = status_filter.upper()
+                    records = [r for r in records if r.get("status") == status_upper]
 
-        sys.exit(0)
-
-    elif quarantine_cmd == "inspect":
-        job_id = resolve_job_id(args)
-        record = db.get_quarantine_record(job_id)
-
-        if not record:
-            print(
-                f"Error: Quarantine record not found for job ID '{job_id}'.",
-                file=sys.stderr,
-            )
-            sys.exit(1)
-
-        res = {
-            "status": "success",
-            "record": record,
-        }
-
-        if is_json:
-            sys.stdout.write(json.dumps(res, indent=2) + "\n")
-            sys.stdout.flush()
-        else:
-            print(f"Quarantine Job Record: {job_id}")
-            print(f"  Status: {record.get('status')}")
-            print(f"  Base Dir: {record.get('base_dir')}")
-            print(f"  Original Filepath: {record.get('original_filepath')}")
-            print(f"  Staged Filepath: {record.get('staged_filepath')}")
-            print(f"  Policy Action: {record.get('policy_action')}")
-            if record.get("error_message"):
-                print(f"  Error Message: {record.get('error_message')}")
-
-            audit_log = record.get("audit_log", [])
-            if audit_log:
-                print("  Audit Log:")
-                for entry in audit_log:
-                    print(f"    - [{entry.get('status')}] {entry.get('details')}")
-
-        sys.exit(0)
-
-    elif quarantine_cmd == "process":
-        job_id = resolve_job_id(args)
-        timeout = getattr(args, "timeout", 300.0)
-
-        service = QuarantineInterceptorService(db=db, worker_timeout=timeout)
-        try:
-            result = service.process_quarantine_job(job_id)
             res = {
                 "status": "success",
-                "result": result,
+                "count": len(records),
+                "items": records,
+            }
+
+            if is_json:
+                sys.stdout.write(json.dumps(res, indent=2) + "\n")
+                sys.stdout.flush()
+            else:
+                if not quiet:
+                    print(f"Quarantine Staging: {len(records)} record(s) found.")
+                for r in records:
+                    print(
+                        f"  [{r.get('status')}] {r.get('job_id')} | "
+                        f"Original: {r.get('original_filepath')} | Staged: {r.get('staged_filepath')}"
+                    )
+
+            sys.exit(0)
+
+        elif quarantine_cmd == "inspect":
+            job_id = resolve_job_id(args)
+            record = db.get_quarantine_record(job_id)
+
+            if not record:
+                print(
+                    f"Error: Quarantine record not found for job ID '{job_id}'.",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+
+            res = {
+                "status": "success",
+                "record": record,
+            }
+
+            if is_json:
+                sys.stdout.write(json.dumps(res, indent=2) + "\n")
+                sys.stdout.flush()
+            else:
+                print(f"Quarantine Job Record: {job_id}")
+                print(f"  Status: {record.get('status')}")
+                print(f"  Base Dir: {record.get('base_dir')}")
+                print(f"  Original Filepath: {record.get('original_filepath')}")
+                print(f"  Staged Filepath: {record.get('staged_filepath')}")
+                print(f"  Policy Action: {record.get('policy_action')}")
+                if record.get("error_message"):
+                    print(f"  Error Message: {record.get('error_message')}")
+
+                audit_log = record.get("audit_log", [])
+                if audit_log:
+                    print("  Audit Log:")
+                    for entry in audit_log:
+                        print(f"    - [{entry.get('status')}] {entry.get('details')}")
+
+            sys.exit(0)
+
+        elif quarantine_cmd == "process":
+            job_id = resolve_job_id(args)
+            timeout = getattr(args, "timeout", 300.0)
+
+            service = QuarantineInterceptorService(db=db, worker_timeout=timeout)
+            try:
+                result = service.process_quarantine_job(job_id)
+                res = {
+                    "status": "success",
+                    "result": result,
+                }
+
+                if is_json:
+                    sys.stdout.write(json.dumps(res, indent=2) + "\n")
+                    sys.stdout.flush()
+                else:
+                    if not quiet:
+                        print(
+                            f"Quarantine job '{job_id}' processed. "
+                            f"New Status: {result.get('status')}",
+                            file=sys.stderr,
+                        )
+
+                sys.exit(0)
+            except Exception as e:
+                print(f"Error processing quarantine job '{job_id}': {e}", file=sys.stderr)
+                sys.exit(1)
+
+        elif quarantine_cmd == "release":
+            job_id = resolve_job_id(args)
+            record = db.get_quarantine_record(job_id)
+
+            if not record:
+                print(
+                    f"Error: Quarantine record not found for job ID '{job_id}'.",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+
+            staged_path = record.get("staged_filepath")
+            base_dir = record.get("base_dir") or ""
+            orig_rel = record.get("original_filepath") or "released_file"
+            dest_dir_override = getattr(args, "dest_dir", None)
+
+            if dest_dir_override:
+                target_dir = Path(dest_dir_override).resolve()
+            else:
+                target_dir = Path(base_dir).resolve() if base_dir else Path.cwd()
+
+            target_dir.mkdir(parents=True, exist_ok=True)
+            dest_file_path = target_dir / os.path.basename(orig_rel)
+
+            if staged_path and os.path.exists(staged_path):
+                if os.path.abspath(staged_path) != os.path.abspath(dest_file_path):
+                    resilient_move(staged_path, str(dest_file_path))
+
+            db.update_quarantine_status(
+                job_id=job_id,
+                status="RELEASED",
+                policy_action="release",
+                audit_entry={
+                    "timestamp": __import__("time").time(),
+                    "status": "RELEASED",
+                    "details": f"Manually released from quarantine to {dest_file_path}",
+                },
+            )
+
+            res = {
+                "status": "success",
+                "job_id": job_id,
+                "status_code": "RELEASED",
+                "destination": str(dest_file_path),
             }
 
             if is_json:
@@ -263,72 +326,17 @@ def handle_quarantine_command(args: argparse.Namespace, settings: AppSettings) -
             else:
                 if not quiet:
                     print(
-                        f"Quarantine job '{job_id}' processed. "
-                        f"New Status: {result.get('status')}",
+                        f"Quarantine item '{job_id}' released successfully to '{dest_file_path}'.",
                         file=sys.stderr,
                     )
 
             sys.exit(0)
-        except Exception as e:
-            print(f"Error processing quarantine job '{job_id}': {e}", file=sys.stderr)
-            sys.exit(1)
 
-    elif quarantine_cmd == "release":
-        job_id = resolve_job_id(args)
-        record = db.get_quarantine_record(job_id)
+    finally:
+        if db and hasattr(db, "worker") and db.worker:
+            db.worker.stop()
+        from app.core.db_conn import clear_connection_cache
 
-        if not record:
-            print(
-                f"Error: Quarantine record not found for job ID '{job_id}'.",
-                file=sys.stderr,
-            )
-            sys.exit(1)
-
-        staged_path = record.get("staged_filepath")
-        base_dir = record.get("base_dir") or ""
-        orig_rel = record.get("original_filepath") or "released_file"
-        dest_dir_override = getattr(args, "dest_dir", None)
-
-        if dest_dir_override:
-            target_dir = Path(dest_dir_override).resolve()
-        else:
-            target_dir = Path(base_dir).resolve() if base_dir else Path.cwd()
-
-        target_dir.mkdir(parents=True, exist_ok=True)
-        dest_file_path = target_dir / os.path.basename(orig_rel)
-
-        if staged_path and os.path.exists(staged_path):
-            if os.path.abspath(staged_path) != os.path.abspath(dest_file_path):
-                resilient_move(staged_path, str(dest_file_path))
-
-        db.update_quarantine_status(
-            job_id=job_id,
-            status="RELEASED",
-            policy_action="release",
-            audit_entry={
-                "timestamp": __import__("time").time(),
-                "status": "RELEASED",
-                "details": f"Manually released from quarantine to {dest_file_path}",
-            },
-        )
-
-        res = {
-            "status": "success",
-            "job_id": job_id,
-            "status_code": "RELEASED",
-            "destination": str(dest_file_path),
-        }
-
-        if is_json:
-            sys.stdout.write(json.dumps(res, indent=2) + "\n")
-            sys.stdout.flush()
-        else:
-            if not quiet:
-                print(
-                    f"Quarantine item '{job_id}' released successfully to '{dest_file_path}'.",
-                    file=sys.stderr,
-                )
-
-        sys.exit(0)
+        clear_connection_cache(only_current_and_inactive=False)
 
     return True

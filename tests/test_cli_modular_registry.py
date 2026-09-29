@@ -68,7 +68,7 @@ def test_crypto_info():
         assert data["status"] == "success"
         assert "key_path" in data
         assert "storage_backend" in data
-        assert data["db_path"] == str(db_path)
+        assert Path(data["db_path"]).resolve() == db_path.resolve()
 
 
 @pytest.mark.xdist_group(name="cli_registry")
@@ -116,7 +116,7 @@ def test_crypto_export_key():
         assert code == 0, f"Expected 0 exit code, got {code}. Stderr: {stderr}"
         data = json.loads(stdout)
         assert data["status"] == "success"
-        assert data["exported_to"] == str(out_file)
+        assert Path(data["exported_to"]).resolve() == out_file.resolve()
         assert out_file.exists()
         assert len(out_file.read_text()) > 0
 
@@ -135,53 +135,58 @@ def test_ledger_status_and_reconcile():
     with tempfile.TemporaryDirectory() as tmpdir:
         ledger_db = str(Path(tmpdir) / "ledger.db")
 
-        # 1. Status empty
-        code, stdout, stderr = run_cli(
-            ["ledger", "status", "--ledger-db", ledger_db, "--json"]
-        )
-        assert code == 0
-        data = json.loads(stdout)
-        assert data["status"] == "success"
-        assert data["count"] == 0
+        try:
+            # 1. Status empty
+            code, stdout, stderr = run_cli(
+                ["ledger", "status", "--ledger-db", ledger_db, "--json"]
+            )
+            assert code == 0
+            data = json.loads(stdout)
+            assert data["status"] == "success"
+            assert data["count"] == 0
 
-        # Create an entry directly in transaction ledger
-        from app.core.ledger import TransactionLedger
+            # Create an entry directly in transaction ledger
+            from app.core.ledger import TransactionLedger
 
-        ledger_inst = TransactionLedger(db_path=ledger_db)
-        entry_id = ledger_inst.log_intent(
-            session_id="sess_101",
-            base_dir=tmpdir,
-            source_path=str(Path(tmpdir) / "src.txt"),
-            dest_path=str(Path(tmpdir) / "dest.txt"),
-            source_rel_path="src.txt",
-            dest_rel_path="dest.txt",
-        )
+            ledger_inst = TransactionLedger(db_path=ledger_db)
+            entry_id = ledger_inst.log_intent(
+                session_id="sess_101",
+                base_dir=tmpdir,
+                source_path=str(Path(tmpdir) / "src.txt"),
+                dest_path=str(Path(tmpdir) / "dest.txt"),
+                source_rel_path="src.txt",
+                dest_rel_path="dest.txt",
+            )
 
-        # 2. Status with pending entry
-        code_pend, stdout_pend, stderr_pend = run_cli(
-            ["ledger", "status", "--ledger-db", ledger_db, "--json"]
-        )
-        assert code_pend == 0
-        data_pend = json.loads(stdout_pend)
-        assert data_pend["count"] == 1
-        assert data_pend["pending_entries"][0]["entry_id"] == entry_id
+            # 2. Status with pending entry
+            code_pend, stdout_pend, stderr_pend = run_cli(
+                ["ledger", "status", "--ledger-db", ledger_db, "--json"]
+            )
+            assert code_pend == 0
+            data_pend = json.loads(stdout_pend)
+            assert data_pend["count"] == 1
+            assert data_pend["pending_entries"][0]["entry_id"] == entry_id
 
-        # 3. Reconcile
-        code_rec, stdout_rec, stderr_rec = run_cli(
-            ["ledger", "reconcile", "--ledger-db", ledger_db, "--json"]
-        )
-        assert code_rec == 0
-        data_rec = json.loads(stdout_rec)
-        assert data_rec["status"] == "success"
-        assert data_rec["reconciled_count"] == 1
+            # 3. Reconcile
+            code_rec, stdout_rec, stderr_rec = run_cli(
+                ["ledger", "reconcile", "--ledger-db", ledger_db, "--json"]
+            )
+            assert code_rec == 0
+            data_rec = json.loads(stdout_rec)
+            assert data_rec["status"] == "success"
+            assert data_rec["reconciled_count"] == 1
 
-        # 4. Status after reconciliation
-        code_post, stdout_post, stderr_post = run_cli(
-            ["ledger", "status", "--ledger-db", ledger_db, "--json"]
-        )
-        assert code_post == 0
-        data_post = json.loads(stdout_post)
-        assert data_post["count"] == 0
+            # 4. Status after reconciliation
+            code_post, stdout_post, stderr_post = run_cli(
+                ["ledger", "status", "--ledger-db", ledger_db, "--json"]
+            )
+            assert code_post == 0
+            data_post = json.loads(stdout_post)
+            assert data_post["count"] == 0
+        finally:
+            from app.core.db_conn import clear_connection_cache
+
+            clear_connection_cache(only_current_and_inactive=False)
 
 
 @pytest.mark.xdist_group(name="cli_registry")
@@ -190,13 +195,18 @@ def test_ledger_purge():
     with tempfile.TemporaryDirectory() as tmpdir:
         ledger_db = str(Path(tmpdir) / "ledger.db")
 
-        # Purge with --completed
-        code, stdout, stderr = run_cli(
-            ["ledger", "purge", "--ledger-db", ledger_db, "--completed", "--json"]
-        )
-        assert code == 0
-        data = json.loads(stdout)
-        assert data["status"] == "success"
+        try:
+            # Purge with --completed
+            code, stdout, stderr = run_cli(
+                ["ledger", "purge", "--ledger-db", ledger_db, "--completed", "--json"]
+            )
+            assert code == 0
+            data = json.loads(stdout)
+            assert data["status"] == "success"
+        finally:
+            from app.core.db_conn import clear_connection_cache
+
+            clear_connection_cache(only_current_and_inactive=False)
 
 
 @pytest.mark.xdist_group(name="cli_registry")
@@ -210,65 +220,72 @@ def test_quarantine_lifecycle():
 
         db = Database(Path(db_path), DBWorker())
 
-        # Create source test file
-        src_file = Path(tmpdir) / "sample_quarantine_doc.txt"
-        src_file.write_text("Confidential report with SSN 123-45-6789.")
+        try:
+            # Create source test file
+            src_file = Path(tmpdir) / "sample_quarantine_doc.txt"
+            src_file.write_text("Confidential report with SSN 123-45-6789.")
 
-        # Stage file
-        service = QuarantineInterceptorService(db=db)
-        staged_info = service.stage_incoming_file(str(src_file), base_dir=tmpdir)
-        job_id = staged_info["job_id"]
+            # Stage file
+            service = QuarantineInterceptorService(db=db)
+            staged_info = service.stage_incoming_file(str(src_file), base_dir=tmpdir)
+            job_id = staged_info["job_id"]
 
-        # 1. List
-        code_list, stdout_list, stderr_list = run_cli(
-            ["quarantine", "list", "--db-path", db_path, "--status", "STAGED", "--json"]
-        )
-        assert code_list == 0
-        data_list = json.loads(stdout_list)
-        assert data_list["count"] == 1
-        assert data_list["items"][0]["job_id"] == job_id
+            # 1. List
+            code_list, stdout_list, stderr_list = run_cli(
+                ["quarantine", "list", "--db-path", db_path, "--status", "STAGED", "--json"]
+            )
+            assert code_list == 0
+            data_list = json.loads(stdout_list)
+            assert data_list["count"] == 1
+            assert data_list["items"][0]["job_id"] == job_id
 
-        # 2. Inspect
-        code_insp, stdout_insp, stderr_insp = run_cli(
-            ["quarantine", "inspect", job_id, "--db-path", db_path, "--json"]
-        )
-        assert code_insp == 0
-        data_insp = json.loads(stdout_insp)
-        assert data_insp["record"]["job_id"] == job_id
+            # 2. Inspect
+            code_insp, stdout_insp, stderr_insp = run_cli(
+                ["quarantine", "inspect", job_id, "--db-path", db_path, "--json"]
+            )
+            assert code_insp == 0
+            data_insp = json.loads(stdout_insp)
+            assert data_insp["record"]["job_id"] == job_id
 
-        # 3. Process
-        code_proc, stdout_proc, stderr_proc = run_cli(
-            [
-                "quarantine",
-                "process",
-                "--job-id",
-                job_id,
-                "--db-path",
-                db_path,
-                "--json",
-            ]
-        )
-        assert code_proc == 0
-        data_proc = json.loads(stdout_proc)
-        assert data_proc["status"] == "success"
+            # 3. Process
+            code_proc, stdout_proc, stderr_proc = run_cli(
+                [
+                    "quarantine",
+                    "process",
+                    "--job-id",
+                    job_id,
+                    "--db-path",
+                    db_path,
+                    "--json",
+                ]
+            )
+            assert code_proc == 0
+            data_proc = json.loads(stdout_proc)
+            assert data_proc["status"] == "success"
 
-        # 4. Release
-        code_rel, stdout_rel, stderr_rel = run_cli(
-            [
-                "quarantine",
-                "release",
-                job_id,
-                "--db-path",
-                db_path,
-                "--dest-dir",
-                tmpdir,
-                "--json",
-            ]
-        )
-        assert code_rel == 0
-        data_rel = json.loads(stdout_rel)
-        assert data_rel["status"] == "success"
-        assert data_rel["status_code"] == "RELEASED"
+            # 4. Release
+            code_rel, stdout_rel, stderr_rel = run_cli(
+                [
+                    "quarantine",
+                    "release",
+                    job_id,
+                    "--db-path",
+                    db_path,
+                    "--dest-dir",
+                    tmpdir,
+                    "--json",
+                ]
+            )
+            assert code_rel == 0
+            data_rel = json.loads(stdout_rel)
+            assert data_rel["status"] == "success"
+            assert data_rel["status_code"] == "RELEASED"
+        finally:
+            if db and hasattr(db, "worker") and db.worker:
+                db.worker.stop()
+            from app.core.db_conn import clear_connection_cache
+
+            clear_connection_cache(only_current_and_inactive=False)
 
 
 @pytest.mark.xdist_group(name="cli_registry")
