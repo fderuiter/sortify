@@ -1,7 +1,10 @@
 """Unit tests for Component Catalog registry and accessibility scanner."""
 
+import copy
+import pickle
+
 from app.ui.a11y_runner import run_all_catalog_scans, scan_catalog_component
-from app.ui.catalog import CATALOG_REGISTRY, ui
+from app.ui.catalog import CATALOG_REGISTRY, UIProxy, ui
 
 
 def test_catalog_registry_populated():
@@ -103,10 +106,6 @@ def test_a11y_violation_detection_rule_a11y004_label_overflow():
 
 def test_ui_proxy_pickle_and_uninitialized_safety():
     """Verify UIProxy supports pickling, unpickling, and safe uninitialized attribute access without RecursionError."""
-    import copy
-    import pickle
-    from app.ui.catalog import UIProxy
-
     proxy = UIProxy(None)
     serialized = pickle.dumps(proxy)
     deserialized = pickle.loads(serialized)
