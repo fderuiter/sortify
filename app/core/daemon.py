@@ -13,6 +13,7 @@ from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
 from app.config import AppSettings
+from app.core.domain_contracts import validate_quarantine_record
 from app.core.metadata import MetadataPass
 from app.core.quarantine_interceptor import QuarantineInterceptorService
 from app.core.resilient_file_ops import resilient_remove
@@ -624,23 +625,17 @@ class ContinuousWatchdogDaemon:
             return
 
         # Execute deep forensic inspection, PII redaction, and compliance policy evaluation off-thread
-        quarantine_record = await asyncio.to_thread(
+        raw_record = await asyncio.to_thread(
             interceptor.process_quarantine_job, job_id
         )
 
         if cancel_check():
             return
 
-        status = (
-            quarantine_record.get("status")
-            if isinstance(quarantine_record, dict)
-            else None
-        )
-        policy_action = (
-            quarantine_record.get("policy_action")
-            if isinstance(quarantine_record, dict)
-            else None
-        )
+        quarantine_record = validate_quarantine_record(raw_record)
+
+        status = quarantine_record.status
+        policy_action = quarantine_record.policy_action
 
         # If file was quarantined, archived, or routed to DLQ / manual review, triage is complete
         if status in (

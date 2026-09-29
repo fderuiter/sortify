@@ -11,6 +11,7 @@ from app.core.analyzer_strategies import redact_sensitive_text
 from app.core.clinical_compliance import ClinicalComplianceEngine
 from app.core.crypto import zero_vector_buffer
 from app.core.db import Database
+from app.core.domain_contracts import QuarantineRecordModel, validate_quarantine_record
 from app.core.extractor import extract_file_text
 from app.core.forensic_scanner import ForensicScanner
 from app.core.policy_engine import PolicyEngine
@@ -128,7 +129,7 @@ class QuarantineInterceptorService:
 
     def process_quarantine_job(
         self, job_id: str, timeout_override: Optional[float] = None
-    ) -> Dict[str, Any]:
+    ) -> QuarantineRecordModel:
         """Execute deep forensic scanning, PII redaction, policy evaluation, and archival lifecycle actions."""
         record = self.db.get_quarantine_record(job_id)
         if not isinstance(record, dict):
@@ -368,10 +369,10 @@ class QuarantineInterceptorService:
 
             res = self.db.get_quarantine_record(job_id)
             if isinstance(res, dict):
-                return res
+                return validate_quarantine_record(res)
             record["status"] = "RELEASED"
             record["policy_action"] = action or "release"
-            return record
+            return validate_quarantine_record(record)
 
         except TimeoutError as te:
             logger.error(f"Quarantine worker timeout for job {job_id}: {te}")
@@ -391,7 +392,9 @@ class QuarantineInterceptorService:
             if dlq_item:
                 dlq_item["status"] = "DEAD_LETTER_QUEUE"
                 self.dlq_records.append(dlq_item)
-            return dlq_item or {"job_id": job_id, "status": "DEAD_LETTER_QUEUE", "error": err_msg}
+                return validate_quarantine_record(dlq_item)
+            fallback = {"job_id": job_id, "status": "DEAD_LETTER_QUEUE", "error": err_msg}
+            return validate_quarantine_record(fallback)
 
         except Exception as e:
             logger.error(f"Error processing quarantine job {job_id}: {e}", exc_info=True)
@@ -410,4 +413,6 @@ class QuarantineInterceptorService:
             if dlq_item:
                 dlq_item["status"] = "DEAD_LETTER_QUEUE"
                 self.dlq_records.append(dlq_item)
-            return dlq_item or {"job_id": job_id, "status": "DEAD_LETTER_QUEUE", "error": err_msg}
+                return validate_quarantine_record(dlq_item)
+            fallback = {"job_id": job_id, "status": "DEAD_LETTER_QUEUE", "error": err_msg}
+            return validate_quarantine_record(fallback)

@@ -6,73 +6,20 @@ This module provides topic modeling functionality.
 import hashlib
 import logging
 import os
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel
 
 from app.core.analyzer_strategies import clustering_registry
+from app.core.domain_contracts import (
+    SortingPlanNodeModel,
+    validate_corpus_prefetch_batch,
+    validate_jev_classification_result,
+)
 
 _UNSPECIFIED = object()
 
-
-class _SortingPlanNodeSchema(BaseModel):
-    """Pydantic V2 schema for validating node data."""
-
-    node_type: str = Field(default="file", alias="__type__")
-    relative_source: Optional[str] = None
-    routed_by: Optional[str] = None
-    keyword: Optional[str] = None
-    match: Optional[str] = None
-    status: Optional[str] = None
-    extraction_status: Optional[Union[str, Any]] = None
-    is_corrected: Optional[bool] = None
-    corrected: Optional[bool] = None
-    is_overridden: Optional[bool] = None
-    overridden: Optional[bool] = None
-    original_lock_path: Optional[str] = None
-    original_path: Optional[str] = None
-    user_lock_path: Optional[str] = None
-    historical_path: Optional[str] = None
-    policy_path: Optional[str] = None
-    new_policy_path: Optional[str] = None
-    is_conflicted: Optional[bool] = None
-    compliance_path: Optional[str] = None
-    new_filename: Optional[str] = None
-    category: Optional[str] = None
-    sensitivity_rating: Optional[str] = None
-    sensitivity_score: Optional[float] = None
-    archival_priority: Optional[Union[int, float]] = None
-    archival_priority_score: Optional[float] = None
-    confidence: Optional[float] = None
-
-    target_filename: Optional[str] = None
-    is_locked: Optional[bool] = None
-    confirmed: Optional[bool] = None
-    is_confirmed: Optional[bool] = None
-    user_confirmed: Optional[bool] = None
-    jev_category: Optional[str] = None
-
-    model_config = ConfigDict(populate_by_name=True, extra="allow")
-
-    @field_validator("confidence", mode="before")
-    @classmethod
-    def validate_confidence(cls, v: Any) -> Optional[float]:
-        """Validate and clamp confidence score between 0.0 and 1.0."""
-        if v is None:
-            return None
-        try:
-            val = float(v)
-            return max(0.0, min(1.0, val))
-        except (ValueError, TypeError):
-            return None
-
-    @field_validator("node_type", mode="before")
-    @classmethod
-    def validate_node_type(cls, v: Any) -> str:
-        """Validate and ensure node_type defaults to 'file' if empty."""
-        if not v or not isinstance(v, str):
-            return "file"
-        return v
+_SortingPlanNodeSchema = SortingPlanNodeModel
 
 
 class SortingPlanNode(dict):
@@ -83,6 +30,8 @@ class SortingPlanNode(dict):
         """Validate and construct a SortingPlanNode from a dictionary or instance."""
         if isinstance(obj, SortingPlanNode):
             return obj
+        if isinstance(obj, BaseModel):
+            obj = obj.model_dump(by_alias=True, exclude_none=True)
         if isinstance(obj, dict):
             validated = _SortingPlanNodeSchema.model_validate(obj).model_dump(
                 by_alias=True, exclude_none=True
@@ -146,6 +95,8 @@ class SortingPlan(dict):
         """Validate and construct a SortingPlan from a dictionary or instance."""
         if isinstance(obj, SortingPlan):
             return obj
+        if isinstance(obj, BaseModel):
+            obj = obj.model_dump(by_alias=True, exclude_none=True)
         if isinstance(obj, dict):
             if "plan" in obj and isinstance(obj["plan"], dict) and len(obj) == 1:
                 return cls(obj["plan"])
@@ -253,10 +204,10 @@ def pre_fetch_historical_corpus(
             rows = cursor.fetchall()
     except Exception as e:
         logging.error(f"Failed to query historical documents from DB: {e}")
-        return {"model_metadata": model_metadata, "examples": []}
+        return validate_corpus_prefetch_batch({"model_metadata": model_metadata, "examples": []})
 
     if not rows:
-        return {"model_metadata": model_metadata, "examples": []}
+        return validate_corpus_prefetch_batch({"model_metadata": model_metadata, "examples": []})
 
     # Decrypt and parse candidates
     candidates = []
@@ -355,7 +306,7 @@ def pre_fetch_historical_corpus(
                 logging.error(f"TF-IDF ranking of historical examples failed: {e}")
                 selected_examples = candidates[:max_examples]
 
-    return {"model_metadata": model_metadata, "examples": selected_examples}
+    return validate_corpus_prefetch_batch({"model_metadata": model_metadata, "examples": selected_examples})
 
 
 class IncrementalAnalyzer:
@@ -704,24 +655,13 @@ class IncrementalAnalyzer:
                             break
 
                     if jev_res:
-                        is_classified = (
-                            getattr(jev_res, "is_classified", False)
-                            if not isinstance(jev_res, dict)
-                            else jev_res.get("is_classified", False)
-                        )
-                        confidence = (
-                            getattr(jev_res, "confidence", 0.0)
-                            if not isinstance(jev_res, dict)
-                            else jev_res.get("confidence", 0.0)
-                        )
-                        cat = (
-                            getattr(jev_res, "category", "Unclassified")
-                            if not isinstance(jev_res, dict)
-                            else jev_res.get("category", "Unclassified")
-                        )
-
-                        if is_classified and confidence > 0.0 and cat != "Unclassified":
-                            jev_plan_files.append((f, cat, jev_res, status_match))
+                        jev_model = validate_jev_classification_result(jev_res)
+                        if (
+                            jev_model.is_classified
+                            and jev_model.confidence > 0.0
+                            and jev_model.category != "Unclassified"
+                        ):
+                            jev_plan_files.append((f, jev_model.category, jev_model, status_match))
                             matched = True
 
                 if not matched and keyword_rules:
@@ -776,23 +716,13 @@ class IncrementalAnalyzer:
                         f_path not in processed_files
                         and os.path.basename(f_path) not in processed_files
                     ):
-                        is_classified = (
-                            getattr(v_jev, "is_classified", False)
-                            if not isinstance(v_jev, dict)
-                            else v_jev.get("is_classified", False)
-                        )
-                        confidence = (
-                            getattr(v_jev, "confidence", 0.0)
-                            if not isinstance(v_jev, dict)
-                            else v_jev.get("confidence", 0.0)
-                        )
-                        cat = (
-                            getattr(v_jev, "category", "Unclassified")
-                            if not isinstance(v_jev, dict)
-                            else v_jev.get("category", "Unclassified")
-                        )
-                        if is_classified and confidence > 0.0 and cat != "Unclassified":
-                            jev_plan_files.append((f_path, cat, v_jev, None))
+                        v_jev_model = validate_jev_classification_result(v_jev)
+                        if (
+                            v_jev_model.is_classified
+                            and v_jev_model.confidence > 0.0
+                            and v_jev_model.category != "Unclassified"
+                        ):
+                            jev_plan_files.append((f_path, v_jev_model.category, v_jev_model, None))
                             processed_files.add(f_path)
 
             # Internal Jev Classifier Fallback execution for unclassified candidate documents in fast-path
@@ -1231,7 +1161,7 @@ class IncrementalAnalyzer:
                     pre_fetched_corpus = None
                     if self.db:
                         try:
-                            pre_fetched_corpus = pre_fetch_historical_corpus(
+                            raw_corpus = pre_fetch_historical_corpus(
                                 db=self.db,
                                 base_dir=base_dir,
                                 filenames=ai_filenames,
@@ -1239,6 +1169,8 @@ class IncrementalAnalyzer:
                                 pre_fetched_vectors=pre_fetched_vectors,
                                 max_examples=50,
                             )
+                            if raw_corpus:
+                                pre_fetched_corpus = validate_corpus_prefetch_batch(raw_corpus)
                         except Exception as e:
                             logging.error(f"Failed to pre-fetch historical corpus: {e}")
 
@@ -1332,36 +1264,12 @@ class IncrementalAnalyzer:
                     if not isinstance(current[part], dict):
                         current[part] = {"_original": current[part]}
                     if i == len(parts) - 1:
-                        cat_val = (
-                            getattr(jev_res, "category", None)
-                            if not isinstance(jev_res, dict)
-                            else jev_res.get("category")
-                        )
-                        sens_val = (
-                            getattr(jev_res, "sensitivity_rating", None)
-                            if not isinstance(jev_res, dict)
-                            else jev_res.get("sensitivity_rating")
-                        )
-                        sens_score = (
-                            getattr(jev_res, "sensitivity_score", None)
-                            if not isinstance(jev_res, dict)
-                            else jev_res.get("sensitivity_score")
-                        )
-                        arch_prio = (
-                            getattr(jev_res, "archival_priority", None)
-                            if not isinstance(jev_res, dict)
-                            else jev_res.get("archival_priority")
-                        )
-                        arch_score = (
-                            getattr(jev_res, "archival_priority_score", None)
-                            if not isinstance(jev_res, dict)
-                            else jev_res.get("archival_priority_score")
-                        )
-                        conf_val = (
-                            getattr(jev_res, "confidence", None)
-                            if not isinstance(jev_res, dict)
-                            else jev_res.get("confidence")
-                        )
+                        cat_val = jev_res.category
+                        sens_val = jev_res.sensitivity_rating
+                        sens_score = jev_res.sensitivity_score
+                        arch_prio = jev_res.archival_priority
+                        arch_score = jev_res.archival_priority_score
+                        conf_val = jev_res.confidence
 
                         node_data = {
                             "__type__": "file",
@@ -1374,9 +1282,10 @@ class IncrementalAnalyzer:
                             "archival_priority_score": arch_score,
                             "confidence": conf_val,
                         }
-                        current[part][f] = {
-                            k: v for k, v in node_data.items() if v is not None
-                        }
+                        node_model = SortingPlanNodeModel.model_validate(
+                            {k: v for k, v in node_data.items() if v is not None}
+                        )
+                        current[part][f] = SortingPlanNode.model_validate(node_model)
                     else:
                         current = current[part]
 

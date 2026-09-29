@@ -62,6 +62,10 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.core.db_worker
 
+## `app.core.domain_contracts`
+
+::: app.core.domain_contracts
+
 ## `app.core.downloader`
 
 ::: app.core.downloader
