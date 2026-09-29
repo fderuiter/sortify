@@ -261,7 +261,8 @@ options:
   --debug-layout        Enable visual debug outlines for UI elements in dev
                         mode
   --tui                 Launch full-screen Textual TUI interface
-  --gui                 Force launch graphical web interface
+  --gui                 Force launch graphical web interface (Deprecated:
+                        launches terminal interface)
 ```
 
 #### Subcommands

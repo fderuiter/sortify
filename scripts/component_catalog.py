@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Standalone Component Catalog CLI entry point.
 
-Launches the isolated NiceGUI component preview catalog environment or runs
+Launches the isolated component preview catalog environment or runs
 headless accessibility verification checks.
 """
 
