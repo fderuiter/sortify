@@ -55,6 +55,12 @@ class UIProxy:
     def __getattr__(self, name):
         return getattr(self._target, name)
 
+    def __getstate__(self):
+        return {"_target": None}
+
+    def __setstate__(self, state):
+        self._target = state.get("_target") or MagicMock()
+
 
 ui = UIProxy(MagicMock())
 
