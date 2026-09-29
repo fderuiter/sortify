@@ -125,6 +125,58 @@ def test_corpus_prefetch_batch_model_validation():
         validate_corpus_prefetch_batch(invalid_payload)
 
 
+def test_corpus_example_model_dict_compatibility():
+    """Test CorpusExampleModel dict subscripting and get method compatibility."""
+    example = CorpusExampleModel(
+        filepath="docs/test.pdf",
+        user_verified_target_path="Verified/test.pdf",
+        vector=[0.1, 0.2],
+        text="Sample text",
+    )
+    assert example["filepath"] == "docs/test.pdf"
+    assert example.get("user_verified_target_path") == "Verified/test.pdf"
+    assert example.get("non_existent", "default") == "default"
+    assert "text" in example
+    assert example.dict()["text"] == "Sample text"
+
+
+def test_ipc_payload_serialization_with_domain_models():
+    """Verify EphemeralSessionCrypto and encrypt_ipc_payload serialize domain models without error."""
+    from app.core.crypto import (
+        EphemeralSessionCrypto,
+        decrypt_ipc_payload,
+        encrypt_ipc_payload,
+    )
+
+    batch = validate_corpus_prefetch_batch(
+        {
+            "model_metadata": {"version": "1.0"},
+            "examples": [
+                {
+                    "filepath": "a.txt",
+                    "user_verified_target_path": "Cat/a.txt",
+                    "vector": [1.0, 0.0],
+                    "text": "sample",
+                }
+            ],
+        }
+    )
+
+    payload = {"pre_fetched_corpus": batch}
+
+    # Test EphemeralSessionCrypto
+    session_crypto = EphemeralSessionCrypto()
+    encrypted = session_crypto.encrypt_payload(payload)
+    decrypted = session_crypto.decrypt_payload(encrypted)
+    assert decrypted["pre_fetched_corpus"]["model_metadata"]["version"] == "1.0"
+
+    # Test encrypt_ipc_payload / decrypt_ipc_payload
+    key = session_crypto.session_key
+    ipc_encrypted = encrypt_ipc_payload(payload, key)
+    ipc_decrypted = decrypt_ipc_payload(ipc_encrypted, key)
+    assert ipc_decrypted["pre_fetched_corpus"]["examples"][0]["filepath"] == "a.txt"
+
+
 def test_sorting_plan_node_and_plan_validation():
     """Test SortingPlanNodeModel and SortingPlanModel contracts."""
     node_payload = {

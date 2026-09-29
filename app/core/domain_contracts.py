@@ -179,6 +179,25 @@ class CorpusExampleModel(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
+    def __getitem__(self, item: str) -> Any:
+        """Provide item lookup subscripting for dictionary backward compatibility."""
+        try:
+            return getattr(self, item)
+        except AttributeError:
+            raise KeyError(item) from None
+
+    def get(self, item: str, default: Any = None) -> Any:
+        """Provide dictionary get method for backward compatibility."""
+        return getattr(self, item, default)
+
+    def __contains__(self, item: str) -> bool:
+        """Provide in containment check for dictionary backward compatibility."""
+        return hasattr(self, item) and getattr(self, item) is not None
+
+    def dict(self, *args: Any, **kwargs: Any) -> Dict[str, Any]:
+        """Provide dict conversion method for backward compatibility."""
+        return self.model_dump(*args, **kwargs)
+
 
 class CorpusPreFetchBatchModel(BaseModel):
     """Pydantic v2 contract model for pre-fetched historical corpus batches."""
@@ -244,7 +263,13 @@ class VectorBatchPayloadModel(BaseModel):
         """Provide item lookup subscripting for vector payload keys."""
         if item in ("base_dir", "vectors", "metadata"):
             return getattr(self, item)
+        if hasattr(self, item):
+            return getattr(self, item)
         raise KeyError(item)
+
+    def __contains__(self, item: str) -> bool:
+        """Provide in containment check for vector payload keys."""
+        return item in ("base_dir", "vectors", "metadata") or hasattr(self, item)
 
     def dict(self, *args: Any, **kwargs: Any) -> Dict[str, Any]:
         """Provide dict conversion method for backward compatibility."""

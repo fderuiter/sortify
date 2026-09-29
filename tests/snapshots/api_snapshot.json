@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "859b21850cb658efc0061cbc14b0380fd5510fdcf89f7172fcbcf3f4371e92dc"
+    "checksum": "f56b3bfb575aff0435a53393c60c0927c1d63f42ef2205db78e4ec37b58dd880"
   },
   "cli": {
     "app/main.py": [
@@ -4369,7 +4369,54 @@
         {
           "class_name": "CorpusExampleModel",
           "decorators": [],
-          "methods": []
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "dict",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "Any",
+                  "default": null,
+                  "name": "*args"
+                },
+                {
+                  "annotation": "Any",
+                  "default": null,
+                  "name": "**kwargs"
+                }
+              ],
+              "returns": "Dict[str, Any]"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "get",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "item"
+                },
+                {
+                  "annotation": "Any",
+                  "default": "None",
+                  "name": "default"
+                }
+              ],
+              "returns": "Any"
+            }
+          ]
         },
         {
           "class_name": "CorpusPreFetchBatchModel",
