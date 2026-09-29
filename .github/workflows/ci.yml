@@ -32,13 +32,12 @@ jobs:
 
     - name: Run Dependency Audit
       run: |
-        uv audit || true
+        uv audit --ignore-until-fixed GHSA-w8v5-vhqr-4h9v
 
     - name: Secret Scanning Guardrails
       uses: gitleaks/gitleaks-action@v2
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      continue-on-error: true
 
     - name: Set up Go
       uses: actions/setup-go@v5
@@ -78,6 +77,7 @@ jobs:
 
   build-and-test:
     name: Build & Test
+    needs: [security-and-audit]
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-13]
@@ -255,6 +255,7 @@ jobs:
         uv run mkdocs gh-deploy --force
 
   heavy-tests:
+    needs: [security-and-audit]
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
