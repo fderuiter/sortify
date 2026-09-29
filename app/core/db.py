@@ -365,14 +365,22 @@ class Database:
         def _write():
             conn = get_db_connection(self.db_path)
             with conn:
+                from app.core.text_utils import sanitize_text
+
                 rows_to_insert = []
                 for doc in documents:
                     base_dir, filepath, file_hash, extracted_text = doc
                     filepath = filepath.replace("\\", "/")
 
-                    enc_text = (
-                        self.crypto.encrypt_text(extracted_text)
+                    sanitized_text = (
+                        sanitize_text(extracted_text)
                         if extracted_text is not None
+                        else None
+                    )
+
+                    enc_text = (
+                        self.crypto.encrypt_text(sanitized_text)
+                        if sanitized_text is not None
                         else None
                     )
 
