@@ -77,7 +77,7 @@ def generate_api_docs():
 
         f.write("## Core Architecture Diagram\n\n")
         f.write(
-            "![Core Module Architecture Flow](assets/diagrams/api_core_architecture.svg)\n\n"
+            "![Core Architecture Diagram](assets/diagrams/core_architecture.svg)\n\n"
         )
 
         # Find all python files except ui and binaries
@@ -192,7 +192,7 @@ def generate_admin_guide():
         f.write("## Compliance Policies & Routing Rules\n\n")
         f.write("### Policy Evaluation Flowchart\n\n")
         f.write(
-            "![Policy Evaluation Flowchart](assets/diagrams/admin_policy_evaluation.svg)\n\n"
+            "![Policy Evaluation Flowchart](assets/diagrams/policy_evaluation_flow.svg)\n\n"
         )
         f.write("### Rule Syntax & Types\n\n")
         f.write(

@@ -64,6 +64,8 @@ Check the `docs/` folder for the MkDocs configuration or run `uv run mkdocs buil
 
 This repository strictly separates the presentation layer from business logic.
 
+![Core Architecture Diagram](docs/assets/diagrams/core_architecture.svg)
+
 *   **`app/config.py`**: Defines global configuration constants, machine learning parameters, and NLP stop words.
 
 ### `app/core/` Package (Business Logic & Intelligence)

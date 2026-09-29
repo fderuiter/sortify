@@ -1,4 +1,5 @@
 flowchart TD
+<<<<<<< HEAD
     A["app.main"]
     B["app.core.session"]
     C["app.core.extractor"]
@@ -19,3 +20,122 @@ flowchart TD
     click E "docs/api_reference.md#appcoreverifier" "Virtual Sorting Verifier Module"
     click F "docs/api_reference.md#appcoresanitizer" "Path & Input Sanitizer Module"
     click G "docs/api_reference.md#appcoreanalyzer_strategies" "Analysis Strategy Implementations"
+=======
+    subgraph ui_layer ["Presentation & User Interfaces (app.ui)"]
+        app_main("app.main (CLI Entry Point)")
+        ui_app["app.ui.app (AutoSorterApp)"]
+        ui_catalog["app.ui.catalog (Component Catalog)"]
+        ui_wizard["app.ui.wizard (Setup Wizard)"]
+        ui_dialog_helper["app.ui.dialog_helper"]
+        ui_a11y_runner["app.ui.a11y_runner"]
+        ui_diagram_schema["app.ui.diagram_schema"]
+    end
+    subgraph session_orchestration ["Session Orchestration & Lifecycle (app.core)"]
+        core_session["app.core.session"]
+        core_user_space_bootstrap["app.core.user_space_bootstrap"]
+        core_daemon["app.core.daemon"]
+        core_integration["app.core.integration"]
+    end
+    subgraph ingestion_extraction ["Ingestion & Extraction Engine (app.core)"]
+        core_extractor["app.core.extractor"]
+        core_extractor_strategies["app.core.extractor_strategies"]
+        core_forensic_scanner["app.core.forensic_scanner"]
+        core_offline_loader["app.core.offline_loader"]
+        core_downloader["app.core.downloader"]
+    end
+    subgraph analytics_intelligence ["Analytics & Machine Learning (app.core)"]
+        core_analyzer["app.core.analyzer"]
+        core_analyzer_strategies["app.core.analyzer_strategies"]
+        core_jev_classifier["app.core.jev_classifier"]
+        core_semantic_embeddings["app.core.semantic_embeddings"]
+    end
+    subgraph clinical_pipeline ["Clinical Trial & Multi-Study Pipeline (app.core)"]
+        core_cro_multi_study_pipeline["app.core.cro_multi_study_pipeline"]
+        core_study_disambiguator["app.core.study_disambiguator"]
+        core_clinical_taxonomy["app.core.clinical_taxonomy"]
+        core_clinical_compliance["app.core.clinical_compliance"]
+        core_clinical_renamer["app.core.clinical_renamer"]
+        core_clinical_strategy["app.core.clinical_strategy"]
+    end
+    subgraph memory_cache ["Caching & Memory Layer (app.core)"]
+        core_cache[("app.core.cache (BoundedMemoryCache)")]
+        core_db_conn["app.core.db_conn"]
+        core_link_manager["app.core.link_manager"]
+        core_hashes_registry["app.core.hashes_registry"]
+    end
+    subgraph concurrency_shared ["Concurrency & Shared Registry (app.core)"]
+        core_shared_registry["app.core.shared_registry (SharedWorkerPool)"]
+        core_db_worker["app.core.db_worker"]
+    end
+    subgraph storage_persistence ["Storage & Database Persistence (app.core)"]
+        core_db[("app.core.db")]
+        core_ledger[("app.core.ledger")]
+        core_history[("app.core.history")]
+    end
+    subgraph execution_operations ["Policy, Validation & File Operations (app.core)"]
+        core_policy_engine{app.core.policy_engine}
+        core_quarantine_interceptor["app.core.quarantine_interceptor"]
+        core_verifier{app.core.verifier}
+        core_mover["app.core.mover"]
+        core_file_renamer["app.core.file_renamer"]
+        core_resilient_file_ops["app.core.resilient_file_ops"]
+        core_scanner["app.core.scanner"]
+        core_progress["app.core.progress"]
+        core_metadata["app.core.metadata"]
+    end
+    subgraph utilities_security ["Security & Utilities (app.core)"]
+        core_text_utils["app.core.text_utils"]
+        core_path_utils["app.core.path_utils"]
+        core_env_helper["app.core.env_helper"]
+        core_crypto["app.core.crypto"]
+        core_exceptions["app.core.exceptions"]
+    end
+    app_main --> ui_app
+    app_main --> core_session
+    ui_app --> core_session
+    ui_app --> ui_wizard
+    ui_app --> ui_dialog_helper
+    ui_catalog --> ui_diagram_schema
+    ui_a11y_runner --> ui_catalog
+    core_session --> core_user_space_bootstrap
+    core_session --> core_scanner
+    core_session --> core_extractor
+    core_session --> core_analyzer
+    core_session --> core_policy_engine
+    core_session --> core_verifier
+    core_session --> core_mover
+    core_daemon --> core_session
+    core_integration --> core_session
+    core_extractor --> core_extractor_strategies
+    core_extractor --> core_forensic_scanner
+    core_extractor --> core_offline_loader
+    core_downloader --> core_env_helper
+    core_analyzer --> core_analyzer_strategies
+    core_analyzer --> core_jev_classifier
+    core_analyzer --> core_semantic_embeddings
+    core_cro_multi_study_pipeline --> core_study_disambiguator
+    core_cro_multi_study_pipeline --> core_clinical_taxonomy
+    core_cro_multi_study_pipeline --> core_clinical_compliance
+    core_cro_multi_study_pipeline --> core_clinical_renamer
+    core_clinical_renamer --> core_clinical_strategy
+    core_db_conn --> core_cache
+    core_link_manager --> core_cache
+    core_semantic_embeddings --> core_cache
+    core_jev_classifier --> core_cache
+    core_hashes_registry --> core_crypto
+    core_shared_registry --> core_mover
+    core_shared_registry --> core_extractor
+    core_db_worker --> core_shared_registry
+    core_db --> core_cache
+    core_ledger --> core_db
+    core_history --> core_db
+    core_policy_engine --> core_quarantine_interceptor
+    core_policy_engine --> core_mover
+    core_verifier --> core_mover
+    core_mover --> core_file_renamer
+    core_mover --> core_resilient_file_ops
+    core_mover --> core_progress
+    core_mover --> core_metadata
+    core_text_utils --> core_exceptions
+    core_path_utils --> core_exceptions
+>>>>>>> d698e94 (feat(docs): extend Pydantic diagram schema toolchain to cover all core submodules)

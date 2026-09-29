@@ -1,4 +1,8 @@
 {
+  "api_core_architecture": {
+    "sha256": "68014b24b46ca30f705166af7bddaedaf9f97d890228d1832e138112d7e0983c",
+    "fallback": true
+  },
   "architecture_dataflow": {
     "sha256": "89d07680b3161c5e93a955a1a61e80c605e71726ba8690d4cb67cc556c903b20",
     "fallback": true
@@ -11,16 +15,32 @@
     "sha256": "623b9ab7007242b90a55abe3ec61caa0a2db866c7d78c985cf66d8e064892a6a",
     "fallback": true
   },
+  "cro_multi_study_pipeline": {
+    "sha256": "6563a4af0b1da8c093f4fdaa639909c93a4fab36e6be61ef0ec66e2b2b22c22a",
+    "fallback": true
+  },
+  "memory_cache_layers": {
+    "sha256": "9d7a25eb158dea40c775c3a719456fb4f19fe773d0d0acfe2d930e05f83a56ef",
+    "fallback": true
+  },
+  "worker_pool_concurrency": {
+    "sha256": "7736e9dfaea53c7b2e5afb19e960b9e7fb9ce5eb817076df2b6ca4c986ab77ee",
+    "fallback": true
+  },
+  "policy_evaluation_flow": {
+    "sha256": "5ea21532d3d508da37325ae16f53a973ac2b789321148ca7063895372f6ffec8",
+    "fallback": true
+  },
+  "setup_wizard_flow": {
+    "sha256": "beb00051df4ec53a415c4cdf5b7dfb5058b5d6ea0aaac09447f7e72444a9ef17",
+    "fallback": true
+  },
   "catalog_workflow": {
     "sha256": "4a9c047519486cc8127459c6782dc85420cda229bec2b98ea7503c750ec7495f",
     "fallback": true
   },
   "ui_component_hierarchy": {
     "sha256": "bd53c9d52fbafe9c25dd658eb88e4c843f2961e263506797dca24ca1e8d51a8f",
-    "fallback": true
-  },
-  "api_core_architecture": {
-    "sha256": "68014b24b46ca30f705166af7bddaedaf9f97d890228d1832e138112d7e0983c",
     "fallback": true
   },
   "core_text_extraction": {

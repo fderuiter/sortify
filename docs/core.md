@@ -6,6 +6,8 @@ This document outlines the core internal workflow and architecture of the Smart 
 
 The system uses a two-phase pipeline to convert documents into structured sorting plans:
 
+![Data Flow Architecture](assets/diagrams/architecture_dataflow.svg)
+
 ![Multi-Format Text Extraction Flow](assets/diagrams/core_text_extraction.svg)
 
 1. **Extraction (`app.core.extractor`)**:
@@ -18,6 +20,18 @@ The system uses a two-phase pipeline to convert documents into structured sortin
     - `TfidfVectorizer` transforms the text into sparse numerical embeddings.
     - `NMF` is used to perform incremental topic modeling.
     - Finally, a recursive clustering function creates a hierarchical sorting plan based on the dominant topics, identifying sub-topics where appropriate.
+
+## Multi-Study Clinical Ingestion Pipeline
+
+![CRO Multi-Study Pipeline](assets/diagrams/cro_multi_study_pipeline.svg)
+
+## Centralized In-Memory Caching Architecture
+
+![Memory Cache Layers](assets/diagrams/memory_cache_layers.svg)
+
+## Concurrency & Worker Pool Model
+
+![Worker Pool Concurrency](assets/diagrams/worker_pool_concurrency.svg)
 
 ## Verifier Logic
 

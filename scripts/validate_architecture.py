@@ -1,8 +1,60 @@
 """Validates architectural constraints across the project codebase."""
 
 import ast
+import glob
 import os
 import sys
+from pathlib import Path
+
+# Add project root to sys.path so we can import app modules
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
+
+def validate_diagram_schema_and_assets(errors: list) -> None:
+    """Validate that Pydantic diagram specifications represent all active core modules and match generated assets."""
+    try:
+        from app.ui.diagram_schema import CORE_ARCHITECTURE_SPEC, SYSTEM_DIAGRAM_SPECS
+
+        # 1. Verify all active app/core/*.py submodules are represented in core_architecture diagram spec
+        core_files = glob.glob("app/core/*.py")
+        core_modules = {
+            f"app.core.{Path(p).stem}"
+            for p in core_files
+            if not p.endswith("__init__.py")
+        }
+
+        arch_spec = SYSTEM_DIAGRAM_SPECS.get("core_architecture", CORE_ARCHITECTURE_SPEC)
+        represented_labels = {node.label for node in arch_spec.nodes}
+
+        for mod in sorted(core_modules):
+            if not any(mod in label for label in represented_labels):
+                errors.append(
+                    f"Diagram validation error: Module '{mod}' is not represented in 'core_architecture' diagram schema specification."
+                )
+
+        # 2. Check that compiled diagram assets exist and match spec Mermaid output
+        diagrams_dir = Path("docs/assets/diagrams")
+        for spec_id, spec in SYSTEM_DIAGRAM_SPECS.items():
+            mmd_file = diagrams_dir / f"{spec_id}.mmd"
+            svg_file = diagrams_dir / f"{spec_id}.svg"
+            if not mmd_file.exists():
+                errors.append(
+                    f"Diagram asset error: Compiled file '{mmd_file}' does not exist for spec '{spec_id}'."
+                )
+            if not svg_file.exists():
+                errors.append(
+                    f"Diagram asset error: Compiled SVG file '{svg_file}' does not exist for spec '{spec_id}'."
+                )
+
+            if mmd_file.exists():
+                expected_mmd = spec.to_mermaid().replace("\r\n", "\n")
+                actual_mmd = mmd_file.read_text(encoding="utf-8").replace("\r\n", "\n")
+                if expected_mmd != actual_mmd:
+                    errors.append(
+                        f"Diagram asset error: '{mmd_file}' is out of sync with Pydantic diagram spec '{spec_id}'."
+                    )
+    except Exception as e:
+        errors.append(f"Failed diagram schema validation check: {e}")
 
 
 def main():
@@ -116,10 +168,13 @@ def main():
 
             Visitor().visit(tree)
 
+    # Rule C: Validate Pydantic diagram specs and asset sync
+    validate_diagram_schema_and_assets(errors)
+
     if errors:
         print("Architectural Violations Found:")
         for error in errors:
-            print(error)
+            print(f"  - {error}")
         sys.exit(1)
     else:
         print("No architectural violations found.")
