@@ -417,7 +417,8 @@ def sanitize_plan(plan: Any) -> tuple[dict, list[str]]:
             if isinstance(file_content, dict) and "target_filename" in file_content and file_content["target_filename"]:
                 old_tf = file_content["target_filename"]
                 if contains_secrets(old_tf) or scrub_pii_from_filename(old_tf) != old_tf:
-                    new_tf, _ = _sanitize_plan_key(old_tf, is_file=True)
+                    leaf_tf = re.split(r"[/\\]+", old_tf)[-1]
+                    new_tf = sanitize_name(leaf_tf)
                     if new_tf != old_tf:
                         file_content["target_filename"] = new_tf
                         file_content["confirmed"] = True
@@ -473,7 +474,8 @@ def sanitize_plan(plan: Any) -> tuple[dict, list[str]]:
                 if isinstance(file_content, dict) and "target_filename" in file_content and file_content["target_filename"]:
                     old_tf = file_content["target_filename"]
                     if contains_secrets(old_tf) or scrub_pii_from_filename(old_tf) != old_tf:
-                        new_tf, _ = _sanitize_plan_key(old_tf, is_file=True)
+                        leaf_tf = re.split(r"[/\\]+", old_tf)[-1]
+                        new_tf = sanitize_name(leaf_tf)
                         if new_tf != old_tf:
                             file_content["target_filename"] = new_tf
                             file_content["confirmed"] = True
@@ -503,40 +505,6 @@ def sanitize_plan(plan: Any) -> tuple[dict, list[str]]:
                         isinstance(existing, (dict, BaseModel))
                         and not _is_file_node(existing)
                         and not _is_dir_node(existing)
-                    ):
-                        merge_warns = _merge_plan_dicts(existing, sub_sanitized)
-                        warnings.extend(merge_warns)
-                    else:
-                        safe_key = _disambiguate_key(
-                            sanitized_plan, safe_key, is_file=False
-                        )
-                        sanitized_plan[safe_key] = sub_sanitized
-                else:
-                    sanitized_plan[safe_key] = sub_sanitized
-
-        else:
-            sanitized_plan[key] = content
-
-    return sanitized_plan, warnings
-                    )
-                    if "target_filename" in file_content:
-                        file_content["target_filename"] = safe_file_key
-                        file_content["confirmed"] = True
-
-                sanitized_plan[safe_file_key] = file_content
-            else:
-                safe_key, transformed = _sanitize_plan_key(key, is_file=False)
-                if transformed:
-                    warnings.append(f"Sanitized folder key '{key}' to '{safe_key}'")
-
-                sub_sanitized, sub_warns = sanitize_plan(content)
-                warnings.extend(sub_warns)
-
-                if safe_key in sanitized_plan:
-                    existing = sanitized_plan[safe_key]
-                    if (
-                        isinstance(existing, dict)
-                        and existing.get("__type__") not in ("file", "directory")
                     ):
                         merge_warns = _merge_plan_dicts(existing, sub_sanitized)
                         warnings.extend(merge_warns)

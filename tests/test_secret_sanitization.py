@@ -233,7 +233,7 @@ def test_verification_engine_plan_integrity_with_secrets():
     assert win_result["success"] is True
     assert "Folder" in win_result["plan"]
     assert "doc.pdf" in win_result["plan"]["Folder"]
-    assert win_result["plan"]["Folder"]["doc.pdf"]["target_filename"] == r"Folder\doc.pdf"
+    assert win_result["plan"]["Folder"]["doc.pdf"]["target_filename"] == "doc.pdf"
 
 
 def test_contextual_file_renamer_scrubs_secrets():

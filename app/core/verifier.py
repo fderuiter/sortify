@@ -269,9 +269,17 @@ class VerificationEngine:
                             f"Missing required relative source metadata field for nested item '{key}'"
                         )
                     relative_source = rel_src_val
-                    rel_src_with_parent = os.path.join(
-                        active_parent_path, relative_source
-                    )
+                    rel_src_norm = relative_source.replace("\\", "/")
+                    parent_norm = active_parent_path.replace("\\", "/")
+                    if parent_norm and (
+                        rel_src_norm.startswith(parent_norm + "/")
+                        or rel_src_norm == parent_norm
+                    ):
+                        rel_src_with_parent = relative_source
+                    else:
+                        rel_src_with_parent = os.path.join(
+                            active_parent_path, relative_source
+                        )
                     source_path = os.path.normpath(
                         os.path.join(base_dir, rel_src_with_parent)
                     )
@@ -287,7 +295,7 @@ class VerificationEngine:
 
                 tgt_fn = _get_val(content, "target_filename")
                 if tgt_fn is not None:
-                    filename = tgt_fn
+                    filename = re.split(r"[/\\]+", tgt_fn)[-1]
                 else:
                     filename = re.split(r"[/\\]+", key)[-1]
 
