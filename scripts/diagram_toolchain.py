@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Dict, List, Optional
 
 if TYPE_CHECKING:
-    from app.ui.diagram_schema import BaseDiagramSpec
+    from app.ui.diagram_schema import BaseDiagramSpec, ComponentDiagramSpec
 
 # Add project root to sys.path so we can import app modules
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
