@@ -351,3 +351,94 @@ def test_file_analyzer_internal_jev_fallback_windows_paths(tmp_path):
     assert node["routed_by"] == "jev_classifier"
     assert node["category"] == "Financial Reports"
 
+
+def test_jev_fast_snippet_extraction_pdf_docx_xlsx(tmp_path):
+    """Verify fast snippet extraction for generic PDF, DOCX, and XLSX files."""
+    import docx
+    import openpyxl
+    from reportlab.lib.pagesizes import letter
+    from reportlab.pdfgen import canvas
+
+    engine = JevClassifierEngine()
+
+    # 1. Generic PDF file scan_001.pdf containing "Invoice"
+    pdf_path = tmp_path / "scan_001.pdf"
+    c = canvas.Canvas(str(pdf_path), pagesize=letter)
+    c.drawString(100, 750, "Invoice #10023 - Financial Statement and Billing")
+    c.save()
+
+    t0 = time.perf_counter()
+    res_pdf = engine.classify(str(pdf_path))
+    pdf_elapsed_ms = (time.perf_counter() - t0) * 1000.0
+
+    assert pdf_elapsed_ms < 150.0
+    assert res_pdf.is_classified is True
+    assert res_pdf.confidence >= 0.50
+    assert "Financial" in res_pdf.category
+
+    # 2. Generic DOCX file doc_001.docx containing "Contract" and "NDA"
+    docx_path = tmp_path / "doc_001.docx"
+    doc = docx.Document()
+    doc.add_paragraph("Legal NDA Contract and Confidentiality Agreement.")
+    doc.save(str(docx_path))
+
+    t0 = time.perf_counter()
+    res_docx = engine.classify(str(docx_path))
+    docx_elapsed_ms = (time.perf_counter() - t0) * 1000.0
+
+    assert docx_elapsed_ms < 150.0
+    assert res_docx.is_classified is True
+    assert res_docx.confidence >= 0.50
+    assert "Legal" in res_docx.category
+
+    # 3. Generic XLSX file sheet_001.xlsx containing "Payroll" and "Ledger"
+    xlsx_path = tmp_path / "sheet_001.xlsx"
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(["Payroll", "Ledger", "Balance"])
+    ws.append([1000, 500, 1500])
+    wb.save(str(xlsx_path))
+
+    res_xlsx = engine.classify(str(xlsx_path))
+    assert res_xlsx.is_classified is True
+    assert res_xlsx.confidence >= 0.50
+    assert "Financial" in res_xlsx.category
+
+
+def test_jev_fast_snippet_extraction_encrypted_and_corrupt(tmp_path):
+    """Verify encrypted and corrupt binary documents fail gracefully with confidence < 0.50."""
+    import pypdf
+
+    engine = JevClassifierEngine()
+
+    # 1. Encrypted PDF
+    encrypted_pdf = tmp_path / "encrypted_scan.pdf"
+    writer = pypdf.PdfWriter()
+    writer.add_blank_page(width=612, height=792)
+    writer.encrypt("secret_password")
+    with open(encrypted_pdf, "wb") as f:
+        writer.write(f)
+
+    res_enc = engine.classify(str(encrypted_pdf))
+    assert isinstance(res_enc, JevClassificationResult)
+    assert res_enc.confidence < 0.50
+    assert res_enc.is_classified is False
+
+    # 2. Corrupt PDF file
+    corrupt_pdf = tmp_path / "corrupt_file.pdf"
+    corrupt_pdf.write_bytes(b"%PDF-1.4\x00\xff\xfe\xfdCORRUPT_HEADER_AND_STREAM")
+
+    res_corrupt = engine.classify(str(corrupt_pdf))
+    assert isinstance(res_corrupt, JevClassificationResult)
+    assert res_corrupt.confidence < 0.50
+    assert res_corrupt.is_classified is False
+
+    # 3. Corrupt DOCX file
+    corrupt_docx = tmp_path / "corrupt_doc.docx"
+    corrupt_docx.write_bytes(b"PK\x03\x04CORRUPT_ZIP_DATA")
+
+    res_corrupt_docx = engine.classify(str(corrupt_docx))
+    assert isinstance(res_corrupt_docx, JevClassificationResult)
+    assert res_corrupt_docx.confidence < 0.50
+    assert res_corrupt_docx.is_classified is False
+
