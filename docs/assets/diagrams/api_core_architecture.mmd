@@ -1,0 +1,14 @@
+flowchart TD
+    A["app.main"]
+    B["app.core.session"]
+    C["app.core.extractor"]
+    D["app.core.analyzer"]
+    E["app.core.verifier"]
+    F["app.core.sanitizer"]
+    G["app.core.analyzer_strategies"]
+    A --> B
+    B --> C
+    B --> D
+    B --> E
+    C --> F
+    D --> G

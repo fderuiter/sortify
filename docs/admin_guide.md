@@ -178,18 +178,7 @@ System settings modified during runtime are dynamically saved to the local JSON 
 
 ### Policy Evaluation Flowchart
 
-```mermaid
-flowchart TD
-    A[Incoming Document] --> B[Sort Rules by Priority High to Low]
-    B --> C{Evaluate Next Rule}
-    C -->|Override Rule Match| D[Route Document via Override Path]
-    C -->|Keyword Rule Match| E[Route Document via Keyword Category]
-    C -->|Pattern Rule Match| F[Route Document via Pattern Category]
-    C -->|No Match & Halt on Mismatch Enabled| G[Stop Processing & Halt Evaluation]
-    C -->|No Match & Halt Disabled| H{More Rules Remaining?}
-    H -->|Yes| C
-    H -->|No| I[Proceed to General Classification / AI Sorting]
-```
+![Policy Evaluation Flowchart](assets/diagrams/admin_policy_evaluation.svg)
 
 ### Rule Syntax & Types
 
@@ -261,7 +250,8 @@ options:
   --debug-layout        Enable visual debug outlines for UI elements in dev
                         mode
   --tui                 Launch full-screen Textual TUI interface
-  --gui                 Force launch graphical web interface
+  --gui                 Force launch graphical web interface (Deprecated:
+                        launches terminal interface)
 ```
 
 #### Subcommands

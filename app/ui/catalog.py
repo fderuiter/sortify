@@ -643,32 +643,25 @@ def main():
         action="store_true",
         help="Execute headless accessibility scans against all components and exit",
     )
-    args = parser.parse_args()
+    parser.parse_args()
 
-    if args.audit_only:
-        total_scans, violations = run_all_catalog_scans(CATALOG_REGISTRY)
-        if violations:
+    total_scans, violations = run_all_catalog_scans(CATALOG_REGISTRY)
+    if violations:
+        print(
+            f"FAILED: Found {len(violations)} accessibility violations across {total_scans} scans.",
+            file=sys.stderr,
+        )
+        for v in violations:
             print(
-                f"FAILED: Found {len(violations)} accessibility violations across {total_scans} scans.",
+                f"  [{v.rule_id}] Component '{v.component_id}' ({v.viewport_name}): {v.message} @ {v.locator}",
                 file=sys.stderr,
             )
-            for v in violations:
-                print(
-                    f"  [{v.rule_id}] Component '{v.component_id}' ({v.viewport_name}): {v.message} @ {v.locator}",
-                    file=sys.stderr,
-                )
-            sys.exit(1)
-        else:
-            print(
-                f"SUCCESS: All {total_scans} catalog component-viewport accessibility scans passed."
-            )
-            sys.exit(0)
-
-    @ui.page("/")
-    def catalog_page():
-        build_catalog_ui()
-
-    ui.run(port=args.port, title="Component Catalog Workbench", show=False)
+        sys.exit(1)
+    else:
+        print(
+            f"SUCCESS: All {total_scans} catalog component-viewport accessibility scans passed."
+        )
+        sys.exit(0)
 
 
 if __name__ == "__main__":
