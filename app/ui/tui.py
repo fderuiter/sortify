@@ -81,36 +81,26 @@ class A11yMixin:
             if sys.platform == "darwin":
                 return shutil.which("say")
             elif sys.platform == "win32":
-                bin_path = shutil.which("spd-say") or shutil.which("spd-say.exe")
+                bin_path = shutil.which("spd-say.exe") or shutil.which("spd-say")
                 if bin_path:
                     norm = bin_path.replace("/", "\\").lower()
                     if any(
-                        p in norm
-                        for p in (
-                            "\\usr\\bin\\",
-                            "\\msys",
-                            "\\cygwin",
-                            "/usr/bin/",
-                            "\\git\\",
-                            "/git/",
-                            "\\mingw",
-                            "/mingw",
-                            "\\bash",
-                            "/bash",
-                            "\\wsl",
-                            "/wsl",
-                            "\\chocolatey",
-                            "/chocolatey",
-                            "\\npm",
-                            "/npm",
-                            "\\strawberry",
-                            "/strawberry",
-                            "\\actions-runner",
-                            "/actions-runner",
-                            "\\hostedtoolcache",
-                            "/hostedtoolcache",
-                            "\\usr\\",
-                            "/usr/",
+                        k in norm
+                        for k in (
+                            "usr",
+                            "git",
+                            "msys",
+                            "cygwin",
+                            "mingw",
+                            "bash",
+                            "wsl",
+                            "chocolatey",
+                            "npm",
+                            "strawberry",
+                            "runner",
+                            "actions",
+                            "hostedtoolcache",
+                            "windowsapps",
                         )
                     ):
                         return None
