@@ -173,7 +173,14 @@ def handle_cro_command(args: argparse.Namespace, settings: AppSettings) -> bool:
                     progress_callback=progress_cb,
                 )
 
-                res_dict = dataclasses.asdict(result)
+                if hasattr(result, "model_dump"):
+                    res_dict = result.model_dump()
+                elif dataclasses.is_dataclass(result):
+                    res_dict = dataclasses.asdict(result)
+                elif isinstance(result, dict):
+                    res_dict = result
+                else:
+                    res_dict = dict(result)
                 res = {
                     "status": "success",
                     "pipeline_result": res_dict,
