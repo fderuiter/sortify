@@ -2,7 +2,10 @@
 
 import logging
 import os
+import shutil
+import subprocess
 import sys
+import threading
 import time
 from typing import Any, Dict, List, Optional
 
@@ -37,6 +40,57 @@ class A11yMixin:
         super().__init__(*args, **kwargs)
         self.announcements: List[Dict[str, Any]] = []
         self.last_announcement: Optional[str] = None
+        self._speech_thread: Optional[threading.Thread] = None
+
+    def update_status(self, text: str) -> None:
+        """Update visual status region on self or parent application."""
+        if hasattr(self, "app") and self.app and self.app is not self and hasattr(self.app, "update_status"):
+            try:
+                self.app.update_status(text)
+            except Exception:
+                pass
+
+    def join_speech_thread(self, timeout: float = 1.0) -> None:
+        """Wait for active speech synthesis thread to finish."""
+        if self._speech_thread is not None:
+            if self._speech_thread.is_alive():
+                try:
+                    self._speech_thread.join(timeout=timeout)
+                except Exception:
+                    pass
+            if not self._speech_thread.is_alive():
+                self._speech_thread = None
+        if hasattr(self, "app") and self.app and self.app is not self and hasattr(self.app, "join_speech_thread"):
+            try:
+                self.app.join_speech_thread(timeout=timeout)
+            except Exception:
+                pass
+
+    def on_unmount(self) -> None:
+        """Lifecycle hook called when component is unmounted from Textual app."""
+        self.join_speech_thread(timeout=0.5)
+        if hasattr(super(), "on_unmount"):
+            try:
+                super().on_unmount()  # type: ignore[misc]
+            except Exception:
+                pass
+
+    def _get_speech_binary(self) -> Optional[str]:
+        """Resolve available speech synthesis executable based on host platform.
+
+        On macOS, returns native 'say' command path. On Linux, returns 'spd-say' or
+        'say' path. On Windows (win32), returns None as Linux/macOS speech binaries
+        do not exist natively, defaulting to visual status live region fallback.
+        """
+        try:
+            if sys.platform == "darwin":
+                return shutil.which("say")
+            elif sys.platform == "win32":
+                return None
+            else:
+                return shutil.which("spd-say") or shutil.which("say")
+        except (FileNotFoundError, OSError):
+            return None
 
     def announce(self, message: str, priority: str = "polite") -> str:
         """Emit auditory screen reader announcement and log accessibility event."""
@@ -48,19 +102,55 @@ class A11yMixin:
         self.announcements.append(entry)
         self.last_announcement = message
 
+        forwarded = False
         # Forward to parent app if available
         if hasattr(self, "app") and self.app and self.app is not self and hasattr(self.app, "announce"):
             try:
                 self.app.announce(message, priority=priority)
+                forwarded = True
             except Exception:
                 pass
 
-        # Update status bar if available
-        if hasattr(self, "update_status") and callable(self.update_status):
-            try:
-                self.update_status(message)
-            except Exception:
-                pass
+        if not forwarded:
+            # Check speech binary presence via _get_speech_binary before launching subprocess
+            speech_bin = self._get_speech_binary()
+
+            if speech_bin:
+                if self._speech_thread is None or not self._speech_thread.is_alive():
+                    try:
+                        def _speak():
+                            try:
+                                kwargs: Dict[str, Any] = {
+                                    "timeout": 1.0,
+                                    "stdin": subprocess.DEVNULL,
+                                    "stdout": subprocess.DEVNULL,
+                                    "stderr": subprocess.DEVNULL,
+                                    "check": False,
+                                }
+                                if sys.platform == "win32":
+                                    kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+                                subprocess.run(
+                                    [speech_bin, message],
+                                    **kwargs,
+                                )
+                            except BaseException as exc:
+                                logger.debug(f"Speech synthesis execution failed: {exc}")
+                            finally:
+                                if getattr(self, "_speech_thread", None) is threading.current_thread():
+                                    self._speech_thread = None
+
+                        t = threading.Thread(target=_speak, daemon=True)
+                        t.start()
+                        self._speech_thread = t
+                    except Exception as e:
+                        logger.debug(f"Speech binary execution failed: {e}")
+
+            # Fallback and update visual status region for every invocation
+            if hasattr(self, "update_status") and callable(self.update_status):
+                try:
+                    self.update_status(message)
+                except Exception:
+                    pass
 
         return message
 
@@ -75,6 +165,7 @@ class A11yMixin:
         1. Interactive controls have tooltips or explicit accessibility labels.
         2. Modal screens define Escape key bindings for keyboard dismissal.
         3. Screen reader announcement logging capability exists.
+        4. Root application defines visual status region capabilities and speech binary fallback handling.
         """
         violations = []
 
@@ -116,11 +207,27 @@ class A11yMixin:
                 "message": f"Component '{type(self).__name__}' lacks screen reader announcement handler.",
             })
 
+        status_bar_available = (
+            hasattr(self, "update_status")
+            or (hasattr(self, "app") and self.app and hasattr(self.app, "update_status"))
+        )
+        if not status_bar_available:
+            violations.append({
+                "rule": "A11Y_MISSING_STATUS_REGION",
+                "message": f"Component '{type(self).__name__}' or root application lacks visual status region capability.",
+            })
+
+        speech_binary = self._get_speech_binary()
+
         return {
             "component": type(self).__name__,
             "compliant": len(violations) == 0,
             "violations_count": len(violations),
             "violations": violations,
+            "speech_binary_available": speech_binary is not None,
+            "speech_binary": speech_binary,
+            "speech_binary_fallback_ready": True,
+            "status_bar_available": status_bar_available,
         }
 
 
