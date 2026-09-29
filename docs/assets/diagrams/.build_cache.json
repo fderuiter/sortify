@@ -33,51 +33,39 @@
     "sha256": "3e09096a2b1c52f473096ec36014395430c9a57fd11060d11db19a9222c1cf20"
   },
   "architecture_async_processing": {
-    "sha256": "0f3e202e7adfd8edf7e113ad27e47e67eab7c20eaf336478aa9e2772d69e0d63",
-    "fallback": true
+    "sha256": "0f3e202e7adfd8edf7e113ad27e47e67eab7c20eaf336478aa9e2772d69e0d63"
   },
   "architecture_watchdog_state": {
-    "sha256": "623b9ab7007242b90a55abe3ec61caa0a2db866c7d78c985cf66d8e064892a6a",
-    "fallback": true
+    "sha256": "623b9ab7007242b90a55abe3ec61caa0a2db866c7d78c985cf66d8e064892a6a"
   },
   "core_text_extraction": {
-    "sha256": "7632667989b957403491b47c55c93862fcb58bf36be1aa30772b206ad8959ad3",
-    "fallback": true
+    "sha256": "7632667989b957403491b47c55c93862fcb58bf36be1aa30772b206ad8959ad3"
   },
   "contributor_onboarding": {
-    "sha256": "d094476461d97dd380b180ba99402cbe8f78aad2fb3ec1238c6b21f87d0b730e",
-    "fallback": true
+    "sha256": "d094476461d97dd380b180ba99402cbe8f78aad2fb3ec1238c6b21f87d0b730e"
   },
   "troubleshooting_setup_wizard": {
-    "sha256": "6d4ebcc144185abe779a152fb41f67d53f737c5f8b8a6aa016fa7ea9bbf0fc5f",
-    "fallback": true
+    "sha256": "6d4ebcc144185abe779a152fb41f67d53f737c5f8b8a6aa016fa7ea9bbf0fc5f"
   },
   "ml_analyzer_clustering": {
-    "sha256": "b6266ed48e702dbeb4711bcd2db746aa51e30d9d808765698fb2262b3b7a5ea4",
-    "fallback": true
+    "sha256": "b6266ed48e702dbeb4711bcd2db746aa51e30d9d808765698fb2262b3b7a5ea4"
   },
   "multi_format_text_extraction_seq": {
-    "sha256": "63f0acf03b05bd5dc06e73f2b3332314758661ffdcdc138eed3f52b9d9fafebb",
-    "fallback": true
+    "sha256": "63f0acf03b05bd5dc06e73f2b3332314758661ffdcdc138eed3f52b9d9fafebb"
   },
   "virtual_sorting_verification_seq": {
-    "sha256": "180e03fc9c576b8200d05f223faf20cdf7759b6e3e338f0d06ef7c3aa43614c6",
-    "fallback": true
+    "sha256": "180e03fc9c576b8200d05f223faf20cdf7759b6e3e338f0d06ef7c3aa43614c6"
   },
   "user_guide_setup_wizard": {
-    "sha256": "8bae30f22d5b8c62e714e82a8b1ee6db4037d92fe5514af845bf076bc1a25a7c",
-    "fallback": true
+    "sha256": "8bae30f22d5b8c62e714e82a8b1ee6db4037d92fe5514af845bf076bc1a25a7c"
   },
   "user_guide_watchdog_state": {
-    "sha256": "31841cdf6b18bed0ffaffc02a769a1588a8d767a0c65685c2962902f3ad868b6",
-    "fallback": true
+    "sha256": "31841cdf6b18bed0ffaffc02a769a1588a8d767a0c65685c2962902f3ad868b6"
   },
   "api_core_architecture": {
-    "sha256": "1ef040b61eafe2ece0352a5af6f685cbfe91f00c510571763baaf0b3eb465781",
-    "fallback": true
+    "sha256": "1ef040b61eafe2ece0352a5af6f685cbfe91f00c510571763baaf0b3eb465781"
   },
   "admin_policy_evaluation": {
-    "sha256": "8fa2e31d89223dc224c717000b272a8a420392edb69d955cac7676db98400625",
-    "fallback": true
+    "sha256": "8fa2e31d89223dc224c717000b272a8a420392edb69d955cac7676db98400625"
   }
 }
