@@ -4,7 +4,6 @@ import asyncio
 import contextlib
 import logging
 import os
-import sys
 import threading
 import time
 from dataclasses import dataclass, field
@@ -31,6 +30,9 @@ class FileChangeEvent:
     file_path: str
     timestamp: float = field(default_factory=time.time)
     dest_path: Optional[str] = None
+    priority_key: Optional[tuple[int, float]] = None
+    archival_priority: int = 5
+    archival_priority_score: float = 0.0
 
 
 def _extract_plan_destinations(plan, base_dir=None, current_dest="", dests_set=None):
@@ -127,13 +129,14 @@ class ContinuousWatchdogDaemon:
 
         # Pipeline state
         self._event_loop: Optional[asyncio.AbstractEventLoop] = None
-        self._event_queue: Optional[asyncio.Queue[FileChangeEvent]] = None
+        self._event_queue: Optional[asyncio.PriorityQueue] = None
         self._recent_events: dict[str, float] = {}
         self._active_path_locks: dict[str, asyncio.Lock] = {}
         self._active_triage_paths: set[str] = set()
         self._worker_tasks: list[asyncio.Task] = []
         self._reconciliation_task: Optional[asyncio.Task] = None
         self._app_session: Optional[AppSession] = None
+        self._queue_sequence_counter: int = 0
 
         # We run the actual sorting loop on a dedicated background execution thread
         self._execution_thread = None
@@ -206,9 +209,7 @@ class ContinuousWatchdogDaemon:
         for key, content in plan.items():
             if isinstance(content, str):
                 src_path = (
-                    os.path.join(base, key)
-                    if base and not os.path.isabs(key)
-                    else key
+                    os.path.join(base, key) if base and not os.path.isabs(key) else key
                 )
                 dst_path = (
                     os.path.join(base, content)
@@ -226,9 +227,7 @@ class ContinuousWatchdogDaemon:
             elif isinstance(content, dict):
                 if content.get("__type__") == "file":
                     rel_src = content.get("relative_source") or key
-                    filename = (
-                        content.get("target_filename") or os.path.basename(key)
-                    )
+                    filename = content.get("target_filename") or os.path.basename(key)
                     rel_dst = os.path.join(current_dest, filename)
 
                     src_path = (
@@ -355,7 +354,7 @@ class ContinuousWatchdogDaemon:
         return False
 
     def enqueue_event(self, change_event: FileChangeEvent) -> bool:
-        """Publish a FileChangeEvent directly to the asynchronous FIFO queue with deduplication."""
+        """Publish a FileChangeEvent directly to the asynchronous PriorityQueue with deduplication."""
         if not change_event or not change_event.file_path:
             return False
 
@@ -365,6 +364,28 @@ class ContinuousWatchdogDaemon:
 
         norm_p = os.path.normcase(os.path.abspath(file_path))
         now = time.time()
+
+        if change_event.priority_key is None:
+            try:
+                from app.core.shared_registry import SharedModelRegistry
+
+                jev_engine = SharedModelRegistry.get_instance().get_jev_classifier()
+                jev_res = jev_engine.classify(file_path)
+                if jev_res:
+                    change_event.archival_priority = getattr(
+                        jev_res, "archival_priority", 5
+                    )
+                    change_event.archival_priority_score = getattr(
+                        jev_res, "archival_priority_score", 0.0
+                    )
+            except Exception:
+                change_event.archival_priority = 5
+                change_event.archival_priority_score = 0.0
+
+            change_event.priority_key = (
+                change_event.archival_priority,
+                -change_event.archival_priority_score,
+            )
 
         with self._lock:
             if not self._is_running:
@@ -388,6 +409,11 @@ class ContinuousWatchdogDaemon:
                     k: v for k, v in self._recent_events.items() if v > cutoff
                 }
 
+            self._queue_sequence_counter += 1
+            seq = self._queue_sequence_counter
+
+        queue_entry = (change_event.priority_key, seq, change_event)
+
         queue = self._event_queue
         loop = self._event_loop
 
@@ -400,12 +426,12 @@ class ContinuousWatchdogDaemon:
 
             if loop and loop.is_running():
                 loop.call_soon_threadsafe(
-                    lambda: queue.put_nowait(change_event) if not queue.full() else None
+                    lambda: queue.put_nowait(queue_entry) if not queue.full() else None
                 )
                 return True
             else:
                 try:
-                    queue.put_nowait(change_event)
+                    queue.put_nowait(queue_entry)
                     return True
                 except asyncio.QueueFull:
                     logger.warning(f"Queue full, dropping event: {file_path}")
@@ -437,15 +463,13 @@ class ContinuousWatchdogDaemon:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             self._event_loop = loop
-            self._event_queue = asyncio.Queue(maxsize=self.max_queue_capacity)
+            self._event_queue = asyncio.PriorityQueue(maxsize=self.max_queue_capacity)
 
             self._worker_tasks = [
                 loop.create_task(self._triage_worker(i))
                 for i in range(self.num_workers)
             ]
-            self._reconciliation_task = loop.create_task(
-                self._reconciliation_worker()
-            )
+            self._reconciliation_task = loop.create_task(self._reconciliation_worker())
 
             ready_event.set()
 
@@ -485,9 +509,20 @@ class ContinuousWatchdogDaemon:
                 if self._event_queue is None:
                     await asyncio.sleep(0.05)
                     continue
-                event = await self._event_queue.get()
+                raw_item = await self._event_queue.get()
             except (asyncio.CancelledError, RuntimeError):
                 break
+
+            if (
+                isinstance(raw_item, tuple)
+                and len(raw_item) == 3
+                and isinstance(raw_item[2], FileChangeEvent)
+            ):
+                event = raw_item[2]
+            elif isinstance(raw_item, FileChangeEvent):
+                event = raw_item
+            else:
+                event = raw_item
 
             try:
                 await self._process_single_event(event)
@@ -579,7 +614,9 @@ class ContinuousWatchdogDaemon:
         staged_filepath = staged_info.get("staged_filepath")
 
         # Unlink/remove original unisolated file from base_dir post-staging
-        if staged_filepath and os.path.abspath(abs_path) != os.path.abspath(staged_filepath):
+        if staged_filepath and os.path.abspath(abs_path) != os.path.abspath(
+            staged_filepath
+        ):
             if os.path.exists(abs_path):
                 resilient_remove(abs_path)
 
@@ -606,7 +643,12 @@ class ContinuousWatchdogDaemon:
         )
 
         # If file was quarantined, archived, or routed to DLQ / manual review, triage is complete
-        if status in ("QUARANTINED", "ARCHIVED", "MANUAL_REVIEW_REQUIRED", "DEAD_LETTER_QUEUE"):
+        if status in (
+            "QUARANTINED",
+            "ARCHIVED",
+            "MANUAL_REVIEW_REQUIRED",
+            "DEAD_LETTER_QUEUE",
+        ):
             logger.info(
                 f"Quarantine interceptor completed for {rel_path} with status {status}"
             )
@@ -773,6 +815,7 @@ class ContinuousWatchdogDaemon:
             if self._is_running:
                 return
             self._is_running = True
+            self._queue_sequence_counter = 0
             self._move_ref_count = 0
             self._pending_dirty = False
             self._active_move_paths.clear()
@@ -782,7 +825,6 @@ class ContinuousWatchdogDaemon:
             self._active_triage_paths.clear()
 
         logger.info(f"Starting continuous watchdog daemon for: {self.base_dir}")
-        print(f"Starting continuous watchdog daemon for: {self.base_dir}", file=sys.stderr)
 
         # Launch background asyncio event loop & worker pool
         self._start_pipeline_event_loop()
@@ -843,7 +885,6 @@ class ContinuousWatchdogDaemon:
                 self._app_session = None
 
         logger.info("Watchdog daemon stopped.")
-        print("Watchdog daemon stopped.", file=sys.stderr)
 
     def trigger_recalculation(self):
         """Thread-safe and debounced trigger for sorting run."""
@@ -907,7 +948,6 @@ class ContinuousWatchdogDaemon:
             return
 
         logger.info("Executing background sorting run...")
-        print("Executing background sorting run...", file=sys.stderr)
 
         # Define the cancel check callback
         def cancel_check():
@@ -1023,13 +1063,11 @@ class ContinuousWatchdogDaemon:
             with self.scoped_move_phase(plan=slow_path_plan):
                 summary = app_session.execute_moves(slow_path_plan)
             logger.info(f"Phase 2 (Slow-Path AI) completed successfully: {summary}")
-            print(f"Silent move execution completed successfully: {summary}", file=sys.stderr)
 
         except Exception as e:
             logger.error(
                 f"Error during continuous watchdog execution run: {e}", exc_info=True
             )
-            print(f"Error during background sorting run: {e}", file=sys.stderr)
         finally:
             if app_session:
                 app_session.close()

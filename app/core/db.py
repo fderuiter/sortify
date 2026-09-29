@@ -213,6 +213,27 @@ class Database:
                 "CREATE INDEX IF NOT EXISTS idx_quarantine_records_base_dir ON quarantine_records (base_dir, status)"
             )
 
+            # Initialize Jev classification two-tier cache table
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS jev_classification_cache (
+                    file_path TEXT PRIMARY KEY,
+                    mtime REAL NOT NULL,
+                    size INTEGER NOT NULL,
+                    category TEXT NOT NULL,
+                    sensitivity_rating TEXT NOT NULL,
+                    sensitivity_score REAL NOT NULL,
+                    archival_priority INTEGER NOT NULL,
+                    archival_priority_score REAL NOT NULL,
+                    confidence REAL NOT NULL,
+                    is_classified INTEGER NOT NULL,
+                    metadata TEXT NOT NULL,
+                    updated_at REAL NOT NULL
+                )
+            """)
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_jev_cache_lookup ON jev_classification_cache (file_path, mtime, size)"
+            )
+
             # Purge existing unencrypted vector cache on startup to prevent reading insecure data
             cursor = conn.cursor()
             try:
@@ -365,14 +386,22 @@ class Database:
         def _write():
             conn = get_db_connection(self.db_path)
             with conn:
+                from app.core.text_utils import sanitize_text
+
                 rows_to_insert = []
                 for doc in documents:
                     base_dir, filepath, file_hash, extracted_text = doc
                     filepath = filepath.replace("\\", "/")
 
-                    enc_text = (
-                        self.crypto.encrypt_text(extracted_text)
+                    sanitized_text = (
+                        sanitize_text(extracted_text)
                         if extracted_text is not None
+                        else None
+                    )
+
+                    enc_text = (
+                        self.crypto.encrypt_text(sanitized_text)
+                        if sanitized_text is not None
                         else None
                     )
 

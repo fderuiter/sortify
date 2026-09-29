@@ -153,3 +153,48 @@ def test_write_smoke_test_error_all_blocked_handles_gracefully():
             "All diagnostic log write options failed" in call_msg
             for call_msg in error_calls
         )
+
+
+def test_null_writer_and_reader_stream_properties():
+    """Verify that NullWriter and NullReader correctly implement stream interface properties and methods."""
+    from unittest.mock import MagicMock
+
+    from app.main import ANSIStrippingWriter, NullReader, NullWriter
+
+    writer = NullWriter()
+    assert writer.closed is False
+    assert writer.encoding == "utf-8"
+    assert writer.errors == "replace"
+    assert writer.isatty() is False
+    assert writer.readable() is False
+    assert writer.writable() is True
+    assert writer.seekable() is False
+    assert writer.write("test") == 4
+    assert writer.write("") == 0
+    with pytest.raises(OSError):
+        writer.fileno()
+
+    reader = NullReader()
+    assert reader.closed is False
+    assert reader.encoding == "utf-8"
+    assert reader.errors == "replace"
+    assert reader.isatty() is False
+    assert reader.readable() is True
+    assert reader.writable() is False
+    assert reader.seekable() is False
+    assert reader.read() == ""
+    assert reader.readline() == ""
+    assert reader.readlines() == []
+    with pytest.raises(OSError):
+        reader.fileno()
+
+    mock_stream = MagicMock()
+    mock_stream.closed = False
+    mock_stream.encoding = "utf-8"
+
+    wrapper = ANSIStrippingWriter(mock_stream)
+    assert wrapper.closed is False
+    assert wrapper.encoding == "utf-8"
+
+    wrapper.write("\x1b[31mRed Text\x1b[0m")
+    mock_stream.write.assert_called_once_with("Red Text")

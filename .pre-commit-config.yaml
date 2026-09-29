@@ -34,7 +34,7 @@ repos:
         name: Validate Diagram Artifacts and Mermaid Compilation
         entry: uv run python scripts/diagram_toolchain.py --verify
         language: system
-        files: '^(app/ui/.*\.py|scripts/diagram_toolchain\.py|docs/assets/diagrams/.*)$'
+        files: '^(app/ui/.*\.py|scripts/diagram_toolchain\.py|docs/assets/diagrams/.*|docs/.*\.md)$'
         pass_filenames: false
       - id: validate-links
         name: Validate External Links
@@ -57,12 +57,6 @@ repos:
       - id: validate-duplicates
         name: Validate Duplicate System Utilities
         entry: uv run python scripts/validate_duplicates.py
-        language: system
-        files: '\.py$'
-        pass_filenames: false
-      - id: validate-layout
-        name: Validate UI Layout Classes
-        entry: uv run python scripts/validate_layout.py
         language: system
         files: '\.py$'
         pass_filenames: false

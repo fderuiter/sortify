@@ -28,27 +28,28 @@ VERTICAL_WHITESPACE_PATTERN = re.compile(r"\s*\n\s*")
 # 6. Centralized Secret & Credential Patterns
 SECRET_KEY_PATTERNS = [
     # Stripe / General sk_ live or test keys
-    re.compile(r"\bsk_(?:live|test)_[a-zA-Z0-9]{20,}\b"),
+    re.compile(r"sk_(?:live|test)_[a-zA-Z0-9]{20,}"),
     # GitHub Tokens (ghp_, gho_, ghu_, ghs_, ghr_)
-    re.compile(r"\bgh[pousr]_[a-zA-Z0-9]{36}\b"),
+    re.compile(r"gh[pousr]_[a-zA-Z0-9]{36,}"),
     # AWS Access Key ID (AKIA or ASIA followed by 16 alphanumeric characters)
-    re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b"),
+    re.compile(r"(?:AKIA|ASIA)[0-9A-Z]{16,}"),
     # AWS Secret Access Key or generic secret key key-value pairs
     re.compile(
-        r"\b(?:aws_secret_access_key|api[_-]?key|secret[_-]?key|access[_-]?token|auth[_-]?token)\s*[:=]\s*[a-zA-Z0-9_\-/+=]{16,}\b",
+        r"(?:aws_secret_access_key|api[_-]?key|secret[_-]?key|access[_-]?token|auth[_-]?token)\s*[:=]\s*[a-zA-Z0-9_\-/+=]{16,}",
         re.IGNORECASE,
     ),
     # Mailgun / Generic API key format (e.g. key-3ax6...)
-    re.compile(r"\bkey-[a-zA-Z0-9]{32}\b"),
+    re.compile(r"key-[a-zA-Z0-9]{32,}"),
     # Generic sk_ key format
-    re.compile(r"\bsk_[a-zA-Z0-9_]{20,}\b"),
+    re.compile(r"sk_[a-zA-Z0-9]{20,}"),
 ]
 
 BEARER_TOKEN_PATTERN = re.compile(
-    r"\bBearer\s+[a-zA-Z0-9_\-\.=]{16,}\b", re.IGNORECASE
+    r"Bearer[\s_]+(?:eyJ[a-zA-Z0-9\-_=]+\.eyJ[a-zA-Z0-9\-_=]+\.[a-zA-Z0-9\-_=]{43,88}?|[a-zA-Z0-9_\-\.=]{16,})",
+    re.IGNORECASE,
 )
 JWT_PATTERN = re.compile(
-    r"\beyJ[a-zA-Z0-9_\=-]+\.eyJ[a-zA-Z0-9_\=-]+\.[a-zA-Z0-9_\=-]+\b"
+    r"eyJ[a-zA-Z0-9\-_=]+\.eyJ[a-zA-Z0-9\-_=]+\.[a-zA-Z0-9\-_=]{43,88}?"
 )
 PRIVATE_KEY_PATTERN = re.compile(
     r"-----BEGIN\s+(?:[A-Z0-9_-]+\s+)?PRIVATE\s+KEY-----[\s\S]*?-----END\s+(?:[A-Z0-9_-]+\s+)?PRIVATE\s+KEY-----|"
@@ -76,9 +77,17 @@ def calculate_shannon_entropy(text: str) -> float:
 
 def _is_high_entropy_token(token: str) -> bool:
     """Check if a single word/token exhibits high Shannon entropy indicative of secret credentials."""
-    if "<USER_HOME>" in token or "REDACTED" in token or "[STATUS:" in token:
+    if not token or "<USER_HOME>" in token or "REDACTED" in token or "[STATUS:" in token:
         return False
+
     clean_token = token.strip(".,;:\"'()[]{}<>!@#$%^&*+=/")
+    if not clean_token:
+        return False
+
+    parts = re.split(r"[_\-/\\.]", clean_token)
+    if len(parts) > 1:
+        return any(_is_high_entropy_token(p) for p in parts if p)
+
     if len(clean_token) < 20:
         return False
     has_digit = any(c.isdigit() for c in clean_token)
@@ -140,8 +149,8 @@ def sanitize_secret_patterns(text: str, replacement: str = "") -> str:
     result = text
 
     result = PRIVATE_KEY_PATTERN.sub(replacement, result)
-    result = JWT_PATTERN.sub(replacement, result)
     result = BEARER_TOKEN_PATTERN.sub(replacement, result)
+    result = JWT_PATTERN.sub(replacement, result)
 
     for pat in SECRET_KEY_PATTERNS:
         result = pat.sub(replacement, result)
@@ -166,7 +175,23 @@ def sanitize_secret_patterns(text: str, replacement: str = "") -> str:
                 new_words.append(replacement)
             modified = True
         else:
-            new_words.append(word)
+            sub_tokens = re.split(r"([_\-/])", word)
+            new_sub_tokens = []
+            sub_modified = False
+            for st in sub_tokens:
+                if st in ("_", "-", "/") or not st:
+                    new_sub_tokens.append(st)
+                elif _is_high_entropy_token(st):
+                    if replacement:
+                        new_sub_tokens.append(replacement)
+                    sub_modified = True
+                else:
+                    new_sub_tokens.append(st)
+            if sub_modified:
+                new_words.append("".join(new_sub_tokens))
+                modified = True
+            else:
+                new_words.append(word)
 
     if modified:
         result = " ".join(new_words)
@@ -206,6 +231,9 @@ def sanitize_text(text: str) -> str:
     text_rstrip = text.rstrip()
     if TRUNCATED_TAG_PATTERN.search(text_rstrip):
         text = TRUNCATED_TAG_PATTERN.sub("", text_rstrip)
+
+    # Redact API keys, JWTs, Bearer tokens, private keys, SSNs, credit cards, and high-entropy secrets
+    text = sanitize_secret_patterns(text, replacement="[REDACTED_SECRET]")
 
     # Normalize horizontal whitespaces (spaces, tabs)
     text = HORIZONTAL_WHITESPACE_PATTERN.sub(" ", text)

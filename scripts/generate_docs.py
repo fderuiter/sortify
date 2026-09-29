@@ -68,8 +68,6 @@ def generate_tutorial_docs():
 
 def generate_api_docs():
     """Generate API reference markdown from python modules."""
-    from app.ui.diagram_schema import CORE_ARCHITECTURE_SPEC
-
     app_dir = "app"
     output_file = os.path.join("docs", "api_reference.md")
 
@@ -78,9 +76,9 @@ def generate_api_docs():
         f.write("This document is automatically generated. Do not edit manually.\n\n")
 
         f.write("## Core Architecture Diagram\n\n")
-        f.write("```mermaid\n")
-        f.write(CORE_ARCHITECTURE_SPEC.to_mermaid())
-        f.write("```\n\n")
+        f.write(
+            "![Core Module Architecture Flow](assets/diagrams/api_core_architecture.svg)\n\n"
+        )
 
         # Find all python files except ui and binaries
         py_files = glob.glob(os.path.join(app_dir, "**", "*.py"), recursive=True)
@@ -124,22 +122,11 @@ def generate_ui_docs():
         f.write(
             "![Component Catalog Workflow](assets/diagrams/catalog_workflow.svg)\n\n"
         )
-        from app.ui.diagram_schema import (
-            CATALOG_WORKFLOW_SPEC,
-            UI_COMPONENT_HIERARCHY_SPEC,
-        )
-
-        f.write("```mermaid\n")
-        f.write(CATALOG_WORKFLOW_SPEC.to_mermaid())
-        f.write("```\n\n")
 
         f.write("### UI Component Hierarchy\n\n")
         f.write(
             "![UI Component Hierarchy](assets/diagrams/ui_component_hierarchy.svg)\n\n"
         )
-        f.write("```mermaid\n")
-        f.write(UI_COMPONENT_HIERARCHY_SPEC.to_mermaid())
-        f.write("```\n\n")
 
         py_files = glob.glob(os.path.join(app_dir, "*.py"))
         py_files = [p for p in py_files if not p.endswith("__init__.py")]
@@ -204,24 +191,9 @@ def generate_admin_guide():
 
         f.write("## Compliance Policies & Routing Rules\n\n")
         f.write("### Policy Evaluation Flowchart\n\n")
-        f.write("```mermaid\n")
-        f.write("flowchart TD\n")
-        f.write("    A[Incoming Document] --> B[Sort Rules by Priority High to Low]\n")
-        f.write("    B --> C{Evaluate Next Rule}\n")
-        f.write("    C -->|Override Rule Match| D[Route Document via Override Path]\n")
         f.write(
-            "    C -->|Keyword Rule Match| E[Route Document via Keyword Category]\n"
+            "![Policy Evaluation Flowchart](assets/diagrams/admin_policy_evaluation.svg)\n\n"
         )
-        f.write(
-            "    C -->|Pattern Rule Match| F[Route Document via Pattern Category]\n"
-        )
-        f.write(
-            "    C -->|No Match & Halt on Mismatch Enabled| G[Stop Processing & Halt Evaluation]\n"
-        )
-        f.write("    C -->|No Match & Halt Disabled| H{More Rules Remaining?}\n")
-        f.write("    H -->|Yes| C\n")
-        f.write("    H -->|No| I[Proceed to General Classification / AI Sorting]\n")
-        f.write("```\n\n")
         f.write("### Rule Syntax & Types\n\n")
         f.write(
             "Compliance policies categorize and sort documents based on three rule types:\n\n"

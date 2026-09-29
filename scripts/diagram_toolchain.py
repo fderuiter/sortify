@@ -21,11 +21,68 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from app.ui.catalog import CATALOG_REGISTRY
 from app.ui.diagram_schema import (
     SYSTEM_DIAGRAM_SPECS,
-    ComponentDiagramSpec,
+    BaseDiagramSpec,
 )
 
 DEFAULT_OUTPUT_DIR = Path("docs/assets/diagrams")
 CACHE_FILE_NAME = ".build_cache.json"
+
+
+_BROWSER_AVAILABLE_CACHE: Optional[bool] = None
+
+
+def reset_browser_cache() -> None:
+    """Reset cached browser availability result (mainly for testing)."""
+    global _BROWSER_AVAILABLE_CACHE
+    _BROWSER_AVAILABLE_CACHE = None
+
+
+def is_browser_available(
+    mmdc_cmd: Optional[List[str]] = None, force_check: bool = False
+) -> bool:
+    """Probe whether mmdc is present and capable of launching a browser engine."""
+    global _BROWSER_AVAILABLE_CACHE
+    if not force_check and _BROWSER_AVAILABLE_CACHE is not None:
+        return _BROWSER_AVAILABLE_CACHE
+
+    cmd = mmdc_cmd or find_mmdc_executable()
+    if not cmd:
+        _BROWSER_AVAILABLE_CACHE = False
+        return False
+
+    import tempfile
+
+    try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            test_mmd = Path(tmpdir) / "probe.mmd"
+            test_svg = Path(tmpdir) / "probe.svg"
+            test_mmd.write_text("graph TD\n  A --> B\n", encoding="utf-8")
+            probe_cmd = cmd + [
+                "-i",
+                str(test_mmd),
+                "-o",
+                str(test_svg),
+                "-e",
+                "svg",
+                "-b",
+                "white",
+            ]
+            res = subprocess.run(
+                probe_cmd, capture_output=True, text=True, check=False, timeout=2
+            )
+            if (
+                res.returncode == 0
+                and test_svg.exists()
+                and test_svg.stat().st_size > 0
+            ):
+                _BROWSER_AVAILABLE_CACHE = True
+                return True
+            else:
+                _BROWSER_AVAILABLE_CACHE = False
+                return False
+    except Exception:
+        _BROWSER_AVAILABLE_CACHE = False
+        return False
 
 
 def get_sha256(content: str) -> str:
@@ -46,9 +103,34 @@ def find_mmdc_executable() -> Optional[List[str]]:
     return None
 
 
-def collect_all_specs() -> Dict[str, ComponentDiagramSpec]:
+def check_no_raw_mermaid_in_docs(docs_dir: Path = Path("docs")) -> bool:
+    """Scan docs directory for raw inline ```mermaid code blocks and return False if any remain."""
+    import re
+
+    if not docs_dir.exists():
+        return True
+
+    found_raw_mermaid = False
+    for md_path in sorted(docs_dir.rglob("*.md")):
+        try:
+            content = md_path.read_text(encoding="utf-8")
+        except Exception as e:
+            sys.stderr.write(f"Warning: Could not read {md_path}: {e}\n")
+            continue
+
+        if re.search(r"```mermaid", content):
+            sys.stderr.write(
+                f"Verification FAILED: Found raw ```mermaid code block in '{md_path.as_posix()}'. "
+                f"All documentation diagrams must be registered schemas and linked as visual assets.\n"
+            )
+            found_raw_mermaid = True
+
+    return not found_raw_mermaid
+
+
+def collect_all_specs() -> Dict[str, BaseDiagramSpec]:
     """Collect all registered system and component diagram specifications."""
-    specs: Dict[str, ComponentDiagramSpec] = {}
+    specs: Dict[str, BaseDiagramSpec] = {}
 
     # System diagrams
     for key, spec in SYSTEM_DIAGRAM_SPECS.items():
@@ -56,9 +138,7 @@ def collect_all_specs() -> Dict[str, ComponentDiagramSpec]:
 
     # Catalog component specs
     for entry in CATALOG_REGISTRY:
-        if "diagram_spec" in entry and isinstance(
-            entry["diagram_spec"], ComponentDiagramSpec
-        ):
+        if "diagram_spec" in entry and hasattr(entry["diagram_spec"], "to_mermaid"):
             spec = entry["diagram_spec"]
             specs[spec.id] = spec
 
@@ -230,11 +310,24 @@ def build_diagrams(
         return True
 
     mmdc_cmd = find_mmdc_executable()
+    has_browser = is_browser_available(mmdc_cmd)
+
+    if not has_browser:
+        if mmdc_cmd:
+            sys.stderr.write(
+                "Warning: mmdc executable found but browser execution environment is unavailable.\n"
+            )
+        else:
+            sys.stderr.write("Warning: mmdc executable not found in PATH.\n")
+
     cache_path = output_dir / CACHE_FILE_NAME
     cache = load_cache(cache_path)
     new_cache = dict(cache)
 
     all_success = True
+    if verify_only and not check_no_raw_mermaid_in_docs():
+        all_success = False
+
     updated_count = 0
 
     for spec_id, spec in specs.items():
@@ -276,13 +369,12 @@ def build_diagrams(
             force
             or cached_hash != current_hash
             or not svg_file.exists()
-            or not png_file.exists()
+            or (has_browser and not png_file.exists())
         )
 
         if verify_only:
-            # In verification mode, check syntax and click directives, and run mmdc if functional
-            rendered_ok = False
-            if mmdc_cmd:
+            # In verification mode, check schema validity and headless rendering or fallback SVG generation
+            if has_browser and mmdc_cmd:
                 temp_svg = output_dir / f".tmp_verify_{spec_id}.svg"
                 rendered_ok = render_diagram_artifact(
                     mmdc_cmd, mmd_file, temp_svg, "svg"
@@ -290,11 +382,20 @@ def build_diagrams(
                 if temp_svg.exists():
                     temp_svg.unlink()
 
-            if rendered_ok:
-                print(
-                    f"Verified spec '{spec_id}' -> {mmd_file.name} (headless mmdc render succeeded)."
-                )
+                if not rendered_ok:
+                    sys.stderr.write(
+                        f"Verification FAILED: Diagram '{spec_id}' failed headless compilation.\n"
+                    )
+                    all_success = False
+                else:
+                    print(
+                        f"Verified spec '{spec_id}' -> {mmd_file.name} (headless compilation successful)."
+                    )
             else:
+                fallback_svg = generate_fallback_svg(spec.title, mmd_content)
+                if not svg_file.exists() or force or cached_hash != current_hash:
+                    with open(svg_file, "w", encoding="utf-8", newline="\n") as f:
+                        f.write(fallback_svg)
                 print(
                     f"Verified spec '{spec_id}' -> {mmd_file.name} (validated click directives and schema)."
                 )
@@ -307,7 +408,7 @@ def build_diagrams(
         updated_count += 1
         print(f"Compiling diagram asset: {spec_id} ...")
 
-        if mmdc_cmd:
+        if has_browser and mmdc_cmd:
             svg_ok = render_diagram_artifact(mmdc_cmd, mmd_file, svg_file, "svg")
             png_ok = render_diagram_artifact(mmdc_cmd, mmd_file, png_file, "png")
 
@@ -323,11 +424,12 @@ def build_diagrams(
                 all_success = False
         else:
             print(
-                f"mmdc not found in environment. Creating fallback text-based SVG for '{spec_id}'."
+                f"Browser engine unavailable. Creating fallback text-based SVG for '{spec_id}'."
             )
             fallback_svg = generate_fallback_svg(spec.title, mmd_content)
             with open(svg_file, "w", encoding="utf-8", newline="\n") as f:
                 f.write(fallback_svg)
+            new_cache[spec_id] = {"sha256": current_hash, "fallback": True}
 
     if not verify_only:
         save_cache(cache_path, new_cache)

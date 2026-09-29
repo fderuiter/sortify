@@ -180,6 +180,30 @@ def _is_cross_volume(src: str, dst: str) -> bool:
     return False
 
 
+def _resolve_source_path(
+    base_dir: str,
+    key: str,
+    content: Any,
+    active_parent_path: str = "",
+    depth: int = 0,
+) -> str:
+    """Resolve normalized absolute source path for a plan node."""
+    rel_src = key
+    if isinstance(content, dict) and "relative_source" in content:
+        rel_src = content["relative_source"]
+
+    if depth > 0 and active_parent_path:
+        primary = os.path.normpath(os.path.join(base_dir, active_parent_path, rel_src))
+        if os.path.lexists(primary):
+            return primary
+        alt = os.path.normpath(os.path.join(base_dir, rel_src))
+        if os.path.lexists(alt):
+            return alt
+        return primary
+
+    return os.path.normpath(os.path.join(base_dir, rel_src))
+
+
 def _get_node_mtime(
     base_dir: str,
     key: str,
@@ -189,29 +213,14 @@ def _get_node_mtime(
 ) -> float:
     """Recursively calculate the minimum modification timestamp (st_mtime) for a plan node."""
     if content is None or (
-        isinstance(content, dict)
-        and content.get("__type__") in ("file", "directory")
+        isinstance(content, dict) and content.get("__type__") in ("file", "directory")
     ):
         if isinstance(content, dict) and content.get("__type__") == "directory":
             return float("inf")
 
-        if depth > 0:
-            if not isinstance(content, dict) or "relative_source" not in content:
-                rel_src = key
-            else:
-                rel_src = content["relative_source"]
-            rel_src_with_parent = os.path.join(active_parent_path, rel_src)
-            source_path = os.path.normpath(
-                os.path.join(base_dir, rel_src_with_parent)
-            )
-        else:
-            if isinstance(content, dict) and "relative_source" in content:
-                relative_source = content["relative_source"]
-                source_path = os.path.normpath(
-                    os.path.join(base_dir, relative_source)
-                )
-            else:
-                source_path = os.path.normpath(os.path.join(base_dir, key))
+        source_path = _resolve_source_path(
+            base_dir, key, content, active_parent_path, depth
+        )
 
         try:
             if os.path.lexists(source_path):
@@ -223,13 +232,74 @@ def _get_node_mtime(
         min_mtime = float("inf")
         sub_parent = os.path.join(active_parent_path, key)
         for sub_key, sub_content in content.items():
-            m = _get_node_mtime(
-                base_dir, sub_key, sub_content, sub_parent, depth + 1
-            )
+            m = _get_node_mtime(base_dir, sub_key, sub_content, sub_parent, depth + 1)
             if m < min_mtime:
                 min_mtime = m
         return min_mtime
     return float("inf")
+
+
+def _get_node_priority_key(
+    base_dir: str,
+    key: str,
+    content: Any,
+    active_parent_path: str = "",
+    depth: int = 0,
+) -> tuple[int, float, float]:
+    """Recursively calculate priority key tuple (archival_priority, -archival_priority_score, st_mtime) for a plan node."""
+    if content is None or (
+        isinstance(content, dict)
+        and (
+            content.get("__type__") in ("file", "directory")
+            or "relative_source" in content
+            or "target_filename" in content
+        )
+    ):
+        if isinstance(content, dict) and content.get("__type__") == "directory":
+            return (999, 0.0, float("inf"))
+
+        source_path = _resolve_source_path(
+            base_dir, key, content, active_parent_path, depth
+        )
+
+        mtime = float("inf")
+        try:
+            if os.path.lexists(source_path):
+                mtime = os.stat(source_path).st_mtime
+        except OSError:
+            pass
+
+        arch_prio = 5
+        arch_score = 0.0
+        if isinstance(content, dict):
+            prio = content.get("archival_priority")
+            if prio is not None:
+                try:
+                    arch_prio = int(prio)
+                except (ValueError, TypeError):
+                    arch_prio = 5
+            score = content.get("archival_priority_score")
+            if score is not None:
+                try:
+                    arch_score = float(score)
+                except (ValueError, TypeError):
+                    arch_score = 0.0
+
+        return (arch_prio, -arch_score, mtime)
+
+    elif isinstance(content, dict):
+        child_keys = []
+        sub_parent = os.path.join(active_parent_path, key)
+        for sub_key, sub_content in content.items():
+            k = _get_node_priority_key(
+                base_dir, sub_key, sub_content, sub_parent, depth + 1
+            )
+            child_keys.append(k)
+        if child_keys:
+            return min(child_keys)
+        return (999, 0.0, float("inf"))
+
+    return (5, 0.0, float("inf"))
 
 
 def _execute_moves_recursive(
@@ -263,7 +333,7 @@ def _execute_moves_recursive(
 
     sorted_plan_items = sorted(
         plan.items(),
-        key=lambda item: _get_node_mtime(
+        key=lambda item: _get_node_priority_key(
             base_dir, item[0], item[1], active_parent_path, depth
         ),
     )
@@ -280,24 +350,15 @@ def _execute_moves_recursive(
                 # Even if already sorted, the target might have moved, so we still process links
                 pass
 
-            if depth > 0:
-                if not isinstance(content, dict) or "relative_source" not in content:
+            if depth > 0 and (not isinstance(content, dict) or "relative_source" not in content):
+                if content is not None and not isinstance(content, dict):
                     raise ValueError(
                         f"Missing required relative source metadata field for nested item '{key}'"
                     )
-                relative_source = content["relative_source"]
-                rel_src_with_parent = os.path.join(active_parent_path, relative_source)
-                source_path = os.path.normpath(
-                    os.path.join(base_dir, rel_src_with_parent)
-                )
-            else:
-                if isinstance(content, dict) and "relative_source" in content:
-                    relative_source = content["relative_source"]
-                    source_path = os.path.normpath(
-                        os.path.join(base_dir, relative_source)
-                    )
-                else:
-                    source_path = os.path.normpath(os.path.join(base_dir, key))
+
+            source_path = _resolve_source_path(
+                base_dir, key, content, active_parent_path, depth
+            )
 
             if not os.path.lexists(source_path):
                 continue
@@ -342,7 +403,11 @@ def _execute_moves_recursive(
 
             source_rel_path = os.path.relpath(source_path, base_dir).replace("\\", "/")
             rel_dest = os.path.relpath(dest_path, base_dir).replace("\\", "/")
-            doc = db.get_document(base_dir, source_rel_path) if hasattr(db, "get_document") else None
+            doc = (
+                db.get_document(base_dir, source_rel_path)
+                if hasattr(db, "get_document")
+                else None
+            )
             file_hash = doc.get("file_hash") if (doc and isinstance(doc, dict)) else ""
 
             entry_id = f"{session_id}:{source_rel_path}" if session_id else None
@@ -360,7 +425,9 @@ def _execute_moves_recursive(
                         entry_id=entry_id,
                     )
                 except Exception as exc:
-                    logging.warning(f"Failed to log move intent to transaction ledger: {exc}")
+                    logging.warning(
+                        f"Failed to log move intent to transaction ledger: {exc}"
+                    )
 
             link_info = LinkManager.get_link_info(source_path)
             if not link_info:
@@ -534,12 +601,20 @@ def _execute_moves_recursive(
                 try:
                     ledger.update_status(entry_id, "MOVED_PHYSICAL")
                 except Exception as exc:
-                    logging.warning(f"Failed to update transaction ledger status: {exc}")
+                    logging.warning(
+                        f"Failed to update transaction ledger status: {exc}"
+                    )
 
-            if history_manager and session_id and not _is_same_path(dest_path, source_path):
+            if (
+                history_manager
+                and session_id
+                and not _is_same_path(dest_path, source_path)
+            ):
                 file_hash = doc.get("file_hash") if doc else None
                 orig_filename = os.path.basename(source_path)
-                is_collision = bool(collision or (os.path.basename(dest_path) != orig_filename))
+                is_collision = bool(
+                    collision or (os.path.basename(dest_path) != orig_filename)
+                )
                 is_cross_vol = _is_cross_volume(source_path, dest_path)
                 try:
                     history_manager.log_step(
@@ -592,12 +667,15 @@ def _execute_moves_recursive(
                 link_meta = None
                 if link_info:
                     link_meta = {
-                        "target": new_abs_target if "new_abs_target" in locals() else link_info.get("target"),
+                        "target": new_abs_target
+                        if "new_abs_target" in locals()
+                        else link_info.get("target"),
                         "type": link_info["type"],
                     }
                     if link_info["type"] == "lnk" and "kwargs" in locals():
                         link_meta.update(kwargs)
                 import json
+
                 step_hash = None
                 if item_type == "file" and os.path.exists(dest_path):
                     try:
@@ -631,7 +709,9 @@ def _execute_moves_recursive(
                 try:
                     ledger.update_status(entry_id, "COMPLETED")
                 except Exception as exc:
-                    logging.warning(f"Failed to update transaction ledger completion: {exc}")
+                    logging.warning(
+                        f"Failed to update transaction ledger completion: {exc}"
+                    )
 
             moved_counter[0] += 1
             if moved_counter[0] >= batch_size:
@@ -709,6 +789,26 @@ def _get_item_age_tier(item):
     return (tier, mtime)
 
 
+def _get_item_priority_key(item: dict) -> tuple[int, float, float]:
+    content = item.get("content")
+    if isinstance(content, dict):
+        prio = content.get("archival_priority")
+        try:
+            arch_prio = int(prio) if prio is not None else 5
+        except (ValueError, TypeError):
+            arch_prio = 5
+        score = content.get("archival_priority_score")
+        try:
+            arch_score = float(score) if score is not None else 0.0
+        except (ValueError, TypeError):
+            arch_score = 0.0
+    else:
+        arch_prio = 5
+        arch_score = 0.0
+    mtime = _get_item_mtime(item)
+    return (arch_prio, -arch_score, mtime)
+
+
 def _collect_move_items(
     base_dir: str,
     plan: dict,
@@ -726,7 +826,7 @@ def _collect_move_items(
 
     sorted_plan_items = sorted(
         plan.items(),
-        key=lambda item: _get_node_mtime(
+        key=lambda item: _get_node_priority_key(
             base_dir, item[0], item[1], active_parent_path, depth
         ),
     )
@@ -742,24 +842,15 @@ def _collect_move_items(
             if isinstance(content, dict) and content.get("status") == "Already Sorted":
                 pass
 
-            if depth > 0:
-                if not isinstance(content, dict) or "relative_source" not in content:
+            if depth > 0 and (not isinstance(content, dict) or "relative_source" not in content):
+                if content is not None and not isinstance(content, dict):
                     raise ValueError(
                         f"Missing required relative source metadata field for nested item '{key}'"
                     )
-                relative_source = content["relative_source"]
-                rel_src_with_parent = os.path.join(active_parent_path, relative_source)
-                source_path = os.path.normpath(
-                    os.path.join(base_dir, rel_src_with_parent)
-                )
-            else:
-                if isinstance(content, dict) and "relative_source" in content:
-                    relative_source = content["relative_source"]
-                    source_path = os.path.normpath(
-                        os.path.join(base_dir, relative_source)
-                    )
-                else:
-                    source_path = os.path.normpath(os.path.join(base_dir, key))
+
+            source_path = _resolve_source_path(
+                base_dir, key, content, active_parent_path, depth
+            )
 
             if isinstance(content, dict) and "target_filename" in content:
                 filename = content["target_filename"]
@@ -792,7 +883,7 @@ def _collect_move_items(
     if depth == 0:
         p_mode = (
             priority.strip().lower() if isinstance(priority, str) else None
-        ) or "mtime"
+        ) or "priority"
         if p_mode in ("age_tier", "tier", "age_tier_desc"):
             items.sort(key=_get_item_age_tier)
         elif p_mode in ("mtime", "age", "oldest_first"):
@@ -802,7 +893,7 @@ def _collect_move_items(
         elif p_mode in ("standard", "traversal", "none"):
             pass
         else:
-            items.sort(key=_get_item_mtime)
+            items.sort(key=_get_item_priority_key)
 
     return items
 
@@ -887,7 +978,9 @@ def _process_move_item(
                     entry_id=entry_id,
                 )
             except Exception as exc:
-                logging.warning(f"Failed to log move intent to transaction ledger: {exc}")
+                logging.warning(
+                    f"Failed to log move intent to transaction ledger: {exc}"
+                )
 
     link_info = LinkManager.get_link_info(source_path)
     if not link_info:
@@ -920,9 +1013,9 @@ def _process_move_item(
 
         new_abs_target = resolve_new_target(abs_target, path_map)
 
-        needs_update = not _is_same_path(
-            dest_path, source_path
-        ) or not _is_same_path(new_abs_target, abs_target)
+        needs_update = not _is_same_path(dest_path, source_path) or not _is_same_path(
+            new_abs_target, abs_target
+        )
 
         if needs_update:
             shadow_name = f"{dest_path}.shadow_{uuid.uuid4().hex}"
@@ -959,8 +1052,7 @@ def _process_move_item(
                 try:
                     _create_junction(new_abs_target, shadow_name)
                     if not (
-                        os.path.lexists(shadow_name)
-                        or is_junction_path(shadow_name)
+                        os.path.lexists(shadow_name) or is_junction_path(shadow_name)
                     ):
                         raise RuntimeError(
                             "Shadow junction creation failed validation."
@@ -1116,7 +1208,9 @@ def _process_move_item(
             link_meta = None
             if link_info:
                 link_meta = {
-                    "target": new_abs_target if "new_abs_target" in locals() else link_info.get("target"),
+                    "target": new_abs_target
+                    if "new_abs_target" in locals()
+                    else link_info.get("target"),
                     "type": link_info["type"],
                 }
                 if link_info["type"] == "lnk" and "kwargs" in locals():
@@ -1141,7 +1235,9 @@ def _process_move_item(
             try:
                 ledger.update_status(entry_id, "COMPLETED")
             except Exception as exc:
-                logging.warning(f"Failed to update transaction ledger completion: {exc}")
+                logging.warning(
+                    f"Failed to update transaction ledger completion: {exc}"
+                )
 
     return True
 
@@ -1176,7 +1272,10 @@ class AsyncMoveEngine:
             or integrity_result.get("unconfirmed_renames")
             or integrity_result.get("circular_renames")
         ):
-            warn_text = "; ".join(integrity_result.get("warnings", [])) or "Plan validation failed."
+            warn_text = (
+                "; ".join(integrity_result.get("warnings", []))
+                or "Plan validation failed."
+            )
             raise ValueError(f"Plan validation or confirmation failed: {warn_text}")
 
         session_id = None
@@ -1232,9 +1331,7 @@ class AsyncMoveEngine:
         )
 
         effective_max_workers = (
-            self.max_workers
-            or getattr(runtime_settings, "MAX_WORKERS", None)
-            or 1
+            self.max_workers or getattr(runtime_settings, "MAX_WORKERS", None) or 1
         )
 
         effective_priority = (
@@ -1260,9 +1357,13 @@ class AsyncMoveEngine:
             import unittest.mock
 
             if (
-                isinstance(_execute_moves_recursive, (unittest.mock.Mock, unittest.mock.NonCallableMock))
+                isinstance(
+                    _execute_moves_recursive,
+                    (unittest.mock.Mock, unittest.mock.NonCallableMock),
+                )
                 or hasattr(_execute_moves_recursive, "mock_add_spec")
-                or getattr(_execute_moves_recursive, "__name__", "") != "_execute_moves_recursive"
+                or getattr(_execute_moves_recursive, "__name__", "")
+                != "_execute_moves_recursive"
             ):
                 _execute_moves_recursive(
                     base_dir,
@@ -1371,7 +1472,8 @@ class AsyncMoveEngine:
                             try:
                                 src_path = node.get("source_path")
                                 if src_path and (
-                                    is_junction_path(src_path) or os.path.islink(src_path)
+                                    is_junction_path(src_path)
+                                    or os.path.islink(src_path)
                                 ):
                                     from app.core.resilient_file_ops import (
                                         resilient_remove,
@@ -1437,7 +1539,11 @@ class AsyncMoveEngine:
                 except Exception:
                     pass
 
-            if session_id and history_manager and hasattr(history_manager, "unwind_session"):
+            if (
+                session_id
+                and history_manager
+                and hasattr(history_manager, "unwind_session")
+            ):
                 logging.error(
                     f"Error during background sorting: {e}. Initiating automatic rollback for session {session_id}"
                 )

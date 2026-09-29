@@ -1,4 +1,4 @@
-"""Help modal module using NiceGUI."""
+"""Help modal module for terminal interface."""
 
 import logging
 import sys

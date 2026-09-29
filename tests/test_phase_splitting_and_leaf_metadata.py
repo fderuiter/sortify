@@ -209,3 +209,44 @@ def test_end_to_end_phase_splitting_and_model_unloading(tmp_path):
     assert "ai_doc3.txt" in all_ai_files
 
     session.close()
+
+
+def test_plan_splitter_routes_jev_classifier_to_fast_path():
+    """Verify AutoSorterApp.split_plan_phases assigns jev_classifier routed files to Phase 1 fast-path."""
+    from app.ui.app import AutoSorterApp
+
+    test_plan = {
+        "Finance": {
+            "jev_doc.pdf": {
+                "__type__": "file",
+                "routed_by": "jev_classifier",
+                "category": "Finance",
+                "sensitivity_rating": "HIGH",
+                "archival_priority": 1,
+                "relative_source": "jev_doc.pdf",
+            },
+            "keyword_doc.pdf": {
+                "__type__": "file",
+                "routed_by": "keyword",
+                "relative_source": "keyword_doc.pdf",
+            },
+        },
+        "Uncategorized": {
+            "ai_doc.pdf": {
+                "__type__": "file",
+                "routed_by": "clustering",
+                "relative_source": "ai_doc.pdf",
+            },
+        },
+    }
+
+    fast_plan, slow_plan = AutoSorterApp.split_plan_phases(test_plan)
+
+    assert "Finance" in fast_plan
+    assert "jev_doc.pdf" in fast_plan["Finance"]
+    assert "keyword_doc.pdf" in fast_plan["Finance"]
+
+    assert "Uncategorized" in slow_plan
+    assert "ai_doc.pdf" in slow_plan["Uncategorized"]
+    assert "jev_doc.pdf" not in slow_plan.get("Finance", {})
+

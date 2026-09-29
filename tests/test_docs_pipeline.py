@@ -478,3 +478,236 @@ def test_find_mmdc_executable():
     cmd = find_mmdc_executable()
     if cmd and any("npx" in arg for arg in cmd):
         assert "--yes" in cmd
+
+
+def test_generate_fallback_svg():
+    from scripts.diagram_toolchain import generate_fallback_svg
+
+    title = "Test & Special <Title>"
+    mmd = "graph TD\n  A[Node & A] --> B<Node B>\n"
+    svg = generate_fallback_svg(title, mmd)
+
+    assert "<svg" in svg
+    assert 'xmlns="http://www.w3.org/2000/svg"' in svg
+    assert "Test &amp; Special &lt;Title&gt;" in svg
+    assert "A[Node &amp; A] --&gt; B&lt;Node B&gt;" in svg
+
+
+def test_is_browser_available_when_missing():
+    from scripts.diagram_toolchain import is_browser_available, reset_browser_cache
+
+    reset_browser_cache()
+    with patch("scripts.diagram_toolchain.find_mmdc_executable", return_value=None):
+        assert is_browser_available(force_check=True) is False
+
+    reset_browser_cache()
+    with patch("subprocess.run", side_effect=Exception("Browser launch error")):
+        assert is_browser_available(mmdc_cmd=["mmdc"], force_check=True) is False
+
+
+def test_is_browser_available_when_present():
+    from scripts.diagram_toolchain import is_browser_available, reset_browser_cache
+
+    reset_browser_cache()
+    mock_res = MagicMock(returncode=0)
+    with (
+        patch("subprocess.run", return_value=mock_res),
+        patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.stat") as mock_stat,
+    ):
+        mock_stat.return_value.st_size = 100
+        assert is_browser_available(mmdc_cmd=["mmdc"], force_check=True) is True
+
+
+def test_diagram_toolchain_browserless_verify_and_build(tmp_path):
+    from scripts.diagram_toolchain import build_diagrams, reset_browser_cache
+
+    reset_browser_cache()
+    with patch("scripts.diagram_toolchain.is_browser_available", return_value=False):
+        # Test verify mode in browserless environment
+        verify_ok = build_diagrams(output_dir=tmp_path, force=True, verify_only=True)
+        assert verify_ok is True
+
+        # Test build mode in browserless environment
+        build_ok = build_diagrams(output_dir=tmp_path, force=True, verify_only=False)
+        assert build_ok is True
+
+        # Verify fallback SVGs were generated
+        svg_files = list(tmp_path.glob("*.svg"))
+        assert len(svg_files) > 0
+        first_svg = svg_files[0].read_text(encoding="utf-8")
+        assert "<svg" in first_svg
+        assert "Fallback View" in first_svg
+
+
+def test_diagram_toolchain_cli_verify_failure_on_bad_schema(tmp_path):
+    import scripts.diagram_toolchain as dt
+
+    class BadSpec:
+        id = "bad_spec"
+        title = "Bad Spec"
+
+        def to_mermaid(self):
+            raise ValueError("Invalid Mermaid schema")
+
+    dt.reset_browser_cache()
+    with (
+        patch(
+            "sys.argv",
+            ["diagram_toolchain.py", "verify", "--output-dir", str(tmp_path)],
+        ),
+        patch(
+            "scripts.diagram_toolchain.collect_all_specs",
+            return_value={"bad_spec": BadSpec()},
+        ),
+        patch("sys.exit") as mock_exit,
+    ):
+        dt.main()
+        mock_exit.assert_called_once_with(1)
+
+
+def test_sequence_diagram_spec_serialization():
+    from app.ui.diagram_schema import (
+        SequenceActivation,
+        SequenceAlt,
+        SequenceAltBranch,
+        SequenceDiagramSpec,
+        SequenceLoop,
+        SequenceMessage,
+        SequenceNote,
+        SequenceOpt,
+        SequenceParticipant,
+    )
+
+    spec = SequenceDiagramSpec(
+        id="test_seq",
+        title="Test Sequence",
+        autonumber=True,
+        participants=[
+            SequenceParticipant(id="A", label="User", is_actor=True),
+            SequenceParticipant(id="B", label="System"),
+        ],
+        items=[
+            SequenceMessage(source="A", target="B", text="Request"),
+            SequenceActivation(target="B", action="activate"),
+            SequenceLoop(
+                label="Process",
+                items=[
+                    SequenceMessage(source="B", target="B", text="Self check"),
+                ],
+            ),
+            SequenceOpt(
+                label="Cache hit",
+                items=[
+                    SequenceMessage(source="B", target="A", text="Return cached"),
+                ],
+            ),
+            SequenceAlt(
+                branches=[
+                    SequenceAltBranch(
+                        label="Success",
+                        items=[
+                            SequenceMessage(
+                                source="B", target="A", text="OK", arrow_type="-->>"
+                            ),
+                        ],
+                    ),
+                    SequenceAltBranch(
+                        label="Error",
+                        items=[
+                            SequenceMessage(
+                                source="B", target="A", text="Fail", arrow_type="-->>"
+                            ),
+                        ],
+                    ),
+                ]
+            ),
+            SequenceNote(position="over", targets=["A", "B"], text="Done"),
+            SequenceActivation(target="B", action="deactivate"),
+        ],
+    )
+
+    mmd = spec.to_mermaid()
+    assert "sequenceDiagram" in mmd
+    assert "autonumber" in mmd
+    assert "actor A as User" in mmd
+    assert "participant B as System" in mmd
+    assert "A->>B: Request" in mmd
+    assert "activate B" in mmd
+    assert "loop Process" in mmd
+    assert "opt Cache hit" in mmd
+    assert "alt Success" in mmd
+    assert "else Error" in mmd
+    assert "note over A, B: Done" in mmd
+    assert "deactivate B" in mmd
+
+
+def test_state_diagram_spec_serialization():
+    from app.ui.diagram_schema import (
+        StateComposite,
+        StateDiagramSpec,
+        StateNode,
+        StateNote,
+        StateTransition,
+    )
+
+    spec = StateDiagramSpec(
+        id="test_state",
+        title="Test State",
+        diagram_type="stateDiagram-v2",
+        direction="LR",
+        states=[
+            StateNode(id="Idle", label="Active Service"),
+            StateNode(id="Choice1", is_choice=True),
+        ],
+        transitions=[
+            StateTransition(source="[*]", target="Idle", label="Start"),
+            StateTransition(source="Idle", target="Choice1"),
+        ],
+        composite_states=[
+            StateComposite(
+                id="Processing",
+                label="In Progress",
+                states=[StateNode(id="Sub1", label="Step 1")],
+                transitions=[StateTransition(source="[*]", target="Sub1")],
+            )
+        ],
+        notes=[
+            StateNote(position="left of", target="Idle", text="Watchdog note"),
+        ],
+    )
+
+    mmd = spec.to_mermaid()
+    assert "stateDiagram-v2" in mmd
+    assert "direction LR" in mmd
+    assert "state Choice1 <<choice>>" in mmd
+    assert "Idle: Active Service" in mmd
+    assert "[*] --> Idle: Start" in mmd
+    assert "state Processing [In Progress] {" in mmd
+    assert "Sub1: Step 1" in mmd
+    assert "note left of Idle: Watchdog note" in mmd
+
+
+def test_collect_all_specs_contains_sequence_and_state():
+    from app.ui.diagram_schema import SequenceDiagramSpec, StateDiagramSpec
+    from scripts.diagram_toolchain import collect_all_specs
+
+    specs = collect_all_specs()
+    has_seq = any(isinstance(s, SequenceDiagramSpec) for s in specs.values())
+    has_state = any(isinstance(s, StateDiagramSpec) for s in specs.values())
+    assert has_seq is True
+    assert has_state is True
+
+
+def test_check_no_raw_mermaid_in_docs_detects_blocks(tmp_path):
+    from scripts.diagram_toolchain import check_no_raw_mermaid_in_docs
+
+    # Clean directory
+    clean_doc = tmp_path / "clean.md"
+    clean_doc.write_text("# Clean doc\n![Image](assets/diagrams/spec.svg)\n")
+    assert check_no_raw_mermaid_in_docs(docs_dir=tmp_path) is True
+
+    # Bad directory with raw mermaid
+    bad_doc = tmp_path / "bad.md"
+    bad_doc.write_text("# Bad doc\n```mermaid\ngraph TD\nA-->B\n```\n")
+    assert check_no_raw_mermaid_in_docs(docs_dir=tmp_path) is False

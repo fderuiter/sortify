@@ -2,6 +2,7 @@
 
 import logging
 import os
+import sys
 import time
 from typing import Any, Dict, List, Optional
 
@@ -853,7 +854,12 @@ class AutoSorterTUI(A11yMixin, App):
     def __init__(self, settings, base_dir: Optional[str] = None):
         super().__init__()
         self.settings = settings
-        self.base_dir = os.path.abspath(base_dir) if base_dir else ""
+        if base_dir and str(base_dir).startswith("/"):
+            self.base_dir = str(base_dir)
+        elif base_dir:
+            self.base_dir = os.path.abspath(base_dir)
+        else:
+            self.base_dir = ""
         self.plan: Dict[str, Any] = {}
         self.locked_files: Dict[str, str] = {}
         self._ratings_cache: Dict[str, str] = {}
@@ -1070,6 +1076,19 @@ class AutoSorterTUI(A11yMixin, App):
                 elif rating == "negative":
                     label_parts.append("[-]")
 
+                routed_by = file_info.get("routed_by")
+                if routed_by == "jev_classifier" or file_info.get("is_jev"):
+                    label_parts.append("[JEV]")
+
+                sens_rating = file_info.get("sensitivity_rating")
+                if sens_rating:
+                    label_parts.append(f"[SENS: {str(sens_rating).upper()}]")
+
+                arch_prio = file_info.get("archival_priority")
+                if arch_prio is not None:
+                    arch_str = f"P{arch_prio}" if isinstance(arch_prio, int) or (isinstance(arch_prio, str) and not str(arch_prio).upper().startswith("P")) else str(arch_prio).upper()
+                    label_parts.append(f"[ARCH: {arch_str}]")
+
                 label_parts.append(file_key)
                 target_filename = file_info.get("target_filename")
                 if target_filename and target_filename != file_key:
@@ -1097,53 +1116,107 @@ class AutoSorterTUI(A11yMixin, App):
                 child_tree_node = parent_item.add(f"📁 {k}", data=node_data, expand=True)
                 self._build_tree_nodes(v, child_tree_node, current_folder=sub_folder)
 
-    @on(Tree.NodeHighlighted, "#plan-tree")
-    @on(Tree.NodeSelected, "#plan-tree")
-    def on_node_selected(self, event: Tree.NodeSelected) -> None:
-        """Handle tree node selection or highlight to update metadata pane and screen reader announcement."""
-        self.active_tree_node = event.node
-        data = event.node.data
-        try:
-            meta_widget = self.query_one("#meta-details", Static)
-        except Exception:
-            return
+    def _update_inspector(self, node_or_data: Any = None) -> str:
+        """Update and return formatted metadata text for the inspector panel."""
+        if node_or_data is None:
+            node_or_data = self.active_tree_node
 
-        if not data:
+        data = None
+        if hasattr(node_or_data, "data"):
+            data = getattr(node_or_data, "data", None)
+        elif isinstance(node_or_data, dict):
+            data = node_or_data
+
+        if not data or not isinstance(data, dict):
             msg = "Root folder of sorting plan."
-            meta_widget.update(msg)
-            self.announce(f"Selected: {msg}")
-            return
+            try:
+                meta_widget = self.query_one("#meta-details", Static)
+                meta_widget.update(msg)
+            except Exception:
+                pass
+            return msg
 
         lines = []
         if data.get("is_file"):
-            key = data.get("key")
+            key = data.get("key", "")
             folder = data.get("folder") or "(Root)"
             locked = "Yes [LOCKED]" if data.get("is_locked") else "No"
             rating = data.get("rating") or "None"
+            info = data.get("info") if isinstance(data.get("info"), dict) else {}
+
             lines.append(f"[bold accent]File:[/bold accent] {key}")
             lines.append(f"[bold]Path:[/bold] {data.get('filepath')}")
             lines.append(f"[bold]Target Folder:[/bold] {folder}")
 
-            target_fn = data.get("info", {}).get("target_filename")
+            target_fn = info.get("target_filename")
             if target_fn:
                 lines.append(f"[bold]Target Filename:[/bold] {target_fn}")
 
             lines.append(f"[bold]Locked:[/bold] {locked}")
             lines.append(f"[bold]ML Rating:[/bold] {rating}")
 
-            conf = data.get("info", {}).get("confidence")
-            if conf is not None:
-                lines.append(f"[bold]Confidence:[/bold] {conf:.2%}")
+            routing_src = info.get("routed_by")
+            if routing_src:
+                lines.append(f"[bold]Routing Source:[/bold] {routing_src}")
 
-            self.announce(f"Selected file '{key}' in folder '{folder}'. Locked: {locked}. Rating: {rating}.")
+            cat = info.get("category") or info.get("jev_category")
+            if cat:
+                lines.append(f"[bold]Category:[/bold] {cat}")
+
+            sens_rating = info.get("sensitivity_rating")
+            if sens_rating is not None:
+                lines.append(f"[bold]Sensitivity Rating:[/bold] {sens_rating}")
+
+            sens_score = info.get("sensitivity_score")
+            if sens_score is not None:
+                try:
+                    lines.append(f"[bold]Sensitivity Score:[/bold] {float(sens_score):.2f}")
+                except (ValueError, TypeError):
+                    lines.append(f"[bold]Sensitivity Score:[/bold] {sens_score}")
+
+            arch_prio = info.get("archival_priority")
+            if arch_prio is not None:
+                arch_str = f"P{arch_prio}" if isinstance(arch_prio, int) or (isinstance(arch_prio, str) and not str(arch_prio).upper().startswith("P")) else str(arch_prio).upper()
+                lines.append(f"[bold]Archival Priority:[/bold] {arch_str}")
+
+            arch_score = info.get("archival_priority_score")
+            if arch_score is not None:
+                try:
+                    lines.append(f"[bold]Archival Priority Score:[/bold] {float(arch_score):.2f}")
+                except (ValueError, TypeError):
+                    lines.append(f"[bold]Archival Priority Score:[/bold] {arch_score}")
+
+            conf = info.get("confidence")
+            if conf is not None:
+                try:
+                    lines.append(f"[bold]Confidence:[/bold] {float(conf):.2%}")
+                except (ValueError, TypeError):
+                    lines.append(f"[bold]Confidence:[/bold] {conf}")
+
+            announcement = f"Selected file '{key}' in folder '{folder}'. Locked: {locked}. Rating: {rating}."
+            self.announce(announcement)
         else:
-            key = data.get("key")
-            folder = data.get("folder")
+            key = data.get("key", "")
+            folder = data.get("folder", "")
             lines.append(f"[bold accent]Folder Category:[/bold accent] {key}")
             lines.append(f"[bold]Relative Path:[/bold] {folder}")
             self.announce(f"Selected folder category '{key}' at path '{folder}'.")
 
-        meta_widget.update("\n".join(lines))
+        text = "\n".join(lines)
+        try:
+            meta_widget = self.query_one("#meta-details", Static)
+            meta_widget.update(text)
+        except Exception:
+            pass
+
+        return text
+
+    @on(Tree.NodeHighlighted, "#plan-tree")
+    @on(Tree.NodeSelected, "#plan-tree")
+    def on_node_selected(self, event: Tree.NodeSelected) -> None:
+        """Handle tree node selection or highlight to update metadata pane and screen reader announcement."""
+        self.active_tree_node = event.node
+        self._update_inspector(event.node)
 
     # --- Keyboard Action Hotkeys ---
 
@@ -1269,5 +1342,35 @@ class AutoSorterTUI(A11yMixin, App):
 
 def run_tui(settings, base_dir: Optional[str] = None) -> None:
     """Run the Textual full-screen terminal interface."""
+    from app.core.path_utils import is_packaged
+
+    if sys.platform == "win32" and is_packaged():
+        if sys.stdin is None or not hasattr(sys.stdin, "isatty") or not sys.stdin.isatty():
+            try:
+                import ctypes
+
+                if ctypes.windll.kernel32.AllocConsole():
+                    try:
+                        sys.stdout = open("CONOUT$", "w", encoding="utf-8")
+                    except Exception:
+                        pass
+                    try:
+                        sys.stderr = open("CONERR$", "w", encoding="utf-8")
+                    except Exception:
+                        pass
+                    try:
+                        sys.stdin = open("CONIN$", "r", encoding="utf-8")
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+    if sys.stdin is None or not hasattr(sys.stdin, "isatty") or not sys.stdin.isatty():
+        print(
+            "Notice: Terminal TUI requires an interactive TTY terminal.",
+            file=sys.stderr,
+        )
+        return
+
     app = AutoSorterTUI(settings=settings, base_dir=base_dir)
     app.run()

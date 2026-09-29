@@ -21,6 +21,16 @@ from app.core.resilient_file_ops import resilient_rmtree
 
 logger = logging.getLogger(__name__)
 
+
+def _set_posix_mode(path: str, mode: int) -> None:
+    """Apply POSIX permissions (mode) to a path gracefully across platforms."""
+    if os.name == "posix":
+        try:
+            os.chmod(path, mode)
+        except OSError as err:
+            logger.debug(f"Failed to set mode {oct(mode)} on '{path}': {err}")
+
+
 SUPPORTED_DOC_EXTENSIONS = {
     ".pdf",
     ".docx",
@@ -97,6 +107,7 @@ class ForensicScanner:
                             os.makedirs(os.path.dirname(target), exist_ok=True)
                             with zf.open(member) as src, open(target, "wb") as dst:
                                 shutil.copyfileobj(src, dst)
+                            _set_posix_mode(target, 0o600)
                             extracted_files.append(target)
 
             elif tarfile.is_tarfile(archive_path):
@@ -105,8 +116,11 @@ class ForensicScanner:
                         if member.name.startswith("/") or ".." in member.name:
                             continue
                         tf.extract(member, path=destination_dir)
+                        extracted_path = os.path.join(destination_dir, member.name)
+                        if os.path.isfile(extracted_path):
+                            _set_posix_mode(extracted_path, 0o600)
                         extracted_files.append(
-                            os.path.join(destination_dir, member.name)
+                            extracted_path
                         )
         except Exception as e:
             logger.warning(f"Error unpacking archive {archive_path}: {e}")
