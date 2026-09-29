@@ -364,3 +364,90 @@ def test_find_mmdc_executable():
     cmd = find_mmdc_executable()
     if cmd and any("npx" in arg for arg in cmd):
         assert "--yes" in cmd
+
+
+def test_generate_fallback_svg():
+    from scripts.diagram_toolchain import generate_fallback_svg
+
+    title = "Test & Special <Title>"
+    mmd = "graph TD\n  A[Node & A] --> B<Node B>\n"
+    svg = generate_fallback_svg(title, mmd)
+
+    assert "<svg" in svg
+    assert 'xmlns="http://www.w3.org/2000/svg"' in svg
+    assert "Test &amp; Special &lt;Title&gt;" in svg
+    assert "A[Node &amp; A] --&gt; B&lt;Node B&gt;" in svg
+
+
+def test_is_browser_available_when_missing():
+    from scripts.diagram_toolchain import is_browser_available, reset_browser_cache
+
+    reset_browser_cache()
+    with patch("scripts.diagram_toolchain.find_mmdc_executable", return_value=None):
+        assert is_browser_available(force_check=True) is False
+
+    reset_browser_cache()
+    with patch("subprocess.run", side_effect=Exception("Browser launch error")):
+        assert is_browser_available(mmdc_cmd=["mmdc"], force_check=True) is False
+
+
+def test_is_browser_available_when_present():
+    from scripts.diagram_toolchain import is_browser_available, reset_browser_cache
+
+    reset_browser_cache()
+    mock_res = MagicMock(returncode=0)
+    with (
+        patch("subprocess.run", return_value=mock_res),
+        patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.stat") as mock_stat,
+    ):
+        mock_stat.return_value.st_size = 100
+        assert is_browser_available(mmdc_cmd=["mmdc"], force_check=True) is True
+
+
+def test_diagram_toolchain_browserless_verify_and_build(tmp_path):
+    from scripts.diagram_toolchain import build_diagrams, reset_browser_cache
+
+    reset_browser_cache()
+    with patch("scripts.diagram_toolchain.is_browser_available", return_value=False):
+        # Test verify mode in browserless environment
+        verify_ok = build_diagrams(output_dir=tmp_path, force=True, verify_only=True)
+        assert verify_ok is True
+
+        # Test build mode in browserless environment
+        build_ok = build_diagrams(output_dir=tmp_path, force=True, verify_only=False)
+        assert build_ok is True
+
+        # Verify fallback SVGs were generated
+        svg_files = list(tmp_path.glob("*.svg"))
+        assert len(svg_files) > 0
+        first_svg = svg_files[0].read_text(encoding="utf-8")
+        assert "<svg" in first_svg
+        assert "Fallback View" in first_svg
+
+
+def test_diagram_toolchain_cli_verify_failure_on_bad_schema(tmp_path):
+    import scripts.diagram_toolchain as dt
+
+    class BadSpec:
+        id = "bad_spec"
+        title = "Bad Spec"
+
+        def to_mermaid(self):
+            raise ValueError("Invalid Mermaid schema")
+
+    dt.reset_browser_cache()
+    with (
+        patch(
+            "sys.argv",
+            ["diagram_toolchain.py", "verify", "--output-dir", str(tmp_path)],
+        ),
+        patch(
+            "scripts.diagram_toolchain.collect_all_specs",
+            return_value={"bad_spec": BadSpec()},
+        ),
+        patch("sys.exit") as mock_exit,
+    ):
+        dt.main()
+        mock_exit.assert_called_once_with(1)
+
