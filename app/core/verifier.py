@@ -54,7 +54,8 @@ def check_ai_status(settings) -> tuple[bool, str | None]:
     is_sandboxed = is_packaged() or getattr(settings, "SANDBOXED", False)
 
     if not is_ml_available():
-        if is_sandboxed:
+        is_lite = os.environ.get("LITE_BUILD") == "1" or getattr(settings, "LITE_BUILD", False)
+        if is_sandboxed and not is_lite:
             raise ValueError(
                 "Machine learning dependencies (PyTorch/EasyOCR) are missing in sandboxed execution."
             )
