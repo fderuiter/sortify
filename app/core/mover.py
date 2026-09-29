@@ -856,13 +856,8 @@ def _collect_move_items(
         return default
 
     sorted_plan_items = sorted(
-<<<<<<< HEAD
-        plan.items(),
-        key=lambda item: _get_node_priority_key(
-=======
         curr_plan.items(),
-        key=lambda item: _get_node_mtime(
->>>>>>> 46d1ffa (feat(models): migrate domain models to Pydantic v2 schemas and preserve dictionary interface compatibility)
+        key=lambda item: _get_node_priority_key(
             base_dir, item[0], item[1], active_parent_path, depth
         ),
     )
@@ -877,9 +872,8 @@ def _collect_move_items(
             if _get_val(content, "status") == "Already Sorted":
                 pass
 
-<<<<<<< HEAD
-            if depth > 0 and (not isinstance(content, dict) or "relative_source" not in content):
-                if content is not None and not isinstance(content, dict):
+            if depth > 0 and _get_val(content, "relative_source") is None:
+                if content is not None and not (isinstance(content, dict) or isinstance(content, BaseModel)):
                     raise ValueError(
                         f"Missing required relative source metadata field for nested item '{key}'"
                     )
@@ -887,28 +881,6 @@ def _collect_move_items(
             source_path = _resolve_source_path(
                 base_dir, key, content, active_parent_path, depth
             )
-=======
-            if depth > 0:
-                rel_src = _get_val(content, "relative_source")
-                if rel_src is None:
-                    raise ValueError(
-                        f"Missing required relative source metadata field for nested item '{key}'"
-                    )
-                relative_source = rel_src
-                rel_src_with_parent = os.path.join(active_parent_path, relative_source)
-                source_path = os.path.normpath(
-                    os.path.join(base_dir, rel_src_with_parent)
-                )
-            else:
-                rel_src = _get_val(content, "relative_source")
-                if rel_src is not None:
-                    relative_source = rel_src
-                    source_path = os.path.normpath(
-                        os.path.join(base_dir, relative_source)
-                    )
-                else:
-                    source_path = os.path.normpath(os.path.join(base_dir, key))
->>>>>>> 46d1ffa (feat(models): migrate domain models to Pydantic v2 schemas and preserve dictionary interface compatibility)
 
             tgt_fn = _get_val(content, "target_filename")
             if tgt_fn is not None:
