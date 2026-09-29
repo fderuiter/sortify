@@ -110,5 +110,9 @@
   "status_progress_spec": {
     "sha256": "3e09096a2b1c52f473096ec36014395430c9a57fd11060d11db19a9222c1cf20",
     "fallback": true
+  },
+  "core_architecture": {
+    "sha256": "34810368e84bb774ab65bfa4a570352bd73dd56afe99f6b359bf875e794a7b36",
+    "fallback": true
   }
 }

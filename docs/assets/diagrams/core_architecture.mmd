@@ -1,26 +1,4 @@
 flowchart TD
-<<<<<<< HEAD
-    A["app.main"]
-    B["app.core.session"]
-    C["app.core.extractor"]
-    D["app.core.analyzer"]
-    E["app.core.verifier"]
-    F["app.core.sanitizer"]
-    G["app.core.analyzer_strategies"]
-    A --> B
-    B --> C
-    B --> D
-    B --> E
-    C --> F
-    D --> G
-    click A "docs/api_reference.md#appmain" "CLI Entrypoint Module"
-    click B "docs/api_reference.md#appcoresession" "Session Management Module"
-    click C "docs/api_reference.md#appcoreextractor" "Multi-format Text Extractor Module"
-    click D "docs/api_reference.md#appcoreanalyzer" "Document Analyzer Module"
-    click E "docs/api_reference.md#appcoreverifier" "Virtual Sorting Verifier Module"
-    click F "docs/api_reference.md#appcoresanitizer" "Path & Input Sanitizer Module"
-    click G "docs/api_reference.md#appcoreanalyzer_strategies" "Analysis Strategy Implementations"
-=======
     subgraph ui_layer ["Presentation & User Interfaces (app.ui)"]
         app_main("app.main (CLI Entry Point)")
         ui_app["app.ui.app (AutoSorterApp)"]
@@ -138,4 +116,3 @@ flowchart TD
     core_mover --> core_metadata
     core_text_utils --> core_exceptions
     core_path_utils --> core_exceptions
->>>>>>> d698e94 (feat(docs): extend Pydantic diagram schema toolchain to cover all core submodules)

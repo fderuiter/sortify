@@ -1618,7 +1618,6 @@ API_CORE_ARCHITECTURE_SPEC = ComponentDiagramSpec(
         DiagramEdge(source="D", target="G"),
     ],
 )
-CORE_ARCHITECTURE_SPEC = API_CORE_ARCHITECTURE_SPEC
 
 ADMIN_POLICY_EVALUATION_SPEC = ComponentDiagramSpec(
     id="admin_policy_evaluation",
@@ -1663,7 +1662,6 @@ SYSTEM_DIAGRAM_SPECS: Dict[str, BaseDiagramSpec] = {
     "setup_wizard_flow": SETUP_WIZARD_FLOW_SPEC,
     "catalog_workflow": CATALOG_WORKFLOW_SPEC,
     "ui_component_hierarchy": UI_COMPONENT_HIERARCHY_SPEC,
-    "core_architecture": CORE_ARCHITECTURE_SPEC,
     "core_text_extraction": CORE_TEXT_EXTRACTION_SPEC,
     "contributor_onboarding": CONTRIBUTOR_ONBOARDING_SPEC,
     "troubleshooting_setup_wizard": TROUBLESHOOTING_SETUP_WIZARD_SPEC,
