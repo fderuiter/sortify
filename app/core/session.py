@@ -186,6 +186,13 @@ class AppSession:
         )
 
         try:
+            from app.core.shared_registry import SharedModelRegistry
+            jev_engine = SharedModelRegistry.get_instance().get_jev_classifier()
+            jev_engine.set_database(str(self.session_dir / "autosorter.db"), self.db_worker)
+        except Exception:
+            pass
+
+        try:
             from app.core.ledger import TransactionLedger
 
             ledger = TransactionLedger()
