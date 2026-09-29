@@ -1,4 +1,4 @@
-"""Settings module using NiceGUI."""
+"""Settings module for terminal interface."""
 
 import threading
 from unittest.mock import MagicMock
