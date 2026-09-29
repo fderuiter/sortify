@@ -18,6 +18,7 @@ from pydantic import BaseModel
 
 from app.core.link_manager import LinkManager
 from app.core.path_utils import is_junction_path
+from app.core.progress import emit_progress
 from app.core.verifier import VerificationEngine
 
 try:
@@ -1380,9 +1381,12 @@ class AsyncMoveEngine:
         cancel_event=None,
         cancellation_token=None,
         priority: str = None,
+        progress_callback=None,
     ) -> dict:
         """Partition relocation plan into bounded worker chunks and execute off-thread."""
         base_dir = os.path.normpath(base_dir)
+
+        effective_progress_cb = progress_callback or getattr(runtime_settings, "progress_callback", None)
 
         integrity_result = VerificationEngine.verify_plan_integrity(base_dir, plan)
         if (
@@ -1460,10 +1464,21 @@ class AsyncMoveEngine:
         )
 
         move_items = _collect_move_items(base_dir, plan, priority=effective_priority)
+        total_items = len(move_items)
         chunks = [
             move_items[i : i + effective_chunk_size]
             for i in range(0, len(move_items), effective_chunk_size)
         ]
+        total_chunks = len(chunks)
+
+        if total_chunks == 0:
+            emit_progress(
+                effective_progress_cb,
+                1.0,
+                stage="Relocation complete",
+                unit_count=0,
+                unit_type="files",
+            )
 
         db_lock = threading.Lock()
         db_updates_batch = []
@@ -1497,6 +1512,13 @@ class AsyncMoveEngine:
                     step_counter=step_counter,
                     ledger=ledger,
                     history_manager=history_manager,
+                )
+                emit_progress(
+                    effective_progress_cb,
+                    1.0,
+                    stage=f"Moved {total_items} of {total_items} files",
+                    unit_count=total_items,
+                    unit_type="files",
                 )
             else:
                 from app.core.shared_registry import SharedWorkerPool
@@ -1536,6 +1558,16 @@ class AsyncMoveEngine:
                             db.execute_batch_updates(list(db_updates_batch))
                             db_updates_batch.clear()
                             has_flushed_db = True
+
+                    processed_count = min((chunk_idx + 1) * effective_chunk_size, total_items)
+                    progress_ratio = (chunk_idx + 1) / total_chunks if total_chunks > 0 else 1.0
+                    emit_progress(
+                        effective_progress_cb,
+                        progress_ratio,
+                        stage=f"Moved {processed_count} of {total_items} files",
+                        unit_count=processed_count,
+                        unit_type="files",
+                    )
 
                     if _is_cancelled(cancel_token):
                         logging.info(
@@ -1692,6 +1724,7 @@ def execute_moves(
     cancel_event=None,
     cancellation_token=None,
     priority: str = None,
+    progress_callback=None,
 ) -> dict:
     """Create directories and safely move files using chunked asynchronous execution."""
     engine = AsyncMoveEngine(max_workers=max_workers, chunk_size=chunk_size)
@@ -1707,6 +1740,7 @@ def execute_moves(
         cancel_event=cancel_event,
         cancellation_token=cancellation_token,
         priority=priority,
+        progress_callback=progress_callback,
     )
 
 
@@ -1724,6 +1758,7 @@ async def execute_moves_async(
     cancel_event=None,
     cancellation_token=None,
     priority: str = None,
+    progress_callback=None,
 ) -> dict:
     """Asynchronously execute move operations off the main event loop thread."""
     return await asyncio.to_thread(
@@ -1741,4 +1776,5 @@ async def execute_moves_async(
         cancel_event=cancel_event,
         cancellation_token=cancellation_token,
         priority=priority,
+        progress_callback=progress_callback,
     )

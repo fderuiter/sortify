@@ -176,3 +176,182 @@ def test_extractor_and_metadata_emit_completion_events(tmp_path):
     assert len(updates) == 1
     assert updates[0].progress == 1.0
     assert updates[0].unit_type == "files"
+
+
+def test_progress_update_invalid_coercions():
+    """Verify ProgressUpdate gracefully handles invalid progress and unit_count values."""
+    update = ProgressUpdate(progress="invalid_float")
+    assert update.progress == 0.0
+
+    update_none = ProgressUpdate(progress=None)
+    assert update_none.progress == 0.0
+
+    update_bad_unit = ProgressUpdate(progress=0.5, unit_count="invalid_int")
+    assert update_bad_unit.unit_count is None
+
+
+def test_emit_progress_falsy_callback_and_update_instance():
+    """Verify emit_progress with None callback or direct ProgressUpdate instance."""
+    # Falsy callback
+    assert emit_progress(None, 0.5) is None
+
+    # Direct ProgressUpdate instance delivery
+    received = []
+
+    def cb(update: ProgressUpdate):
+        received.append(update)
+
+    up = ProgressUpdate(progress=0.7, stage="DirectUpdate")
+    emit_progress(cb, up)
+    assert len(received) == 1
+    assert received[0] is up
+
+
+def test_emit_progress_string_stage_and_kwargs():
+    """Verify string stage argument parsing and fallback keyword options."""
+    received = []
+
+    def cb(update: ProgressUpdate):
+        received.append(update)
+
+    # String passed as first argument and progress in kwargs
+    emit_progress(cb, "StringStage", progress=0.35)
+    assert received[-1].progress == 0.35
+    assert received[-1].stage == "StringStage"
+
+    # unit_count and unit_type via kwargs when positional parameters are None
+    emit_progress(cb, 0.5, unit_count=None, unit_type=None, kwargs={"unit_count": 42, "unit_type": "items"})
+    assert received[-1].unit_count == 42
+    assert received[-1].unit_type == "items"
+
+    # Stage specified via 'message' kwarg
+    emit_progress(cb, 0.8, message="MessageKwarg")
+    assert received[-1].stage == "MessageKwarg"
+
+    # Stage specified via 'stage' kwarg when stage arg is None
+    emit_progress(cb, 0.9, stage=None, kwargs={"stage": "StageKwarg"})
+    assert received[-1].stage == "StageKwarg"
+
+
+def test_emit_progress_inspection_type_errors():
+    """Verify inspection parameter calls catch inner TypeErrors and fall through."""
+    # 2-arg callback raising TypeError
+    calls_2arg = []
+
+    def cb_2arg_error(p, s):
+        calls_2arg.append((p, s))
+        raise TypeError("Inner type error during 2-arg call")
+
+    emit_progress(cb_2arg_error, 0.5, stage="Stage2Arg")
+    assert len(calls_2arg) >= 1
+
+    # 2-arg callback when stage is None (hits lines 111-113)
+    calls_2arg_none = []
+
+    def cb_2arg_none(p, s):
+        calls_2arg_none.append((p, s))
+
+    emit_progress(cb_2arg_none, 0.5, stage=None)
+    assert calls_2arg_none == [(0.5, None)]
+
+    # 1-arg callback raising TypeError
+    calls_1arg = []
+
+    def cb_1arg_error(p):
+        calls_1arg.append(p)
+        raise TypeError("Inner type error during 1-arg call")
+
+    emit_progress(cb_1arg_error, 0.5)
+    assert len(calls_1arg) >= 1
+
+    # 0-arg callback raising TypeError (hits lines 128-129)
+    calls_0arg = []
+
+    def cb_0arg_error():
+        calls_0arg.append(True)
+        raise TypeError("Inner type error during 0-arg call")
+
+    emit_progress(cb_0arg_error, 0.5)
+    assert len(calls_0arg) >= 1
+
+
+def test_emit_progress_generic_fallback_paths(monkeypatch):
+    """Verify generic fallback execution when inspect.signature fails or raises ValueError/TypeError."""
+    import inspect
+
+    # Force inspect.signature to raise ValueError
+    monkeypatch.setattr(inspect, "signature", MagicMock(side_effect=ValueError("Signature inspect not supported")))
+
+    # 1. Callback accepting ProgressUpdate directly in fallback
+    recv_fallback_update = []
+
+    def cb_fallback_update(update: ProgressUpdate):
+        recv_fallback_update.append(update)
+
+    emit_progress(cb_fallback_update, 0.5, stage="Fallback1")
+    assert len(recv_fallback_update) == 1
+    assert recv_fallback_update[0].progress == 0.5
+
+    # 2. Callback rejecting ProgressUpdate (TypeError) and taking (progress, stage)
+    recv_fallback_2arg = []
+
+    def cb_fallback_2arg(*args):
+        if len(args) == 1 and isinstance(args[0], ProgressUpdate):
+            raise TypeError("No ProgressUpdate allowed")
+        recv_fallback_2arg.append(args)
+
+    emit_progress(cb_fallback_2arg, 0.6, stage="Fallback2")
+    assert recv_fallback_2arg == [(0.6, "Fallback2")]
+
+    # 3. Callback rejecting ProgressUpdate and 2-arg, taking 1 float arg
+    recv_fallback_1arg = []
+
+    def cb_fallback_1arg(*args):
+        if len(args) == 1 and isinstance(args[0], ProgressUpdate):
+            raise TypeError("No ProgressUpdate allowed")
+        if len(args) == 2:
+            raise TypeError("No 2-arg allowed")
+        recv_fallback_1arg.append(args[0])
+
+    emit_progress(cb_fallback_1arg, 0.7, stage="Fallback3")
+    assert recv_fallback_1arg == [0.7]
+
+    # 4. Callback taking 1 stage string arg only
+    recv_fallback_stage = []
+
+    def cb_fallback_stage(*args):
+        if len(args) == 1 and isinstance(args[0], ProgressUpdate):
+            raise TypeError("No ProgressUpdate allowed")
+        if len(args) == 2:
+            raise TypeError("No 2-arg allowed")
+        if len(args) == 1 and isinstance(args[0], float):
+            raise TypeError("No float allowed")
+        recv_fallback_stage.append(args[0])
+
+    emit_progress(cb_fallback_stage, 0.8, stage="FallbackStageOnly")
+    assert recv_fallback_stage == ["FallbackStageOnly"]
+
+    # 5. Callback taking 0 args
+    recv_fallback_0arg = []
+
+    def cb_fallback_0arg(*args):
+        if args:
+            raise TypeError("No args allowed")
+        recv_fallback_0arg.append(True)
+
+    emit_progress(cb_fallback_0arg, 0.9, stage="Fallback0Arg")
+    assert recv_fallback_0arg == [True]
+
+    # 6. Callback raising non-TypeError Exception in fallback
+    def cb_fallback_exception(*args):
+        raise RuntimeError("Catastrophic error in legacy callback")
+
+    # Should log and NOT raise
+    emit_progress(cb_fallback_exception, 1.0, stage="ErrorStage")
+
+    # 7. Callback raising Exception directly on callback(update)
+    def cb_outer_exception(update):
+        raise ValueError("Outer error in fallback")
+
+    emit_progress(cb_outer_exception, 1.0)
+

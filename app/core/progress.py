@@ -62,15 +62,21 @@ def emit_progress(
         elif isinstance(progress_or_update, (int, float)):
             progress_val = float(progress_or_update)
 
-        if unit_count_val is None and "unit_count" in kwargs:
-            unit_count_val = kwargs["unit_count"]
-        if unit_type_val is None and "unit_type" in kwargs:
-            unit_type_val = kwargs["unit_type"]
+        extra_kwargs = (
+            kwargs["kwargs"]
+            if "kwargs" in kwargs and isinstance(kwargs["kwargs"], dict)
+            else kwargs
+        )
 
-        if stage_val is None and "message" in kwargs:
-            stage_val = str(kwargs["message"])
-        elif stage_val is None and "stage" in kwargs:
-            stage_val = str(kwargs["stage"])
+        if unit_count_val is None and "unit_count" in extra_kwargs:
+            unit_count_val = extra_kwargs["unit_count"]
+        if unit_type_val is None and "unit_type" in extra_kwargs:
+            unit_type_val = extra_kwargs["unit_type"]
+
+        if stage_val is None and "message" in extra_kwargs:
+            stage_val = str(extra_kwargs["message"])
+        elif stage_val is None and "stage" in extra_kwargs:
+            stage_val = str(extra_kwargs["stage"])
 
         update = ProgressUpdate(
             progress=progress_val,

@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "f7e9cacfc733aff37acb3a06179bca1963f4a1a8ce2a778886d98e005e646e9e"
+    "checksum": "18d411f08afad18441684dea22261e10958644e382b04e9ce35414881292799a"
   },
   "cli": {
     "app/main.py": [
@@ -7545,6 +7545,11 @@
                   "annotation": "str",
                   "default": "None",
                   "name": "priority"
+                },
+                {
+                  "annotation": null,
+                  "default": "None",
+                  "name": "progress_callback"
                 }
               ],
               "returns": "dict"
@@ -7622,6 +7627,11 @@
               "annotation": "str",
               "default": "None",
               "name": "priority"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "progress_callback"
             }
           ],
           "returns": "dict"
@@ -7695,6 +7705,11 @@
               "annotation": "str",
               "default": "None",
               "name": "priority"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "progress_callback"
             }
           ],
           "returns": "dict"
@@ -9015,6 +9030,11 @@
                   "annotation": null,
                   "default": "None",
                   "name": "chunk_size"
+                },
+                {
+                  "annotation": null,
+                  "default": "None",
+                  "name": "progress_callback"
                 },
                 {
                   "annotation": null,

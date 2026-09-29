@@ -169,3 +169,40 @@ def test_async_mover_execute_moves_async(tmp_path):
     summary = asyncio.run(execute_moves_async(base_dir, plan, db, hm))
     assert not summary.get("cancelled")
     assert os.path.exists(tmp_path / "async_dest.txt")
+
+
+def test_async_mover_progress_callback_propagation(tmp_path):
+    """Test that AsyncMoveEngine emits progress updates per completed chunk."""
+    from app.core.progress import ProgressUpdate
+
+    base_dir = str(tmp_path)
+    plan = {}
+    for i in range(10):
+        fname = f"file_{i}.txt"
+        fpath = tmp_path / fname
+        fpath.write_text(f"content {i}")
+        plan[fname] = {
+            "__type__": "file",
+            "relative_source": fname,
+            "target_filename": f"moved_{fname}",
+            "status": "Confirmed",
+        }
+
+    db = DummyDB()
+    hm = DummyHistoryManager()
+
+    progress_updates = []
+
+    def progress_cb(update: ProgressUpdate):
+        progress_updates.append(update)
+
+    summary = execute_moves(base_dir, plan, db, hm, chunk_size=2, progress_callback=progress_cb)
+
+    assert not summary.get("cancelled")
+    assert len(progress_updates) == 5
+    for idx, up in enumerate(progress_updates):
+        expected_ratio = (idx + 1) / 5.0
+        assert abs(up.progress - expected_ratio) < 1e-5
+        assert up.unit_type == "files"
+        assert up.unit_count == (idx + 1) * 2
+
