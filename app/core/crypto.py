@@ -107,7 +107,7 @@ class CryptoManager:
     @staticmethod
     def derive_db_hash(db_path: Path | str, algorithm: str = "sha256") -> str:
         """Derive digest hash for a database path (SHA-256 by default, or MD5 for legacy)."""
-        db_path_str = str(Path(os.path.abspath(db_path)))
+        db_path_str = os.path.normcase(os.path.abspath(db_path))
         if algorithm == "sha256":
             return hashlib.sha256(db_path_str.encode("utf-8")).hexdigest()
         elif algorithm == "md5":
