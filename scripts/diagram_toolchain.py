@@ -13,16 +13,13 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import TYPE_CHECKING, Dict, List, Optional
+
+if TYPE_CHECKING:
+    from app.ui.diagram_schema import BaseDiagramSpec, ComponentDiagramSpec
 
 # Add project root to sys.path so we can import app modules
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-
-from app.ui.catalog import CATALOG_REGISTRY
-from app.ui.diagram_schema import (
-    SYSTEM_DIAGRAM_SPECS,
-    BaseDiagramSpec,
-)
 
 DEFAULT_OUTPUT_DIR = Path("docs/assets/diagrams")
 CACHE_FILE_NAME = ".build_cache.json"
@@ -289,8 +286,14 @@ def check_no_raw_mermaid_in_docs(docs_dir: Path = Path("docs")) -> bool:
     return not found_raw_mermaid
 
 
-def collect_all_specs() -> Dict[str, BaseDiagramSpec]:
+def collect_all_specs() -> Dict[str, "BaseDiagramSpec"]:
     """Collect all registered system and component diagram specifications."""
+    from app.ui.catalog import CATALOG_REGISTRY
+    from app.ui.diagram_schema import (
+        SYSTEM_DIAGRAM_SPECS,
+        BaseDiagramSpec,
+    )
+
     specs: Dict[str, BaseDiagramSpec] = {}
 
     # System diagrams
