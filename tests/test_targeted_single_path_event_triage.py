@@ -43,7 +43,7 @@ def test_daemon_handler_enqueues_event_without_recalculation(tmp_path):
     settings = DummySettings()
     daemon = ContinuousWatchdogDaemon(settings, str(tmp_path))
     daemon._is_running = True
-    daemon._event_queue = asyncio.Queue()
+    daemon._event_queue = asyncio.PriorityQueue()
 
     handler = DaemonFolderHandler(daemon)
     test_file = tmp_path / "incoming_invoice.pdf"
@@ -54,7 +54,8 @@ def test_daemon_handler_enqueues_event_without_recalculation(tmp_path):
 
     # Verify event was enqueued
     assert daemon._event_queue.qsize() == 1
-    enqueued = daemon._event_queue.get_nowait()
+    raw_item = daemon._event_queue.get_nowait()
+    enqueued = raw_item[2] if isinstance(raw_item, tuple) else raw_item
     assert isinstance(enqueued, FileChangeEvent)
     assert enqueued.file_path == str(test_file)
     assert enqueued.event_type == "created"
@@ -73,13 +74,17 @@ def test_analyzer_and_session_generate_sorting_plan_target_paths_filter(tmp_path
     db = Database(db_path, worker)
 
     base_dir = str(tmp_path)
-    db.upsert_documents([
-        (base_dir, "doc1_invoice.pdf", "hash1", "invoice payment details"),
-        (base_dir, "doc2_report.pdf", "hash2", "quarterly financial report"),
-        (base_dir, "doc3_notes.txt", "hash3", "meeting notes"),
-    ])
+    db.upsert_documents(
+        [
+            (base_dir, "doc1_invoice.pdf", "hash1", "invoice payment details"),
+            (base_dir, "doc2_report.pdf", "hash2", "quarterly financial report"),
+            (base_dir, "doc3_notes.txt", "hash3", "meeting notes"),
+        ]
+    )
 
-    analyzer = IncrementalAnalyzer(stop_words=set(), max_folders=10, strategy_name="default", db=db)
+    analyzer = IncrementalAnalyzer(
+        stop_words=set(), max_folders=10, strategy_name="default", db=db
+    )
 
     # Test Analyzer.generate_sorting_plan with target_paths restricting to doc1_invoice.pdf
     plan_doc1 = analyzer.generate_sorting_plan(
@@ -91,7 +96,11 @@ def test_analyzer_and_session_generate_sorting_plan_target_paths_filter(tmp_path
     # Flatten plan keys
     keys_doc1 = list(plan_doc1.keys()) if isinstance(plan_doc1, dict) else []
     assert len(keys_doc1) == 1
-    assert "Invoices" in keys_doc1 or "doc1_invoice.pdf" in keys_doc1 or "doc1_invoice.pdf" in str(plan_doc1)
+    assert (
+        "Invoices" in keys_doc1
+        or "doc1_invoice.pdf" in keys_doc1
+        or "doc1_invoice.pdf" in str(plan_doc1)
+    )
 
     # Test AppSession.generate_sorting_plan with target_paths restricting to doc2_report.pdf
     session = AppSession(settings, base_dir)
@@ -119,11 +128,13 @@ def test_db_get_all_documents_targeted_query(tmp_path):
     db = Database(db_path, worker)
 
     base_dir = str(tmp_path)
-    db.upsert_documents([
-        (base_dir, "fileA.txt", "hashA", "Content A"),
-        (base_dir, "fileB.txt", "hashB", "Content B"),
-        (base_dir, "fileC.txt", "hashC", "Content C"),
-    ])
+    db.upsert_documents(
+        [
+            (base_dir, "fileA.txt", "hashA", "Content A"),
+            (base_dir, "fileB.txt", "hashB", "Content B"),
+            (base_dir, "fileC.txt", "hashC", "Content C"),
+        ]
+    )
 
     # Ensure cache is invalidated
     db.invalidate_cache()
@@ -137,7 +148,9 @@ def test_db_get_all_documents_targeted_query(tmp_path):
 
 
 @pytest.mark.anyio
-async def test_triage_file_path_passes_target_paths_and_no_get_files_recursively(tmp_path):
+async def test_triage_file_path_passes_target_paths_and_no_get_files_recursively(
+    tmp_path,
+):
     """Verify ContinuousWatchdogDaemon._triage_file_path passes target_paths to generate_sorting_plan without calling get_files_recursively."""
     settings = DummySettings()
     daemon = ContinuousWatchdogDaemon(settings, str(tmp_path))
@@ -147,13 +160,18 @@ async def test_triage_file_path_passes_target_paths_and_no_get_files_recursively
     test_file.write_text("invoice text")
 
     mock_app_session = mock.MagicMock()
-    mock_app_session.generate_sorting_plan.return_value = {"Invoices": {"single_drop_invoice.pdf": {"__type__": "file"}}}
+    mock_app_session.generate_sorting_plan.return_value = {
+        "Invoices": {"single_drop_invoice.pdf": {"__type__": "file"}}
+    }
     mock_app_session.execute_moves.return_value = {"moved": 1}
 
-    with mock.patch.object(daemon, "_get_or_create_session", return_value=mock_app_session), \
-         mock.patch("app.core.daemon.get_files_recursively") as mock_get_files, \
-         mock.patch("app.core.daemon.MetadataPass.run"):
-
+    with (
+        mock.patch.object(
+            daemon, "_get_or_create_session", return_value=mock_app_session
+        ),
+        mock.patch("app.core.daemon.get_files_recursively") as mock_get_files,
+        mock.patch("app.core.daemon.MetadataPass.run"),
+    ):
         await daemon._triage_file_path(str(test_file))
 
         # Ensure get_files_recursively was NOT called during single file triage
@@ -190,16 +208,19 @@ async def test_reconciliation_audit_enqueues_untracked_files(tmp_path):
     daemon = ContinuousWatchdogDaemon(settings, str(tmp_path))
     daemon._is_running = True
     daemon._event_loop = None
-    daemon._event_queue = asyncio.Queue()
+    daemon._event_queue = asyncio.PriorityQueue()
 
     untracked1 = tmp_path / "untracked1.pdf"
     untracked1.write_text("untracked file 1")
 
-    with mock.patch("app.core.daemon.get_files_recursively", return_value=[str(untracked1)]):
+    with mock.patch(
+        "app.core.daemon.get_files_recursively", return_value=[str(untracked1)]
+    ):
         await daemon._run_reconciliation_audit()
 
     assert daemon._event_queue.qsize() == 1
-    enqueued = daemon._event_queue.get_nowait()
+    raw_item = daemon._event_queue.get_nowait()
+    enqueued = raw_item[2] if isinstance(raw_item, tuple) else raw_item
     assert enqueued.event_type == "reconciliation"
     assert enqueued.file_path == str(untracked1)
 
