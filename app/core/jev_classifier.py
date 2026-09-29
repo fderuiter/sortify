@@ -70,10 +70,10 @@ def _extract_pdf_snippet(file_path: str) -> str:
         import pypdf
 
         with open(file_path, "rb") as f:
-            reader = pypdf.PdfReader(f)
-            if reader.pages:
-                text = reader.pages[0].extract_text() or ""
-                return text[:4096].lower()
+            with pypdf.PdfReader(f) as reader:
+                if reader.pages:
+                    text = reader.pages[0].extract_text() or ""
+                    return text[:4096].lower()
     except Exception as e:
         logger.debug(f"Fast PDF snippet extraction failed for {file_path}: {e}")
     return ""
