@@ -14,6 +14,12 @@ flowchart TD
     C -->|Network Error or Offline| E[Fallback to Offline Non-Semantic Mode]
     B -->|Decline| E
     B -->|Help| F[Open User Guide]
+    click A "#first-run-steps--setup-wizard" "Launch Application Step"
+    click B "#first-run-steps--setup-wizard" "First-Run Setup Wizard"
+    click C "https://huggingface.co" "Hugging Face Model Download" _blank
+    click D "#privacy-configurations" "Privacy & Semantic AI Settings"
+    click E "#offline-non-semantic-mode" "Offline Mode Information"
+    click F "#first-run-steps--setup-wizard" "User Guide Reference"
 ```
 
 1. **Accept & Download:** Click this to download the 80MB model and enable Smart AutoSorter's semantic sorting. This connects to Hugging Face only once.

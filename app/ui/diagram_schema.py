@@ -2,7 +2,9 @@
 
 from typing import Dict, List, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+ALLOWED_URL_SCHEMES = {"http", "https", "mailto", "file"}
 
 
 class DiagramNode(BaseModel):
@@ -12,6 +14,36 @@ class DiagramNode(BaseModel):
     label: str
     shape: Optional[str] = "rectangle"
     style: Optional[str] = None
+    url: Optional[str] = None
+    tooltip: Optional[str] = None
+    target: Optional[str] = None
+    step_number: Optional[int] = None
+    step_description: Optional[str] = None
+
+    @field_validator("url")
+    @classmethod
+    def validate_url_scheme(cls, v: Optional[str]) -> Optional[str]:
+        """Validate URL target scheme to block invalid or unsafe URI schemes."""
+        if not v:
+            return v
+        cleaned = v.strip()
+        if not cleaned:
+            return v
+
+        lower_url = cleaned.lower()
+        if lower_url.startswith(("javascript:", "data:", "vbscript:")):
+            raise ValueError(f"Unsafe or invalid URI scheme in URL target: {v}")
+
+        if ":" in cleaned and not cleaned.startswith("#"):
+            scheme = cleaned.split(":", 1)[0].lower()
+            if (
+                scheme.isalpha()
+                and len(scheme) > 1
+                and "/" not in scheme
+                and scheme not in ALLOWED_URL_SCHEMES
+            ):
+                raise ValueError(f"Disallowed URI scheme '{scheme}' in URL target: {v}")
+        return v
 
 
 class DiagramEdge(BaseModel):
@@ -89,6 +121,42 @@ class ComponentDiagramSpec(BaseModel):
                 if node.style:
                     lines.append(f"    style {node.id} {node.style}")
 
+            for node in self.nodes:
+                tooltip_str = node.tooltip
+                if not tooltip_str:
+                    if node.step_number is not None and node.step_description:
+                        tooltip_str = (
+                            f"Step {node.step_number}: {node.step_description}"
+                        )
+                    elif node.step_description:
+                        tooltip_str = node.step_description
+                    elif node.step_number is not None:
+                        tooltip_str = f"Step {node.step_number}"
+
+                if node.url or tooltip_str:
+                    if node.url:
+                        clean_url = node.url.replace('"', '\\"')
+                        if tooltip_str:
+                            clean_tip = tooltip_str.replace('"', '\\"')
+                            if node.target:
+                                lines.append(
+                                    f'    click {node.id} "{clean_url}" "{clean_tip}" {node.target}'
+                                )
+                            else:
+                                lines.append(
+                                    f'    click {node.id} "{clean_url}" "{clean_tip}"'
+                                )
+                        else:
+                            if node.target:
+                                lines.append(
+                                    f'    click {node.id} "{clean_url}" {node.target}'
+                                )
+                            else:
+                                lines.append(f'    click {node.id} "{clean_url}"')
+                    elif tooltip_str:
+                        clean_tip = tooltip_str.replace('"', '\\"')
+                        lines.append(f'    click {node.id} tooltip "{clean_tip}"')
+
             return "\n".join(lines) + "\n"
 
         return f"{self.diagram_type}\n"
@@ -105,16 +173,74 @@ ARCHITECTURE_DATAFLOW_SPEC = ComponentDiagramSpec(
     diagram_type="graph",
     direction="TD",
     nodes=[
-        DiagramNode(id="A", label="Directory Selection", shape="round"),
-        DiagramNode(id="B", label="File Extraction & Generator", shape="rectangle"),
-        DiagramNode(id="C", label="Chunked Yielding", shape="rectangle"),
         DiagramNode(
-            id="D", label="Incremental Analyzer (partial_fit)", shape="rectangle"
+            id="A",
+            label="Directory Selection",
+            shape="round",
+            url="docs/user_guide.md#first-run-steps--setup-wizard",
+            tooltip="Directory Selection Step",
+            step_number=1,
+            step_description="Select target directory to organize",
         ),
-        DiagramNode(id="E", label="TF-IDF & NMF Clustering", shape="rectangle"),
-        DiagramNode(id="F", label="Recursive Topic Grouping", shape="rectangle"),
-        DiagramNode(id="G", label="Generate Sorting Plan", shape="rectangle"),
-        DiagramNode(id="H", label="UI Tree Rendering", shape="round"),
+        DiagramNode(
+            id="B",
+            label="File Extraction & Generator",
+            shape="rectangle",
+            url="docs/user_guide.md#supported-file-formats",
+            tooltip="File Extraction Step",
+            step_number=2,
+            step_description="Extract files and prepare generator",
+        ),
+        DiagramNode(
+            id="C",
+            label="Chunked Yielding",
+            shape="rectangle",
+            tooltip="Chunked Yielding Step",
+            step_number=3,
+            step_description="Yield file chunks incrementally",
+        ),
+        DiagramNode(
+            id="D",
+            label="Incremental Analyzer (partial_fit)",
+            shape="rectangle",
+            tooltip="Analyzer Step",
+            step_number=4,
+            step_description="Run incremental analyzer",
+        ),
+        DiagramNode(
+            id="E",
+            label="TF-IDF & NMF Clustering",
+            shape="rectangle",
+            url="docs/user_guide.md#ai-clustering-constraints",
+            tooltip="Clustering Step",
+            step_number=5,
+            step_description="Cluster file features with TF-IDF & NMF",
+        ),
+        DiagramNode(
+            id="F",
+            label="Recursive Topic Grouping",
+            shape="rectangle",
+            tooltip="Topic Grouping Step",
+            step_number=6,
+            step_description="Recursively group file topics",
+        ),
+        DiagramNode(
+            id="G",
+            label="Generate Sorting Plan",
+            shape="rectangle",
+            tooltip="Sorting Plan Step",
+            step_number=7,
+            step_description="Generate final file sorting plan",
+        ),
+        DiagramNode(
+            id="H",
+            label="UI Tree Rendering",
+            shape="round",
+            url="docs/ui.md#appuiplan_treeview",
+            tooltip="UI Rendering Step",
+            step_number=8,
+            step_description="Render sorting plan in tree view",
+        ),
     ],
     edges=[
         DiagramEdge(source="A", target="B"),
@@ -133,13 +259,55 @@ CATALOG_WORKFLOW_SPEC = ComponentDiagramSpec(
     diagram_type="graph",
     direction="TD",
     nodes=[
-        DiagramNode(id="workbench", label="Catalog Workbench", shape="round"),
-        DiagramNode(id="selector", label="Component Selector", shape="rectangle"),
-        DiagramNode(id="viewport", label="Viewport Controller", shape="rectangle"),
-        DiagramNode(id="state_var", label="State Variant Switcher", shape="rectangle"),
-        DiagramNode(id="renderer", label="Component Renderer", shape="subroutine"),
-        DiagramNode(id="a11y_scan", label="Accessibility Auditor", shape="rhombus"),
-        DiagramNode(id="preview", label="Interactive Viewport Frame", shape="round"),
+        DiagramNode(
+            id="workbench",
+            label="Catalog Workbench",
+            shape="round",
+            url="docs/ui.md",
+            tooltip="Catalog Workbench",
+        ),
+        DiagramNode(
+            id="selector",
+            label="Component Selector",
+            shape="rectangle",
+            url="docs/ui.md",
+            tooltip="Component Selector",
+        ),
+        DiagramNode(
+            id="viewport",
+            label="Viewport Controller",
+            shape="rectangle",
+            url="docs/ui.md",
+            tooltip="Viewport Controller",
+        ),
+        DiagramNode(
+            id="state_var",
+            label="State Variant Switcher",
+            shape="rectangle",
+            url="docs/ui.md",
+            tooltip="State Variant Switcher",
+        ),
+        DiagramNode(
+            id="renderer",
+            label="Component Renderer",
+            shape="subroutine",
+            url="docs/ui.md",
+            tooltip="Component Renderer",
+        ),
+        DiagramNode(
+            id="a11y_scan",
+            label="Accessibility Auditor",
+            shape="rhombus",
+            url="docs/admin_guide.md",
+            tooltip="Accessibility Auditor",
+        ),
+        DiagramNode(
+            id="preview",
+            label="Interactive Viewport Frame",
+            shape="round",
+            url="docs/ui.md",
+            tooltip="Interactive Viewport Frame",
+        ),
     ],
     edges=[
         DiagramEdge(source="workbench", target="selector"),
@@ -176,14 +344,54 @@ UI_COMPONENT_HIERARCHY_SPEC = ComponentDiagramSpec(
         ),
     ],
     nodes=[
-        DiagramNode(id="header_bar", label="Application Header Bar"),
-        DiagramNode(id="toolbar", label="Top Action Toolbar"),
-        DiagramNode(id="directory_selection", label="Directory Selection Card"),
-        DiagramNode(id="settings_modal", label="Settings Dialog View"),
-        DiagramNode(id="setup_wizard", label="AI Model Setup Wizard"),
-        DiagramNode(id="plan_treeview", label="Proposed Reorganization Plan"),
-        DiagramNode(id="cro_forensic_dialog", label="CRO Forensic View"),
-        DiagramNode(id="status_progress_panel", label="Status & Progress Panel"),
+        DiagramNode(
+            id="header_bar",
+            label="Application Header Bar",
+            url="docs/ui.md#appuiheader_bar",
+            tooltip="Header Bar Component",
+        ),
+        DiagramNode(
+            id="toolbar",
+            label="Top Action Toolbar",
+            url="docs/ui.md",
+            tooltip="Top Action Toolbar",
+        ),
+        DiagramNode(
+            id="directory_selection",
+            label="Directory Selection Card",
+            url="docs/ui.md#appuidirectory_selection",
+            tooltip="Directory Selection Component",
+        ),
+        DiagramNode(
+            id="settings_modal",
+            label="Settings Dialog View",
+            url="docs/ui.md#appuisettings_modal",
+            tooltip="Settings Dialog View Component",
+        ),
+        DiagramNode(
+            id="setup_wizard",
+            label="AI Model Setup Wizard",
+            url="docs/ui.md#appuisetup_wizard",
+            tooltip="AI Model Setup Wizard Component",
+        ),
+        DiagramNode(
+            id="plan_treeview",
+            label="Proposed Reorganization Plan",
+            url="docs/ui.md#appuiplan_treeview",
+            tooltip="Proposed Reorganization Plan Component",
+        ),
+        DiagramNode(
+            id="cro_forensic_dialog",
+            label="CRO Forensic View",
+            url="docs/ui.md#appuicro_forensic_dialog",
+            tooltip="CRO Forensic View Component",
+        ),
+        DiagramNode(
+            id="status_progress_panel",
+            label="Status & Progress Panel",
+            url="docs/ui.md#appuistatus_progress_panel",
+            tooltip="Status & Progress Panel Component",
+        ),
     ],
     edges=[
         DiagramEdge(source="header_bar", target="directory_selection"),
@@ -194,8 +402,68 @@ UI_COMPONENT_HIERARCHY_SPEC = ComponentDiagramSpec(
     ],
 )
 
+CORE_ARCHITECTURE_SPEC = ComponentDiagramSpec(
+    id="core_architecture",
+    title="Core Architecture Module Flow",
+    diagram_type="flowchart",
+    direction="TD",
+    nodes=[
+        DiagramNode(
+            id="A",
+            label="app.main",
+            url="docs/api_reference.md#appmain",
+            tooltip="CLI Entrypoint Module",
+        ),
+        DiagramNode(
+            id="B",
+            label="app.core.session",
+            url="docs/api_reference.md#appcoresession",
+            tooltip="Session Management Module",
+        ),
+        DiagramNode(
+            id="C",
+            label="app.core.extractor",
+            url="docs/api_reference.md#appcoreextractor",
+            tooltip="Multi-format Text Extractor Module",
+        ),
+        DiagramNode(
+            id="D",
+            label="app.core.analyzer",
+            url="docs/api_reference.md#appcoreanalyzer",
+            tooltip="Document Analyzer Module",
+        ),
+        DiagramNode(
+            id="E",
+            label="app.core.verifier",
+            url="docs/api_reference.md#appcoreverifier",
+            tooltip="Virtual Sorting Verifier Module",
+        ),
+        DiagramNode(
+            id="F",
+            label="app.core.sanitizer",
+            url="docs/api_reference.md#appcoresanitizer",
+            tooltip="Path & Input Sanitizer Module",
+        ),
+        DiagramNode(
+            id="G",
+            label="app.core.analyzer_strategies",
+            url="docs/api_reference.md#appcoreanalyzer_strategies",
+            tooltip="Analysis Strategy Implementations",
+        ),
+    ],
+    edges=[
+        DiagramEdge(source="A", target="B"),
+        DiagramEdge(source="B", target="C"),
+        DiagramEdge(source="B", target="D"),
+        DiagramEdge(source="B", target="E"),
+        DiagramEdge(source="C", target="F"),
+        DiagramEdge(source="D", target="G"),
+    ],
+)
+
 SYSTEM_DIAGRAM_SPECS: Dict[str, ComponentDiagramSpec] = {
     "architecture_dataflow": ARCHITECTURE_DATAFLOW_SPEC,
     "catalog_workflow": CATALOG_WORKFLOW_SPEC,
     "ui_component_hierarchy": UI_COMPONENT_HIERARCHY_SPEC,
+    "core_architecture": CORE_ARCHITECTURE_SPEC,
 }

@@ -68,6 +68,8 @@ def generate_tutorial_docs():
 
 def generate_api_docs():
     """Generate API reference markdown from python modules."""
+    from app.ui.diagram_schema import CORE_ARCHITECTURE_SPEC
+
     app_dir = "app"
     output_file = os.path.join("docs", "api_reference.md")
 
@@ -77,13 +79,7 @@ def generate_api_docs():
 
         f.write("## Core Architecture Diagram\n\n")
         f.write("```mermaid\n")
-        f.write("flowchart TD\n")
-        f.write("    A[app.main] --> B[app.core.session]\n")
-        f.write("    B --> C[app.core.extractor]\n")
-        f.write("    B --> D[app.core.analyzer]\n")
-        f.write("    B --> E[app.core.verifier]\n")
-        f.write("    C --> F[app.core.sanitizer]\n")
-        f.write("    D --> G[app.core.analyzer_strategies]\n")
+        f.write(CORE_ARCHITECTURE_SPEC.to_mermaid())
         f.write("```\n\n")
 
         # Find all python files except ui and binaries

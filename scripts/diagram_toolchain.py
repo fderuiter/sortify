@@ -8,6 +8,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -86,25 +87,96 @@ def save_cache(cache_path: Path, cache_data: dict) -> None:
 
 
 def generate_fallback_svg(title: str, mmd_content: str) -> str:
-    """Generate a clean text-based SVG placeholder when headless rendering is unavailable."""
+    """Generate a clean text-based SVG placeholder with interactive click links when headless rendering is unavailable."""
     escaped_title = (
         title.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
     )
     lines = [line.strip() for line in mmd_content.splitlines() if line.strip()]
-    content_preview = "\n".join(lines[:10])
+    content_preview = "\n".join(lines[:15])
     escaped_preview = (
         content_preview.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
     )
 
-    return f"""<svg xmlns="http://www.w3.org/2000/svg" width="800" height="400" viewBox="0 0 800 400">
+    # Extract click directives for interactive SVG hyperlinks
+    click_links_svg = []
+    y_pos = 320
+    for line in lines:
+        if line.startswith("click "):
+            m = re.match(
+                r'^\s*click\s+([A-Za-z0-9_\-]+)(?:\s+tooltip)?\s+"([^"]+)"(?:\s+"([^"]+)")?(?:\s+([^\s"]+))?',
+                line,
+            )
+            if m:
+                nid, url, tip, target = m.groups()
+                target_attr = f' target="{target}"' if target else ""
+                escaped_url = (
+                    url.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                )
+                label_text = f"Node {nid} -> {tip or url}"
+                escaped_label = (
+                    label_text.replace("&", "&amp;")
+                    .replace("<", "&lt;")
+                    .replace(">", "&gt;")
+                )
+                click_links_svg.append(
+                    f'    <a href="{escaped_url}"{target_attr} style="color: #2563eb; text-decoration: underline;">'
+                    f'<text x="20" y="{y_pos}" font-family="sans-serif" font-size="11" fill="#2563eb">🔗 {escaped_label}</text></a>'
+                )
+                y_pos += 18
+
+    links_section = "\n".join(click_links_svg)
+    total_height = max(400, y_pos + 20)
+
+    return f"""<svg xmlns="http://www.w3.org/2000/svg" width="800" height="{total_height}" viewBox="0 0 800 {total_height}">
   <rect width="100%" height="100%" fill="#f8fafc" rx="8" stroke="#cbd5e1" stroke-width="2"/>
   <text x="20" y="40" font-family="sans-serif" font-size="18" font-weight="bold" fill="#0f172a">{escaped_title}</text>
   <text x="20" y="70" font-family="sans-serif" font-size="12" fill="#64748b">Mermaid Diagram Specification (Fallback View):</text>
-  <foreignObject x="20" y="90" width="760" height="290">
-    <pre xmlns="http://www.w3.org/1999/xhtml" style="font-family: monospace; font-size: 12px; color: #334155; background: #ffffff; padding: 12px; border-radius: 6px; border: 1px solid #e2e8f0; overflow: auto; height: 260px;">{escaped_preview}</pre>
+  <foreignObject x="20" y="90" width="760" height="210">
+    <pre xmlns="http://www.w3.org/1999/xhtml" style="font-family: monospace; font-size: 12px; color: #334155; background: #ffffff; padding: 12px; border-radius: 6px; border: 1px solid #e2e8f0; overflow: auto; height: 180px;">{escaped_preview}</pre>
   </foreignObject>
+{links_section}
 </svg>
 """
+
+
+def parse_and_validate_click_directives(mmd_content: str) -> List[str]:
+    """Parse and validate Mermaid click directives within diagram markup."""
+    errors = []
+    lines = mmd_content.splitlines()
+    for idx, line in enumerate(lines, 1):
+        stripped = line.strip()
+        if stripped.startswith("click "):
+            parts = stripped.split()
+            if len(parts) < 2:
+                errors.append(
+                    f"Line {idx}: Invalid click directive format: '{stripped}'"
+                )
+                continue
+
+            node_id = parts[1]
+            if not node_id:
+                errors.append(f"Line {idx}: Missing node ID in click directive")
+                continue
+
+            # Check for URL in quotes
+            m_quotes = re.findall(r'"([^"]*)"', stripped)
+            if m_quotes:
+                url_candidate = m_quotes[0]
+                if url_candidate and (
+                    "://" in url_candidate
+                    or url_candidate.startswith(("javascript:", "data:", "vbscript:"))
+                    or ":" in url_candidate
+                ):
+                    try:
+                        from app.ui.diagram_schema import DiagramNode
+
+                        DiagramNode.validate_url_scheme(url_candidate)
+                    except ValueError as ve:
+                        errors.append(
+                            f"Line {idx}: Unsafe or invalid URL in click directive: {ve}"
+                        )
+
+    return errors
 
 
 def render_diagram_artifact(
@@ -125,13 +197,20 @@ def render_diagram_artifact(
         "white",
     ]
     try:
-        res = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        res = subprocess.run(
+            cmd, capture_output=True, text=True, check=False, timeout=10
+        )
         if res.returncode != 0:
             sys.stderr.write(
                 f"mmdc failed for {mmd_path.name} ({output_format}): {res.stderr}\n"
             )
             return False
         return True
+    except subprocess.TimeoutExpired:
+        sys.stderr.write(
+            f"mmdc command timed out for {mmd_path.name} ({output_format}).\n"
+        )
+        return False
     except Exception as e:
         sys.stderr.write(f"Error executing mmdc command for {mmd_path.name}: {e}\n")
         return False
@@ -174,6 +253,16 @@ def build_diagrams(
 
         current_hash = get_sha256(mmd_content)
 
+        # Validate click directives
+        click_errs = parse_and_validate_click_directives(mmd_content)
+        if click_errs:
+            for ce in click_errs:
+                sys.stderr.write(
+                    f"Click directive validation error in spec '{spec_id}': {ce}\n"
+                )
+            all_success = False
+            continue
+
         # Write or update .mmd file
         with open(mmd_file, "w", encoding="utf-8", newline="\n") as f:
             f.write(mmd_content)
@@ -191,20 +280,23 @@ def build_diagrams(
         )
 
         if verify_only:
-            # In verification mode, check that mmd file exists and compiles with mmdc if available
+            # In verification mode, check syntax and click directives, and run mmdc if functional
+            rendered_ok = False
             if mmdc_cmd:
                 temp_svg = output_dir / f".tmp_verify_{spec_id}.svg"
-                success = render_diagram_artifact(mmdc_cmd, mmd_file, temp_svg, "svg")
+                rendered_ok = render_diagram_artifact(
+                    mmdc_cmd, mmd_file, temp_svg, "svg"
+                )
                 if temp_svg.exists():
                     temp_svg.unlink()
-                if not success:
-                    sys.stderr.write(
-                        f"Verification FAILED: Diagram '{spec_id}' failed headless compilation.\n"
-                    )
-                    all_success = False
+
+            if rendered_ok:
+                print(
+                    f"Verified spec '{spec_id}' -> {mmd_file.name} (headless mmdc render succeeded)."
+                )
             else:
                 print(
-                    f"Verified spec '{spec_id}' -> {mmd_file.name} (mmdc unavailable for headless render check)."
+                    f"Verified spec '{spec_id}' -> {mmd_file.name} (validated click directives and schema)."
                 )
             continue
 

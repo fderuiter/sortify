@@ -329,6 +329,120 @@ def test_component_diagram_spec_serialization():
     assert "n1 -->|connects| n2" in mmd
 
 
+def test_diagram_node_click_attributes_and_url_validation():
+    import pytest
+    from pydantic import ValidationError
+
+    from app.ui.diagram_schema import DiagramNode
+
+    # 1. Valid click attributes
+    node = DiagramNode(
+        id="step1",
+        label="Step One",
+        url="https://example.com/docs",
+        tooltip="Custom Tooltip",
+        target="_blank",
+        step_number=1,
+        step_description="First step description",
+    )
+    assert node.url == "https://example.com/docs"
+    assert node.tooltip == "Custom Tooltip"
+    assert node.target == "_blank"
+    assert node.step_number == 1
+    assert node.step_description == "First step description"
+
+    # Relative links and valid schemes
+    valid_urls = [
+        "docs/user_guide.md#first-run-steps--setup-wizard",
+        "#setup-wizard",
+        "http://localhost:8000",
+        "mailto:user@example.com",
+        "file:///tmp/doc.txt",
+    ]
+    for url in valid_urls:
+        n = DiagramNode(id="test", label="Test", url=url)
+        assert n.url == url
+
+    # Unsafe and invalid schemes
+    unsafe_urls = [
+        "javascript:alert(1)",
+        "data:text/html,<script>alert(1)</script>",
+        "vbscript:msgbox(1)",
+        "ftp://example.com/file",
+    ]
+    for url in unsafe_urls:
+        with pytest.raises(ValidationError):
+            DiagramNode(id="test", label="Test", url=url)
+
+
+def test_component_diagram_spec_click_serialization():
+    from app.ui.diagram_schema import ComponentDiagramSpec, DiagramNode
+
+    spec = ComponentDiagramSpec(
+        id="click_spec",
+        title="Click Spec",
+        diagram_type="graph",
+        direction="TD",
+        nodes=[
+            DiagramNode(
+                id="a",
+                label="Node A",
+                url="https://example.com/a",
+                tooltip="Tooltip A",
+                target="_blank",
+            ),
+            DiagramNode(
+                id="b",
+                label="Node B",
+                url="docs/guide.md",
+                step_number=2,
+                step_description="Second Step",
+            ),
+            DiagramNode(
+                id="c",
+                label="Node C",
+                tooltip="Tooltip C Only",
+            ),
+            DiagramNode(
+                id="d",
+                label="Node D Plain",
+            ),
+        ],
+    )
+
+    mmd = spec.to_mermaid()
+    assert 'click a "https://example.com/a" "Tooltip A" _blank' in mmd
+    assert 'click b "docs/guide.md" "Step 2: Second Step"' in mmd
+    assert 'click c tooltip "Tooltip C Only"' in mmd
+    assert "click d" not in mmd
+
+
+def test_diagram_toolchain_click_directives_and_fallback_svg():
+    from scripts.diagram_toolchain import (
+        generate_fallback_svg,
+        parse_and_validate_click_directives,
+    )
+
+    mmd_valid = """graph TD
+    A["Node A"]
+    click A "https://example.com" "Tooltip A" _blank
+    """
+    errs_valid = parse_and_validate_click_directives(mmd_valid)
+    assert len(errs_valid) == 0
+
+    mmd_invalid = """graph TD
+    A["Node A"]
+    click A "javascript:alert(1)" "Tooltip A"
+    """
+    errs_invalid = parse_and_validate_click_directives(mmd_invalid)
+    assert len(errs_invalid) > 0
+    assert "Unsafe or invalid URL" in errs_invalid[0]
+
+    fallback = generate_fallback_svg("Test Title", mmd_valid)
+    assert '<a href="https://example.com" target="_blank"' in fallback
+    assert "🔗 Node A -&gt; Tooltip A" in fallback
+
+
 def test_diagram_toolchain_build_and_verify(tmp_path):
     from scripts.diagram_toolchain import build_diagrams
 

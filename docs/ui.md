@@ -25,6 +25,13 @@ graph TD
     state_var --> renderer
     renderer --> preview
     renderer --> a11y_scan
+    click workbench "docs/ui.md" "Catalog Workbench"
+    click selector "docs/ui.md" "Component Selector"
+    click viewport "docs/ui.md" "Viewport Controller"
+    click state_var "docs/ui.md" "State Variant Switcher"
+    click renderer "docs/ui.md" "Component Renderer"
+    click a11y_scan "docs/admin_guide.md" "Accessibility Auditor"
+    click preview "docs/ui.md" "Interactive Viewport Frame"
 ```
 
 ### UI Component Hierarchy
@@ -52,6 +59,14 @@ graph LR
     plan_treeview --> status_progress_panel
     settings_modal --> setup_wizard
     cro_forensic_dialog --> status_progress_panel
+    click header_bar "docs/ui.md#appuiheader_bar" "Header Bar Component"
+    click toolbar "docs/ui.md" "Top Action Toolbar"
+    click directory_selection "docs/ui.md#appuidirectory_selection" "Directory Selection Component"
+    click settings_modal "docs/ui.md#appuisettings_modal" "Settings Dialog View Component"
+    click setup_wizard "docs/ui.md#appuisetup_wizard" "AI Model Setup Wizard Component"
+    click plan_treeview "docs/ui.md#appuiplan_treeview" "Proposed Reorganization Plan Component"
+    click cro_forensic_dialog "docs/ui.md#appuicro_forensic_dialog" "CRO Forensic View Component"
+    click status_progress_panel "docs/ui.md#appuistatus_progress_panel" "Status & Progress Panel Component"
 ```
 
 ## `app.ui.a11y_runner`
