@@ -4,7 +4,6 @@ import asyncio
 import contextlib
 import logging
 import os
-import sys
 import threading
 import time
 from dataclasses import dataclass, field
@@ -206,9 +205,7 @@ class ContinuousWatchdogDaemon:
         for key, content in plan.items():
             if isinstance(content, str):
                 src_path = (
-                    os.path.join(base, key)
-                    if base and not os.path.isabs(key)
-                    else key
+                    os.path.join(base, key) if base and not os.path.isabs(key) else key
                 )
                 dst_path = (
                     os.path.join(base, content)
@@ -226,9 +223,7 @@ class ContinuousWatchdogDaemon:
             elif isinstance(content, dict):
                 if content.get("__type__") == "file":
                     rel_src = content.get("relative_source") or key
-                    filename = (
-                        content.get("target_filename") or os.path.basename(key)
-                    )
+                    filename = content.get("target_filename") or os.path.basename(key)
                     rel_dst = os.path.join(current_dest, filename)
 
                     src_path = (
@@ -443,9 +438,7 @@ class ContinuousWatchdogDaemon:
                 loop.create_task(self._triage_worker(i))
                 for i in range(self.num_workers)
             ]
-            self._reconciliation_task = loop.create_task(
-                self._reconciliation_worker()
-            )
+            self._reconciliation_task = loop.create_task(self._reconciliation_worker())
 
             ready_event.set()
 
@@ -579,7 +572,9 @@ class ContinuousWatchdogDaemon:
         staged_filepath = staged_info.get("staged_filepath")
 
         # Unlink/remove original unisolated file from base_dir post-staging
-        if staged_filepath and os.path.abspath(abs_path) != os.path.abspath(staged_filepath):
+        if staged_filepath and os.path.abspath(abs_path) != os.path.abspath(
+            staged_filepath
+        ):
             if os.path.exists(abs_path):
                 resilient_remove(abs_path)
 
@@ -606,7 +601,12 @@ class ContinuousWatchdogDaemon:
         )
 
         # If file was quarantined, archived, or routed to DLQ / manual review, triage is complete
-        if status in ("QUARANTINED", "ARCHIVED", "MANUAL_REVIEW_REQUIRED", "DEAD_LETTER_QUEUE"):
+        if status in (
+            "QUARANTINED",
+            "ARCHIVED",
+            "MANUAL_REVIEW_REQUIRED",
+            "DEAD_LETTER_QUEUE",
+        ):
             logger.info(
                 f"Quarantine interceptor completed for {rel_path} with status {status}"
             )
@@ -782,7 +782,6 @@ class ContinuousWatchdogDaemon:
             self._active_triage_paths.clear()
 
         logger.info(f"Starting continuous watchdog daemon for: {self.base_dir}")
-        print(f"Starting continuous watchdog daemon for: {self.base_dir}", file=sys.stderr)
 
         # Launch background asyncio event loop & worker pool
         self._start_pipeline_event_loop()
@@ -843,7 +842,6 @@ class ContinuousWatchdogDaemon:
                 self._app_session = None
 
         logger.info("Watchdog daemon stopped.")
-        print("Watchdog daemon stopped.", file=sys.stderr)
 
     def trigger_recalculation(self):
         """Thread-safe and debounced trigger for sorting run."""
@@ -907,7 +905,6 @@ class ContinuousWatchdogDaemon:
             return
 
         logger.info("Executing background sorting run...")
-        print("Executing background sorting run...", file=sys.stderr)
 
         # Define the cancel check callback
         def cancel_check():
@@ -1023,13 +1020,11 @@ class ContinuousWatchdogDaemon:
             with self.scoped_move_phase(plan=slow_path_plan):
                 summary = app_session.execute_moves(slow_path_plan)
             logger.info(f"Phase 2 (Slow-Path AI) completed successfully: {summary}")
-            print(f"Silent move execution completed successfully: {summary}", file=sys.stderr)
 
         except Exception as e:
             logger.error(
                 f"Error during continuous watchdog execution run: {e}", exc_info=True
             )
-            print(f"Error during background sorting run: {e}", file=sys.stderr)
         finally:
             if app_session:
                 app_session.close()
