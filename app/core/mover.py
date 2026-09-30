@@ -42,42 +42,17 @@ def _resolve_path(p: Path) -> Path:
 
     Returns
     -------
-        Resolved Path object with symlinks and 8.3 short names expanded for existing ancestors.
+        Resolved Path object with symlinks and 8.3 short names expanded.
     """
     try:
-        p = p.expanduser()
+        p_str = str(p.expanduser())
     except Exception:
-        pass
+        p_str = str(p)
 
     try:
-        if p.exists():
-            return p.resolve()
+        return Path(os.path.realpath(p_str))
     except Exception:
-        pass
-
-    parts = []
-    curr = p
-    while True:
-        try:
-            if curr.exists():
-                break
-        except Exception:
-            pass
-        parent_curr = curr.parent
-        if parent_curr == curr:
-            break
-        parts.append(curr.name)
-        curr = parent_curr
-
-    try:
-        curr_resolved = curr.resolve()
-    except Exception:
-        curr_resolved = curr
-
-    for part in reversed(parts):
-        curr_resolved = curr_resolved / part
-
-    return curr_resolved
+        return Path(os.path.abspath(p_str))
 
 
 def is_subpath_or_equal(child: str, parent: str) -> bool:
@@ -98,11 +73,8 @@ def is_subpath_or_equal(child: str, parent: str) -> bool:
     clean_parent = str(parent).replace("\\", "/")
 
     try:
-        norm_c = os.path.normpath(clean_child)
-        norm_p = os.path.normpath(clean_parent)
-
-        p_child = _resolve_path(Path(norm_c))
-        p_parent = _resolve_path(Path(norm_p))
+        p_child = _resolve_path(Path(clean_child))
+        p_parent = _resolve_path(Path(clean_parent))
 
         if p_child == p_parent:
             return True
@@ -111,18 +83,9 @@ def is_subpath_or_equal(child: str, parent: str) -> bool:
                 return True
         except (AttributeError, ValueError):
             pass
-    except Exception:
-        pass
 
-    try:
-        norm_c = os.path.normpath(clean_child)
-        norm_p = os.path.normpath(clean_parent)
-
-        p_child_res = _resolve_path(Path(norm_c))
-        p_parent_res = _resolve_path(Path(norm_p))
-
-        s_child = str(p_child_res).replace("\\", "/").rstrip("/").lower()
-        s_parent = str(p_parent_res).replace("\\", "/").rstrip("/").lower()
+        s_child = str(p_child).replace("\\", "/").rstrip("/").lower()
+        s_parent = str(p_parent).replace("\\", "/").rstrip("/").lower()
 
         if s_child == s_parent:
             return True
