@@ -245,7 +245,10 @@ def is_rigid_width_class(cls_name: str, viewport_width: int) -> bool:
 
 
 def get_element_type_name(element: Any) -> str:
-    """Extract readable type name of a UI element."""
+    """Extract readable type name of a NiceGUI element."""
+    type_name = getattr(element, "_type_name", None)
+    if isinstance(type_name, str) and type_name:
+        return type_name
     return type(element).__name__
 
 
@@ -393,6 +396,42 @@ def inspect_element_tree(
                 )
             )
 
+    # Rule A11Y005: Slider Range Attributes Verification
+    if type_name in ("Slider", "slider"):
+        role = props.get("role")
+        vmin = props.get("aria-valuemin")
+        vmax = props.get("aria-valuemax")
+        vnow = props.get("aria-valuenow")
+        vtext = props.get("aria-valuetext")
+
+        missing_attrs = []
+        if role != "slider":
+            missing_attrs.append("role='slider'")
+        if vmin is None or str(vmin).strip() == "":
+            missing_attrs.append("aria-valuemin")
+        if vmax is None or str(vmax).strip() == "":
+            missing_attrs.append("aria-valuemax")
+        if vnow is None or str(vnow).strip() == "":
+            missing_attrs.append("aria-valuenow")
+        if vtext is None or str(vtext).strip() == "":
+            missing_attrs.append("aria-valuetext")
+
+        if missing_attrs:
+            violations.append(
+                A11yViolation(
+                    rule_id="A11Y005_SLIDER_RANGE_ATTRIBUTES",
+                    component_id=component_id,
+                    component_name=component_name,
+                    viewport_name=viewport_name,
+                    viewport_width=viewport_width,
+                    locator=locator,
+                    message=(
+                        f"Slider component 'ui.slider' is missing required ARIA range attributes: "
+                        f"{', '.join(missing_attrs)}."
+                    ),
+                )
+            )
+
     # Recurse through children slots / elements
     current_path = ancestor_path + [f"ui.{type_name.lower()}"]
     slots = getattr(element, "slots", {})
@@ -412,6 +451,139 @@ def inspect_element_tree(
                 )
 
     return violations
+
+
+class _MockElement:
+    def __init__(self, type_name, text="", parent=None):
+        self._type_name = type_name
+        self._props = {}
+        self._classes = []
+        self._text = text
+        self.children = []
+        self.slots = {"default": self}
+
+        if parent is not None and hasattr(parent, "children"):
+            parent.children.append(self)
+
+    @property
+    def value(self):
+        return self._props.get("value")
+
+    @value.setter
+    def value(self, val):
+        self._props["value"] = val
+
+    def props(self, *args, **kwargs):
+        if args and isinstance(args[0], str):
+            import re
+            props_str = args[0]
+            for match in re.finditer(
+                r'([a-zA-Z0-9_-]+)(?:=["\']([^"\']*)["\']|=(\S+))?', props_str
+            ):
+                k = match.group(1)
+                v = (
+                    match.group(2)
+                    if match.group(2) is not None
+                    else (match.group(3) if match.group(3) is not None else True)
+                )
+                self._props[k] = v
+        for k, v in kwargs.items():
+            self._props[k] = v
+        return self
+
+    def classes(self, *args, **kwargs):
+        if args and isinstance(args[0], str):
+            self._classes.extend(args[0].split())
+        return self
+
+    def tooltip(self, text):
+        self._props["tooltip"] = text
+        return self
+
+    def set_visibility(self, vis):
+        self._props["visible"] = vis
+        return self
+
+    def bind_text_from(self, *args, **kwargs):
+        return self
+
+    def disable(self):
+        self._props["disabled"] = True
+        return self
+
+    def enable(self):
+        self._props["disabled"] = False
+        return self
+
+    def __enter__(self):
+        _MockUI.stack.append(self)
+        return self
+
+    def __exit__(self, *args):
+        if _MockUI.stack and _MockUI.stack[-1] is self:
+            _MockUI.stack.pop()
+
+
+class _MockUI:
+    stack: List[_MockElement] = []
+
+    @classmethod
+    def current_parent(cls):
+        return cls.stack[-1] if cls.stack else None
+
+    @classmethod
+    def card(cls, *args, **kwargs):
+        return _MockElement("Card", parent=cls.current_parent())
+
+    @classmethod
+    def row(cls, *args, **kwargs):
+        return _MockElement("Row", parent=cls.current_parent())
+
+    @classmethod
+    def column(cls, *args, **kwargs):
+        return _MockElement("Column", parent=cls.current_parent())
+
+    @classmethod
+    def label(cls, text="", *args, **kwargs):
+        return _MockElement("Label", text=text, parent=cls.current_parent())
+
+    @classmethod
+    def button(cls, text="", *args, **kwargs):
+        elem = _MockElement("Button", text=text, parent=cls.current_parent())
+        if "aria-label" in kwargs:
+            elem._props["aria-label"] = kwargs["aria-label"]
+        return elem
+
+    @classmethod
+    def icon(cls, name="", *args, **kwargs):
+        return _MockElement("Icon", text=name, parent=cls.current_parent())
+
+    @classmethod
+    def switch(cls, text="", *args, **kwargs):
+        elem = _MockElement("Switch", text=text, parent=cls.current_parent())
+        if "value" in kwargs:
+            elem._props["value"] = kwargs["value"]
+        return elem
+
+    @classmethod
+    def slider(cls, min=0, max=100, value=0, step=1, **kwargs):
+        elem = _MockElement("Slider", parent=cls.current_parent())
+        elem._props["min"] = min
+        elem._props["max"] = max
+        elem._props["value"] = value
+        elem._props["step"] = step
+        return elem
+
+    @classmethod
+    def input(cls, label="", placeholder="", *args, **kwargs):
+        elem = _MockElement("Input", text=label, parent=cls.current_parent())
+        if placeholder:
+            elem._props["placeholder"] = placeholder
+        return elem
+
+    @classmethod
+    def select(cls, options=None, value=None, label="", **kwargs):
+        return _MockElement("Select", text=label, parent=cls.current_parent())
 
 
 def scan_catalog_component(
