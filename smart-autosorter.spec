@@ -23,6 +23,7 @@ if is_lite:
     with open(lite_marker_path, "w", encoding="utf-8") as f:
         f.write("1\n")
     datas.append((os.path.abspath(lite_marker_path), "."))
+    datas.append((os.path.abspath(lite_marker_path), "_internal"))
 else:
     ml_packages = [
         'torch', 'easyocr', 'transformers', 'sklearn', 'llama_cpp',
