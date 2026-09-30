@@ -471,15 +471,26 @@ def _resolve_target_and_files(args: argparse.Namespace) -> tuple[Path, list[str]
                 stdin_text = sys.stdin.read()
                 if stdin_text:
                     piped_lines = [
-                        line.strip()
+                        line.strip().strip('"').strip("'")
                         for line in stdin_text.splitlines()
-                        if line.strip()
+                        if line.strip().strip('"').strip("'")
                     ]
         except Exception:
             piped_lines = []
 
     if piped_lines:
-        valid_paths = [Path(p).resolve() for p in piped_lines if Path(p).resolve().exists()]
+        base_for_rel = Path(raw_dir).resolve() if raw_dir else Path.cwd()
+        valid_paths: list[Path] = []
+        for p in piped_lines:
+            p_obj = Path(p)
+            resolved = (
+                (base_for_rel / p_obj).resolve()
+                if not p_obj.is_absolute()
+                else p_obj.resolve()
+            )
+            if resolved.exists():
+                valid_paths.append(resolved)
+
         if not valid_paths:
             raise ValueError("No valid file paths provided via standard input.")
 

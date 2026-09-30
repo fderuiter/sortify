@@ -23,8 +23,11 @@ def extract_plan_rows(plan: Any) -> List[Dict[str, Any]]:
                 or node.get("original_path")
                 or src_key
             )
-            if isinstance(orig_path, str) and orig_path.startswith("../"):
-                orig_path = orig_path[3:]
+            if isinstance(orig_path, str):
+                if orig_path.startswith("../"):
+                    orig_path = orig_path[3:]
+                elif orig_path.startswith("..\\"):
+                    orig_path = orig_path[3:]
 
             target_path = node.get("target_filename") or node.get("target_path")
             category = (
@@ -39,10 +42,13 @@ def extract_plan_rows(plan: Any) -> List[Dict[str, Any]]:
                 else:
                     target_path = str(orig_path)
 
-            if not category and "/" in str(target_path):
-                category = str(target_path).split("/")[0]
-            elif not category and "\\" in str(target_path):
-                category = str(target_path).split("\\")[0]
+            if not category and target_path:
+                tp_str = str(target_path).replace("\\", "/")
+                parts = [p for p in tp_str.split("/") if p]
+                if parts and parts[0].endswith(":"):
+                    parts = parts[1:]
+                if len(parts) > 1:
+                    category = parts[0]
             if not category:
                 category = "Uncategorized"
 
@@ -51,10 +57,13 @@ def extract_plan_rows(plan: Any) -> List[Dict[str, Any]]:
             orig_path = src_key
             target_path = str(node)
             category = default_category
-            if not category and "/" in target_path:
-                category = target_path.split("/")[0]
-            elif not category and "\\" in target_path:
-                category = target_path.split("\\")[0]
+            if not category and target_path:
+                tp_str = str(target_path).replace("\\", "/")
+                parts = [p for p in tp_str.split("/") if p]
+                if parts and parts[0].endswith(":"):
+                    parts = parts[1:]
+                if len(parts) > 1:
+                    category = parts[0]
             if not category:
                 category = "Uncategorized"
             conf_val = None
