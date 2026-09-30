@@ -45,3 +45,15 @@ Before any files are moved, the `app.core.verifier` ensures the sorting plan is 
 
 ## Module Definitions
 
+### Fast-Path Triage Engine (`app.core.jev_classifier`)
+
+The `JevClassifierEngine` provides ultra-fast, local, non-generative document triage and classification designed to enforce a sub-150ms per-file SLA.
+
+- **In-Engine Fast Snippet Extraction**: When callers omit pre-extracted `text_content`, the engine automatically performs lightweight header snippet extraction directly from binary and PDF files under 10MB:
+  - `.pdf`: Reads page 0 text (up to 4096 characters) using `pypdf.PdfReader`.
+  - `.docx`: Reads initial paragraph text (up to 4096 characters) using `docx.Document`.
+  - `.xlsx`: Reads initial rows from sheet 0 (up to 4096 characters) using `openpyxl.load_workbook`.
+  - `.xls`: Reads initial rows from sheet 0 (up to 4096 characters) using `xlrd.open_workbook`.
+  - `.pptx`: Reads text from slide 0 (up to 4096 characters) using `pptx.Presentation`.
+- **Stream Descriptor Resilience**: All document readers accept string or `Path` file paths wrapped in explicit `with open(file_path, "rb") as f:` binary context managers or internal stream lifecycle managers, ensuring file descriptors are released immediately and preventing file handle locking (`WinError 32`) on Windows platforms.
+- **Rule-Based Triage & Caching**: Combines category keyword and extension matching with two-tier in-memory caching (`BoundedMemoryCache`), assigning sensitivity ratings, archival priorities, and confidence scores without invoking heavy LLM inference.

@@ -105,7 +105,7 @@ def test_get_cluster_keywords_truncation_and_formatting():
         {"generated_text": '  Folder-containing "Finance-Data: Alpha"!!!  '}
     ]
 
-    documents = ["doc1.txt"] * 50
+    documents = [f"Invoice Data Alpha document {i}" for i in range(50)]
     # doc_text will be joined and truncated to 1000 characters
     result = strategy._get_cluster_keywords(documents)
 
