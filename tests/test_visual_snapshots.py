@@ -56,25 +56,25 @@ def sanitize_svg(svg: str) -> str:
     if style_match:
         css_text = style_match.group(1)
         rules = re.findall(r"\.(terminal-test-r\d+)\s*\{(.*?)\}", css_text)
+        if rules:
+            style_map = {}
+            sorted_unique_styles = sorted(list(set(rule[1].strip() for rule in rules)))
 
-        style_map = {}
-        sorted_unique_styles = sorted(list(set(rule[1].strip() for rule in rules)))
+            for old_class, style_body in rules:
+                style_index = sorted_unique_styles.index(style_body.strip())
+                style_map[old_class] = f"terminal-test-c{style_index}"
 
-        for old_class, style_body in rules:
-            style_index = sorted_unique_styles.index(style_body.strip())
-            style_map[old_class] = f"terminal-test-c{style_index}"
+            new_css_lines = [
+                f"    .terminal-test-c{idx} {{ {body} }}"
+                for idx, body in enumerate(sorted_unique_styles)
+            ]
+            new_css = "\n" + "\n".join(new_css_lines) + "\n    "
+            svg = svg.replace(css_text, new_css)
 
-        new_css_lines = [
-            f"    .terminal-test-c{idx} {{ {body} }}"
-            for idx, body in enumerate(sorted_unique_styles)
-        ]
-        new_css = "\n" + "\n".join(new_css_lines) + "\n    "
-        svg = svg.replace(css_text, new_css)
-
-        for old_class, new_class in sorted(
-            style_map.items(), key=lambda x: len(x[0]), reverse=True
-        ):
-            svg = re.sub(r"\b" + old_class + r"\b", new_class, svg)
+            for old_class, new_class in sorted(
+                style_map.items(), key=lambda x: len(x[0]), reverse=True
+            ):
+                svg = re.sub(r"\b" + old_class + r"\b", new_class, svg)
 
     return svg
 
