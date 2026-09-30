@@ -65,14 +65,20 @@ def secure_delete_file(file_path: Path):
                     try:
                         os.fsync(f.fileno())
                     except OSError as fsync_err:
-                        logger.debug(f"fsync failed during secure file deletion of '{file_path}': {fsync_err}")
+                        logger.debug(
+                            f"fsync failed during secure file deletion of '{file_path}': {fsync_err}"
+                        )
             file_path.unlink()
     except Exception as e:
-        logger.warning(f"Failed to overwrite file '{file_path}' during secure deletion: {e}")
+        logger.warning(
+            f"Failed to overwrite file '{file_path}' during secure deletion: {e}"
+        )
         try:
             file_path.unlink()
         except OSError as unlink_err:
-            logger.warning(f"Failed to unlink file '{file_path}' after overwrite failure: {unlink_err}")
+            logger.warning(
+                f"Failed to unlink file '{file_path}' after overwrite failure: {unlink_err}"
+            )
 
 
 def secure_delete_dir(dir_path: Path):
@@ -87,7 +93,9 @@ def secure_delete_dir(dir_path: Path):
                 secure_delete_dir(item)
         dir_path.rmdir()
     except Exception as e:
-        logger.warning(f"Failed to securely delete directory '{dir_path}', using rmtree fallback: {e}")
+        logger.warning(
+            f"Failed to securely delete directory '{dir_path}', using rmtree fallback: {e}"
+        )
         from app.core.resilient_file_ops import resilient_rmtree
 
         resilient_rmtree(dir_path, ignore_errors=True)
@@ -135,7 +143,9 @@ class SessionCrypto:
             if key_str:
                 key = key_str.encode("utf-8")
         except Exception as e:
-            logger.warning(f"Keyring lookup failed for account '{self.keyring_account}': {e}")
+            logger.warning(
+                f"Keyring lookup failed for account '{self.keyring_account}': {e}"
+            )
 
         # 2. Centralized Fallback Key Lookup
         if key is None and self.isolated_key_path.exists():
@@ -143,7 +153,9 @@ class SessionCrypto:
                 with open(self.isolated_key_path, "rb") as f:
                     key = f.read().strip()
             except OSError as e:
-                logger.warning(f"Failed to read isolated key at '{self.isolated_key_path}': {e}")
+                logger.warning(
+                    f"Failed to read isolated key at '{self.isolated_key_path}': {e}"
+                )
 
         # 3. Legacy Fallback Migration and Cleanup
         legacy_key = None
@@ -152,7 +164,9 @@ class SessionCrypto:
                 with open(self.legacy_isolated_key_path, "rb") as f:
                     legacy_key = f.read().strip()
             except OSError as e:
-                logger.warning(f"Failed to read legacy isolated key at '{self.legacy_isolated_key_path}': {e}")
+                logger.warning(
+                    f"Failed to read legacy isolated key at '{self.legacy_isolated_key_path}': {e}"
+                )
 
         if (
             legacy_key is None
@@ -168,9 +182,13 @@ class SessionCrypto:
                                 if legacy_key:
                                     break
                         except OSError as e:
-                            logger.debug(f"Failed to read legacy key candidate '{p}': {e}")
+                            logger.debug(
+                                f"Failed to read legacy key candidate '{p}': {e}"
+                            )
             except OSError as e:
-                logger.warning(f"Failed to iterate legacy isolated key directory '{self.legacy_isolated_dir}': {e}")
+                logger.warning(
+                    f"Failed to iterate legacy isolated key directory '{self.legacy_isolated_dir}': {e}"
+                )
 
         if legacy_key is None and self.key_path.exists():
             try:
@@ -189,7 +207,9 @@ class SessionCrypto:
             try:
                 os.chmod(self.isolated_dir, 0o700)
             except OSError as chmod_err:
-                logger.debug(f"Failed to set permissions on isolated directory '{self.isolated_dir}': {chmod_err}")
+                logger.debug(
+                    f"Failed to set permissions on isolated directory '{self.isolated_dir}': {chmod_err}"
+                )
 
             try:
                 fd = os.open(
@@ -200,13 +220,17 @@ class SessionCrypto:
                 with os.fdopen(fd, "wb") as f:
                     f.write(legacy_key)
             except OSError as e:
-                logger.warning(f"fdopen failed writing key to '{self.isolated_key_path}', falling back to open: {e}")
+                logger.warning(
+                    f"fdopen failed writing key to '{self.isolated_key_path}', falling back to open: {e}"
+                )
                 with open(self.isolated_key_path, "wb") as f:
                     f.write(legacy_key)
                 try:
                     os.chmod(self.isolated_key_path, 0o600)
                 except OSError as chmod_err:
-                    logger.debug(f"Failed to set permissions on key file '{self.isolated_key_path}': {chmod_err}")
+                    logger.debug(
+                        f"Failed to set permissions on key file '{self.isolated_key_path}': {chmod_err}"
+                    )
 
             # Try to migrate to keyring
             try:
@@ -216,14 +240,18 @@ class SessionCrypto:
                     legacy_key.decode("utf-8"),
                 )
             except Exception as e:
-                logger.warning(f"Failed to set keyring password during legacy migration: {e}")
+                logger.warning(
+                    f"Failed to set keyring password during legacy migration: {e}"
+                )
 
         # Always clean up legacy fallback keys if they exist (even if they weren't used to load the key)
         if self.legacy_isolated_dir.exists():
             try:
                 secure_delete_dir(self.legacy_isolated_dir)
             except Exception as e:
-                logger.warning(f"Failed to clean up legacy key directory '{self.legacy_isolated_dir}': {e}")
+                logger.warning(
+                    f"Failed to clean up legacy key directory '{self.legacy_isolated_dir}': {e}"
+                )
 
         # 4. Database Guard Check
         if key is None:
@@ -259,7 +287,9 @@ class SessionCrypto:
                     # which means it's an existing DB! We cannot read it without a key.
                     raise CryptoError("Database accessed but key file is missing.")
                 except sqlite3.Error as e:
-                    logger.debug(f"SQLite error checking unencrypted database guard: {e}")
+                    logger.debug(
+                        f"SQLite error checking unencrypted database guard: {e}"
+                    )
 
             # 5. New Key Generation
             key = Fernet.generate_key()
@@ -282,7 +312,9 @@ class SessionCrypto:
                 try:
                     os.chmod(self.isolated_dir, 0o700)
                 except OSError as chmod_err:
-                    logger.debug(f"Failed to set permissions on isolated directory '{self.isolated_dir}': {chmod_err}")
+                    logger.debug(
+                        f"Failed to set permissions on isolated directory '{self.isolated_dir}': {chmod_err}"
+                    )
 
                 try:
                     fd = os.open(
@@ -293,13 +325,17 @@ class SessionCrypto:
                     with os.fdopen(fd, "wb") as f:
                         f.write(key)
                 except OSError as e:
-                    logger.warning(f"fdopen failed writing generated key to '{self.isolated_key_path}', falling back to open: {e}")
+                    logger.warning(
+                        f"fdopen failed writing generated key to '{self.isolated_key_path}', falling back to open: {e}"
+                    )
                     with open(self.isolated_key_path, "wb") as f:
                         f.write(key)
                     try:
                         os.chmod(self.isolated_key_path, 0o600)
                     except OSError as chmod_err:
-                        logger.debug(f"Failed to set permissions on key file '{self.isolated_key_path}': {chmod_err}")
+                        logger.debug(
+                            f"Failed to set permissions on key file '{self.isolated_key_path}': {chmod_err}"
+                        )
 
         if key is None:
             raise CryptoError("Database accessed but key file is missing.")
@@ -506,6 +542,10 @@ def _json_default(obj: Any) -> Any:
     """JSON default encoder helper for converting non-primitive Python types to JSON lists."""
     if isinstance(obj, (set, tuple)):
         return list(obj)
+    if hasattr(obj, "model_dump") and callable(obj.model_dump):
+        return obj.model_dump()
+    if hasattr(obj, "dict") and callable(obj.dict):
+        return obj.dict()
     if hasattr(obj, "to_list") and callable(obj.to_list):
         return obj.to_list()
     if hasattr(obj, "tolist") and callable(obj.tolist):
@@ -581,4 +621,3 @@ def decrypt_ipc_payload(encrypted_bytes: bytes, session_key: bytes | str) -> Any
             pos=0,
         ) from e
     return json.loads(decrypted_str)
-
