@@ -504,6 +504,7 @@ CORE_ARCHITECTURE_SPEC = ComponentDiagramSpec(
                 "core_env_helper",
                 "core_crypto",
                 "core_exceptions",
+                "core_domain_contracts",
             ],
         ),
     ],
