@@ -18,6 +18,8 @@ from app.ui.tui import (
     WizardModal,
 )
 
+pytestmark = pytest.mark.xdist_group(name="visual_snapshots")
+
 SNAPSHOT_DIR = os.path.join(os.path.dirname(__file__), "snapshots", "tui_svg")
 
 
