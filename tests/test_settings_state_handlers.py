@@ -1,11 +1,7 @@
 """Unit tests for settings state handlers, sliders, presets, policies, and UI component workflows in app/ui/settings.py."""
 
 import re
-import sys
-from pathlib import Path
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 from app.config import AppSettings
 from app.ui.settings import (
