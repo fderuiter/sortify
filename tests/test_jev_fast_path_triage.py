@@ -159,7 +159,7 @@ def test_file_analyzer_generate_sorting_plan_with_jev_results(tmp_path):
 
 
 @pytest.mark.anyio
-async def test_daemon_triage_file_path_jev_fast_path(tmp_path):
+async def test_daemon_triage_file_path_jev_fast_path(tmp_path, monkeypatch):
     """Verify ContinuousWatchdogDaemon._triage_file_path routes via Jev fast-path triage."""
     from app.core.db_conn import clear_connection_cache
 
@@ -171,6 +171,7 @@ async def test_daemon_triage_file_path_jev_fast_path(tmp_path):
 
     settings = AppSettings()
     settings.AUTO_QUARANTINE_RATINGS = []
+    monkeypatch.setattr(AppSettings, "load", lambda self: None)
     daemon = ContinuousWatchdogDaemon(settings, str(base_dir))
     daemon._is_running = True
 

@@ -236,7 +236,7 @@ def test_settings_modal_snapshot():
 
     async def _test():
         settings = AppSettings()
-        settings._settings_model.AI_CONSENT_GRANTED = True
+        settings.AI_CONSENT_GRANTED = True
         app = AutoSorterTUI(settings=settings)
         async with app.run_test(size=(100, 35)) as pilot:
             modal = SettingsModal(app.settings)
