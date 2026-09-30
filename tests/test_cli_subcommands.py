@@ -5,12 +5,19 @@ import json
 import os
 import tempfile
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 
-def run_cli(args, env=None):
+def mock_non_interactive_stdin():
+    """Return patch for sys.stdin as a non-interactive stream."""
+    mock_stdin = MagicMock()
+    mock_stdin.isatty.return_value = False
+    return patch("sys.stdin", mock_stdin)
+
+
+def run_cli(args, env=None, prog="main.py"):
     """Run app/main.py in-process and return (returncode, stdout, stderr)."""
     old_env = os.environ.copy()
     repo_root = str(Path(__file__).parent.parent.resolve())
@@ -21,7 +28,7 @@ def run_cli(args, env=None):
 
     stdout_cap = io.StringIO()
     stderr_cap = io.StringIO()
-    test_args = ["main.py"] + args
+    test_args = [prog] + args
 
     code = 0
     with patch("sys.argv", test_args), patch("sys.stdout", stdout_cap), patch("sys.stderr", stderr_cap):
@@ -276,4 +283,65 @@ def test_build_parser_factory():
     assert "directory" in sort_help
     assert "--dest-dir" in sort_help
     assert "--dry-run" in sort_help
+
+
+@pytest.mark.xdist_group(name="cli_subcommands")
+def test_headless_no_args_exits_code_2_with_guidance():
+    """Test non-interactive invocation without subcommands or path exits with code 2 and guidance."""
+    with mock_non_interactive_stdin():
+        code, stdout, stderr = run_cli([])
+        assert code == 2, f"Expected exit code 2, got {code}. Stderr: {stderr}"
+        assert "usage:" in stderr or "subcommand" in stderr
+        assert "sort" in stderr
+
+
+@pytest.mark.xdist_group(name="cli_subcommands")
+def test_headless_positional_path_autoroutes_to_sort():
+    """Test non-interactive invocation with target path auto-routes to batch sorting."""
+    with tempfile.TemporaryDirectory() as src_dir:
+        create_sample_corpus(src_dir)
+        with mock_non_interactive_stdin():
+            code, stdout, stderr = run_cli([src_dir, "-q"])
+            assert code == 0, f"Expected exit code 0, got {code}. Stderr: {stderr}"
+            assert "finance_doc.txt" in stdout
+
+
+@pytest.mark.xdist_group(name="cli_subcommands")
+def test_headless_gui_flag_honored():
+    """Test non-interactive invocation with explicit --gui flag calls UI app launcher."""
+    with mock_non_interactive_stdin(), patch("app.ui.tui.run_tui") as mock_run_tui:
+        code, stdout, stderr = run_cli(["--gui"])
+        assert code == 0
+        mock_run_tui.assert_called_once()
+
+
+@pytest.mark.xdist_group(name="cli_subcommands")
+def test_headless_explicit_sort_subcommand():
+    """Test non-interactive invocation with explicit sort subcommand executes batch sorting."""
+    with tempfile.TemporaryDirectory() as src_dir:
+        create_sample_corpus(src_dir)
+        with mock_non_interactive_stdin():
+            code, stdout, stderr = run_cli(["sort", src_dir, "-q"])
+            assert code == 0, f"Expected exit code 0, got {code}. Stderr: {stderr}"
+            assert "finance_doc.txt" in stdout
+
+
+@pytest.mark.xdist_group(name="cli_subcommands")
+def test_headless_no_color_guidance_strips_ansi():
+    """Test non-interactive guidance output strips ANSI escape codes when --no-color is set."""
+    with mock_non_interactive_stdin():
+        code, stdout, stderr = run_cli(["--no-color"])
+        assert code == 2
+        assert "\x1b[" not in stderr
+
+
+@pytest.mark.xdist_group(name="cli_subcommands")
+def test_headless_gui_exe_name_honored():
+    """Test non-interactive invocation via smart-autosorter-gui executable launches UI app."""
+    with mock_non_interactive_stdin(), patch("app.ui.tui.run_tui") as mock_run_tui:
+        code, stdout, stderr = run_cli([], prog="smart-autosorter-gui.exe")
+        assert code == 0
+        mock_run_tui.assert_called_once()
+
+
 

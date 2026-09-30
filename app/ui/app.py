@@ -2559,7 +2559,15 @@ def run_app(settings, directory=None, port=8080, show=True, debug_layout=False) 
             print("==========================================\n")
             app_instance.start_analysis_sync()
             app_instance.print_terminal_tree()
-            if sys.stdin.isatty():
+            is_interactive_stdin = False
+            if sys.stdin is not None:
+                try:
+                    isatty_fn = getattr(sys.stdin, "isatty", None)
+                    is_interactive_stdin = bool(isatty_fn and isatty_fn())
+                except Exception:
+                    is_interactive_stdin = False
+
+            if is_interactive_stdin:
                 try:
                     ans = input("Approve and execute file sorting now? [Y/n]: ").strip().lower()
                     if ans in ("", "y", "yes"):
@@ -2575,7 +2583,15 @@ def run_app(settings, directory=None, port=8080, show=True, debug_layout=False) 
             print(f"Error: Target directory does not exist: {abs_dir}", file=sys.stderr)
             sys.exit(1)
     else:
-        if sys.stdin.isatty():
+        is_interactive_stdin = False
+        if sys.stdin is not None:
+            try:
+                isatty_fn = getattr(sys.stdin, "isatty", None)
+                is_interactive_stdin = bool(isatty_fn and isatty_fn())
+            except Exception:
+                is_interactive_stdin = False
+
+        if is_interactive_stdin:
             app_instance.run_interactive_terminal()
         else:
             print("Smart AutoSorter AI Pro - Terminal Mode")
