@@ -36,13 +36,53 @@ def is_prompt_dump_enabled() -> bool:
 ILLEGAL_DUMP_PATH_CHARS = set('<>?*|"\0')
 
 
+def _get_long_path_name(path_str: str) -> str | None:
+    """Safely resolve Win32 long path name using kernel32.GetLongPathNameW with dynamic buffer allocation."""
+    if sys.platform != "win32" and os.name != "nt":
+        return None
+    try:
+        import ctypes
+
+        buf_size = 1024
+        buf = ctypes.create_unicode_buffer(buf_size)
+        res = ctypes.windll.kernel32.GetLongPathNameW(path_str, buf, buf_size)
+        if res >= buf_size:
+            buf_size = res + 1
+            buf = ctypes.create_unicode_buffer(buf_size)
+            res = ctypes.windll.kernel32.GetLongPathNameW(path_str, buf, buf_size)
+        if 0 < res < buf_size and buf.value:
+            return buf.value
+    except Exception:
+        pass
+    return None
+
+
+def _get_short_path_name(path_str: str) -> str | None:
+    """Safely resolve Win32 short 8.3 path name using kernel32.GetShortPathNameW with dynamic buffer allocation."""
+    if sys.platform != "win32" and os.name != "nt":
+        return None
+    try:
+        import ctypes
+
+        buf_size = 1024
+        buf = ctypes.create_unicode_buffer(buf_size)
+        res = ctypes.windll.kernel32.GetShortPathNameW(path_str, buf, buf_size)
+        if res >= buf_size:
+            buf_size = res + 1
+            buf = ctypes.create_unicode_buffer(buf_size)
+            res = ctypes.windll.kernel32.GetShortPathNameW(path_str, buf, buf_size)
+        if 0 < res < buf_size and buf.value:
+            return buf.value
+    except Exception:
+        pass
+    return None
+
+
 def _get_canonical_windows_path(p: str | Path) -> str:
     """Normalize and resolve Win32 short 8.3 paths and drive letter casing for Windows path comparison."""
     path_str = str(p)
     if sys.platform == "win32" or os.name == "nt":
         try:
-            import ctypes
-
             p_obj = Path(p)
             tail_parts = []
             curr = p_obj
@@ -50,10 +90,9 @@ def _get_canonical_windows_path(p: str | Path) -> str:
                 tail_parts.append(curr.name)
                 curr = curr.parent
 
-            buf = ctypes.create_unicode_buffer(1024)
-            res = ctypes.windll.kernel32.GetLongPathNameW(str(curr), buf, 1024)
-            if res > 0:
-                expanded_base = Path(buf.value)
+            long_base = _get_long_path_name(str(curr))
+            if long_base:
+                expanded_base = Path(long_base)
                 for part in reversed(tail_parts):
                     expanded_base = expanded_base / part
                 path_str = str(expanded_base)
@@ -201,20 +240,15 @@ def _scrub_user_home_paths(text: str) -> str:
         if combined and combined not in home_dirs:
             home_dirs.append(combined)
 
-    if sys.platform == "win32":
+    if sys.platform == "win32" or os.name == "nt":
         try:
-            import ctypes
             for h_dir in list(home_dirs):
-                buf = ctypes.create_unicode_buffer(500)
-                if ctypes.windll.kernel32.GetLongPathNameW(h_dir, buf, 500):
-                    long_p = buf.value
-                    if long_p and long_p not in home_dirs:
-                        home_dirs.append(long_p)
-                buf2 = ctypes.create_unicode_buffer(500)
-                if ctypes.windll.kernel32.GetShortPathNameW(h_dir, buf2, 500):
-                    short_p = buf2.value
-                    if short_p and short_p not in home_dirs:
-                        home_dirs.append(short_p)
+                long_p = _get_long_path_name(h_dir)
+                if long_p and long_p not in home_dirs:
+                    home_dirs.append(long_p)
+                short_p = _get_short_path_name(h_dir)
+                if short_p and short_p not in home_dirs:
+                    home_dirs.append(short_p)
         except Exception:
             pass
 
