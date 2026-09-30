@@ -671,22 +671,22 @@ def main():
 
     # 1. Identify files to check
     notebook_files = [
-        os.path.join("notebooks", "01_ml_analyzer_clustering.ipynb"),
-        os.path.join("notebooks", "02_multi_format_text_extraction.ipynb"),
-        os.path.join("notebooks", "03_virtual_sorting_verification.ipynb"),
+        Path("notebooks/01_ml_analyzer_clustering.ipynb").as_posix(),
+        Path("notebooks/02_multi_format_text_extraction.ipynb").as_posix(),
+        Path("notebooks/03_virtual_sorting_verification.ipynb").as_posix(),
     ]
     tutorial_files = [
-        os.path.join("docs", "tutorials", "01_ml_analyzer_clustering.md"),
-        os.path.join("docs", "tutorials", "02_multi_format_text_extraction.md"),
-        os.path.join("docs", "tutorials", "03_virtual_sorting_verification.md"),
+        Path("docs/tutorials/01_ml_analyzer_clustering.md").as_posix(),
+        Path("docs/tutorials/02_multi_format_text_extraction.md").as_posix(),
+        Path("docs/tutorials/03_virtual_sorting_verification.md").as_posix(),
     ]
     generated_files = (
         notebook_files
         + tutorial_files
         + [
-            os.path.join("docs", "api_reference.md"),
-            os.path.join("docs", "ui.md"),
-            os.path.join("docs", "admin_guide.md"),
+            Path("docs/api_reference.md").as_posix(),
+            Path("docs/ui.md").as_posix(),
+            Path("docs/admin_guide.md").as_posix(),
             "SECURITY.md",
         ]
     )

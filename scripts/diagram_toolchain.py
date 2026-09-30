@@ -559,7 +559,10 @@ def build_diagrams(
                     mmdc_cmd, mmd_file, temp_svg, "svg"
                 )
                 if temp_svg.exists():
-                    temp_svg.unlink()
+                    try:
+                        temp_svg.unlink()
+                    except Exception:
+                        pass
 
                 if not rendered_ok:
                     sys.stderr.write(
