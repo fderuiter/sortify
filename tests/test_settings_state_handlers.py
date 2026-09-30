@@ -301,7 +301,7 @@ def test_accessible_slider_formatting_and_events():
 
 # --- 4. Validation Warning Banner Tests ---
 
-def test_validation_warning_banner():
+def test_validation_warning_banner(tmp_path):
     harness = MockUIHarness()
     settings = AppSettings()
     settings._has_validation_errors = True
@@ -336,7 +336,8 @@ def test_validation_warning_banner():
             guide_btn.handlers["click"]()
 
         # Test packaged path
-        with patch("app.core.path_utils.is_packaged", return_value=True), patch("sys._MEIPASS", "/tmp/meipass", create=True):
+        meipass_dir = str((tmp_path / "meipass").resolve())
+        with patch("app.core.path_utils.is_packaged", return_value=True), patch("sys._MEIPASS", meipass_dir, create=True):
             guide_btn.handlers["click"]()
 
         # Test deleted banner card refresh
@@ -351,8 +352,12 @@ def test_show_settings_general_tab(tmp_path):
     harness = MockUIHarness()
     parent_app = MagicMock()
 
+    p1 = str((tmp_path / "protected" / "dir1").resolve())
+    p2 = str((tmp_path / "protected" / "dir2").resolve())
+    p3 = str((tmp_path / "protected" / "dir3").resolve())
+
     settings = AppSettings(filepath=str(tmp_path / "settings.json"))
-    settings.PROTECTED_PATHS = ["/protected/dir1", "/protected/dir2"]
+    settings.PROTECTED_PATHS = [p1, p2]
     settings.IGNORED_EXTENSIONS = [".tmp", ".bak"]
 
     with patch("app.ui.settings.ui", harness):
@@ -380,18 +385,18 @@ def test_show_settings_general_tab(tmp_path):
         remove_btns = [e for e in harness.elements if e.tag == "button" and getattr(e, "_text", "") == "Remove"]
         assert len(remove_btns) >= 4
         # First 2 are protected paths, next 2 are ignored extensions
-        remove_btns[0].handlers["click"]() # deletes /protected/dir1
+        remove_btns[0].handlers["click"]() # deletes p1
         remove_btns[2].handlers["click"]() # deletes .tmp
 
         btn_add_prot = harness.find_by_aria_label("Add Protected Path Button", tag="button")
         input_prot = harness.find_by_aria_label("Add Protected Directory Path input", tag="input")
         input_prot.value = ""
         btn_add_prot.handlers["click"]()
-        input_prot.value = "/protected/dir2"
+        input_prot.value = p2
         btn_add_prot.handlers["click"]()
-        input_prot.value = "/protected/dir3"
+        input_prot.value = p3
         btn_add_prot.handlers["click"]()
-        assert "/protected/dir3" in settings.PROTECTED_PATHS
+        assert p3 in settings.PROTECTED_PATHS
 
         btn_clear_prot = harness.find_by_aria_label("Clear All Protected Paths Button", tag="button")
         btn_clear_prot.handlers["click"]()
