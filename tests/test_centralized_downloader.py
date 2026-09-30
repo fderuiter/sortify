@@ -10,6 +10,8 @@ from app.core.downloader import (
     ThreadSafeState,
 )
 
+pytestmark = pytest.mark.xdist_group(name="downloader")
+
 
 def test_download_manager_singleton():
     """Verify that DownloadManager is a singleton."""

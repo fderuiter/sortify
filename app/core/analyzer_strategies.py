@@ -202,7 +202,8 @@ def _scrub_user_home_paths(text: str) -> str:
             continue
 
         pattern = (
-            r"(?:[a-zA-Z]:[\/\\]*|[\/\\][a-zA-Z][\/\\]+)?"
+            r"(?<![a-zA-Z0-9_])"
+            + r"(?:[a-zA-Z]:[\/\\]*|[\/\\][a-zA-Z][\/\\]+)?"
             + r"[\/\\]*"
             + r"[\/\\]+".join([re.escape(p) for p in body_parts])
             + r"(?=[\\/]|[^a-zA-Z0-9_-]|$)"

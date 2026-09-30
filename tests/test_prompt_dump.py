@@ -48,7 +48,7 @@ def test_is_prompt_dump_enabled(monkeypatch):
 
 
 def test_validate_prompt_dump_path_valid():
-    debug_dir = get_debug_log_dir()
+    debug_dir = get_debug_log_dir().resolve()
     valid_paths = [
         "dump.txt",
         "logs/debug/dump.txt",
