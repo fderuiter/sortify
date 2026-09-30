@@ -518,7 +518,6 @@ def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
             plan = re_rooted_plan
 
         serializable_plan = _make_json_serializable(plan)
-
         if dry_run:
             result = {
                 "status": "success",
@@ -589,6 +588,8 @@ def handle_scan_command(args: argparse.Namespace, settings: AppSettings):
             file=sys.stderr,
         )
         sys.exit(1)
+
+    apply_config_overrides(settings, args)
 
     session = None
     try:
@@ -927,6 +928,8 @@ def main():
     args = parser.parse_args()
     if legacy_directory and not getattr(args, "directory", None):
         args.directory = legacy_directory
+    if not hasattr(args, "directory"):
+        args.directory = None
 
     if not hasattr(args, "quiet"):
         args.quiet = False
@@ -979,6 +982,37 @@ def main():
     elif getattr(args, "subcommand", None) == "daemon":
         handle_daemon_command(args, settings)
 
+    # Explicit Headless Guard for non-interactive streams without subcommands
+    argv0 = sys.argv[0] if sys.argv and sys.argv[0] else ""
+    exe0 = sys.executable if sys.executable else ""
+    is_gui_exe = (
+        "smart-autosorter-gui" in os.path.basename(argv0).lower()
+        or "smart-autosorter-gui" in os.path.basename(exe0).lower()
+    )
+    is_interactive = False
+    if sys.stdin is not None:
+        try:
+            isatty_fn = getattr(sys.stdin, "isatty", None)
+            is_interactive = bool(isatty_fn and isatty_fn())
+        except Exception:
+            is_interactive = False
+    is_explicit_ui = (
+        is_gui_exe
+        or getattr(args, "gui", False)
+        or bool(os.environ.get("FORCE_GUI"))
+        or getattr(args, "tui", False)
+        or getattr(args, "interactive", False)
+        or getattr(args, "demo", False)
+        or getattr(args, "daemon", False)
+    )
+
+    if not is_interactive and not is_explicit_ui:
+        if getattr(args, "directory", None):
+            handle_sort_command(args, settings)
+        else:
+            parser.print_help(sys.stderr)
+            sys.exit(2)
+
     # Verify embedded model integrity upfront if packaged / sandboxed
     if is_packaged():
         print("Verifying integrity of embedded model weights...", file=sys.stderr)
@@ -1013,15 +1047,6 @@ def main():
         from app.demo import run_demo
 
         run_demo(settings)
-    elif (
-        sys.stdin is not None
-        and hasattr(sys.stdin, "isatty")
-        and not sys.stdin.isatty()
-        and getattr(args, "directory", None)
-        and not getattr(args, "tui", False)
-        and not getattr(args, "interactive", False)
-    ):
-        handle_sort_command(args, settings)
     else:
         from app.ui.tui import run_tui
 

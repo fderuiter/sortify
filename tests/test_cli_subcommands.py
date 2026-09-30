@@ -5,12 +5,19 @@ import json
 import os
 import tempfile
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 
-def run_cli(args, env=None):
+def mock_non_interactive_stdin():
+    """Return patch for sys.stdin as a non-interactive stream."""
+    mock_stdin = MagicMock()
+    mock_stdin.isatty.return_value = False
+    return patch("sys.stdin", mock_stdin)
+
+
+def run_cli(args, env=None, prog="main.py"):
     """Run app/main.py in-process and return (returncode, stdout, stderr)."""
     old_env = os.environ.copy()
     repo_root = str(Path(__file__).parent.parent.resolve())
@@ -21,14 +28,10 @@ def run_cli(args, env=None):
 
     stdout_cap = io.StringIO()
     stderr_cap = io.StringIO()
-    test_args = ["main.py"] + args
+    test_args = [prog] + args
 
     code = 0
-    with (
-        patch("sys.argv", test_args),
-        patch("sys.stdout", stdout_cap),
-        patch("sys.stderr", stderr_cap),
-    ):
+    with patch("sys.argv", test_args), patch("sys.stdout", stdout_cap), patch("sys.stderr", stderr_cap):
         try:
             from app.main import main
 
@@ -50,35 +53,26 @@ def create_sample_corpus(base_dir):
     base = Path(base_dir)
     base.mkdir(parents=True, exist_ok=True)
     (base / "finance_doc.txt").write_text("Finance, investment, and banking report.")
-    (base / "tech_doc.txt").write_text(
-        "Software engineering, Python, algorithms, and computers."
-    )
-    (base / "health_doc.txt").write_text(
-        "Medical science, clinical trial, doctor, and patient data."
-    )
+    (base / "tech_doc.txt").write_text("Software engineering, Python, algorithms, and computers.")
+    (base / "health_doc.txt").write_text("Medical science, clinical trial, doctor, and patient data.")
     (base / "empty.txt").write_text("")
 
 
 @pytest.mark.xdist_group(name="cli_subcommands")
 def test_sort_subcommand_dry_run_json():
     """Test sort subcommand with --dry-run and --json flags."""
-    with (
-        tempfile.TemporaryDirectory() as src_dir,
-        tempfile.TemporaryDirectory() as dest_dir,
-    ):
+    with tempfile.TemporaryDirectory() as src_dir, tempfile.TemporaryDirectory() as dest_dir:
         create_sample_corpus(src_dir)
-        code, stdout, stderr = run_cli(
-            [
-                "sort",
-                src_dir,
-                "--json",
-                "--dest-dir",
-                dest_dir,
-                "--dry-run",
-                "--max-folders",
-                "5",
-            ]
-        )
+        code, stdout, stderr = run_cli([
+            "sort",
+            src_dir,
+            "--json",
+            "--dest-dir",
+            dest_dir,
+            "--dry-run",
+            "--max-folders",
+            "5",
+        ])
 
         assert code == 0, f"Expected 0 exit code, got {code}. Stderr: {stderr}"
         data = json.loads(stdout)
@@ -95,20 +89,15 @@ def test_sort_subcommand_dry_run_json():
 @pytest.mark.xdist_group(name="cli_subcommands")
 def test_sort_subcommand_live_execution():
     """Test sort subcommand live batch execution."""
-    with (
-        tempfile.TemporaryDirectory() as src_dir,
-        tempfile.TemporaryDirectory() as dest_dir,
-    ):
+    with tempfile.TemporaryDirectory() as src_dir, tempfile.TemporaryDirectory() as dest_dir:
         create_sample_corpus(src_dir)
-        code, stdout, stderr = run_cli(
-            [
-                "sort",
-                src_dir,
-                "--json",
-                "--dest-dir",
-                dest_dir,
-            ]
-        )
+        code, stdout, stderr = run_cli([
+            "sort",
+            src_dir,
+            "--json",
+            "--dest-dir",
+            dest_dir,
+        ])
 
         assert code == 0, f"Expected 0 exit code, got {code}. Stderr: {stderr}"
         data = json.loads(stdout)
@@ -123,17 +112,15 @@ def test_scan_subcommand_json():
     """Test scan subcommand with --json output and jq pipeline style structure."""
     with tempfile.TemporaryDirectory() as src_dir:
         create_sample_corpus(src_dir)
-        code, stdout, stderr = run_cli(
-            [
-                "scan",
-                src_dir,
-                "--json",
-                "--strategy",
-                "default",
-                "--conflict-policy",
-                "rename",
-            ]
-        )
+        code, stdout, stderr = run_cli([
+            "scan",
+            src_dir,
+            "--json",
+            "--strategy",
+            "default",
+            "--conflict-policy",
+            "rename",
+        ])
 
         assert code == 0, f"Expected 0 exit code, got {code}. Stderr: {stderr}"
         data = json.loads(stdout)
@@ -151,15 +138,13 @@ def test_config_subcommand_show_and_set():
     assert "MAX_FOLDERS" in data
     assert "CONFLICT_POLICY" in data
 
-    code_set, stdout_set, stderr_set = run_cli(
-        [
-            "config",
-            "--set",
-            "MAX_FOLDERS",
-            "10",
-            "--json",
-        ]
-    )
+    code_set, stdout_set, stderr_set = run_cli([
+        "config",
+        "--set",
+        "MAX_FOLDERS",
+        "10",
+        "--json",
+    ])
     assert code_set == 0, f"Expected 0 exit code, got {code_set}. Stderr: {stderr_set}"
     data_set = json.loads(stdout_set)
     assert data_set["MAX_FOLDERS"] == 10
@@ -190,11 +175,7 @@ def test_sandbox_cli_json():
 
     try:
         # First reset sandbox
-        with (
-            patch("sys.argv", ["sandbox_cli.py", "reset"]),
-            patch("sys.stdout", stdout_cap),
-            patch("sys.stderr", stderr_cap),
-        ):
+        with patch("sys.argv", ["sandbox_cli.py", "reset"]), patch("sys.stdout", stdout_cap), patch("sys.stderr", stderr_cap):
             import sandbox_cli
 
             sandbox_cli.main()
@@ -203,11 +184,7 @@ def test_sandbox_cli_json():
         stderr_cap = io.StringIO()
 
         # Run analyze with --json
-        with (
-            patch("sys.argv", ["sandbox_cli.py", "analyze", "--json"]),
-            patch("sys.stdout", stdout_cap),
-            patch("sys.stderr", stderr_cap),
-        ):
+        with patch("sys.argv", ["sandbox_cli.py", "analyze", "--json"]), patch("sys.stdout", stdout_cap), patch("sys.stderr", stderr_cap):
             sandbox_cli.main()
 
         out = stdout_cap.getvalue()
@@ -216,11 +193,7 @@ def test_sandbox_cli_json():
         assert isinstance(data, dict)
     finally:
         try:
-            with (
-                patch("sys.argv", ["sandbox_cli.py", "reset"]),
-                patch("sys.stdout", io.StringIO()),
-                patch("sys.stderr", io.StringIO()),
-            ):
+            with patch("sys.argv", ["sandbox_cli.py", "reset"]), patch("sys.stdout", io.StringIO()), patch("sys.stderr", io.StringIO()):
                 import sandbox_cli
 
                 sandbox_cli.main()
@@ -272,9 +245,7 @@ def test_no_color_flag_and_env_var_strips_ansi():
         assert "\x1b[" not in stderr
 
         # Test with NO_COLOR env var
-        code, stdout, stderr = run_cli(
-            ["scan", src_dir, "--json"], env={"NO_COLOR": "1"}
-        )
+        code, stdout, stderr = run_cli(["scan", src_dir, "--json"], env={"NO_COLOR": "1"})
         assert code == 0
         assert "\x1b[" not in stdout
         assert "\x1b[" not in stderr
@@ -312,3 +283,65 @@ def test_build_parser_factory():
     assert "directory" in sort_help
     assert "--dest-dir" in sort_help
     assert "--dry-run" in sort_help
+
+
+@pytest.mark.xdist_group(name="cli_subcommands")
+def test_headless_no_args_exits_code_2_with_guidance():
+    """Test non-interactive invocation without subcommands or path exits with code 2 and guidance."""
+    with mock_non_interactive_stdin():
+        code, stdout, stderr = run_cli([])
+        assert code == 2, f"Expected exit code 2, got {code}. Stderr: {stderr}"
+        assert "usage:" in stderr or "subcommand" in stderr
+        assert "sort" in stderr
+
+
+@pytest.mark.xdist_group(name="cli_subcommands")
+def test_headless_positional_path_autoroutes_to_sort():
+    """Test non-interactive invocation with target path auto-routes to batch sorting."""
+    with tempfile.TemporaryDirectory() as src_dir:
+        create_sample_corpus(src_dir)
+        with mock_non_interactive_stdin():
+            code, stdout, stderr = run_cli([src_dir, "-q"])
+            assert code == 0, f"Expected exit code 0, got {code}. Stderr: {stderr}"
+            assert "finance_doc.txt" in stdout
+
+
+@pytest.mark.xdist_group(name="cli_subcommands")
+def test_headless_gui_flag_honored():
+    """Test non-interactive invocation with explicit --gui flag calls UI app launcher."""
+    with mock_non_interactive_stdin(), patch("app.ui.tui.run_tui") as mock_run_tui:
+        code, stdout, stderr = run_cli(["--gui"])
+        assert code == 0
+        mock_run_tui.assert_called_once()
+
+
+@pytest.mark.xdist_group(name="cli_subcommands")
+def test_headless_explicit_sort_subcommand():
+    """Test non-interactive invocation with explicit sort subcommand executes batch sorting."""
+    with tempfile.TemporaryDirectory() as src_dir:
+        create_sample_corpus(src_dir)
+        with mock_non_interactive_stdin():
+            code, stdout, stderr = run_cli(["sort", src_dir, "-q"])
+            assert code == 0, f"Expected exit code 0, got {code}. Stderr: {stderr}"
+            assert "finance_doc.txt" in stdout
+
+
+@pytest.mark.xdist_group(name="cli_subcommands")
+def test_headless_no_color_guidance_strips_ansi():
+    """Test non-interactive guidance output strips ANSI escape codes when --no-color is set."""
+    with mock_non_interactive_stdin():
+        code, stdout, stderr = run_cli(["--no-color"])
+        assert code == 2
+        assert "\x1b[" not in stderr
+
+
+@pytest.mark.xdist_group(name="cli_subcommands")
+def test_headless_gui_exe_name_honored():
+    """Test non-interactive invocation via smart-autosorter-gui executable launches UI app."""
+    with mock_non_interactive_stdin(), patch("app.ui.tui.run_tui") as mock_run_tui:
+        code, stdout, stderr = run_cli([], prog="smart-autosorter-gui.exe")
+        assert code == 0
+        mock_run_tui.assert_called_once()
+
+
+
