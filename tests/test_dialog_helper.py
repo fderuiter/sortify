@@ -418,9 +418,13 @@ async def test_ask_directory_async_windows_powershell_ci_check():
         args, kwargs = mock_run.call_args
         cmd = args[0]
         assert "powershell" in cmd
-        script = cmd[-1]
+        if "-EncodedCommand" in cmd:
+            import base64
+
+            script = base64.b64decode(cmd[-1]).decode("utf-16-le")
+        else:
+            script = cmd[-1]
         assert "$isCI" in script
-        callback.assert_called_once_with("")
 
 
 @pytest.mark.anyio

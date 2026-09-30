@@ -1,6 +1,7 @@
 """Helper module for asynchronous directory selection with focus elevation."""
 
 import asyncio
+import base64
 import logging
 import os
 import sys
@@ -245,24 +246,25 @@ def ask_directory_async(
             elif sys.platform == "win32":
                 # Windows PowerShell
                 safe_title = title.replace("'", "''")
-                script = (
-                    "$isCI = $env:CI -eq 'true' -or $env:GITHUB_ACTIONS -eq 'true' -or $env:TF_BUILD -eq 'true'; "
-                    "if ([System.Environment]::UserInteractive -and -not $isCI) { "
-                    "[System.Reflection.Assembly]::LoadWithPartialName('System.windows.forms') | Out-Null; "
-                    "$objForm = New-Object System.Windows.Forms.FolderBrowserDialog; "
-                    f"$objForm.Description = '{safe_title}'; "
-                    "$objForm.ShowNewFolderButton = $true; "
-                    "$result = $objForm.ShowDialog(); "
-                    "if ($result -eq [System.Windows.Forms.DialogResult]::OK) { "
-                    'Write-Output "SUCCESS:$($objForm.SelectedPath)" '
-                    "} else { "
-                    'Write-Output "CANCEL:" '
-                    "} "
-                    "} else { "
-                    'Write-Output "CANCEL:" '
-                    "}"
-                )
-                cmd = ["powershell", "-NoProfile", "-NonInteractive", "-Command", script]
+                script = f"""
+$isCI = $env:CI -eq 'true' -or $env:GITHUB_ACTIONS -eq 'true' -or $env:TF_BUILD -eq 'true'
+if (-not [System.Environment]::UserInteractive -or $isCI) {{
+    Write-Error "Native folder picker unavailable in non-interactive or CI environment."
+    exit 1
+}}
+[System.Reflection.Assembly]::LoadWithPartialName('System.windows.forms') | Out-Null
+$objForm = New-Object System.Windows.Forms.FolderBrowserDialog
+$objForm.Description = '{safe_title}'
+$objForm.ShowNewFolderButton = $true
+$result = $objForm.ShowDialog()
+if ($result -eq [System.Windows.Forms.DialogResult]::OK) {{
+    Write-Output "SUCCESS:$($objForm.SelectedPath)"
+}} else {{
+    Write-Output "CANCEL:"
+}}
+"""
+                encoded_script = base64.b64encode(script.encode("utf-16-le")).decode("ascii")
+                cmd = ["powershell", "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded_script]
                 result = run_background_process(
                     cmd, sandbox=False, capture_output=True, text=True, timeout=15
                 )
