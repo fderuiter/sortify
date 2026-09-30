@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "b9573cc04a5b95682d2803017723983f06a04eefe8f00b5418c2d7606cf25cbf"
+    "checksum": "12206d71ff7e3b0a1bd10dc5338cc412005fa2967131c655500ea9177c98115b"
   },
   "cli": {
     "app/main.py": [
@@ -1257,6 +1257,71 @@
                   "annotation": null,
                   "default": null,
                   "name": "self"
+                }
+              ],
+              "returns": null
+            }
+          ]
+        },
+        {
+          "class_name": "InMemoryDBMock",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "__init__",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "dict | None",
+                  "default": "None",
+                  "name": "meta"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "get_model_metadata",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "key"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "set_model_metadata",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "key"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "value"
                 }
               ],
               "returns": null
