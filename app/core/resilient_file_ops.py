@@ -158,10 +158,7 @@ def resilient_rmtree(path, ignore_errors=False):
                 os.chmod(parent, stat.S_IWRITE | stat.S_IREAD | stat.S_IEXEC)
             except Exception:
                 pass
-        try:
-            func(p)
-        except Exception:
-            pass
+        func(p)
 
     max_attempts = 2 if ignore_errors else MAX_ATTEMPTS
     for attempt in range(max_attempts):
@@ -171,7 +168,9 @@ def resilient_rmtree(path, ignore_errors=False):
                 return
             # Pass both onerror and onexc for maximum compatibility across Python versions
             shutil.rmtree(path, onerror=_handle_error, onexc=_handle_error)
-            return
+            if not os.path.exists(path):
+                return
+            raise OSError(f"Directory {path} was not deleted")
         except (OSError, PermissionError) as e:
             if attempt == max_attempts - 1:
                 logging.warning(
