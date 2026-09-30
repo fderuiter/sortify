@@ -94,8 +94,22 @@ class QuarantineInterceptorService:
     ) -> str:
         """Validate target subfolder and ensure containment within base_dir boundaries.
 
-        If validation fails or boundary containment fails, falls back to default_subfolder
-        inside base_dir and logs a security audit warning.
+        Args:
+            base_dir: The base parent directory path acting as the boundary.
+            target_subfolder: Optional relative subfolder path requested for output.
+            default_subfolder: Default relative subfolder path to fall back on if target_subfolder
+                is invalid or escapes the base_dir boundary.
+
+        Returns
+        -------
+            Normalized absolute or relative safe destination directory path strictly contained
+            within base_dir.
+
+        Notes
+        -----
+            If target_subfolder fails validation (e.g. contains illegal OS characters, absolute path
+            roots, or directory traversal segments like '..') or escapes base_dir, this function logs
+            a security warning and safely returns the fallback directory.
         """
         fallback_dir = os.path.normpath(
             os.path.join(base_dir, default_subfolder)

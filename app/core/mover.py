@@ -35,7 +35,15 @@ def _is_same_path(p1: str, p2: str) -> bool:
 
 
 def _resolve_path(p: Path) -> Path:
-    """Resolve symlinks and Windows 8.3 short paths, even if trailing components do not exist."""
+    """Resolve symlinks and Windows 8.3 short paths, even if trailing components do not exist.
+
+    Args:
+        p: Path object to resolve.
+
+    Returns
+    -------
+        Resolved Path object with symlinks and 8.3 short names expanded for existing ancestors.
+    """
     try:
         p = p.expanduser()
     except Exception:
@@ -73,7 +81,16 @@ def _resolve_path(p: Path) -> Path:
 
 
 def is_subpath_or_equal(child: str, parent: str) -> bool:
-    """Check if child path is equal to or nested within parent path (case-insensitive)."""
+    """Check if child path is equal to or nested within parent path (case-insensitive and cross-platform).
+
+    Args:
+        child: Candidate child path to check for subpath containment.
+        parent: Boundary parent path to evaluate child against.
+
+    Returns
+    -------
+        True if child is identical to or located within parent directory boundary, False otherwise.
+    """
     if child is None or parent is None:
         return False
 
