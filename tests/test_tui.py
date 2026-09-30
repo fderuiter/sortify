@@ -57,6 +57,7 @@ def test_tui_app_mount_and_dual_pane(temp_workspace):
 
     async def _test():
         settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
         app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
 
         async with app.run_test() as pilot:
@@ -73,6 +74,7 @@ def test_tui_tree_rebuild_and_selection(temp_workspace):
 
     async def _test():
         settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
         app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
 
         async with app.run_test() as pilot:
@@ -112,6 +114,7 @@ def test_tui_toggle_lock(temp_workspace):
 
     async def _test():
         settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
         app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
 
         async with app.run_test() as pilot:
@@ -150,6 +153,7 @@ def test_tui_node_ratings(temp_workspace):
 
     async def _test():
         settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
         app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
 
         async with app.run_test() as pilot:
@@ -192,6 +196,7 @@ def test_tui_new_folder(temp_workspace):
 
     async def _test():
         settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
         app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
 
         async with app.run_test() as pilot:
@@ -216,6 +221,7 @@ def test_tui_rename_node(temp_workspace):
 
     async def _test():
         settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
         app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
 
         async with app.run_test() as pilot:
@@ -257,6 +263,7 @@ def test_tui_settings_modal(temp_workspace):
 
     async def _test():
         settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
         app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
 
         with patch.object(AppSettings, "_save", return_value=None):
@@ -292,25 +299,87 @@ def test_tui_settings_modal(temp_workspace):
     asyncio.run(_test())
 
 
-def test_tui_wizard_modal(temp_workspace):
-    """Verify wizard modal allows toggling consent and completes onboarding."""
+def test_tui_first_run_auto_triggers_wizard(temp_workspace):
+    """Verify first-run launch with unconfigured AI consent automatically triggers WizardModal after layout refresh."""
+
+    async def _test():
+        settings = AppSettings()
+        assert settings.AI_CONSENT_GRANTED is None
+        app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
+
+        async with app.run_test() as pilot:
+            await pilot.pause(0.1)
+            assert isinstance(app.screen, WizardModal)
+
+    asyncio.run(_test())
+
+
+def test_tui_returning_launch_bypasses_wizard(temp_workspace):
+    """Verify returning launch with explicit AI consent settings bypasses WizardModal."""
+
+    async def _test():
+        # Case 1: Consent granted = True
+        settings_true = AppSettings()
+        settings_true.AI_CONSENT_GRANTED = True
+        app_true = AutoSorterTUI(settings=settings_true, base_dir=temp_workspace)
+
+        async with app_true.run_test() as pilot:
+            await pilot.pause(0.1)
+            assert not isinstance(app_true.screen, WizardModal)
+
+        # Case 2: Consent granted = False
+        settings_false = AppSettings()
+        settings_false.AI_CONSENT_GRANTED = False
+        app_false = AutoSorterTUI(settings=settings_false, base_dir=temp_workspace)
+
+        async with app_false.run_test() as pilot:
+            await pilot.pause(0.1)
+            assert not isinstance(app_false.screen, WizardModal)
+
+    asyncio.run(_test())
+
+
+def test_tui_wizard_modal_cancel_preserves_defaults(temp_workspace):
+    """Verify canceling WizardModal maintains defaults and emits announcement."""
 
     async def _test():
         settings = AppSettings()
         app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
 
         async with app.run_test() as pilot:
-            app.action_open_wizard()
             await pilot.pause(0.1)
-
             modal = app.screen
             assert isinstance(modal, WizardModal)
 
-            modal.query_one("#switch-consent", Switch).value = True
-            modal.action_finish()
+            modal.action_cancel()
             await pilot.pause(0.1)
 
-            assert app.settings.AI_CONSENT_GRANTED is True
+            assert app.settings.AI_CONSENT_GRANTED is None
+            assert not isinstance(app.screen, WizardModal)
+
+    asyncio.run(_test())
+
+
+def test_tui_wizard_modal_finish_persists_settings(temp_workspace):
+    """Verify wizard modal allows toggling consent, persists settings, and completes onboarding."""
+
+    async def _test():
+        settings = AppSettings()
+        app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
+
+        async with app.run_test() as pilot:
+            await pilot.pause(0.1)
+            modal = app.screen
+            assert isinstance(modal, WizardModal)
+
+            modal.query_one("#switch-consent", Switch).value = False
+            with patch.object(AppSettings, "_save") as mock_save:
+                modal.action_finish()
+                await pilot.pause(0.1)
+
+                assert app.settings.AI_CONSENT_GRANTED is False
+                assert mock_save.called
+                assert not isinstance(app.screen, WizardModal)
 
     asyncio.run(_test())
 
@@ -320,6 +389,7 @@ def test_tui_cro_forensic_modal(temp_workspace):
 
     async def _test():
         settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
         app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
 
         async with app.run_test() as pilot:
@@ -355,6 +425,7 @@ def test_tui_modals_render_on_small_viewports(temp_workspace):
     from app.ui.tui import DirectorySelectModal
 
     settings = AppSettings()
+    settings._settings_model.AI_CONSENT_GRANTED = True
 
     modals = [
         RenameModal("Rename Test", "current", ".txt"),
@@ -428,6 +499,7 @@ def test_tui_screen_reader_announcements(temp_workspace):
 
     async def _test():
         settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
         app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
 
         async with app.run_test() as pilot:
@@ -478,6 +550,7 @@ def test_tui_screen_reader_announcements(temp_workspace):
 def test_tui_modal_escape_key_navigation(temp_workspace):
     """Verify pressing Escape key dismisses modal dialogs without defects."""
     settings = AppSettings()
+    settings._settings_model.AI_CONSENT_GRANTED = True
 
     async def _test():
         app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
@@ -500,6 +573,7 @@ def test_tui_wcag_tooltips_and_attributes(temp_workspace):
     from app.ui.tui import DirectorySelectModal
 
     settings = AppSettings()
+    settings._settings_model.AI_CONSENT_GRANTED = True
     modals = [
         RenameModal("Rename Test", "current", ".txt"),
         NewFolderModal(),
@@ -537,6 +611,7 @@ def test_tui_automated_audit_hooks(temp_workspace):
     from app.ui.tui import DirectorySelectModal
 
     settings = AppSettings()
+    settings._settings_model.AI_CONSENT_GRANTED = True
     modals = [
         RenameModal("Rename Test", "current", ".txt"),
         NewFolderModal(),
@@ -583,6 +658,7 @@ def test_tui_automated_audit_hooks(temp_workspace):
 def test_tui_session_recovery_modal_actions(temp_workspace):
     """Verify SessionRecoveryModal options (Resume, Rollback, Clean)."""
     settings = AppSettings()
+    settings._settings_model.AI_CONSENT_GRANTED = True
     session_info = {
         "session_id": "test_session_123",
         "base_dir": temp_workspace,
@@ -646,6 +722,7 @@ def test_tui_jev_tree_node_tags_and_inspector(temp_workspace):
     """Verify TUI formats Jev tags in tree nodes and renders detailed metadata in inspector panel."""
     async def _test():
         settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
         app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
 
         async with app.run_test() as pilot:
@@ -703,6 +780,7 @@ def test_tui_expanded_settings_fields(temp_workspace):
 
     async def _test():
         settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
         app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
 
         with patch.object(AppSettings, "_save", return_value=None):
@@ -731,6 +809,7 @@ def test_tui_jev_partial_metadata(temp_workspace):
     """Verify TUI handles partial/missing Jev metadata without throwing exceptions."""
     async def _test():
         settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
         app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
 
         async with app.run_test() as pilot:
@@ -808,6 +887,7 @@ def test_tui_speech_binary_fallback_missing_binary(temp_workspace):
     """Verify announce succeeds, updates #status-bar, and records history when speech binaries are missing."""
     from unittest.mock import patch
     settings = AppSettings()
+    settings._settings_model.AI_CONSENT_GRANTED = True
 
     async def _test():
         app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
@@ -830,6 +910,7 @@ def test_tui_speech_binary_execution_exception_fallback(temp_workspace):
     """Verify announce handles subprocess execution exceptions without interrupting navigation."""
     from unittest.mock import patch
     settings = AppSettings()
+    settings._settings_model.AI_CONSENT_GRANTED = True
     mock_speech_bin = "/usr/bin/spd-say"
 
     async def _test():
@@ -852,6 +933,7 @@ def test_tui_speech_binary_available_and_audit(temp_workspace):
     """Verify speech binary execution attempt when available and verify audit compliance output."""
     from unittest.mock import patch
     settings = AppSettings()
+    settings._settings_model.AI_CONSENT_GRANTED = True
     mock_speech_bin = "/usr/bin/spd-say"
 
     async def _test():

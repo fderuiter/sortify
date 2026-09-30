@@ -841,7 +841,10 @@ class WizardModal(A11yMixin, ModalScreen[None]):
         consent = self.query_one("#switch-consent", Switch).value
         self.settings.AI_CONSENT_GRANTED = consent
         if hasattr(self.settings, "_save"):
-            self.settings._save()
+            try:
+                self.settings._save()
+            except Exception as e:
+                logger.error(f"Error saving consent setting: {e}")
         self.announce("Finished model onboarding wizard and saved consent settings.")
         self.dismiss(None)
 
@@ -1234,6 +1237,8 @@ class AutoSorterTUI(A11yMixin, App):
             pass
         self.announce("Sortify AI Pro TUI initialized and ready.")
         self.check_abandoned_sessions()
+        if getattr(self.settings, "AI_CONSENT_GRANTED", None) is None:
+            self.call_after_refresh(self.action_open_wizard)
 
     @work
     async def check_abandoned_sessions(self) -> None:
