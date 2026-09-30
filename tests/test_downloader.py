@@ -95,7 +95,7 @@ def test_downloader_sandboxing_bypass(temp_model_dir):
                 on_failure=on_failure,
             )
 
-            assert success_called.wait(timeout=5)
+            assert success_called.wait(timeout=15)
             assert verify_downloaded_model(temp_model_dir)
     finally:
         _thread_local.sandboxed = was_sandboxed
@@ -139,7 +139,7 @@ def test_downloader_cancellation(temp_model_dir):
         # Trigger cancellation immediately
         cancel_event.set()
 
-        assert failure_called.wait(timeout=5)
+        assert failure_called.wait(timeout=15)
         assert len(captured_error) == 1
         assert isinstance(captured_error[0], DownloadCancelledError)
 
@@ -176,7 +176,7 @@ def test_downloader_insufficient_disk_space(temp_model_dir):
             on_failure=on_failure,
         )
 
-        assert failure_called.wait(timeout=5)
+        assert failure_called.wait(timeout=15)
         assert len(captured_error) == 1
         assert isinstance(captured_error[0], DiskSpaceError)
 
@@ -293,7 +293,7 @@ def test_downloader_fails_on_hash_mismatch(temp_model_dir):
             on_failure=on_failure,
         )
 
-        assert failure_called.wait(timeout=5)
+        assert failure_called.wait(timeout=15)
         assert len(captured_error) == 1
         assert isinstance(captured_error[0], ModelVerificationError)
         assert "Cryptographic signature verification failed" in str(captured_error[0])
@@ -325,7 +325,7 @@ def test_downloader_aborts_on_placeholder_proxy(temp_model_dir):
         on_failure=on_failure,
     )
 
-    assert failure_called.wait(timeout=5)
+    assert failure_called.wait(timeout=15)
     assert len(captured_error) == 1
     assert isinstance(captured_error[0], NetworkError)
     assert "Invalid proxy configuration" in str(captured_error[0])

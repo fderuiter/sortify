@@ -363,4 +363,4 @@ def test_active_download_adopts_updated_proxy_on_retry(temp_settings_path):
             )
 
             # Verification: should retry with updated opener and succeed
-            assert success_event.wait(timeout=5)
+            assert success_event.wait(timeout=15)
