@@ -387,3 +387,79 @@ def test_headless_gui_exe_name_honored():
         code, stdout, stderr = run_cli([], prog="smart-autosorter-gui.exe")
         assert code == 0
         mock_run_tui.assert_called_once()
+
+
+@pytest.mark.xdist_group(name="cli_subcommands")
+def test_format_table_scan_and_sort():
+    """Test --format table displays ASCII table for scan and sort subcommands."""
+    with tempfile.TemporaryDirectory() as src_dir:
+        create_sample_corpus(src_dir)
+
+        # Test scan --format table
+        code, stdout, stderr = run_cli(["scan", src_dir, "--format", "table"])
+        assert code == 0, f"Expected exit code 0, got {code}. Stderr: {stderr}"
+        assert "+---" in stdout
+        assert "| Original Path" in stdout
+        assert "| Target Path" in stdout
+        assert "finance_doc.txt" in stdout
+
+        # Test sort --format table --dry-run
+        code, stdout, stderr = run_cli(["sort", src_dir, "-f", "table", "--dry-run"])
+        assert code == 0, f"Expected exit code 0, got {code}. Stderr: {stderr}"
+        assert "+---" in stdout
+        assert "| Original Path" in stdout
+        assert "finance_doc.txt" in stdout
+
+
+@pytest.mark.xdist_group(name="cli_subcommands")
+def test_format_text_scan_and_sort():
+    """Test --format text outputs line-delimited tab-separated mappings."""
+    with tempfile.TemporaryDirectory() as src_dir:
+        create_sample_corpus(src_dir)
+
+        # Test sort --format text --dry-run
+        code, stdout, stderr = run_cli(["sort", src_dir, "--format", "text", "--dry-run"])
+        assert code == 0, f"Expected exit code 0, got {code}. Stderr: {stderr}"
+        assert "+---" not in stdout
+        assert "\t" in stdout
+        assert "finance_doc.txt" in stdout
+
+        # Test scan --format text
+        code, stdout, stderr = run_cli(["scan", src_dir, "-f", "text"])
+        assert code == 0, f"Expected exit code 0, got {code}. Stderr: {stderr}"
+        assert "+---" not in stdout
+        assert "\t" in stdout
+        assert "finance_doc.txt" in stdout
+
+
+@pytest.mark.xdist_group(name="cli_subcommands")
+def test_stdin_piped_file_paths_ingestion():
+    """Test reading line-delimited file paths from sys.stdin without positional directory argument."""
+    with tempfile.TemporaryDirectory() as src_dir:
+        create_sample_corpus(src_dir)
+        p1 = os.path.join(src_dir, "finance_doc.txt")
+        p2 = os.path.join(src_dir, "tech_doc.txt")
+        piped_input = f"{p1}\n{p2}\n"
+
+        mock_stdin = io.StringIO(piped_input)
+        mock_stdin.isatty = lambda: False  # type: ignore
+
+        with patch("sys.stdin", mock_stdin):
+            code, stdout, stderr = run_cli(["scan", "--format", "text"])
+            assert code == 0, f"Expected exit code 0, got {code}. Stderr: {stderr}"
+            assert "finance_doc.txt" in stdout
+            assert "tech_doc.txt" in stdout
+            assert "\t" in stdout
+
+
+@pytest.mark.xdist_group(name="cli_subcommands")
+def test_missing_directory_and_empty_stdin_error():
+    """Test error message and exit code when positional directory and stdin paths are missing."""
+    mock_stdin = io.StringIO("")
+    mock_stdin.isatty = lambda: False  # type: ignore
+
+    with patch("sys.stdin", mock_stdin):
+        code, stdout, stderr = run_cli(["scan"])
+        assert code == 1, f"Expected exit code 1, got {code}. Stdout: {stdout}"
+        assert "Error:" in stderr
+        assert "standard input" in stderr or "directory" in stderr

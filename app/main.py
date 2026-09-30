@@ -449,35 +449,104 @@ def apply_config_overrides(settings: AppSettings, args: argparse.Namespace):
         settings.CONTEXTUAL_RENAMING = args.contextual_renaming
 
 
+def _make_json_serializable(obj):
+    if hasattr(obj, "model_dump"):
+        return obj.model_dump(mode="json")
+    if isinstance(obj, dict):
+        return {k: _make_json_serializable(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_make_json_serializable(v) for v in obj]
+    return obj
+
+
+def _resolve_target_and_files(args: argparse.Namespace) -> tuple[Path, list[str]]:
+    """Resolve target directory and list of file paths from positional arguments or stdin."""
+    raw_dir = getattr(args, "directory", None)
+    piped_lines: list[str] = []
+
+    if sys.stdin is not None:
+        try:
+            isatty_fn = getattr(sys.stdin, "isatty", None)
+            if isatty_fn and not isatty_fn():
+                stdin_text = sys.stdin.read()
+                if stdin_text:
+                    piped_lines = [
+                        line.strip()
+                        for line in stdin_text.splitlines()
+                        if line.strip()
+                    ]
+        except Exception:
+            piped_lines = []
+
+    if piped_lines:
+        valid_paths = [Path(p).resolve() for p in piped_lines if Path(p).resolve().exists()]
+        if not valid_paths:
+            raise ValueError("No valid file paths provided via standard input.")
+
+        if raw_dir:
+            target_path = Path(raw_dir).resolve()
+        else:
+            str_paths = [str(p) for p in valid_paths]
+            try:
+                common = os.path.commonpath(str_paths)
+                common_p = Path(common)
+                target_path = common_p.parent if common_p.is_file() else common_p
+            except ValueError:
+                target_path = Path.cwd()
+
+        files: list[str] = []
+        target_str = str(target_path)
+        for p in valid_paths:
+            p_str = str(p)
+            try:
+                rel = os.path.relpath(p_str, target_str)
+                files.append(rel)
+            except ValueError:
+                files.append(p_str)
+
+        return target_path, files
+
+    if raw_dir:
+        target_path = Path(raw_dir).resolve()
+        if not target_path.exists() or not target_path.is_dir():
+            raise FileNotFoundError(
+                f"Target directory '{raw_dir}' does not exist or is not a directory."
+            )
+        from app.core.scanner import get_files_recursively
+
+        files = get_files_recursively(str(target_path))
+        return target_path, files
+
+    raise ValueError("No target directory or standard input paths provided.")
+
+
 def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
     """Execute document batch sorting or launch interactive TUI."""
     import json
     from pathlib import Path
+
+    from app.core.formatter import format_output
 
     apply_config_overrides(settings, args)
 
     if getattr(args, "tui", False) or getattr(args, "interactive", False):
         from app.ui.tui import run_tui
 
-        run_tui(settings, args.directory)
+        run_tui(settings, getattr(args, "directory", None))
         sys.exit(0)
 
-    target_path = Path(args.directory).resolve()
-    if not target_path.exists() or not target_path.is_dir():
-        print(
-            f"Error: Target directory '{args.directory}' does not exist or is not a directory.",
-            file=sys.stderr,
-        )
+    try:
+        target_path, files = _resolve_target_and_files(args)
+    except (ValueError, FileNotFoundError) as err:
+        print(f"Error: {err}", file=sys.stderr)
         sys.exit(1)
 
     session = None
     try:
         from app.core.extractor import build_corpus_generator
-        from app.core.scanner import get_files_recursively
         from app.core.session import AppSession
 
         session = AppSession(settings, base_dir=str(target_path))
-        files = get_files_recursively(str(target_path))
 
         def progress_cb(info=None):
             pass
@@ -500,6 +569,8 @@ def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
         dest_dir = getattr(args, "dest_dir", None)
         dry_run = getattr(args, "dry_run", False)
         json_output = getattr(args, "json", False)
+        format_choice = getattr(args, "format", "table") or "table"
+        output_format = "json" if json_output else format_choice
 
         if dest_dir:
             dest_base = Path(dest_dir).resolve()
@@ -554,7 +625,9 @@ def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
                 )
                 if dry_run:
                     print("Dry-run mode: no files were moved.", file=sys.stderr)
-            print(json.dumps(serializable_plan, indent=2))
+            output_str = format_output(result, fmt=output_format, plan=serializable_plan)
+            sys.stdout.write(output_str + "\n")
+            sys.stdout.flush()
 
         sys.exit(0)
     except Exception as e:
@@ -568,22 +641,21 @@ def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
 def handle_scan_command(args: argparse.Namespace, settings: AppSettings):
     """Execute directory scanning and sorting analysis or launch interactive TUI."""
     import json
-    from pathlib import Path
+
+    from app.core.formatter import format_output
 
     apply_config_overrides(settings, args)
 
     if getattr(args, "tui", False) or getattr(args, "interactive", False):
         from app.ui.tui import run_tui
 
-        run_tui(settings, args.directory)
+        run_tui(settings, getattr(args, "directory", None))
         sys.exit(0)
 
-    target_path = Path(args.directory).resolve()
-    if not target_path.exists() or not target_path.is_dir():
-        print(
-            f"Error: Target directory '{args.directory}' does not exist or is not a directory.",
-            file=sys.stderr,
-        )
+    try:
+        target_path, files = _resolve_target_and_files(args)
+    except (ValueError, FileNotFoundError) as err:
+        print(f"Error: {err}", file=sys.stderr)
         sys.exit(1)
 
     apply_config_overrides(settings, args)
@@ -591,11 +663,9 @@ def handle_scan_command(args: argparse.Namespace, settings: AppSettings):
     session = None
     try:
         from app.core.extractor import build_corpus_generator
-        from app.core.scanner import get_files_recursively
         from app.core.session import AppSession
 
         session = AppSession(settings, base_dir=str(target_path))
-        files = get_files_recursively(str(target_path))
 
         def progress_cb(info=None):
             pass
@@ -616,6 +686,10 @@ def handle_scan_command(args: argparse.Namespace, settings: AppSettings):
         plan = session.generate_sorting_plan()
         serializable_plan = _make_json_serializable(plan)
 
+        json_output = getattr(args, "json", False)
+        format_choice = getattr(args, "format", "table") or "table"
+        output_format = "json" if json_output else format_choice
+
         result = {
             "status": "success",
             "target_directory": str(target_path),
@@ -624,7 +698,7 @@ def handle_scan_command(args: argparse.Namespace, settings: AppSettings):
         }
 
         quiet = getattr(args, "quiet", False)
-        if getattr(args, "json", False):
+        if json_output:
             sys.stdout.write(json.dumps(result, indent=2) + "\n")
             sys.stdout.flush()
         else:
@@ -633,7 +707,9 @@ def handle_scan_command(args: argparse.Namespace, settings: AppSettings):
                     f"Scan analysis completed for '{target_path}'. Scanned {len(files)} files.",
                     file=sys.stderr,
                 )
-            print(json.dumps(serializable_plan, indent=2))
+            output_str = format_output(result, fmt=output_format, plan=serializable_plan)
+            sys.stdout.write(output_str + "\n")
+            sys.stdout.flush()
 
         sys.exit(0)
     except Exception as e:
@@ -836,7 +912,16 @@ def build_parser(prog: str | None = "app/main.py") -> argparse.ArgumentParser:
     parser_sort = subparsers.add_parser(
         "sort", help="Run document sorting in headless batch processing mode"
     )
-    parser_sort.add_argument("directory", type=str, help="Target directory to sort")
+    parser_sort.add_argument(
+        "directory", nargs="?", type=str, default=None, help="Target directory to sort"
+    )
+    parser_sort.add_argument(
+        "-f",
+        "--format",
+        choices=["table", "text", "json"],
+        default="table",
+        help="Output format (table, text, or json)",
+    )
     parser_sort.add_argument(
         "--json",
         action="store_true",
@@ -859,7 +944,16 @@ def build_parser(prog: str | None = "app/main.py") -> argparse.ArgumentParser:
     parser_scan = subparsers.add_parser(
         "scan", help="Run directory scanning and analysis without moving files"
     )
-    parser_scan.add_argument("directory", type=str, help="Target directory to scan")
+    parser_scan.add_argument(
+        "directory", nargs="?", type=str, default=None, help="Target directory to scan"
+    )
+    parser_scan.add_argument(
+        "-f",
+        "--format",
+        choices=["table", "text", "json"],
+        default="table",
+        help="Output format (table, text, or json)",
+    )
     parser_scan.add_argument(
         "--json",
         action="store_true",

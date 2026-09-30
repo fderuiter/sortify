@@ -133,8 +133,27 @@
         ],
         "caller": "parser_sort",
         "keywords": {
+          "default": null,
           "help": "Target directory to sort",
+          "nargs": "?",
           "type": "str"
+        },
+        "method": "add_argument"
+      },
+      {
+        "args": [
+          "-f",
+          "--format"
+        ],
+        "caller": "parser_sort",
+        "keywords": {
+          "choices": [
+            "table",
+            "text",
+            "json"
+          ],
+          "default": "table",
+          "help": "Output format (table, text, or json)"
         },
         "method": "add_argument"
       },
@@ -188,8 +207,27 @@
         ],
         "caller": "parser_scan",
         "keywords": {
+          "default": null,
           "help": "Target directory to scan",
+          "nargs": "?",
           "type": "str"
+        },
+        "method": "add_argument"
+      },
+      {
+        "args": [
+          "-f",
+          "--format"
+        ],
+        "caller": "parser_scan",
+        "keywords": {
+          "choices": [
+            "table",
+            "text",
+            "json"
+          ],
+          "default": "table",
+          "help": "Output format (table, text, or json)"
         },
         "method": "add_argument"
       },
@@ -6678,6 +6716,73 @@
         }
       ],
       "functions": []
+    },
+    "app/core/formatter.py": {
+      "classes": [],
+      "functions": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "extract_plan_rows",
+          "parameters": [
+            {
+              "annotation": "Any",
+              "default": null,
+              "name": "plan"
+            }
+          ],
+          "returns": "List[Dict[str, Any]]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "format_output",
+          "parameters": [
+            {
+              "annotation": "Any",
+              "default": null,
+              "name": "data"
+            },
+            {
+              "annotation": "str",
+              "default": "'table'",
+              "name": "fmt"
+            },
+            {
+              "annotation": "Optional[Dict[str, Any]]",
+              "default": "None",
+              "name": "plan"
+            }
+          ],
+          "returns": "str"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "format_table",
+          "parameters": [
+            {
+              "annotation": "List[Dict[str, Any]]",
+              "default": null,
+              "name": "rows"
+            }
+          ],
+          "returns": "str"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "format_text",
+          "parameters": [
+            {
+              "annotation": "List[Dict[str, Any]]",
+              "default": null,
+              "name": "rows"
+            }
+          ],
+          "returns": "str"
+        }
+      ]
     },
     "app/core/hashes_registry.py": {
       "classes": [],
