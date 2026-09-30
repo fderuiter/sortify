@@ -494,6 +494,7 @@ CORE_ARCHITECTURE_SPEC = ComponentDiagramSpec(
                 "core_scanner",
                 "core_progress",
                 "core_metadata",
+                "core_domain_contracts",
             ],
         ),
         DiagramSubgraph(
@@ -566,6 +567,7 @@ CORE_ARCHITECTURE_SPEC = ComponentDiagramSpec(
         DiagramNode(id="core_scanner", label="app.core.scanner"),
         DiagramNode(id="core_progress", label="app.core.progress"),
         DiagramNode(id="core_metadata", label="app.core.metadata"),
+        DiagramNode(id="core_domain_contracts", label="app.core.domain_contracts"),
         # Utilities
         DiagramNode(id="core_text_utils", label="app.core.text_utils"),
         DiagramNode(id="core_path_utils", label="app.core.path_utils"),
