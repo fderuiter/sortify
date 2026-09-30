@@ -68,9 +68,13 @@ def test_validate_prompt_dump_path_valid():
             except ValueError:
                 is_rel = False
         if not is_rel and (sys.platform == "win32" or os.name == "nt"):
-            norm_res = os.path.normpath(str(resolved)).replace("\\", "/").lower()
-            norm_deg = os.path.normpath(str(debug_dir)).replace("\\", "/").lower()
-            is_rel = os.path.commonpath([norm_res, norm_deg]) == norm_deg
+            norm_res = os.path.normpath(str(resolved)).lower()
+            norm_deg = os.path.normpath(str(debug_dir)).lower()
+            try:
+                common = os.path.normpath(os.path.commonpath([norm_res, norm_deg])).lower()
+                is_rel = (common == norm_deg)
+            except Exception:
+                is_rel = False
         assert is_rel
 
 
