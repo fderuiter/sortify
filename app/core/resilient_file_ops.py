@@ -163,7 +163,7 @@ def resilient_rmtree(path, ignore_errors=False):
         except Exception:
             pass
 
-    max_attempts = (3 if IS_WINDOWS else 1) if ignore_errors else MAX_ATTEMPTS
+    max_attempts = 1 if ignore_errors else MAX_ATTEMPTS
     for attempt in range(max_attempts):
         try:
             kwargs = {}
