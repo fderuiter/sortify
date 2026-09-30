@@ -101,27 +101,110 @@ def secure_delete_dir(dir_path: Path):
         resilient_rmtree(dir_path, ignore_errors=True)
 
 
+class CryptoManager:
+    """Centralized facade for cryptographic operations, key derivation, envelope encryption, and secret handling."""
+
+    @staticmethod
+    def derive_db_hash(db_path: Path | str, algorithm: str = "sha256") -> str:
+        """Derive digest hash for a database path (SHA-256 by default, or MD5 for legacy)."""
+        db_path_str = str(Path(os.path.abspath(db_path)))
+        if len(db_path_str) >= 2 and db_path_str[1] == ":":
+            db_path_str = db_path_str[0].upper() + db_path_str[1:]
+        if algorithm == "sha256":
+            return hashlib.sha256(db_path_str.encode("utf-8")).hexdigest()
+        elif algorithm == "md5":
+            return hashlib.md5(db_path_str.encode("utf-8")).hexdigest()
+        else:
+            raise ValueError(f"Unsupported hashing algorithm: {algorithm}")
+
+    @staticmethod
+    def derive_keyring_account(db_path: Path | str, legacy_md5: bool = False) -> str:
+        """Derive keyring account name for a database path."""
+        algo = "md5" if legacy_md5 else "sha256"
+        db_hash = CryptoManager.derive_db_hash(db_path, algorithm=algo)
+        return f"DatabaseDecryptionKey_{db_hash}"
+
+    @staticmethod
+    def derive_isolated_key_path(db_path: Path | str, legacy_md5: bool = False) -> Path:
+        """Derive isolated fallback key file path for a database path."""
+        algo = "md5" if legacy_md5 else "sha256"
+        db_path_obj = Path(os.path.abspath(db_path))
+        db_hash = CryptoManager.derive_db_hash(db_path_obj, algorithm=algo)
+        return get_fallback_keys_dir() / f"{db_path_obj.name}_{db_hash}.key"
+
+    @staticmethod
+    def generate_bootstrap_key() -> str:
+        """Generate a random high-entropy key for ephemeral pre-flight checks."""
+        return Fernet.generate_key().decode("utf-8")
+
+    @staticmethod
+    def is_encrypted_proxy(proxy_str: str) -> bool:
+        """Return True if string is an encrypted proxy payload starting with 'enc:'."""
+        return isinstance(proxy_str, str) and proxy_str.startswith("enc:")
+
+    @staticmethod
+    def encrypt_proxy_setting(proxy_str: str, crypto: Any = None, db_path: Path | str = None) -> str:
+        """Encrypt a proxy setting string using envelope encryption and return formatted string with 'enc:' prefix."""
+        if not proxy_str or proxy_str == "<DECRYPTION_FAILED>" or CryptoManager.is_encrypted_proxy(proxy_str):
+            return proxy_str
+
+        if crypto is None and db_path is not None:
+            from app.core.path_utils import resolve_db_crypto
+
+            crypto = resolve_db_crypto(db_path)
+
+        if crypto is not None:
+            encrypted_val = crypto.encrypt_text(proxy_str)
+            if isinstance(encrypted_val, bytes):
+                encrypted_val = encrypted_val.decode("utf-8")
+            return f"enc:{encrypted_val}"
+        return proxy_str
+
+    @staticmethod
+    def decrypt_proxy_setting(proxy_str: str, crypto: Any = None, db_path: Path | str = None) -> str:
+        """Decrypt a formatted proxy setting string starting with 'enc:' prefix."""
+        if not proxy_str or not CryptoManager.is_encrypted_proxy(proxy_str):
+            return proxy_str
+
+        raw_cipher = proxy_str[4:]
+        if crypto is None and db_path is not None:
+            from app.core.path_utils import resolve_db_crypto
+
+            crypto = resolve_db_crypto(db_path)
+
+        if crypto is not None:
+            return crypto.decrypt_text(raw_cipher)
+        return proxy_str
+
+
 class SessionCrypto:
     """Manages encryption and decryption of data per session."""
 
     def __init__(self, key_path: Path, db_path: Path):
         import threading
 
-        self.db_path = Path(os.path.abspath(db_path))
-        self.key_path = Path(os.path.abspath(key_path))
+        self.db_path = Path(db_path).resolve()
+        self.key_path = Path(key_path).resolve()
         self._cipher = None
         self._key = None
         self.keyring_service = "AutoSorter"
-        db_hash = hashlib.md5(str(self.db_path).encode("utf-8")).hexdigest()
-        self.keyring_account = f"DatabaseDecryptionKey_{db_hash}"
+
+        # SHA-256 derived account and key path
+        self.keyring_account = CryptoManager.derive_keyring_account(self.db_path)
         self._vector_cache_max_entries = 10000
         self._vector_parsed_cache = {}
         self._vector_decrypt_lock = threading.Lock()
 
         # Centralized key store location under user's home directory / APPDATA
         self.isolated_dir = get_fallback_keys_dir()
-        self.isolated_key_path = (
-            self.isolated_dir / f"{self.db_path.name}_{db_hash}.key"
+        self.isolated_key_path = CryptoManager.derive_isolated_key_path(self.db_path)
+
+        # Legacy MD5 derived account and key path for backward compatibility lookup
+        self.legacy_md5_keyring_account = CryptoManager.derive_keyring_account(
+            self.db_path, legacy_md5=True
+        )
+        self.legacy_md5_isolated_key_path = CryptoManager.derive_isolated_key_path(
+            self.db_path, legacy_md5=True
         )
 
         # Legacy key paths for migration
@@ -137,7 +220,7 @@ class SessionCrypto:
 
         key = None
 
-        # 1. OS Keyring Lookup
+        # 1. OS Keyring Lookup (SHA-256)
         try:
             key_str = keyring.get_password(self.keyring_service, self.keyring_account)
             if key_str:
@@ -147,7 +230,7 @@ class SessionCrypto:
                 f"Keyring lookup failed for account '{self.keyring_account}': {e}"
             )
 
-        # 2. Centralized Fallback Key Lookup
+        # 2. Centralized Fallback Key Lookup (SHA-256 file)
         if key is None and self.isolated_key_path.exists():
             try:
                 with open(self.isolated_key_path, "rb") as f:
@@ -159,7 +242,36 @@ class SessionCrypto:
 
         # 3. Legacy Fallback Migration and Cleanup
         legacy_key = None
-        if self.legacy_isolated_key_path.exists():
+
+        # 3a. Legacy MD5 Keyring Lookup
+        if key is None:
+            try:
+                legacy_key_str = keyring.get_password(
+                    self.keyring_service, self.legacy_md5_keyring_account
+                )
+                if legacy_key_str:
+                    legacy_key = legacy_key_str.encode("utf-8")
+            except Exception as e:
+                logger.warning(
+                    f"Legacy MD5 keyring lookup failed for account '{self.legacy_md5_keyring_account}': {e}"
+                )
+
+        # 3b. Legacy MD5 Isolated Key File
+        if key is None and legacy_key is None and self.legacy_md5_isolated_key_path.exists():
+            try:
+                with open(self.legacy_md5_isolated_key_path, "rb") as f:
+                    legacy_key = f.read().strip()
+            except OSError as e:
+                logger.warning(
+                    f"Failed to read legacy MD5 isolated key at '{self.legacy_md5_isolated_key_path}': {e}"
+                )
+
+        # 3c. Legacy .keys directory
+        if (
+            key is None
+            and legacy_key is None
+            and self.legacy_isolated_key_path.exists()
+        ):
             try:
                 with open(self.legacy_isolated_key_path, "rb") as f:
                     legacy_key = f.read().strip()
@@ -169,7 +281,8 @@ class SessionCrypto:
                 )
 
         if (
-            legacy_key is None
+            key is None
+            and legacy_key is None
             and self.legacy_isolated_dir.exists()
             and self.legacy_isolated_dir.is_dir()
         ):
@@ -190,7 +303,8 @@ class SessionCrypto:
                     f"Failed to iterate legacy isolated key directory '{self.legacy_isolated_dir}': {e}"
                 )
 
-        if legacy_key is None and self.key_path.exists():
+        # 3d. Legacy secret.key in db directory
+        if key is None and legacy_key is None and self.key_path.exists():
             try:
                 with open(self.key_path, "rb") as f:
                     legacy_key = f.read().strip()
@@ -198,11 +312,11 @@ class SessionCrypto:
                 logger.warning(f"Failed to read key path '{self.key_path}': {e}")
 
         if legacy_key:
-            # If we didn't find a key in the keyring or centralized store, use the legacy key.
+            # If we didn't find a key in the primary keyring or centralized store, use the legacy key.
             if key is None:
                 key = legacy_key
 
-            # Write/copy to the centralized fallback key path
+            # Write/copy to the centralized SHA-256 fallback key path
             self.isolated_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
             try:
                 os.chmod(self.isolated_dir, 0o700)
@@ -232,7 +346,7 @@ class SessionCrypto:
                         f"Failed to set permissions on key file '{self.isolated_key_path}': {chmod_err}"
                     )
 
-            # Try to migrate to keyring
+            # Try to migrate to SHA-256 keyring
             try:
                 keyring.set_password(
                     self.keyring_service,
@@ -369,6 +483,21 @@ class SessionCrypto:
                     key = f.read().strip()
             except OSError as e:
                 logger.warning(f"Failed to read isolated key in get_raw_key: {e}")
+        if key is None:
+            try:
+                legacy_key_str = keyring.get_password(
+                    self.keyring_service, self.legacy_md5_keyring_account
+                )
+                if legacy_key_str:
+                    key = legacy_key_str.encode("utf-8")
+            except Exception as e:
+                logger.warning(f"Legacy keyring lookup failed in get_raw_key: {e}")
+        if key is None and self.legacy_md5_isolated_key_path.exists():
+            try:
+                with open(self.legacy_md5_isolated_key_path, "rb") as f:
+                    key = f.read().strip()
+            except OSError as e:
+                logger.warning(f"Failed to read legacy MD5 isolated key in get_raw_key: {e}")
         if key is None and self.key_path.exists():
             try:
                 with open(self.key_path, "rb") as f:
@@ -376,6 +505,75 @@ class SessionCrypto:
             except OSError as e:
                 logger.warning(f"Failed to read key_path in get_raw_key: {e}")
         return key.decode("utf-8") if key else None
+
+    def rotate_key(self, new_key_str: str | None = None) -> str:
+        """Safely rotate the session encryption key and rekey any associated SQLCipher database.
+
+        Parameters
+        ----------
+        new_key_str : str | None
+            Optional new key string. If None, a new Fernet key is generated.
+
+        Returns
+        -------
+        str
+            The new raw encryption key string.
+        """
+        new_key_bytes = (
+            new_key_str.encode("utf-8") if new_key_str else Fernet.generate_key()
+        )
+        new_raw_key = new_key_bytes.decode("utf-8")
+
+        # 1. Rekey SQLCipher database if DB file exists
+        if self.db_path.exists() and self.db_path.stat().st_size > 0:
+            try:
+                from app.core.db_conn import clear_connection_cache, get_db_connection
+
+                clear_connection_cache(only_current_and_inactive=False)
+                conn = get_db_connection(str(self.db_path))
+                with conn:
+                    conn.execute(f"PRAGMA rekey = '{new_raw_key}'")
+                clear_connection_cache(only_current_and_inactive=False)
+            except Exception as e:
+                logger.warning(
+                    f"SQLCipher PRAGMA rekey failed during key rotation: {e}"
+                )
+
+        # 2. Update OS keyring if available
+        try:
+            keyring.set_password(
+                self.keyring_service, self.keyring_account, new_raw_key
+            )
+        except Exception as e:
+            logger.warning(f"Keyring update failed during key rotation: {e}")
+
+        # 3. Update isolated key file
+        self.isolated_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+        try:
+            os.chmod(self.isolated_dir, 0o700)
+        except OSError:
+            pass
+
+        try:
+            fd = os.open(
+                str(self.isolated_key_path),
+                os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+                0o600,
+            )
+            with os.fdopen(fd, "wb") as f:
+                f.write(new_key_bytes)
+        except OSError:
+            with open(self.isolated_key_path, "wb") as f:
+                f.write(new_key_bytes)
+            try:
+                os.chmod(self.isolated_key_path, 0o600)
+            except OSError:
+                pass
+
+        # 4. Update internal cipher state
+        self._key = new_key_bytes
+        self._cipher = Fernet(new_key_bytes)
+        return new_raw_key
 
     def encrypt_text(self, text: str) -> bytes:
         """Encrypt a string and return bytes."""

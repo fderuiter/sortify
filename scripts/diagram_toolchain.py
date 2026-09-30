@@ -13,16 +13,13 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import TYPE_CHECKING, Dict, List, Optional
+
+if TYPE_CHECKING:
+    from app.ui.diagram_schema import BaseDiagramSpec
 
 # Add project root to sys.path so we can import app modules
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-
-from app.ui.catalog import CATALOG_REGISTRY
-from app.ui.diagram_schema import (
-    SYSTEM_DIAGRAM_SPECS,
-    BaseDiagramSpec,
-)
 
 DEFAULT_OUTPUT_DIR = Path("docs/assets/diagrams")
 CACHE_FILE_NAME = ".build_cache.json"
@@ -45,7 +42,7 @@ def is_browser_available(
     if not force_check and _BROWSER_AVAILABLE_CACHE is not None:
         return _BROWSER_AVAILABLE_CACHE
 
-    cmd = mmdc_cmd or find_mmdc_executable()
+    cmd = mmdc_cmd or find_mmdc_executable(verify_browser=False)
     if not cmd:
         _BROWSER_AVAILABLE_CACHE = False
         return False
@@ -53,7 +50,7 @@ def is_browser_available(
     import tempfile
 
     try:
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
             test_mmd = Path(tmpdir) / "probe.mmd"
             test_svg = Path(tmpdir) / "probe.svg"
             test_mmd.write_text("graph TD\n  A --> B\n", encoding="utf-8")
@@ -90,17 +87,184 @@ def get_sha256(content: str) -> str:
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
 
-def find_mmdc_executable() -> Optional[List[str]]:
-    """Determine the command prefix required to run mmdc (mermaid-cli)."""
+def find_mmdc_executable(verify_browser: bool = True) -> Optional[List[str]]:
+    """Determine the command prefix required to run mmdc (mermaid-cli).
+
+    If verify_browser is True, probes whether the browser engine can launch successfully.
+    """
     mmdc_path = shutil.which("mmdc")
+    candidate: Optional[List[str]] = None
     if mmdc_path:
-        return [mmdc_path]
+        candidate = [mmdc_path]
+    else:
+        npx_path = shutil.which("npx")
+        if npx_path:
+            candidate = [
+                npx_path,
+                "--no-install",
+                "-p",
+                "@mermaid-js/mermaid-cli",
+                "mmdc",
+            ]
 
-    npx_path = shutil.which("npx")
-    if npx_path:
-        return [npx_path, "--yes", "-p", "@mermaid-js/mermaid-cli", "mmdc"]
+    if not candidate:
+        return None
 
-    return None
+    if verify_browser:
+        if is_browser_available(candidate):
+            return candidate
+        return None
+
+    return candidate
+
+
+def validate_mermaid_syntax(mmd_content: str) -> List[str]:
+    """Validate Mermaid diagram syntax using pure Python rules.
+
+    Returns a list of error detail strings with line numbers. An empty list indicates valid syntax.
+    """
+    if not mmd_content or not mmd_content.strip():
+        return ["Mermaid diagram content is empty."]
+
+    lines = mmd_content.splitlines()
+    code_lines = []
+
+    for idx, raw_line in enumerate(lines, start=1):
+        stripped = raw_line.strip()
+        if not stripped or stripped.startswith("%%"):
+            continue
+        # Strip inline comments
+        code_part = stripped.split("%%")[0].strip()
+        if code_part:
+            code_lines.append((idx, raw_line, code_part))
+
+    if not code_lines:
+        return ["Mermaid diagram contains only comments."]
+
+    valid_types = {
+        "flowchart",
+        "graph",
+        "sequenceDiagram",
+        "stateDiagram",
+        "stateDiagram-v2",
+        "classDiagram",
+        "classDiagram-v2",
+        "erDiagram",
+        "gantt",
+        "pie",
+        "gitGraph",
+        "mindmap",
+        "timeline",
+        "architecture",
+        "architecture-beta",
+        "C4Context",
+        "zenuml",
+        "kanban",
+        "sankey-beta",
+        "block-beta",
+    }
+
+    # Find first non-directive header line
+    header_entry = None
+    for entry in code_lines:
+        if not entry[2].startswith("%%{"):
+            header_entry = entry
+            break
+
+    if not header_entry:
+        return ["Missing Mermaid diagram header definition."]
+
+    h_idx, h_raw, h_code = header_entry
+    first_word = h_code.split()[0]
+
+    if first_word not in valid_types:
+        return [
+            f"Line {h_idx}: unknown diagram type '{first_word}'. Expected one of: {', '.join(sorted(valid_types))}."
+        ]
+
+    errors = []
+    block_depth = 0
+    is_sequence = first_word == "sequenceDiagram"
+    is_flowchart = first_word in {"flowchart", "graph"}
+
+    for idx, raw_line, code_line in code_lines:
+        # Quote and bracket balance checking
+        in_quotes = False
+        escaped = False
+        bracket_counts = {"[": 0, "]": 0, "(": 0, ")": 0, "{": 0, "}": 0}
+
+        for char in code_line:
+            if char == '"' and not escaped:
+                in_quotes = not in_quotes
+            elif not in_quotes:
+                if char in bracket_counts:
+                    bracket_counts[char] += 1
+            escaped = (char == "\\") and not escaped
+
+        if in_quotes:
+            errors.append(f"Line {idx}: Unclosed double quote in '{raw_line.strip()}'.")
+
+        if (
+            bracket_counts["["] != bracket_counts["]"]
+            or bracket_counts["("] != bracket_counts[")"]
+            or bracket_counts["{"] != bracket_counts["}"]
+        ):
+            errors.append(
+                f"Line {idx}: unbalanced brackets in '{raw_line.strip()}' "
+                f"(Square: {bracket_counts['[']}/{bracket_counts[']']}, "
+                f"Paren: {bracket_counts['(']}/{bracket_counts[')']}, "
+                f"Curly: {bracket_counts['{']}/{bracket_counts['}']})."
+            )
+
+        # Structural block depth tracking
+        tokens = code_line.split()
+        if tokens:
+            kw = tokens[0]
+            if is_flowchart:
+                if kw == "subgraph":
+                    block_depth += 1
+                elif kw == "end":
+                    block_depth -= 1
+                    if block_depth < 0:
+                        errors.append(
+                            f"Line {idx}: 'end' statement without matching 'subgraph'."
+                        )
+                        block_depth = 0
+            elif is_sequence:
+                if kw in {
+                    "subgraph",
+                    "opt",
+                    "alt",
+                    "loop",
+                    "par",
+                    "rect",
+                    "critical",
+                    "break",
+                }:
+                    block_depth += 1
+                elif kw == "end":
+                    block_depth -= 1
+                    if block_depth < 0:
+                        errors.append(
+                            f"Line {idx}: 'end' statement without matching block start."
+                        )
+                        block_depth = 0
+
+        # Relationship connection checks
+        if any(
+            code_line.endswith(arrow)
+            for arrow in ["-->", "---", "==>", "-.->", "->>", "--->", "--o", "--x"]
+        ):
+            errors.append(
+                f"Line {idx}: Hanging relationship arrow without target node in '{raw_line.strip()}'."
+            )
+
+    if block_depth > 0:
+        errors.append(
+            f"Unclosed structural block ({block_depth} unclosed block(s) remaining)."
+        )
+
+    return errors
 
 
 def check_no_raw_mermaid_in_docs(docs_dir: Path = Path("docs")) -> bool:
@@ -128,8 +292,14 @@ def check_no_raw_mermaid_in_docs(docs_dir: Path = Path("docs")) -> bool:
     return not found_raw_mermaid
 
 
-def collect_all_specs() -> Dict[str, BaseDiagramSpec]:
+def collect_all_specs() -> Dict[str, "BaseDiagramSpec"]:
     """Collect all registered system and component diagram specifications."""
+    from app.ui.catalog import CATALOG_REGISTRY
+    from app.ui.diagram_schema import (
+        SYSTEM_DIAGRAM_SPECS,
+        BaseDiagramSpec,
+    )
+
     specs: Dict[str, BaseDiagramSpec] = {}
 
     # System diagrams
@@ -309,11 +479,12 @@ def build_diagrams(
         print("No diagram specifications registered.")
         return True
 
-    mmdc_cmd = find_mmdc_executable()
-    has_browser = is_browser_available(mmdc_cmd)
+    mmdc_cmd = find_mmdc_executable(verify_browser=True)
+    has_browser = mmdc_cmd is not None and is_browser_available(mmdc_cmd)
 
     if not has_browser:
-        if mmdc_cmd:
+        candidate_cmd = find_mmdc_executable(verify_browser=False)
+        if candidate_cmd:
             sys.stderr.write(
                 "Warning: mmdc executable found but browser execution environment is unavailable.\n"
             )
@@ -341,6 +512,14 @@ def build_diagrams(
             sys.stderr.write(
                 f"Schema error: Failed to serialize spec '{spec_id}' to Mermaid: {e}\n"
             )
+            all_success = False
+            continue
+
+        syntax_errors = validate_mermaid_syntax(mmd_content)
+        if syntax_errors:
+            sys.stderr.write(f"Syntax error in diagram spec '{spec_id}':\n")
+            for err in syntax_errors:
+                sys.stderr.write(f"  - {err}\n")
             all_success = False
             continue
 
@@ -373,14 +552,17 @@ def build_diagrams(
         )
 
         if verify_only:
-            # In verification mode, check schema validity and headless rendering or fallback SVG generation
+            # In verification mode, check schema validity and syntax, then headless compilation or fallback notice
             if has_browser and mmdc_cmd:
                 temp_svg = output_dir / f".tmp_verify_{spec_id}.svg"
                 rendered_ok = render_diagram_artifact(
                     mmdc_cmd, mmd_file, temp_svg, "svg"
                 )
                 if temp_svg.exists():
-                    temp_svg.unlink()
+                    try:
+                        temp_svg.unlink()
+                    except Exception:
+                        pass
 
                 if not rendered_ok:
                     sys.stderr.write(
@@ -397,7 +579,7 @@ def build_diagrams(
                     with open(svg_file, "w", encoding="utf-8", newline="\n") as f:
                         f.write(fallback_svg)
                 print(
-                    f"Verified spec '{spec_id}' -> {mmd_file.name} (validated click directives and schema)."
+                    f"Verified spec '{spec_id}' -> {mmd_file.name} (validated syntax, click directives, and schema)."
                 )
             continue
 

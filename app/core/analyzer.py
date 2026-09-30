@@ -502,11 +502,12 @@ class IncrementalAnalyzer:
         new_node = {}
         for k, v in node.items():
             if v is None or (isinstance(v, dict) and v.get("__type__") == "file"):
-                dirname = os.path.dirname(k)
+                norm_k = k.replace("\\", "/")
+                dirname = os.path.dirname(norm_k)
                 if not dirname:
                     new_node[k] = v
                 else:
-                    parts = dirname.replace("\\", "/").split("/")
+                    parts = dirname.split("/")
                     current = new_node
                     for part in parts:
                         if (
