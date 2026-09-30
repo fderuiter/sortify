@@ -358,10 +358,18 @@ if "pytest" not in sys.modules:
             ]:
                 candidate_dir = os.path.join(vd, sub.replace("/", os.sep))
                 if os.path.isdir(candidate_dir):
-                    candidate_path = os.path.abspath(os.path.join(candidate_dir, "sqlite3.dll"))
-                    if os.path.exists(candidate_path):
-                        custom_sqlite3_dll = candidate_path
-                        break
+                    try:
+                        for f in os.listdir(candidate_dir):
+                            if f.lower() in ("sqlite3.dll", "sqlcipher.dll", "libsqlcipher.dll"):
+                                candidate_path = os.path.abspath(os.path.join(candidate_dir, f))
+                                cand_lower = candidate_path.lower().replace('\\', '/')
+                                if not (base_lower and base_lower in cand_lower and base_lower != prefix_lower):
+                                    custom_sqlite3_dll = candidate_path
+                                    break
+                    except Exception:
+                        pass
+                if custom_sqlite3_dll:
+                    break
             if custom_sqlite3_dll:
                 break
                 

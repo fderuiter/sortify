@@ -64,13 +64,31 @@ def update_binaries_and_manifest(system_platform=None, bypass_pytest_check=False
         # We will build a list of missing patterns to search for
         for pat in dll_patterns:
             # Check if we already have a copied DLL file containing this pattern (case-insensitive)
-            already_copied = any(
-                f.lower().endswith(".dll") and pat in f.lower() for f in copied_files
-            )
+            if pat in ("sqlcipher", "libsqlcipher", "sqlite3"):
+                already_copied = any(
+                    f.lower().endswith(".dll")
+                    and any(k in f.lower() for k in ("sqlcipher", "sqlite3", "libsqlcipher"))
+                    for f in copied_files
+                )
+            else:
+                already_copied = any(
+                    f.lower().endswith(".dll") and pat in f.lower() for f in copied_files
+                )
+
             if not already_copied:
                 # We need to search for a DLL matching this pattern
                 # Let's find all matching DLLs in the prioritized search paths
                 dll_srcs = []
+
+                def matches_pat(fname: str) -> bool:
+                    f_lower = fname.lower()
+                    if not f_lower.endswith(".dll"):
+                        return False
+                    if pat in ("sqlcipher", "libsqlcipher", "sqlite3"):
+                        return any(
+                            k in f_lower for k in ("sqlcipher", "sqlite3", "libsqlcipher")
+                        )
+                    return pat in f_lower
 
                 # List of search paths
                 venv_dirs = []
@@ -110,7 +128,7 @@ def update_binaries_and_manifest(system_platform=None, bypass_pytest_check=False
                         if candidate_dir.exists():
                             try:
                                 for f in os.listdir(candidate_dir):
-                                    if f.lower().endswith(".dll") and pat in f.lower():
+                                    if matches_pat(f):
                                         dll_srcs.append(candidate_dir / f)
                                         found_for_pattern = True
                             except Exception:
@@ -171,7 +189,7 @@ def update_binaries_and_manifest(system_platform=None, bypass_pytest_check=False
                         ):
                             continue
                         for file in files:
-                            if file.lower().endswith(".dll") and pat in file.lower():
+                            if matches_pat(file):
                                 dll_srcs.append(Path(root) / file)
                                 found_for_pattern = True
                         if found_for_pattern:
@@ -179,7 +197,7 @@ def update_binaries_and_manifest(system_platform=None, bypass_pytest_check=False
                     if found_for_pattern:
                         break
 
-                # Search sys.base_prefix as a fallback if different
+                # Search sys.base_prefix candidate directories as a fallback if different
                 if (
                     not found_for_pattern
                     and sys.base_prefix
@@ -195,54 +213,11 @@ def update_binaries_and_manifest(system_platform=None, bypass_pytest_check=False
                         if candidate_dir.exists():
                             try:
                                 for f in os.listdir(candidate_dir):
-                                    if f.lower().endswith(".dll") and pat in f.lower():
+                                    if matches_pat(f):
                                         dll_srcs.append(candidate_dir / f)
                                         found_for_pattern = True
                             except Exception:
                                 pass
-                    if not found_for_pattern:
-                        for root, dirs, files in os.walk(sys.base_prefix):
-                            # Filter out heavy directories in-place to prevent os.walk from recursing into them
-                            dirs[:] = [
-                                d
-                                for d in dirs
-                                if d.lower()
-                                not in (
-                                    "torch",
-                                    "easyocr",
-                                    "scipy",
-                                    "transformers",
-                                    "numpy",
-                                    "pandas",
-                                    "sklearn",
-                                    "matplotlib",
-                                    "jinja2",
-                                    "anyio",
-                                    "aiohttp",
-                                    "pydantic",
-                                    "pydantic_core",
-                                )
-                            ]
-
-                            root_normalized = root.lower().replace("\\", "/")
-                            if any(
-                                p in root_normalized
-                                for p in (
-                                    "site-packages/torch",
-                                    "site-packages/easyocr",
-                                    "site-packages/scipy",
-                                )
-                            ):
-                                continue
-                            for file in files:
-                                if (
-                                    file.lower().endswith(".dll")
-                                    and pat in file.lower()
-                                ):
-                                    dll_srcs.append(Path(root) / file)
-                                    found_for_pattern = True
-                            if found_for_pattern:
-                                break
 
                 # Search directory of python executable
                 if not found_for_pattern and sys.executable:
