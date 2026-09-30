@@ -43,6 +43,7 @@ __all__ = [
     "main",
 ]
 
+
 class UIProxy:
     """Proxy object delegating ui builder calls to active harness or mock instance."""
 
@@ -252,9 +253,15 @@ def render_settings_modal_card(container, state="default", viewport_width=1280):
                 )
                 from app.ui.settings import create_accessible_slider
 
-                ui.label("Worker Concurrency Limit").classes("text-sm text-gray-700 mt-2")
+                ui.label("Worker Concurrency Limit").classes(
+                    "text-sm text-gray-700 mt-2"
+                )
                 create_accessible_slider(
-                    min=1, max=64, value=4, step=1, aria_label="Worker Concurrency Limit"
+                    min=1,
+                    max=64,
+                    value=4,
+                    step=1,
+                    aria_label="Worker Concurrency Limit",
                 )
                 ui.label("Coherence Threshold").classes("text-sm text-gray-700 mt-2")
                 create_accessible_slider(

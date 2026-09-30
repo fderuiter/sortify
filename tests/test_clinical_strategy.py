@@ -104,11 +104,17 @@ def test_isf_mode_plan_generation_with_smart_renaming():
 
     # Verify smart renaming output
     node_1572 = plan_dict["03_FDA_Form_1572_and_Agreements"]["raw_1572.pdf"]
-    assert getattr(node_1572, "node_type", None) or (isinstance(node_1572, dict) and node_1572.get("__type__") == "file")
-    assert getattr(node_1572, "relative_source", None) or (isinstance(node_1572, dict) and node_1572.get("relative_source")) == "raw_1572.pdf"
+    assert getattr(node_1572, "node_type", None) or (
+        isinstance(node_1572, dict) and node_1572.get("__type__") == "file"
+    )
     assert (
-        "PROTO_999_Form_FDA_1572_PI_Alice_Walker_20240510.pdf"
-        == (getattr(node_1572, "target_filename", None) or (node_1572.get("target_filename") if isinstance(node_1572, dict) else None))
+        getattr(node_1572, "relative_source", None)
+        or (isinstance(node_1572, dict) and node_1572.get("relative_source"))
+        == "raw_1572.pdf"
+    )
+    assert "PROTO_999_Form_FDA_1572_PI_Alice_Walker_20240510.pdf" == (
+        getattr(node_1572, "target_filename", None)
+        or (node_1572.get("target_filename") if isinstance(node_1572, dict) else None)
     )
 
 

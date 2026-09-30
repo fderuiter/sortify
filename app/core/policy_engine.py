@@ -174,3 +174,40 @@ class PolicyEngine:
         validate_target_path(
             lock_path, keyword=os.path.basename(file_path) if file_path else None
         )
+
+
+def is_masked_by(higher_rule: Any, lower_rule: Any) -> bool:
+    """Check if a lower priority rule expression is masked by a higher priority rule expression."""
+    ha_type = (
+        higher_rule.get("type", "").lower()
+        if hasattr(higher_rule, "get")
+        else getattr(higher_rule, "type", "").lower()
+    )
+    lo_type = (
+        lower_rule.get("type", "").lower()
+        if hasattr(lower_rule, "get")
+        else getattr(lower_rule, "type", "").lower()
+    )
+    ha_expr = (
+        higher_rule.get("expression", "").lower()
+        if hasattr(higher_rule, "get")
+        else getattr(higher_rule, "expression", "").lower()
+    )
+    lo_expr = (
+        lower_rule.get("expression", "").lower()
+        if hasattr(lower_rule, "get")
+        else getattr(lower_rule, "expression", "").lower()
+    )
+
+    if not ha_expr or not lo_expr:
+        return False
+
+    if ha_expr in lo_expr:
+        if ha_type == "keyword":
+            return True
+        if ha_type == "pattern":
+            if lo_type in ("pattern", "override"):
+                return True
+        if ha_type == "override" and lo_type == "override":
+            return True
+    return False

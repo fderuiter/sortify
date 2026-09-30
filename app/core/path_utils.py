@@ -46,11 +46,22 @@ PII_FILENAME_PATTERNS = [
     # Credit Card pattern
     re.compile(_BOUND_LEFT + r"(?:\d[ -]*?){13,16}" + _BOUND_RIGHT),
     # Email pattern
-    re.compile(_BOUND_LEFT + r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}" + _BOUND_RIGHT),
+    re.compile(
+        _BOUND_LEFT + r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}" + _BOUND_RIGHT
+    ),
     # Phone number pattern
-    re.compile(_BOUND_LEFT + r"(?:\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}" + _BOUND_RIGHT),
+    re.compile(
+        _BOUND_LEFT
+        + r"(?:\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}"
+        + _BOUND_RIGHT
+    ),
     # Health ID / Patient ID / Medical Record patterns
-    re.compile(r"(?i)" + _BOUND_LEFT + r"(?:MRN|PATIENT[ _-]?ID|SUBJECT[ _-]?ID|MED[ _-]?REC|HCID)[ _-]?#?:?\s*[A-Za-z0-9-]+" + _BOUND_RIGHT),
+    re.compile(
+        r"(?i)"
+        + _BOUND_LEFT
+        + r"(?:MRN|PATIENT[ _-]?ID|SUBJECT[ _-]?ID|MED[ _-]?REC|HCID)[ _-]?#?:?\s*[A-Za-z0-9-]+"
+        + _BOUND_RIGHT
+    ),
     re.compile(r"(?i)" + _BOUND_LEFT + r"(?:PATIENT|SUBJECT)[ _-]?\d+" + _BOUND_RIGHT),
     re.compile(r"(?i)(Confidential Medical Report|Diagnosis:[^\n]*)"),
 ]
@@ -64,7 +75,7 @@ def _split_name_ext(name: str) -> tuple[str, str, bool]:
     _, ext = os.path.splitext(last_component)
     valid_ext = bool(ext and re.match(r"^\.[a-zA-Z0-9]{1,5}$", ext))
     if valid_ext:
-        stem = name[:-len(ext)]
+        stem = name[: -len(ext)]
         return stem, ext, True
     return name, "", False
 
@@ -142,27 +153,40 @@ def resolve_db_crypto(db_path: Path | str):
     """Resolve and return the standard SessionCrypto instance for a given database path."""
     from app.core.crypto import SessionCrypto
 
-    db_path_obj = Path(db_path)
+    db_path_obj = Path(db_path).resolve()
     key_path = db_path_obj.parent / "secret.key"
     return SessionCrypto(key_path, db_path_obj)
 
 
 def validate_target_path(target_path: str, keyword: str = None) -> None:
-    """Validate a target folder path for safety and correct structure.
+    """Validate a target folder path for cross-platform safety and correct structure.
 
-    Raises ValueError if invalid.
+    Args:
+        target_path: Candidate relative directory path string to validate.
+        keyword: Optional keyword context label for error reporting.
+
+    Raises
+    ------
+        ValueError: If target_path is not a string, contains absolute path roots, Windows drive prefixes,
+            illegal OS characters, directory traversal segments ('..'), reserved names, or trailing dots/spaces.
     """
     if not isinstance(target_path, str):
         suffix = f" for keyword '{keyword}'" if keyword else ""
         raise ValueError(f"Target path{suffix} must be a string.")
 
+    # Check for absolute path roots (/ or \), platform-specific drive roots, or Windows drive prefixes
+    if (
+        target_path.startswith("/")
+        or target_path.startswith("\\")
+        or os.path.isabs(target_path)
+        or Path(target_path).is_absolute()
+        or bool(re.match(r"^[a-zA-Z]:", target_path))
+    ):
+        raise ValueError(f"Target path '{target_path}' cannot be an absolute path.")
+
     # Check for illegal OS characters
     if any(char in ILLEGAL_PATH_CHARS_SET for char in target_path):
         raise ValueError(f"Target path '{target_path}' contains illegal characters.")
-
-    # Check for absolute path roots (/ or \)
-    if target_path.startswith("/") or target_path.startswith("\\"):
-        raise ValueError(f"Target path '{target_path}' cannot be an absolute path.")
 
     # Check for directory traversal segments (..)
     segments = target_path.replace("\\", "/").split("/")
@@ -315,13 +339,12 @@ def _merge_plan_dicts(target_dict: dict, source_dict: dict) -> list[str]:
             target_dict[k] = v
         else:
             existing_val = target_dict[k]
-            is_existing_subfolder = (
-                isinstance(existing_val, dict)
-                and existing_val.get("__type__") not in ("file", "directory")
-            )
-            is_v_subfolder = (
-                isinstance(v, dict)
-                and v.get("__type__") not in ("file", "directory")
+            is_existing_subfolder = isinstance(existing_val, dict) and existing_val.get(
+                "__type__"
+            ) not in ("file", "directory")
+            is_v_subfolder = isinstance(v, dict) and v.get("__type__") not in (
+                "file",
+                "directory",
             )
 
             if is_existing_subfolder and is_v_subfolder:
@@ -429,10 +452,18 @@ def sanitize_plan(plan: Any) -> tuple[dict, list[str]]:
                 if transformed:
                     file_content["confirmed"] = True
                     if "target_filename" in file_content:
-                        file_content["target_filename"] = re.split(r"[/\\]+", safe_file_key)[-1]
-                if "target_filename" in file_content and file_content["target_filename"]:
+                        file_content["target_filename"] = re.split(
+                            r"[/\\]+", safe_file_key
+                        )[-1]
+                if (
+                    "target_filename" in file_content
+                    and file_content["target_filename"]
+                ):
                     old_tf = file_content["target_filename"]
-                    if contains_secrets(old_tf) or scrub_pii_from_filename(old_tf) != old_tf:
+                    if (
+                        contains_secrets(old_tf)
+                        or scrub_pii_from_filename(old_tf) != old_tf
+                    ):
                         leaf_tf = re.split(r"[/\\]+", old_tf)[-1]
                         new_tf = sanitize_name(leaf_tf)
                         if new_tf != old_tf:
@@ -457,7 +488,11 @@ def sanitize_plan(plan: Any) -> tuple[dict, list[str]]:
             if transformed:
                 warnings.append(f"Sanitized folder key '{key}' to '{safe_key}'")
 
-            children = {k: v for k, v in content.items() if not k.startswith("__")} if isinstance(content, dict) else {}
+            children = (
+                {k: v for k, v in content.items() if not k.startswith("__")}
+                if isinstance(content, dict)
+                else {}
+            )
             sub_sanitized, sub_warns = sanitize_plan(children)
             warnings.extend(sub_warns)
 
@@ -551,4 +586,3 @@ def is_junction_entry(entry) -> bool:
         return os.path.isjunction(path)
     except (AttributeError, OSError):
         return False
-

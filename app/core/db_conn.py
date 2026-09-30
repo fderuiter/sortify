@@ -4,6 +4,7 @@ import logging
 import os
 import sys
 import threading
+from pathlib import Path
 
 from app.core.cache import BoundedMemoryCache
 
@@ -57,6 +58,7 @@ except Exception:
 
         sys.modules["sqlite3"] = sqlite3_mock
         sqlite3 = sqlite3_mock
+
 
 # Global connection cache and lock
 def _close_evicted_connection(key, conn):
@@ -129,7 +131,7 @@ def clear_dead_thread_connections():
 def get_db_connection(db_path: str):
     """Create and configure a new database connection with performance parameters."""
     global _connection_cache
-    abs_path = os.path.abspath(db_path)
+    abs_path = str(Path(db_path).resolve())
     thread_id = threading.get_ident()
     cache_key = (abs_path, thread_id)
 
@@ -282,7 +284,6 @@ def get_db_connection(db_path: str):
             # directory by copying raw bytes directly (avoiding metadata/ACL copy failures on Windows)
             # and trying to connect to the temp copy.
             import tempfile
-            from pathlib import Path
 
             try:
                 determined_is_decryption_err = False

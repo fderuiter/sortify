@@ -17,18 +17,9 @@ from typing import Callable, Dict, List, Optional
 
 from app.core.extractor import extract_file_text
 from app.core.progress import emit_progress
-from app.core.resilient_file_ops import resilient_rmtree
+from app.core.resilient_file_ops import _set_posix_mode, resilient_rmtree
 
 logger = logging.getLogger(__name__)
-
-
-def _set_posix_mode(path: str, mode: int) -> None:
-    """Apply POSIX permissions (mode) to a path gracefully across platforms."""
-    if os.name == "posix":
-        try:
-            os.chmod(path, mode)
-        except OSError as err:
-            logger.debug(f"Failed to set mode {oct(mode)} on '{path}': {err}")
 
 
 SUPPORTED_DOC_EXTENSIONS = {
@@ -79,6 +70,7 @@ class ForensicScanner:
         )
         self.discovered_documents: List[DiscoveredDocument] = []
         self.seen_hashes: Dict[str, str] = {}  # sha256 -> source_path
+        self.seen_texts: Dict[str, str] = {}  # sha256 -> extracted text
         self._is_owned_staging_dir = temp_staging_dir is None
 
     @staticmethod
@@ -119,9 +111,7 @@ class ForensicScanner:
                         extracted_path = os.path.join(destination_dir, member.name)
                         if os.path.isfile(extracted_path):
                             _set_posix_mode(extracted_path, 0o600)
-                        extracted_files.append(
-                            extracted_path
-                        )
+                        extracted_files.append(extracted_path)
         except Exception as e:
             logger.warning(f"Error unpacking archive {archive_path}: {e}")
 
@@ -176,6 +166,7 @@ class ForensicScanner:
         """Perform comprehensive forensic scan of a source drive or directory."""
         self.discovered_documents.clear()
         self.seen_hashes.clear()
+        self.seen_texts.clear()
 
         source_root = os.path.abspath(source_root)
         count = 0
@@ -297,14 +288,20 @@ class ForensicScanner:
             self.seen_hashes[sha256] = source_path
 
         # Text extraction
-        if pre_extracted_text is not None:
+        if is_dup and sha256 != "ERROR" and pre_extracted_text is None:
+            text = self.seen_texts.get(sha256, "")
+        elif pre_extracted_text is not None:
             text = str(pre_extracted_text)
+            if sha256 != "ERROR":
+                self.seen_texts[sha256] = text
         else:
             try:
                 text = str(extract_file_text(actual_file_path) or "")
             except Exception as e:
                 logger.warning(f"Extraction error for {actual_file_path}: {e}")
                 text = ""
+            if sha256 != "ERROR":
+                self.seen_texts[sha256] = text
 
         doc = DiscoveredDocument(
             source_path=source_path,

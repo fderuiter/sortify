@@ -29,16 +29,27 @@ _SECRET_BOUND_LEFT = r"(?:^|(?<=[^a-zA-Z0-9]))"
 _SECRET_BOUND_RIGHT = r"(?:$|(?=[^a-zA-Z0-9]))"
 
 # 6. Centralized Secret & Credential Patterns
+ENC_CREDENTIAL_PATTERN = re.compile(r"\benc:[^\s,;'\"]*|enc:[^\s,;'\"]*")
+KEY_VALUE_SECRET_PATTERN = re.compile(
+    r"(?i)\b(password|passwd|secret|api_key|apikey|access_token|auth_token)\s*=\s*[^\s,;'\"]+"
+)
+
 SECRET_KEY_PATTERNS = [
     # Stripe / General sk_ live or test keys
-    re.compile(_SECRET_BOUND_LEFT + r"sk_(?:live|test)_[a-zA-Z0-9]{20,}" + _SECRET_BOUND_RIGHT),
+    re.compile(
+        _SECRET_BOUND_LEFT + r"sk_(?:live|test)_[a-zA-Z0-9]{20,}" + _SECRET_BOUND_RIGHT
+    ),
     # GitHub Tokens (ghp_, gho_, ghu_, ghs_, ghr_)
-    re.compile(_SECRET_BOUND_LEFT + r"gh[pousr]_[a-zA-Z0-9]{20,}" + _SECRET_BOUND_RIGHT),
+    re.compile(
+        _SECRET_BOUND_LEFT + r"gh[pousr]_[a-zA-Z0-9]{20,}" + _SECRET_BOUND_RIGHT
+    ),
     # AWS Access Key ID (AKIA or ASIA followed by 16 alphanumeric characters)
     re.compile(_SECRET_BOUND_LEFT + r"(?:AKIA|ASIA)[0-9A-Z]{16}" + _SECRET_BOUND_RIGHT),
     # AWS Secret Access Key or generic secret key key-value pairs
     re.compile(
-        _SECRET_BOUND_LEFT + r"(?:aws_secret_access_key|api[_-]?key|secret[_-]?key|access[_-]?token|auth[_-]?token)\s*[:=]\s*[a-zA-Z0-9_\-/+=]{16,}" + _SECRET_BOUND_RIGHT,
+        _SECRET_BOUND_LEFT
+        + r"(?:aws_secret_access_key|api[_-]?key|secret[_-]?key|access[_-]?token|auth[_-]?token)\s*[:=]\s*[a-zA-Z0-9_\-/+=]{16,}"
+        + _SECRET_BOUND_RIGHT,
         re.IGNORECASE,
     ),
     # Mailgun / Generic API key format (e.g. key-3ax6...)
@@ -48,11 +59,15 @@ SECRET_KEY_PATTERNS = [
 ]
 
 BEARER_TOKEN_PATTERN = re.compile(
-    _SECRET_BOUND_LEFT + r"Bearer[\s_]+(?:eyJ[a-zA-Z0-9\-_=]+\.eyJ[a-zA-Z0-9\-_=]+\.[a-zA-Z0-9\-_=]{43,88}?|[a-zA-Z0-9_\-\.=]{16,})" + _SECRET_BOUND_RIGHT,
+    _SECRET_BOUND_LEFT
+    + r"Bearer[\s_]+(?:eyJ[a-zA-Z0-9\-_=]+\.eyJ[a-zA-Z0-9\-_=]+\.[a-zA-Z0-9\-_=]{43,88}?|[a-zA-Z0-9_\-\.=]{16,})"
+    + _SECRET_BOUND_RIGHT,
     re.IGNORECASE,
 )
 JWT_PATTERN = re.compile(
-    _SECRET_BOUND_LEFT + r"eyJ[a-zA-Z0-9\-_=]+\.eyJ[a-zA-Z0-9\-_=]+\.[a-zA-Z0-9\-_=]{43,88}?" + _SECRET_BOUND_RIGHT
+    _SECRET_BOUND_LEFT
+    + r"eyJ[a-zA-Z0-9\-_=]+\.eyJ[a-zA-Z0-9\-_=]+\.[a-zA-Z0-9\-_=]{43,88}?"
+    + _SECRET_BOUND_RIGHT
 )
 PRIVATE_KEY_PATTERN = re.compile(
     r"-----BEGIN\s+(?:[A-Z0-9_-]+\s+)?PRIVATE\s+KEY-----[\s\S]*?-----END\s+(?:[A-Z0-9_-]+\s+)?PRIVATE\s+KEY-----|"
@@ -119,6 +134,10 @@ def contains_secrets(text: str) -> bool:
     if not isinstance(text, str) or not text:
         return False
 
+    if ENC_CREDENTIAL_PATTERN.search(text):
+        return True
+    if KEY_VALUE_SECRET_PATTERN.search(text):
+        return True
     for pat in SECRET_KEY_PATTERNS:
         if pat.search(text):
             return True
@@ -148,12 +167,22 @@ def sanitize_secret_patterns(text: str, replacement: str = "") -> str:
     """Scrub or replace secret tokens and API credentials from string text.
 
     Scrubs API keys (sk_live_, ghp_, AKIA), Bearer tokens, JWT strings,
-    private keys, SSNs, credit card numbers, and high-entropy secret tokens.
+    private keys, SSNs, credit card numbers, key=value secrets, enc: payloads,
+    and high-entropy secret tokens.
     """
     if not isinstance(text, str) or not text:
         return text if text is not None else ""
 
     result = text
+
+    # Strip encrypted credential tokens and prefixes starting with 'enc:'
+    result = ENC_CREDENTIAL_PATTERN.sub(replacement, result)
+
+    # Mask key-value secrets (e.g. password=super_secret -> password=[REDACTED])
+    if replacement:
+        result = KEY_VALUE_SECRET_PATTERN.sub(rf"\1={replacement}", result)
+    else:
+        result = KEY_VALUE_SECRET_PATTERN.sub(r"\1=[REDACTED]", result)
 
     result = PRIVATE_KEY_PATTERN.sub(replacement, result)
     result = BEARER_TOKEN_PATTERN.sub(replacement, result)
@@ -249,4 +278,3 @@ def sanitize_text(text: str) -> str:
     text = VERTICAL_WHITESPACE_PATTERN.sub("\n", text)
 
     return text.strip()
-

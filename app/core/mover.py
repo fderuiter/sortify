@@ -11,10 +11,12 @@ import shutil  # noqa: F401
 import threading
 import unicodedata
 import uuid
+from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel
 
+from app.core.domain_contracts import _get_val
 from app.core.link_manager import LinkManager
 from app.core.path_utils import is_junction_path
 from app.core.verifier import VerificationEngine
@@ -33,17 +35,103 @@ def _is_same_path(p1: str, p2: str) -> bool:
     )
 
 
+def _resolve_path(p: Path) -> Path:
+    """Resolve symlinks and Windows 8.3 short paths, even if trailing components do not exist.
+
+    Args:
+        p: Path object to resolve.
+
+    Returns
+    -------
+        Resolved Path object with symlinks and 8.3 short names expanded for existing ancestors.
+    """
+    try:
+        p = p.expanduser()
+    except Exception:
+        pass
+
+    try:
+        if p.exists():
+            return p.resolve()
+    except Exception:
+        pass
+
+    parts = []
+    curr = p
+    while True:
+        try:
+            if curr.exists():
+                break
+        except Exception:
+            pass
+        parent_curr = curr.parent
+        if parent_curr == curr:
+            break
+        parts.append(curr.name)
+        curr = parent_curr
+
+    try:
+        curr_resolved = curr.resolve()
+    except Exception:
+        curr_resolved = curr
+
+    for part in reversed(parts):
+        curr_resolved = curr_resolved / part
+
+    return curr_resolved
+
+
 def is_subpath_or_equal(child: str, parent: str) -> bool:
-    """Check if child path is equal to or nested within parent path (case-insensitive)."""
+    """Check if child path is equal to or nested within parent path (case-insensitive and cross-platform).
+
+    Args:
+        child: Candidate child path to check for subpath containment.
+        parent: Boundary parent path to evaluate child against.
+
+    Returns
+    -------
+        True if child is identical to or located within parent directory boundary, False otherwise.
+    """
     if child is None or parent is None:
         return False
-    abs_child = os.path.normcase(os.path.abspath(child))
-    abs_parent = os.path.normcase(os.path.abspath(parent))
-    if abs_child == abs_parent:
-        return True
-    if not abs_parent.endswith(os.sep):
-        abs_parent += os.sep
-    return abs_child.startswith(abs_parent)
+
+    clean_child = str(child).replace("\\", "/")
+    clean_parent = str(parent).replace("\\", "/")
+
+    try:
+        p_child = _resolve_path(Path(clean_child))
+        p_parent = _resolve_path(Path(clean_parent))
+
+        if p_child == p_parent:
+            return True
+        try:
+            if p_child.is_relative_to(p_parent):
+                return True
+        except (AttributeError, ValueError):
+            pass
+
+        s_child = str(p_child).replace("\\", "/").rstrip("/").lower()
+        s_parent = str(p_parent).replace("\\", "/").rstrip("/").lower()
+
+        if s_child == s_parent:
+            return True
+        if s_child.startswith(s_parent + "/"):
+            return True
+    except Exception:
+        pass
+
+    try:
+        abs_c = os.path.abspath(clean_child).replace("\\", "/").rstrip("/").lower()
+        abs_p = os.path.abspath(clean_parent).replace("\\", "/").rstrip("/").lower()
+
+        if abs_c == abs_p:
+            return True
+        if abs_c.startswith(abs_p + "/"):
+            return True
+    except Exception:
+        pass
+
+    return False
 
 
 def get_safe_path(dest_dir: str, filename: str, source_path: str = None) -> str:
@@ -182,17 +270,6 @@ def _is_cross_volume(src: str, dst: str) -> bool:
     return False
 
 
-def _get_val(obj, attr, default=None):
-    """Safely retrieve attribute or key value from dictionary or domain model object."""
-    if hasattr(obj, attr):
-        val = getattr(obj, attr)
-        if val is not None:
-            return val
-    if isinstance(obj, dict):
-        return obj.get(attr, default)
-    return default
-
-
 def _resolve_source_path(
     base_dir: str,
     key: str,
@@ -227,7 +304,12 @@ def _get_node_mtime(
     rel_src = _get_val(content, "relative_source")
     target_fn = _get_val(content, "target_filename")
 
-    if content is None or node_type in ("file", "directory") or rel_src is not None or target_fn is not None:
+    if (
+        content is None
+        or node_type in ("file", "directory")
+        or rel_src is not None
+        or target_fn is not None
+    ):
         if node_type == "directory":
             return float("inf")
 
@@ -242,7 +324,11 @@ def _get_node_mtime(
             pass
         return float("inf")
     elif isinstance(content, dict) or hasattr(content, "items"):
-        items = content.items() if hasattr(content, "items") else getattr(content, "plan", {}).items()
+        items = (
+            content.items()
+            if hasattr(content, "items")
+            else getattr(content, "plan", {}).items()
+        )
         min_mtime = float("inf")
         sub_parent = os.path.join(active_parent_path, key)
         for sub_key, sub_content in items:
@@ -265,7 +351,12 @@ def _get_node_priority_key(
     rel_src = _get_val(content, "relative_source")
     target_fn = _get_val(content, "target_filename")
 
-    if content is None or node_type in ("file", "directory") or rel_src is not None or target_fn is not None:
+    if (
+        content is None
+        or node_type in ("file", "directory")
+        or rel_src is not None
+        or target_fn is not None
+    ):
         if node_type == "directory":
             return (999, 0.0, float("inf"))
 
@@ -298,7 +389,11 @@ def _get_node_priority_key(
         return (arch_prio, -arch_score, mtime)
 
     elif isinstance(content, dict) or hasattr(content, "items"):
-        items = content.items() if hasattr(content, "items") else getattr(content, "plan", {}).items()
+        items = (
+            content.items()
+            if hasattr(content, "items")
+            else getattr(content, "plan", {}).items()
+        )
         child_keys = []
         sub_parent = os.path.join(active_parent_path, key)
         for sub_key, sub_content in items:
@@ -339,18 +434,11 @@ def _execute_moves_recursive(
     if step_counter is None:
         step_counter = [1]
 
-    curr_plan = plan.plan if hasattr(plan, "plan") and isinstance(plan.plan, dict) else plan
+    curr_plan = (
+        plan.plan if hasattr(plan, "plan") and isinstance(plan.plan, dict) else plan
+    )
     if not isinstance(curr_plan, dict):
         return
-
-    def _get_val(obj, attr, default=None):
-        if hasattr(obj, attr):
-            val = getattr(obj, attr)
-            if val is not None:
-                return val
-        if isinstance(obj, dict):
-            return obj.get(attr, default)
-        return default
 
     sorted_plan_items = sorted(
         curr_plan.items(),
@@ -361,7 +449,11 @@ def _execute_moves_recursive(
 
     for key, content in sorted_plan_items:
         node_type = _get_val(content, "node_type") or _get_val(content, "__type__")
-        is_leaf = content is None or node_type in ("file", "directory") or isinstance(content, BaseModel)
+        is_leaf = (
+            content is None
+            or node_type in ("file", "directory")
+            or isinstance(content, BaseModel)
+        )
         if is_leaf:
             if node_type == "directory":
                 continue
@@ -371,7 +463,9 @@ def _execute_moves_recursive(
                 pass
 
             if depth > 0 and _get_val(content, "relative_source") is None:
-                if content is not None and not (isinstance(content, dict) or isinstance(content, BaseModel)):
+                if content is not None and not (
+                    isinstance(content, dict) or isinstance(content, BaseModel)
+                ):
                     raise ValueError(
                         f"Missing required relative source metadata field for nested item '{key}'"
                     )
@@ -842,18 +936,11 @@ def _collect_move_items(
     base_dir = os.path.normpath(base_dir)
     items = []
 
-    curr_plan = plan.plan if hasattr(plan, "plan") and isinstance(plan.plan, dict) else plan
+    curr_plan = (
+        plan.plan if hasattr(plan, "plan") and isinstance(plan.plan, dict) else plan
+    )
     if not isinstance(curr_plan, dict):
         return items
-
-    def _get_val(obj, attr, default=None):
-        if hasattr(obj, attr):
-            val = getattr(obj, attr)
-            if val is not None:
-                return val
-        if isinstance(obj, dict):
-            return obj.get(attr, default)
-        return default
 
     sorted_plan_items = sorted(
         curr_plan.items(),
@@ -864,7 +951,11 @@ def _collect_move_items(
 
     for key, content in sorted_plan_items:
         node_type = _get_val(content, "node_type") or _get_val(content, "__type__")
-        is_leaf = content is None or node_type in ("file", "directory") or isinstance(content, BaseModel)
+        is_leaf = (
+            content is None
+            or node_type in ("file", "directory")
+            or isinstance(content, BaseModel)
+        )
         if is_leaf:
             if node_type == "directory":
                 continue
@@ -873,7 +964,9 @@ def _collect_move_items(
                 pass
 
             if depth > 0 and _get_val(content, "relative_source") is None:
-                if content is not None and not (isinstance(content, dict) or isinstance(content, BaseModel)):
+                if content is not None and not (
+                    isinstance(content, dict) or isinstance(content, BaseModel)
+                ):
                     raise ValueError(
                         f"Missing required relative source metadata field for nested item '{key}'"
                     )

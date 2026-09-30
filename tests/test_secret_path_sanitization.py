@@ -19,7 +19,9 @@ def test_sanitize_name_strips_secret_patterns():
     assert "Report.pdf" in res1
 
     # 2. Bearer token in name
-    res2 = sanitize_name("Token_Bearer_eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c_Notes.docx")
+    res2 = sanitize_name(
+        "Token_Bearer_eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c_Notes.docx"
+    )
     assert "Bearer" not in res2
     assert "Token" in res2
     assert "Notes.docx" in res2
@@ -130,7 +132,11 @@ def test_cro_multi_study_pipeline_sanitizes_folder_names_and_filenames(tmp_path)
 
             assert res is not None
             # Verify created study directory in target_dir does not contain secret pattern
-            target_subdirs = [d for d in os.listdir(target_dir) if os.path.isdir(os.path.join(target_dir, d))]
+            target_subdirs = [
+                d
+                for d in os.listdir(target_dir)
+                if os.path.isdir(os.path.join(target_dir, d))
+            ]
             for sd in target_subdirs:
                 assert "sk_live" not in sd
 

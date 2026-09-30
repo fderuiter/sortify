@@ -224,18 +224,26 @@ Main command-line interface for Smart AutoSorter AI Pro.
 usage: app/main.py [-h] [-q] [--no-color] [--demo] [--smoke-test]
                    [--update-snapshots] [--daemon] [--debug-layout] [--tui]
                    [--interactive] [--gui]
-                   {sort,scan,config,daemon} ...
+                   {sort,scan,config,daemon,crypto,ledger,quarantine,cro} ...
 
 Smart AutoSorter AI Pro
 
 positional arguments:
-  {sort,scan,config,daemon}
+  {sort,scan,config,daemon,crypto,ledger,quarantine,cro}
                         Available subcommands
     sort                Run document sorting in headless batch processing mode
     scan                Run directory scanning and analysis without moving
                         files
     config              View or update application configuration settings
     daemon              Launch the persistent directory-watching daemon
+    crypto              Manage database encryption keys and cryptographic
+                        status
+    ledger              Manage transaction ledger entries and automated
+                        reconciliation
+    quarantine          Manage compliance quarantine staging, inspection, and
+                        release
+    cro                 CRO multi-study forensic ingestion and regulatory
+                        binder generation
 
 options:
   -h, --help            show this help message and exit
@@ -394,6 +402,72 @@ options:
                         Disable AI contextual renaming
   --tui                 Launch full-screen Textual TUI interface
   --interactive         Launch full-screen interactive TUI mode
+```
+
+##### `crypto`
+```text
+usage: app/main.py crypto [-h] {info,rotate-key,export-key} ...
+
+positional arguments:
+  {info,rotate-key,export-key}
+                        Crypto subcommands
+    info                Report active encryption key location and storage
+                        backend
+    rotate-key          Safely re-encrypt database keys with new
+                        Fernet/SQLCipher key
+    export-key          Export active raw encryption key
+
+options:
+  -h, --help            show this help message and exit
+```
+
+##### `ledger`
+```text
+usage: app/main.py ledger [-h] {status,reconcile,purge} ...
+
+positional arguments:
+  {status,reconcile,purge}
+                        Ledger subcommands
+    status              Display incomplete or pending transaction ledger
+                        entries
+    reconcile           Execute automated headless reconciliation for
+                        interrupted file moves
+    purge               Purge completed or session transaction ledger records
+
+options:
+  -h, --help            show this help message and exit
+```
+
+##### `quarantine`
+```text
+usage: app/main.py quarantine [-h] {list,inspect,process,release} ...
+
+positional arguments:
+  {list,inspect,process,release}
+                        Quarantine subcommands
+    list                List staged and quarantined compliance items
+    inspect             Inspect a specific quarantine job record and audit
+                        trail
+    process             Trigger forensic scanning and policy evaluation for a
+                        quarantine job
+    release             Release a quarantined item to its destination
+                        directory
+
+options:
+  -h, --help            show this help message and exit
+```
+
+##### `cro`
+```text
+usage: app/main.py cro [-h] {ingest,manifest} ...
+
+positional arguments:
+  {ingest,manifest}  CRO subcommands
+    ingest           Run CRO multi-study forensic ingestion pipeline
+    manifest         View or inspect regulatory chain-of-custody manifest
+
+options:
+  -h, --help         show this help message and exit
 ```
 
 ### `sandbox_cli.py`

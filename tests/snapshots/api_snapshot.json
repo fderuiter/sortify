@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "428026e2cfbde0c50183acf4c1135b35b64d9c0a8fb81004f2e8ee957117ffd5"
+    "checksum": "b9573cc04a5b95682d2803017723983f06a04eefe8f00b5418c2d7606cf25cbf"
   },
   "cli": {
     "app/main.py": [
@@ -2655,6 +2655,146 @@
     "app/core/crypto.py": {
       "classes": [
         {
+          "class_name": "CryptoManager",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [
+                "@staticmethod"
+              ],
+              "name": "decrypt_proxy_setting",
+              "parameters": [
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "proxy_str"
+                },
+                {
+                  "annotation": "Any",
+                  "default": "None",
+                  "name": "crypto"
+                },
+                {
+                  "annotation": "Path | str",
+                  "default": "None",
+                  "name": "db_path"
+                }
+              ],
+              "returns": "str"
+            },
+            {
+              "async": false,
+              "decorators": [
+                "@staticmethod"
+              ],
+              "name": "derive_db_hash",
+              "parameters": [
+                {
+                  "annotation": "Path | str",
+                  "default": null,
+                  "name": "db_path"
+                },
+                {
+                  "annotation": "str",
+                  "default": "'sha256'",
+                  "name": "algorithm"
+                }
+              ],
+              "returns": "str"
+            },
+            {
+              "async": false,
+              "decorators": [
+                "@staticmethod"
+              ],
+              "name": "derive_isolated_key_path",
+              "parameters": [
+                {
+                  "annotation": "Path | str",
+                  "default": null,
+                  "name": "db_path"
+                },
+                {
+                  "annotation": "bool",
+                  "default": "False",
+                  "name": "legacy_md5"
+                }
+              ],
+              "returns": "Path"
+            },
+            {
+              "async": false,
+              "decorators": [
+                "@staticmethod"
+              ],
+              "name": "derive_keyring_account",
+              "parameters": [
+                {
+                  "annotation": "Path | str",
+                  "default": null,
+                  "name": "db_path"
+                },
+                {
+                  "annotation": "bool",
+                  "default": "False",
+                  "name": "legacy_md5"
+                }
+              ],
+              "returns": "str"
+            },
+            {
+              "async": false,
+              "decorators": [
+                "@staticmethod"
+              ],
+              "name": "encrypt_proxy_setting",
+              "parameters": [
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "proxy_str"
+                },
+                {
+                  "annotation": "Any",
+                  "default": "None",
+                  "name": "crypto"
+                },
+                {
+                  "annotation": "Path | str",
+                  "default": "None",
+                  "name": "db_path"
+                }
+              ],
+              "returns": "str"
+            },
+            {
+              "async": false,
+              "decorators": [
+                "@staticmethod"
+              ],
+              "name": "generate_bootstrap_key",
+              "parameters": [],
+              "returns": "str"
+            },
+            {
+              "async": false,
+              "decorators": [
+                "@staticmethod"
+              ],
+              "name": "is_encrypted_proxy",
+              "parameters": [
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "proxy_str"
+                }
+              ],
+              "returns": "bool"
+            }
+          ]
+        },
+        {
           "class_name": "EphemeralSessionCrypto",
           "decorators": [],
           "methods": [
@@ -2866,6 +3006,24 @@
                   "annotation": null,
                   "default": null,
                   "name": "self"
+                }
+              ],
+              "returns": "str"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "rotate_key",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str | None",
+                  "default": "None",
+                  "name": "new_key_str"
                 }
               ],
               "returns": "str"
@@ -8196,7 +8354,26 @@
           ]
         }
       ],
-      "functions": []
+      "functions": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "is_masked_by",
+          "parameters": [
+            {
+              "annotation": "Any",
+              "default": null,
+              "name": "higher_rule"
+            },
+            {
+              "annotation": "Any",
+              "default": null,
+              "name": "lower_rule"
+            }
+          ],
+          "returns": "bool"
+        }
+      ]
     },
     "app/core/progress.py": {
       "classes": [
@@ -8305,6 +8482,34 @@
                 }
               ],
               "returns": "QuarantineRecordModel"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "resolve_safe_target_dir",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "base_dir"
+                },
+                {
+                  "annotation": "Optional[str]",
+                  "default": null,
+                  "name": "target_subfolder"
+                },
+                {
+                  "annotation": "str",
+                  "default": "''",
+                  "name": "default_subfolder"
+                }
+              ],
+              "returns": "str"
             },
             {
               "async": false,

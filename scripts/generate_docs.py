@@ -366,7 +366,17 @@ def update_security_md():
             d
             for d in dirs
             if not d.startswith(".")
-            and d not in ("venv", "env", "__pycache__", "node_modules", "site-packages", "build", "dist", "htmlcov")
+            and d
+            not in (
+                "venv",
+                "env",
+                "__pycache__",
+                "node_modules",
+                "site-packages",
+                "build",
+                "dist",
+                "htmlcov",
+            )
         ]
         for file in files:
             if not file.endswith(".py"):
@@ -582,6 +592,8 @@ def validate_mermaid_diagrams():
     import json
     import re
 
+    from scripts.diagram_toolchain import validate_mermaid_syntax
+
     doc_files = []
     if os.path.exists("docs"):
         for root, dirs, files in os.walk("docs"):
@@ -595,24 +607,6 @@ def validate_mermaid_diagrams():
             for f in sorted(files):
                 if f.endswith(".ipynb"):
                     doc_files.append(Path(root, f).as_posix())
-
-    valid_types = {
-        "flowchart",
-        "graph",
-        "sequenceDiagram",
-        "stateDiagram",
-        "stateDiagram-v2",
-        "classDiagram",
-        "classDiagram-v2",
-        "erDiagram",
-        "gantt",
-        "pie",
-        "gitGraph",
-        "mindmap",
-        "timeline",
-        "architecture",
-        "C4Context",
-    }
 
     errors = []
 
@@ -647,59 +641,10 @@ def validate_mermaid_diagrams():
         blocks = re.findall(r"```mermaid\s*([\s\S]*?)```", full_text)
 
         for idx, block in enumerate(blocks, start=1):
-            lines = [
-                line.strip() for line in block.strip().splitlines() if line.strip()
-            ]
-            if not lines:
-                errors.append(f"Empty Mermaid diagram block #{idx} in {file_path}.")
-                continue
-
-            header = None
-            for line in lines:
-                if not line.startswith("%%"):
-                    header = line
-                    break
-
-            if not header:
+            syntax_errors = validate_mermaid_syntax(block)
+            for err in syntax_errors:
                 errors.append(
-                    f"Invalid Mermaid diagram block #{idx} in {file_path}: contains only comments."
-                )
-                continue
-
-            first_word = header.split()[0]
-            if first_word not in valid_types:
-                errors.append(
-                    f"Invalid Mermaid diagram block #{idx} in {file_path}: unknown diagram type '{first_word}'."
-                )
-                continue
-
-            bracket_counts = {"[": 0, "]": 0, "(": 0, ")": 0, "{": 0, "}": 0}
-            for line in lines:
-                if line.startswith("%%"):
-                    continue
-                line_code = line.split("%%")[0].strip()
-                if not line_code:
-                    continue
-                in_quotes = False
-                escaped = False
-                for char in line_code:
-                    if char == '"' and not escaped:
-                        in_quotes = not in_quotes
-                    elif not in_quotes:
-                        if char in bracket_counts:
-                            bracket_counts[char] += 1
-                    escaped = (char == "\\") and not escaped
-
-            if (
-                bracket_counts["["] != bracket_counts["]"]
-                or bracket_counts["("] != bracket_counts[")"]
-                or bracket_counts["{"] != bracket_counts["}"]
-            ):
-                errors.append(
-                    f"Invalid Mermaid diagram block #{idx} in {file_path}: unbalanced brackets "
-                    f"(Square: {bracket_counts['[']}/{bracket_counts[']']}, "
-                    f"Paren: {bracket_counts['(']}/{bracket_counts[')']}, "
-                    f"Curly: {bracket_counts['{']}/{bracket_counts['}']})."
+                    f"Invalid Mermaid diagram block #{idx} in {file_path}: {err}"
                 )
 
     return errors
@@ -736,22 +681,22 @@ def main():
 
     # 1. Identify files to check
     notebook_files = [
-        os.path.join("notebooks", "01_ml_analyzer_clustering.ipynb"),
-        os.path.join("notebooks", "02_multi_format_text_extraction.ipynb"),
-        os.path.join("notebooks", "03_virtual_sorting_verification.ipynb"),
+        Path("notebooks/01_ml_analyzer_clustering.ipynb").as_posix(),
+        Path("notebooks/02_multi_format_text_extraction.ipynb").as_posix(),
+        Path("notebooks/03_virtual_sorting_verification.ipynb").as_posix(),
     ]
     tutorial_files = [
-        os.path.join("docs", "tutorials", "01_ml_analyzer_clustering.md"),
-        os.path.join("docs", "tutorials", "02_multi_format_text_extraction.md"),
-        os.path.join("docs", "tutorials", "03_virtual_sorting_verification.md"),
+        Path("docs/tutorials/01_ml_analyzer_clustering.md").as_posix(),
+        Path("docs/tutorials/02_multi_format_text_extraction.md").as_posix(),
+        Path("docs/tutorials/03_virtual_sorting_verification.md").as_posix(),
     ]
     generated_files = (
         notebook_files
         + tutorial_files
         + [
-            os.path.join("docs", "api_reference.md"),
-            os.path.join("docs", "ui.md"),
-            os.path.join("docs", "admin_guide.md"),
+            Path("docs/api_reference.md").as_posix(),
+            Path("docs/ui.md").as_posix(),
+            Path("docs/admin_guide.md").as_posix(),
             "SECURITY.md",
         ]
     )

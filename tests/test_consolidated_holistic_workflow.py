@@ -173,9 +173,19 @@ def test_holistic_two_phase_and_hybrid_routing_workflow(db, temp_workspace):
         # Assert Phase 1 isolated invoice to Finances/Invoices immediately
         fast_dict = fast_plan.plan if hasattr(fast_plan, "plan") else fast_plan
         assert "Finances" in fast_dict
-        fin_dict = fast_dict["Finances"].plan if hasattr(fast_dict["Finances"], "plan") and isinstance(fast_dict["Finances"].plan, dict) else fast_dict["Finances"]
+        fin_dict = (
+            fast_dict["Finances"].plan
+            if hasattr(fast_dict["Finances"], "plan")
+            and isinstance(fast_dict["Finances"].plan, dict)
+            else fast_dict["Finances"]
+        )
         assert "Invoices" in fin_dict
-        inv_dict = fin_dict["Invoices"].plan if hasattr(fin_dict["Invoices"], "plan") and isinstance(fin_dict["Invoices"].plan, dict) else fin_dict["Invoices"]
+        inv_dict = (
+            fin_dict["Invoices"].plan
+            if hasattr(fin_dict["Invoices"], "plan")
+            and isinstance(fin_dict["Invoices"].plan, dict)
+            else fin_dict["Invoices"]
+        )
         assert "Invoice_9912.txt" in inv_dict
         # AI files must not be processed in fast_path_only
         assert "feature_branch.txt" not in str(fast_dict.get("Development", {}))
@@ -190,7 +200,12 @@ def test_holistic_two_phase_and_hybrid_routing_workflow(db, temp_workspace):
         # Assert Phase 2 matched feature_branch.txt to Development via hybrid routing
         slow_dict = slow_plan.plan if hasattr(slow_plan, "plan") else slow_plan
         assert "Development" in slow_dict
-        dev_dict = slow_dict["Development"].plan if hasattr(slow_dict["Development"], "plan") and isinstance(slow_dict["Development"].plan, dict) else slow_dict["Development"]
+        dev_dict = (
+            slow_dict["Development"].plan
+            if hasattr(slow_dict["Development"], "plan")
+            and isinstance(slow_dict["Development"].plan, dict)
+            else slow_dict["Development"]
+        )
         assert "feature_branch.txt" in dev_dict
 
 

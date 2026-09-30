@@ -16,6 +16,8 @@ from typing import Annotated, Any, Callable, Literal
 from pydantic import Field, ValidationError, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.core.policy_engine import is_masked_by
+
 _SCHEMA_VALIDATOR = None
 _SCHEMA_VALIDATOR_LOCK = threading.Lock()
 
@@ -279,26 +281,8 @@ class Settings(BaseSettings):
                 raise ValueError("Policy halting property must be a boolean.")
 
         # Overlap check
-        def is_masked_by(higher_rule, lower_rule) -> bool:
-            ha_type = higher_rule.get("type", "").lower()
-            lo_type = lower_rule.get("type", "").lower()
-            ha_expr = higher_rule.get("expression", "").lower()
-            lo_expr = lower_rule.get("expression", "").lower()
-
-            if not ha_expr or not lo_expr:
-                return False
-
-            if ha_expr in lo_expr:
-                if ha_type == "keyword":
-                    return True
-                if ha_type == "pattern":
-                    if lo_type in ("pattern", "override"):
-                        return True
-                if ha_type == "override" and lo_type == "override":
-                    return True
-            return False
-
         sorted_policies = sorted(v, key=lambda x: x.get("priority", 0), reverse=True)
+
         for i, lower_rule in enumerate(sorted_policies):
             for higher_rule in sorted_policies[:i]:
                 if is_masked_by(higher_rule, lower_rule):
@@ -426,13 +410,17 @@ class AppSettings:
             if isinstance(data, dict) and "PROXY" in data:
                 proxy_val = data["PROXY"]
                 if proxy_val:
-                    if proxy_val.startswith("enc:"):
+                    from app.core.crypto import CryptoManager
+
+                    if CryptoManager.is_encrypted_proxy(proxy_val):
                         self._raw_encrypted_proxy = proxy_val
                         try:
                             from app.core.path_utils import resolve_db_crypto
 
                             crypto = resolve_db_crypto(self._filepath)
-                            decrypted_val = crypto.decrypt_text(proxy_val[4:])
+                            decrypted_val = CryptoManager.decrypt_proxy_setting(
+                                proxy_val, crypto=crypto
+                            )
                             data["PROXY"] = decrypted_val
                         except Exception as e:
                             logging.warning(
@@ -521,17 +509,19 @@ class AppSettings:
             if proxy_val == "<DECRYPTION_FAILED>":
                 if self._raw_encrypted_proxy:
                     data["PROXY"] = self._raw_encrypted_proxy
-            elif proxy_val and not proxy_val.startswith("enc:"):
-                try:
-                    from app.core.path_utils import resolve_db_crypto
+            elif proxy_val:
+                from app.core.crypto import CryptoManager
 
-                    crypto = resolve_db_crypto(self._filepath)
-                    encrypted_val = crypto.encrypt_text(proxy_val)
-                    if isinstance(encrypted_val, bytes):
-                        encrypted_val = encrypted_val.decode("utf-8")
-                    data["PROXY"] = f"enc:{encrypted_val}"
-                except Exception as e:
-                    logging.error(f"Failed to encrypt proxy string during save: {e}")
+                if not CryptoManager.is_encrypted_proxy(proxy_val):
+                    try:
+                        from app.core.path_utils import resolve_db_crypto
+
+                        crypto = resolve_db_crypto(self._filepath)
+                        data["PROXY"] = CryptoManager.encrypt_proxy_setting(
+                            proxy_val, crypto=crypto
+                        )
+                    except Exception as e:
+                        logging.error(f"Failed to encrypt proxy string during save: {e}")
 
             parent_dir = os.path.dirname(self._filepath)
             if parent_dir and not os.path.exists(parent_dir):

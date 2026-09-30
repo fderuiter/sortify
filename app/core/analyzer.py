@@ -52,14 +52,18 @@ class SortingPlanNode(dict):
     def __getattr__(self, name: str) -> Any:
         """Provide dynamic attribute lookup for schema fields and dictionary keys."""
         if name.startswith("__") and name.endswith("__"):
-            raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
+            raise AttributeError(
+                f"'{self.__class__.__name__}' object has no attribute '{name}'"
+            )
         if name == "node_type":
             return self.get("node_type") or self.get("__type__", "file")
         if name in self:
             return self[name]
         if name in _SortingPlanNodeSchema.model_fields:
             return self.get(name)
-        raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
+        raise AttributeError(
+            f"'{self.__class__.__name__}' object has no attribute '{name}'"
+        )
 
     def __setattr__(self, name: str, value: Any) -> None:
         """Provide dynamic attribute assignment mapping to dictionary entries."""
@@ -81,7 +85,12 @@ class SortingPlan(dict):
                 target = plan
             validated = _validate_sorting_plan_nodes(target)
             super().__init__(validated)
-        elif kwargs and "plan" in kwargs and isinstance(kwargs["plan"], dict) and len(kwargs) == 1:
+        elif (
+            kwargs
+            and "plan" in kwargs
+            and isinstance(kwargs["plan"], dict)
+            and len(kwargs) == 1
+        ):
             validated = _validate_sorting_plan_nodes(kwargs["plan"])
             super().__init__(validated)
         elif kwargs:
@@ -204,78 +213,110 @@ def pre_fetch_historical_corpus(
             rows = cursor.fetchall()
     except Exception as e:
         logging.error(f"Failed to query historical documents from DB: {e}")
-        return validate_corpus_prefetch_batch({"model_metadata": model_metadata, "examples": []})
+        return validate_corpus_prefetch_batch(
+            {"model_metadata": model_metadata, "examples": []}
+        )
 
     if not rows:
-        return validate_corpus_prefetch_batch({"model_metadata": model_metadata, "examples": []})
+        return validate_corpus_prefetch_batch(
+            {"model_metadata": model_metadata, "examples": []}
+        )
 
-    # Decrypt and parse candidates
+    def _safe_decrypt_text(crypto_obj, enc_text):
+        if not enc_text:
+            return ""
+        try:
+            dec = crypto_obj.decrypt_text(enc_text)
+            return dec if dec is not None else ""
+        except Exception:
+            return ""
+
+    def _safe_decrypt_and_parse_vector(crypto_obj, vector_str):
+        if not vector_str:
+            return None
+        try:
+            if hasattr(crypto_obj, "decrypt_and_parse_vector"):
+                return crypto_obj.decrypt_and_parse_vector(vector_str)
+            decrypted_str = crypto_obj.decrypt_vector(vector_str)
+            return json.loads(decrypted_str) if decrypted_str else None
+        except Exception:
+            return None
+
+    # Store raw candidate payloads without initial decryption
     candidates = []
     for filepath, user_verified_target_path, vector_str, extracted_text_enc in rows:
-        try:
-            decrypted_text = (
-                db.crypto.decrypt_text(extracted_text_enc)
-                if extracted_text_enc is not None
-                else ""
-            )
-        except Exception:
-            decrypted_text = ""
-
-        vector = None
-        if vector_str:
-            try:
-                decrypted_vector_str = db.crypto.decrypt_vector(vector_str)
-                vector = json.loads(decrypted_vector_str)
-            except Exception:
-                pass
-
         candidates.append(
             {
                 "filepath": filepath,
                 "user_verified_target_path": user_verified_target_path,
-                "vector": vector,
-                "text": decrypted_text,
+                "vector_str": vector_str,
+                "extracted_text_enc": extracted_text_enc,
             }
         )
 
     # Restrict to maximum of 50 relevant historical examples
     if len(candidates) <= max_examples:
-        selected_examples = candidates
+        selected_examples = [
+            {
+                "filepath": c["filepath"],
+                "user_verified_target_path": c["user_verified_target_path"],
+                "vector": _safe_decrypt_and_parse_vector(db.crypto, c["vector_str"]),
+                "text": _safe_decrypt_text(db.crypto, c["extracted_text_enc"]),
+            }
+            for c in candidates
+        ]
     else:
         # Rank candidates by relevance
-        # Attempt semantic ranking if active vectors and candidate vectors exist
         ranked = False
+        selected_examples = []
         active_vectors = [v for v in (pre_fetched_vectors or []) if v is not None]
-        if active_vectors and any(c["vector"] is not None for c in candidates):
+
+        # Attempt semantic ranking if active vectors exist and candidate vector payloads exist
+        if active_vectors and any(c["vector_str"] for c in candidates):
             try:
                 centroid = np.mean(active_vectors, axis=0)
                 from sklearn.metrics.pairwise import cosine_similarity
 
                 cand_vectors = []
                 cand_indices = []
+                cand_parsed_vectors = {}
+
                 for idx, c in enumerate(candidates):
-                    if c["vector"] is not None and len(c["vector"]) == len(centroid):
-                        cand_vectors.append(c["vector"])
-                        cand_indices.append(idx)
+                    if c["vector_str"]:
+                        parsed_v = _safe_decrypt_and_parse_vector(db.crypto, c["vector_str"])
+                        if parsed_v is not None:
+                            cand_parsed_vectors[idx] = parsed_v
+                            if len(parsed_v) == len(centroid):
+                                cand_vectors.append(parsed_v)
+                                cand_indices.append(idx)
 
                 if cand_vectors:
                     sims = cosine_similarity([centroid], cand_vectors).flatten()
                     sorted_cand_indices = [
                         cand_indices[i] for i in sims.argsort()[::-1]
                     ]
-                    selected_indices = set(sorted_cand_indices[:max_examples])
-                    selected_examples = []
-                    for idx, c in enumerate(candidates):
-                        if idx in selected_indices:
-                            selected_examples.append(c)
-                    if len(selected_examples) < max_examples:
-                        remaining = [
-                            c
-                            for idx, c in enumerate(candidates)
-                            if idx not in selected_indices
-                        ]
-                        selected_examples.extend(
-                            remaining[: max_examples - len(selected_examples)]
+                    chosen_indices = list(sorted_cand_indices[:max_examples])
+                    if len(chosen_indices) < max_examples:
+                        selected_set = set(chosen_indices)
+                        for idx in range(len(candidates)):
+                            if idx not in selected_set:
+                                chosen_indices.append(idx)
+                                if len(chosen_indices) == max_examples:
+                                    break
+
+                    for idx in chosen_indices:
+                        c = candidates[idx]
+                        v = cand_parsed_vectors.get(idx)
+                        if v is None and c["vector_str"]:
+                            v = _safe_decrypt_and_parse_vector(db.crypto, c["vector_str"])
+                        text = _safe_decrypt_text(db.crypto, c["extracted_text_enc"])
+                        selected_examples.append(
+                            {
+                                "filepath": c["filepath"],
+                                "user_verified_target_path": c["user_verified_target_path"],
+                                "vector": v,
+                                "text": text,
+                            }
                         )
                     ranked = True
             except Exception as e:
@@ -289,7 +330,12 @@ def pre_fetch_historical_corpus(
 
                 from app.core.text_utils import sanitize_text
 
-                hist_texts = [sanitize_text(c["text"] or "") for c in candidates]
+                # Decrypt texts for candidate evaluation during TF-IDF vectorization
+                decrypted_texts = [
+                    _safe_decrypt_text(db.crypto, c["extracted_text_enc"])
+                    for c in candidates
+                ]
+                hist_texts = [sanitize_text(t) for t in decrypted_texts]
                 active_text = sanitize_text(" ".join(documents or []))
 
                 vectorizer = TfidfVectorizer(max_features=1000, stop_words="english")
@@ -301,12 +347,34 @@ def pre_fetch_historical_corpus(
 
                 selected_examples = []
                 for idx in sorted_indices[:max_examples]:
-                    selected_examples.append(candidates[idx])
+                    c = candidates[idx]
+                    v = _safe_decrypt_and_parse_vector(db.crypto, c["vector_str"])
+                    selected_examples.append(
+                        {
+                            "filepath": c["filepath"],
+                            "user_verified_target_path": c["user_verified_target_path"],
+                            "vector": v,
+                            "text": decrypted_texts[idx],
+                        }
+                    )
             except Exception as e:
                 logging.error(f"TF-IDF ranking of historical examples failed: {e}")
-                selected_examples = candidates[:max_examples]
+                selected_examples = []
+                for c in candidates[:max_examples]:
+                    v = _safe_decrypt_and_parse_vector(db.crypto, c["vector_str"])
+                    text = _safe_decrypt_text(db.crypto, c["extracted_text_enc"])
+                    selected_examples.append(
+                        {
+                            "filepath": c["filepath"],
+                            "user_verified_target_path": c["user_verified_target_path"],
+                            "vector": v,
+                            "text": text,
+                        }
+                    )
 
-    return validate_corpus_prefetch_batch({"model_metadata": model_metadata, "examples": selected_examples})
+    return validate_corpus_prefetch_batch(
+        {"model_metadata": model_metadata, "examples": selected_examples}
+    )
 
 
 class IncrementalAnalyzer:
@@ -449,11 +517,12 @@ class IncrementalAnalyzer:
         new_node = {}
         for k, v in node.items():
             if v is None or (isinstance(v, dict) and v.get("__type__") == "file"):
-                dirname = os.path.dirname(k)
+                norm_k = k.replace("\\", "/")
+                dirname = os.path.dirname(norm_k)
                 if not dirname:
                     new_node[k] = v
                 else:
-                    parts = dirname.replace("\\", "/").split("/")
+                    parts = dirname.split("/")
                     current = new_node
                     for part in parts:
                         if (
@@ -614,9 +683,15 @@ class IncrementalAnalyzer:
                     policy_plan_files.append(
                         (
                             f,
-                            matched_policy.target_path if hasattr(matched_policy, "target_path") else matched_policy["target_path"],
-                            matched_policy.expression if hasattr(matched_policy, "expression") else matched_policy["expression"],
-                            matched_policy.type if hasattr(matched_policy, "type") else matched_policy["type"],
+                            matched_policy.target_path
+                            if hasattr(matched_policy, "target_path")
+                            else matched_policy["target_path"],
+                            matched_policy.expression
+                            if hasattr(matched_policy, "expression")
+                            else matched_policy["expression"],
+                            matched_policy.type
+                            if hasattr(matched_policy, "type")
+                            else matched_policy["type"],
                             status_match,
                         )
                     )
@@ -661,7 +736,9 @@ class IncrementalAnalyzer:
                             and jev_model.confidence > 0.0
                             and jev_model.category != "Unclassified"
                         ):
-                            jev_plan_files.append((f, jev_model.category, jev_model, status_match))
+                            jev_plan_files.append(
+                                (f, jev_model.category, jev_model, status_match)
+                            )
                             matched = True
 
                 if not matched and keyword_rules:
@@ -722,7 +799,9 @@ class IncrementalAnalyzer:
                             and v_jev_model.confidence > 0.0
                             and v_jev_model.category != "Unclassified"
                         ):
-                            jev_plan_files.append((f_path, v_jev_model.category, v_jev_model, None))
+                            jev_plan_files.append(
+                                (f_path, v_jev_model.category, v_jev_model, None)
+                            )
                             processed_files.add(f_path)
 
             # Internal Jev Classifier Fallback execution for unclassified candidate documents in fast-path
@@ -731,8 +810,7 @@ class IncrementalAnalyzer:
                     {d[0]: d[1] for d in docs if len(d) > 1} if docs else {}
                 )
                 processed_jev_files = {
-                    str(f_item).replace("\\", "/")
-                    for f_item, _, _, _ in jev_plan_files
+                    str(f_item).replace("\\", "/") for f_item, _, _, _ in jev_plan_files
                 }
                 remaining_ai_files = []
                 remaining_ai_docs = []
@@ -1170,7 +1248,9 @@ class IncrementalAnalyzer:
                                 max_examples=50,
                             )
                             if raw_corpus:
-                                pre_fetched_corpus = validate_corpus_prefetch_batch(raw_corpus)
+                                pre_fetched_corpus = validate_corpus_prefetch_batch(
+                                    raw_corpus
+                                )
                         except Exception as e:
                             logging.error(f"Failed to pre-fetch historical corpus: {e}")
 
@@ -1407,8 +1487,16 @@ class IncrementalAnalyzer:
 
                 matched_pol = matched_policies_map.get(f)
                 if matched_pol:
-                    info["routed_by"] = getattr(matched_pol, "type", None) or (matched_pol.get("type", "policy") if isinstance(matched_pol, dict) else "policy")
-                    info["match"] = getattr(matched_pol, "expression", None) or (matched_pol.get("expression") if isinstance(matched_pol, dict) else None)
+                    info["routed_by"] = getattr(matched_pol, "type", None) or (
+                        matched_pol.get("type", "policy")
+                        if isinstance(matched_pol, dict)
+                        else "policy"
+                    )
+                    info["match"] = getattr(matched_pol, "expression", None) or (
+                        matched_pol.get("expression")
+                        if isinstance(matched_pol, dict)
+                        else None
+                    )
                 else:
                     info["routed_by"] = "historical"
                     info["match"] = "user assignment"
