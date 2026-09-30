@@ -110,6 +110,10 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.core.forensic_scanner
 
+## `app.core.formatter`
+
+::: app.core.formatter
+
 ## `app.core.hashes_registry`
 
 ::: app.core.hashes_registry

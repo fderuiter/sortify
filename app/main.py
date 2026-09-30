@@ -449,16 +449,6 @@ def apply_config_overrides(settings: AppSettings, args: argparse.Namespace):
         settings.CONTEXTUAL_RENAMING = args.contextual_renaming
 
 
-def _make_json_serializable(obj):
-    if hasattr(obj, "model_dump"):
-        return obj.model_dump(mode="json")
-    if isinstance(obj, dict):
-        return {k: _make_json_serializable(v) for k, v in obj.items()}
-    if isinstance(obj, list):
-        return [_make_json_serializable(v) for v in obj]
-    return obj
-
-
 def _resolve_target_and_files(args: argparse.Namespace) -> tuple[Path, list[str]]:
     """Resolve target directory and list of file paths from positional arguments or stdin."""
     raw_dir = getattr(args, "directory", None)

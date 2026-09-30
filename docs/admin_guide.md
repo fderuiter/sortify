@@ -283,19 +283,22 @@ When executing `app/main.py` in non-interactive or detached standard input strea
 
 ##### `sort`
 ```text
-usage: app/main.py sort [-h] [--json] [--dest-dir DEST_DIR] [--dry-run] [-q]
-                        [--no-color] [--max-folders MAX_FOLDERS]
+usage: app/main.py sort [-h] [-f {table,text,json}] [--json]
+                        [--dest-dir DEST_DIR] [--dry-run] [-q] [--no-color]
+                        [--max-folders MAX_FOLDERS]
                         [--strategy {default,generative,clinical_tmf,clinical_isf}]
                         [--conflict-policy {skip,rename}]
                         [--contextual-renaming] [--no-contextual-renaming]
                         [--tui] [--interactive]
-                        directory
+                        [directory]
 
 positional arguments:
   directory             Target directory to sort
 
 options:
   -h, --help            show this help message and exit
+  -f {table,text,json}, --format {table,text,json}
+                        Output format (table, text, or json)
   --json                Output result in structured JSON format
   --dest-dir DEST_DIR   Destination directory for sorted files
   --dry-run             Perform dry run analysis without executing physical
@@ -319,19 +322,21 @@ options:
 
 ##### `scan`
 ```text
-usage: app/main.py scan [-h] [--json] [-q] [--no-color]
+usage: app/main.py scan [-h] [-f {table,text,json}] [--json] [-q] [--no-color]
                         [--max-folders MAX_FOLDERS]
                         [--strategy {default,generative,clinical_tmf,clinical_isf}]
                         [--conflict-policy {skip,rename}]
                         [--contextual-renaming] [--no-contextual-renaming]
                         [--tui] [--interactive]
-                        directory
+                        [directory]
 
 positional arguments:
   directory             Target directory to scan
 
 options:
   -h, --help            show this help message and exit
+  -f {table,text,json}, --format {table,text,json}
+                        Output format (table, text, or json)
   --json                Output scan plan in structured JSON format
   -q, --quiet           Suppress informational prints and non-essential
                         progress output
