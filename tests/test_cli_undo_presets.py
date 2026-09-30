@@ -1,11 +1,10 @@
 """Tests for integrated undo subcommand and preset CLI flags."""
 
 import json
-import tempfile
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
+
 from tests.test_cli_subcommands import create_sample_corpus, run_cli
 
 

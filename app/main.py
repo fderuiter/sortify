@@ -488,8 +488,6 @@ def resolve_preset_and_directory(args: argparse.Namespace) -> Path:
 
 def find_all_history_sessions() -> list:
     """Scan all session directories and configuration directories for history databases."""
-    import time
-    from typing import Any
     from app.config import get_app_dir
     from app.core.db_conn import get_db_connection
     from app.core.path_utils import get_session_base_dir
@@ -539,7 +537,6 @@ def find_all_history_sessions() -> list:
     return all_sessions
 
 
->>>>>>> b72d806 (feat(cli): add undo subcommand and preset flags for sort/scan)
 def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
     """Execute document batch sorting or launch interactive TUI."""
     import json
@@ -666,7 +663,6 @@ def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
 def handle_scan_command(args: argparse.Namespace, settings: AppSettings):
     """Execute directory scanning and sorting analysis or launch interactive TUI."""
     import json
-    from pathlib import Path
 
     apply_config_overrides(settings, args)
 

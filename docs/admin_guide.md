@@ -232,18 +232,21 @@ Main command-line interface for Smart AutoSorter AI Pro.
 usage: app/main.py [-h] [-q] [--no-color] [--demo] [--smoke-test]
                    [--update-snapshots] [--daemon] [--debug-layout] [--tui]
                    [--interactive] [--gui]
-                   {sort,scan,config,daemon,crypto,ledger,quarantine,cro} ...
+                   {sort,scan,config,daemon,undo,crypto,ledger,quarantine,cro}
+                   ...
 
 Smart AutoSorter AI Pro
 
 positional arguments:
-  {sort,scan,config,daemon,crypto,ledger,quarantine,cro}
+  {sort,scan,config,daemon,undo,crypto,ledger,quarantine,cro}
                         Available subcommands
     sort                Run document sorting in headless batch processing mode
     scan                Run directory scanning and analysis without moving
                         files
     config              View or update application configuration settings
     daemon              Launch the persistent directory-watching daemon
+    undo                Rollback sorting operations and manage history
+                        sessions
     crypto              Manage database encryption keys and cryptographic
                         status
     ledger              Manage transaction ledger entries and automated
@@ -283,19 +286,23 @@ When executing `app/main.py` in non-interactive or detached standard input strea
 
 ##### `sort`
 ```text
-usage: app/main.py sort [-h] [--json] [--dest-dir DEST_DIR] [--dry-run] [-q]
-                        [--no-color] [--max-folders MAX_FOLDERS]
+usage: app/main.py sort [-h] [--preset {demo,downloads,documents}] [--json]
+                        [--dest-dir DEST_DIR] [--dry-run] [-q] [--no-color]
+                        [--max-folders MAX_FOLDERS]
                         [--strategy {default,generative,clinical_tmf,clinical_isf}]
                         [--conflict-policy {skip,rename}]
                         [--contextual-renaming] [--no-contextual-renaming]
                         [--tui] [--interactive]
-                        directory
+                        [directory]
 
 positional arguments:
   directory             Target directory to sort
 
 options:
   -h, --help            show this help message and exit
+  --preset {demo,downloads,documents}
+                        Use standard workspace preset directory (demo,
+                        downloads, documents)
   --json                Output result in structured JSON format
   --dest-dir DEST_DIR   Destination directory for sorted files
   --dry-run             Perform dry run analysis without executing physical
@@ -319,19 +326,22 @@ options:
 
 ##### `scan`
 ```text
-usage: app/main.py scan [-h] [--json] [-q] [--no-color]
-                        [--max-folders MAX_FOLDERS]
+usage: app/main.py scan [-h] [--preset {demo,downloads,documents}] [--json]
+                        [-q] [--no-color] [--max-folders MAX_FOLDERS]
                         [--strategy {default,generative,clinical_tmf,clinical_isf}]
                         [--conflict-policy {skip,rename}]
                         [--contextual-renaming] [--no-contextual-renaming]
                         [--tui] [--interactive]
-                        directory
+                        [directory]
 
 positional arguments:
   directory             Target directory to scan
 
 options:
   -h, --help            show this help message and exit
+  --preset {demo,downloads,documents}
+                        Use standard workspace preset directory (demo,
+                        downloads, documents)
   --json                Output scan plan in structured JSON format
   -q, --quiet           Suppress informational prints and non-essential
                         progress output
@@ -395,6 +405,42 @@ positional arguments:
 
 options:
   -h, --help            show this help message and exit
+  -q, --quiet           Suppress informational prints and non-essential
+                        progress output
+  --no-color            Disable ANSI color and style formatting
+  --max-folders MAX_FOLDERS
+                        Maximum number of generated subfolders
+  --strategy {default,generative,clinical_tmf,clinical_isf}
+                        Sorting strategy
+  --conflict-policy {skip,rename}
+                        Conflict resolution policy
+  --contextual-renaming
+                        Enable AI contextual renaming
+  --no-contextual-renaming
+                        Disable AI contextual renaming
+  --tui                 Launch full-screen Textual TUI interface
+  --interactive         Launch full-screen interactive TUI mode
+```
+
+##### `undo`
+```text
+usage: app/main.py undo [-h] [--session-id SESSION_ID] [--list] [--latest]
+                        [--force] [--json] [-q] [--no-color]
+                        [--max-folders MAX_FOLDERS]
+                        [--strategy {default,generative,clinical_tmf,clinical_isf}]
+                        [--conflict-policy {skip,rename}]
+                        [--contextual-renaming] [--no-contextual-renaming]
+                        [--tui] [--interactive]
+
+options:
+  -h, --help            show this help message and exit
+  --session-id SESSION_ID
+                        Specific historical session ID UUID to rollback
+  --list                List active and completed historical sorting sessions
+  --latest              Rollback the latest historical sorting session
+  --force               Force rollback even if original files are missing
+  --json                Output session list or rollback status in structured
+                        JSON format
   -q, --quiet           Suppress informational prints and non-essential
                         progress output
   --no-color            Disable ANSI color and style formatting
