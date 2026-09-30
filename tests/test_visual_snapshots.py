@@ -102,6 +102,7 @@ def isolated_app_dir(monkeypatch, tmp_path):
     import app.core.session
 
     monkeypatch.setenv("AUTOSORTER_APP_DIR", str(tmp_path))
+    monkeypatch.setenv("PYTHON_KEYRING_BACKEND", "keyring.backends.fail.Keyring")
     monkeypatch.setattr(app.config, "get_app_dir", lambda: tmp_path)
     monkeypatch.setattr(
         app.config.AppSettings, "_trigger_save", lambda self: self._save()
