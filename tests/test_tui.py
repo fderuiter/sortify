@@ -19,6 +19,8 @@ from app.ui.tui import (
     WizardModal,
 )
 
+pytestmark = pytest.mark.xdist_group(name="tui")
+
 
 @pytest.fixture(autouse=True)
 def isolated_app_dir(monkeypatch, tmp_path):

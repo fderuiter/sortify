@@ -461,3 +461,150 @@ def test_in_memory_db_mock():
     db_meta.set_model_metadata("version", 1)
     assert db_meta.get_model_metadata("version") == 1
 
+
+def test_prefetch_deferred_decryption_count(mocker):
+    """Verify pre_fetch_historical_corpus defers decryption and only decrypts text for selected top max_examples (O(min(N, 50)))."""
+    from app.core.analyzer import pre_fetch_historical_corpus
+
+    base_dir = "test_deferred_prefetch_base"
+    db.clear(base_dir)
+
+    # Insert 60 historical documents
+    vector_dim = 384
+    for i in range(60):
+        fp = f"hist_{i}.txt"
+        h = f"hash_{i}"
+        txt = f"Historical text payload {i}"
+        db.upsert_document(base_dir, fp, h, txt)
+        db.set_user_verified_target(base_dir, h, f"TargetFolder_{i % 3}")
+        db.upsert_document_vectors(base_dir, [(fp, [0.1 * (i % 5)] * vector_dim)])
+
+    spy_decrypt_text = mocker.spy(db.crypto, "decrypt_text")
+    spy_decrypt_vector_parse = mocker.spy(db.crypto, "decrypt_and_parse_vector")
+
+    pre_fetched_vectors = [[0.1] * vector_dim]
+    batch = pre_fetch_historical_corpus(
+        db,
+        base_dir=base_dir,
+        filenames=[],
+        documents=[],
+        pre_fetched_vectors=pre_fetched_vectors,
+        max_examples=50,
+    )
+
+    examples = batch.examples if hasattr(batch, "examples") else batch["examples"]
+    assert len(examples) == 50
+
+    # Since there are 60 candidates and max_examples=50, text decryption must be called ONLY for the selected 50 examples
+    assert spy_decrypt_text.call_count == 50
+    # decrypt_and_parse_vector should be called for vector parsing
+    assert spy_decrypt_vector_parse.call_count > 0
+
+
+def test_prefetch_small_batch_shortcut(mocker):
+    """Verify pre_fetch_historical_corpus short-circuits when total records <= max_examples."""
+    from app.core.analyzer import pre_fetch_historical_corpus
+
+    base_dir = "test_small_prefetch_base"
+    db.clear(base_dir)
+
+    for i in range(5):
+        fp = f"small_{i}.txt"
+        h = f"hash_s_{i}"
+        txt = f"Small batch text {i}"
+        db.upsert_document(base_dir, fp, h, txt)
+        db.set_user_verified_target(base_dir, h, "FolderA")
+
+    spy_decrypt_text = mocker.spy(db.crypto, "decrypt_text")
+
+    batch = pre_fetch_historical_corpus(
+        db,
+        base_dir=base_dir,
+        filenames=[],
+        documents=[],
+        pre_fetched_vectors=None,
+        max_examples=50,
+    )
+
+    examples = batch.examples if hasattr(batch, "examples") else batch["examples"]
+    assert len(examples) == 5
+    assert spy_decrypt_text.call_count == 5
+
+
+def test_prefetch_corrupt_payload_handling(mocker):
+    """Verify corrupt encrypted text or vector strings are handled gracefully without raising exceptions."""
+    from app.core.analyzer import pre_fetch_historical_corpus
+
+    base_dir = "test_corrupt_prefetch_base"
+    db.clear(base_dir)
+
+    db.upsert_document(base_dir, "corrupt.txt", "hash_c", "Corrupt payload test")
+    db.set_user_verified_target(base_dir, "hash_c", "FolderCorrupt")
+
+    # Mock decrypt_text to raise CryptoError on corrupt input
+    mocker.patch.object(db.crypto, "decrypt_text", side_effect=Exception("Corrupt text decryption failed"))
+    mocker.patch.object(db.crypto, "decrypt_and_parse_vector", side_effect=Exception("Corrupt vector parse failed"))
+
+    batch = pre_fetch_historical_corpus(
+        db,
+        base_dir=base_dir,
+        filenames=[],
+        documents=[],
+        pre_fetched_vectors=None,
+        max_examples=50,
+    )
+
+    examples = batch.examples if hasattr(batch, "examples") else batch["examples"]
+    assert len(examples) == 1
+    ex = examples[0]
+    # Should handle errors by returning empty text and None vector
+    ex_text = ex.get("text") if isinstance(ex, dict) else ex.text
+    ex_vec = ex.get("vector") if isinstance(ex, dict) else ex.vector
+    assert ex_text == ""
+    assert ex_vec is None
+
+
+def test_prefetch_semantic_ranking_order(mocker):
+    """Verify pre_fetch_historical_corpus maintains descending cosine similarity score order."""
+    from app.core.analyzer import pre_fetch_historical_corpus
+
+    base_dir = "test_ranking_order_base"
+    db.clear(base_dir)
+
+    # Insert 60 documents with varying directional cosine similarity to centroid [1.0, 0.0, ...]
+    # Document 55 has vector aligned with centroid [1.0, 0.0] -> sim 1.0
+    # Document 10 has vector [0.8, 0.6] -> sim 0.8
+    # Other documents have vector [0.0, 1.0] -> sim 0.0
+    vector_dim = 384
+    for i in range(60):
+        fp = f"file_{i}.txt"
+        h = f"hash_{i}"
+        txt = f"Content {i}"
+        db.upsert_document(base_dir, fp, h, txt)
+        db.set_user_verified_target(base_dir, h, "FolderRank")
+
+        if i == 55:
+            v = [1.0, 0.0] + [0.0] * (vector_dim - 2)
+        elif i == 10:
+            v = [0.8, 0.6] + [0.0] * (vector_dim - 2)
+        else:
+            v = [0.0, 1.0] + [0.0] * (vector_dim - 2)
+        db.upsert_document_vectors(base_dir, [(fp, v)])
+
+    active_centroid = [[1.0] + [0.0] * (vector_dim - 1)]
+    batch = pre_fetch_historical_corpus(
+        db,
+        base_dir=base_dir,
+        filenames=[],
+        documents=[],
+        pre_fetched_vectors=active_centroid,
+        max_examples=50,
+    )
+
+    examples = batch.examples if hasattr(batch, "examples") else batch["examples"]
+    assert len(examples) == 50
+    # First returned candidate must be file_55.txt (highest similarity 1.0), second file_10.txt (similarity 0.8)
+    fp_0 = examples[0].get("filepath") if isinstance(examples[0], dict) else examples[0].filepath
+    fp_1 = examples[1].get("filepath") if isinstance(examples[1], dict) else examples[1].filepath
+    assert fp_0 == "file_55.txt"
+    assert fp_1 == "file_10.txt"

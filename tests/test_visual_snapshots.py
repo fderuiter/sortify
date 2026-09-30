@@ -35,7 +35,16 @@ def sanitize_svg(svg: str) -> str:
     svg = re.sub(r"\b\d{2}:\d{2}:\d{2}\b", "00:00:00", svg)
 
     # Normalize Windows drive letters, backslashes, and HTML entities in test paths
-    svg = svg.replace("&#92;", "\\").replace("&bsol;", "\\")
+    svg = (
+        svg.replace("&#92;", "\\")
+        .replace("&bsol;", "\\")
+        .replace("&#x5C;", "\\")
+        .replace("&#x5c;", "\\")
+        .replace("&#47;", "/")
+        .replace("&sol;", "/")
+        .replace("&#x2F;", "/")
+        .replace("&#x2f;", "/")
+    )
     svg = re.sub(r"(?:[A-Za-z]:)?[/\\]+dummy", "/dummy", svg)
     svg = re.sub(
         r"/dummy([^<\"]*)",
@@ -47,25 +56,25 @@ def sanitize_svg(svg: str) -> str:
     if style_match:
         css_text = style_match.group(1)
         rules = re.findall(r"\.(terminal-test-r\d+)\s*\{(.*?)\}", css_text)
+        if rules:
+            style_map = {}
+            sorted_unique_styles = sorted(list(set(rule[1].strip() for rule in rules)))
 
-        style_map = {}
-        sorted_unique_styles = sorted(list(set(rule[1].strip() for rule in rules)))
+            for old_class, style_body in rules:
+                style_index = sorted_unique_styles.index(style_body.strip())
+                style_map[old_class] = f"terminal-test-c{style_index}"
 
-        for old_class, style_body in rules:
-            style_index = sorted_unique_styles.index(style_body.strip())
-            style_map[old_class] = f"terminal-test-c{style_index}"
+            new_css_lines = [
+                f"    .terminal-test-c{idx} {{ {body} }}"
+                for idx, body in enumerate(sorted_unique_styles)
+            ]
+            new_css = "\n" + "\n".join(new_css_lines) + "\n    "
+            svg = svg.replace(css_text, new_css)
 
-        new_css_lines = [
-            f"    .terminal-test-c{idx} {{ {body} }}"
-            for idx, body in enumerate(sorted_unique_styles)
-        ]
-        new_css = "\n" + "\n".join(new_css_lines) + "\n    "
-        svg = svg.replace(css_text, new_css)
-
-        for old_class, new_class in sorted(
-            style_map.items(), key=lambda x: len(x[0]), reverse=True
-        ):
-            svg = re.sub(r"\b" + old_class + r"\b", new_class, svg)
+            for old_class, new_class in sorted(
+                style_map.items(), key=lambda x: len(x[0]), reverse=True
+            ):
+                svg = re.sub(r"\b" + old_class + r"\b", new_class, svg)
 
     return svg
 
@@ -101,7 +110,13 @@ def isolated_app_dir(monkeypatch, tmp_path):
     import app.config
     import app.core.session
 
+    app.config.AppSettings.clear_observers()
+    monkeypatch.setenv("FORCE_COLOR", "1")
+    monkeypatch.setenv("COLORTERM", "truecolor")
+    monkeypatch.setenv("TERM", "xterm-256color")
+    monkeypatch.delenv("NO_COLOR", raising=False)
     monkeypatch.setenv("AUTOSORTER_APP_DIR", str(tmp_path))
+    monkeypatch.setenv("PYTHON_KEYRING_BACKEND", "keyring.backends.fail.Keyring")
     monkeypatch.setattr(app.config, "get_app_dir", lambda: tmp_path)
     monkeypatch.setattr(
         app.config.AppSettings, "_trigger_save", lambda self: self._save()
@@ -111,8 +126,9 @@ def isolated_app_dir(monkeypatch, tmp_path):
         "scan_abandoned_sessions_async",
         AsyncMock(return_value=[]),
     )
-    monkeypatch.delenv("AUTOSORTER_PROTECTED_PATHS", raising=False)
-    monkeypatch.delenv("AUTOSORTER_IGNORED_EXTENSIONS", raising=False)
+    for k in list(os.environ.keys()):
+        if k.startswith("AUTOSORTER_") and k != "AUTOSORTER_APP_DIR":
+            monkeypatch.delenv(k, raising=False)
 
     try:
         from app.core.shared_registry import SharedModelRegistry
@@ -132,7 +148,7 @@ def test_tui_main_screen_snapshot():
         settings = AppSettings()
         app = AutoSorterTUI(settings=settings)
         async with app.run_test(size=(100, 30)) as pilot:
-            await pilot.pause()
+            await pilot.pause(0.1)
             svg = app.export_screenshot()
             assert_svg_snapshot("tui_main_screen", svg)
 
@@ -173,7 +189,7 @@ def test_tui_populated_plan_snapshot():
                 },
             }
             app.rebuild_tree()
-            await pilot.pause()
+            await pilot.pause(0.1)
             svg = app.export_screenshot()
             assert_svg_snapshot("tui_populated_plan", svg)
 
@@ -187,7 +203,7 @@ def test_wizard_modal_snapshot():
         app = AutoSorterTUI(settings=settings)
         async with app.run_test(size=(100, 30)) as pilot:
             app.push_screen(WizardModal(app.settings))
-            await pilot.pause()
+            await pilot.pause(0.1)
             svg = app.export_screenshot()
             assert_svg_snapshot("wizard_modal", svg)
 
@@ -202,9 +218,9 @@ def test_settings_modal_snapshot():
         async with app.run_test(size=(100, 35)) as pilot:
             modal = SettingsModal(app.settings)
             app.push_screen(modal)
-            await pilot.pause()
+            await pilot.pause(0.1)
             modal.scroll_home(animate=False)
-            await pilot.pause()
+            await pilot.pause(0.1)
             svg = app.export_screenshot()
             assert_svg_snapshot("settings_modal", svg)
 
@@ -223,7 +239,7 @@ def test_rename_modal_snapshot():
                 extension=".pdf",
             )
             app.push_screen(modal)
-            await pilot.pause()
+            await pilot.pause(0.1)
             svg = app.export_screenshot()
             assert_svg_snapshot("rename_modal", svg)
 
@@ -237,7 +253,7 @@ def test_cro_forensic_modal_snapshot():
         app = AutoSorterTUI(settings=settings, base_dir="/dummy/study_root")
         async with app.run_test(size=(100, 30)) as pilot:
             app.push_screen(CROForensicModal(app.settings, base_dir=app.base_dir))
-            await pilot.pause()
+            await pilot.pause(0.1)
             svg = app.export_screenshot()
             assert_svg_snapshot("cro_forensic_modal", svg)
 
@@ -251,7 +267,7 @@ def test_new_folder_modal_snapshot():
         app = AutoSorterTUI(settings=settings)
         async with app.run_test(size=(100, 30)) as pilot:
             app.push_screen(NewFolderModal())
-            await pilot.pause()
+            await pilot.pause(0.1)
             svg = app.export_screenshot()
             assert_svg_snapshot("new_folder_modal", svg)
 
@@ -265,7 +281,7 @@ def test_directory_select_modal_snapshot():
         app = AutoSorterTUI(settings=settings, base_dir="/dummy/projects")
         async with app.run_test(size=(100, 30)) as pilot:
             app.push_screen(DirectorySelectModal(current_dir=app.base_dir))
-            await pilot.pause()
+            await pilot.pause(0.1)
             svg = app.export_screenshot()
             assert_svg_snapshot("directory_select_modal", svg)
 

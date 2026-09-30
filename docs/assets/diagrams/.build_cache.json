@@ -1,6 +1,6 @@
 {
-  "api_core_architecture": {
-    "sha256": "68014b24b46ca30f705166af7bddaedaf9f97d890228d1832e138112d7e0983c",
+  "core_architecture": {
+    "sha256": "e8891aa9dfa416d1dd8731e92fc54915985195d0957088e32c9c85e21dce0184",
     "fallback": true
   },
   "architecture_dataflow": {
@@ -75,6 +75,10 @@
     "sha256": "31841cdf6b18bed0ffaffc02a769a1588a8d767a0c65685c2962902f3ad868b6",
     "fallback": true
   },
+  "api_core_architecture": {
+    "sha256": "68014b24b46ca30f705166af7bddaedaf9f97d890228d1832e138112d7e0983c",
+    "fallback": true
+  },
   "admin_policy_evaluation": {
     "sha256": "8fa2e31d89223dc224c717000b272a8a420392edb69d955cac7676db98400625",
     "fallback": true
@@ -109,10 +113,6 @@
   },
   "status_progress_spec": {
     "sha256": "3e09096a2b1c52f473096ec36014395430c9a57fd11060d11db19a9222c1cf20",
-    "fallback": true
-  },
-  "core_architecture": {
-    "sha256": "1e65113e195a6a289f6925e1613acdac7f818237faa9978f476f0fc9259f4c16",
     "fallback": true
   }
 }

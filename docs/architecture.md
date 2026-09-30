@@ -44,8 +44,22 @@ To prevent redundant patterns, platform-specific path bugs, and visual/functiona
 All shared system utilities must reside in or be exposed through `app.core.path_utils`. Direct usage of custom platform or frozen bundle hacks is strictly prohibited.
 * **Packaging and Bundle Detections:** The unified helper `is_packaged()` in `app.core.path_utils` checks `sys.frozen` to detect if the app is running in a PyInstaller frozen bundle.
 * **Path Sanitization & Name Validation:** Standard validations such as `validate_target_path()`, `sanitize_name()`, and `is_valid_name()` standardize path checking across the application, adhering to OS limits and avoiding platform-specific path errors.
+* **Quarantine Target Path & Boundary Validation:** `QuarantineInterceptorService.resolve_safe_target_dir()` verifies target output subfolders using `validate_target_path()` and enforces strict boundary containment within base directory boundaries via `is_subpath_or_equal()`, safely falling back to default subfolders if path traversal or illegal characters are detected.
 * **Session and Data Directory Resolution:** Session setup is centralized in `setup_session_directory()` and encryption key lookup is handled via `resolve_db_crypto()`.
+* **Centralized Cryptographic & Key Management Facade:** Cryptographic key derivation (SHA-256 with legacy MD5 migration), envelope encryption for proxy settings, and ephemeral bootstrap keys are managed by `CryptoManager` (`app.core.crypto`).
+* **Unified Secret Scrubbing Delegate:** All secret scrubbing and diagnostic credential masking delegates to `sanitize_secret_patterns()` in `app.core.text_utils`, eliminating duplicate regex definitions across logging and text filtering.
 
 ### Automated Commit-Stage Linting
 The automated validation script `scripts/validate_duplicates.py` is configured as a pre-commit hook to parse Python files and reject any attempts to re-introduce hardcoded path characters (e.g., `<>:"|?*`), direct `sys.frozen` checks, or raw `secret.key` references outside of `path_utils.py`. This keeps pre-commit validation times extremely low (typically < 0.5s) while enforcing strong guardrails against duplicate utilities.
+
+## Modular CLI Subcommand Registry
+
+The command-line interface is organized modularly under `app/cli/`, delegating domain subcommands to dedicated handlers registered via `build_subparser_registry` in `app/cli/__init__.py`:
+
+- **`crypto` (`app/cli/crypto_cli.py`)**: Key inspection (`info`), re-keying database files (`rotate-key`), and key export (`export-key`).
+- **`ledger` (`app/cli/ledger_cli.py`)**: Transaction ledger status (`status`), automated operation recovery (`reconcile`), and record cleanup (`purge`).
+- **`quarantine` (`app/cli/quarantine_cli.py`)**: Quarantine staging inspection (`list`, `inspect`), forensic scanning (`process`), and document release (`release`).
+- **`cro` (`app/cli/cro_cli.py`)**: Multi-study trial document ingestion (`ingest`) and regulatory manifest generation (`manifest`).
+
+All subcommands enforce stream isolation (`sys.stdout` reserved for structured output/JSON; `sys.stderr` for logs and progress), support `--json`, `--quiet`, and `--no-color` global wrappers, and execute database connection cleanup in `finally` blocks to release file descriptor locks across all target platforms.
 

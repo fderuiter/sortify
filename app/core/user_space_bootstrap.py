@@ -38,11 +38,14 @@ def verify_sqlcipher_encryption() -> bool:
     try:
         from sqlcipher3 import dbapi2 as sqlite3
 
+        from app.core.crypto import CryptoManager
+
         # Test connection with an in-memory encrypted database
         conn = sqlite3.connect(":memory:")
         try:
             cursor = conn.cursor()
-            cursor.execute("PRAGMA key = 'test_bootstrap_key'")
+            bootstrap_key = CryptoManager.generate_bootstrap_key()
+            cursor.execute(f"PRAGMA key = '{bootstrap_key}'")
             cursor.execute("CREATE TABLE test_encrypt (val TEXT)")
             cursor.execute("INSERT INTO test_encrypt VALUES ('secure_data')")
             cursor.execute("SELECT val FROM test_encrypt")
