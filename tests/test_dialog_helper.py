@@ -6,6 +6,16 @@ import pytest
 from app.ui.dialog_helper import ask_directory_async
 
 
+async def _wait_until(condition_fn, timeout=2.0):
+    """Poll condition until True or timeout is reached."""
+    loop = asyncio.get_running_loop()
+    start = loop.time()
+    while not condition_fn():
+        if loop.time() - start > timeout:
+            break
+        await asyncio.sleep(0.02)
+
+
 @pytest.mark.anyio
 async def test_ask_directory_async_macos():
     # Test macOS logic
@@ -21,7 +31,7 @@ async def test_ask_directory_async_macos():
         mock.patch("app.ui.dialog_helper.run_background_process", mock_run),
     ):
         ask_directory_async(None, "Select Folder", callback, None, None)
-        await asyncio.sleep(0.1)
+        await _wait_until(lambda: callback.called)
 
         mock_run.assert_called_once()
         args, kwargs = mock_run.call_args
@@ -44,7 +54,7 @@ async def test_ask_directory_async_windows_success():
         mock.patch("app.ui.dialog_helper.run_background_process", mock_run),
     ):
         ask_directory_async(None, "Select Folder", callback, None, None)
-        await asyncio.sleep(0.1)
+        await _wait_until(lambda: callback.called)
 
         mock_run.assert_called_once()
         args, kwargs = mock_run.call_args
@@ -68,7 +78,7 @@ async def test_ask_directory_async_linux_zenity():
         mock.patch("app.ui.dialog_helper.run_background_process", mock_run),
     ):
         ask_directory_async(None, "Select Folder", callback, None, None)
-        await asyncio.sleep(0.1)
+        await _wait_until(lambda: callback.called)
 
         mock_run.assert_called_once()
         callback.assert_called_once_with("/mock/linux/path")
@@ -108,7 +118,7 @@ async def test_ask_directory_async_fallback_os_error(tmp_path):
             disable_ui_callback=disable_ui,
             enable_ui_callback=enable_ui,
         )
-        await asyncio.sleep(0.1)
+        await _wait_until(lambda: mock_ui.dialog.called)
 
         disable_ui.assert_called_once()
         mock_ui.dialog.assert_called_once()
@@ -153,7 +163,7 @@ async def test_ask_directory_async_fallback_non_zero_status():
             callback,
             enable_ui_callback=enable_ui,
         )
-        await asyncio.sleep(0.1)
+        await _wait_until(lambda: mock_ui.dialog.called)
 
         mock_ui.dialog.assert_called_once()
         mock_ui.input.assert_called_once()
@@ -304,7 +314,7 @@ async def test_ask_directory_async_windows_cancel_multiline():
         mock.patch("app.ui.dialog_helper.run_background_process", mock_run),
     ):
         ask_directory_async(None, "Select Folder", callback, None, None)
-        await asyncio.sleep(0.1)
+        await _wait_until(lambda: callback.called)
 
         mock_run.assert_called_once()
         callback.assert_called_once_with("")
@@ -412,7 +422,7 @@ async def test_ask_directory_async_windows_powershell_ci_check():
         mock.patch("app.ui.dialog_helper.run_background_process", mock_run),
     ):
         ask_directory_async(None, "Select Folder", callback, None, None)
-        await asyncio.sleep(0.1)
+        await _wait_until(lambda: callback.called or mock_run.called)
 
         mock_run.assert_called_once()
         args, kwargs = mock_run.call_args
