@@ -109,6 +109,7 @@ def isolated_app_dir(monkeypatch, tmp_path):
     """Ensure AppSettings is isolated from persistent disk configuration changes."""
     import app.config
     import app.core.session
+    from app.core.shared_registry import SharedModelRegistry
 
     app.config.AppSettings.clear_observers()
     monkeypatch.setenv("FORCE_COLOR", "1")
@@ -130,9 +131,9 @@ def isolated_app_dir(monkeypatch, tmp_path):
         if k.startswith("AUTOSORTER_") and k != "AUTOSORTER_APP_DIR":
             monkeypatch.delenv(k, raising=False)
 
+    SharedModelRegistry._instance = None
+    app.config.AppSettings.clear_observers()
     try:
-        from app.core.shared_registry import SharedModelRegistry
-
         reg = getattr(SharedModelRegistry, "_instance", None)
         if reg is not None:
             reg._cached_settings = None
@@ -143,11 +144,11 @@ def isolated_app_dir(monkeypatch, tmp_path):
         monkeypatch.delattr(app.config, "settings", raising=False)
 
 
-def test_tui_main_screen_snapshot():
+def test_tui_main_screen_snapshot(tmp_path):
     """Verify visual layout of default AutoSorterTUI main screen."""
 
     async def _test():
-        settings = AppSettings()
+        settings = AppSettings(filepath=str(tmp_path / "settings.json"))
         settings.AI_CONSENT_GRANTED = True
         app = AutoSorterTUI(settings=settings)
         async with app.run_test(size=(100, 30)) as pilot:
@@ -158,11 +159,11 @@ def test_tui_main_screen_snapshot():
     asyncio.run(_test())
 
 
-def test_tui_populated_plan_snapshot():
+def test_tui_populated_plan_snapshot(tmp_path):
     """Verify visual layout of AutoSorterTUI with a populated tree plan."""
 
     async def _test():
-        settings = AppSettings()
+        settings = AppSettings(filepath=str(tmp_path / "settings.json"))
         settings.AI_CONSENT_GRANTED = True
         app = AutoSorterTUI(settings=settings, base_dir="/dummy/workspace")
         async with app.run_test(size=(100, 30)) as pilot:
@@ -201,11 +202,11 @@ def test_tui_populated_plan_snapshot():
     asyncio.run(_test())
 
 
-def test_wizard_modal_snapshot():
+def test_wizard_modal_snapshot(tmp_path):
     """Verify visual layout of WizardModal onboarding screen."""
 
     async def _test():
-        settings = AppSettings()
+        settings = AppSettings(filepath=str(tmp_path / "settings.json"))
         settings.AI_CONSENT_GRANTED = True
         app = AutoSorterTUI(settings=settings)
         async with app.run_test(size=(100, 30)) as pilot:
@@ -217,30 +218,31 @@ def test_wizard_modal_snapshot():
     asyncio.run(_test())
 
 
-def test_settings_modal_snapshot():
+def test_settings_modal_snapshot(tmp_path):
     """Verify visual layout of SettingsModal screen."""
 
     async def _test():
-        settings = AppSettings()
-        settings._settings_model.AI_CONSENT_GRANTED = True
+        settings = AppSettings(filepath=str(tmp_path / "settings.json"))
+        settings.AI_CONSENT_GRANTED = True
         app = AutoSorterTUI(settings=settings)
         async with app.run_test(size=(100, 35)) as pilot:
             modal = SettingsModal(app.settings)
             app.push_screen(modal)
-            await pilot.pause(0.1)
+            await pilot.pause()
             modal.scroll_home(animate=False)
-            await pilot.pause(0.1)
+            await pilot.pause()
+            await pilot.pause()
             svg = app.export_screenshot()
             assert_svg_snapshot("settings_modal", svg)
 
     asyncio.run(_test())
 
 
-def test_rename_modal_snapshot():
+def test_rename_modal_snapshot(tmp_path):
     """Verify visual layout of RenameModal screen."""
 
     async def _test():
-        settings = AppSettings()
+        settings = AppSettings(filepath=str(tmp_path / "settings.json"))
         settings.AI_CONSENT_GRANTED = True
         app = AutoSorterTUI(settings=settings)
         async with app.run_test(size=(100, 30)) as pilot:
@@ -257,11 +259,11 @@ def test_rename_modal_snapshot():
     asyncio.run(_test())
 
 
-def test_cro_forensic_modal_snapshot():
+def test_cro_forensic_modal_snapshot(tmp_path):
     """Verify visual layout of CROForensicModal screen."""
 
     async def _test():
-        settings = AppSettings()
+        settings = AppSettings(filepath=str(tmp_path / "settings.json"))
         settings.AI_CONSENT_GRANTED = True
         app = AutoSorterTUI(settings=settings, base_dir="/dummy/study_root")
         async with app.run_test(size=(100, 30)) as pilot:
@@ -273,11 +275,11 @@ def test_cro_forensic_modal_snapshot():
     asyncio.run(_test())
 
 
-def test_new_folder_modal_snapshot():
+def test_new_folder_modal_snapshot(tmp_path):
     """Verify visual layout of NewFolderModal screen."""
 
     async def _test():
-        settings = AppSettings()
+        settings = AppSettings(filepath=str(tmp_path / "settings.json"))
         settings.AI_CONSENT_GRANTED = True
         app = AutoSorterTUI(settings=settings)
         async with app.run_test(size=(100, 30)) as pilot:
@@ -289,11 +291,11 @@ def test_new_folder_modal_snapshot():
     asyncio.run(_test())
 
 
-def test_directory_select_modal_snapshot():
+def test_directory_select_modal_snapshot(tmp_path):
     """Verify visual layout of DirectorySelectModal screen."""
 
     async def _test():
-        settings = AppSettings()
+        settings = AppSettings(filepath=str(tmp_path / "settings.json"))
         settings.AI_CONSENT_GRANTED = True
         app = AutoSorterTUI(settings=settings, base_dir="/dummy/projects")
         async with app.run_test(size=(100, 30)) as pilot:

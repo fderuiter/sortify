@@ -167,7 +167,7 @@ async def test_daemon_triage_file_path_jev_fast_path(tmp_path):
     invoice_file = base_dir / "invoice_2026.csv"
     invoice_file.write_text("Invoice ID, Total\n1, 100")
 
-    settings = AppSettings()
+    settings = AppSettings(filepath=str(tmp_path / "settings.json"))
     daemon = ContinuousWatchdogDaemon(settings, str(base_dir))
     daemon._is_running = True
 
@@ -188,7 +188,7 @@ async def test_daemon_triage_unclassified_fallback(tmp_path):
     unclassified_file = base_dir / "random_file.dat"
     unclassified_file.write_bytes(b"1234567890")
 
-    settings = AppSettings()
+    settings = AppSettings(filepath=str(tmp_path / "settings.json"))
     daemon = ContinuousWatchdogDaemon(settings, str(base_dir))
     daemon._is_running = True
 
