@@ -39,11 +39,15 @@ def test_reject_absolute_paths():
         Settings(KEYWORD_RULES={"test": "\\windows\\absolute\\path"})
     assert "absolute path" in str(exc_info2.value)
 
+    with pytest.raises(ValidationError) as exc_info3:
+        Settings(KEYWORD_RULES={"test": "C:\\fake\\path"})
+    assert "absolute path" in str(exc_info3.value)
+
 
 def test_reject_illegal_characters():
     """Paths containing illegal OS characters should be rejected."""
     with pytest.raises(ValidationError) as exc_info:
-        Settings(KEYWORD_RULES={"test": "C:\\fake\\path"})
+        Settings(KEYWORD_RULES={"test": "folder/with:colon"})
     assert "illegal characters" in str(exc_info.value)
 
     with pytest.raises(ValidationError) as exc_info2:

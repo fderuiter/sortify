@@ -29,6 +29,11 @@ _SECRET_BOUND_LEFT = r"(?:^|(?<=[^a-zA-Z0-9]))"
 _SECRET_BOUND_RIGHT = r"(?:$|(?=[^a-zA-Z0-9]))"
 
 # 6. Centralized Secret & Credential Patterns
+ENC_CREDENTIAL_PATTERN = re.compile(r"\benc:[^\s,;'\"]*|enc:[^\s,;'\"]*")
+KEY_VALUE_SECRET_PATTERN = re.compile(
+    r"(?i)\b(password|passwd|secret|api_key|apikey|access_token|auth_token)\s*=\s*[^\s,;'\"]+"
+)
+
 SECRET_KEY_PATTERNS = [
     # Stripe / General sk_ live or test keys
     re.compile(
@@ -129,6 +134,10 @@ def contains_secrets(text: str) -> bool:
     if not isinstance(text, str) or not text:
         return False
 
+    if ENC_CREDENTIAL_PATTERN.search(text):
+        return True
+    if KEY_VALUE_SECRET_PATTERN.search(text):
+        return True
     for pat in SECRET_KEY_PATTERNS:
         if pat.search(text):
             return True
@@ -158,12 +167,22 @@ def sanitize_secret_patterns(text: str, replacement: str = "") -> str:
     """Scrub or replace secret tokens and API credentials from string text.
 
     Scrubs API keys (sk_live_, ghp_, AKIA), Bearer tokens, JWT strings,
-    private keys, SSNs, credit card numbers, and high-entropy secret tokens.
+    private keys, SSNs, credit card numbers, key=value secrets, enc: payloads,
+    and high-entropy secret tokens.
     """
     if not isinstance(text, str) or not text:
         return text if text is not None else ""
 
     result = text
+
+    # Strip encrypted credential tokens and prefixes starting with 'enc:'
+    result = ENC_CREDENTIAL_PATTERN.sub(replacement, result)
+
+    # Mask key-value secrets (e.g. password=super_secret -> password=[REDACTED])
+    if replacement:
+        result = KEY_VALUE_SECRET_PATTERN.sub(rf"\1={replacement}", result)
+    else:
+        result = KEY_VALUE_SECRET_PATTERN.sub(r"\1=[REDACTED]", result)
 
     result = PRIVATE_KEY_PATTERN.sub(replacement, result)
     result = BEARER_TOKEN_PATTERN.sub(replacement, result)

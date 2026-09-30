@@ -312,7 +312,16 @@ def test_build_parser_factory():
         None,
     )
     assert subparsers_action is not None
-    assert set(subparsers_action.choices.keys()) == {"sort", "scan", "config", "daemon"}
+    assert set(subparsers_action.choices.keys()) == {
+        "sort",
+        "scan",
+        "config",
+        "daemon",
+        "crypto",
+        "ledger",
+        "quarantine",
+        "cro",
+    }
 
     sort_parser = subparsers_action.choices["sort"]
     sort_help = sort_parser.format_help()
