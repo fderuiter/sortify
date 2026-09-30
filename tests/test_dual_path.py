@@ -100,7 +100,7 @@ def test_strategy_dual_path_resolution_user_fallback(mock_app_session_env):
             assert Path(strategy.model_path).resolve() == Path(user_model).resolve()
 
 
-def test_setup_wizard_bypass_dual_path(mock_app_session_env):
+def test_setup_wizard_requires_explicit_consent_with_local_models(mock_app_session_env):
     from app.ui.app import AutoSorterApp
 
     base_temp, app_temp = mock_app_session_env
@@ -117,5 +117,25 @@ def test_setup_wizard_bypass_dual_path(mock_app_session_env):
 
     with patch("app.config.get_app_dir", return_value=Path(app_temp)):
         with patch("app.core.path_utils.get_base_path", return_value=base_temp):
+            with patch("app.ui.wizard.show_wizard") as mock_show_wizard:
+                app.check_setup_wizard()
+                # Consent must NOT be automatically granted
+                assert settings.AI_CONSENT_GRANTED is None
+                # Show wizard must be invoked
+                mock_show_wizard.assert_called_once_with(app, settings)
+
+
+def test_setup_wizard_skips_when_consent_already_decided(mock_app_session_env):
+    from app.ui.app import AutoSorterApp
+
+    base_temp, app_temp = mock_app_session_env
+
+    for consent_state in (True, False):
+        settings = AppSettings()
+        settings.AI_CONSENT_GRANTED = consent_state
+        app = AutoSorterApp(settings)
+
+        with patch("app.ui.wizard.show_wizard") as mock_show_wizard:
             app.check_setup_wizard()
-            assert settings.AI_CONSENT_GRANTED is True
+            assert settings.AI_CONSENT_GRANTED is consent_state
+            mock_show_wizard.assert_not_called()
