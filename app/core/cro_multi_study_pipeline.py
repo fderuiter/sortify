@@ -139,7 +139,11 @@ class CROMultiStudyPipeline:
             def scan_cb(update: ProgressUpdate) -> None:
                 c = update.unit_count or 0
                 ratio = min(0.40, 0.05 + c * 0.005)
-                emit_progress(progress_callback, ratio, update.stage or "Scanning source storage volume...")
+                emit_progress(
+                    progress_callback,
+                    ratio,
+                    update.stage or "Scanning source storage volume...",
+                )
 
             discovered_docs = self.scanner.scan_drive(
                 source_root,

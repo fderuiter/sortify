@@ -112,7 +112,10 @@ def test_cache_manager_logging_on_failure(tmp_path, caplog):
         corpus, locked, idx, manual = cm.load_cache("/invalid/json/dir")
 
     assert corpus is None
-    assert "Query or JSON parsing error loading cache for directory '/invalid/json/dir'" in caplog.text
+    assert (
+        "Query or JSON parsing error loading cache for directory '/invalid/json/dir'"
+        in caplog.text
+    )
 
 
 def test_crypto_logging_on_fallback(tmp_path, caplog):

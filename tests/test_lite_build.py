@@ -77,6 +77,7 @@ def test_ocr_warning_dialog_on_scan():
                 with patch("asyncio.sleep", return_value=None):
                     # Mock other methods to avoid side effects
                     app.app_session = MagicMock()
+
                     async def mock_process_items(*args, **kwargs):
                         if False:
                             yield
@@ -478,4 +479,3 @@ def test_spec_file_dual_target_executables():
     collect_args = mock_collect.call_args.args
     assert mock_globals["exe_cli"] in collect_args
     assert mock_globals["exe_gui"] in collect_args
-

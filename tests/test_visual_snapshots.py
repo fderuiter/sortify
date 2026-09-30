@@ -3,6 +3,7 @@
 import asyncio
 import os
 import re
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -96,11 +97,31 @@ def assert_svg_snapshot(snapshot_name: str, actual_svg: str) -> None:
 def isolated_app_dir(monkeypatch, tmp_path):
     """Ensure AppSettings is isolated from persistent disk configuration changes."""
     import app.config
+    import app.core.session
 
     monkeypatch.setenv("AUTOSORTER_APP_DIR", str(tmp_path))
     monkeypatch.setattr(app.config, "get_app_dir", lambda: tmp_path)
+    monkeypatch.setattr(
+        app.config.AppSettings, "_trigger_save", lambda self: self._save()
+    )
+    monkeypatch.setattr(
+        app.core.session,
+        "scan_abandoned_sessions_async",
+        AsyncMock(return_value=[]),
+    )
     monkeypatch.delenv("AUTOSORTER_PROTECTED_PATHS", raising=False)
     monkeypatch.delenv("AUTOSORTER_IGNORED_EXTENSIONS", raising=False)
+
+    try:
+        from app.core.shared_registry import SharedModelRegistry
+        reg = getattr(SharedModelRegistry, "_instance", None)
+        if reg is not None:
+            reg._cached_settings = None
+    except Exception:
+        pass
+
+    if hasattr(app.config, "settings"):
+        monkeypatch.delattr(app.config, "settings", raising=False)
 
 
 def test_tui_main_screen_snapshot():
@@ -177,7 +198,10 @@ def test_settings_modal_snapshot():
         settings = AppSettings()
         app = AutoSorterTUI(settings=settings)
         async with app.run_test(size=(100, 35)) as pilot:
-            app.push_screen(SettingsModal(app.settings))
+            modal = SettingsModal(app.settings)
+            app.push_screen(modal)
+            await pilot.pause()
+            modal.scroll_home(animate=False)
             await pilot.pause()
             svg = app.export_screenshot()
             assert_svg_snapshot("settings_modal", svg)

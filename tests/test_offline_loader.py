@@ -232,9 +232,7 @@ def test_offline_loader_rejects_trust_remote_code_true():
         patch("os.path.isdir", return_value=True),
         patch("os.listdir", return_value=["weights.bin"]),
     ):
-        with pytest.raises(
-            OfflineModelLoadError, match="trust_remote_code=True"
-        ):
+        with pytest.raises(OfflineModelLoadError, match="trust_remote_code=True"):
             OfflineModelLoader.load_model(
                 "test-remote-code-model", mock_loader, trust_remote_code=True
             )
@@ -308,7 +306,8 @@ def test_florence2_visual_processor_mock_load_and_run(mocker):
 
     # Mock from_pretrained on native HF classes
     mock_from_pretrained_model = mocker.patch(
-        "transformers.Florence2ForConditionalGeneration.from_pretrained", return_value=mock_model
+        "transformers.Florence2ForConditionalGeneration.from_pretrained",
+        return_value=mock_model,
     )
     mock_from_pretrained_processor = mocker.patch(
         "transformers.Florence2Processor.from_pretrained", return_value=mock_processor
@@ -416,7 +415,8 @@ def test_florence2_pre_execution_integrity_valid_bundle(tmp_path, mocker):
     mock_model = MagicMock()
     mock_processor = MagicMock()
     mock_from_model = mocker.patch(
-        "transformers.Florence2ForConditionalGeneration.from_pretrained", return_value=mock_model
+        "transformers.Florence2ForConditionalGeneration.from_pretrained",
+        return_value=mock_model,
     )
     mock_from_processor = mocker.patch(
         "transformers.Florence2Processor.from_pretrained", return_value=mock_processor
@@ -459,8 +459,12 @@ def test_florence2_pre_execution_integrity_tampered_bundle_aborts(tmp_path, mock
         "app.core.offline_loader.OfflineModelLoader.resolve_model_path",
         return_value=str(tmp_path),
     )
-    mock_from_model = mocker.patch("transformers.Florence2ForConditionalGeneration.from_pretrained")
-    mock_from_processor = mocker.patch("transformers.Florence2Processor.from_pretrained")
+    mock_from_model = mocker.patch(
+        "transformers.Florence2ForConditionalGeneration.from_pretrained"
+    )
+    mock_from_processor = mocker.patch(
+        "transformers.Florence2Processor.from_pretrained"
+    )
 
     processor = Florence2VisualProcessor()
 

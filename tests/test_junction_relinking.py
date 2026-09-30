@@ -328,4 +328,3 @@ def test_relocate_target_directory_handles_osreplace_error(tmp_path):
 
         execute_moves(base_dir, plan, db, history_manager)
         assert replace_calls >= 2
-

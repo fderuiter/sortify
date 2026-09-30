@@ -1123,4 +1123,3 @@ def test_malformed_model_validation_failure_cleans_up_registry(db, temp_dir):
 
         # Confirm registry cleaned up the session key
         assert expected_key not in registry._models
-

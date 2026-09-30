@@ -27,7 +27,9 @@ def test_contains_secrets_and_sanitization_formats():
     for secret in secrets:
         assert contains_secrets(secret) is True, f"Failed to detect secret in: {secret}"
         sanitized = sanitize_secret_patterns(secret)
-        assert not contains_secrets(sanitized), f"Sanitized text still contains secret: {sanitized}"
+        assert not contains_secrets(sanitized), (
+            f"Sanitized text still contains secret: {sanitized}"
+        )
 
 
 def test_generative_naming_strategy_secret_scrubbing_and_fallback():
@@ -38,10 +40,15 @@ def test_generative_naming_strategy_secret_scrubbing_and_fallback():
     strategy.stop_words = {"the", "and"}
     strategy.max_features = 3
 
-    docs = ["Financial report for fiscal year 2026", "Quarterly earnings and tax summaries"]
+    docs = [
+        "Financial report for fiscal year 2026",
+        "Quarterly earnings and tax summaries",
+    ]
 
     # 1. Full secret title -> scrubbed to < 2 chars -> triggers fallback to TF-IDF super()._get_cluster_keywords(docs)
-    with patch.object(strategy, "_run_prompt", return_value="sk_live_51Nxabc123XYZ4567890abcdef"):
+    with patch.object(
+        strategy, "_run_prompt", return_value="sk_live_51Nxabc123XYZ4567890abcdef"
+    ):
         folder_name = strategy._get_cluster_keywords(docs)
         # Should fall back to TF-IDF keywords
         assert folder_name != "sk_live_51Nxabc123XYZ4567890abcdef"
@@ -49,7 +56,11 @@ def test_generative_naming_strategy_secret_scrubbing_and_fallback():
         assert len(folder_name) >= 2
 
     # 2. Mixed title containing secret + legitimate words -> secret scrubbed, remaining words preserved
-    with patch.object(strategy, "_run_prompt", return_value="Project ghp_1234567890abcdef1234567890abcdef123456 Reports"):
+    with patch.object(
+        strategy,
+        "_run_prompt",
+        return_value="Project ghp_1234567890abcdef1234567890abcdef123456 Reports",
+    ):
         folder_name = strategy._get_cluster_keywords(docs)
         assert folder_name == "Project Reports"
         assert not contains_secrets(folder_name)
@@ -88,11 +99,15 @@ def test_policy_engine_secret_matching():
         }
     ]
 
-    rule_match = PolicyEngine.evaluate_policies("config.env", doc_with_secret, None, policies)
+    rule_match = PolicyEngine.evaluate_policies(
+        "config.env", doc_with_secret, None, policies
+    )
     assert rule_match is not None
     assert rule_match.target_path == "Quarantine/Secrets"
 
-    rule_no_match = PolicyEngine.evaluate_policies("readme.md", doc_clean, None, policies)
+    rule_no_match = PolicyEngine.evaluate_policies(
+        "readme.md", doc_clean, None, policies
+    )
     assert rule_no_match is None
 
 

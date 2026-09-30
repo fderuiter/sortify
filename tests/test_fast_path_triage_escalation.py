@@ -32,7 +32,12 @@ def test_text_confidence_evaluation():
     assert evaluate_text_confidence("Some OCR Text", ".jpg") == 0.0
 
     # Clean PDF text vs empty/scanned PDF text
-    assert evaluate_text_confidence("Medical trial summary report with detailed findings.", ".pdf") >= 0.8
+    assert (
+        evaluate_text_confidence(
+            "Medical trial summary report with detailed findings.", ".pdf"
+        )
+        >= 0.8
+    )
     assert evaluate_text_confidence("", ".pdf") == 0.0
     assert evaluate_text_confidence("a b", ".pdf") < 0.8
 
@@ -40,7 +45,9 @@ def test_text_confidence_evaluation():
 def test_standard_text_and_csv_triage_under_50ms(tmp_path: Path):
     """Verify standard text and CSV files complete triage in under 50ms on fast path."""
     text_file = tmp_path / "invoice.txt"
-    text_file.write_text("Medical Invoice #8841 for patient treatment", encoding="utf-8")
+    text_file.write_text(
+        "Medical Invoice #8841 for patient treatment", encoding="utf-8"
+    )
 
     csv_file = tmp_path / "report.csv"
     csv_file.write_text("Patient,ID,Status\nJohn Doe,101,Active", encoding="utf-8")
@@ -56,8 +63,12 @@ def test_standard_text_and_csv_triage_under_50ms(tmp_path: Path):
     threshold = 200.0 if _is_ci_or_parallel() else 50.0
     assert "Medical Invoice" in res_text
     assert "John Doe" in res_csv
-    assert elapsed_text_ms < threshold, f"Text triage expected < {threshold}ms, got {elapsed_text_ms:.2f}ms"
-    assert elapsed_csv_ms < threshold, f"CSV triage expected < {threshold}ms, got {elapsed_csv_ms:.2f}ms"
+    assert elapsed_text_ms < threshold, (
+        f"Text triage expected < {threshold}ms, got {elapsed_text_ms:.2f}ms"
+    )
+    assert elapsed_csv_ms < threshold, (
+        f"CSV triage expected < {threshold}ms, got {elapsed_csv_ms:.2f}ms"
+    )
 
 
 def test_low_confidence_escalation_non_blocking(tmp_path: Path):
@@ -85,8 +96,12 @@ def test_low_confidence_escalation_non_blocking(tmp_path: Path):
         threshold = 200.0 if _is_ci_or_parallel() else 50.0
         assert res_img == "[STATUS:PROVISIONAL]"
         assert res_pdf == "[STATUS:PROVISIONAL]"
-        assert elapsed_img_ms < threshold, f"Image fast-path expected < {threshold}ms, got {elapsed_img_ms:.2f}ms"
-        assert elapsed_pdf_ms < threshold, f"Low-conf PDF fast-path expected < {threshold}ms, got {elapsed_pdf_ms:.2f}ms"
+        assert elapsed_img_ms < threshold, (
+            f"Image fast-path expected < {threshold}ms, got {elapsed_img_ms:.2f}ms"
+        )
+        assert elapsed_pdf_ms < threshold, (
+            f"Low-conf PDF fast-path expected < {threshold}ms, got {elapsed_pdf_ms:.2f}ms"
+        )
 
         # Allow time for background jobs to run
         time.sleep(0.5)
@@ -102,8 +117,12 @@ def test_in_memory_lru_sparse_matrix_cache_sub_5ms(tmp_path: Path):
     base_dir = str(tmp_path)
 
     try:
-        db.upsert_document(base_dir, "fileA.txt", "hashA", "clinical trial patient data")
-        db.upsert_document(base_dir, "fileB.txt", "hashB", "financial billing invoice tax")
+        db.upsert_document(
+            base_dir, "fileA.txt", "hashA", "clinical trial patient data"
+        )
+        db.upsert_document(
+            base_dir, "fileB.txt", "hashB", "financial billing invoice tax"
+        )
         db.set_user_verified_target_path(base_dir, "fileA.txt", "Clinical/fileA.txt")
         db.set_user_verified_target_path(base_dir, "fileB.txt", "Finance/fileB.txt")
 
@@ -119,7 +138,9 @@ def test_in_memory_lru_sparse_matrix_cache_sub_5ms(tmp_path: Path):
 
         threshold = 50.0 if _is_ci_or_parallel() else 5.0
         assert len(cached_rows) > 0
-        assert elapsed_ms < threshold, f"Matrix cache lookup expected < {threshold}ms, got {elapsed_ms:.2f}ms"
+        assert elapsed_ms < threshold, (
+            f"Matrix cache lookup expected < {threshold}ms, got {elapsed_ms:.2f}ms"
+        )
     finally:
         db_worker.stop()
 
@@ -170,4 +191,6 @@ def test_overall_pipeline_per_file_latency_under_150ms(tmp_path: Path):
 
     threshold = 200.0 if _is_ci_or_parallel() else 150.0
     for latency in latencies:
-        assert latency < threshold, f"Pipeline latency expected < {threshold}ms, got {latency:.2f}ms"
+        assert latency < threshold, (
+            f"Pipeline latency expected < {threshold}ms, got {latency:.2f}ms"
+        )

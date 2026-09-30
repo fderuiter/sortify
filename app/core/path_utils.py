@@ -119,6 +119,11 @@ def get_base_path(caller_file_path: str = None) -> str:
 
 def get_session_base_dir() -> Path:
     """Get the standard base directory for sessions."""
+    app_dir_env = os.environ.get("AUTOSORTER_APP_DIR")
+    if app_dir_env:
+        p = Path(app_dir_env) / "sessions"
+        p.mkdir(parents=True, exist_ok=True)
+        return p
     return Path(tempfile.gettempdir()) / "autosorter_sessions"
 
 

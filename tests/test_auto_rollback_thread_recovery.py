@@ -104,8 +104,11 @@ async def test_ui_recovery_and_watcher_restart(tmp_path):
         # Call execute_sort (which runs background task on asyncio event loop)
         app.execute_sort()
 
-        # Let the async task run
-        await asyncio.sleep(0.1)
+        # Let the async task run to completion
+        for _ in range(50):
+            await asyncio.sleep(0.05)
+            if app.execute_btn.enable.called:
+                break
 
         # Acceptance Criteria Check:
         # 1. stop_watcher should be called before execution starts

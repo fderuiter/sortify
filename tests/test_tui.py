@@ -14,9 +14,24 @@ from app.ui.tui import (
     CROForensicModal,
     NewFolderModal,
     RenameModal,
+    SessionRecoveryModal,
     SettingsModal,
     WizardModal,
 )
+
+
+@pytest.fixture(autouse=True)
+def isolated_app_dir(monkeypatch, tmp_path):
+    """Ensure AppSettings is isolated from persistent disk configuration changes."""
+    import app.config
+
+    monkeypatch.setenv("AUTOSORTER_APP_DIR", str(tmp_path))
+    monkeypatch.setattr(app.config, "get_app_dir", lambda: tmp_path)
+    monkeypatch.setattr(
+        app.config.AppSettings, "_trigger_save", lambda self: self._save()
+    )
+    monkeypatch.delenv("AUTOSORTER_PROTECTED_PATHS", raising=False)
+    monkeypatch.delenv("AUTOSORTER_IGNORED_EXTENSIONS", raising=False)
 
 
 @pytest.fixture
@@ -39,6 +54,7 @@ def temp_workspace():
 
 def test_tui_app_mount_and_dual_pane(temp_workspace):
     """Verify AutoSorterTUI mounts with dual-pane layout and tree view."""
+
     async def _test():
         settings = AppSettings()
         app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
@@ -54,6 +70,7 @@ def test_tui_app_mount_and_dual_pane(temp_workspace):
 
 def test_tui_tree_rebuild_and_selection(temp_workspace):
     """Verify tree population, node data attachment, and metadata inspector updates."""
+
     async def _test():
         settings = AppSettings()
         app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
@@ -76,7 +93,12 @@ def test_tui_tree_rebuild_and_selection(temp_workspace):
             assert tree.root.children is not None
             assert len(tree.root.children) == 2
 
-            folder_node = tree.root.children[1] if tree.root.children[0].data and tree.root.children[0].data.get("is_file") else tree.root.children[0]
+            folder_node = (
+                tree.root.children[1]
+                if tree.root.children[0].data
+                and tree.root.children[0].data.get("is_file")
+                else tree.root.children[0]
+            )
             app.active_tree_node = folder_node
 
             meta = app.query_one("#meta-details")
@@ -87,6 +109,7 @@ def test_tui_tree_rebuild_and_selection(temp_workspace):
 
 def test_tui_toggle_lock(temp_workspace):
     """Verify locking and unlocking file nodes in TUI updates plan state immediately."""
+
     async def _test():
         settings = AppSettings()
         app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
@@ -114,13 +137,17 @@ def test_tui_toggle_lock(temp_workspace):
 
             # Toggle lock off
             app.action_toggle_lock()
-            assert "sample.txt" not in app.locked_files and filepath not in app.locked_files
+            assert (
+                "sample.txt" not in app.locked_files
+                and filepath not in app.locked_files
+            )
 
     asyncio.run(_test())
 
 
 def test_tui_node_ratings(temp_workspace):
     """Verify ML quality ratings (+ / -) update rating cache and node labels."""
+
     async def _test():
         settings = AppSettings()
         app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
@@ -152,13 +179,17 @@ def test_tui_node_ratings(temp_workspace):
 
             # Rate negative again (clear)
             app.action_rate_negative()
-            assert filepath not in app._ratings_cache or app._ratings_cache.get(filepath) is None
+            assert (
+                filepath not in app._ratings_cache
+                or app._ratings_cache.get(filepath) is None
+            )
 
     asyncio.run(_test())
 
 
 def test_tui_new_folder(temp_workspace):
     """Verify creating a new folder node via NewFolderModal updates plan state."""
+
     async def _test():
         settings = AppSettings()
         app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
@@ -182,6 +213,7 @@ def test_tui_new_folder(temp_workspace):
 
 def test_tui_rename_node(temp_workspace):
     """Verify renaming file and folder nodes via RenameModal."""
+
     async def _test():
         settings = AppSettings()
         app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
@@ -222,33 +254,47 @@ def test_tui_rename_node(temp_workspace):
 
 def test_tui_settings_modal(temp_workspace):
     """Verify settings modal displays and updates application settings."""
+
     async def _test():
         settings = AppSettings()
         app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
 
-        async with app.run_test() as pilot:
-            app.action_open_settings()
-            await pilot.pause(0.1)
+        with patch.object(AppSettings, "_save", return_value=None):
+            async with app.run_test() as pilot:
+                app.action_open_settings()
+                await pilot.pause(0.1)
 
-            modal = app.screen
-            assert isinstance(modal, SettingsModal)
+                modal = app.screen
+                assert isinstance(modal, SettingsModal)
 
-            modal.query_one("#input-protected", Input).value = "/tmp/protected1, /tmp/protected2"
-            modal.query_one("#input-ignored", Input).value = ".tmp, .log, .bak"
-            modal.query_one("#input-concurrency", Input).value = "8"
+                modal.query_one(
+                    "#input-protected", Input
+                ).value = "/tmp/protected1, /tmp/protected2"
+                modal.query_one("#input-ignored", Input).value = ".tmp, .log, .bak"
+                modal.query_one("#input-concurrency", Input).value = "8"
 
-            modal.action_save()
-            await pilot.pause(0.1)
+                modal.action_save()
+                await pilot.pause(0.1)
 
-            assert getattr(app.settings, "PROTECTED_PATHS", None) == ["/tmp/protected1", "/tmp/protected2"] or getattr(app.settings, "PROTECTED_DIRECTORIES", None) == ["/tmp/protected1", "/tmp/protected2"]
-            assert app.settings.IGNORED_EXTENSIONS == [".tmp", ".log", ".bak"]
-            assert getattr(app.settings, "MAX_WORKERS", None) == 8 or getattr(app.settings, "WORKER_CONCURRENCY", None) == 8
+                assert getattr(app.settings, "PROTECTED_PATHS", None) == [
+                    "/tmp/protected1",
+                    "/tmp/protected2",
+                ] or getattr(app.settings, "PROTECTED_DIRECTORIES", None) == [
+                    "/tmp/protected1",
+                    "/tmp/protected2",
+                ]
+                assert app.settings.IGNORED_EXTENSIONS == [".tmp", ".log", ".bak"]
+                assert (
+                    getattr(app.settings, "MAX_WORKERS", None) == 8
+                    or getattr(app.settings, "WORKER_CONCURRENCY", None) == 8
+                )
 
     asyncio.run(_test())
 
 
 def test_tui_wizard_modal(temp_workspace):
     """Verify wizard modal allows toggling consent and completes onboarding."""
+
     async def _test():
         settings = AppSettings()
         app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
@@ -271,6 +317,7 @@ def test_tui_wizard_modal(temp_workspace):
 
 def test_tui_cro_forensic_modal(temp_workspace):
     """Verify CRO forensic ingest modal executes pipeline worker and logs output."""
+
     async def _test():
         settings = AppSettings()
         app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
@@ -283,9 +330,13 @@ def test_tui_cro_forensic_modal(temp_workspace):
             assert isinstance(modal, CROForensicModal)
 
             modal.query_one("#input-source", Input).value = temp_workspace
-            modal.query_one("#input-target", Input).value = os.path.join(temp_workspace, "Output")
+            modal.query_one("#input-target", Input).value = os.path.join(
+                temp_workspace, "Output"
+            )
 
-            with patch("app.core.cro_multi_study_pipeline.CROMultiStudyPipeline.run_pipeline") as mock_run:
+            with patch(
+                "app.core.cro_multi_study_pipeline.CROMultiStudyPipeline.run_pipeline"
+            ) as mock_run:
                 mock_res = MagicMock()
                 mock_res.total_scanned_files = 5
                 mock_res.discovered_studies_count = 1
@@ -300,12 +351,11 @@ def test_tui_cro_forensic_modal(temp_workspace):
 
 
 def test_tui_modals_render_on_small_viewports(temp_workspace):
-    """Verify all six TUI modal screens render without errors on 70x20 and 80x24 viewports."""
+    """Verify all TUI modal screens render without errors on 70x20 and 80x24 viewports."""
     from app.ui.tui import DirectorySelectModal
 
     settings = AppSettings()
 
-    # Verify CSS definitions enforce fluid 90% width, max-width 80, max-height 90%, overflow-y auto
     modals = [
         RenameModal("Rename Test", "current", ".txt"),
         NewFolderModal(),
@@ -313,6 +363,9 @@ def test_tui_modals_render_on_small_viewports(temp_workspace):
         SettingsModal(settings),
         WizardModal(settings),
         CROForensicModal(settings, temp_workspace),
+        SessionRecoveryModal(
+            {"session_id": "s1", "base_dir": temp_workspace, "status": "failed"}
+        ),
     ]
 
     for modal in modals:
@@ -336,13 +389,24 @@ def test_tui_modals_render_on_small_viewports(temp_workspace):
         asyncio.run(_test(size, lambda: SettingsModal(settings)))
         asyncio.run(_test(size, lambda: WizardModal(settings)))
         asyncio.run(_test(size, lambda: CROForensicModal(settings, temp_workspace)))
+        asyncio.run(
+            _test(
+                size,
+                lambda: SessionRecoveryModal(
+                    {"session_id": "s1", "base_dir": temp_workspace, "status": "failed"}
+                ),
+            )
+        )
 
 
 def test_main_cli_tui_invocation():
     """Verify app/main.py launches run_tui when --tui argument is supplied."""
     from app.main import main
 
-    with patch("argparse.ArgumentParser.parse_args") as mock_args, patch("app.ui.tui.run_tui") as mock_run_tui:
+    with (
+        patch("argparse.ArgumentParser.parse_args") as mock_args,
+        patch("app.ui.tui.run_tui") as mock_run_tui,
+    ):
         args = MagicMock()
         args.tui = True
         args.gui = False
@@ -403,7 +467,10 @@ def test_tui_screen_reader_announcements(temp_workspace):
             modal = DirectorySelectModal(temp_workspace)
             app.push_screen(modal)
             await pilot.pause(0.05)
-            assert "Opened target directory selection dialog" in modal.get_last_announcement()
+            assert (
+                "Opened target directory selection dialog"
+                in modal.get_last_announcement()
+            )
 
     asyncio.run(_test())
 
@@ -440,6 +507,9 @@ def test_tui_wcag_tooltips_and_attributes(temp_workspace):
         SettingsModal(settings),
         WizardModal(settings),
         CROForensicModal(settings, temp_workspace),
+        SessionRecoveryModal(
+            {"session_id": "s1", "base_dir": temp_workspace, "status": "failed"}
+        ),
     ]
 
     async def _test(modal_inst):
@@ -453,7 +523,9 @@ def test_tui_wcag_tooltips_and_attributes(temp_workspace):
                 w_type = type(widget).__name__
                 if w_type in ("Input", "Button", "Select", "Switch"):
                     tooltip = getattr(widget, "tooltip", None)
-                    assert tooltip is not None and len(str(tooltip)) > 0, f"{w_type} #{getattr(widget, 'id', '')} missing tooltip"
+                    assert tooltip is not None and len(str(tooltip)) > 0, (
+                        f"{w_type} #{getattr(widget, 'id', '')} missing tooltip"
+                    )
 
     for m in modals:
         asyncio.run(_test(m))
@@ -472,6 +544,9 @@ def test_tui_automated_audit_hooks(temp_workspace):
         SettingsModal(settings),
         WizardModal(settings),
         CROForensicModal(settings, temp_workspace),
+        SessionRecoveryModal(
+            {"session_id": "s1", "base_dir": temp_workspace, "status": "failed"}
+        ),
     ]
 
     async def _test():
@@ -489,16 +564,82 @@ def test_tui_automated_audit_hooks(temp_workspace):
                 await pilot.pause(0.05)
 
                 modal_audit = m.audit_a11y_compliance()
-                assert modal_audit["compliant"] is True, f"{m} failed audit: {modal_audit['violations']}"
+                assert modal_audit["compliant"] is True, (
+                    f"{m} failed audit: {modal_audit['violations']}"
+                )
                 assert modal_audit["violations_count"] == 0
 
                 modal_violations = inspect_tui_component(m)
-                assert len(modal_violations) == 0, f"{m} has violations: {modal_violations}"
+                assert len(modal_violations) == 0, (
+                    f"{m} has violations: {modal_violations}"
+                )
 
                 await pilot.press("escape")
                 await pilot.pause(0.05)
 
     asyncio.run(_test())
+
+
+def test_tui_session_recovery_modal_actions(temp_workspace):
+    """Verify SessionRecoveryModal options (Resume, Rollback, Clean)."""
+    settings = AppSettings()
+    session_info = {
+        "session_id": "test_session_123",
+        "base_dir": temp_workspace,
+        "status": "interrupted",
+    }
+
+    async def _test_resume():
+        app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
+        async with app.run_test() as pilot:
+            modal = SessionRecoveryModal(session_info)
+            res = None
+
+            def on_dismiss(val):
+                nonlocal res
+                res = val
+
+            app.push_screen(modal, on_dismiss)
+            await pilot.pause(0.05)
+            await pilot.click("#btn-resume")
+            await pilot.pause(0.05)
+            assert res == "resume"
+
+    async def _test_rollback():
+        app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
+        async with app.run_test() as pilot:
+            modal = SessionRecoveryModal(session_info)
+            res = None
+
+            def on_dismiss(val):
+                nonlocal res
+                res = val
+
+            app.push_screen(modal, on_dismiss)
+            await pilot.pause(0.05)
+            await pilot.click("#btn-rollback")
+            await pilot.pause(0.05)
+            assert res == "rollback"
+
+    async def _test_clean():
+        app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
+        async with app.run_test() as pilot:
+            modal = SessionRecoveryModal(session_info)
+            res = None
+
+            def on_dismiss(val):
+                nonlocal res
+                res = val
+
+            app.push_screen(modal, on_dismiss)
+            await pilot.pause(0.05)
+            await pilot.click("#btn-clean")
+            await pilot.pause(0.05)
+            assert res == "clean"
+
+    asyncio.run(_test_resume())
+    asyncio.run(_test_rollback())
+    asyncio.run(_test_clean())
 
 
 def test_tui_jev_tree_node_tags_and_inspector(temp_workspace):
@@ -557,6 +698,35 @@ def test_tui_jev_tree_node_tags_and_inspector(temp_workspace):
     asyncio.run(_test())
 
 
+def test_tui_expanded_settings_fields(temp_workspace):
+    """Verify SettingsModal MAX_FOLDERS, CLINICAL_SMART_RENAMING, and CONTEXTUAL_RENAMING controls."""
+
+    async def _test():
+        settings = AppSettings()
+        app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
+
+        with patch.object(AppSettings, "_save", return_value=None):
+            async with app.run_test() as pilot:
+                app.action_open_settings()
+                await pilot.pause(0.1)
+
+                modal = app.screen
+                assert isinstance(modal, SettingsModal)
+
+                modal.query_one("#input-max-folders", Input).value = "8"
+                modal.query_one("#switch-clinical-renaming", Switch).value = True
+                modal.query_one("#switch-contextual-renaming", Switch).value = True
+
+                modal.action_save()
+                await pilot.pause(0.1)
+
+                assert app.settings.MAX_FOLDERS == 8
+                assert app.settings.CLINICAL_SMART_RENAMING is True
+                assert app.settings.CONTEXTUAL_RENAMING is True
+
+    asyncio.run(_test())
+
+
 def test_tui_jev_partial_metadata(temp_workspace):
     """Verify TUI handles partial/missing Jev metadata without throwing exceptions."""
     async def _test():
@@ -590,18 +760,48 @@ def test_tui_jev_partial_metadata(temp_workspace):
     asyncio.run(_test())
 
 
-def test_run_tui_non_interactive_stdin():
-    """Verify run_tui returns immediately without launching App when sys.stdin is non-interactive or None."""
+def test_main_cli_interactive_subcommand_flags():
+    """Verify smart-autosorter sort <dir> --interactive and --tui launch run_tui."""
+    from app.main import main
+
+    for flag in ["--tui", "--interactive"]:
+        with (
+            patch("sys.argv", ["smart-autosorter", "sort", "/tmp/testdir", flag]),
+            patch("app.ui.tui.run_tui") as mock_run_tui,
+        ):
+            try:
+                main()
+            except SystemExit:
+                pass
+            mock_run_tui.assert_called_once()
+
+
+def test_run_tui_guardrails(monkeypatch):
+    """Verify non-TTY and small terminal dimension guardrails in run_tui."""
     from app.ui.tui import run_tui
 
-    class MockNonInteractiveStdin:
-        def isatty(self):
-            return False
-
     settings = AppSettings()
-    with patch("sys.stdin", MockNonInteractiveStdin()), patch("app.ui.tui.AutoSorterTUI") as mock_app_cls:
+
+    monkeypatch.delenv("FORCE_TUI", raising=False)
+    monkeypatch.delenv("IGNORE_TERMINAL_SIZE", raising=False)
+
+    # Test non-TTY exit
+    with (
+        patch("sys.stdin.isatty", return_value=False),
+        pytest.raises(SystemExit) as exc1,
+    ):
         run_tui(settings)
-        mock_app_cls.assert_not_called()
+    assert exc1.value.code == 1
+
+    # Test small dimensions exit
+    with (
+        patch("sys.stdin.isatty", return_value=True),
+        patch("sys.stdout.isatty", return_value=True),
+        patch("shutil.get_terminal_size", return_value=(70, 20)),
+        pytest.raises(SystemExit) as exc2,
+    ):
+        run_tui(settings)
+    assert exc2.value.code == 1
 
 
 def test_tui_speech_binary_fallback_missing_binary(temp_workspace):
@@ -710,7 +910,3 @@ def test_tui_speech_binary_windows_posix_path_filtering(temp_workspace):
     ]:
         with patch("sys.platform", "win32"), patch("shutil.which", return_value=posix_path):
             assert app._get_speech_binary() is None
-
-
-
-

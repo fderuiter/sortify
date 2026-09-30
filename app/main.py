@@ -453,9 +453,17 @@ def _make_json_serializable(obj):
 
 
 def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
-    """Execute non-interactive document batch sorting."""
+    """Execute document batch sorting or launch interactive TUI."""
     import json
     from pathlib import Path
+
+    apply_config_overrides(settings, args)
+
+    if getattr(args, "tui", False) or getattr(args, "interactive", False):
+        from app.ui.tui import run_tui
+
+        run_tui(settings, args.directory)
+        sys.exit(0)
 
     target_path = Path(args.directory).resolve()
     if not target_path.exists() or not target_path.is_dir():
@@ -464,8 +472,6 @@ def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
             file=sys.stderr,
         )
         sys.exit(1)
-
-    apply_config_overrides(settings, args)
 
     session = None
     try:
@@ -564,9 +570,17 @@ def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
 
 
 def handle_scan_command(args: argparse.Namespace, settings: AppSettings):
-    """Execute directory scanning and sorting analysis without moving files."""
+    """Execute directory scanning and sorting analysis or launch interactive TUI."""
     import json
     from pathlib import Path
+
+    apply_config_overrides(settings, args)
+
+    if getattr(args, "tui", False) or getattr(args, "interactive", False):
+        from app.ui.tui import run_tui
+
+        run_tui(settings, args.directory)
+        sys.exit(0)
 
     target_path = Path(args.directory).resolve()
     if not target_path.exists() or not target_path.is_dir():
@@ -575,8 +589,6 @@ def handle_scan_command(args: argparse.Namespace, settings: AppSettings):
             file=sys.stderr,
         )
         sys.exit(1)
-
-    apply_config_overrides(settings, args)
 
     session = None
     try:
@@ -749,6 +761,11 @@ def build_parser(prog: str | None = "app/main.py") -> argparse.ArgumentParser:
         help="Launch full-screen Textual TUI interface",
     )
     parser.add_argument(
+        "--interactive",
+        action="store_true",
+        help="Launch full-screen interactive TUI mode",
+    )
+    parser.add_argument(
         "--gui",
         action="store_true",
         help="Force launch graphical web interface (Deprecated: launches terminal interface)",
@@ -803,6 +820,18 @@ def build_parser(prog: str | None = "app/main.py") -> argparse.ArgumentParser:
             action="store_false",
             dest="contextual_renaming",
             help="Disable AI contextual renaming",
+        )
+        subparser.add_argument(
+            "--tui",
+            action="store_true",
+            default=False,
+            help="Launch full-screen Textual TUI interface",
+        )
+        subparser.add_argument(
+            "--interactive",
+            action="store_true",
+            default=False,
+            help="Launch full-screen interactive TUI mode",
         )
 
     # Subcommand: sort
@@ -990,6 +1019,7 @@ def main():
         and not sys.stdin.isatty()
         and getattr(args, "directory", None)
         and not getattr(args, "tui", False)
+        and not getattr(args, "interactive", False)
     ):
         handle_sort_command(args, settings)
     else:

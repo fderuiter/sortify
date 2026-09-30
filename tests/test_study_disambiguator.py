@@ -171,4 +171,3 @@ def test_single_study_unassigned_fallback():
     assert "receipt.pdf" in unassigned_files
     assert "deploy_script.sh" in unassigned_files
     assert "1572.pdf" not in unassigned_files
-

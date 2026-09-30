@@ -49,12 +49,14 @@ class BoundedMemoryCache(Generic[K, V]):
         max_size: int = 1000,
         ttl: float | None = None,
         on_evict: Callable[[K, V], None] | None = None,
+        time_func: Callable[[], float] = time.monotonic,
     ):
         if max_size <= 0:
             raise ValueError("max_size must be greater than 0")
         self.max_size = max_size
         self.ttl = ttl
         self.on_evict = on_evict
+        self._time_func = time_func
         self._cache: collections.OrderedDict[K, tuple[V, float | None]] = (
             collections.OrderedDict()
         )
@@ -63,10 +65,10 @@ class BoundedMemoryCache(Generic[K, V]):
     def _is_expired(self, expire_time: float | None) -> bool:
         if expire_time is None:
             return False
-        return time.monotonic() >= expire_time
+        return self._time_func() >= expire_time
 
     def _purge_expired(self) -> None:
-        now = time.monotonic()
+        now = self._time_func()
         for k in list(self._cache.keys()):
             _, exp = self._cache[k]
             if exp is not None and now >= exp:
@@ -97,10 +99,10 @@ class BoundedMemoryCache(Generic[K, V]):
         """Store an item in the cache with optional entry-specific TTL."""
         with self._lock:
             ttl_val = ttl if ttl is not None else self.ttl
-            expire_time = (time.monotonic() + ttl_val) if ttl_val is not None else None
+            expire_time = (self._time_func() + ttl_val) if ttl_val is not None else None
 
             if key in self._cache:
-                self._cache.pop(key)
+                self._remove_item(key, call_on_evict=True)
 
             self._cache[key] = (value, expire_time)
             self._cache.move_to_end(key)
@@ -250,8 +252,12 @@ class SparseMatrixLRUCache:
                 self._invalidate_unlocked(base_dir)
                 return
 
-            current_total = sum(self._doc_counts.values()) - self._doc_counts.get(base_dir, 0)
-            while self._access_order and (current_total + distinct_docs > self.max_documents):
+            current_total = sum(self._doc_counts.values()) - self._doc_counts.get(
+                base_dir, 0
+            )
+            while self._access_order and (
+                current_total + distinct_docs > self.max_documents
+            ):
                 lru_key = self._access_order.pop(0)
                 if lru_key != base_dir:
                     self._cache.pop(lru_key, None)
@@ -321,9 +327,13 @@ class CacheManager:
                         "ALTER TABLE directory_cache ADD COLUMN manual_folders TEXT"
                     )
                 except Exception as alter_err:
-                    logging.debug(f"Column manual_folders alter execution skipped or failed: {alter_err}")
+                    logging.debug(
+                        f"Column manual_folders alter execution skipped or failed: {alter_err}"
+                    )
         except Exception as e:
-            logging.error(f"Failed to initialize directory cache database: {e}", exc_info=True)
+            logging.error(
+                f"Failed to initialize directory cache database: {e}", exc_info=True
+            )
             if not isinstance(e, CacheError):
                 raise CacheError(f"Failed to initialize cache database: {e}") from e
             raise

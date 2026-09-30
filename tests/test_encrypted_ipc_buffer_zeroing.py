@@ -144,7 +144,11 @@ def test_encrypted_ipc_queue_passing():
     try:
         proc.start()
 
-        get_timeout = 60.0 if (os.environ.get("CI") or os.environ.get("PYTEST_XDIST_WORKER")) else 10.0
+        get_timeout = (
+            60.0
+            if (os.environ.get("CI") or os.environ.get("PYTEST_XDIST_WORKER"))
+            else 10.0
+        )
         raw_output = out_q.get(timeout=get_timeout)
         proc.join(timeout=2.0)
 
@@ -213,13 +217,20 @@ def test_worker_failure_triggers_buffer_zeroing():
     try:
         proc.start()
 
-        get_timeout = 60.0 if (os.environ.get("CI") or os.environ.get("PYTEST_XDIST_WORKER")) else 10.0
+        get_timeout = (
+            60.0
+            if (os.environ.get("CI") or os.environ.get("PYTEST_XDIST_WORKER"))
+            else 10.0
+        )
         raw_output = out_q.get(timeout=get_timeout)
         proc.join(timeout=2.0)
 
         assert isinstance(raw_output, bytes)
         decrypted_output = decrypt_ipc_payload(raw_output, session_key)
-        assert decrypted_output.get("status") == "error" or decrypted_output.get("plan") is not None
+        assert (
+            decrypted_output.get("status") == "error"
+            or decrypted_output.get("plan") is not None
+        )
     finally:
         if proc.is_alive():
             proc.terminate()
@@ -310,4 +321,3 @@ def test_malicious_pickled_payload_rejection():
 
     with pytest.raises(json.JSONDecodeError):
         decrypt_ipc_payload(encrypted_pickled_bytes, session_key)
-

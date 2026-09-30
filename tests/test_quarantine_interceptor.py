@@ -50,7 +50,9 @@ def test_quarantine_staging_ingestion():
     os.makedirs(sample_dir, exist_ok=True)
     sample_file = os.path.join(sample_dir, "patient_record.txt")
     with open(sample_file, "w", encoding="utf-8") as f:
-        f.write("Patient Name: John Doe\nDiagnosis: Confidential Medical Report for Subject 101")
+        f.write(
+            "Patient Name: John Doe\nDiagnosis: Confidential Medical Report for Subject 101"
+        )
 
     res = service.stage_incoming_file(source_path=sample_file, base_dir=sample_dir)
 
@@ -186,12 +188,16 @@ def test_extended_policy_engine_actions():
         },
     ]
 
-    rule1 = PolicyEngine.evaluate_policies("doc.txt", "This is confidential info", "", policies)
+    rule1 = PolicyEngine.evaluate_policies(
+        "doc.txt", "This is confidential info", "", policies
+    )
     assert rule1 is not None
     assert rule1.action == "redact"
     assert rule1.target_path == "Sanitized_Folder"
 
-    rule2 = PolicyEngine.evaluate_policies("old_file.txt", "This is legacy data", "", policies)
+    rule2 = PolicyEngine.evaluate_policies(
+        "old_file.txt", "This is legacy data", "", policies
+    )
     assert rule2 is not None
     assert rule2.action == "archive"
 
@@ -216,7 +222,9 @@ def test_pii_scrubbing_and_release_pipeline():
     with open(sensitive_file, "w", encoding="utf-8") as f:
         f.write("Confidential Medical Report for Subject 101 with sensitive findings")
 
-    staged_info = service.stage_incoming_file(source_path=sensitive_file, base_dir=sample_dir)
+    staged_info = service.stage_incoming_file(
+        source_path=sensitive_file, base_dir=sample_dir
+    )
     job_id = staged_info["job_id"]
 
     # Process job synchronously in test
@@ -239,7 +247,12 @@ def test_pii_scrubbing_and_release_pipeline():
     with open(released_path, "r", encoding="utf-8") as f:
         sanitized_content = f.read()
 
-    assert "[REDACTED_HISTORICAL_SNIPPET:" in sanitized_content or "[REDACTED_DOCUMENT_TEXT:" in sanitized_content or "Confidential" not in sanitized_content or "Medical Report" not in sanitized_content
+    assert (
+        "[REDACTED_HISTORICAL_SNIPPET:" in sanitized_content
+        or "[REDACTED_DOCUMENT_TEXT:" in sanitized_content
+        or "Confidential" not in sanitized_content
+        or "Medical Report" not in sanitized_content
+    )
 
 
 def test_policy_action_archive():
@@ -261,17 +274,23 @@ def test_policy_action_archive():
     with open(obsolete_file, "w", encoding="utf-8") as f:
         f.write("This file is obsolete and should be archived")
 
-    staged_info = service.stage_incoming_file(source_path=obsolete_file, base_dir=sample_dir)
+    staged_info = service.stage_incoming_file(
+        source_path=obsolete_file, base_dir=sample_dir
+    )
     result = service.process_quarantine_job(staged_info["job_id"])
 
     assert result["status"] == "ARCHIVED"
     assert result["policy_action"] == "archive"
-    assert os.path.exists(os.path.join(sample_dir, "Deep_Storage", "obsolete_record.txt"))
+    assert os.path.exists(
+        os.path.join(sample_dir, "Deep_Storage", "obsolete_record.txt")
+    )
 
 
 def test_worker_timeout_and_dead_letter_queue():
     """Test that forensic scanning jobs exceeding timeout threshold trigger TimeoutError and move to DLQ."""
-    service = QuarantineInterceptorService(db=db, worker_timeout=0.001)  # 1 ms timeout to force timeout exception
+    service = QuarantineInterceptorService(
+        db=db, worker_timeout=0.001
+    )  # 1 ms timeout to force timeout exception
 
     sample_dir = os.path.join(_test_dir, "dlq_test")
     os.makedirs(sample_dir, exist_ok=True)
@@ -279,14 +298,19 @@ def test_worker_timeout_and_dead_letter_queue():
     with open(heavy_file, "w", encoding="utf-8") as f:
         f.write("Heavy archive data simulation")
 
-    staged_info = service.stage_incoming_file(source_path=heavy_file, base_dir=sample_dir)
+    staged_info = service.stage_incoming_file(
+        source_path=heavy_file, base_dir=sample_dir
+    )
     job_id = staged_info["job_id"]
 
     # Process job with forced 0 second timeout override
     time.sleep(0.01)  # Ensure time elapsed > 0.001s
     result = service.process_quarantine_job(job_id, timeout_override=0.0)
 
-    assert result["status"] == "DEAD_LETTER_QUEUE" or result["status"] == "MANUAL_REVIEW_REQUIRED"
+    assert (
+        result["status"] == "DEAD_LETTER_QUEUE"
+        or result["status"] == "MANUAL_REVIEW_REQUIRED"
+    )
     assert len(service.dlq_records) >= 1
     assert service.dlq_records[0]["job_id"] == job_id
 

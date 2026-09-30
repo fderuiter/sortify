@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "f56b3bfb575aff0435a53393c60c0927c1d63f42ef2205db78e4ec37b58dd880"
+    "checksum": "428026e2cfbde0c50183acf4c1135b35b64d9c0a8fb81004f2e8ee957117ffd5"
   },
   "cli": {
     "app/main.py": [
@@ -92,6 +92,17 @@
         "keywords": {
           "action": "store_true",
           "help": "Launch full-screen Textual TUI interface"
+        },
+        "method": "add_argument"
+      },
+      {
+        "args": [
+          "--interactive"
+        ],
+        "caller": "parser",
+        "keywords": {
+          "action": "store_true",
+          "help": "Launch full-screen interactive TUI mode"
         },
         "method": "add_argument"
       },
@@ -359,6 +370,30 @@
           "help": "Disable AI contextual renaming"
         },
         "method": "add_argument"
+      },
+      {
+        "args": [
+          "--tui"
+        ],
+        "caller": "subparser",
+        "keywords": {
+          "action": "store_true",
+          "default": false,
+          "help": "Launch full-screen Textual TUI interface"
+        },
+        "method": "add_argument"
+      },
+      {
+        "args": [
+          "--interactive"
+        ],
+        "caller": "subparser",
+        "keywords": {
+          "action": "store_true",
+          "default": false,
+          "help": "Launch full-screen interactive TUI mode"
+        },
+        "method": "add_argument"
       }
     ],
     "sandbox_cli.py": [
@@ -384,6 +419,28 @@
           "action": "store_true",
           "dest": "no_color",
           "help": "Disable ANSI color output"
+        },
+        "method": "add_argument"
+      },
+      {
+        "args": [
+          "--tui"
+        ],
+        "caller": "parser",
+        "keywords": {
+          "action": "store_true",
+          "help": "Launch full-screen Textual TUI mode on sandbox dataset"
+        },
+        "method": "add_argument"
+      },
+      {
+        "args": [
+          "--interactive"
+        ],
+        "caller": "parser",
+        "keywords": {
+          "action": "store_true",
+          "help": "Launch full-screen interactive TUI mode on sandbox dataset"
         },
         "method": "add_argument"
       },
@@ -463,6 +520,28 @@
         "keywords": {
           "action": "store_true",
           "help": "Output raw JSON without decorative borders"
+        },
+        "method": "add_argument"
+      },
+      {
+        "args": [
+          "--tui"
+        ],
+        "caller": "parser_analyze",
+        "keywords": {
+          "action": "store_true",
+          "help": "Launch full-screen Textual TUI mode on sandbox dataset"
+        },
+        "method": "add_argument"
+      },
+      {
+        "args": [
+          "--interactive"
+        ],
+        "caller": "parser_analyze",
+        "keywords": {
+          "action": "store_true",
+          "help": "Launch full-screen interactive TUI mode on sandbox dataset"
         },
         "method": "add_argument"
       }
@@ -1595,6 +1674,11 @@
                   "annotation": "Callable[[K, V], None] | None",
                   "default": "None",
                   "name": "on_evict"
+                },
+                {
+                  "annotation": "Callable[[], float]",
+                  "default": "time.monotonic",
+                  "name": "time_func"
                 }
               ],
               "returns": null

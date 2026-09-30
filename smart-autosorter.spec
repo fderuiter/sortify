@@ -34,8 +34,8 @@ for pkg in ml_packages:
     except Exception as e:
         print(f"Warning: Could not collect package {pkg}: {e}")
 
-# Bundle jsonschema, rfc3987 syntax, and pydantic schema data assets
-for schema_pkg in ('jsonschema', 'jsonschema_specifications', 'referencing', 'rfc3987_syntax', 'rfc3987', 'pydantic', 'pydantic_settings', 'pydantic_core', 'annotated_types', 'typing_extensions', 'dotenv'):
+# Bundle jsonschema, rfc3987 syntax, pydantic schema data assets, plus textual TUI dependencies
+for schema_pkg in ('jsonschema', 'jsonschema_specifications', 'referencing', 'rfc3987_syntax', 'rfc3987', 'pydantic', 'pydantic_settings', 'pydantic_core', 'annotated_types', 'typing_extensions', 'dotenv', 'textual'):
     try:
         s_datas, s_binaries, s_hiddenimports = collect_all(schema_pkg)
         datas.extend(s_datas)
@@ -271,7 +271,7 @@ def is_prunable_asset(name):
     parts = name_lower.split('/')
     
     # Safety Rule: Core weights, model files, and crucial bin targets must NEVER be pruned.
-    safety_keywords = ("weight", "bin", "model", "checkpoint", "offline_bundle", "easyocr", "user_guide", "pydantic", "pydantic_core", "pydantic_settings", "annotated_types", "typing_extensions", "dotenv")
+    safety_keywords = ("weight", "bin", "model", "checkpoint", "offline_bundle", "easyocr", "user_guide", "pydantic", "pydantic_core", "pydantic_settings", "annotated_types", "typing_extensions", "dotenv", "textual")
     if any(sk in name_lower for sk in safety_keywords):
         return False
         
@@ -424,6 +424,8 @@ if "pytest" not in sys.modules:
 # Exclude Quasar framework files, Vue assets, HTML templates, and static web assets
 def is_web_asset(name):
     name_lower = name.lower().replace('\\', '/')
+    if 'textual' in name_lower:
+        return False
     parts = name_lower.split('/')
     for p in parts:
         if p in ('quasar', 'vue', 'nicegui', 'static_assets', 'templates', 'vbuild'):

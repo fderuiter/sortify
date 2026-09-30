@@ -101,7 +101,9 @@ class DownloadManager:
                 try:
                     from app.config import AppSettings
 
-                    AppSettings.remove_observer("PROXY", cls._instance._on_proxy_changed)
+                    AppSettings.remove_observer(
+                        "PROXY", cls._instance._on_proxy_changed
+                    )
                 except Exception:
                     pass
                 cls._instance = None
@@ -173,7 +175,9 @@ class DownloadManager:
             if self._proxy and self._proxy.strip():
                 p_str = self._proxy.strip()
                 if "<DECRYPTION_FAILED>" in p_str:
-                    self._proxy_error = "Invalid proxy configuration: decryption failed."
+                    self._proxy_error = (
+                        "Invalid proxy configuration: decryption failed."
+                    )
                     self._opener = None
                 else:
                     handlers.append(
@@ -190,13 +194,18 @@ class DownloadManager:
             if proxy is not None and proxy != "":
                 p_str = str(proxy).strip()
                 if "<DECRYPTION_FAILED>" in p_str:
-                    raise NetworkError("Invalid proxy configuration: decryption failed.")
-                handlers = [urllib.request.ProxyHandler({"http": p_str, "https": p_str})]
+                    raise NetworkError(
+                        "Invalid proxy configuration: decryption failed."
+                    )
+                handlers = [
+                    urllib.request.ProxyHandler({"http": p_str, "https": p_str})
+                ]
                 return urllib.request.build_opener(*handlers)
 
             if self._proxy_error or "<DECRYPTION_FAILED>" in self._proxy:
                 raise NetworkError(
-                    self._proxy_error or "Invalid proxy configuration: decryption failed."
+                    self._proxy_error
+                    or "Invalid proxy configuration: decryption failed."
                 )
 
             handlers = []
@@ -287,9 +296,12 @@ class DownloadManager:
 
                 try:
                     from app.core.shared_registry import SharedModelRegistry
+
                     SharedModelRegistry.get_instance().unload_all_models()
                 except Exception as e:
-                    logger.warning(f"Failed to unload in-memory model instances during deletion: {e}")
+                    logger.warning(
+                        f"Failed to unload in-memory model instances during deletion: {e}"
+                    )
 
                 from app.core.resilient_file_ops import resilient_rmtree
 
@@ -514,7 +526,11 @@ def run_background_download(
                                     ) from e
 
                                 bytes_downloaded += len(chunk)
-                                ratio = (bytes_downloaded / total_size) if total_size > 0 else 0.0
+                                ratio = (
+                                    (bytes_downloaded / total_size)
+                                    if total_size > 0
+                                    else 0.0
+                                )
                                 msg = (
                                     f"Downloaded {bytes_downloaded / (1024 * 1024):.2f}MB of {total_size / (1024 * 1024):.2f}MB ({ratio * 100:.1f}%)"
                                     if total_size > 0

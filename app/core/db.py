@@ -42,6 +42,7 @@ class Database:
         self.corrupted_vectors = set()
         self._corrupted_vectors_lock = threading.Lock()
         from app.core.cache import SparseMatrixLRUCache
+
         self.matrix_lru_cache = SparseMatrixLRUCache(max_documents=500)
         self.init_db()
 
@@ -489,7 +490,10 @@ class Database:
             else:
                 self._populate_cache_if_needed(base_dir)
                 with self._cache_lock:
-                    if self._cached_base_dir == base_dir and self._cached_documents is not None:
+                    if (
+                        self._cached_base_dir == base_dir
+                        and self._cached_documents is not None
+                    ):
                         return list(self._cached_documents)
                 cursor = conn.execute(
                     "SELECT filepath, extracted_text, file_hash, user_verified_target_path FROM documents WHERE base_dir = ?",
@@ -1203,6 +1207,7 @@ class Database:
 
     def update_tfidf_matrix_cache(self, base_dir: str):
         """Recompute and refresh pre-computed TF-IDF matrix weights for a workspace base directory."""
+
         def _write():
             conn = get_db_connection(self.db_path)
             with conn:
@@ -1214,6 +1219,7 @@ class Database:
         if not base_dir:
             return
         import math
+
         cursor = conn.execute(
             "SELECT COUNT(DISTINCT filepath) FROM tfidf_doc_terms WHERE base_dir = ?",
             (base_dir,),
@@ -1237,10 +1243,7 @@ class Database:
             return
 
         vocab_terms = {term for term, df in top_terms}
-        idf_weights = {
-            term: math.log((1 + N) / (1 + df)) + 1
-            for term, df in top_terms
-        }
+        idf_weights = {term: math.log((1 + N) / (1 + df)) + 1 for term, df in top_terms}
 
         cursor = conn.execute(
             "SELECT filepath, term, tf FROM tfidf_doc_terms WHERE base_dir = ?",
@@ -1526,13 +1529,15 @@ class Database:
         import time
 
         now = time.time()
-        audit_log = json.dumps([
-            {
-                "timestamp": now,
-                "status": "STAGED",
-                "details": "Initial document placement in quarantine staging",
-            }
-        ])
+        audit_log = json.dumps(
+            [
+                {
+                    "timestamp": now,
+                    "status": "STAGED",
+                    "details": "Initial document placement in quarantine staging",
+                }
+            ]
+        )
 
         def _write():
             conn = get_db_connection(self.db_path)
@@ -1589,7 +1594,9 @@ class Database:
                         current_log = []
 
                 existing_action = row[1] if row else None
-                act_to_save = policy_action if policy_action is not None else existing_action
+                act_to_save = (
+                    policy_action if policy_action is not None else existing_action
+                )
 
                 if audit_entry:
                     if isinstance(audit_entry, dict):
@@ -1597,17 +1604,21 @@ class Database:
                             audit_entry["timestamp"] = now
                         current_log.append(audit_entry)
                     else:
-                        current_log.append({
+                        current_log.append(
+                            {
+                                "timestamp": now,
+                                "status": status,
+                                "details": str(audit_entry),
+                            }
+                        )
+                else:
+                    current_log.append(
+                        {
                             "timestamp": now,
                             "status": status,
-                            "details": str(audit_entry),
-                        })
-                else:
-                    current_log.append({
-                        "timestamp": now,
-                        "status": status,
-                        "details": f"Transitioned quarantine state to {status}",
-                    })
+                            "details": f"Transitioned quarantine state to {status}",
+                        }
+                    )
 
                 conn.execute(
                     """
@@ -1615,7 +1626,14 @@ class Database:
                     SET status = ?, policy_action = ?, audit_log = ?, updated_at = ?, error_message = ?
                     WHERE job_id = ?
                     """,
-                    (status, act_to_save, json.dumps(current_log), now, error_message, job_id),
+                    (
+                        status,
+                        act_to_save,
+                        json.dumps(current_log),
+                        now,
+                        error_message,
+                        job_id,
+                    ),
                 )
 
         return self.worker.execute_write(_write)
@@ -1697,19 +1715,21 @@ class Database:
                         audit = json.loads(row[7])
                     except Exception:
                         audit = []
-                results.append({
-                    "job_id": row[0],
-                    "base_dir": row[1],
-                    "original_filepath": row[2],
-                    "staged_filepath": row[3],
-                    "file_hash": row[4],
-                    "status": row[5],
-                    "policy_action": row[6],
-                    "audit_log": audit,
-                    "created_at": row[8],
-                    "updated_at": row[9],
-                    "error_message": row[10],
-                })
+                results.append(
+                    {
+                        "job_id": row[0],
+                        "base_dir": row[1],
+                        "original_filepath": row[2],
+                        "staged_filepath": row[3],
+                        "file_hash": row[4],
+                        "status": row[5],
+                        "policy_action": row[6],
+                        "audit_log": audit,
+                        "created_at": row[8],
+                        "updated_at": row[9],
+                        "error_message": row[10],
+                    }
+                )
             return results
 
     def get_all_quarantine_records(self) -> list[dict]:
@@ -1735,17 +1755,19 @@ class Database:
                         audit = json.loads(row[7])
                     except Exception:
                         audit = []
-                results.append({
-                    "job_id": row[0],
-                    "base_dir": row[1],
-                    "original_filepath": row[2],
-                    "staged_filepath": row[3],
-                    "file_hash": row[4],
-                    "status": row[5],
-                    "policy_action": row[6],
-                    "audit_log": audit,
-                    "created_at": row[8],
-                    "updated_at": row[9],
-                    "error_message": row[10],
-                })
+                results.append(
+                    {
+                        "job_id": row[0],
+                        "base_dir": row[1],
+                        "original_filepath": row[2],
+                        "staged_filepath": row[3],
+                        "file_hash": row[4],
+                        "status": row[5],
+                        "policy_action": row[6],
+                        "audit_log": audit,
+                        "created_at": row[8],
+                        "updated_at": row[9],
+                        "error_message": row[10],
+                    }
+                )
             return results

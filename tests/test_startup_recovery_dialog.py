@@ -115,7 +115,9 @@ async def test_wizard_file_recovery_custom_location(mock_session_base, tmp_path)
         "safety_folder": str(branch_dir),
     }
 
-    app.run_recovery(session_info, restore_to_original=False, custom_path=str(custom_export_dir))
+    app.run_recovery(
+        session_info, restore_to_original=False, custom_path=str(custom_export_dir)
+    )
     await asyncio.sleep(0.1)
 
     exported_file = custom_export_dir / "sub_folder" / "trapped_export.txt"

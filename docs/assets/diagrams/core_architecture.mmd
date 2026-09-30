@@ -53,6 +53,7 @@ flowchart TD
     subgraph execution_operations ["Policy, Validation & File Operations (app.core)"]
         core_policy_engine{app.core.policy_engine}
         core_quarantine_interceptor["app.core.quarantine_interceptor"]
+        core_domain_contracts["app.core.domain_contracts"]
         core_verifier{app.core.verifier}
         core_mover["app.core.mover"]
         core_file_renamer["app.core.file_renamer"]
@@ -108,6 +109,7 @@ flowchart TD
     core_ledger --> core_db
     core_history --> core_db
     core_policy_engine --> core_quarantine_interceptor
+    core_quarantine_interceptor --> core_domain_contracts
     core_policy_engine --> core_mover
     core_verifier --> core_mover
     core_mover --> core_file_renamer

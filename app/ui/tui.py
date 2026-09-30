@@ -105,7 +105,12 @@ class A11yMixin:
 
         forwarded = False
         # Forward to parent app if available
-        if hasattr(self, "app") and self.app and self.app is not self and hasattr(self.app, "announce"):
+        if (
+            hasattr(self, "app")
+            and self.app
+            and self.app is not self
+            and hasattr(self.app, "announce")
+        ):
             try:
                 self.app.announce(message, priority=priority)
                 forwarded = True
@@ -182,31 +187,38 @@ class A11yMixin:
                         or getattr(widget, "placeholder", None)
                     )
                     if not (has_tooltip or has_label):
-                        violations.append({
-                            "rule": "A11Y001_MISSING_LABEL",
-                            "widget_id": getattr(widget, "id", None) or w_type,
-                            "message": f"Interactive control '{w_type}' lacks explicit tooltip or accessible text label.",
-                        })
+                        violations.append(
+                            {
+                                "rule": "A11Y001_MISSING_LABEL",
+                                "widget_id": getattr(widget, "id", None) or w_type,
+                                "message": f"Interactive control '{w_type}' lacks explicit tooltip or accessible text label.",
+                            }
+                        )
         except Exception:
             pass
 
         if isinstance(self, ModalScreen):
             bindings = getattr(self, "BINDINGS", [])
             has_escape = any(
-                getattr(b, "key", None) == "escape" or (isinstance(b, Binding) and b.key == "escape")
+                getattr(b, "key", None) == "escape"
+                or (isinstance(b, Binding) and b.key == "escape")
                 for b in bindings
             )
             if not has_escape:
-                violations.append({
-                    "rule": "A11Y_MISSING_ESCAPE_BINDING",
-                    "message": f"Modal screen '{type(self).__name__}' lacks Escape key binding for accessibility dismissal.",
-                })
+                violations.append(
+                    {
+                        "rule": "A11Y_MISSING_ESCAPE_BINDING",
+                        "message": f"Modal screen '{type(self).__name__}' lacks Escape key binding for accessibility dismissal.",
+                    }
+                )
 
         if not hasattr(self, "announce") or not hasattr(self, "announcements"):
-            violations.append({
-                "rule": "A11Y_MISSING_ANNOUNCER",
-                "message": f"Component '{type(self).__name__}' lacks screen reader announcement handler.",
-            })
+            violations.append(
+                {
+                    "rule": "A11Y_MISSING_ANNOUNCER",
+                    "message": f"Component '{type(self).__name__}' lacks screen reader announcement handler.",
+                }
+            )
 
         status_bar_available = (
             hasattr(self, "update_status")
@@ -285,8 +297,14 @@ class RenameModal(A11yMixin, ModalScreen[Optional[str]]):
         with Vertical(classes="modal-box"):
             yield Label(self.modal_title, classes="modal-title")
             if self.extension:
-                yield Label(f"Extension '{self.extension}' is locked", classes="modal-subtitle")
-            inp = Input(value=self.current_name, placeholder="Enter new name...", id="input-name")
+                yield Label(
+                    f"Extension '{self.extension}' is locked", classes="modal-subtitle"
+                )
+            inp = Input(
+                value=self.current_name,
+                placeholder="Enter new name...",
+                id="input-name",
+            )
             inp.tooltip = "Enter new file or folder item name"
             yield inp
             with Horizontal(classes="button-row"):
@@ -300,7 +318,9 @@ class RenameModal(A11yMixin, ModalScreen[Optional[str]]):
     def on_mount(self) -> None:
         """Focus input field on mount and emit screen reader announcement."""
         self.query_one("#input-name", Input).focus()
-        self.announce(f"Opened rename dialog for '{self.modal_title}'. Enter new name and press Enter or click Rename.")
+        self.announce(
+            f"Opened rename dialog for '{self.modal_title}'. Enter new name and press Enter or click Rename."
+        )
 
     @on(Button.Pressed, "#btn-confirm")
     def action_confirm(self) -> None:
@@ -366,7 +386,10 @@ class NewFolderModal(A11yMixin, ModalScreen[Optional[str]]):
         """Compose modal dialog children."""
         with Vertical(classes="modal-box"):
             yield Label("Create New Target Folder", classes="modal-title")
-            inp = Input(placeholder="e.g. Financials, Contracts, Invoices", id="input-folder-name")
+            inp = Input(
+                placeholder="e.g. Financials, Contracts, Invoices",
+                id="input-folder-name",
+            )
             inp.tooltip = "Enter new target folder category name"
             yield inp
             with Horizontal(classes="button-row"):
@@ -455,7 +478,11 @@ class DirectorySelectModal(A11yMixin, ModalScreen[Optional[str]]):
         """Compose modal dialog children."""
         with Vertical(classes="modal-box"):
             yield Label("Select Target Directory", classes="modal-title")
-            inp = Input(value=self.current_dir, placeholder="Enter absolute directory path...", id="input-dir")
+            inp = Input(
+                value=self.current_dir,
+                placeholder="Enter absolute directory path...",
+                id="input-dir",
+            )
             inp.tooltip = "Enter absolute target directory path to scan"
             yield inp
             yield Label("Quick Presets:")
@@ -557,12 +584,18 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         color: $text;
         text-style: bold;
     }
+    .switch-row {
+        margin-top: 1;
+        margin-bottom: 1;
+        height: 3;
+        align: left middle;
+    }
     .button-row {
         margin-top: 1;
         height: 3;
         align: right middle;
     }
-    Button:focus, Input:focus, Select:focus {
+    Button:focus, Input:focus, Select:focus, Switch:focus {
         border: heavy $accent;
         text-style: bold;
     }
@@ -577,22 +610,52 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         with Vertical(classes="modal-box"):
             yield Label("Application Settings [Ctrl+S]", classes="modal-title")
 
-            yield Label("Protected Directories (comma-separated):", classes="field-label")
-            prot = getattr(self.settings, "PROTECTED_PATHS", getattr(self.settings, "PROTECTED_DIRECTORIES", []))
-            prot_str = ", ".join(prot) if isinstance(prot, (list, tuple, set)) else str(prot)
-            inp_prot = Input(value=prot_str, placeholder="/path/1, /path/2", id="input-protected")
-            inp_prot.tooltip = "Comma-separated protected directories exempt from automated moves"
+            yield Label(
+                "Protected Directories (comma-separated):", classes="field-label"
+            )
+            prot = getattr(
+                self.settings,
+                "PROTECTED_PATHS",
+                getattr(self.settings, "PROTECTED_DIRECTORIES", []),
+            )
+            prot_str = (
+                ", ".join(prot) if isinstance(prot, (list, tuple, set)) else str(prot)
+            )
+            inp_prot = Input(
+                value=prot_str, placeholder="/path/1, /path/2", id="input-protected"
+            )
+            inp_prot.tooltip = (
+                "Comma-separated protected directories exempt from automated moves"
+            )
             yield inp_prot
 
             yield Label("Ignored Extensions (comma-separated):", classes="field-label")
             ign = getattr(self.settings, "IGNORED_EXTENSIONS", [])
-            ign_str = ", ".join(ign) if isinstance(ign, (list, tuple, set)) else str(ign)
-            inp_ign = Input(value=ign_str, placeholder=".tmp, .bak, .log", id="input-ignored")
-            inp_ign.tooltip = "Comma-separated file extensions to ignore during scanning"
+            ign_str = (
+                ", ".join(ign) if isinstance(ign, (list, tuple, set)) else str(ign)
+            )
+            inp_ign = Input(
+                value=ign_str, placeholder=".tmp, .bak, .log", id="input-ignored"
+            )
+            inp_ign.tooltip = (
+                "Comma-separated file extensions to ignore during scanning"
+            )
             yield inp_ign
 
+            yield Label("Max Folders:", classes="field-label")
+            max_f_str = str(getattr(self.settings, "MAX_FOLDERS", 12))
+            inp_max_f = Input(value=max_f_str, placeholder="12", id="input-max-folders")
+            inp_max_f.tooltip = "Maximum subdirectories generated during sorting"
+            yield inp_max_f
+
             yield Label("Worker Concurrency (Threads):", classes="field-label")
-            conc_str = str(getattr(self.settings, "MAX_WORKERS", getattr(self.settings, "WORKER_CONCURRENCY", 4)))
+            conc_str = str(
+                getattr(
+                    self.settings,
+                    "MAX_WORKERS",
+                    getattr(self.settings, "WORKER_CONCURRENCY", 4),
+                )
+            )
             inp_conc = Input(value=conc_str, placeholder="4", id="input-concurrency")
             inp_conc.tooltip = "Worker concurrency thread limit for processing"
             yield inp_conc
@@ -606,8 +669,31 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                 ("Clinical ISF", "clinical_isf"),
             ]
             sel_strat = Select(options=options, value=strat, id="select-strategy")
-            sel_strat.tooltip = "Select sorting strategy engine for document classification"
+            sel_strat.tooltip = (
+                "Select sorting strategy engine for document classification"
+            )
             yield sel_strat
+
+            yield Label("Compliance & Renaming Toggles:", classes="field-label")
+            with Horizontal(classes="switch-row"):
+                sw_clin = Switch(
+                    value=bool(
+                        getattr(self.settings, "CLINICAL_SMART_RENAMING", False)
+                    ),
+                    id="switch-clinical-renaming",
+                )
+                sw_clin.tooltip = "Toggle clinical smart renaming compliance mode"
+                yield sw_clin
+                yield Label(" Clinical Smart Renaming")
+
+            with Horizontal(classes="switch-row"):
+                sw_ctx = Switch(
+                    value=bool(getattr(self.settings, "CONTEXTUAL_RENAMING", False)),
+                    id="switch-contextual-renaming",
+                )
+                sw_ctx.tooltip = "Toggle AI contextual file renaming"
+                yield sw_ctx
+                yield Label(" AI Contextual Renaming")
 
             with Horizontal(classes="button-row"):
                 btn_cancel = Button("Cancel", id="btn-cancel", variant="default")
@@ -640,15 +726,26 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         except ValueError:
             conc = 4
 
+        try:
+            max_f = int(self.query_one("#input-max-folders", Input).value.strip())
+        except ValueError:
+            max_f = 12
+
         strat = self.query_one("#select-strategy", Select).value
         if strat == Select.BLANK:
             strat = "default"
+
+        clin_renaming = self.query_one("#switch-clinical-renaming", Switch).value
+        ctx_renaming = self.query_one("#switch-contextual-renaming", Switch).value
 
         res = {
             "PROTECTED_PATHS": p_list,
             "IGNORED_EXTENSIONS": i_list,
             "MAX_WORKERS": conc,
+            "MAX_FOLDERS": max_f,
             "SORTING_STRATEGY": strat,
+            "CLINICAL_SMART_RENAMING": clin_renaming,
+            "CONTEXTUAL_RENAMING": ctx_renaming,
         }
         self.announce("Saved application settings.")
         self.dismiss(res)
@@ -728,7 +825,9 @@ class WizardModal(A11yMixin, ModalScreen[None]):
 
             with Horizontal(classes="button-row"):
                 btn_finish = Button("Finish & Save", id="btn-finish", variant="primary")
-                btn_finish.tooltip = "Save AI consent setting and complete onboarding wizard"
+                btn_finish.tooltip = (
+                    "Save AI consent setting and complete onboarding wizard"
+                )
                 yield btn_finish
 
     def on_mount(self) -> None:
@@ -805,9 +904,15 @@ class CROForensicModal(A11yMixin, ModalScreen[None]):
     def compose(self) -> ComposeResult:
         """Compose modal dialog children."""
         with Vertical(classes="modal-box"):
-            yield Label("CRO Multi-Study Forensic Ingestion [Ctrl+C]", classes="modal-title")
+            yield Label(
+                "CRO Multi-Study Forensic Ingestion [Ctrl+C]", classes="modal-title"
+            )
             yield Label("Source Storage Drive / Archive Root:")
-            inp_src = Input(value=self.base_dir, placeholder="Select source drive to scan...", id="input-source")
+            inp_src = Input(
+                value=self.base_dir,
+                placeholder="Select source drive to scan...",
+                id="input-source",
+            )
             inp_src.tooltip = "Source storage drive path or archive directory root"
             yield inp_src
 
@@ -818,7 +923,9 @@ class CROForensicModal(A11yMixin, ModalScreen[None]):
             yield inp_tgt
 
             log_w = Log(classes="log-area", id="log-widget")
-            log_w.tooltip = "Live execution log output for CRO forensic ingestion worker"
+            log_w.tooltip = (
+                "Live execution log output for CRO forensic ingestion worker"
+            )
             yield log_w
 
             with Horizontal(classes="button-row"):
@@ -826,7 +933,9 @@ class CROForensicModal(A11yMixin, ModalScreen[None]):
                 btn_close.tooltip = "Close CRO forensic ingestion modal dialog"
                 yield btn_close
                 btn_run = Button("Run Forensic Ingest", id="btn-run", variant="success")
-                btn_run.tooltip = "Trigger CRO multi-study forensic ingestion worker execution"
+                btn_run.tooltip = (
+                    "Trigger CRO multi-study forensic ingestion worker execution"
+                )
                 yield btn_run
 
     def on_mount(self) -> None:
@@ -896,6 +1005,104 @@ class CROForensicModal(A11yMixin, ModalScreen[None]):
         self.dismiss(None)
 
 
+class SessionRecoveryModal(A11yMixin, ModalScreen[Optional[str]]):
+    """Modal dialog for recovering interrupted file sorting sessions."""
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel dialog", show=True),
+    ]
+
+    CSS = """
+    SessionRecoveryModal {
+        align: center middle;
+        background: rgba(0, 0, 0, 0.6);
+    }
+    .modal-box {
+        padding: 1 2;
+        background: $panel;
+        border: thick $primary;
+        width: 90%;
+        max-width: 80;
+        height: auto;
+        max-height: 90%;
+        overflow-y: auto;
+    }
+    .modal-title {
+        text-style: bold;
+        color: $error;
+        margin-bottom: 1;
+    }
+    .button-row {
+        margin-top: 1;
+        height: 3;
+        align: right middle;
+    }
+    Button:focus {
+        border: heavy $accent;
+        text-style: bold;
+    }
+    """
+
+    def __init__(self, session_info: Dict[str, Any]):
+        super().__init__()
+        self.session_info = session_info
+
+    def compose(self) -> ComposeResult:
+        """Compose session recovery modal children."""
+        with Vertical(classes="modal-box"):
+            yield Label("Interrupted Session Detected", classes="modal-title")
+            yield Label(f"Session ID: {self.session_info.get('session_id', 'Unknown')}")
+            yield Label(
+                f"Target Directory: {self.session_info.get('base_dir', 'Unknown')}"
+            )
+            yield Label(f"Status: {self.session_info.get('status', 'Unknown')}")
+            yield Label("Select session recovery action:")
+
+            with Horizontal(classes="button-row"):
+                btn_clean = Button("Clean", id="btn-clean", variant="error")
+                btn_clean.tooltip = "Discard session files and clean workspace"
+                yield btn_clean
+
+                btn_rollback = Button("Rollback", id="btn-rollback", variant="warning")
+                btn_rollback.tooltip = (
+                    "Rollback partial file moves from interrupted run"
+                )
+                yield btn_rollback
+
+                btn_resume = Button("Resume", id="btn-resume", variant="primary")
+                btn_resume.tooltip = "Resume pending file moves for interrupted run"
+                yield btn_resume
+
+    def on_mount(self) -> None:
+        """Focus resume button on mount and emit screen reader announcement."""
+        self.query_one("#btn-resume", Button).focus()
+        self.announce("Opened interrupted session recovery dialog.")
+
+    @on(Button.Pressed, "#btn-resume")
+    def action_resume(self) -> None:
+        """Confirm resume action."""
+        self.announce("Confirmed session resume.")
+        self.dismiss("resume")
+
+    @on(Button.Pressed, "#btn-rollback")
+    def action_rollback(self) -> None:
+        """Confirm rollback action."""
+        self.announce("Confirmed session rollback.")
+        self.dismiss("rollback")
+
+    @on(Button.Pressed, "#btn-clean")
+    def action_clean(self) -> None:
+        """Confirm clean action."""
+        self.announce("Confirmed session clean.")
+        self.dismiss("clean")
+
+    @on(Button.Pressed, "#btn-cancel")
+    def action_cancel(self) -> None:
+        """Cancel recovery dialog."""
+        self.announce("Cancelled session recovery dialog.")
+        self.dismiss(None)
+
+
 class AutoSorterTUI(A11yMixin, App):
     """Textual full-screen interactive TUI application for Sortify AI Pro."""
 
@@ -913,6 +1120,7 @@ class AutoSorterTUI(A11yMixin, App):
         Binding("ctrl+c", "open_cro_forensic", "CRO Ingest", show=True),
         Binding("s", "scan_directory", "Scan", show=True),
         Binding("e", "execute_sort", "Execute", show=True),
+        Binding("enter", "execute_sort", "Execute", show=False),
         Binding("b", "select_dir", "Browse Dir", show=True),
         Binding("q", "quit", "Quit", show=True),
     ]
@@ -939,6 +1147,13 @@ class AutoSorterTUI(A11yMixin, App):
         border: solid $secondary;
         padding: 1 2;
     }
+    .tui-log-area {
+        height: 1fr;
+        max-height: 10;
+        min-height: 3;
+        margin-top: 1;
+        border: solid $secondary;
+    }
     #status-bar {
         height: 1;
         background: $primary-darken-2;
@@ -953,7 +1168,7 @@ class AutoSorterTUI(A11yMixin, App):
     .meta-line {
         margin-bottom: 1;
     }
-    Tree:focus, Static:focus {
+    Tree:focus, Static:focus, Log:focus {
         border: heavy $accent;
         text-style: bold;
     }
@@ -983,13 +1198,31 @@ class AutoSorterTUI(A11yMixin, App):
             yield tree
             with Vertical(id="right-meta-pane"):
                 yield Label("Node Metadata Inspector", classes="meta-header")
-                meta_widget = Static("Select a node in the tree to inspect details.", id="meta-details")
+                meta_widget = Static(
+                    "Select a node in the tree to inspect details.", id="meta-details"
+                )
                 meta_widget.tooltip = "Metadata inspector panel displaying attributes of selected file or folder"
                 yield meta_widget
-        sb = Static("Ready. Press [S] to Scan or [B] to select Directory.", id="status-bar")
+                yield Label("Live Execution Log", classes="meta-header")
+                tui_log = Log(id="tui-log", classes="tui-log-area")
+                tui_log.tooltip = "Live operation execution log output feed"
+                yield tui_log
+        sb = Static(
+            "Ready. Press [S] to Scan or [B] to select Directory.", id="status-bar"
+        )
         sb.tooltip = "Application status and screen reader announcement bar"
         yield sb
         yield Footer()
+
+    def announce(self, message: str, priority: str = "polite") -> str:
+        """Emit screen reader announcement and log to live execution log feed."""
+        res = super().announce(message, priority=priority)
+        try:
+            log_w = self.query_one("#tui-log", Log)
+            log_w.write_line(message)
+        except Exception:
+            pass
+        return res
 
     def on_mount(self) -> None:
         """Mount event handler."""
@@ -1000,6 +1233,103 @@ class AutoSorterTUI(A11yMixin, App):
         except Exception:
             pass
         self.announce("Sortify AI Pro TUI initialized and ready.")
+        self.check_abandoned_sessions()
+
+    @work
+    async def check_abandoned_sessions(self) -> None:
+        """Scan for abandoned sessions on startup and prompt for recovery if detected."""
+        try:
+            from app.core.session import scan_abandoned_sessions_async
+
+            abandoned = await scan_abandoned_sessions_async()
+            if not abandoned:
+                return
+
+            session_info = abandoned[0]
+
+            def on_recovery_choice(choice: Optional[str]) -> None:
+                if not choice:
+                    return
+                if choice == "resume":
+                    self._do_recovery_resume(session_info)
+                elif choice == "rollback":
+                    self._do_recovery_rollback(session_info)
+                elif choice == "clean":
+                    self._do_recovery_clean(session_info)
+
+            self.push_screen(SessionRecoveryModal(session_info), on_recovery_choice)
+        except Exception as e:
+            logger.error(f"Error checking abandoned sessions: {e}")
+
+    def _do_recovery_resume(self, session_info: Dict[str, Any]) -> None:
+        """Resume interrupted sorting operation."""
+        import json
+
+        from app.core.session import AppSession
+
+        base_dir = session_info.get("base_dir") or self.base_dir
+        if base_dir:
+            self.base_dir = base_dir
+
+        self.app_session = AppSession(
+            self.settings, self.base_dir, session_id=session_info.get("session_id")
+        )
+
+        plan_path = session_info.get("plan_path")
+        if plan_path and os.path.exists(plan_path):
+            try:
+                with open(plan_path, "r", encoding="utf-8") as f:
+                    self.plan = json.load(f)
+            except Exception:
+                self.plan = self.app_session.generate_sorting_plan()
+        else:
+            self.plan = self.app_session.generate_sorting_plan()
+
+        self.rebuild_tree()
+        self.announce(
+            f"Resuming session '{session_info.get('session_id')}'. Executing pending moves..."
+        )
+        self.action_execute_sort()
+
+    def _do_recovery_rollback(self, session_info: Dict[str, Any]) -> None:
+        """Rollback interrupted sorting operation."""
+        import shutil
+
+        from app.core.session import AppSession
+
+        base_dir = session_info.get("base_dir") or self.base_dir
+        session_id = session_info.get("session_id")
+        if base_dir and session_id:
+            try:
+                temp_session = AppSession(
+                    self.settings, base_dir, session_id=session_id
+                )
+                if hasattr(temp_session, "rollback"):
+                    temp_session.rollback(session_id, True)
+                elif hasattr(temp_session, "history_manager"):
+                    temp_session.history_manager.unwind_session(
+                        session_id, temp_session.db
+                    )
+                temp_session.close()
+            except Exception as e:
+                logger.error(f"Error during session rollback: {e}")
+
+        session_dir = session_info.get("session_dir")
+        if session_dir and os.path.exists(session_dir):
+            shutil.rmtree(session_dir, ignore_errors=True)
+
+        self.announce(f"Rolled back session '{session_id}'.")
+        if self.base_dir:
+            self.action_scan_directory()
+
+    def _do_recovery_clean(self, session_info: Dict[str, Any]) -> None:
+        """Clean abandoned session files."""
+        import shutil
+
+        session_dir = session_info.get("session_dir")
+        if session_dir and os.path.exists(session_dir):
+            shutil.rmtree(session_dir, ignore_errors=True)
+        self.announce(f"Cleaned session files for '{session_info.get('session_id')}'.")
 
     def update_status(self, text: str) -> None:
         """Update status bar label."""
@@ -1024,6 +1354,7 @@ class AutoSorterTUI(A11yMixin, App):
 
     def action_select_dir(self) -> None:
         """Open directory selection modal."""
+
         def on_selected(path: Optional[str]) -> None:
             if path and os.path.exists(path):
                 self.base_dir = os.path.abspath(path)
@@ -1035,6 +1366,7 @@ class AutoSorterTUI(A11yMixin, App):
 
     def action_open_settings(self) -> None:
         """Open settings modal screen."""
+
         def on_saved(res: Optional[Dict[str, Any]]) -> None:
             if res:
                 if "PROTECTED_PATHS" in res:
@@ -1049,8 +1381,19 @@ class AutoSorterTUI(A11yMixin, App):
                         self.settings.MAX_WORKERS = res["MAX_WORKERS"]
                     except Exception:
                         pass
+                if "MAX_FOLDERS" in res:
+                    try:
+                        self.settings.MAX_FOLDERS = res["MAX_FOLDERS"]
+                    except Exception:
+                        pass
                 if "SORTING_STRATEGY" in res:
                     self.settings.SORTING_STRATEGY = res["SORTING_STRATEGY"]
+                if "CLINICAL_SMART_RENAMING" in res:
+                    self.settings.CLINICAL_SMART_RENAMING = res[
+                        "CLINICAL_SMART_RENAMING"
+                    ]
+                if "CONTEXTUAL_RENAMING" in res:
+                    self.settings.CONTEXTUAL_RENAMING = res["CONTEXTUAL_RENAMING"]
                 if hasattr(self.settings, "_save"):
                     self.settings._save()
                 self.announce("Settings updated and saved.")
@@ -1162,8 +1505,16 @@ class AutoSorterTUI(A11yMixin, App):
         except Exception as e:
             logger.error(f"Error rebuilding tree: {e}")
 
-    def _build_tree_nodes(self, node_dict: Dict[str, Any], parent_item: TreeNode, current_folder: str) -> None:
-        for k, v in sorted(node_dict.items(), key=lambda x: (1 if isinstance(x[1], dict) and x[1].get("__type__") == "file" else 0, x[0])):
+    def _build_tree_nodes(
+        self, node_dict: Dict[str, Any], parent_item: TreeNode, current_folder: str
+    ) -> None:
+        for k, v in sorted(
+            node_dict.items(),
+            key=lambda x: (
+                1 if isinstance(x[1], dict) and x[1].get("__type__") == "file" else 0,
+                x[0],
+            ),
+        ):
             if isinstance(v, dict) and v.get("__type__") == "file":
                 file_key = k
                 file_info = v
@@ -1221,7 +1572,9 @@ class AutoSorterTUI(A11yMixin, App):
                     "folder": sub_folder,
                     "info": v,
                 }
-                child_tree_node = parent_item.add(f"📁 {k}", data=node_data, expand=True)
+                child_tree_node = parent_item.add(
+                    f"📁 {k}", data=node_data, expand=True
+                )
                 self._build_tree_nodes(v, child_tree_node, current_folder=sub_folder)
 
     def _update_inspector(self, node_or_data: Any = None) -> str:
@@ -1301,8 +1654,9 @@ class AutoSorterTUI(A11yMixin, App):
                 except (ValueError, TypeError):
                     lines.append(f"[bold]Confidence:[/bold] {conf}")
 
-            announcement = f"Selected file '{key}' in folder '{folder}'. Locked: {locked}. Rating: {rating}."
-            self.announce(announcement)
+            self.announce(
+                f"Selected file '{key}' in folder '{folder}'. Locked: {locked}. Rating: {rating}."
+            )
         else:
             key = data.get("key", "")
             folder = data.get("folder", "")
@@ -1345,13 +1699,17 @@ class AutoSorterTUI(A11yMixin, App):
             self.locked_files.pop(filepath, None)
             data["is_locked"] = False
             if self.app_session:
-                self.app_session.db.set_user_verified_target_path(self.base_dir, file_key, None)
+                self.app_session.db.set_user_verified_target_path(
+                    self.base_dir, file_key, None
+                )
             msg = f"Unlocked file '{file_key}'"
         else:
             self.locked_files[file_key] = folder
             data["is_locked"] = True
             if self.app_session:
-                self.app_session.db.set_user_verified_target_path(self.base_dir, file_key, folder)
+                self.app_session.db.set_user_verified_target_path(
+                    self.base_dir, file_key, folder
+                )
             msg = f"Locked file '{file_key}' to folder '{folder}'"
 
         self.announce(msg)
@@ -1370,7 +1728,9 @@ class AutoSorterTUI(A11yMixin, App):
 
         if is_file:
             stem, ext = os.path.splitext(old_name)
-            modal = RenameModal(title=f"Rename File: {old_name}", current_name=stem, extension=ext)
+            modal = RenameModal(
+                title=f"Rename File: {old_name}", current_name=stem, extension=ext
+            )
 
             def on_renamed(new_stem: Optional[str]) -> None:
                 if not new_stem or new_stem == stem:
@@ -1389,7 +1749,9 @@ class AutoSorterTUI(A11yMixin, App):
 
             self.push_screen(modal, on_renamed)
         else:
-            modal = RenameModal(title=f"Rename Folder: {old_name}", current_name=old_name)
+            modal = RenameModal(
+                title=f"Rename Folder: {old_name}", current_name=old_name
+            )
 
             def on_folder_renamed(new_name: Optional[str]) -> None:
                 if not new_name or new_name == old_name:
@@ -1397,12 +1759,15 @@ class AutoSorterTUI(A11yMixin, App):
                 if old_name in self.plan:
                     self.plan[new_name] = self.plan.pop(old_name)
                     self.rebuild_tree()
-                    self.announce(f"Renamed folder category '{old_name}' -> '{new_name}'")
+                    self.announce(
+                        f"Renamed folder category '{old_name}' -> '{new_name}'"
+                    )
 
             self.push_screen(modal, on_folder_renamed)
 
     def action_new_folder(self) -> None:
         """Create a new folder category node [N]."""
+
         def on_created(folder_name: Optional[str]) -> None:
             if not folder_name:
                 return
@@ -1440,7 +1805,9 @@ class AutoSorterTUI(A11yMixin, App):
             self._ratings_cache.pop(filepath, None)
 
         if self.app_session:
-            self.app_session.db.set_document_rating(self.base_dir, filepath, rating_to_set)
+            self.app_session.db.set_document_rating(
+                self.base_dir, filepath, rating_to_set
+            )
 
         data["rating"] = rating_to_set
         self.rebuild_tree()
@@ -1450,6 +1817,8 @@ class AutoSorterTUI(A11yMixin, App):
 
 def run_tui(settings, base_dir: Optional[str] = None) -> None:
     """Run the Textual full-screen terminal interface."""
+    import shutil
+
     from app.core.path_utils import is_packaged
 
     if sys.platform == "win32" and is_packaged():
@@ -1473,12 +1842,22 @@ def run_tui(settings, base_dir: Optional[str] = None) -> None:
             except Exception:
                 pass
 
-    if sys.stdin is None or not hasattr(sys.stdin, "isatty") or not sys.stdin.isatty():
+    if sys.stdin is None or not hasattr(sys.stdin, "isatty") or not sys.stdin.isatty() or (hasattr(sys.stdout, "isatty") and not sys.stdout.isatty()):
+        if not os.environ.get("FORCE_TUI"):
+            print(
+                "Error: Textual TUI requires an interactive TTY terminal environment.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+    cols, lines = shutil.get_terminal_size((80, 24))
+    if (cols < 80 or lines < 24) and not os.environ.get("IGNORE_TERMINAL_SIZE"):
         print(
-            "Notice: Terminal TUI requires an interactive TTY terminal.",
+            f"Error: Terminal dimensions ({cols}x{lines}) are below minimum requirement (80x24). "
+            "Please resize your terminal window.",
             file=sys.stderr,
         )
-        return
+        sys.exit(1)
 
     app = AutoSorterTUI(settings=settings, base_dir=base_dir)
     app.run()

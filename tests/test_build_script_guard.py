@@ -293,4 +293,3 @@ def test_build_script_dual_target_verification_success(tmp_path):
                 assert (dist_dir / "smart-autosorter.desktop").exists()
     finally:
         os.chdir(original_cwd)
-

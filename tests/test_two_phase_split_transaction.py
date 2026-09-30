@@ -197,6 +197,8 @@ def test_independent_rollback_safety(temp_environment):
     settings = AppSettings()
     settings.KEYWORD_RULES = {"invoice": "Invoices"}
     settings.POLICIES = []
+    settings.LEARNED_RULES = {}
+    settings.CONTEXTUAL_RENAMING = False
 
     session = AppSession(settings, base_dir=temp_environment["base_dir"])
 

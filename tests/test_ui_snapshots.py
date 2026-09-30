@@ -1,82 +1,11 @@
 import json
 import os
-import sys
-from unittest.mock import MagicMock
 
 import pytest
 
-# --- HEADLESS GUI MOCKING ---
-from tests.mock_ui import HeadlessTreeview
-
-
-class DummyWidget:
-    def __init__(self, *args, **kwargs):
-        pass
-
-    def __call__(self, *args, **kwargs):
-        return self
-
-    def __getattr__(self, name):
-        return MagicMock()
-
-    def pack(self, *args, **kwargs):
-        pass
-
-    def configure(self, *args, **kwargs):
-        pass
-
-    def delete(self, *args, **kwargs):
-        pass
-
-    def insert(self, *args, **kwargs):
-        pass
-
-
-class DummyCTk(DummyWidget):
-    pass
-
-
-class DummyVar(DummyWidget):
-    def get(self):
-        return False
-
-    def set(self, val):
-        pass
-
-
-mock_ctk = MagicMock()
-mock_ctk.CTk = DummyCTk
-mock_ctk.CTkFrame = DummyWidget
-mock_ctk.CTkLabel = DummyWidget
-mock_ctk.CTkButton = DummyWidget
-mock_ctk.CTkProgressBar = DummyWidget
-mock_ctk.CTkSwitch = DummyWidget
-mock_ctk.BooleanVar = DummyVar
-mock_ctk.CTkScrollableFrame = DummyWidget
-
-mock_tk = MagicMock()
-mock_tk.Menu = DummyWidget
-mock_tk.Canvas = DummyWidget
-
-mock_ttk = MagicMock()
-mock_ttk.Treeview = HeadlessTreeview
-mock_ttk.Scrollbar = DummyWidget
-mock_tk.ttk = mock_ttk
-
-sys.modules["customtkinter"] = mock_ctk
-sys.modules["tkinter"] = mock_tk
-sys.modules["tkinter.ttk"] = mock_ttk
-sys.modules["tkinter.filedialog"] = MagicMock()
-sys.modules["tkinter.messagebox"] = MagicMock()
-
-# Inject dummy settings
-from app.config import AppSettings  # noqa: E402
-
-dummy_settings = AppSettings()
-dummy_settings.AI_CONSENT_GRANTED = False
-sys.modules["app.config"].settings = dummy_settings
-
-from app.ui.app import AutoSorterApp  # noqa: E402
+import app.config as app_config
+from app.config import AppSettings
+from app.ui.app import AutoSorterApp
 
 SNAPSHOT_DIR = os.path.join(os.path.dirname(__file__), "snapshots")
 
@@ -103,11 +32,24 @@ def assert_snapshot(snapshot_name, actual_state):
 
 
 @pytest.fixture
-def headless_app():
+def headless_app(tmp_path, monkeypatch):
+    monkeypatch.setattr(AppSettings, "_trigger_save", lambda self: self._save())
+    dummy_settings = AppSettings(filepath=str(tmp_path / "settings.json"))
+    dummy_settings.AI_CONSENT_GRANTED = False
+    monkeypatch.setattr(app_config, "settings", dummy_settings, raising=False)
+
     app = AutoSorterApp(dummy_settings)
     app.plan = {}
     app.plan_errors = {}
     yield app
+
+    try:
+        from app.core.shared_registry import SharedModelRegistry
+        reg = getattr(SharedModelRegistry, "_instance", None)
+        if reg is not None:
+            reg._cached_settings = None
+    except Exception:
+        pass
 
 
 def test_empty_plan_rendering(headless_app):

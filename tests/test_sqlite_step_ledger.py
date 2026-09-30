@@ -205,9 +205,7 @@ def test_mid_execution_exception_reverse_unwinding(ledger_env):
             raise OSError("Simulated disk error during move")
         return original_resilient_move(src, dst)
 
-    with patch(
-        "app.core.resilient_file_ops.resilient_move", side_effect=failing_move
-    ):
+    with patch("app.core.resilient_file_ops.resilient_move", side_effect=failing_move):
         with pytest.raises(OSError, match="Simulated disk error during move"):
             execute_moves(base_dir, plan, db, history_manager)
 
@@ -276,7 +274,9 @@ def mock_session_base(tmp_path, monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_startup_recovery_triggers_uncommitted_batch_unwind(mock_session_base, tmp_path):
+async def test_startup_recovery_triggers_uncommitted_batch_unwind(
+    mock_session_base, tmp_path
+):
     """Verify that scan_abandoned_sessions_async detects uncommitted batch session with step ledger and triggers automatic recovery."""
     session_id = "uncommitted-session-123"
     session_dir = mock_session_base / session_id

@@ -26,7 +26,9 @@ def transaction_env(tmp_path):
     db.init_db()
 
     cache_mgr = CacheManager(str(cache_path), worker=db_worker)
-    history_manager = HistoryManager(db=db, cache_manager=cache_mgr, db_path=str(history_db_path))
+    history_manager = HistoryManager(
+        db=db, cache_manager=cache_mgr, db_path=str(history_db_path)
+    )
 
     yield str(base_dir), db, history_manager, db_worker
 
@@ -64,10 +66,14 @@ def test_schema_migration_v6(tmp_path):
         cursor.execute("PRAGMA user_version")
         assert cursor.fetchone()[0] == 6
 
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='transaction_ledger'")
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='transaction_ledger'"
+        )
         assert cursor.fetchone() is not None
 
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_transaction_ledger_session'")
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_transaction_ledger_session'"
+        )
         assert cursor.fetchone() is not None
 
 

@@ -485,6 +485,7 @@ CORE_ARCHITECTURE_SPEC = ComponentDiagramSpec(
             nodes=[
                 "core_policy_engine",
                 "core_quarantine_interceptor",
+                "core_domain_contracts",
                 "core_verifier",
                 "core_mover",
                 "core_file_renamer",
@@ -553,6 +554,7 @@ CORE_ARCHITECTURE_SPEC = ComponentDiagramSpec(
         # Policy & Execution
         DiagramNode(id="core_policy_engine", label="app.core.policy_engine", shape="rhombus"),
         DiagramNode(id="core_quarantine_interceptor", label="app.core.quarantine_interceptor"),
+        DiagramNode(id="core_domain_contracts", label="app.core.domain_contracts"),
         DiagramNode(id="core_verifier", label="app.core.verifier", shape="rhombus"),
         DiagramNode(id="core_mover", label="app.core.mover"),
         DiagramNode(id="core_file_renamer", label="app.core.file_renamer"),
@@ -608,6 +610,7 @@ CORE_ARCHITECTURE_SPEC = ComponentDiagramSpec(
         DiagramEdge(source="core_ledger", target="core_db"),
         DiagramEdge(source="core_history", target="core_db"),
         DiagramEdge(source="core_policy_engine", target="core_quarantine_interceptor"),
+        DiagramEdge(source="core_quarantine_interceptor", target="core_domain_contracts"),
         DiagramEdge(source="core_policy_engine", target="core_mover"),
         DiagramEdge(source="core_verifier", target="core_mover"),
         DiagramEdge(source="core_mover", target="core_file_renamer"),

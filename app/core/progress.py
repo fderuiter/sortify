@@ -98,7 +98,10 @@ def emit_progress(
             p
             for p in params
             if p.kind
-            in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
+            in (
+                inspect.Parameter.POSITIONAL_ONLY,
+                inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            )
         ]
 
         if len(pos_params) >= 2:

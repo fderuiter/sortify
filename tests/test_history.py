@@ -199,7 +199,9 @@ def test_divergent_branch_protection_from_pruning(test_history_env):
     assert expired_id in session_ids
 
 
-def test_snapshot_pruning_preserves_sessions_within_age_limit_across_many_runs(test_history_env):
+def test_snapshot_pruning_preserves_sessions_within_age_limit_across_many_runs(
+    test_history_env,
+):
     base_dir, db, cache, history_manager, db_worker = test_history_env
 
     now = time.time()
@@ -263,7 +265,9 @@ def test_snapshot_pruning_respects_policy_engine_actions(test_history_env):
             ("session-ordinary-expired", now - (60 * day_sec), base_dir),
         )
 
-    policies = [{"type": "compliance", "expression": "compliance_doc.pdf", "action": "retain"}]
+    policies = [
+        {"type": "compliance", "expression": "compliance_doc.pdf", "action": "retain"}
+    ]
 
     with conn:
         history_manager._prune_snapshots(conn, retention_days=30, policies=policies)
@@ -274,4 +278,3 @@ def test_snapshot_pruning_respects_policy_engine_actions(test_history_env):
     assert "session-status-retain" in session_ids
     assert "session-policy-matched" in session_ids
     assert "session-ordinary-expired" not in session_ids
-

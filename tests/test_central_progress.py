@@ -11,7 +11,9 @@ from app.core.progress import ProgressUpdate, emit_progress
 
 def test_progress_update_dataclass_defaults_and_clamping():
     """Verify ProgressUpdate field defaults and ratio clamping behavior."""
-    update = ProgressUpdate(progress=0.5, stage="Extracting", unit_count=10, unit_type="files")
+    update = ProgressUpdate(
+        progress=0.5, stage="Extracting", unit_count=10, unit_type="files"
+    )
     assert update.progress == 0.5
     assert update.stage == "Extracting"
     assert update.unit_count == 10
@@ -163,7 +165,12 @@ def test_extractor_and_metadata_emit_completion_events(tmp_path):
     settings.POLICIES = []
 
     MetadataPass.run(
-        str(tmp_path), ["doc.txt"], settings, db=None, callback=progress_cb, cancel_check=None
+        str(tmp_path),
+        ["doc.txt"],
+        settings,
+        db=None,
+        callback=progress_cb,
+        cancel_check=None,
     )
 
     assert len(updates) == 1

@@ -85,7 +85,9 @@ def analyze_all(json_output=False):
         db = Database(db_path, db_worker)
 
         analyzer = IncrementalAnalyzer(
-            max_folders=MockSettings.MAX_FOLDERS, stop_words=MockSettings.STOP_WORDS, db=db
+            max_folders=MockSettings.MAX_FOLDERS,
+            stop_words=MockSettings.STOP_WORDS,
+            db=db,
         )
 
         def progress_callback():
@@ -115,7 +117,7 @@ def analyze_all(json_output=False):
     finally:
         if analyzer is not None:
             analyzer.terminate()
-        if 'db_worker' in locals() and db_worker:
+        if "db_worker" in locals() and db_worker:
             db_worker.stop()
         try:
             from app.core.shared_registry import SharedModelRegistry, SharedWorkerPool
@@ -162,6 +164,16 @@ def build_parser():
         dest="no_color",
         help="Disable ANSI color output",
     )
+    parser.add_argument(
+        "--tui",
+        action="store_true",
+        help="Launch full-screen Textual TUI mode on sandbox dataset",
+    )
+    parser.add_argument(
+        "--interactive",
+        action="store_true",
+        help="Launch full-screen interactive TUI mode on sandbox dataset",
+    )
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
     # reset command
@@ -199,6 +211,16 @@ def build_parser():
         action="store_true",
         help="Output raw JSON without decorative borders",
     )
+    parser_analyze.add_argument(
+        "--tui",
+        action="store_true",
+        help="Launch full-screen Textual TUI mode on sandbox dataset",
+    )
+    parser_analyze.add_argument(
+        "--interactive",
+        action="store_true",
+        help="Launch full-screen interactive TUI mode on sandbox dataset",
+    )
     return parser
 
 
@@ -206,6 +228,14 @@ def main():
     """Execute the main CLI logic for the sandbox tool."""
     parser = build_parser()
     args = parser.parse_args()
+
+    if getattr(args, "tui", False) or getattr(args, "interactive", False):
+        from app.config import AppSettings
+        from app.ui.tui import run_tui
+
+        settings = AppSettings()
+        run_tui(settings, SANDBOX_DIR)
+        sys.exit(0)
 
     if args.command == "reset":
         reset_sandbox()

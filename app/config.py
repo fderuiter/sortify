@@ -533,6 +533,10 @@ class AppSettings:
                 except Exception as e:
                     logging.error(f"Failed to encrypt proxy string during save: {e}")
 
+            parent_dir = os.path.dirname(self._filepath)
+            if parent_dir and not os.path.exists(parent_dir):
+                os.makedirs(parent_dir, exist_ok=True)
+
             with open(self._filepath, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=4)
         except Exception as e:

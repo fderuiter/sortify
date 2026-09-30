@@ -1,5 +1,4 @@
 import concurrent.futures
-import time
 
 from app.core.cache import BoundedMemoryCache
 from app.core.db import Database
@@ -66,8 +65,28 @@ def test_bounded_memory_cache_lru_eviction():
     assert evicted_items[0] == ("key2", 20)
 
 
+def test_bounded_memory_cache_evicts_on_key_overwrite():
+    evicted_items = []
+
+    def on_evict(k, v):
+        evicted_items.append((k, v))
+
+    cache = BoundedMemoryCache(max_size=5, on_evict=on_evict)
+    cache["key1"] = "val1"
+    cache["key1"] = "val2"
+
+    assert len(evicted_items) == 1
+    assert evicted_items[0] == ("key1", "val1")
+    assert cache["key1"] == "val2"
+
+
 def test_bounded_memory_cache_ttl_expiration():
-    cache = BoundedMemoryCache(max_size=10, ttl=0.1)
+    current_time = 1000.0
+
+    def mock_clock() -> float:
+        return current_time
+
+    cache = BoundedMemoryCache(max_size=10, ttl=0.1, time_func=mock_clock)
 
     cache["temp1"] = "val1"
     cache.set("temp2", "val2", ttl=0.5)
@@ -75,14 +94,14 @@ def test_bounded_memory_cache_ttl_expiration():
     assert cache.get("temp1") == "val1"
     assert cache.get("temp2") == "val2"
 
-    time.sleep(0.15)
+    current_time += 0.15
 
     # temp1 should be expired now, temp2 should still be valid
     assert "temp1" not in cache
     assert cache.get("temp1") is None
     assert cache.get("temp2") == "val2"
 
-    time.sleep(0.4)
+    current_time += 0.4
     assert cache.get("temp2") is None
 
 
