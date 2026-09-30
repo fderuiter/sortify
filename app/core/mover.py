@@ -1383,7 +1383,30 @@ class AsyncMoveEngine:
         priority: str = None,
         progress_callback=None,
     ) -> dict:
-        """Partition relocation plan into bounded worker chunks and execute off-thread."""
+        """Partition relocation plan into bounded worker chunks and execute file moves off-thread.
+
+        Args:
+            base_dir: Root directory path where file movements occur.
+            plan: Mapping of category names to target file move specifications.
+            db: Database connection instance for tracking transaction records.
+            history_manager: History manager instance for session snapshots/rollbacks.
+            runtime_settings: Optional runtime configuration settings object.
+            resume: Whether this execution is resuming a previously incomplete session.
+            batch_size: Number of database entries per batch transaction write.
+            cancel_check: Optional callable that returns True if cancellation was requested.
+            cancel_event: Optional threading or asyncio event signaling cancellation.
+            cancellation_token: Optional cancellation token object for cooperative cancellation.
+            priority: Execution priority tier string.
+            progress_callback: Optional callback receiving progress ratio updates during file movement.
+
+        Returns
+        -------
+            dict: Execution results containing overall session status and processed item counts.
+
+        Raises
+        ------
+            ValueError: If base_dir or plan verification fails integrity checks.
+        """
         base_dir = os.path.normpath(base_dir)
 
         effective_progress_cb = progress_callback or getattr(runtime_settings, "progress_callback", None)
@@ -1726,7 +1749,28 @@ def execute_moves(
     priority: str = None,
     progress_callback=None,
 ) -> dict:
-    """Create directories and safely move files using chunked asynchronous execution."""
+    """Create directories and safely move files using chunked asynchronous execution.
+
+    Args:
+        base_dir: Target base directory path.
+        plan: Move operations plan dictionary.
+        db: Database connection instance.
+        history_manager: History tracking manager.
+        runtime_settings: Optional application runtime configuration.
+        resume: Flag indicating whether to resume an existing session.
+        batch_size: Database transaction batch size.
+        chunk_size: Number of files per worker execution chunk.
+        max_workers: Maximum concurrency level for worker tasks.
+        cancel_check: Optional function returning True if cancellation requested.
+        cancel_event: Optional thread event indicating cancellation.
+        cancellation_token: Optional cancellation token object.
+        priority: Priority level identifier.
+        progress_callback: Optional progress emission callback function.
+
+    Returns
+    -------
+        dict: Execution summary and status details.
+    """
     engine = AsyncMoveEngine(max_workers=max_workers, chunk_size=chunk_size)
     return engine.execute(
         base_dir=base_dir,
@@ -1760,7 +1804,28 @@ async def execute_moves_async(
     priority: str = None,
     progress_callback=None,
 ) -> dict:
-    """Asynchronously execute move operations off the main event loop thread."""
+    """Asynchronously execute move operations off the main event loop thread.
+
+    Args:
+        base_dir: Target base directory path.
+        plan: Move operations plan dictionary.
+        db: Database connection instance.
+        history_manager: History tracking manager.
+        runtime_settings: Optional application runtime configuration.
+        resume: Flag indicating whether to resume an existing session.
+        batch_size: Database transaction batch size.
+        chunk_size: Number of files per worker execution chunk.
+        max_workers: Maximum concurrency level for worker tasks.
+        cancel_check: Optional function returning True if cancellation requested.
+        cancel_event: Optional thread event indicating cancellation.
+        cancellation_token: Optional cancellation token object.
+        priority: Priority level identifier.
+        progress_callback: Optional progress emission callback function.
+
+    Returns
+    -------
+        dict: Execution summary and status details.
+    """
     return await asyncio.to_thread(
         execute_moves,
         base_dir,

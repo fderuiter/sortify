@@ -302,7 +302,20 @@ class AppSession:
     def execute_moves(
         self, plan, resume=False, cancel_check=None, chunk_size=None, progress_callback=None, **kwargs
     ):
-        """Execute move operations using asynchronous chunked worker pipeline."""
+        """Execute move operations using asynchronous chunked worker pipeline.
+
+        Args:
+            plan: The file movement plan dict.
+            resume: Whether to resume a previously halted move session.
+            cancel_check: Optional callable that checks if cancellation was requested.
+            chunk_size: Optional chunk size for worker execution.
+            progress_callback: Optional progress callback for emitting status updates.
+            **kwargs: Additional arguments passed to execute_moves.
+
+        Returns
+        -------
+            dict: Summary dictionary containing move execution results and statistics.
+        """
         if not self.base_dir:
             return {}
 
