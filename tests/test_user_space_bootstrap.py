@@ -488,3 +488,49 @@ def test_bootstrap_binaries_windows_direct_import_fallback():
         ]
         assert "c:/site-packages/sqlcipher3" in calls_lower
         assert os.path.abspath("C:\\venv").lower().replace("\\", "/") in calls_lower
+
+
+def test_bootstrap_binaries_pyinstaller_alternate_candidate_locations(tmp_path):
+    """Verify PyInstaller frozen execution finds binaries in alternate locations inside sys._MEIPASS."""
+    import hashlib
+    import json
+
+    mock_meipass = tmp_path / "meipass"
+    mock_meipass.mkdir()
+
+    mock_binaries_root = mock_meipass / "_internal" / "app" / "binaries"
+    mock_binaries_root.mkdir(parents=True)
+
+    content = b"alternate pyd content"
+    expected_hash = hashlib.sha256(content).hexdigest()
+
+    manifest = {"windows": {"sqlcipher3/sqlite3.dll": expected_hash}}
+    with open(mock_binaries_root / "manifest.json", "w") as f:
+        json.dump(manifest, f)
+
+    # Place sqlite3.dll at alternate location: _internal/sqlite3.dll instead of _internal/app/binaries/windows/sqlcipher3/sqlite3.dll
+    alt_dll_dir = mock_meipass / "_internal"
+    with open(alt_dll_dir / "sqlite3.dll", "wb") as f:
+        f.write(content)
+
+    win_dir = mock_binaries_root / "windows"
+    win_dir.mkdir(parents=True)
+
+    with (
+        patch("sys.platform", "win32"),
+        patch("sys.frozen", True, create=True),
+        patch("sys._MEIPASS", str(mock_meipass), create=True),
+        patch(
+            "app.core.user_space_bootstrap.__file__",
+            str(tmp_path / "core" / "user_space_bootstrap.py"),
+        ),
+        patch(
+            "app.core.user_space_bootstrap.verify_sqlcipher_encryption",
+            return_value=True,
+        ),
+        patch("app.core.user_space_bootstrap.inject_bootstrap_paths") as mock_inject,
+    ):
+        res = bootstrap_binaries(force_download=True)
+        assert res is True
+        mock_inject.assert_called_once()
+
