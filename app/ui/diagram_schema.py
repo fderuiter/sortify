@@ -571,6 +571,7 @@ CORE_ARCHITECTURE_SPEC = ComponentDiagramSpec(
         DiagramNode(id="core_crypto", label="app.core.crypto"),
         DiagramNode(id="core_domain_contracts", label="app.core.domain_contracts"),
         DiagramNode(id="core_exceptions", label="app.core.exceptions"),
+        DiagramNode(id="core_domain_contracts", label="app.core.domain_contracts"),
     ],
     edges=[
         DiagramEdge(source="app_main", target="ui_app"),
