@@ -1,14 +1,30 @@
+import builtins
+import json
 import os
 import shutil
 import sqlite3
 from contextlib import closing
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import keyring
+import numpy as np
 import pytest
 from cryptography.fernet import Fernet
 
-from app.core.crypto import SessionCrypto
+from app.core.crypto import (
+    EphemeralSessionCrypto,
+    SessionCrypto,
+    VectorBuffer,
+    _json_default,
+    decrypt_ipc_payload,
+    encrypt_ipc_payload,
+    get_fallback_keys_dir,
+    secure_delete_dir,
+    secure_delete_file,
+    zero_vector_buffer,
+)
+from app.core.exceptions import CryptoError
 
 
 def test_key_generation_keyring(tmp_path):
@@ -591,4 +607,634 @@ def test_session_crypto_legacy_md5_key_resolution_and_migration(tmp_path):
     migrated_key = keyring.get_password("AutoSorter", primary_account)
     assert migrated_key == legacy_key.decode("utf-8")
     assert session.get_raw_key() == legacy_key.decode("utf-8")
+
+
+def test_get_fallback_keys_dir_windows_and_posix(monkeypatch):
+    """Verify fallback key store directory resolution for Windows and POSIX environments."""
+    import pathlib
+
+    # 1. Windows with APPDATA set
+    monkeypatch.setattr(os, "name", "nt")
+    monkeypatch.setattr("app.core.crypto.Path", pathlib.PurePath)
+    monkeypatch.setenv("APPDATA", "/fake/appdata")
+    assert (
+        get_fallback_keys_dir()
+        == pathlib.PurePath("/fake/appdata") / "Sortify" / "keys"
+    )
+
+    # 2. Windows without APPDATA or POSIX with HOME set
+    monkeypatch.setattr(os, "name", "posix")
+    monkeypatch.setattr("app.core.crypto.Path", pathlib.Path)
+    monkeypatch.setenv("HOME", "/fake/home")
+    assert get_fallback_keys_dir() == Path("/fake/home") / ".sortify" / "keys"
+
+    # 3. Non-Windows with HOME and USERPROFILE unset, Path.home() throwing error
+    monkeypatch.delenv("HOME", raising=False)
+    monkeypatch.delenv("USERPROFILE", raising=False)
+    monkeypatch.setattr(
+        Path, "home", MagicMock(side_effect=Exception("Path.home failed"))
+    )
+    monkeypatch.setattr(os.path, "expanduser", lambda p: "/fake/expanduser")
+    assert get_fallback_keys_dir() == Path("/fake/expanduser") / ".sortify" / "keys"
+
+
+def test_secure_delete_file_edge_cases(tmp_path, monkeypatch, caplog):
+    """Verify file shredding for non-existent, zero-byte, fsync errors, and overwrite failures."""
+    # 1. Non-existent file (early return)
+    non_existent = tmp_path / "absent.txt"
+    secure_delete_file(non_existent)
+
+    # 2. Zero-byte file
+    zero_file = tmp_path / "zero.txt"
+    zero_file.touch()
+    assert zero_file.exists()
+    secure_delete_file(zero_file)
+    assert not zero_file.exists()
+
+    # 3. Normal file with data
+    data_file = tmp_path / "data.txt"
+    data_file.write_bytes(b"sensitive content 123456")
+    secure_delete_file(data_file)
+    assert not data_file.exists()
+
+    # 4. fsync failure handling
+    fsync_file = tmp_path / "fsync.txt"
+    fsync_file.write_bytes(b"some data")
+
+    def mock_fsync(fd):
+        raise OSError("Disk fsync error")
+
+    monkeypatch.setattr(os, "fsync", mock_fsync)
+    secure_delete_file(fsync_file)
+    assert not fsync_file.exists()
+
+    # 5. Overwrite failure handling (open throws exception) -> falls back to unlink
+    fail_file = tmp_path / "fail.txt"
+    fail_file.write_bytes(b"content")
+
+    def mock_open_fail(*args, **kwargs):
+        raise PermissionError("Access denied during overwrite")
+
+    monkeypatch.setattr("builtins.open", mock_open_fail)
+    secure_delete_file(fail_file)
+    assert not fail_file.exists()
+
+    # 6. Unlink failure in fallback block
+    fail_file2 = tmp_path / "fail2.txt"
+    fail_file2.write_bytes(b"content")
+
+    monkeypatch.setattr(
+        Path, "unlink", MagicMock(side_effect=OSError("Unlink error"))
+    )
+    secure_delete_file(fail_file2)
+
+
+def test_secure_delete_dir_edge_cases(tmp_path, monkeypatch):
+    """Verify recursive directory deletion and resilient_rmtree fallback."""
+    # 1. Non-existent directory
+    secure_delete_dir(tmp_path / "missing_dir")
+
+    # 2. Recursive directory tree deletion
+    dir_path = tmp_path / "tree_dir"
+    dir_path.mkdir()
+    sub_dir = dir_path / "subdir"
+    sub_dir.mkdir()
+    (dir_path / "f1.txt").write_bytes(b"data1")
+    (sub_dir / "f2.txt").write_bytes(b"data2")
+
+    secure_delete_dir(dir_path)
+    assert not dir_path.exists()
+
+    # 3. Deletion failure fallback to resilient_rmtree
+    fail_dir = tmp_path / "fail_dir"
+    fail_dir.mkdir()
+
+    mock_rmtree = MagicMock()
+    monkeypatch.setattr("app.core.resilient_file_ops.resilient_rmtree", mock_rmtree)
+    monkeypatch.setattr(
+        Path, "rmdir", MagicMock(side_effect=PermissionError("Permission denied"))
+    )
+
+    secure_delete_dir(fail_dir)
+    mock_rmtree.assert_called_once_with(fail_dir, ignore_errors=True)
+
+
+def test_session_crypto_get_raw_key_resolution(tmp_path, monkeypatch):
+    """Verify SessionCrypto.get_raw_key fallbacks and key resolution behavior."""
+    key_path = tmp_path / "secret.key"
+    db_path = tmp_path / "autosorter.db"
+    crypto = SessionCrypto(key_path, db_path)
+
+    # 1. When self._cipher and self._key are set
+    raw_key = Fernet.generate_key()
+    crypto._cipher = Fernet(raw_key)
+    crypto._key = raw_key
+    assert crypto.get_raw_key() == raw_key.decode("utf-8")
+
+    # 2. Test fallbacks in lines 359-378 by setting _cipher truthy but _key = None
+    crypto._cipher = MagicMock()
+    crypto._key = None
+
+    # Keyring lookup fallback
+    monkeypatch.setattr(keyring, "get_password", lambda svc, acc: "keyring_key_123")
+    assert crypto.get_raw_key() == "keyring_key_123"
+
+    # Keyring error handling
+    def mock_keyring_error(*args, **kwargs):
+        raise Exception("Keyring failure")
+
+    monkeypatch.setattr(keyring, "get_password", mock_keyring_error)
+
+    # Isolated key file fallback
+    crypto.isolated_dir.mkdir(parents=True, exist_ok=True)
+    crypto.isolated_key_path.write_bytes(b"isolated_key_456")
+    assert crypto.get_raw_key() == "isolated_key_456"
+
+    # Isolated key file read error
+    original_open = builtins.open
+
+    def mock_open_isolated_err(file, *args, **kwargs):
+        if str(file) == str(crypto.isolated_key_path):
+            raise OSError("Isolated key read error")
+        return original_open(file, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.open", mock_open_isolated_err)
+
+    # Key path fallback
+    key_path.write_bytes(b"key_path_789")
+    assert crypto.get_raw_key() == "key_path_789"
+
+    # Key path read error and no keys found
+    def mock_open_all_err(file, *args, **kwargs):
+        raise OSError("Key path read error")
+
+    monkeypatch.setattr("builtins.open", mock_open_all_err)
+    assert crypto.get_raw_key() is None
+
+
+def test_session_crypto_get_cipher_os_error_branches(tmp_path, monkeypatch):
+    """Verify error and permission handling across get_cipher execution paths."""
+    key_path = tmp_path / "secret.key"
+    db_path = tmp_path / "autosorter.db"
+    crypto = SessionCrypto(key_path, db_path)
+
+    # Keyring exception
+    monkeypatch.setattr(
+        keyring, "get_password", MagicMock(side_effect=Exception("Keyring err"))
+    )
+
+    # 1. Setup files for isolated_key_path, legacy_isolated_key_path, legacy_isolated_dir, key_path
+    crypto.isolated_key_path.parent.mkdir(parents=True, exist_ok=True)
+    crypto.isolated_key_path.touch()
+
+    crypto.legacy_isolated_key_path.parent.mkdir(parents=True, exist_ok=True)
+    crypto.legacy_isolated_key_path.touch()
+
+    candidate = crypto.legacy_isolated_dir / "candidate.key"
+    candidate.touch()
+
+    key_path.touch()
+
+    original_open = builtins.open
+
+    # Fail reading on all key files to test OSError handlers on reading
+    class MockFailFile:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def read(self):
+            raise OSError("Read error inside read()")
+
+        def strip(self):
+            raise OSError("Strip error inside strip()")
+
+    def mock_open_read_fail(file, mode="r", *args, **kwargs):
+        if ("r" in mode) and ("w" not in mode) and any(
+            str(file) == str(p)
+            for p in (
+                crypto.isolated_key_path,
+                crypto.legacy_isolated_key_path,
+                candidate,
+                key_path,
+            )
+        ):
+            return MockFailFile()
+        return original_open(file, mode, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.open", mock_open_read_fail)
+
+    # Will proceed to generate a key since reading failed on all files
+    cipher = crypto.get_cipher()
+    assert cipher is not None
+
+    # Test legacy migration with read key and cleanup exception
+    crypto2 = SessionCrypto(tmp_path / "k2.key", tmp_path / "db2.db")
+    legacy_key = Fernet.generate_key()
+    crypto2.legacy_isolated_dir.mkdir(parents=True, exist_ok=True)
+    (crypto2.legacy_isolated_dir / "mig.key").write_bytes(legacy_key)
+
+    monkeypatch.setattr(
+        keyring, "get_password", MagicMock(side_effect=Exception("Keyring err"))
+    )
+    monkeypatch.setattr(os, "chmod", MagicMock(side_effect=OSError("chmod error")))
+    monkeypatch.setattr(os, "open", MagicMock(side_effect=OSError("os.open error")))
+    monkeypatch.setattr(
+        keyring,
+        "set_password",
+        MagicMock(side_effect=Exception("set_password error")),
+    )
+    monkeypatch.setattr(
+        "app.core.crypto.secure_delete_dir",
+        MagicMock(side_effect=Exception("delete error")),
+    )
+
+    cipher2 = crypto2.get_cipher()
+    assert cipher2 is not None
+
+    # 3. Test iterdir OSError on legacy_isolated_dir
+    crypto3 = SessionCrypto(tmp_path / "k3.key", tmp_path / "db3.db")
+    crypto3.legacy_isolated_dir.mkdir(parents=True, exist_ok=True)
+
+    orig_iterdir = Path.iterdir
+
+    def mock_iterdir(self_path):
+        if str(self_path) == str(crypto3.legacy_isolated_dir):
+            raise OSError("iterdir error")
+        return orig_iterdir(self_path)
+
+    monkeypatch.setattr(Path, "iterdir", mock_iterdir)
+    cipher3 = crypto3.get_cipher()
+    assert cipher3 is not None
+
+
+def test_session_crypto_database_guard_checks(tmp_path, monkeypatch):
+    """Verify database guard exception handling for encrypted or invalid databases."""
+    key_path = tmp_path / "secret.key"
+    db_path = tmp_path / "autosorter.db"
+
+    # Create DB file
+    db_path.write_bytes(b"fake sqlite db header content")
+
+    crypto = SessionCrypto(key_path, db_path)
+
+    monkeypatch.setattr(keyring, "get_password", lambda *args: None)
+
+    # 1. sqlite3.DatabaseError in guard check
+    import sqlite3 as real_sqlite3
+
+    def mock_connect_db_err(*args, **kwargs):
+        raise real_sqlite3.DatabaseError("file is not a database")
+
+    monkeypatch.setattr("sqlite3.connect", mock_connect_db_err)
+
+    with pytest.raises(
+        CryptoError, match="Database accessed but key file is missing."
+    ):
+        crypto.get_cipher()
+
+    # 2. sqlite3.Error in guard check (general error)
+    def mock_connect_err(*args, **kwargs):
+        raise real_sqlite3.Error("Operational SQLite error")
+
+    monkeypatch.setattr("sqlite3.connect", mock_connect_err)
+
+    # Should proceed to generate key
+    cipher = crypto.get_cipher()
+    assert cipher is not None
+
+
+def test_session_crypto_generated_key_os_errors_and_invalid_key(
+    tmp_path, monkeypatch
+):
+    """Verify chmod and fdopen error handling during generated key persistence, and invalid key handling."""
+    key_path = tmp_path / "secret.key"
+    db_path = tmp_path / "autosorter.db"
+    crypto = SessionCrypto(key_path, db_path)
+
+    # Disable keyring
+    monkeypatch.setattr(keyring, "get_password", lambda *args: None)
+    monkeypatch.setattr(
+        keyring,
+        "set_password",
+        MagicMock(side_effect=Exception("Keyring write error")),
+    )
+
+    monkeypatch.setattr(os, "chmod", MagicMock(side_effect=OSError("chmod error")))
+    monkeypatch.setattr(os, "open", MagicMock(side_effect=OSError("os.open error")))
+
+    cipher = crypto.get_cipher()
+    assert cipher is not None
+
+    # Test invalid Fernet key
+    crypto2 = SessionCrypto(key_path, tmp_path / "db2.db")
+    monkeypatch.setattr(keyring, "get_password", lambda *args: "invalid_key_string")
+
+    with pytest.raises(
+        CryptoError, match="Database accessed but key file is missing or invalid."
+    ):
+        crypto2.get_cipher()
+
+
+def test_encrypt_decrypt_text_and_vector_methods():
+    """Verify text and vector encryption/decryption helpers with None, string, and invalid inputs."""
+    crypto = SessionCrypto(Path("/tmp/k.key"), Path("/tmp/d.db"))
+    crypto._key = Fernet.generate_key()
+    crypto._cipher = Fernet(crypto._key)
+
+    # Text methods
+    assert crypto.encrypt_text(None) is None
+    assert crypto.decrypt_text(None) is None
+
+    enc = crypto.encrypt_text("hello world")
+    assert crypto.decrypt_text(enc) == "hello world"
+    assert crypto.decrypt_text(enc.decode("utf-8")) == "hello world"
+
+    with pytest.raises(CryptoError, match="Failed to decrypt text"):
+        crypto.decrypt_text(b"invalid_ciphertext")
+
+    # Vector methods
+    assert crypto.encrypt_vector(None) is None
+    assert crypto.decrypt_vector(None) is None
+
+    vec_enc = crypto.encrypt_vector("[0.1, 0.2]")
+    assert crypto.decrypt_vector(vec_enc) == "[0.1, 0.2]"
+    assert crypto.decrypt_vector(vec_enc.decode("utf-8")) == "[0.1, 0.2]"
+
+    with pytest.raises(CryptoError, match="Failed to decrypt vector"):
+        crypto.decrypt_vector(b"invalid_vector")
+
+
+def test_decrypt_and_parse_vector_cache_and_eviction(caplog):
+    """Verify decrypt_and_parse_vector caching, LRU eviction, string inputs, and decryption failures."""
+    crypto = SessionCrypto(Path("/tmp/k.key"), Path("/tmp/d.db"))
+    crypto._key = Fernet.generate_key()
+    crypto._cipher = Fernet(crypto._key)
+
+    # 1. None check
+    assert crypto.decrypt_and_parse_vector(None) is None
+
+    # 2. Encryption and parsing
+    vec_data = [0.1, 0.2, 0.3]
+    enc_bytes = crypto.encrypt_vector(json.dumps(vec_data))
+
+    # Cache miss
+    res1 = crypto.decrypt_and_parse_vector(enc_bytes)
+    assert res1 == vec_data
+
+    # String input & cache hit
+    enc_str = enc_bytes.decode("utf-8")
+    res2 = crypto.decrypt_and_parse_vector(enc_str)
+    assert res2 == vec_data
+
+    # 3. LRU Cache Eviction
+    crypto._vector_cache_max_entries = 2
+    crypto._vector_parsed_cache.clear()
+
+    enc1 = crypto.encrypt_vector(json.dumps([1.0]))
+    enc2 = crypto.encrypt_vector(json.dumps([2.0]))
+    enc3 = crypto.encrypt_vector(json.dumps([3.0]))
+
+    crypto.decrypt_and_parse_vector(enc1)
+    crypto.decrypt_and_parse_vector(enc2)
+    assert len(crypto._vector_parsed_cache) == 2
+
+    crypto.decrypt_and_parse_vector(enc3)
+    assert len(crypto._vector_parsed_cache) == 2
+    assert enc1 not in crypto._vector_parsed_cache
+
+    # 4. Decryption/JSON parsing failure
+    bad_res = crypto.decrypt_and_parse_vector(b"invalid_cipher_bytes")
+    assert bad_res is None
+    assert "Failed to decrypt or parse vector" in caplog.text
+
+
+def test_vector_buffer_comprehensive_operations(monkeypatch):
+    """Verify VectorBuffer initialization variants, indexing, slice, numpy conversions, and zero-filling."""
+    # 1. Constructor variants
+    vb_list = VectorBuffer([1.0, 2.0, 3.0])
+    assert len(vb_list) == 3
+
+    vb_tuple = VectorBuffer((4.0, 5.0))
+    assert len(vb_tuple) == 2
+
+    vb_empty = VectorBuffer([])
+    assert len(vb_empty) == 0
+
+    vb_from_vb = VectorBuffer(vb_list)
+    assert len(vb_from_vb) == 3
+
+    arr = np.array([0.5, 1.5], dtype=np.float32)
+    vb_np = VectorBuffer(arr)
+    assert len(vb_np) == 2
+
+    ba = bytearray(b"\x00\x00\x00\x00\x00\x00\x80\x3f")
+    vb_ba = VectorBuffer(ba)
+    assert len(vb_ba) == 2
+
+    b_bytes = bytes(ba)
+    vb_bytes = VectorBuffer(b_bytes)
+    assert len(vb_bytes) == 2
+
+    vb_none = VectorBuffer(None)
+    assert len(vb_none) == 0
+
+    # 2. Indexing and Slicing
+    assert vb_list[0] == pytest.approx(1.0)
+    assert vb_list[-1] == pytest.approx(3.0)
+    assert vb_list[0:2] == pytest.approx([1.0, 2.0])
+
+    with pytest.raises(IndexError, match="Vector index out of range"):
+        _ = vb_list[10]
+
+    with pytest.raises(IndexError, match="Vector index out of range"):
+        _ = vb_list[-10]
+
+    # 3. NumPy conversion
+    np_res = vb_list.to_numpy()
+    assert np.allclose(np_res, np.array([1.0, 2.0, 3.0], dtype=np.float32))
+
+    empty_np = vb_empty.to_numpy()
+    assert len(empty_np) == 0
+
+    # NumPy missing exception
+    monkeypatch.setattr("app.core.crypto.np", None)
+    with pytest.raises(RuntimeError, match="NumPy is not installed"):
+        vb_list.to_numpy()
+
+    # Restore np
+    monkeypatch.setattr("app.core.crypto.np", np)
+
+    # 4. Zero fill & cleared indexing error
+    vb_list.zero_fill()
+    assert vb_list.is_zeroed()
+    with pytest.raises(IndexError, match="Vector buffer has been zeroed/cleared"):
+        _ = vb_list[0]
+
+    # 5. zero_vector_buffer helper
+    zero_vector_buffer(None)
+
+
+def test_json_default_helper_types():
+    """Verify _json_default custom JSON serializer for sets, tuples, models, custom list converters, and invalid types."""
+    # set and tuple
+    assert _json_default({1, 2}) in ([1, 2], [2, 1])
+    assert _json_default((3, 4)) == [3, 4]
+
+    # model_dump
+    class ModelDumpObj:
+        def model_dump(self):
+            return {"a": 1}
+
+    assert _json_default(ModelDumpObj()) == {"a": 1}
+
+    # dict
+    class DictObj:
+        def dict(self):
+            return {"b": 2}
+
+    assert _json_default(DictObj()) == {"b": 2}
+
+    # to_list
+    class ToListObj:
+        def to_list(self):
+            return [5, 6]
+
+    assert _json_default(ToListObj()) == [5, 6]
+
+    # tolist
+    class ToListNumpyObj:
+        def tolist(self):
+            return [7, 8]
+
+    assert _json_default(ToListNumpyObj()) == [7, 8]
+
+    # Unsupported type
+    with pytest.raises(
+        TypeError, match="Object of type object is not JSON serializable"
+    ):
+        _json_default(object())
+
+
+def test_ephemeral_session_crypto_and_ipc_payloads():
+    """Verify EphemeralSessionCrypto and standalone IPC encryption functions."""
+    # Key input types
+    key_str = Fernet.generate_key().decode("utf-8")
+    crypto_str = EphemeralSessionCrypto(key_str)
+    assert crypto_str.session_key == key_str.encode("utf-8")
+
+    key_bytes = Fernet.generate_key()
+    crypto_bytes = EphemeralSessionCrypto(key_bytes)
+    assert crypto_bytes.session_key == key_bytes
+
+    # Payload encryption/decryption
+    payload = {"data": [1, 2, 3]}
+    enc = crypto_bytes.encrypt_payload(payload)
+    dec = crypto_bytes.decrypt_payload(enc)
+    assert dec == payload
+
+    # Post-purge rejections
+    crypto_bytes.purge()
+    with pytest.raises(ValueError, match="Ephemeral session key has been purged"):
+        crypto_bytes.encrypt_payload(payload)
+
+    with pytest.raises(ValueError, match="Ephemeral session key has been purged"):
+        crypto_bytes.decrypt_payload(enc)
+
+    # Standalone functions
+    # Missing session key
+    with pytest.raises(ValueError, match="Session key cannot be None"):
+        encrypt_ipc_payload(payload, None)
+
+    with pytest.raises(ValueError, match="Session key cannot be None"):
+        decrypt_ipc_payload(enc, None)
+
+    # String vs bytes key in IPC payload functions
+    enc_ipc = encrypt_ipc_payload(payload, key_str)
+    assert decrypt_ipc_payload(enc_ipc, key_str) == payload
+    assert decrypt_ipc_payload(enc_ipc, key_str.encode("utf-8")) == payload
+
+    # UnicodeDecodeError handling -> JSONDecodeError
+    cipher = Fernet(key_bytes)
+    bad_utf8_encrypted = cipher.encrypt(b"\x80\x81\x82\x83")
+
+    crypto_active = EphemeralSessionCrypto(key_bytes)
+    with pytest.raises(json.JSONDecodeError):
+        crypto_active.decrypt_payload(bad_utf8_encrypted)
+
+    with pytest.raises(json.JSONDecodeError):
+        decrypt_ipc_payload(bad_utf8_encrypted, key_bytes)
+
+
+def test_top_level_import_fallbacks_and_missing_key_branch(tmp_path, monkeypatch):
+    """Verify top-level module import error fallbacks and get_cipher missing key branch."""
+    # 1. Test key is None in get_cipher (line 341)
+    crypto = SessionCrypto(tmp_path / "k.key", tmp_path / "d.db")
+    monkeypatch.setattr(keyring, "get_password", lambda *args: None)
+    monkeypatch.setattr("cryptography.fernet.Fernet.generate_key", lambda: None)
+
+    mock_file = MagicMock()
+    monkeypatch.setattr("builtins.open", lambda *args, **kwargs: mock_file)
+    monkeypatch.setattr(os, "open", lambda *args, **kwargs: 123)
+    monkeypatch.setattr(os, "fdopen", lambda *args, **kwargs: mock_file)
+
+    with pytest.raises(
+        CryptoError, match="Database accessed but key file is missing."
+    ):
+        crypto.get_cipher()
+
+
+def test_import_fallbacks():
+    """Verify import fallbacks when numpy or sqlite3 / sqlcipher3 are unavailable."""
+    import importlib
+    import sys
+
+    import app.core.crypto
+
+    # Backup original modules
+    orig_np = sys.modules.get("numpy")
+    orig_sqlite3 = sys.modules.get("sqlite3")
+    orig_sqlcipher3 = sys.modules.get("sqlcipher3")
+
+    # Save original class references to preserve isinstance identity across reloads
+    orig_vector_buffer = getattr(app.core.crypto, "VectorBuffer", None)
+    orig_session_crypto = getattr(app.core.crypto, "SessionCrypto", None)
+
+    try:
+        # 1. Simulate numpy import error
+        sys.modules["numpy"] = None
+        import app.core.crypto
+
+        importlib.reload(app.core.crypto)
+        assert app.core.crypto.np is None
+
+        # 2. Simulate sqlite3 and sqlcipher3 import error
+        sys.modules["sqlite3"] = None
+        sys.modules["sqlcipher3"] = None
+        importlib.reload(app.core.crypto)
+        assert app.core.crypto.sqlite3 is None
+    finally:
+        # Restore original modules
+        if orig_np is not None:
+            sys.modules["numpy"] = orig_np
+        else:
+            sys.modules.pop("numpy", None)
+        if orig_sqlite3 is not None:
+            sys.modules["sqlite3"] = orig_sqlite3
+        else:
+            sys.modules.pop("sqlite3", None)
+        if orig_sqlcipher3 is not None:
+            sys.modules["sqlcipher3"] = orig_sqlcipher3
+        else:
+            sys.modules.pop("sqlcipher3", None)
+
+        import app.core.crypto
+
+        importlib.reload(app.core.crypto)
+        if orig_vector_buffer:
+            app.core.crypto.VectorBuffer = orig_vector_buffer
+        if orig_session_crypto:
+            app.core.crypto.SessionCrypto = orig_session_crypto
 
