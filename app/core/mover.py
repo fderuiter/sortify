@@ -11,6 +11,7 @@ import shutil  # noqa: F401
 import threading
 import unicodedata
 import uuid
+from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel
@@ -37,8 +38,16 @@ def is_subpath_or_equal(child: str, parent: str) -> bool:
     """Check if child path is equal to or nested within parent path (case-insensitive)."""
     if child is None or parent is None:
         return False
-    abs_child = os.path.normcase(os.path.abspath(child))
-    abs_parent = os.path.normcase(os.path.abspath(parent))
+    try:
+        p_child = Path(child).resolve()
+        p_parent = Path(parent).resolve()
+        if p_child == p_parent or p_child.is_relative_to(p_parent):
+            return True
+    except Exception:
+        pass
+
+    abs_child = os.path.normcase(os.path.abspath(child)).replace("/", os.sep).replace("\\", os.sep)
+    abs_parent = os.path.normcase(os.path.abspath(parent)).replace("/", os.sep).replace("\\", os.sep)
     if abs_child == abs_parent:
         return True
     if not abs_parent.endswith(os.sep):
