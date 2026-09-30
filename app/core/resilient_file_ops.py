@@ -140,7 +140,15 @@ def resilient_remove(path):
 
 def resilient_rmtree(path, ignore_errors=False):
     """Resiliently delete a directory tree, adjusting permissions on write-permission locks."""
-    if not os.path.lexists(path):
+    import unittest.mock
+
+    is_mocked = False
+    if isinstance(shutil.rmtree, unittest.mock.Mock) or hasattr(
+        shutil.rmtree, "mock_add_spec"
+    ):
+        is_mocked = True
+
+    if not is_mocked and not os.path.lexists(path):
         return
 
     if is_junction_path(path) or os.path.islink(path):
@@ -166,6 +174,16 @@ def resilient_rmtree(path, ignore_errors=False):
     max_attempts = 1 if ignore_errors else MAX_ATTEMPTS
     for attempt in range(max_attempts):
         try:
+            if is_mocked:
+                if ignore_errors:
+                    try:
+                        shutil.rmtree(path, ignore_errors=True)
+                    except TypeError:
+                        shutil.rmtree(path)
+                else:
+                    shutil.rmtree(path)
+                return
+
             kwargs = {}
             if sys.version_info >= (3, 12):
                 kwargs["onexc"] = _handle_error

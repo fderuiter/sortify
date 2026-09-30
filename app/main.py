@@ -423,9 +423,9 @@ def run_smoke_test():
         except Exception:
             pass
         try:
-            import shutil
+            from app.core.resilient_file_ops import resilient_rmtree
 
-            shutil.rmtree(temp_dir)
+            resilient_rmtree(temp_dir, ignore_errors=True)
         except Exception:
             pass
 

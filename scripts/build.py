@@ -91,8 +91,12 @@ def update_binaries_and_manifest(system_platform=None, bypass_pytest_check=False
                     for sub in [
                         Path("."),
                         Path("Library") / "bin",
+                        Path("DLLs"),
                         Path("Scripts"),
                         Path("Lib") / "site-packages" / "sqlcipher3",
+                        Path("Lib") / "site-packages" / "sqlcipher3" / ".libs",
+                        Path("Lib") / "site-packages" / "sqlcipher3.libs",
+                        Path("Lib") / "site-packages" / "pysqlcipher3",
                     ]:
                         candidate_dir = vd / sub
                         if candidate_dir.exists():
