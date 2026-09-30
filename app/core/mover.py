@@ -77,45 +77,50 @@ def is_subpath_or_equal(child: str, parent: str) -> bool:
     if child is None or parent is None:
         return False
 
-    try:
-        norm_child = os.path.normpath(child)
-        norm_parent = os.path.normpath(parent)
+    clean_child = str(child).replace("\\", "/")
+    clean_parent = str(parent).replace("\\", "/")
 
-        p_child = _resolve_path(Path(norm_child))
-        p_parent = _resolve_path(Path(norm_parent))
+    try:
+        norm_c = os.path.normpath(clean_child)
+        norm_p = os.path.normpath(clean_parent)
+
+        p_child = _resolve_path(Path(norm_c))
+        p_parent = _resolve_path(Path(norm_p))
 
         if p_child == p_parent:
             return True
         try:
             if p_child.is_relative_to(p_parent):
                 return True
-        except AttributeError:
+        except (AttributeError, ValueError):
             pass
     except Exception:
         pass
 
     try:
-        p_child = _resolve_path(Path(os.path.normpath(child)))
-        p_parent = _resolve_path(Path(os.path.normpath(parent)))
-        abs_child = os.path.normcase(str(p_child)).replace("/", os.sep).replace("\\", os.sep)
-        abs_parent = os.path.normcase(str(p_parent)).replace("/", os.sep).replace("\\", os.sep)
-        if abs_child == abs_parent:
+        norm_c = os.path.normpath(clean_child)
+        norm_p = os.path.normpath(clean_parent)
+
+        p_child_res = _resolve_path(Path(norm_c))
+        p_parent_res = _resolve_path(Path(norm_p))
+
+        s_child = str(p_child_res).replace("\\", "/").rstrip("/").lower()
+        s_parent = str(p_parent_res).replace("\\", "/").rstrip("/").lower()
+
+        if s_child == s_parent:
             return True
-        if not abs_parent.endswith(os.sep):
-            abs_parent += os.sep
-        if abs_child.startswith(abs_parent):
+        if s_child.startswith(s_parent + "/"):
             return True
     except Exception:
         pass
 
     try:
-        abs_child = os.path.normcase(os.path.abspath(child)).replace("/", os.sep).replace("\\", os.sep)
-        abs_parent = os.path.normcase(os.path.abspath(parent)).replace("/", os.sep).replace("\\", os.sep)
-        if abs_child == abs_parent:
+        abs_c = os.path.abspath(clean_child).replace("\\", "/").rstrip("/").lower()
+        abs_p = os.path.abspath(clean_parent).replace("\\", "/").rstrip("/").lower()
+
+        if abs_c == abs_p:
             return True
-        if not abs_parent.endswith(os.sep):
-            abs_parent += os.sep
-        if abs_child.startswith(abs_parent):
+        if abs_c.startswith(abs_p + "/"):
             return True
     except Exception:
         pass
