@@ -540,3 +540,50 @@ def test_prefetch_corrupt_payload_handling(mocker):
     assert ex_text == ""
     assert ex_vec is None
 
+
+def test_prefetch_semantic_ranking_order(mocker):
+    """Verify pre_fetch_historical_corpus maintains descending cosine similarity score order."""
+    from app.core.analyzer import pre_fetch_historical_corpus
+
+    base_dir = "test_ranking_order_base"
+    db.clear(base_dir)
+
+    # Insert 60 documents with varying directional cosine similarity to centroid [1.0, 0.0, ...]
+    # Document 55 has vector aligned with centroid [1.0, 0.0] -> sim 1.0
+    # Document 10 has vector [0.8, 0.6] -> sim 0.8
+    # Other documents have vector [0.0, 1.0] -> sim 0.0
+    vector_dim = 384
+    for i in range(60):
+        fp = f"file_{i}.txt"
+        h = f"hash_{i}"
+        txt = f"Content {i}"
+        db.upsert_document(base_dir, fp, h, txt)
+        db.set_user_verified_target(base_dir, h, "FolderRank")
+
+        if i == 55:
+            v = [1.0, 0.0] + [0.0] * (vector_dim - 2)
+        elif i == 10:
+            v = [0.8, 0.6] + [0.0] * (vector_dim - 2)
+        else:
+            v = [0.0, 1.0] + [0.0] * (vector_dim - 2)
+        db.upsert_document_vectors(base_dir, [(fp, v)])
+
+    active_centroid = [[1.0] + [0.0] * (vector_dim - 1)]
+    batch = pre_fetch_historical_corpus(
+        db,
+        base_dir=base_dir,
+        filenames=[],
+        documents=[],
+        pre_fetched_vectors=active_centroid,
+        max_examples=50,
+    )
+
+    examples = batch.examples if hasattr(batch, "examples") else batch["examples"]
+    assert len(examples) == 50
+    # First returned candidate must be file_55.txt (highest similarity 1.0), second file_10.txt (similarity 0.8)
+    fp_0 = examples[0].get("filepath") if isinstance(examples[0], dict) else examples[0].filepath
+    fp_1 = examples[1].get("filepath") if isinstance(examples[1], dict) else examples[1].filepath
+    assert fp_0 == "file_55.txt"
+    assert fp_1 == "file_10.txt"
+
+
