@@ -103,7 +103,7 @@ class QuarantineInterceptorService:
             else base_dir
         )
 
-        if not target_subfolder:
+        if not target_subfolder or not target_subfolder.strip():
             return fallback_dir
 
         try:

@@ -46,8 +46,12 @@ def is_subpath_or_equal(child: str, parent: str) -> bool:
     except Exception:
         pass
 
-    abs_child = os.path.normcase(os.path.abspath(child)).replace("/", os.sep).replace("\\", os.sep)
-    abs_parent = os.path.normcase(os.path.abspath(parent)).replace("/", os.sep).replace("\\", os.sep)
+    try:
+        abs_child = os.path.normcase(os.path.realpath(child)).replace("/", os.sep).replace("\\", os.sep)
+        abs_parent = os.path.normcase(os.path.realpath(parent)).replace("/", os.sep).replace("\\", os.sep)
+    except Exception:
+        abs_child = os.path.normcase(os.path.abspath(child)).replace("/", os.sep).replace("\\", os.sep)
+        abs_parent = os.path.normcase(os.path.abspath(parent)).replace("/", os.sep).replace("\\", os.sep)
     if abs_child == abs_parent:
         return True
     if not abs_parent.endswith(os.sep):
