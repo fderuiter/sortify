@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from textual import on, work
+from textual import events, on, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
@@ -281,9 +281,14 @@ class RenameModal(A11yMixin, ModalScreen[Optional[str]]):
         border: thick $primary;
         width: 90%;
         max-width: 80;
+        min-width: 30;
         height: auto;
         max-height: 90%;
         overflow-y: auto;
+    }
+    .narrow .modal-box {
+        padding: 0 1;
+        width: 95%;
     }
     .modal-title {
         text-style: bold;
@@ -334,8 +339,20 @@ class RenameModal(A11yMixin, ModalScreen[Optional[str]]):
                 btn_confirm.tooltip = "Confirm renaming action"
                 yield btn_confirm
 
+    def _update_layout(self, width: int) -> None:
+        """Update modal layout based on viewport width breakpoint."""
+        if width < 80:
+            self.add_class("narrow")
+        else:
+            self.remove_class("narrow")
+
+    def on_resize(self, event: events.Resize) -> None:
+        """Handle modal viewport resize event."""
+        self._update_layout(event.size.width)
+
     def on_mount(self) -> None:
         """Focus input field on mount and emit screen reader announcement."""
+        self._update_layout(self.size.width)
         self.query_one("#input-name", Input).focus()
         self.announce(
             f"Opened rename dialog for '{self.modal_title}'. Enter new name and press Enter or click Rename."
@@ -381,9 +398,14 @@ class NewFolderModal(A11yMixin, ModalScreen[Optional[str]]):
         border: thick $primary;
         width: 90%;
         max-width: 80;
+        min-width: 30;
         height: auto;
         max-height: 90%;
         overflow-y: auto;
+    }
+    .narrow .modal-box {
+        padding: 0 1;
+        width: 95%;
     }
     .modal-title {
         text-style: bold;
@@ -419,8 +441,20 @@ class NewFolderModal(A11yMixin, ModalScreen[Optional[str]]):
                 btn_confirm.tooltip = "Confirm new folder category creation"
                 yield btn_confirm
 
+    def _update_layout(self, width: int) -> None:
+        """Update modal layout based on viewport width breakpoint."""
+        if width < 80:
+            self.add_class("narrow")
+        else:
+            self.remove_class("narrow")
+
+    def on_resize(self, event: events.Resize) -> None:
+        """Handle modal viewport resize event."""
+        self._update_layout(event.size.width)
+
     def on_mount(self) -> None:
         """Focus input field on mount and emit screen reader announcement."""
+        self._update_layout(self.size.width)
         self.query_one("#input-folder-name", Input).focus()
         self.announce("Opened create new target folder dialog.")
 
@@ -464,9 +498,14 @@ class DirectorySelectModal(A11yMixin, ModalScreen[Optional[str]]):
         border: thick $primary;
         width: 90%;
         max-width: 80;
+        min-width: 30;
         height: auto;
         max-height: 90%;
         overflow-y: auto;
+    }
+    .narrow .modal-box {
+        padding: 0 1;
+        width: 95%;
     }
     .modal-title {
         text-style: bold;
@@ -476,7 +515,8 @@ class DirectorySelectModal(A11yMixin, ModalScreen[Optional[str]]):
     .preset-row {
         margin-top: 1;
         margin-bottom: 1;
-        height: 3;
+        height: auto;
+        min-height: 3;
     }
     .button-row {
         margin-top: 1;
@@ -523,8 +563,20 @@ class DirectorySelectModal(A11yMixin, ModalScreen[Optional[str]]):
                 btn_confirm.tooltip = "Confirm directory selection"
                 yield btn_confirm
 
+    def _update_layout(self, width: int) -> None:
+        """Update modal layout based on viewport width breakpoint."""
+        if width < 80:
+            self.add_class("narrow")
+        else:
+            self.remove_class("narrow")
+
+    def on_resize(self, event: events.Resize) -> None:
+        """Handle modal viewport resize event."""
+        self._update_layout(event.size.width)
+
     def on_mount(self) -> None:
         """Focus input field on mount and emit screen reader announcement."""
+        self._update_layout(self.size.width)
         self.query_one("#input-dir", Input).focus()
         self.announce("Opened target directory selection dialog.")
 
@@ -589,9 +641,14 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         border: thick $primary;
         width: 90%;
         max-width: 80;
+        min-width: 30;
         height: auto;
         max-height: 90%;
         overflow-y: auto;
+    }
+    .narrow .modal-box {
+        padding: 0 1;
+        width: 95%;
     }
     .modal-title {
         text-style: bold;
@@ -722,8 +779,20 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                 btn_save.tooltip = "Save modified application settings"
                 yield btn_save
 
+    def _update_layout(self, width: int) -> None:
+        """Update modal layout based on viewport width breakpoint."""
+        if width < 80:
+            self.add_class("narrow")
+        else:
+            self.remove_class("narrow")
+
+    def on_resize(self, event: events.Resize) -> None:
+        """Handle modal viewport resize event."""
+        self._update_layout(event.size.width)
+
     def on_mount(self) -> None:
         """Focus initial input field on mount and emit announcement."""
+        self._update_layout(self.size.width)
         self.query_one("#input-protected", Input).focus()
         self.announce("Opened application settings dialog.")
 
@@ -794,9 +863,14 @@ class WizardModal(A11yMixin, ModalScreen[None]):
         border: thick $primary;
         width: 90%;
         max-width: 80;
+        min-width: 30;
         height: auto;
         max-height: 90%;
         overflow-y: auto;
+    }
+    .narrow .modal-box {
+        padding: 0 1;
+        width: 95%;
     }
     .modal-title {
         text-style: bold;
@@ -849,8 +923,20 @@ class WizardModal(A11yMixin, ModalScreen[None]):
                 )
                 yield btn_finish
 
+    def _update_layout(self, width: int) -> None:
+        """Update modal layout based on viewport width breakpoint."""
+        if width < 80:
+            self.add_class("narrow")
+        else:
+            self.remove_class("narrow")
+
+    def on_resize(self, event: events.Resize) -> None:
+        """Handle modal viewport resize event."""
+        self._update_layout(event.size.width)
+
     def on_mount(self) -> None:
         """Focus switch on mount and emit screen reader announcement."""
+        self._update_layout(self.size.width)
         self.query_one("#switch-consent", Switch).focus()
         self.announce("Opened model onboarding wizard dialog.")
 
@@ -895,9 +981,14 @@ class CROForensicModal(A11yMixin, ModalScreen[None]):
         border: thick $primary;
         width: 90%;
         max-width: 80;
+        min-width: 30;
         height: auto;
         max-height: 90%;
         overflow-y: auto;
+    }
+    .narrow .modal-box {
+        padding: 0 1;
+        width: 95%;
     }
     .modal-title {
         text-style: bold;
@@ -974,8 +1065,20 @@ class CROForensicModal(A11yMixin, ModalScreen[None]):
                 )
                 yield btn_run
 
+    def _update_layout(self, width: int) -> None:
+        """Update modal layout based on viewport width breakpoint."""
+        if width < 80:
+            self.add_class("narrow")
+        else:
+            self.remove_class("narrow")
+
+    def on_resize(self, event: events.Resize) -> None:
+        """Handle modal viewport resize event."""
+        self._update_layout(event.size.width)
+
     def on_mount(self) -> None:
         """Focus input field on mount and emit announcement."""
+        self._update_layout(self.size.width)
         self.query_one("#input-source", Input).focus()
         self.announce("Opened CRO multi-study forensic ingestion dialog.")
 
@@ -1059,9 +1162,14 @@ class SessionRecoveryModal(A11yMixin, ModalScreen[Optional[str]]):
         border: thick $primary;
         width: 90%;
         max-width: 80;
+        min-width: 30;
         height: auto;
         max-height: 90%;
         overflow-y: auto;
+    }
+    .narrow .modal-box {
+        padding: 0 1;
+        width: 95%;
     }
     .modal-title {
         text-style: bold;
@@ -1109,8 +1217,20 @@ class SessionRecoveryModal(A11yMixin, ModalScreen[Optional[str]]):
                 btn_resume.tooltip = "Resume pending file moves for interrupted run"
                 yield btn_resume
 
+    def _update_layout(self, width: int) -> None:
+        """Update modal layout based on viewport width breakpoint."""
+        if width < 80:
+            self.add_class("narrow")
+        else:
+            self.remove_class("narrow")
+
+    def on_resize(self, event: events.Resize) -> None:
+        """Handle modal viewport resize event."""
+        self._update_layout(event.size.width)
+
     def on_mount(self) -> None:
         """Focus resume button on mount and emit screen reader announcement."""
+        self._update_layout(self.size.width)
         self.query_one("#btn-resume", Button).focus()
         self.announce("Opened interrupted session recovery dialog.")
 
@@ -1171,17 +1291,28 @@ class AutoSorterTUI(A11yMixin, App):
         height: 1fr;
         width: 100%;
     }
-    #left-tree-pane {
+    #main-dual-pane.narrow {
+        layout: vertical;
+    }
+    #left-tree-pane, #plan-tree {
         width: 50%;
         height: 100%;
         border: solid $primary;
         padding: 0;
+    }
+    #main-dual-pane.narrow #left-tree-pane, #main-dual-pane.narrow #plan-tree {
+        width: 100%;
+        height: 1fr;
     }
     #right-meta-pane {
         width: 50%;
         height: 100%;
         border: solid $secondary;
         padding: 1 2;
+    }
+    #main-dual-pane.narrow #right-meta-pane {
+        width: 100%;
+        height: 1fr;
     }
     .tui-log-area {
         height: 1fr;
@@ -1260,8 +1391,24 @@ class AutoSorterTUI(A11yMixin, App):
             pass
         return res
 
+    def _update_layout(self, width: int) -> None:
+        """Update container CSS classes based on viewport width breakpoint."""
+        try:
+            dual_pane = self.query_one("#main-dual-pane")
+            if width < 100:
+                dual_pane.add_class("narrow")
+            else:
+                dual_pane.remove_class("narrow")
+        except Exception:
+            pass
+
+    def on_resize(self, event: events.Resize) -> None:
+        """Handle viewport resize lifecycle event to update dual-pane container layout."""
+        self._update_layout(event.size.width)
+
     def on_mount(self) -> None:
         """Mount event handler."""
+        self._update_layout(self.size.width)
         try:
             from app.ui.notifications import NotificationManager
             NotificationManager.get_instance().register_tui(self)
