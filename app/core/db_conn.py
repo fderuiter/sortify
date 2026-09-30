@@ -281,7 +281,6 @@ def get_db_connection(db_path: str):
             # We copy the database (and WAL/SHM sidecars, if they exist) to a temporary, isolated
             # directory by copying raw bytes directly (avoiding metadata/ACL copy failures on Windows)
             # and trying to connect to the temp copy.
-            import shutil
             import tempfile
             from pathlib import Path
 
@@ -345,7 +344,9 @@ def get_db_connection(db_path: str):
                     is_decryption_err = determined_is_decryption_err
                 finally:
                     try:
-                        shutil.rmtree(temp_dir, ignore_errors=True)
+                        from app.core.resilient_file_ops import resilient_rmtree
+
+                        resilient_rmtree(temp_dir, ignore_errors=True)
                     except Exception:
                         pass
             except Exception:
