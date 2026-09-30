@@ -507,3 +507,88 @@ def test_decryption_failure_safe_error_propagation(tmp_path, monkeypatch, caplog
     # On Windows, clearing the cache and invoking gc.collect() immediately releases
     # active file descriptors on the database file, ensuring no locks persist.
     verify_db_contents(db_path)
+
+
+def test_crypto_manager_hash_and_keyring_derivation(tmp_path):
+    from app.core.crypto import CryptoManager
+
+    db_path = tmp_path / "test_db.sqlite"
+
+    sha256_hash = CryptoManager.derive_db_hash(db_path, algorithm="sha256")
+    md5_hash = CryptoManager.derive_db_hash(db_path, algorithm="md5")
+
+    assert len(sha256_hash) == 64
+    assert len(md5_hash) == 32
+    assert sha256_hash != md5_hash
+
+    account_sha256 = CryptoManager.derive_keyring_account(db_path, legacy_md5=False)
+    account_md5 = CryptoManager.derive_keyring_account(db_path, legacy_md5=True)
+
+    assert account_sha256 == f"DatabaseDecryptionKey_{sha256_hash}"
+    assert account_md5 == f"DatabaseDecryptionKey_{md5_hash}"
+
+    path_sha256 = CryptoManager.derive_isolated_key_path(db_path, legacy_md5=False)
+    path_md5 = CryptoManager.derive_isolated_key_path(db_path, legacy_md5=True)
+
+    assert path_sha256.name == f"test_db.sqlite_{sha256_hash}.key"
+    assert path_md5.name == f"test_db.sqlite_{md5_hash}.key"
+
+
+def test_crypto_manager_bootstrap_key():
+    from app.core.crypto import CryptoManager
+
+    key1 = CryptoManager.generate_bootstrap_key()
+    key2 = CryptoManager.generate_bootstrap_key()
+
+    assert isinstance(key1, str)
+    assert len(key1) > 20
+    assert key1 != key2
+
+
+def test_crypto_manager_proxy_setting_envelope(tmp_path):
+    from app.core.crypto import CryptoManager, SessionCrypto
+
+    db_path = tmp_path / "proxy_test.db"
+    key_path = tmp_path / "secret.key"
+    crypto = SessionCrypto(key_path, db_path)
+
+    raw_proxy = "http://user:secret123@proxy.example.com:8080"
+    assert not CryptoManager.is_encrypted_proxy(raw_proxy)
+
+    enc_proxy = CryptoManager.encrypt_proxy_setting(raw_proxy, crypto=crypto)
+    assert CryptoManager.is_encrypted_proxy(enc_proxy)
+    assert enc_proxy.startswith("enc:")
+    assert "secret123" not in enc_proxy
+
+    # Idempotent encryption check
+    assert CryptoManager.encrypt_proxy_setting(enc_proxy, crypto=crypto) == enc_proxy
+
+    dec_proxy = CryptoManager.decrypt_proxy_setting(enc_proxy, crypto=crypto)
+    assert dec_proxy == raw_proxy
+
+
+def test_session_crypto_legacy_md5_key_resolution_and_migration(tmp_path):
+    from app.core.crypto import CryptoManager, SessionCrypto
+
+    db_path = tmp_path / "legacy_app.db"
+    key_path = tmp_path / "secret.key"
+
+    legacy_key = Fernet.generate_key()
+
+    # Pre-populate legacy MD5 keyring account
+    legacy_account = CryptoManager.derive_keyring_account(db_path, legacy_md5=True)
+    keyring.set_password("AutoSorter", legacy_account, legacy_key.decode("utf-8"))
+
+    # Instantiate SessionCrypto which uses SHA-256 account as primary
+    session = SessionCrypto(key_path, db_path)
+
+    # Resolution should find legacy MD5 key, initialize cipher, and migrate to SHA-256
+    cipher = session.get_cipher()
+    assert cipher is not None
+
+    # Check migrated SHA-256 keyring account
+    primary_account = CryptoManager.derive_keyring_account(db_path, legacy_md5=False)
+    migrated_key = keyring.get_password("AutoSorter", primary_account)
+    assert migrated_key == legacy_key.decode("utf-8")
+    assert session.get_raw_key() == legacy_key.decode("utf-8")
+
