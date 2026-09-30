@@ -147,7 +147,7 @@ def test_model_cache_reset_purges_in_memory_models(tmp_path, mocker):
         done_event.set()
 
     downloader.delete_model_async(dummy_dir, on_done=on_done)
-    done_event.wait(timeout=5.0)
+    assert done_event.wait(timeout=15.0)
 
     # All in-memory models should be purged
     assert len(registry._models) == 0

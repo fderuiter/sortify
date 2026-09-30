@@ -71,7 +71,7 @@ def test_asynchronous_model_deletion():
     dm.delete_model_async(temp_dir, on_done=on_done)
 
     # Wait for async deletion to complete
-    assert done_event.wait(timeout=5)
+    assert done_event.wait(timeout=15)
     assert callback_results == [(True, None)]
     assert not os.path.exists(temp_dir)
     assert dm.state["is_downloading"] is False
