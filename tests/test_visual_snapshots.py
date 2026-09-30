@@ -218,9 +218,11 @@ def test_settings_modal_snapshot():
         async with app.run_test(size=(100, 35)) as pilot:
             modal = SettingsModal(app.settings)
             app.push_screen(modal)
-            await pilot.pause(0.1)
+            for _ in range(5):
+                await pilot.pause()
             modal.scroll_home(animate=False)
-            await pilot.pause(0.1)
+            for _ in range(5):
+                await pilot.pause()
             svg = app.export_screenshot()
             assert_svg_snapshot("settings_modal", svg)
 
