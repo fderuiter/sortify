@@ -7418,6 +7418,21 @@
             },
             {
               "async": false,
+              "decorators": [
+                "@classmethod"
+              ],
+              "name": "get_supported_extensions",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "cls"
+                }
+              ],
+              "returns": "set"
+            },
+            {
+              "async": false,
               "decorators": [],
               "name": "invalidate",
               "parameters": [
