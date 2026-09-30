@@ -34,29 +34,93 @@ def _is_same_path(p1: str, p2: str) -> bool:
     )
 
 
+def _resolve_path(p: Path) -> Path:
+    """Resolve symlinks and Windows 8.3 short paths, even if trailing components do not exist."""
+    try:
+        p = p.expanduser()
+    except Exception:
+        pass
+
+    try:
+        if p.exists():
+            return p.resolve()
+    except Exception:
+        pass
+
+    parts = []
+    curr = p
+    while True:
+        try:
+            if curr.exists():
+                break
+        except Exception:
+            pass
+        parent_curr = curr.parent
+        if parent_curr == curr:
+            break
+        parts.append(curr.name)
+        curr = parent_curr
+
+    try:
+        curr_resolved = curr.resolve()
+    except Exception:
+        curr_resolved = curr
+
+    for part in reversed(parts):
+        curr_resolved = curr_resolved / part
+
+    return curr_resolved
+
+
 def is_subpath_or_equal(child: str, parent: str) -> bool:
     """Check if child path is equal to or nested within parent path (case-insensitive)."""
     if child is None or parent is None:
         return False
+
     try:
-        p_child = Path(child).resolve()
-        p_parent = Path(parent).resolve()
-        if p_child == p_parent or p_child.is_relative_to(p_parent):
+        norm_child = os.path.normpath(child)
+        norm_parent = os.path.normpath(parent)
+
+        p_child = _resolve_path(Path(norm_child))
+        p_parent = _resolve_path(Path(norm_parent))
+
+        if p_child == p_parent:
+            return True
+        try:
+            if p_child.is_relative_to(p_parent):
+                return True
+        except AttributeError:
+            pass
+    except Exception:
+        pass
+
+    try:
+        p_child = _resolve_path(Path(os.path.normpath(child)))
+        p_parent = _resolve_path(Path(os.path.normpath(parent)))
+        abs_child = os.path.normcase(str(p_child)).replace("/", os.sep).replace("\\", os.sep)
+        abs_parent = os.path.normcase(str(p_parent)).replace("/", os.sep).replace("\\", os.sep)
+        if abs_child == abs_parent:
+            return True
+        if not abs_parent.endswith(os.sep):
+            abs_parent += os.sep
+        if abs_child.startswith(abs_parent):
             return True
     except Exception:
         pass
 
     try:
-        abs_child = os.path.normcase(os.path.realpath(child)).replace("/", os.sep).replace("\\", os.sep)
-        abs_parent = os.path.normcase(os.path.realpath(parent)).replace("/", os.sep).replace("\\", os.sep)
-    except Exception:
         abs_child = os.path.normcase(os.path.abspath(child)).replace("/", os.sep).replace("\\", os.sep)
         abs_parent = os.path.normcase(os.path.abspath(parent)).replace("/", os.sep).replace("\\", os.sep)
-    if abs_child == abs_parent:
-        return True
-    if not abs_parent.endswith(os.sep):
-        abs_parent += os.sep
-    return abs_child.startswith(abs_parent)
+        if abs_child == abs_parent:
+            return True
+        if not abs_parent.endswith(os.sep):
+            abs_parent += os.sep
+        if abs_child.startswith(abs_parent):
+            return True
+    except Exception:
+        pass
+
+    return False
 
 
 def get_safe_path(dest_dir: str, filename: str, source_path: str = None) -> str:
