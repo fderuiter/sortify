@@ -152,7 +152,11 @@ def resilient_rmtree(path, ignore_errors=False):
         return
 
     if is_junction_path(path) or os.path.islink(path):
-        resilient_remove(path)
+        try:
+            resilient_remove(path)
+        except Exception:
+            if not ignore_errors:
+                raise
         return
 
     def _handle_error(func, p, exc_info):

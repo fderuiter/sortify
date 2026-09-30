@@ -97,6 +97,14 @@ def update_binaries_and_manifest(system_platform=None, bypass_pytest_check=False
                         Path("Lib") / "site-packages" / "sqlcipher3" / ".libs",
                         Path("Lib") / "site-packages" / "sqlcipher3.libs",
                         Path("Lib") / "site-packages" / "pysqlcipher3",
+                        Path("Lib") / "site-packages" / "pysqlcipher3.libs",
+                        Path("Lib") / "site-packages" / "pysqlcipher3" / "dlls",
+                        Path("Lib") / "site-packages" / "pysqlcipher3" / "bin",
+                        Path("Lib") / "site-packages" / "cryptography",
+                        Path("Lib") / "site-packages" / "cryptography" / "hazmat" / "bindings",
+                        Path("Lib") / "site-packages" / "cryptography.libs",
+                        Path("Lib") / "site-packages" / "OpenSSL",
+                        Path("app") / "binaries" / "windows" / "sqlcipher3",
                     ]:
                         candidate_dir = vd / sub
                         if candidate_dir.exists():
@@ -110,7 +118,7 @@ def update_binaries_and_manifest(system_platform=None, bypass_pytest_check=False
                     if found_for_pattern:
                         break
 
-                    # If not found in candidate paths, walk the venv directory recursively (excluding heavy site-packages subtrees)
+                    # If not found in candidate paths, walk the venv directory recursively (excluding heavy package subtrees)
                     for root, dirs, files in os.walk(vd):
                         # Filter out heavy directories in-place to prevent os.walk from recursing into them
                         dirs[:] = [
@@ -131,7 +139,23 @@ def update_binaries_and_manifest(system_platform=None, bypass_pytest_check=False
                                 "aiohttp",
                                 "pydantic",
                                 "pydantic_core",
-                                "site-packages",
+                                "mypy",
+                                "pytest",
+                                "coverage",
+                                "docutils",
+                                "sphinx",
+                                "reportlab",
+                                "sympy",
+                                "skimage",
+                                "shapely",
+                                "pil",
+                                "pyzmq",
+                                "rich",
+                                "textual",
+                                "botocore",
+                                "boto3",
+                                "google",
+                                "grpc",
                                 "node_modules",
                             )
                         ]
