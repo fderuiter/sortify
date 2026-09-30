@@ -1,5 +1,7 @@
 """Tests for debug-gated prompt dumping, path traversal validation, and content scrubbing."""
 
+import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -57,7 +59,19 @@ def test_validate_prompt_dump_path_valid():
     ]
     for path in valid_paths:
         resolved = validate_prompt_dump_path(path)
-        assert resolved.is_relative_to(debug_dir)
+        try:
+            is_rel = resolved.is_relative_to(debug_dir)
+        except AttributeError:
+            try:
+                resolved.relative_to(debug_dir)
+                is_rel = True
+            except ValueError:
+                is_rel = False
+        if not is_rel and (sys.platform == "win32" or os.name == "nt"):
+            norm_res = os.path.normpath(str(resolved)).replace("\\", "/").lower()
+            norm_deg = os.path.normpath(str(debug_dir)).replace("\\", "/").lower()
+            is_rel = os.path.commonpath([norm_res, norm_deg]) == norm_deg
+        assert is_rel
 
 
 def test_validate_prompt_dump_path_traversal():

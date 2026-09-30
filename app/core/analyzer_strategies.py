@@ -90,9 +90,20 @@ def validate_prompt_dump_path(dump_file: str) -> Path:
     try:
         target_path.relative_to(debug_dir)
     except ValueError:
-        raise ValueError(
-            f"Invalid prompt dump path '{dump_file}': target path resolves outside designated debug log directory '{debug_dir}'."
-        )
+        is_windows_subpath = False
+        if sys.platform == "win32" or os.name == "nt":
+            try:
+                norm_target = os.path.normpath(str(target_path)).replace("\\", "/").lower()
+                norm_debug = os.path.normpath(str(debug_dir)).replace("\\", "/").lower()
+                is_windows_subpath = (
+                    os.path.commonpath([norm_target, norm_debug]) == norm_debug
+                )
+            except Exception:
+                is_windows_subpath = False
+        if not is_windows_subpath:
+            raise ValueError(
+                f"Invalid prompt dump path '{dump_file}': target path resolves outside designated debug log directory '{debug_dir}'."
+            )
 
     return target_path
 
