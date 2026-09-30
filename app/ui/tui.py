@@ -7,6 +7,7 @@ import subprocess
 import sys
 import threading
 import time
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from textual import on, work
@@ -811,7 +812,7 @@ class CROForensicModal(A11yMixin, ModalScreen[None]):
             yield inp_src
 
             yield Label("Target Audit Output Folder:")
-            default_target = os.path.join(self.base_dir, "CRO_Audit_Output") if self.base_dir else ""
+            default_target = (Path(self.base_dir) / "CRO_Audit_Output").as_posix() if self.base_dir else ""
             inp_tgt = Input(value=default_target, placeholder="Select target output folder...", id="input-target")
             inp_tgt.tooltip = "Target output directory path for CRO forensic audit files"
             yield inp_tgt
@@ -1166,7 +1167,7 @@ class AutoSorterTUI(A11yMixin, App):
             if isinstance(v, dict) and v.get("__type__") == "file":
                 file_key = k
                 file_info = v
-                filepath = file_info.get("filepath", os.path.join(self.base_dir, current_folder, file_key))
+                filepath = file_info.get("filepath", (Path(self.base_dir) / current_folder / file_key).as_posix() if self.base_dir else (Path(current_folder) / file_key).as_posix())
 
                 is_locked = (
                     file_key in self.locked_files
@@ -1213,7 +1214,7 @@ class AutoSorterTUI(A11yMixin, App):
                 }
                 parent_item.add_leaf(label_str, data=node_data)
             elif isinstance(v, dict):
-                sub_folder = os.path.join(current_folder, k) if current_folder else k
+                sub_folder = (Path(current_folder) / k).as_posix() if current_folder else k
                 node_data = {
                     "is_file": False,
                     "key": k,

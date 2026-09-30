@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="400" viewBox="0 0 800 400">
+  <rect width="100%" height="100%" fill="#f8fafc" rx="8" stroke="#cbd5e1" stroke-width="2"/>
+  <text x="20" y="40" font-family="sans-serif" font-size="18" font-weight="bold" fill="#0f172a">BoundedMemoryCache Centralized In-Memory Caching Architecture</text>
+  <text x="20" y="70" font-family="sans-serif" font-size="12" fill="#64748b">Mermaid Diagram Specification (Fallback View):</text>
+  <foreignObject x="20" y="90" width="760" height="210">
+    <pre xmlns="http://www.w3.org/1999/xhtml" style="font-family: monospace; font-size: 12px; color: #334155; background: #ffffff; padding: 12px; border-radius: 6px; border: 1px solid #e2e8f0; overflow: auto; height: 180px;">flowchart LR
+subgraph core_cache_box ["Centralized LRU Cache (app.core.cache)"]
+bounded_cache[("BoundedMemoryCache[K, V]")]
+end
+subgraph cache_clients ["Subsystem Consumers"]
+db_conn_cache["app.core.db_conn (_connection_cache)"]
+link_manager_cache["app.core.link_manager (_registry)"]
+semantic_cache["app.core.semantic_embeddings (_model_properties_cache)"]
+jev_cache["app.core.jev_classifier (memory_cache)"]
+db_cache["app.core.db (doc_cache)"]
+end
+db_conn_cache --&gt;|Max Size: 50| bounded_cache
+link_manager_cache --&gt;|Max Size: 10000| bounded_cache
+semantic_cache --&gt;|Max Size: 500| bounded_cache
+jev_cache --&gt;|Fast Path Cache| bounded_cache</pre>
+  </foreignObject>
+
+</svg>

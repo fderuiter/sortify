@@ -390,9 +390,238 @@ BaseDiagramSpec = Union[ComponentDiagramSpec, SequenceDiagramSpec, StateDiagramS
 
 
 # System Default Diagram Specifications
+CORE_ARCHITECTURE_SPEC = ComponentDiagramSpec(
+    id="core_architecture",
+    title="Smart AutoSorter AI Pro Full System Architecture",
+    diagram_type="flowchart",
+    direction="TD",
+    subgraphs=[
+        DiagramSubgraph(
+            id="ui_layer",
+            title="Presentation & User Interfaces (app.ui)",
+            nodes=[
+                "app_main",
+                "ui_app",
+                "ui_catalog",
+                "ui_wizard",
+                "ui_dialog_helper",
+                "ui_a11y_runner",
+                "ui_diagram_schema",
+            ],
+        ),
+        DiagramSubgraph(
+            id="session_orchestration",
+            title="Session Orchestration & Lifecycle (app.core)",
+            nodes=[
+                "core_session",
+                "core_user_space_bootstrap",
+                "core_daemon",
+                "core_integration",
+            ],
+        ),
+        DiagramSubgraph(
+            id="ingestion_extraction",
+            title="Ingestion & Extraction Engine (app.core)",
+            nodes=[
+                "core_extractor",
+                "core_extractor_strategies",
+                "core_forensic_scanner",
+                "core_offline_loader",
+                "core_downloader",
+            ],
+        ),
+        DiagramSubgraph(
+            id="analytics_intelligence",
+            title="Analytics & Machine Learning (app.core)",
+            nodes=[
+                "core_analyzer",
+                "core_analyzer_strategies",
+                "core_jev_classifier",
+                "core_semantic_embeddings",
+            ],
+        ),
+        DiagramSubgraph(
+            id="clinical_pipeline",
+            title="Clinical Trial & Multi-Study Pipeline (app.core)",
+            nodes=[
+                "core_cro_multi_study_pipeline",
+                "core_study_disambiguator",
+                "core_clinical_taxonomy",
+                "core_clinical_compliance",
+                "core_clinical_renamer",
+                "core_clinical_strategy",
+            ],
+        ),
+        DiagramSubgraph(
+            id="memory_cache",
+            title="Caching & Memory Layer (app.core)",
+            nodes=[
+                "core_cache",
+                "core_db_conn",
+                "core_link_manager",
+                "core_hashes_registry",
+            ],
+        ),
+        DiagramSubgraph(
+            id="concurrency_shared",
+            title="Concurrency & Shared Registry (app.core)",
+            nodes=[
+                "core_shared_registry",
+                "core_db_worker",
+            ],
+        ),
+        DiagramSubgraph(
+            id="storage_persistence",
+            title="Storage & Database Persistence (app.core)",
+            nodes=[
+                "core_db",
+                "core_ledger",
+                "core_history",
+            ],
+        ),
+        DiagramSubgraph(
+            id="execution_operations",
+            title="Policy, Validation & File Operations (app.core)",
+            nodes=[
+                "core_policy_engine",
+                "core_quarantine_interceptor",
+                "core_verifier",
+                "core_mover",
+                "core_file_renamer",
+                "core_resilient_file_ops",
+                "core_scanner",
+                "core_progress",
+                "core_metadata",
+            ],
+        ),
+        DiagramSubgraph(
+            id="utilities_security",
+            title="Security & Utilities (app.core)",
+            nodes=[
+                "core_text_utils",
+                "core_path_utils",
+                "core_env_helper",
+                "core_crypto",
+                "core_exceptions",
+            ],
+        ),
+    ],
+    nodes=[
+        # Presentation
+        DiagramNode(id="app_main", label="app.main (CLI Entry Point)", shape="round"),
+        DiagramNode(id="ui_app", label="app.ui.app (AutoSorterApp)"),
+        DiagramNode(id="ui_catalog", label="app.ui.catalog (Component Catalog)"),
+        DiagramNode(id="ui_wizard", label="app.ui.wizard (Setup Wizard)"),
+        DiagramNode(id="ui_dialog_helper", label="app.ui.dialog_helper"),
+        DiagramNode(id="ui_a11y_runner", label="app.ui.a11y_runner"),
+        DiagramNode(id="ui_diagram_schema", label="app.ui.diagram_schema"),
+        # Orchestration
+        DiagramNode(id="core_session", label="app.core.session"),
+        DiagramNode(id="core_user_space_bootstrap", label="app.core.user_space_bootstrap"),
+        DiagramNode(id="core_daemon", label="app.core.daemon"),
+        DiagramNode(id="core_integration", label="app.core.integration"),
+        # Ingestion & Extraction
+        DiagramNode(id="core_extractor", label="app.core.extractor"),
+        DiagramNode(id="core_extractor_strategies", label="app.core.extractor_strategies"),
+        DiagramNode(id="core_forensic_scanner", label="app.core.forensic_scanner"),
+        DiagramNode(id="core_offline_loader", label="app.core.offline_loader"),
+        DiagramNode(id="core_downloader", label="app.core.downloader"),
+        # Analytics & ML
+        DiagramNode(id="core_analyzer", label="app.core.analyzer"),
+        DiagramNode(id="core_analyzer_strategies", label="app.core.analyzer_strategies"),
+        DiagramNode(id="core_jev_classifier", label="app.core.jev_classifier"),
+        DiagramNode(id="core_semantic_embeddings", label="app.core.semantic_embeddings"),
+        # Clinical
+        DiagramNode(id="core_cro_multi_study_pipeline", label="app.core.cro_multi_study_pipeline"),
+        DiagramNode(id="core_study_disambiguator", label="app.core.study_disambiguator"),
+        DiagramNode(id="core_clinical_taxonomy", label="app.core.clinical_taxonomy"),
+        DiagramNode(id="core_clinical_compliance", label="app.core.clinical_compliance"),
+        DiagramNode(id="core_clinical_renamer", label="app.core.clinical_renamer"),
+        DiagramNode(id="core_clinical_strategy", label="app.core.clinical_strategy"),
+        # Memory & Cache
+        DiagramNode(id="core_cache", label="app.core.cache (BoundedMemoryCache)", shape="database"),
+        DiagramNode(id="core_db_conn", label="app.core.db_conn"),
+        DiagramNode(id="core_link_manager", label="app.core.link_manager"),
+        DiagramNode(id="core_hashes_registry", label="app.core.hashes_registry"),
+        # Concurrency & Shared
+        DiagramNode(id="core_shared_registry", label="app.core.shared_registry (SharedWorkerPool)"),
+        DiagramNode(id="core_db_worker", label="app.core.db_worker"),
+        # Storage
+        DiagramNode(id="core_db", label="app.core.db", shape="database"),
+        DiagramNode(id="core_ledger", label="app.core.ledger", shape="database"),
+        DiagramNode(id="core_history", label="app.core.history", shape="database"),
+        # Policy & Execution
+        DiagramNode(id="core_policy_engine", label="app.core.policy_engine", shape="rhombus"),
+        DiagramNode(id="core_quarantine_interceptor", label="app.core.quarantine_interceptor"),
+        DiagramNode(id="core_verifier", label="app.core.verifier", shape="rhombus"),
+        DiagramNode(id="core_mover", label="app.core.mover"),
+        DiagramNode(id="core_file_renamer", label="app.core.file_renamer"),
+        DiagramNode(id="core_resilient_file_ops", label="app.core.resilient_file_ops"),
+        DiagramNode(id="core_scanner", label="app.core.scanner"),
+        DiagramNode(id="core_progress", label="app.core.progress"),
+        DiagramNode(id="core_metadata", label="app.core.metadata"),
+        # Utilities
+        DiagramNode(id="core_text_utils", label="app.core.text_utils"),
+        DiagramNode(id="core_path_utils", label="app.core.path_utils"),
+        DiagramNode(id="core_env_helper", label="app.core.env_helper"),
+        DiagramNode(id="core_crypto", label="app.core.crypto"),
+        DiagramNode(id="core_exceptions", label="app.core.exceptions"),
+    ],
+    edges=[
+        DiagramEdge(source="app_main", target="ui_app"),
+        DiagramEdge(source="app_main", target="core_session"),
+        DiagramEdge(source="ui_app", target="core_session"),
+        DiagramEdge(source="ui_app", target="ui_wizard"),
+        DiagramEdge(source="ui_app", target="ui_dialog_helper"),
+        DiagramEdge(source="ui_catalog", target="ui_diagram_schema"),
+        DiagramEdge(source="ui_a11y_runner", target="ui_catalog"),
+        DiagramEdge(source="core_session", target="core_user_space_bootstrap"),
+        DiagramEdge(source="core_session", target="core_scanner"),
+        DiagramEdge(source="core_session", target="core_extractor"),
+        DiagramEdge(source="core_session", target="core_analyzer"),
+        DiagramEdge(source="core_session", target="core_policy_engine"),
+        DiagramEdge(source="core_session", target="core_verifier"),
+        DiagramEdge(source="core_session", target="core_mover"),
+        DiagramEdge(source="core_daemon", target="core_session"),
+        DiagramEdge(source="core_integration", target="core_session"),
+        DiagramEdge(source="core_extractor", target="core_extractor_strategies"),
+        DiagramEdge(source="core_extractor", target="core_forensic_scanner"),
+        DiagramEdge(source="core_extractor", target="core_offline_loader"),
+        DiagramEdge(source="core_downloader", target="core_env_helper"),
+        DiagramEdge(source="core_analyzer", target="core_analyzer_strategies"),
+        DiagramEdge(source="core_analyzer", target="core_jev_classifier"),
+        DiagramEdge(source="core_analyzer", target="core_semantic_embeddings"),
+        DiagramEdge(source="core_cro_multi_study_pipeline", target="core_study_disambiguator"),
+        DiagramEdge(source="core_cro_multi_study_pipeline", target="core_clinical_taxonomy"),
+        DiagramEdge(source="core_cro_multi_study_pipeline", target="core_clinical_compliance"),
+        DiagramEdge(source="core_cro_multi_study_pipeline", target="core_clinical_renamer"),
+        DiagramEdge(source="core_clinical_renamer", target="core_clinical_strategy"),
+        DiagramEdge(source="core_db_conn", target="core_cache"),
+        DiagramEdge(source="core_link_manager", target="core_cache"),
+        DiagramEdge(source="core_semantic_embeddings", target="core_cache"),
+        DiagramEdge(source="core_jev_classifier", target="core_cache"),
+        DiagramEdge(source="core_hashes_registry", target="core_crypto"),
+        DiagramEdge(source="core_shared_registry", target="core_mover"),
+        DiagramEdge(source="core_shared_registry", target="core_extractor"),
+        DiagramEdge(source="core_db_worker", target="core_shared_registry"),
+        DiagramEdge(source="core_db", target="core_cache"),
+        DiagramEdge(source="core_ledger", target="core_db"),
+        DiagramEdge(source="core_history", target="core_db"),
+        DiagramEdge(source="core_policy_engine", target="core_quarantine_interceptor"),
+        DiagramEdge(source="core_policy_engine", target="core_mover"),
+        DiagramEdge(source="core_verifier", target="core_mover"),
+        DiagramEdge(source="core_mover", target="core_file_renamer"),
+        DiagramEdge(source="core_mover", target="core_resilient_file_ops"),
+        DiagramEdge(source="core_mover", target="core_progress"),
+        DiagramEdge(source="core_mover", target="core_metadata"),
+        DiagramEdge(source="core_text_utils", target="core_exceptions"),
+        DiagramEdge(source="core_path_utils", target="core_exceptions"),
+    ],
+)
+
 ARCHITECTURE_DATAFLOW_SPEC = ComponentDiagramSpec(
     id="architecture_dataflow",
-    title="Data Flow: Directory Selection to Sorting Plan",
+    title="Data Flow: Directory Selection to Reorganization Plan",
     diagram_type="graph",
     direction="TD",
     nodes=[
@@ -473,6 +702,183 @@ ARCHITECTURE_DATAFLOW_SPEC = ComponentDiagramSpec(
         DiagramEdge(source="E", target="F"),
         DiagramEdge(source="F", target="G"),
         DiagramEdge(source="G", target="H"),
+    ],
+)
+
+CRO_MULTI_STUDY_PIPELINE_SPEC = ComponentDiagramSpec(
+    id="cro_multi_study_pipeline",
+    title="CRO Forensic Multi-Study Ingestion Pipeline",
+    diagram_type="flowchart",
+    direction="TD",
+    subgraphs=[
+        DiagramSubgraph(
+            id="scan_stage",
+            title="Drive Ingestion & Scan",
+            nodes=["forensic_scan", "study_disambiguation"],
+        ),
+        DiagramSubgraph(
+            id="taxonomy_stage",
+            title="Taxonomy & Compliance Rules",
+            nodes=["clinical_taxonomy", "clinical_compliance"],
+        ),
+        DiagramSubgraph(
+            id="binding_stage",
+            title="TMF Binder Relocation",
+            nodes=["clinical_renamer", "cro_pipeline_output"],
+        ),
+    ],
+    nodes=[
+        DiagramNode(id="forensic_scan", label="app.core.forensic_scanner", shape="subroutine"),
+        DiagramNode(id="study_disambiguation", label="app.core.study_disambiguator", shape="rhombus"),
+        DiagramNode(id="clinical_taxonomy", label="app.core.clinical_taxonomy"),
+        DiagramNode(id="clinical_compliance", label="app.core.clinical_compliance", shape="rhombus"),
+        DiagramNode(id="clinical_renamer", label="app.core.clinical_renamer"),
+        DiagramNode(id="cro_pipeline_output", label="TMF Clean Binders Output", shape="stadium"),
+    ],
+    edges=[
+        DiagramEdge(source="forensic_scan", target="study_disambiguation", label="Raw Drives"),
+        DiagramEdge(source="study_disambiguation", target="clinical_taxonomy", label="Protocols Disambiguated"),
+        DiagramEdge(source="clinical_taxonomy", target="clinical_compliance", label="Mapped Taxonomy"),
+        DiagramEdge(source="clinical_compliance", target="clinical_renamer", label="Compliance Validated"),
+        DiagramEdge(source="clinical_renamer", target="cro_pipeline_output", label="Compiled Binders"),
+    ],
+)
+
+MEMORY_CACHE_LAYERS_SPEC = ComponentDiagramSpec(
+    id="memory_cache_layers",
+    title="BoundedMemoryCache Centralized In-Memory Caching Architecture",
+    diagram_type="flowchart",
+    direction="LR",
+    subgraphs=[
+        DiagramSubgraph(
+            id="core_cache_box",
+            title="Centralized LRU Cache (app.core.cache)",
+            nodes=["bounded_cache"],
+        ),
+        DiagramSubgraph(
+            id="cache_clients",
+            title="Subsystem Consumers",
+            nodes=[
+                "db_conn_cache",
+                "link_manager_cache",
+                "semantic_cache",
+                "jev_cache",
+                "db_cache",
+            ],
+        ),
+    ],
+    nodes=[
+        DiagramNode(id="bounded_cache", label="BoundedMemoryCache[K, V]", shape="database"),
+        DiagramNode(id="db_conn_cache", label="app.core.db_conn (_connection_cache)"),
+        DiagramNode(id="link_manager_cache", label="app.core.link_manager (_registry)"),
+        DiagramNode(id="semantic_cache", label="app.core.semantic_embeddings (_model_properties_cache)"),
+        DiagramNode(id="jev_cache", label="app.core.jev_classifier (memory_cache)"),
+        DiagramNode(id="db_cache", label="app.core.db (doc_cache)"),
+    ],
+    edges=[
+        DiagramEdge(source="db_conn_cache", target="bounded_cache", label="Max Size: 50"),
+        DiagramEdge(source="link_manager_cache", target="bounded_cache", label="Max Size: 10000"),
+        DiagramEdge(source="semantic_cache", target="bounded_cache", label="Max Size: 500"),
+        DiagramEdge(source="jev_cache", target="bounded_cache", label="Fast Path Cache"),
+        DiagramEdge(source="db_cache", target="bounded_cache", label="Max Size: 10000"),
+    ],
+)
+
+WORKER_POOL_CONCURRENCY_SPEC = ComponentDiagramSpec(
+    id="worker_pool_concurrency",
+    title="SharedWorkerPool Multi-Threaded Concurrency Model",
+    diagram_type="flowchart",
+    direction="TD",
+    subgraphs=[
+        DiagramSubgraph(
+            id="pool_singleton",
+            title="Shared Singleton (app.core.shared_registry)",
+            nodes=["shared_worker_pool"],
+        ),
+        DiagramSubgraph(
+            id="pool_tasks",
+            title="Concurrent Execution Callers",
+            nodes=[
+                "session_tasks",
+                "mover_tasks",
+                "db_worker_tasks",
+                "extractor_tasks",
+                "analyzer_tasks",
+            ],
+        ),
+    ],
+    nodes=[
+        DiagramNode(id="shared_worker_pool", label="SharedWorkerPool Singleton", shape="stadium"),
+        DiagramNode(id="session_tasks", label="app.core.session (Lifecycle Management)"),
+        DiagramNode(id="mover_tasks", label="app.core.mover (Parallel File Relocation)"),
+        DiagramNode(id="db_worker_tasks", label="app.core.db_worker (Background Heavy Tasks)"),
+        DiagramNode(id="extractor_tasks", label="app.core.extractor (Parallel Text Ingestion)"),
+        DiagramNode(id="analyzer_tasks", label="app.core.analyzer_strategies (Parallel NLP)"),
+    ],
+    edges=[
+        DiagramEdge(source="session_tasks", target="shared_worker_pool", label="get_instance() / shutdown()"),
+        DiagramEdge(source="mover_tasks", target="shared_worker_pool", label="submit() relocation tasks"),
+        DiagramEdge(source="db_worker_tasks", target="shared_worker_pool", label="offload VLM/OCR/GGUF"),
+        DiagramEdge(source="extractor_tasks", target="shared_worker_pool", label="parallel document extraction"),
+        DiagramEdge(source="analyzer_tasks", target="shared_worker_pool", label="offload embedding vector calculations"),
+    ],
+)
+
+POLICY_EVALUATION_FLOW_SPEC = ComponentDiagramSpec(
+    id="policy_evaluation_flow",
+    title="Administrator Policy Evaluation & Compliance Flowchart",
+    diagram_type="flowchart",
+    direction="TD",
+    nodes=[
+        DiagramNode(id="A", label="Incoming Document", shape="round"),
+        DiagramNode(id="B", label="Sort Rules by Priority High to Low", shape="rectangle"),
+        DiagramNode(id="C", label="Evaluate Next Rule", shape="rhombus"),
+        DiagramNode(id="D", label="Route Document via Override Path", shape="rectangle"),
+        DiagramNode(id="E", label="Route Document via Keyword Category", shape="rectangle"),
+        DiagramNode(id="F", label="Route Document via Pattern Category", shape="rectangle"),
+        DiagramNode(id="G", label="Stop Processing & Halt Evaluation", shape="rectangle"),
+        DiagramNode(id="H", label="More Rules Remaining?", shape="rhombus"),
+        DiagramNode(id="I", label="Proceed to General Classification / AI Sorting", shape="rectangle"),
+    ],
+    edges=[
+        DiagramEdge(source="A", target="B"),
+        DiagramEdge(source="B", target="C"),
+        DiagramEdge(source="C", target="D", label="Override Rule Match"),
+        DiagramEdge(source="C", target="E", label="Keyword Rule Match"),
+        DiagramEdge(source="C", target="F", label="Pattern Rule Match"),
+        DiagramEdge(source="C", target="G", label="No Match & Halt on Mismatch Enabled"),
+        DiagramEdge(source="C", target="H", label="No Match & Halt Disabled"),
+        DiagramEdge(source="H", target="C", label="Yes"),
+        DiagramEdge(source="H", target="I", label="No"),
+    ],
+)
+
+SETUP_WIZARD_FLOW_SPEC = ComponentDiagramSpec(
+    id="setup_wizard_flow",
+    title="Setup Wizard Download & Offline Fallback Decision Flow",
+    diagram_type="flowchart",
+    direction="TD",
+    nodes=[
+        DiagramNode(id="A", label="Setup Wizard Download Triggered", shape="round"),
+        DiagramNode(id="B", label="Network Connection OK?", shape="rhombus"),
+        DiagramNode(id="C", label="Check Firewall & Disconnected Status", shape="rectangle"),
+        DiagramNode(id="D", label="Fallback to Offline Non-Semantic Mode", shape="rectangle"),
+        DiagramNode(id="E", label="Sufficient Disk Space >= 200MB?", shape="rhombus"),
+        DiagramNode(id="F", label="Clear Free Disk Space", shape="rectangle"),
+        DiagramNode(id="G", label="Retry Model Download via Settings", shape="rectangle"),
+        DiagramNode(id="H", label="Download 80MB AI Model", shape="rectangle"),
+        DiagramNode(id="I", label="Enable Semantic AI Sorting", shape="round"),
+    ],
+    edges=[
+        DiagramEdge(source="A", target="B"),
+        DiagramEdge(source="B", target="C", label="No"),
+        DiagramEdge(source="C", target="D"),
+        DiagramEdge(source="B", target="E", label="Yes"),
+        DiagramEdge(source="E", target="F", label="No"),
+        DiagramEdge(source="F", target="G"),
+        DiagramEdge(source="G", target="B"),
+        DiagramEdge(source="E", target="H", label="Yes"),
+        DiagramEdge(source="H", target="I"),
     ],
 )
 
@@ -1212,7 +1618,6 @@ API_CORE_ARCHITECTURE_SPEC = ComponentDiagramSpec(
         DiagramEdge(source="D", target="G"),
     ],
 )
-CORE_ARCHITECTURE_SPEC = API_CORE_ARCHITECTURE_SPEC
 
 ADMIN_POLICY_EVALUATION_SPEC = ComponentDiagramSpec(
     id="admin_policy_evaluation",
@@ -1246,12 +1651,17 @@ ADMIN_POLICY_EVALUATION_SPEC = ComponentDiagramSpec(
 )
 
 SYSTEM_DIAGRAM_SPECS: Dict[str, BaseDiagramSpec] = {
+    "core_architecture": CORE_ARCHITECTURE_SPEC,
     "architecture_dataflow": ARCHITECTURE_DATAFLOW_SPEC,
     "architecture_async_processing": ARCHITECTURE_ASYNC_PROCESSING_SPEC,
     "architecture_watchdog_state": ARCHITECTURE_WATCHDOG_STATE_SPEC,
+    "cro_multi_study_pipeline": CRO_MULTI_STUDY_PIPELINE_SPEC,
+    "memory_cache_layers": MEMORY_CACHE_LAYERS_SPEC,
+    "worker_pool_concurrency": WORKER_POOL_CONCURRENCY_SPEC,
+    "policy_evaluation_flow": POLICY_EVALUATION_FLOW_SPEC,
+    "setup_wizard_flow": SETUP_WIZARD_FLOW_SPEC,
     "catalog_workflow": CATALOG_WORKFLOW_SPEC,
     "ui_component_hierarchy": UI_COMPONENT_HIERARCHY_SPEC,
-    "core_architecture": CORE_ARCHITECTURE_SPEC,
     "core_text_extraction": CORE_TEXT_EXTRACTION_SPEC,
     "contributor_onboarding": CONTRIBUTOR_ONBOARDING_SPEC,
     "troubleshooting_setup_wizard": TROUBLESHOOTING_SETUP_WIZARD_SPEC,

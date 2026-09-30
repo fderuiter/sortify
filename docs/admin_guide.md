@@ -178,7 +178,7 @@ System settings modified during runtime are dynamically saved to the local JSON 
 
 ### Policy Evaluation Flowchart
 
-![Policy Evaluation Flowchart](assets/diagrams/admin_policy_evaluation.svg)
+![Policy Evaluation Flowchart](assets/diagrams/policy_evaluation_flow.svg)
 
 ### Rule Syntax & Types
 

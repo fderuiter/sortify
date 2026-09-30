@@ -1,0 +1,16 @@
+flowchart LR
+    subgraph core_cache_box ["Centralized LRU Cache (app.core.cache)"]
+        bounded_cache[("BoundedMemoryCache[K, V]")]
+    end
+    subgraph cache_clients ["Subsystem Consumers"]
+        db_conn_cache["app.core.db_conn (_connection_cache)"]
+        link_manager_cache["app.core.link_manager (_registry)"]
+        semantic_cache["app.core.semantic_embeddings (_model_properties_cache)"]
+        jev_cache["app.core.jev_classifier (memory_cache)"]
+        db_cache["app.core.db (doc_cache)"]
+    end
+    db_conn_cache -->|Max Size: 50| bounded_cache
+    link_manager_cache -->|Max Size: 10000| bounded_cache
+    semantic_cache -->|Max Size: 500| bounded_cache
+    jev_cache -->|Fast Path Cache| bounded_cache
+    db_cache -->|Max Size: 10000| bounded_cache

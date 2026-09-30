@@ -2,7 +2,7 @@
 
 Welcome to the Smart AutoSorter AI Pro troubleshooting guide. If you are experiencing issues during setup, particularly with downloading the AI model, please consult the sections below.
 
-![Setup Wizard Troubleshooting Flowchart](assets/diagrams/troubleshooting_setup_wizard.svg)
+![Setup Wizard Network Flow](assets/diagrams/setup_wizard_flow.svg)
 
 ## Common Network Failure Messages
 

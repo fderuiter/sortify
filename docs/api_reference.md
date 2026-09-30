@@ -4,7 +4,7 @@ This document is automatically generated. Do not edit manually.
 
 ## Core Architecture Diagram
 
-![Core Module Architecture Flow](assets/diagrams/api_core_architecture.svg)
+![Core Architecture Diagram](assets/diagrams/core_architecture.svg)
 
 ## `app.config`
 
