@@ -19,6 +19,7 @@ from pydantic import BaseModel
 from app.core.domain_contracts import _get_val
 from app.core.link_manager import LinkManager
 from app.core.path_utils import is_junction_path
+from app.core.progress import emit_progress
 from app.core.verifier import VerificationEngine
 
 try:
@@ -1386,9 +1387,35 @@ class AsyncMoveEngine:
         cancel_event=None,
         cancellation_token=None,
         priority: str = None,
+        progress_callback=None,
     ) -> dict:
-        """Partition relocation plan into bounded worker chunks and execute off-thread."""
+        """Partition relocation plan into bounded worker chunks and execute file moves off-thread.
+
+        Args:
+            base_dir: Root directory path where file movements occur.
+            plan: Mapping of category names to target file move specifications.
+            db: Database connection instance for tracking transaction records.
+            history_manager: History manager instance for session snapshots/rollbacks.
+            runtime_settings: Optional runtime configuration settings object.
+            resume: Whether this execution is resuming a previously incomplete session.
+            batch_size: Number of database entries per batch transaction write.
+            cancel_check: Optional callable that returns True if cancellation was requested.
+            cancel_event: Optional threading or asyncio event signaling cancellation.
+            cancellation_token: Optional cancellation token object for cooperative cancellation.
+            priority: Execution priority tier string.
+            progress_callback: Optional callback receiving progress ratio updates during file movement.
+
+        Returns
+        -------
+            dict: Execution results containing overall session status and processed item counts.
+
+        Raises
+        ------
+            ValueError: If base_dir or plan verification fails integrity checks.
+        """
         base_dir = os.path.normpath(base_dir)
+
+        effective_progress_cb = progress_callback or getattr(runtime_settings, "progress_callback", None)
 
         integrity_result = VerificationEngine.verify_plan_integrity(base_dir, plan)
         if (
@@ -1466,10 +1493,21 @@ class AsyncMoveEngine:
         )
 
         move_items = _collect_move_items(base_dir, plan, priority=effective_priority)
+        total_items = len(move_items)
         chunks = [
             move_items[i : i + effective_chunk_size]
             for i in range(0, len(move_items), effective_chunk_size)
         ]
+        total_chunks = len(chunks)
+
+        if total_chunks == 0:
+            emit_progress(
+                effective_progress_cb,
+                1.0,
+                stage="Relocation complete",
+                unit_count=0,
+                unit_type="files",
+            )
 
         db_lock = threading.Lock()
         db_updates_batch = []
@@ -1503,6 +1541,13 @@ class AsyncMoveEngine:
                     step_counter=step_counter,
                     ledger=ledger,
                     history_manager=history_manager,
+                )
+                emit_progress(
+                    effective_progress_cb,
+                    1.0,
+                    stage=f"Moved {total_items} of {total_items} files",
+                    unit_count=total_items,
+                    unit_type="files",
                 )
             else:
                 from app.core.shared_registry import SharedWorkerPool
@@ -1542,6 +1587,16 @@ class AsyncMoveEngine:
                             db.execute_batch_updates(list(db_updates_batch))
                             db_updates_batch.clear()
                             has_flushed_db = True
+
+                    processed_count = min((chunk_idx + 1) * effective_chunk_size, total_items)
+                    progress_ratio = (chunk_idx + 1) / total_chunks if total_chunks > 0 else 1.0
+                    emit_progress(
+                        effective_progress_cb,
+                        progress_ratio,
+                        stage=f"Moved {processed_count} of {total_items} files",
+                        unit_count=processed_count,
+                        unit_type="files",
+                    )
 
                     if _is_cancelled(cancel_token):
                         logging.info(
@@ -1698,8 +1753,30 @@ def execute_moves(
     cancel_event=None,
     cancellation_token=None,
     priority: str = None,
+    progress_callback=None,
 ) -> dict:
-    """Create directories and safely move files using chunked asynchronous execution."""
+    """Create directories and safely move files using chunked asynchronous execution.
+
+    Args:
+        base_dir: Target base directory path.
+        plan: Move operations plan dictionary.
+        db: Database connection instance.
+        history_manager: History tracking manager.
+        runtime_settings: Optional application runtime configuration.
+        resume: Flag indicating whether to resume an existing session.
+        batch_size: Database transaction batch size.
+        chunk_size: Number of files per worker execution chunk.
+        max_workers: Maximum concurrency level for worker tasks.
+        cancel_check: Optional function returning True if cancellation requested.
+        cancel_event: Optional thread event indicating cancellation.
+        cancellation_token: Optional cancellation token object.
+        priority: Priority level identifier.
+        progress_callback: Optional progress emission callback function.
+
+    Returns
+    -------
+        dict: Execution summary and status details.
+    """
     engine = AsyncMoveEngine(max_workers=max_workers, chunk_size=chunk_size)
     return engine.execute(
         base_dir=base_dir,
@@ -1713,6 +1790,7 @@ def execute_moves(
         cancel_event=cancel_event,
         cancellation_token=cancellation_token,
         priority=priority,
+        progress_callback=progress_callback,
     )
 
 
@@ -1730,8 +1808,30 @@ async def execute_moves_async(
     cancel_event=None,
     cancellation_token=None,
     priority: str = None,
+    progress_callback=None,
 ) -> dict:
-    """Asynchronously execute move operations off the main event loop thread."""
+    """Asynchronously execute move operations off the main event loop thread.
+
+    Args:
+        base_dir: Target base directory path.
+        plan: Move operations plan dictionary.
+        db: Database connection instance.
+        history_manager: History tracking manager.
+        runtime_settings: Optional application runtime configuration.
+        resume: Flag indicating whether to resume an existing session.
+        batch_size: Database transaction batch size.
+        chunk_size: Number of files per worker execution chunk.
+        max_workers: Maximum concurrency level for worker tasks.
+        cancel_check: Optional function returning True if cancellation requested.
+        cancel_event: Optional thread event indicating cancellation.
+        cancellation_token: Optional cancellation token object.
+        priority: Priority level identifier.
+        progress_callback: Optional progress emission callback function.
+
+    Returns
+    -------
+        dict: Execution summary and status details.
+    """
     return await asyncio.to_thread(
         execute_moves,
         base_dir,
@@ -1747,4 +1847,5 @@ async def execute_moves_async(
         cancel_event=cancel_event,
         cancellation_token=cancellation_token,
         priority=priority,
+        progress_callback=progress_callback,
     )

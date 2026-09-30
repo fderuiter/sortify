@@ -165,10 +165,11 @@ def test_a11y005_slider_rule_inspection():
     assert "aria-valuetext" in slider_violations[0].message
 
 
-def test_all_9_settings_sliders_have_aria_attributes():
+def test_all_9_settings_sliders_have_aria_attributes(tmp_path, monkeypatch):
     """Verify that show_settings creates all 9 sliders with ARIA range attributes."""
+    monkeypatch.setenv("AUTOSORTER_APP_DIR", str(tmp_path))
     parent_app = MagicMock()
-    settings = AppSettings()
+    settings = AppSettings(filepath=str(tmp_path / "settings.json"))
 
     with patch("app.ui.settings.ui") as mock_ui:
         sliders_created = []

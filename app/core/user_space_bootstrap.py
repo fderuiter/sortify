@@ -364,12 +364,40 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
             f"Startup validation failed: manifest has no entries for platform {platform_key}."
         )
 
+    # Inject paths directly from the installation directory first so DLLs are accessible
+    inject_bootstrap_paths(platform_binaries_dir)
+
     for rel_path_str, expected_hash in expected_files.items():
         file_path = platform_binaries_dir / rel_path_str
         if not file_path.exists():
-            raise RuntimeError(
-                f"Startup validation failed: local packaged binary file {rel_path_str} is missing."
-            )
+            if hasattr(sys, "_MEIPASS"):
+                # Check candidate locations in PyInstaller bundle
+                meipass = Path(sys._MEIPASS)
+                rel_base = rel_path_str.replace("sqlcipher3/", "")
+                candidates = [
+                    meipass / "_internal" / rel_path_str,
+                    meipass / rel_path_str,
+                    meipass / "_internal" / "sqlcipher3" / rel_base,
+                    meipass / "sqlcipher3" / rel_base,
+                    meipass / "_internal" / rel_base,
+                    meipass / rel_base,
+                    meipass / "_internal" / "app" / "binaries" / platform_key / rel_path_str,
+                    meipass / "app" / "binaries" / platform_key / rel_path_str,
+                ]
+                found = False
+                for cand in candidates:
+                    if cand.exists():
+                        file_path = cand
+                        found = True
+                        break
+                if not found:
+                    raise RuntimeError(
+                        f"Startup validation failed: local packaged binary file {rel_path_str} is missing."
+                    )
+            else:
+                raise RuntimeError(
+                    f"Startup validation failed: local packaged binary file {rel_path_str} is missing."
+                )
 
         # Calculate SHA256 of the file
         from app.core.resilient_file_ops import resilient_file_hash
@@ -386,9 +414,6 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
             raise RuntimeError(
                 f"Startup validation failed: local packaged binary file {rel_path_str} has been modified."
             )
-
-    # 5. Inject paths directly from the installation directory
-    inject_bootstrap_paths(platform_binaries_dir)
 
     # 6. Clear sys.modules of sqlcipher3, _sqlite3, and sqlite3 to force reload from the newly injected paths
     for k in list(sys.modules.keys()):

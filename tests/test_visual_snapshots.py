@@ -27,8 +27,9 @@ def sanitize_svg(svg: str) -> str:
     """Sanitize and canonicalize dynamic elements in Textual rendered SVG output.
 
     Normalizes Rich's auto-generated unique element ID prefixes, clock timestamps,
-    Windows path separators, drive letters, and sorts style declarations to ensure
-    deterministic baseline snapshot comparisons across operating systems.
+    Windows path separators, drive letters, filters out unused CSS style declarations,
+    and sorts active style declarations to ensure deterministic baseline snapshot
+    comparisons across operating systems and test execution order.
     """
     svg = svg.replace("\r\n", "\n")
     svg = re.sub(r"terminal-\d+-", "terminal-test-", svg)
@@ -57,10 +58,19 @@ def sanitize_svg(svg: str) -> str:
         css_text = style_match.group(1)
         rules = re.findall(r"\.(terminal-test-r\d+)\s*\{(.*?)\}", css_text)
         if rules:
-            style_map = {}
-            sorted_unique_styles = sorted(list(set(rule[1].strip() for rule in rules)))
+            body_without_style = svg.replace(style_match.group(0), "")
+            used_rules = [
+                (cls, body)
+                for cls, body in rules
+                if re.search(r"\b" + re.escape(cls) + r"\b", body_without_style)
+            ]
 
-            for old_class, style_body in rules:
+            style_map = {}
+            sorted_unique_styles = sorted(
+                list(set(body.strip() for cls, body in used_rules))
+            )
+
+            for old_class, style_body in used_rules:
                 style_index = sorted_unique_styles.index(style_body.strip())
                 style_map[old_class] = f"terminal-test-c{style_index}"
 
@@ -136,6 +146,7 @@ def isolated_app_dir(monkeypatch, tmp_path):
         reg = getattr(SharedModelRegistry, "_instance", None)
         if reg is not None:
             reg._cached_settings = None
+        SharedModelRegistry._instance = None
     except Exception:
         pass
 

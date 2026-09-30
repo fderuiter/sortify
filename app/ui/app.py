@@ -593,12 +593,32 @@ class AutoSorterApp:
             return
 
         self.status_label.set_text("Resuming sorting operation...")
+        try:
+            self.loop = asyncio.get_running_loop()
+        except RuntimeError:
+            self.loop = None
+
+        def resume_progress_cb(update: ProgressUpdate):
+            pct_val = update.progress
+            stage_text = update.stage or "Resuming sorting operation..."
+
+            def update_ui():
+                if hasattr(self, "progress_bar"):
+                    self.progress_bar.set_value(pct_val)
+                if hasattr(self, "status_label"):
+                    self.status_label.set_text(stage_text)
+
+            if self.loop and not getattr(self.loop, "is_closed", lambda: False)():
+                try:
+                    self.loop.call_soon_threadsafe(update_ui)
+                except RuntimeError:
+                    pass
 
         async def run():
             success = False
             try:
                 summary = await asyncio.to_thread(
-                    self.app_session.execute_moves, self.plan, True
+                    self.app_session.execute_moves, self.plan, True, progress_callback=resume_progress_cb
                 )
                 ui.notify(f"Resumed and sorted successfully: {summary}")
                 self.status_label.set_text("Sorting complete.")
@@ -1946,6 +1966,32 @@ class AutoSorterApp:
         self.progress_bar.set_value(0)
         self.stop_watcher()
 
+        try:
+            self.loop = asyncio.get_running_loop()
+        except RuntimeError:
+            self.loop = None
+
+        def make_move_progress_cb(start_ratio: float, ratio_span: float, phase_prefix: str):
+            def cb(update: ProgressUpdate):
+                pct_val = start_ratio + (update.progress * ratio_span)
+                stage_text = f"{phase_prefix}: {update.stage}" if update.stage else f"{phase_prefix}: Moving files..."
+
+                def update_ui():
+                    if hasattr(self, "progress_bar"):
+                        self.progress_bar.set_value(pct_val)
+                    if hasattr(self, "status_label"):
+                        self.status_label.set_text(stage_text)
+
+                if self.loop and not getattr(self.loop, "is_closed", lambda: False)():
+                    try:
+                        self.loop.call_soon_threadsafe(update_ui)
+                    except RuntimeError:
+                        pass
+            return cb
+
+        phase1_progress_cb = make_move_progress_cb(0.1, 0.3, "Phase 1/2")
+        phase2_progress_cb = make_move_progress_cb(0.5, 0.4, "Phase 2/2")
+
         async def run():
             success = False
             try:
@@ -1960,7 +2006,7 @@ class AutoSorterApp:
                     )
                     self.progress_bar.set_value(0.1)
                     fast_path_summary = await asyncio.to_thread(
-                        self.app_session.execute_moves, fast_path_plan
+                        self.app_session.execute_moves, fast_path_plan, progress_callback=phase1_progress_cb
                     )
 
                 self.progress_bar.set_value(0.4)
@@ -1989,7 +2035,7 @@ class AutoSorterApp:
                         "Phase 2/2: Executing AI classification..."
                     )
                     slow_path_summary = await asyncio.to_thread(
-                        self.app_session.execute_moves, slow_path_plan
+                        self.app_session.execute_moves, slow_path_plan, progress_callback=phase2_progress_cb
                     )
 
                 # Explicitly unload all models at the end of sorting execution
