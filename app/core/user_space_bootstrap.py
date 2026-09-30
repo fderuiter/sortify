@@ -106,7 +106,11 @@ def inject_bootstrap_paths(platform_binaries_dir: Path = None):
                     except Exception:
                         pass
                     try:
-                        os.add_dll_directory(os.path.join(internal_dir, "app", "binaries", "windows", "sqlcipher3"))
+                        os.add_dll_directory(
+                            os.path.join(
+                                internal_dir, "app", "binaries", "windows", "sqlcipher3"
+                            )
+                        )
                     except Exception:
                         pass
             try:
@@ -125,7 +129,11 @@ def inject_bootstrap_paths(platform_binaries_dir: Path = None):
                 if os.path.isdir(internal_dir):
                     paths.append(internal_dir)
                     paths.append(os.path.join(internal_dir, "sqlcipher3"))
-                    paths.append(os.path.join(internal_dir, "app", "binaries", "windows", "sqlcipher3"))
+                    paths.append(
+                        os.path.join(
+                            internal_dir, "app", "binaries", "windows", "sqlcipher3"
+                        )
+                    )
 
             # Update PATH environment variable without duplicating entries
             current_path_dirs = [

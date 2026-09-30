@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "428026e2cfbde0c50183acf4c1135b35b64d9c0a8fb81004f2e8ee957117ffd5"
+    "checksum": "b9573cc04a5b95682d2803017723983f06a04eefe8f00b5418c2d7606cf25cbf"
   },
   "cli": {
     "app/main.py": [
@@ -8196,7 +8196,26 @@
           ]
         }
       ],
-      "functions": []
+      "functions": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "is_masked_by",
+          "parameters": [
+            {
+              "annotation": "Any",
+              "default": null,
+              "name": "higher_rule"
+            },
+            {
+              "annotation": "Any",
+              "default": null,
+              "name": "lower_rule"
+            }
+          ],
+          "returns": "bool"
+        }
+      ]
     },
     "app/core/progress.py": {
       "classes": [

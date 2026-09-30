@@ -15,6 +15,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from app.core.domain_contracts import _get_val
 from app.core.link_manager import LinkManager
 from app.core.path_utils import is_junction_path
 from app.core.verifier import VerificationEngine
@@ -182,17 +183,6 @@ def _is_cross_volume(src: str, dst: str) -> bool:
     return False
 
 
-def _get_val(obj, attr, default=None):
-    """Safely retrieve attribute or key value from dictionary or domain model object."""
-    if hasattr(obj, attr):
-        val = getattr(obj, attr)
-        if val is not None:
-            return val
-    if isinstance(obj, dict):
-        return obj.get(attr, default)
-    return default
-
-
 def _resolve_source_path(
     base_dir: str,
     key: str,
@@ -227,7 +217,12 @@ def _get_node_mtime(
     rel_src = _get_val(content, "relative_source")
     target_fn = _get_val(content, "target_filename")
 
-    if content is None or node_type in ("file", "directory") or rel_src is not None or target_fn is not None:
+    if (
+        content is None
+        or node_type in ("file", "directory")
+        or rel_src is not None
+        or target_fn is not None
+    ):
         if node_type == "directory":
             return float("inf")
 
@@ -242,7 +237,11 @@ def _get_node_mtime(
             pass
         return float("inf")
     elif isinstance(content, dict) or hasattr(content, "items"):
-        items = content.items() if hasattr(content, "items") else getattr(content, "plan", {}).items()
+        items = (
+            content.items()
+            if hasattr(content, "items")
+            else getattr(content, "plan", {}).items()
+        )
         min_mtime = float("inf")
         sub_parent = os.path.join(active_parent_path, key)
         for sub_key, sub_content in items:
@@ -265,7 +264,12 @@ def _get_node_priority_key(
     rel_src = _get_val(content, "relative_source")
     target_fn = _get_val(content, "target_filename")
 
-    if content is None or node_type in ("file", "directory") or rel_src is not None or target_fn is not None:
+    if (
+        content is None
+        or node_type in ("file", "directory")
+        or rel_src is not None
+        or target_fn is not None
+    ):
         if node_type == "directory":
             return (999, 0.0, float("inf"))
 
@@ -298,7 +302,11 @@ def _get_node_priority_key(
         return (arch_prio, -arch_score, mtime)
 
     elif isinstance(content, dict) or hasattr(content, "items"):
-        items = content.items() if hasattr(content, "items") else getattr(content, "plan", {}).items()
+        items = (
+            content.items()
+            if hasattr(content, "items")
+            else getattr(content, "plan", {}).items()
+        )
         child_keys = []
         sub_parent = os.path.join(active_parent_path, key)
         for sub_key, sub_content in items:
@@ -339,18 +347,11 @@ def _execute_moves_recursive(
     if step_counter is None:
         step_counter = [1]
 
-    curr_plan = plan.plan if hasattr(plan, "plan") and isinstance(plan.plan, dict) else plan
+    curr_plan = (
+        plan.plan if hasattr(plan, "plan") and isinstance(plan.plan, dict) else plan
+    )
     if not isinstance(curr_plan, dict):
         return
-
-    def _get_val(obj, attr, default=None):
-        if hasattr(obj, attr):
-            val = getattr(obj, attr)
-            if val is not None:
-                return val
-        if isinstance(obj, dict):
-            return obj.get(attr, default)
-        return default
 
     sorted_plan_items = sorted(
         curr_plan.items(),
@@ -361,7 +362,11 @@ def _execute_moves_recursive(
 
     for key, content in sorted_plan_items:
         node_type = _get_val(content, "node_type") or _get_val(content, "__type__")
-        is_leaf = content is None or node_type in ("file", "directory") or isinstance(content, BaseModel)
+        is_leaf = (
+            content is None
+            or node_type in ("file", "directory")
+            or isinstance(content, BaseModel)
+        )
         if is_leaf:
             if node_type == "directory":
                 continue
@@ -371,7 +376,9 @@ def _execute_moves_recursive(
                 pass
 
             if depth > 0 and _get_val(content, "relative_source") is None:
-                if content is not None and not (isinstance(content, dict) or isinstance(content, BaseModel)):
+                if content is not None and not (
+                    isinstance(content, dict) or isinstance(content, BaseModel)
+                ):
                     raise ValueError(
                         f"Missing required relative source metadata field for nested item '{key}'"
                     )
@@ -842,18 +849,11 @@ def _collect_move_items(
     base_dir = os.path.normpath(base_dir)
     items = []
 
-    curr_plan = plan.plan if hasattr(plan, "plan") and isinstance(plan.plan, dict) else plan
+    curr_plan = (
+        plan.plan if hasattr(plan, "plan") and isinstance(plan.plan, dict) else plan
+    )
     if not isinstance(curr_plan, dict):
         return items
-
-    def _get_val(obj, attr, default=None):
-        if hasattr(obj, attr):
-            val = getattr(obj, attr)
-            if val is not None:
-                return val
-        if isinstance(obj, dict):
-            return obj.get(attr, default)
-        return default
 
     sorted_plan_items = sorted(
         curr_plan.items(),
@@ -864,7 +864,11 @@ def _collect_move_items(
 
     for key, content in sorted_plan_items:
         node_type = _get_val(content, "node_type") or _get_val(content, "__type__")
-        is_leaf = content is None or node_type in ("file", "directory") or isinstance(content, BaseModel)
+        is_leaf = (
+            content is None
+            or node_type in ("file", "directory")
+            or isinstance(content, BaseModel)
+        )
         if is_leaf:
             if node_type == "directory":
                 continue
@@ -873,7 +877,9 @@ def _collect_move_items(
                 pass
 
             if depth > 0 and _get_val(content, "relative_source") is None:
-                if content is not None and not (isinstance(content, dict) or isinstance(content, BaseModel)):
+                if content is not None and not (
+                    isinstance(content, dict) or isinstance(content, BaseModel)
+                ):
                     raise ValueError(
                         f"Missing required relative source metadata field for nested item '{key}'"
                     )

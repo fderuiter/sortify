@@ -67,12 +67,15 @@ def update_binaries_and_manifest(system_platform=None, bypass_pytest_check=False
             if pat in ("sqlcipher", "libsqlcipher", "sqlite3"):
                 already_copied = any(
                     f.lower().endswith(".dll")
-                    and any(k in f.lower() for k in ("sqlcipher", "sqlite3", "libsqlcipher"))
+                    and any(
+                        k in f.lower() for k in ("sqlcipher", "sqlite3", "libsqlcipher")
+                    )
                     for f in copied_files
                 )
             else:
                 already_copied = any(
-                    f.lower().endswith(".dll") and pat in f.lower() for f in copied_files
+                    f.lower().endswith(".dll") and pat in f.lower()
+                    for f in copied_files
                 )
 
             if not already_copied:
@@ -86,7 +89,8 @@ def update_binaries_and_manifest(system_platform=None, bypass_pytest_check=False
                         return False
                     if pat in ("sqlcipher", "libsqlcipher", "sqlite3"):
                         return any(
-                            k in f_lower for k in ("sqlcipher", "sqlite3", "libsqlcipher")
+                            k in f_lower
+                            for k in ("sqlcipher", "sqlite3", "libsqlcipher")
                         )
                     return pat in f_lower
 
@@ -119,7 +123,11 @@ def update_binaries_and_manifest(system_platform=None, bypass_pytest_check=False
                         Path("Lib") / "site-packages" / "pysqlcipher3" / "dlls",
                         Path("Lib") / "site-packages" / "pysqlcipher3" / "bin",
                         Path("Lib") / "site-packages" / "cryptography",
-                        Path("Lib") / "site-packages" / "cryptography" / "hazmat" / "bindings",
+                        Path("Lib")
+                        / "site-packages"
+                        / "cryptography"
+                        / "hazmat"
+                        / "bindings",
                         Path("Lib") / "site-packages" / "cryptography.libs",
                         Path("Lib") / "site-packages" / "OpenSSL",
                         Path("app") / "binaries" / "windows" / "sqlcipher3",

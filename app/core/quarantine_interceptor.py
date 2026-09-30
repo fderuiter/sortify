@@ -15,18 +15,13 @@ from app.core.domain_contracts import QuarantineRecordModel, validate_quarantine
 from app.core.extractor import extract_file_text
 from app.core.forensic_scanner import ForensicScanner
 from app.core.policy_engine import PolicyEngine
-from app.core.resilient_file_ops import resilient_file_hash, resilient_move
+from app.core.resilient_file_ops import (
+    _set_posix_mode,
+    resilient_file_hash,
+    resilient_move,
+)
 
 logger = logging.getLogger(__name__)
-
-
-def _set_posix_mode(path: str, mode: int) -> None:
-    """Apply POSIX permissions (mode) to a path gracefully across platforms."""
-    if os.name == "posix":
-        try:
-            os.chmod(path, mode)
-        except OSError as err:
-            logger.debug(f"Failed to set mode {oct(mode)} on '{path}': {err}")
 
 
 def scrub_pii_from_text(text: Any) -> str:
@@ -246,12 +241,28 @@ class QuarantineInterceptorService:
             )
 
             action = (
-                (getattr(matched_rule, "action", "") or (matched_rule.get("action", "") if isinstance(matched_rule, dict) else "")).lower()
+                (
+                    getattr(matched_rule, "action", "")
+                    or (
+                        matched_rule.get("action", "")
+                        if isinstance(matched_rule, dict)
+                        else ""
+                    )
+                ).lower()
                 if matched_rule
                 else (record.get("policy_action") or "").lower()
             )
 
-            target_subfolder = getattr(matched_rule, "target_path", None) or (matched_rule.get("target_path") if isinstance(matched_rule, dict) else None) if matched_rule else None
+            target_subfolder = (
+                getattr(matched_rule, "target_path", None)
+                or (
+                    matched_rule.get("target_path")
+                    if isinstance(matched_rule, dict)
+                    else None
+                )
+                if matched_rule
+                else None
+            )
 
             # Re-check timeout guardrail before action execution
             if (
@@ -444,7 +455,11 @@ class QuarantineInterceptorService:
                 dlq_item["status"] = "DEAD_LETTER_QUEUE"
                 self.dlq_records.append(dlq_item)
                 return validate_quarantine_record(dlq_item)
-            fallback = {"job_id": job_id, "status": "DEAD_LETTER_QUEUE", "error": err_msg}
+            fallback = {
+                "job_id": job_id,
+                "status": "DEAD_LETTER_QUEUE",
+                "error": err_msg,
+            }
             return validate_quarantine_record(fallback)
 
         except Exception as e:
@@ -467,5 +482,9 @@ class QuarantineInterceptorService:
                 dlq_item["status"] = "DEAD_LETTER_QUEUE"
                 self.dlq_records.append(dlq_item)
                 return validate_quarantine_record(dlq_item)
-            fallback = {"job_id": job_id, "status": "DEAD_LETTER_QUEUE", "error": err_msg}
+            fallback = {
+                "job_id": job_id,
+                "status": "DEAD_LETTER_QUEUE",
+                "error": err_msg,
+            }
             return validate_quarantine_record(fallback)

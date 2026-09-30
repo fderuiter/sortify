@@ -21,7 +21,9 @@ def test_scan_catalog_component_passes_for_valid_components():
     for comp in CATALOG_REGISTRY:
         violations = scan_catalog_component(comp, "desktop", 1280)
         assert isinstance(violations, list)
-        assert len(violations) == 0, f"Unexpected violations for {comp['id']}: {violations}"
+        assert len(violations) == 0, (
+            f"Unexpected violations for {comp['id']}: {violations}"
+        )
 
 
 def test_run_all_catalog_scans_executes_all_combos():
@@ -90,7 +92,9 @@ def test_a11y_violation_detection_rule_a11y004_label_overflow():
     """Verify detection of unhandled label overflow on narrow viewports (A11Y004)."""
 
     def defective_render(container, state="default", viewport_width=375):
-        ui.label("This is a very long text string that stretches across the narrow viewport without wrapping classes")
+        ui.label(
+            "This is a very long text string that stretches across the narrow viewport without wrapping classes"
+        )
 
     entry = {
         "id": "defective_label",
@@ -116,5 +120,3 @@ def test_ui_proxy_pickle_and_uninitialized_safety():
 
     copied = copy.copy(ui)
     assert copied._target is not None
-
-

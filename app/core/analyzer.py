@@ -52,14 +52,18 @@ class SortingPlanNode(dict):
     def __getattr__(self, name: str) -> Any:
         """Provide dynamic attribute lookup for schema fields and dictionary keys."""
         if name.startswith("__") and name.endswith("__"):
-            raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
+            raise AttributeError(
+                f"'{self.__class__.__name__}' object has no attribute '{name}'"
+            )
         if name == "node_type":
             return self.get("node_type") or self.get("__type__", "file")
         if name in self:
             return self[name]
         if name in _SortingPlanNodeSchema.model_fields:
             return self.get(name)
-        raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
+        raise AttributeError(
+            f"'{self.__class__.__name__}' object has no attribute '{name}'"
+        )
 
     def __setattr__(self, name: str, value: Any) -> None:
         """Provide dynamic attribute assignment mapping to dictionary entries."""
@@ -81,7 +85,12 @@ class SortingPlan(dict):
                 target = plan
             validated = _validate_sorting_plan_nodes(target)
             super().__init__(validated)
-        elif kwargs and "plan" in kwargs and isinstance(kwargs["plan"], dict) and len(kwargs) == 1:
+        elif (
+            kwargs
+            and "plan" in kwargs
+            and isinstance(kwargs["plan"], dict)
+            and len(kwargs) == 1
+        ):
             validated = _validate_sorting_plan_nodes(kwargs["plan"])
             super().__init__(validated)
         elif kwargs:
@@ -204,10 +213,14 @@ def pre_fetch_historical_corpus(
             rows = cursor.fetchall()
     except Exception as e:
         logging.error(f"Failed to query historical documents from DB: {e}")
-        return validate_corpus_prefetch_batch({"model_metadata": model_metadata, "examples": []})
+        return validate_corpus_prefetch_batch(
+            {"model_metadata": model_metadata, "examples": []}
+        )
 
     if not rows:
-        return validate_corpus_prefetch_batch({"model_metadata": model_metadata, "examples": []})
+        return validate_corpus_prefetch_batch(
+            {"model_metadata": model_metadata, "examples": []}
+        )
 
     # Decrypt and parse candidates
     candidates = []
@@ -306,7 +319,9 @@ def pre_fetch_historical_corpus(
                 logging.error(f"TF-IDF ranking of historical examples failed: {e}")
                 selected_examples = candidates[:max_examples]
 
-    return validate_corpus_prefetch_batch({"model_metadata": model_metadata, "examples": selected_examples})
+    return validate_corpus_prefetch_batch(
+        {"model_metadata": model_metadata, "examples": selected_examples}
+    )
 
 
 class IncrementalAnalyzer:
@@ -614,9 +629,15 @@ class IncrementalAnalyzer:
                     policy_plan_files.append(
                         (
                             f,
-                            matched_policy.target_path if hasattr(matched_policy, "target_path") else matched_policy["target_path"],
-                            matched_policy.expression if hasattr(matched_policy, "expression") else matched_policy["expression"],
-                            matched_policy.type if hasattr(matched_policy, "type") else matched_policy["type"],
+                            matched_policy.target_path
+                            if hasattr(matched_policy, "target_path")
+                            else matched_policy["target_path"],
+                            matched_policy.expression
+                            if hasattr(matched_policy, "expression")
+                            else matched_policy["expression"],
+                            matched_policy.type
+                            if hasattr(matched_policy, "type")
+                            else matched_policy["type"],
                             status_match,
                         )
                     )
@@ -661,7 +682,9 @@ class IncrementalAnalyzer:
                             and jev_model.confidence > 0.0
                             and jev_model.category != "Unclassified"
                         ):
-                            jev_plan_files.append((f, jev_model.category, jev_model, status_match))
+                            jev_plan_files.append(
+                                (f, jev_model.category, jev_model, status_match)
+                            )
                             matched = True
 
                 if not matched and keyword_rules:
@@ -722,7 +745,9 @@ class IncrementalAnalyzer:
                             and v_jev_model.confidence > 0.0
                             and v_jev_model.category != "Unclassified"
                         ):
-                            jev_plan_files.append((f_path, v_jev_model.category, v_jev_model, None))
+                            jev_plan_files.append(
+                                (f_path, v_jev_model.category, v_jev_model, None)
+                            )
                             processed_files.add(f_path)
 
             # Internal Jev Classifier Fallback execution for unclassified candidate documents in fast-path
@@ -731,8 +756,7 @@ class IncrementalAnalyzer:
                     {d[0]: d[1] for d in docs if len(d) > 1} if docs else {}
                 )
                 processed_jev_files = {
-                    str(f_item).replace("\\", "/")
-                    for f_item, _, _, _ in jev_plan_files
+                    str(f_item).replace("\\", "/") for f_item, _, _, _ in jev_plan_files
                 }
                 remaining_ai_files = []
                 remaining_ai_docs = []
@@ -1170,7 +1194,9 @@ class IncrementalAnalyzer:
                                 max_examples=50,
                             )
                             if raw_corpus:
-                                pre_fetched_corpus = validate_corpus_prefetch_batch(raw_corpus)
+                                pre_fetched_corpus = validate_corpus_prefetch_batch(
+                                    raw_corpus
+                                )
                         except Exception as e:
                             logging.error(f"Failed to pre-fetch historical corpus: {e}")
 
@@ -1407,8 +1433,16 @@ class IncrementalAnalyzer:
 
                 matched_pol = matched_policies_map.get(f)
                 if matched_pol:
-                    info["routed_by"] = getattr(matched_pol, "type", None) or (matched_pol.get("type", "policy") if isinstance(matched_pol, dict) else "policy")
-                    info["match"] = getattr(matched_pol, "expression", None) or (matched_pol.get("expression") if isinstance(matched_pol, dict) else None)
+                    info["routed_by"] = getattr(matched_pol, "type", None) or (
+                        matched_pol.get("type", "policy")
+                        if isinstance(matched_pol, dict)
+                        else "policy"
+                    )
+                    info["match"] = getattr(matched_pol, "expression", None) or (
+                        matched_pol.get("expression")
+                        if isinstance(matched_pol, dict)
+                        else None
+                    )
                 else:
                     info["routed_by"] = "historical"
                     info["match"] = "user assignment"

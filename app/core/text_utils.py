@@ -31,14 +31,20 @@ _SECRET_BOUND_RIGHT = r"(?:$|(?=[^a-zA-Z0-9]))"
 # 6. Centralized Secret & Credential Patterns
 SECRET_KEY_PATTERNS = [
     # Stripe / General sk_ live or test keys
-    re.compile(_SECRET_BOUND_LEFT + r"sk_(?:live|test)_[a-zA-Z0-9]{20,}" + _SECRET_BOUND_RIGHT),
+    re.compile(
+        _SECRET_BOUND_LEFT + r"sk_(?:live|test)_[a-zA-Z0-9]{20,}" + _SECRET_BOUND_RIGHT
+    ),
     # GitHub Tokens (ghp_, gho_, ghu_, ghs_, ghr_)
-    re.compile(_SECRET_BOUND_LEFT + r"gh[pousr]_[a-zA-Z0-9]{20,}" + _SECRET_BOUND_RIGHT),
+    re.compile(
+        _SECRET_BOUND_LEFT + r"gh[pousr]_[a-zA-Z0-9]{20,}" + _SECRET_BOUND_RIGHT
+    ),
     # AWS Access Key ID (AKIA or ASIA followed by 16 alphanumeric characters)
     re.compile(_SECRET_BOUND_LEFT + r"(?:AKIA|ASIA)[0-9A-Z]{16}" + _SECRET_BOUND_RIGHT),
     # AWS Secret Access Key or generic secret key key-value pairs
     re.compile(
-        _SECRET_BOUND_LEFT + r"(?:aws_secret_access_key|api[_-]?key|secret[_-]?key|access[_-]?token|auth[_-]?token)\s*[:=]\s*[a-zA-Z0-9_\-/+=]{16,}" + _SECRET_BOUND_RIGHT,
+        _SECRET_BOUND_LEFT
+        + r"(?:aws_secret_access_key|api[_-]?key|secret[_-]?key|access[_-]?token|auth[_-]?token)\s*[:=]\s*[a-zA-Z0-9_\-/+=]{16,}"
+        + _SECRET_BOUND_RIGHT,
         re.IGNORECASE,
     ),
     # Mailgun / Generic API key format (e.g. key-3ax6...)
@@ -48,11 +54,15 @@ SECRET_KEY_PATTERNS = [
 ]
 
 BEARER_TOKEN_PATTERN = re.compile(
-    _SECRET_BOUND_LEFT + r"Bearer[\s_]+(?:eyJ[a-zA-Z0-9\-_=]+\.eyJ[a-zA-Z0-9\-_=]+\.[a-zA-Z0-9\-_=]{43,88}?|[a-zA-Z0-9_\-\.=]{16,})" + _SECRET_BOUND_RIGHT,
+    _SECRET_BOUND_LEFT
+    + r"Bearer[\s_]+(?:eyJ[a-zA-Z0-9\-_=]+\.eyJ[a-zA-Z0-9\-_=]+\.[a-zA-Z0-9\-_=]{43,88}?|[a-zA-Z0-9_\-\.=]{16,})"
+    + _SECRET_BOUND_RIGHT,
     re.IGNORECASE,
 )
 JWT_PATTERN = re.compile(
-    _SECRET_BOUND_LEFT + r"eyJ[a-zA-Z0-9\-_=]+\.eyJ[a-zA-Z0-9\-_=]+\.[a-zA-Z0-9\-_=]{43,88}?" + _SECRET_BOUND_RIGHT
+    _SECRET_BOUND_LEFT
+    + r"eyJ[a-zA-Z0-9\-_=]+\.eyJ[a-zA-Z0-9\-_=]+\.[a-zA-Z0-9\-_=]{43,88}?"
+    + _SECRET_BOUND_RIGHT
 )
 PRIVATE_KEY_PATTERN = re.compile(
     r"-----BEGIN\s+(?:[A-Z0-9_-]+\s+)?PRIVATE\s+KEY-----[\s\S]*?-----END\s+(?:[A-Z0-9_-]+\s+)?PRIVATE\s+KEY-----|"
@@ -249,4 +259,3 @@ def sanitize_text(text: str) -> str:
     text = VERTICAL_WHITESPACE_PATTERN.sub("\n", text)
 
     return text.strip()
-

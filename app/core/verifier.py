@@ -6,6 +6,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from app.core.domain_contracts import _get_val
 from app.core.link_manager import LinkManager
 
 try:
@@ -269,18 +270,16 @@ class VerificationEngine:
         if hasattr(plan, "plan") and isinstance(plan.plan, dict):
             plan = plan.plan
 
-        def _get_val(obj, attr, default=None):
-            if hasattr(obj, attr):
-                val = getattr(obj, attr)
-                if val is not None:
-                    return val
-            if isinstance(obj, dict):
-                return obj.get(attr, default)
-            return default
+        if not isinstance(plan, dict):
+            return moves
 
         for key, content in plan.items():
             node_type = _get_val(content, "node_type") or _get_val(content, "__type__")
-            is_node = content is None or node_type in ("file", "directory") or isinstance(content, BaseModel)
+            is_node = (
+                content is None
+                or node_type in ("file", "directory")
+                or isinstance(content, BaseModel)
+            )
             if is_node:
                 if node_type == "directory":
                     continue
@@ -742,7 +741,9 @@ class VirtualFilesystemTracker:
                 )
 
         # Check rename proposals
-        invalid_renames, unconfirmed_renames = self.check_rename_proposals(base_dir, plan)
+        invalid_renames, unconfirmed_renames = self.check_rename_proposals(
+            base_dir, plan
+        )
 
         # Consolidate all warnings
         warnings = []
@@ -790,22 +791,23 @@ class VirtualFilesystemTracker:
         unconfirmed_renames = []
 
         def _inspect_node(node, current_dest=""):
-            curr_dict = node.plan if hasattr(node, "plan") and isinstance(node.plan, dict) else node
+            curr_dict = (
+                node.plan
+                if hasattr(node, "plan") and isinstance(node.plan, dict)
+                else node
+            )
             if not isinstance(curr_dict, dict):
                 return
 
-            def _get_val(obj, attr, default=None):
-                if hasattr(obj, attr):
-                    val = getattr(obj, attr)
-                    if val is not None:
-                        return val
-                if isinstance(obj, dict):
-                    return obj.get(attr, default)
-                return default
-
             for key, content in curr_dict.items():
-                node_type = _get_val(content, "node_type") or _get_val(content, "__type__")
-                is_file_or_dir = content is None or node_type in ("file", "directory") or isinstance(content, BaseModel)
+                node_type = _get_val(content, "node_type") or _get_val(
+                    content, "__type__"
+                )
+                is_file_or_dir = (
+                    content is None
+                    or node_type in ("file", "directory")
+                    or isinstance(content, BaseModel)
+                )
                 if is_file_or_dir:
                     if node_type == "directory":
                         continue
@@ -821,9 +823,7 @@ class VirtualFilesystemTracker:
                         src_stem, src_ext = os.path.splitext(src_filename)
                         tgt_stem, tgt_ext = os.path.splitext(target_filename)
 
-                        source_path = os.path.normpath(
-                            os.path.join(base_dir, rel_src)
-                        )
+                        source_path = os.path.normpath(os.path.join(base_dir, rel_src))
                         dest_dir = os.path.normpath(
                             os.path.join(base_dir, current_dest)
                         )

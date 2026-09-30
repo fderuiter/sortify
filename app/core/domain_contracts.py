@@ -121,7 +121,9 @@ class SortingPlanNodeModel(BaseModel):
     def get(self, item: str, default: Any = None) -> Any:
         """Provide dictionary get method for backward compatibility."""
         if item == "__type__":
-            return getattr(self, "node_type", default if default is not None else "file")
+            return getattr(
+                self, "node_type", default if default is not None else "file"
+            )
         return getattr(self, item, default)
 
     def __contains__(self, item: str) -> bool:
@@ -397,3 +399,27 @@ def validate_sorting_plan_node(payload: Any) -> SortingPlanNodeModel:
             f"SortingPlanNodeModel validation failed: {err}",
             payload_context=str(payload),
         ) from err
+
+
+def _make_json_serializable(obj: Any) -> Any:
+    """Recursively convert model objects and dicts to JSON-serializable structures."""
+    if isinstance(obj, dict):
+        return {k: _make_json_serializable(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_make_json_serializable(v) for v in obj]
+    if hasattr(obj, "model_dump"):
+        return obj.model_dump()
+    if hasattr(obj, "dict"):
+        return obj.dict()
+    return str(obj)
+
+
+def _get_val(obj: Any, attr: str, default: Any = None) -> Any:
+    """Safely retrieve attribute or key value from dictionary or domain model object."""
+    if hasattr(obj, attr):
+        val = getattr(obj, attr)
+        if val is not None:
+            return val
+    if isinstance(obj, dict):
+        return obj.get(attr, default)
+    return default

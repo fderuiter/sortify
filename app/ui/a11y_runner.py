@@ -18,9 +18,13 @@ def parse_prop_str(prop_str: str) -> Dict[str, Any]:
     pattern = r'([a-zA-Z0-9_\-]+)(?:=(?:"([^"]*)"|\'([^\']*)\'|(\S+)))?'
     for match in re.finditer(pattern, prop_str):
         key = match.group(1)
-        val = match.group(2) if match.group(2) is not None else (
-            match.group(3) if match.group(3) is not None else (
-                match.group(4) if match.group(4) is not None else True
+        val = (
+            match.group(2)
+            if match.group(2) is not None
+            else (
+                match.group(3)
+                if match.group(3) is not None
+                else (match.group(4) if match.group(4) is not None else True)
             )
         )
         props[key] = val
@@ -65,7 +69,16 @@ class MockElement:
                     pass
                 elif tag in ("input", "select", "linear_progress"):
                     self._props["value"] = v
-            elif k in ("label", "placeholder", "icon", "alt", "src", "aria-label", "aria-labelledby", "aria-hidden"):
+            elif k in (
+                "label",
+                "placeholder",
+                "icon",
+                "alt",
+                "src",
+                "aria-label",
+                "aria-labelledby",
+                "aria-hidden",
+            ):
                 self._props[k] = v
             elif k == "options":
                 self._props["options"] = v
@@ -476,6 +489,7 @@ class _MockElement:
     def props(self, *args, **kwargs):
         if args and isinstance(args[0], str):
             import re
+
             props_str = args[0]
             for match in re.finditer(
                 r'([a-zA-Z0-9_-]+)(?:=["\']([^"\']*)["\']|=(\S+))?', props_str

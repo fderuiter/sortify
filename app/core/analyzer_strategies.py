@@ -165,8 +165,10 @@ def validate_prompt_dump_path(dump_file: str) -> Path:
             try:
                 norm_target = _get_canonical_windows_path(target_path)
                 norm_debug = _get_canonical_windows_path(debug_dir)
-                common_path = os.path.normpath(os.path.commonpath([norm_target, norm_debug])).lower()
-                is_windows_subpath = (common_path == norm_debug)
+                common_path = os.path.normpath(
+                    os.path.commonpath([norm_target, norm_debug])
+                ).lower()
+                is_windows_subpath = common_path == norm_debug
             except Exception:
                 is_windows_subpath = False
         if not is_windows_subpath:
@@ -268,7 +270,11 @@ def _scrub_user_home_paths(text: str) -> str:
 
         if len(raw_parts[0]) == 2 and raw_parts[0][1] == ":":
             body_parts = raw_parts[1:]
-        elif len(raw_parts[0]) == 1 and raw_parts[0].isalpha() and (h.startswith("/") or h.startswith("\\")):
+        elif (
+            len(raw_parts[0]) == 1
+            and raw_parts[0].isalpha()
+            and (h.startswith("/") or h.startswith("\\"))
+        ):
             body_parts = raw_parts[1:]
         else:
             body_parts = raw_parts
@@ -1483,7 +1489,15 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
             if not isinstance(curr_dict, dict):
                 return res
             for key, val in curr_dict.items():
-                is_file = val is None or not isinstance(val, dict) or (hasattr(val, "node_type") and getattr(val, "node_type") == "file") or (isinstance(val, dict) and val.get("__type__") == "file")
+                is_file = (
+                    val is None
+                    or not isinstance(val, dict)
+                    or (
+                        hasattr(val, "node_type")
+                        and getattr(val, "node_type") == "file"
+                    )
+                    or (isinstance(val, dict) and val.get("__type__") == "file")
+                )
                 if is_file:
                     res.append(key)
                 else:
@@ -1497,11 +1511,20 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
             # Separate files and subfolders in this node
             files = []
             subfolders = {}
-            curr_node = node.plan if hasattr(node, "plan") and isinstance(node.plan, dict) else node
+            curr_node = (
+                node.plan
+                if hasattr(node, "plan") and isinstance(node.plan, dict)
+                else node
+            )
             if not isinstance(curr_node, dict):
                 return new_node, low_confidence_files
             for k, v in curr_node.items():
-                is_file = v is None or not isinstance(v, dict) or (hasattr(v, "node_type") and getattr(v, "node_type") == "file") or (isinstance(v, dict) and v.get("__type__") == "file")
+                is_file = (
+                    v is None
+                    or not isinstance(v, dict)
+                    or (hasattr(v, "node_type") and getattr(v, "node_type") == "file")
+                    or (isinstance(v, dict) and v.get("__type__") == "file")
+                )
                 if is_file:
                     files.append((k, v))
                 else:

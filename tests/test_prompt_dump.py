@@ -72,8 +72,10 @@ def test_validate_prompt_dump_path_valid():
             norm_res = _get_canonical_windows_path(resolved)
             norm_deg = _get_canonical_windows_path(debug_dir)
             try:
-                common = os.path.normpath(os.path.commonpath([norm_res, norm_deg])).lower()
-                is_rel = (common == norm_deg)
+                common = os.path.normpath(
+                    os.path.commonpath([norm_res, norm_deg])
+                ).lower()
+                is_rel = common == norm_deg
             except Exception:
                 is_rel = False
         assert is_rel
@@ -360,12 +362,31 @@ def test_scrub_user_home_paths_cross_platform_variations(monkeypatch):
     text_exact_home_period = r"File located at C:\Users\RunnerAdmin."
     text_non_matching = r"File located at C:\Users\RunnerAdminDocs\data.txt"
 
-    assert _scrub_user_home_paths(text_win_upper) == r"File located at <USER_HOME>\documents\data.txt"
-    assert _scrub_user_home_paths(text_win_lower) == r"File located at <USER_HOME>\documents\data.txt"
-    assert _scrub_user_home_paths(text_win_fwd) == "File located at <USER_HOME>/documents/data.txt"
-    assert _scrub_user_home_paths(text_posix_bash) == "File located at <USER_HOME>/documents/data.txt"
-    assert _scrub_user_home_paths(text_no_drive) == r"File located at <USER_HOME>\documents\data.txt"
+    assert (
+        _scrub_user_home_paths(text_win_upper)
+        == r"File located at <USER_HOME>\documents\data.txt"
+    )
+    assert (
+        _scrub_user_home_paths(text_win_lower)
+        == r"File located at <USER_HOME>\documents\data.txt"
+    )
+    assert (
+        _scrub_user_home_paths(text_win_fwd)
+        == "File located at <USER_HOME>/documents/data.txt"
+    )
+    assert (
+        _scrub_user_home_paths(text_posix_bash)
+        == "File located at <USER_HOME>/documents/data.txt"
+    )
+    assert (
+        _scrub_user_home_paths(text_no_drive)
+        == r"File located at <USER_HOME>\documents\data.txt"
+    )
     assert _scrub_user_home_paths(text_exact_home) == "File located at <USER_HOME>"
-    assert _scrub_user_home_paths(text_exact_home_period) == "File located at <USER_HOME>."
-    assert _scrub_user_home_paths(text_non_matching) == r"File located at C:\Users\RunnerAdminDocs\data.txt"
-
+    assert (
+        _scrub_user_home_paths(text_exact_home_period) == "File located at <USER_HOME>."
+    )
+    assert (
+        _scrub_user_home_paths(text_non_matching)
+        == r"File located at C:\Users\RunnerAdminDocs\data.txt"
+    )

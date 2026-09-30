@@ -16,6 +16,8 @@ from typing import Annotated, Any, Callable, Literal
 from pydantic import Field, ValidationError, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.core.policy_engine import is_masked_by
+
 _SCHEMA_VALIDATOR = None
 _SCHEMA_VALIDATOR_LOCK = threading.Lock()
 
@@ -279,26 +281,8 @@ class Settings(BaseSettings):
                 raise ValueError("Policy halting property must be a boolean.")
 
         # Overlap check
-        def is_masked_by(higher_rule, lower_rule) -> bool:
-            ha_type = higher_rule.get("type", "").lower()
-            lo_type = lower_rule.get("type", "").lower()
-            ha_expr = higher_rule.get("expression", "").lower()
-            lo_expr = lower_rule.get("expression", "").lower()
-
-            if not ha_expr or not lo_expr:
-                return False
-
-            if ha_expr in lo_expr:
-                if ha_type == "keyword":
-                    return True
-                if ha_type == "pattern":
-                    if lo_type in ("pattern", "override"):
-                        return True
-                if ha_type == "override" and lo_type == "override":
-                    return True
-            return False
-
         sorted_policies = sorted(v, key=lambda x: x.get("priority", 0), reverse=True)
+
         for i, lower_rule in enumerate(sorted_policies):
             for higher_rule in sorted_policies[:i]:
                 if is_masked_by(higher_rule, lower_rule):

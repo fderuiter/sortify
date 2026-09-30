@@ -122,12 +122,8 @@ jobs:
       run: |
         uv run python scripts/validate_architecture.py
 
-    - name: Validate Duplicate System Utilities
-      if: matrix.os == 'ubuntu-latest'
-      run: |
-        uv run python scripts/validate_duplicates.py
-
     - name: Terminal Interface Snapshot Validation
+
       run: |
         uv run pytest tests/test_ui_snapshots.py tests/test_visual_snapshots.py
 

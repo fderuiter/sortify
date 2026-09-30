@@ -90,9 +90,9 @@ def assert_svg_snapshot(snapshot_name: str, actual_svg: str) -> None:
     with open(snapshot_path, "r", encoding="utf-8", newline="\n") as f:
         expected_svg = f.read().replace("\r\n", "\n")
 
-    assert (
-        sanitized_actual == expected_svg
-    ), f"SVG visual snapshot mismatch for '{snapshot_name}'. Set UPDATE_SNAPSHOTS=1 to re-baseline."
+    assert sanitized_actual == expected_svg, (
+        f"SVG visual snapshot mismatch for '{snapshot_name}'. Set UPDATE_SNAPSHOTS=1 to re-baseline."
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -116,6 +116,7 @@ def isolated_app_dir(monkeypatch, tmp_path):
 
     try:
         from app.core.shared_registry import SharedModelRegistry
+
         reg = getattr(SharedModelRegistry, "_instance", None)
         if reg is not None:
             reg._cached_settings = None
@@ -128,6 +129,7 @@ def isolated_app_dir(monkeypatch, tmp_path):
 
 def test_tui_main_screen_snapshot():
     """Verify visual layout of default AutoSorterTUI main screen."""
+
     async def _test():
         settings = AppSettings()
         app = AutoSorterTUI(settings=settings)
@@ -141,6 +143,7 @@ def test_tui_main_screen_snapshot():
 
 def test_tui_populated_plan_snapshot():
     """Verify visual layout of AutoSorterTUI with a populated tree plan."""
+
     async def _test():
         settings = AppSettings()
         app = AutoSorterTUI(settings=settings, base_dir="/dummy/workspace")
@@ -182,6 +185,7 @@ def test_tui_populated_plan_snapshot():
 
 def test_wizard_modal_snapshot():
     """Verify visual layout of WizardModal onboarding screen."""
+
     async def _test():
         settings = AppSettings()
         app = AutoSorterTUI(settings=settings)
@@ -196,6 +200,7 @@ def test_wizard_modal_snapshot():
 
 def test_settings_modal_snapshot():
     """Verify visual layout of SettingsModal screen."""
+
     async def _test():
         settings = AppSettings()
         app = AutoSorterTUI(settings=settings)
@@ -213,6 +218,7 @@ def test_settings_modal_snapshot():
 
 def test_rename_modal_snapshot():
     """Verify visual layout of RenameModal screen."""
+
     async def _test():
         settings = AppSettings()
         app = AutoSorterTUI(settings=settings)
@@ -232,6 +238,7 @@ def test_rename_modal_snapshot():
 
 def test_cro_forensic_modal_snapshot():
     """Verify visual layout of CROForensicModal screen."""
+
     async def _test():
         settings = AppSettings()
         app = AutoSorterTUI(settings=settings, base_dir="/dummy/study_root")
@@ -246,6 +253,7 @@ def test_cro_forensic_modal_snapshot():
 
 def test_new_folder_modal_snapshot():
     """Verify visual layout of NewFolderModal screen."""
+
     async def _test():
         settings = AppSettings()
         app = AutoSorterTUI(settings=settings)
@@ -260,6 +268,7 @@ def test_new_folder_modal_snapshot():
 
 def test_directory_select_modal_snapshot():
     """Verify visual layout of DirectorySelectModal screen."""
+
     async def _test():
         settings = AppSettings()
         app = AutoSorterTUI(settings=settings, base_dir="/dummy/projects")

@@ -364,3 +364,12 @@ def resilient_file_hash(
             return hasher.hexdigest()
 
     return hashlib.sha256().hexdigest()
+
+
+def _set_posix_mode(path: str, mode: int) -> None:
+    """Set POSIX file permissions mode if on non-Windows platform."""
+    if sys.platform != "win32":
+        try:
+            os.chmod(path, mode)
+        except OSError:
+            pass

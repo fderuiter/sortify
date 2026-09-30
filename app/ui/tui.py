@@ -45,7 +45,12 @@ class A11yMixin:
 
     def update_status(self, text: str) -> None:
         """Update visual status region on self or parent application."""
-        if hasattr(self, "app") and self.app and self.app is not self and hasattr(self.app, "update_status"):
+        if (
+            hasattr(self, "app")
+            and self.app
+            and self.app is not self
+            and hasattr(self.app, "update_status")
+        ):
             try:
                 self.app.update_status(text)
             except Exception:
@@ -61,7 +66,12 @@ class A11yMixin:
                     pass
             if not self._speech_thread.is_alive():
                 self._speech_thread = None
-        if hasattr(self, "app") and self.app and self.app is not self and hasattr(self.app, "join_speech_thread"):
+        if (
+            hasattr(self, "app")
+            and self.app
+            and self.app is not self
+            and hasattr(self.app, "join_speech_thread")
+        ):
             try:
                 self.app.join_speech_thread(timeout=timeout)
             except Exception:
@@ -124,6 +134,7 @@ class A11yMixin:
             if speech_bin:
                 if self._speech_thread is None or not self._speech_thread.is_alive():
                     try:
+
                         def _speak():
                             try:
                                 kwargs: Dict[str, Any] = {
@@ -134,15 +145,22 @@ class A11yMixin:
                                     "check": False,
                                 }
                                 if sys.platform == "win32":
-                                    kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+                                    kwargs["creationflags"] = getattr(
+                                        subprocess, "CREATE_NO_WINDOW", 0
+                                    )
                                 subprocess.run(
                                     [speech_bin, message],
                                     **kwargs,
                                 )
                             except BaseException as exc:
-                                logger.debug(f"Speech synthesis execution failed: {exc}")
+                                logger.debug(
+                                    f"Speech synthesis execution failed: {exc}"
+                                )
                             finally:
-                                if getattr(self, "_speech_thread", None) is threading.current_thread():
+                                if (
+                                    getattr(self, "_speech_thread", None)
+                                    is threading.current_thread()
+                                ):
                                     self._speech_thread = None
 
                         t = threading.Thread(target=_speak, daemon=True)
@@ -220,15 +238,16 @@ class A11yMixin:
                 }
             )
 
-        status_bar_available = (
-            hasattr(self, "update_status")
-            or (hasattr(self, "app") and self.app and hasattr(self.app, "update_status"))
+        status_bar_available = hasattr(self, "update_status") or (
+            hasattr(self, "app") and self.app and hasattr(self.app, "update_status")
         )
         if not status_bar_available:
-            violations.append({
-                "rule": "A11Y_MISSING_STATUS_REGION",
-                "message": f"Component '{type(self).__name__}' or root application lacks visual status region capability.",
-            })
+            violations.append(
+                {
+                    "rule": "A11Y_MISSING_STATUS_REGION",
+                    "message": f"Component '{type(self).__name__}' or root application lacks visual status region capability.",
+                }
+            )
 
         speech_binary = self._get_speech_binary()
 
@@ -917,9 +936,19 @@ class CROForensicModal(A11yMixin, ModalScreen[None]):
             yield inp_src
 
             yield Label("Target Audit Output Folder:")
-            default_target = (Path(self.base_dir) / "CRO_Audit_Output").as_posix() if self.base_dir else ""
-            inp_tgt = Input(value=default_target, placeholder="Select target output folder...", id="input-target")
-            inp_tgt.tooltip = "Target output directory path for CRO forensic audit files"
+            default_target = (
+                (Path(self.base_dir) / "CRO_Audit_Output").as_posix()
+                if self.base_dir
+                else ""
+            )
+            inp_tgt = Input(
+                value=default_target,
+                placeholder="Select target output folder...",
+                id="input-target",
+            )
+            inp_tgt.tooltip = (
+                "Target output directory path for CRO forensic audit files"
+            )
             yield inp_tgt
 
             log_w = Log(classes="log-area", id="log-widget")
@@ -1518,7 +1547,12 @@ class AutoSorterTUI(A11yMixin, App):
             if isinstance(v, dict) and v.get("__type__") == "file":
                 file_key = k
                 file_info = v
-                filepath = file_info.get("filepath", (Path(self.base_dir) / current_folder / file_key).as_posix() if self.base_dir else (Path(current_folder) / file_key).as_posix())
+                filepath = file_info.get(
+                    "filepath",
+                    (Path(self.base_dir) / current_folder / file_key).as_posix()
+                    if self.base_dir
+                    else (Path(current_folder) / file_key).as_posix(),
+                )
 
                 is_locked = (
                     file_key in self.locked_files
@@ -1545,7 +1579,15 @@ class AutoSorterTUI(A11yMixin, App):
 
                 arch_prio = file_info.get("archival_priority")
                 if arch_prio is not None:
-                    arch_str = f"P{arch_prio}" if isinstance(arch_prio, int) or (isinstance(arch_prio, str) and not str(arch_prio).upper().startswith("P")) else str(arch_prio).upper()
+                    arch_str = (
+                        f"P{arch_prio}"
+                        if isinstance(arch_prio, int)
+                        or (
+                            isinstance(arch_prio, str)
+                            and not str(arch_prio).upper().startswith("P")
+                        )
+                        else str(arch_prio).upper()
+                    )
                     label_parts.append(f"[ARCH: {arch_str}]")
 
                 label_parts.append(file_key)
@@ -1565,7 +1607,9 @@ class AutoSorterTUI(A11yMixin, App):
                 }
                 parent_item.add_leaf(label_str, data=node_data)
             elif isinstance(v, dict):
-                sub_folder = (Path(current_folder) / k).as_posix() if current_folder else k
+                sub_folder = (
+                    (Path(current_folder) / k).as_posix() if current_folder else k
+                )
                 node_data = {
                     "is_file": False,
                     "key": k,
@@ -1631,19 +1675,31 @@ class AutoSorterTUI(A11yMixin, App):
             sens_score = info.get("sensitivity_score")
             if sens_score is not None:
                 try:
-                    lines.append(f"[bold]Sensitivity Score:[/bold] {float(sens_score):.2f}")
+                    lines.append(
+                        f"[bold]Sensitivity Score:[/bold] {float(sens_score):.2f}"
+                    )
                 except (ValueError, TypeError):
                     lines.append(f"[bold]Sensitivity Score:[/bold] {sens_score}")
 
             arch_prio = info.get("archival_priority")
             if arch_prio is not None:
-                arch_str = f"P{arch_prio}" if isinstance(arch_prio, int) or (isinstance(arch_prio, str) and not str(arch_prio).upper().startswith("P")) else str(arch_prio).upper()
+                arch_str = (
+                    f"P{arch_prio}"
+                    if isinstance(arch_prio, int)
+                    or (
+                        isinstance(arch_prio, str)
+                        and not str(arch_prio).upper().startswith("P")
+                    )
+                    else str(arch_prio).upper()
+                )
                 lines.append(f"[bold]Archival Priority:[/bold] {arch_str}")
 
             arch_score = info.get("archival_priority_score")
             if arch_score is not None:
                 try:
-                    lines.append(f"[bold]Archival Priority Score:[/bold] {float(arch_score):.2f}")
+                    lines.append(
+                        f"[bold]Archival Priority Score:[/bold] {float(arch_score):.2f}"
+                    )
                 except (ValueError, TypeError):
                     lines.append(f"[bold]Archival Priority Score:[/bold] {arch_score}")
 
@@ -1822,7 +1878,11 @@ def run_tui(settings, base_dir: Optional[str] = None) -> None:
     from app.core.path_utils import is_packaged
 
     if sys.platform == "win32" and is_packaged():
-        if sys.stdin is None or not hasattr(sys.stdin, "isatty") or not sys.stdin.isatty():
+        if (
+            sys.stdin is None
+            or not hasattr(sys.stdin, "isatty")
+            or not sys.stdin.isatty()
+        ):
             try:
                 import ctypes
 
@@ -1842,7 +1902,12 @@ def run_tui(settings, base_dir: Optional[str] = None) -> None:
             except Exception:
                 pass
 
-    if sys.stdin is None or not hasattr(sys.stdin, "isatty") or not sys.stdin.isatty() or (hasattr(sys.stdout, "isatty") and not sys.stdout.isatty()):
+    if (
+        sys.stdin is None
+        or not hasattr(sys.stdin, "isatty")
+        or not sys.stdin.isatty()
+        or (hasattr(sys.stdout, "isatty") and not sys.stdout.isatty())
+    ):
         if not os.environ.get("FORCE_TUI"):
             print(
                 "Error: Textual TUI requires an interactive TTY terminal environment.",

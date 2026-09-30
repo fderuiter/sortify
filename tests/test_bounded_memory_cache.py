@@ -14,7 +14,7 @@ from app.core.semantic_embeddings import (
 
 def test_bounded_memory_cache_basic_ops():
     cache = BoundedMemoryCache(max_size=3)
-    
+
     cache["a"] = 1
     cache["b"] = 2
     cache.put("c", 3)
@@ -159,7 +159,7 @@ def test_database_cached_documents_uses_bounded_memory_cache(tmp_path):
         db = Database(tmp_path / "test_docs.db", worker=worker)
         base_dir = str(tmp_path / "base")
         db.upsert_document(base_dir, "file1.txt", "hash1", "hello text")
-        
+
         docs = db.get_all_documents(base_dir)
         assert len(docs) == 1
         assert isinstance(db._cached_documents, BoundedMemoryCache)
