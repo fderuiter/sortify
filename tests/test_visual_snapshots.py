@@ -35,7 +35,16 @@ def sanitize_svg(svg: str) -> str:
     svg = re.sub(r"\b\d{2}:\d{2}:\d{2}\b", "00:00:00", svg)
 
     # Normalize Windows drive letters, backslashes, and HTML entities in test paths
-    svg = svg.replace("&#92;", "\\").replace("&bsol;", "\\")
+    svg = (
+        svg.replace("&#92;", "\\")
+        .replace("&bsol;", "\\")
+        .replace("&#x5C;", "\\")
+        .replace("&#x5c;", "\\")
+        .replace("&#47;", "/")
+        .replace("&sol;", "/")
+        .replace("&#x2F;", "/")
+        .replace("&#x2f;", "/")
+    )
     svg = re.sub(r"(?:[A-Za-z]:)?[/\\]+dummy", "/dummy", svg)
     svg = re.sub(
         r"/dummy([^<\"]*)",
@@ -47,25 +56,25 @@ def sanitize_svg(svg: str) -> str:
     if style_match:
         css_text = style_match.group(1)
         rules = re.findall(r"\.(terminal-test-r\d+)\s*\{(.*?)\}", css_text)
+        if rules:
+            style_map = {}
+            sorted_unique_styles = sorted(list(set(rule[1].strip() for rule in rules)))
 
-        style_map = {}
-        sorted_unique_styles = sorted(list(set(rule[1].strip() for rule in rules)))
+            for old_class, style_body in rules:
+                style_index = sorted_unique_styles.index(style_body.strip())
+                style_map[old_class] = f"terminal-test-c{style_index}"
 
-        for old_class, style_body in rules:
-            style_index = sorted_unique_styles.index(style_body.strip())
-            style_map[old_class] = f"terminal-test-c{style_index}"
+            new_css_lines = [
+                f"    .terminal-test-c{idx} {{ {body} }}"
+                for idx, body in enumerate(sorted_unique_styles)
+            ]
+            new_css = "\n" + "\n".join(new_css_lines) + "\n    "
+            svg = svg.replace(css_text, new_css)
 
-        new_css_lines = [
-            f"    .terminal-test-c{idx} {{ {body} }}"
-            for idx, body in enumerate(sorted_unique_styles)
-        ]
-        new_css = "\n" + "\n".join(new_css_lines) + "\n    "
-        svg = svg.replace(css_text, new_css)
-
-        for old_class, new_class in sorted(
-            style_map.items(), key=lambda x: len(x[0]), reverse=True
-        ):
-            svg = re.sub(r"\b" + old_class + r"\b", new_class, svg)
+            for old_class, new_class in sorted(
+                style_map.items(), key=lambda x: len(x[0]), reverse=True
+            ):
+                svg = re.sub(r"\b" + old_class + r"\b", new_class, svg)
 
     return svg
 
@@ -117,8 +126,9 @@ def isolated_app_dir(monkeypatch, tmp_path):
         "scan_abandoned_sessions_async",
         AsyncMock(return_value=[]),
     )
-    monkeypatch.delenv("AUTOSORTER_PROTECTED_PATHS", raising=False)
-    monkeypatch.delenv("AUTOSORTER_IGNORED_EXTENSIONS", raising=False)
+    for k in list(os.environ.keys()):
+        if k.startswith("AUTOSORTER_") and k != "AUTOSORTER_APP_DIR":
+            monkeypatch.delenv(k, raising=False)
 
     try:
         from app.core.shared_registry import SharedModelRegistry

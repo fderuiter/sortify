@@ -52,3 +52,14 @@ All shared system utilities must reside in or be exposed through `app.core.path_
 ### Automated Commit-Stage Linting
 The automated validation script `scripts/validate_duplicates.py` is configured as a pre-commit hook to parse Python files and reject any attempts to re-introduce hardcoded path characters (e.g., `<>:"|?*`), direct `sys.frozen` checks, or raw `secret.key` references outside of `path_utils.py`. This keeps pre-commit validation times extremely low (typically < 0.5s) while enforcing strong guardrails against duplicate utilities.
 
+## Modular CLI Subcommand Registry
+
+The command-line interface is organized modularly under `app/cli/`, delegating domain subcommands to dedicated handlers registered via `build_subparser_registry` in `app/cli/__init__.py`:
+
+- **`crypto` (`app/cli/crypto_cli.py`)**: Key inspection (`info`), re-keying database files (`rotate-key`), and key export (`export-key`).
+- **`ledger` (`app/cli/ledger_cli.py`)**: Transaction ledger status (`status`), automated operation recovery (`reconcile`), and record cleanup (`purge`).
+- **`quarantine` (`app/cli/quarantine_cli.py`)**: Quarantine staging inspection (`list`, `inspect`), forensic scanning (`process`), and document release (`release`).
+- **`cro` (`app/cli/cro_cli.py`)**: Multi-study trial document ingestion (`ingest`) and regulatory manifest generation (`manifest`).
+
+All subcommands enforce stream isolation (`sys.stdout` reserved for structured output/JSON; `sys.stderr` for logs and progress), support `--json`, `--quiet`, and `--no-color` global wrappers, and execute database connection cleanup in `finally` blocks to release file descriptor locks across all target platforms.
+
