@@ -426,13 +426,17 @@ class AppSettings:
             if isinstance(data, dict) and "PROXY" in data:
                 proxy_val = data["PROXY"]
                 if proxy_val:
-                    if proxy_val.startswith("enc:"):
+                    from app.core.crypto import CryptoManager
+
+                    if CryptoManager.is_encrypted_proxy(proxy_val):
                         self._raw_encrypted_proxy = proxy_val
                         try:
                             from app.core.path_utils import resolve_db_crypto
 
                             crypto = resolve_db_crypto(self._filepath)
-                            decrypted_val = crypto.decrypt_text(proxy_val[4:])
+                            decrypted_val = CryptoManager.decrypt_proxy_setting(
+                                proxy_val, crypto=crypto
+                            )
                             data["PROXY"] = decrypted_val
                         except Exception as e:
                             logging.warning(
@@ -521,17 +525,19 @@ class AppSettings:
             if proxy_val == "<DECRYPTION_FAILED>":
                 if self._raw_encrypted_proxy:
                     data["PROXY"] = self._raw_encrypted_proxy
-            elif proxy_val and not proxy_val.startswith("enc:"):
-                try:
-                    from app.core.path_utils import resolve_db_crypto
+            elif proxy_val:
+                from app.core.crypto import CryptoManager
 
-                    crypto = resolve_db_crypto(self._filepath)
-                    encrypted_val = crypto.encrypt_text(proxy_val)
-                    if isinstance(encrypted_val, bytes):
-                        encrypted_val = encrypted_val.decode("utf-8")
-                    data["PROXY"] = f"enc:{encrypted_val}"
-                except Exception as e:
-                    logging.error(f"Failed to encrypt proxy string during save: {e}")
+                if not CryptoManager.is_encrypted_proxy(proxy_val):
+                    try:
+                        from app.core.path_utils import resolve_db_crypto
+
+                        crypto = resolve_db_crypto(self._filepath)
+                        data["PROXY"] = CryptoManager.encrypt_proxy_setting(
+                            proxy_val, crypto=crypto
+                        )
+                    except Exception as e:
+                        logging.error(f"Failed to encrypt proxy string during save: {e}")
 
             parent_dir = os.path.dirname(self._filepath)
             if parent_dir and not os.path.exists(parent_dir):

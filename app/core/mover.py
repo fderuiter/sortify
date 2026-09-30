@@ -11,6 +11,7 @@ import shutil  # noqa: F401
 import threading
 import unicodedata
 import uuid
+from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel
@@ -33,17 +34,103 @@ def _is_same_path(p1: str, p2: str) -> bool:
     )
 
 
+def _resolve_path(p: Path) -> Path:
+    """Resolve symlinks and Windows 8.3 short paths, even if trailing components do not exist.
+
+    Args:
+        p: Path object to resolve.
+
+    Returns
+    -------
+        Resolved Path object with symlinks and 8.3 short names expanded for existing ancestors.
+    """
+    try:
+        p = p.expanduser()
+    except Exception:
+        pass
+
+    try:
+        if p.exists():
+            return p.resolve()
+    except Exception:
+        pass
+
+    parts = []
+    curr = p
+    while True:
+        try:
+            if curr.exists():
+                break
+        except Exception:
+            pass
+        parent_curr = curr.parent
+        if parent_curr == curr:
+            break
+        parts.append(curr.name)
+        curr = parent_curr
+
+    try:
+        curr_resolved = curr.resolve()
+    except Exception:
+        curr_resolved = curr
+
+    for part in reversed(parts):
+        curr_resolved = curr_resolved / part
+
+    return curr_resolved
+
+
 def is_subpath_or_equal(child: str, parent: str) -> bool:
-    """Check if child path is equal to or nested within parent path (case-insensitive)."""
+    """Check if child path is equal to or nested within parent path (case-insensitive and cross-platform).
+
+    Args:
+        child: Candidate child path to check for subpath containment.
+        parent: Boundary parent path to evaluate child against.
+
+    Returns
+    -------
+        True if child is identical to or located within parent directory boundary, False otherwise.
+    """
     if child is None or parent is None:
         return False
-    abs_child = os.path.normcase(os.path.abspath(child))
-    abs_parent = os.path.normcase(os.path.abspath(parent))
-    if abs_child == abs_parent:
-        return True
-    if not abs_parent.endswith(os.sep):
-        abs_parent += os.sep
-    return abs_child.startswith(abs_parent)
+
+    clean_child = str(child).replace("\\", "/")
+    clean_parent = str(parent).replace("\\", "/")
+
+    try:
+        p_child = _resolve_path(Path(clean_child))
+        p_parent = _resolve_path(Path(clean_parent))
+
+        if p_child == p_parent:
+            return True
+        try:
+            if p_child.is_relative_to(p_parent):
+                return True
+        except (AttributeError, ValueError):
+            pass
+
+        s_child = str(p_child).replace("\\", "/").rstrip("/").lower()
+        s_parent = str(p_parent).replace("\\", "/").rstrip("/").lower()
+
+        if s_child == s_parent:
+            return True
+        if s_child.startswith(s_parent + "/"):
+            return True
+    except Exception:
+        pass
+
+    try:
+        abs_c = os.path.abspath(clean_child).replace("\\", "/").rstrip("/").lower()
+        abs_p = os.path.abspath(clean_parent).replace("\\", "/").rstrip("/").lower()
+
+        if abs_c == abs_p:
+            return True
+        if abs_c.startswith(abs_p + "/"):
+            return True
+    except Exception:
+        pass
+
+    return False
 
 
 def get_safe_path(dest_dir: str, filename: str, source_path: str = None) -> str:
