@@ -43,10 +43,22 @@ def _get_canonical_windows_path(p: str | Path) -> str:
         try:
             import ctypes
 
+            p_obj = Path(p)
+            tail_parts = []
+            curr = p_obj
+            while not curr.exists() and curr.parent != curr:
+                tail_parts.append(curr.name)
+                curr = curr.parent
+
             buf = ctypes.create_unicode_buffer(1024)
-            res = ctypes.windll.kernel32.GetLongPathNameW(path_str, buf, 1024)
+            res = ctypes.windll.kernel32.GetLongPathNameW(str(curr), buf, 1024)
             if res > 0:
-                path_str = buf.value
+                expanded_base = Path(buf.value)
+                for part in reversed(tail_parts):
+                    expanded_base = expanded_base / part
+                path_str = str(expanded_base)
+            else:
+                path_str = str(p_obj)
         except Exception:
             pass
     return os.path.normpath(path_str).lower()
