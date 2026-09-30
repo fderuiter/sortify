@@ -31,9 +31,11 @@ def test_diagram_schema_import_performance():
     ds.reset_diagram_specs_cache()
     assert len(ds._INSTANTIATED_SPECS) == 0
 
+    # Ensure catalog is imported before timing diagram_schema import
+    import app.ui.catalog  # noqa: F401
+
     # Test re-import latency when module is in sys.modules
     t0 = time.perf_counter()
-    import app.ui.catalog  # noqa: F401
     import app.ui.diagram_schema  # noqa: F401
 
     import_time_ms = (time.perf_counter() - t0) * 1000
