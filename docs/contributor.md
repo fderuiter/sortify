@@ -6,7 +6,22 @@ Welcome to the Smart AutoSorter AI Pro project! This guide will help you get sta
 
 To set up your local development environment and sync dependencies, run the standard uv commands:
 
-![Contributor Onboarding Workflow](assets/diagrams/contributor_onboarding.svg)
+```mermaid
+flowchart TD
+    A["Clone Repository"]
+    B["Sync Environment: uv sync"]
+    C["Install Hooks: uv run pre-commit install"]
+    D["Run Test Suite: uv run pytest"]
+    E["Run CLI Demo: uv run smart-autosorter --demo"]
+    F["Run Docs Check: uv run docs --check"]
+    G["Submit Pull Request"]
+    A --> B
+    B --> C
+    C --> D
+    D --> E
+    E --> F
+    F --> G
+```
 
 ```bash
 uv sync

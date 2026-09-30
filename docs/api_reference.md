@@ -4,7 +4,30 @@ This document is automatically generated. Do not edit manually.
 
 ## Core Architecture Diagram
 
-![Core Module Architecture Flow](assets/diagrams/api_core_architecture.svg)
+```mermaid
+flowchart TD
+    A["app.main"]
+    B["app.core.session"]
+    C["app.core.extractor"]
+    D["app.core.analyzer"]
+    E["app.core.verifier"]
+    F["app.core.sanitizer"]
+    G["app.core.analyzer_strategies"]
+    A --> B
+    B --> C
+    B --> D
+    B --> E
+    C --> F
+    D --> G
+    click A "docs/api_reference.md#appmain" "CLI Entrypoint Module"
+    click B "docs/api_reference.md#appcoresession" "Session Management Module"
+    click C "docs/api_reference.md#appcoreextractor" "Multi-format Text Extractor Module"
+    click D "docs/api_reference.md#appcoreanalyzer" "Document Analyzer Module"
+    click E "docs/api_reference.md#appcoreverifier" "Virtual Sorting Verifier Module"
+    click F "docs/api_reference.md#appcoresanitizer" "Path & Input Sanitizer Module"
+    click G "docs/api_reference.md#appcoreanalyzer_strategies" "Analysis Strategy Implementations"
+
+```
 
 ## `app.config`
 

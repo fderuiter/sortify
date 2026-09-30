@@ -22,7 +22,20 @@ The `IncrementalAnalyzer` class requires several parameters to govern its behavi
 - **Sorting Plan**: A nested dictionary representation of the proposed directory structure containing files mapped to destination paths and categories based on mathematical clustering profiles.
 
 ### Stateful Clustering Architecture
-![ML Analyzer Clustering Pipeline](../assets/diagrams/ml_analyzer_clustering.svg)
+```mermaid
+flowchart TD
+    A["Extracted Corpus"]
+    B["TF-IDF Vectorizer"]
+    C["Incremental Ingestion: partial_fit"]
+    D["NMF Topic Modeling / Vector Embeddings"]
+    E["Recursive KMeans Clustering"]
+    F["Generate Dynamic Folder Structure & Sorting Plan"]
+    A --> B
+    B --> C
+    C --> D
+    D --> E
+    E --> F
+```
 
 ```python
 import json

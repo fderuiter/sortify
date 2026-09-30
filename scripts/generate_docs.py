@@ -76,9 +76,11 @@ def generate_api_docs():
         f.write("This document is automatically generated. Do not edit manually.\n\n")
 
         f.write("## Core Architecture Diagram\n\n")
-        f.write(
-            "![Core Module Architecture Flow](assets/diagrams/api_core_architecture.svg)\n\n"
-        )
+        from app.ui.diagram_schema import SYSTEM_DIAGRAM_SPECS
+
+        f.write("```mermaid\n")
+        f.write(SYSTEM_DIAGRAM_SPECS["api_core_architecture"].to_mermaid())
+        f.write("\n```\n\n")
 
         # Find all python files except ui and binaries
         py_files = glob.glob(os.path.join(app_dir, "**", "*.py"), recursive=True)
@@ -196,9 +198,11 @@ def generate_admin_guide():
 
         f.write("## Compliance Policies & Routing Rules\n\n")
         f.write("### Policy Evaluation Flowchart\n\n")
-        f.write(
-            "![Policy Evaluation Flowchart](assets/diagrams/admin_policy_evaluation.svg)\n\n"
-        )
+        from app.ui.diagram_schema import SYSTEM_DIAGRAM_SPECS
+
+        f.write("```mermaid\n")
+        f.write(SYSTEM_DIAGRAM_SPECS["admin_policy_evaluation"].to_mermaid())
+        f.write("\n```\n\n")
         f.write("### Rule Syntax & Types\n\n")
         f.write(
             "Compliance policies categorize and sort documents based on three rule types:\n\n"
