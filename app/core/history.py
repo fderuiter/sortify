@@ -1795,6 +1795,7 @@ class HistoryManager:
         def _write():
             conn = get_db_connection(self.db_path)
             step_count = 0
+            base_dir = None
             with conn:
                 try:
                     cur = conn.execute(
@@ -1805,10 +1806,6 @@ class HistoryManager:
                 except Exception:
                     step_count = 0
 
-            if step_count > 0:
-                return self._unwind_session_internal(session_id, db=self.db)
-
-            with conn:
                 cur = conn.execute(
                     "SELECT base_dir FROM sessions WHERE session_id = ?", (session_id,)
                 )
@@ -1818,7 +1815,12 @@ class HistoryManager:
                 base_dir = row[0]
 
             # Pre-rollback safety snapshot created BEFORE any file system write operation
-            safety_session_id = self._create_snapshot_internal(base_dir)
+            safety_session_id = None
+            if os.path.exists(base_dir):
+                safety_session_id = self._create_snapshot_internal(base_dir)
+
+            if step_count > 0:
+                return self._unwind_session_internal(session_id, db=self.db)
 
             steps = self.db.get_transaction_steps(session_id)
             if steps:

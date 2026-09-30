@@ -449,6 +449,97 @@ def apply_config_overrides(settings: AppSettings, args: argparse.Namespace):
         settings.CONTEXTUAL_RENAMING = args.contextual_renaming
 
 
+def _make_json_serializable(obj):
+    if hasattr(obj, "model_dump"):
+        return obj.model_dump(mode="json")
+    if isinstance(obj, dict):
+        return {k: _make_json_serializable(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_make_json_serializable(v) for v in obj]
+    return obj
+
+
+def resolve_preset_and_directory(args: argparse.Namespace) -> Path:
+    """Resolve preset choice or target directory path from CLI arguments."""
+    preset = getattr(args, "preset", None)
+    directory = getattr(args, "directory", None)
+
+    if preset:
+        preset_str = str(preset).lower()
+        if preset_str == "demo":
+            target = Path("sandbox/demo_workspace").resolve()
+            if not target.exists():
+                target.mkdir(parents=True, exist_ok=True)
+            return target
+        elif preset_str == "downloads":
+            return (Path.home() / "Downloads").resolve()
+        elif preset_str == "documents":
+            return (Path.home() / "Documents").resolve()
+        else:
+            raise ValueError(
+                f"Unknown preset choice '{preset}'. Choices are: demo, downloads, documents."
+            )
+
+    if directory:
+        return Path(directory).resolve()
+
+    raise ValueError("Either target directory or --preset must be specified.")
+
+
+def find_all_history_sessions() -> list:
+    """Scan all session directories and configuration directories for history databases."""
+    import time
+    from typing import Any
+    from app.config import get_app_dir
+    from app.core.db_conn import get_db_connection
+    from app.core.path_utils import get_session_base_dir
+
+    search_roots = [get_session_base_dir(), get_app_dir() / "sessions", get_app_dir()]
+    history_db_paths = set()
+
+    for root in search_roots:
+        if not root.exists():
+            continue
+        db_file = root / "history.db"
+        if db_file.exists():
+            history_db_paths.add(db_file.resolve())
+        if root.is_dir():
+            for child in root.iterdir():
+                if child.is_dir():
+                    child_db = child / "history.db"
+                    if child_db.exists():
+                        history_db_paths.add(child_db.resolve())
+
+    all_sessions = []
+    seen_sids = set()
+
+    for db_path in history_db_paths:
+        try:
+            conn = get_db_connection(str(db_path))
+            with conn:
+                cur = conn.execute(
+                    "SELECT session_id, timestamp, base_dir, status FROM sessions ORDER BY timestamp DESC"
+                )
+                for row in cur.fetchall():
+                    sid, ts, base_dir, status = row
+                    if sid not in seen_sids:
+                        seen_sids.add(sid)
+                        all_sessions.append({
+                            "session_id": sid,
+                            "timestamp": ts,
+                            "base_dir": base_dir,
+                            "status": status,
+                            "history_db_path": str(db_path),
+                            "session_dir": str(db_path.parent),
+                        })
+        except Exception:
+            pass
+
+    all_sessions.sort(key=lambda s: s.get("timestamp") or 0.0, reverse=True)
+    return all_sessions
+
+
+>>>>>>> b72d806 (feat(cli): add undo subcommand and preset flags for sort/scan)
 def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
     """Execute document batch sorting or launch interactive TUI."""
     import json
@@ -459,16 +550,23 @@ def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
     if getattr(args, "tui", False) or getattr(args, "interactive", False):
         from app.ui.tui import run_tui
 
-        run_tui(settings, args.directory)
+        run_tui(settings, getattr(args, "directory", None))
         sys.exit(0)
 
-    target_path = Path(args.directory).resolve()
+    try:
+        target_path = resolve_preset_and_directory(args)
+    except ValueError as err:
+        print(f"Error: {err}", file=sys.stderr)
+        sys.exit(1)
+
     if not target_path.exists() or not target_path.is_dir():
         print(
-            f"Error: Target directory '{args.directory}' does not exist or is not a directory.",
+            f"Error: Target directory '{target_path}' does not exist or is not a directory.",
             file=sys.stderr,
         )
         sys.exit(1)
+
+    args.directory = str(target_path)
 
     session = None
     try:
@@ -575,16 +673,23 @@ def handle_scan_command(args: argparse.Namespace, settings: AppSettings):
     if getattr(args, "tui", False) or getattr(args, "interactive", False):
         from app.ui.tui import run_tui
 
-        run_tui(settings, args.directory)
+        run_tui(settings, getattr(args, "directory", None))
         sys.exit(0)
 
-    target_path = Path(args.directory).resolve()
+    try:
+        target_path = resolve_preset_and_directory(args)
+    except ValueError as err:
+        print(f"Error: {err}", file=sys.stderr)
+        sys.exit(1)
+
     if not target_path.exists() or not target_path.is_dir():
         print(
-            f"Error: Target directory '{args.directory}' does not exist or is not a directory.",
+            f"Error: Target directory '{target_path}' does not exist or is not a directory.",
             file=sys.stderr,
         )
         sys.exit(1)
+
+    args.directory = str(target_path)
 
     apply_config_overrides(settings, args)
 
@@ -714,6 +819,141 @@ def handle_daemon_command(args: argparse.Namespace, settings: AppSettings):
     start_daemon(settings, target_dir)
 
 
+def handle_undo_command(args: argparse.Namespace, settings: AppSettings):
+    """Execute undo subcommand for session rollback or listing history records."""
+    import json
+    import time
+    from pathlib import Path
+
+    apply_config_overrides(settings, args)
+
+    list_flag = getattr(args, "list", False)
+    latest_flag = getattr(args, "latest", False)
+    session_id_arg = getattr(args, "session_id", None)
+    force_flag = getattr(args, "force", False)
+    json_output = getattr(args, "json", False)
+
+    # Constraint: Default to --latest when no session ID or subcommand flag specified
+    if not list_flag and not latest_flag and not session_id_arg:
+        latest_flag = True
+
+    all_sessions = find_all_history_sessions()
+
+    if list_flag:
+        if json_output:
+            sys.stdout.write(json.dumps(all_sessions, indent=2) + "\n")
+            sys.stdout.flush()
+        else:
+            if not all_sessions:
+                print("No historical sorting sessions found.", file=sys.stderr)
+            else:
+                quiet = getattr(args, "quiet", False)
+                if not quiet:
+                    print("Historical Sorting Sessions:", file=sys.stderr)
+                for s in all_sessions:
+                    ts = s.get("timestamp")
+                    ts_str = (
+                        time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts))
+                        if ts
+                        else "N/A"
+                    )
+                    print(
+                        f"  Session ID: {s['session_id']} | Base: {s.get('base_dir', 'N/A')} | Status: {s.get('status', 'N/A')} | Time: {ts_str}"
+                    )
+        sys.exit(0)
+
+    target_session = None
+    if session_id_arg:
+        for s in all_sessions:
+            if s["session_id"] == session_id_arg:
+                target_session = s
+                break
+        if not target_session:
+            target_session = {
+                "session_id": session_id_arg,
+                "history_db_path": None,
+                "base_dir": None,
+            }
+    elif latest_flag:
+        if all_sessions:
+            target_session = all_sessions[0]
+        else:
+            msg = "Error: No historical sorting sessions available to undo."
+            if json_output:
+                sys.stdout.write(
+                    json.dumps({"status": "error", "message": msg}, indent=2) + "\n"
+                )
+                sys.stdout.flush()
+            else:
+                print(msg, file=sys.stderr)
+            sys.exit(1)
+
+    target_session_id = target_session["session_id"]
+    db_path = target_session.get("history_db_path")
+    base_dir = target_session.get("base_dir")
+
+    session_obj = None
+    try:
+        from app.core.cache import CacheManager
+        from app.core.db import Database
+        from app.core.db_worker import DBWorker
+        from app.core.history import HistoryManager
+
+        if db_path and Path(db_path).exists():
+            session_dir = Path(db_path).parent
+            db_worker = DBWorker()
+            db = Database(session_dir / "autosorter.db", db_worker)
+            cache_mgr = CacheManager(str(session_dir / "cache.db"), db_worker)
+            history_mgr = HistoryManager(db, cache_mgr, str(db_path))
+        else:
+            from app.core.session import AppSession
+
+            session_obj = AppSession(settings, base_dir=base_dir)
+            history_mgr = session_obj.history_manager
+
+        history_mgr.rollback(target_session_id, ignore_missing=force_flag)
+
+        result = {
+            "status": "success",
+            "session_id": target_session_id,
+            "message": f"Successfully rolled back sorting session '{target_session_id}'.",
+        }
+
+        if json_output:
+            sys.stdout.write(json.dumps(result, indent=2) + "\n")
+            sys.stdout.flush()
+        else:
+            quiet = getattr(args, "quiet", False)
+            if not quiet:
+                print(
+                    f"Rollback completed successfully for session '{target_session_id}'.",
+                    file=sys.stderr,
+                )
+
+        sys.exit(0)
+    except Exception as ex:
+        err_msg = f"Rollback failed for session '{target_session_id}': {ex}"
+        if json_output:
+            sys.stdout.write(
+                json.dumps(
+                    {
+                        "status": "error",
+                        "session_id": target_session_id,
+                        "message": str(ex),
+                    },
+                    indent=2,
+                )
+                + "\n"
+            )
+            sys.stdout.flush()
+        else:
+            print(err_msg, file=sys.stderr)
+        sys.exit(1)
+    finally:
+        if session_obj is not None:
+            session_obj.close()
+
+
 def build_parser(prog: str | None = "app/main.py") -> argparse.ArgumentParser:
     """Build and return the main command-line argument parser for Smart AutoSorter AI Pro."""
     parser = argparse.ArgumentParser(prog=prog, description="Smart AutoSorter AI Pro")
@@ -836,7 +1076,16 @@ def build_parser(prog: str | None = "app/main.py") -> argparse.ArgumentParser:
     parser_sort = subparsers.add_parser(
         "sort", help="Run document sorting in headless batch processing mode"
     )
-    parser_sort.add_argument("directory", type=str, help="Target directory to sort")
+    parser_sort.add_argument(
+        "directory", nargs="?", default=None, type=str, help="Target directory to sort"
+    )
+    parser_sort.add_argument(
+        "--preset",
+        type=str,
+        choices=["demo", "downloads", "documents"],
+        default=None,
+        help="Use standard workspace preset directory (demo, downloads, documents)",
+    )
     parser_sort.add_argument(
         "--json",
         action="store_true",
@@ -859,7 +1108,16 @@ def build_parser(prog: str | None = "app/main.py") -> argparse.ArgumentParser:
     parser_scan = subparsers.add_parser(
         "scan", help="Run directory scanning and analysis without moving files"
     )
-    parser_scan.add_argument("directory", type=str, help="Target directory to scan")
+    parser_scan.add_argument(
+        "directory", nargs="?", default=None, type=str, help="Target directory to scan"
+    )
+    parser_scan.add_argument(
+        "--preset",
+        type=str,
+        choices=["demo", "downloads", "documents"],
+        default=None,
+        help="Use standard workspace preset directory (demo, downloads, documents)",
+    )
     parser_scan.add_argument(
         "--json",
         action="store_true",
@@ -902,6 +1160,38 @@ def build_parser(prog: str | None = "app/main.py") -> argparse.ArgumentParser:
     )
     add_common_override_args(parser_daemon)
 
+    # Subcommand: undo
+    parser_undo = subparsers.add_parser(
+        "undo", help="Rollback sorting operations and manage history sessions"
+    )
+    parser_undo.add_argument(
+        "--session-id",
+        type=str,
+        default=None,
+        help="Specific historical session ID UUID to rollback",
+    )
+    parser_undo.add_argument(
+        "--list",
+        action="store_true",
+        help="List active and completed historical sorting sessions",
+    )
+    parser_undo.add_argument(
+        "--latest",
+        action="store_true",
+        help="Rollback the latest historical sorting session",
+    )
+    parser_undo.add_argument(
+        "--force",
+        action="store_true",
+        help="Force rollback even if original files are missing",
+    )
+    parser_undo.add_argument(
+        "--json",
+        action="store_true",
+        help="Output session list or rollback status in structured JSON format",
+    )
+    add_common_override_args(parser_undo)
+
     # Register modular domain subcommands
     from app.cli import register_cli_subcommands
 
@@ -928,6 +1218,7 @@ def main():
         "ledger",
         "quarantine",
         "cro",
+        "undo",
     )
     legacy_directory = None
     if (
@@ -993,6 +1284,8 @@ def main():
         handle_config_command(args, settings)
     elif getattr(args, "subcommand", None) == "daemon":
         handle_daemon_command(args, settings)
+    elif getattr(args, "subcommand", None) == "undo":
+        handle_undo_command(args, settings)
     else:
         from app.cli import handle_cli_command
 
