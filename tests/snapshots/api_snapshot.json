@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "d75a71563766de8d5ac9dc7f51c42cc0bab5e41c0707765dcb82000e48a01e2e"
+    "checksum": "ee2a141558080c0eb6c4fd62c78a5249ab723b96627a4e8648d037206d632c63"
   },
   "cli": {
     "app/main.py": [
@@ -8151,6 +8151,24 @@
               "annotation": "str",
               "default": null,
               "name": "name"
+            }
+          ],
+          "returns": "str"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "scrub_user_home_paths",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "text"
+            },
+            {
+              "annotation": "str | Path | None",
+              "default": "None",
+              "name": "home_dir"
             }
           ],
           "returns": "str"
