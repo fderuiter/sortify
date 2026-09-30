@@ -484,9 +484,35 @@ def _execute_moves_recursive(
             else:
                 filename = os.path.basename(key)
 
+            # Downstream Barrier: Evaluate Sensitivity Metadata Before Physical Relocation
+            sens_rating = None
+            sens_score = 0.0
+            if isinstance(content, dict):
+                sens_rating = content.get("sensitivity_rating")
+                sens_score = content.get("sensitivity_score", 0.0)
+
+            sens_rating_str = str(sens_rating or "LOW").upper()
+            auto_ratings = [
+                r.upper()
+                for r in getattr(
+                    runtime_settings, "AUTO_QUARANTINE_RATINGS", ["CRITICAL", "HIGH"]
+                )
+            ]
+            quarantine_dir_name = getattr(
+                runtime_settings, "QUARANTINE_DIR_NAME", "_Compliance_Quarantine"
+            )
+
+            active_dest = current_dest
+            if sens_rating_str in auto_ratings:
+                logging.warning(
+                    f"Downstream Barrier Interception: File {source_path} has sensitivity rating {sens_rating_str}. "
+                    f"Blocking move to '{current_dest}' and redirecting to '{quarantine_dir_name}'."
+                )
+                active_dest = quarantine_dir_name
+
             import unicodedata
 
-            dest_dir = os.path.normpath(os.path.join(base_dir, current_dest))
+            dest_dir = os.path.normpath(os.path.join(base_dir, active_dest))
             dest_dir = unicodedata.normalize("NFC", dest_dir)
 
             if not os.path.exists(dest_dir):
@@ -519,6 +545,39 @@ def _execute_moves_recursive(
 
             source_rel_path = os.path.relpath(source_path, base_dir).replace("\\", "/")
             rel_dest = os.path.relpath(dest_path, base_dir).replace("\\", "/")
+            if sens_rating_str in auto_ratings and db:
+                try:
+                    job_id = f"qjob_mover_{uuid.uuid4().hex[:12]}"
+                    if hasattr(db, "stage_quarantine_record"):
+                        db.stage_quarantine_record(
+                            job_id=job_id,
+                            base_dir=base_dir,
+                            original_filepath=source_rel_path,
+                            staged_filepath=rel_dest,
+                            policy_action="sensitivity_hold",
+                        )
+                    if hasattr(db, "update_quarantine_status"):
+                        import time
+                        db.update_quarantine_status(
+                            job_id=job_id,
+                            status="QUARANTINED",
+                            policy_action="sensitivity_hold",
+                            audit_entry={
+                                "timestamp": time.time(),
+                                "status": "QUARANTINED",
+                                "policy_action": "sensitivity_hold",
+                                "details": (
+                                    f"Downstream mover barrier intercepted {sens_rating_str} sensitivity file; "
+                                    f"redirected to {quarantine_dir_name}"
+                                ),
+                                "sensitivity_rating": sens_rating_str,
+                                "sensitivity_score": sens_score,
+                                "source_path": source_rel_path,
+                                "destination_path": rel_dest,
+                            },
+                        )
+                except Exception as audit_err:
+                    logging.warning(f"Failed to record mover compliance audit entry: {audit_err}")
             doc = (
                 db.get_document(base_dir, source_rel_path)
                 if hasattr(db, "get_document")
@@ -582,8 +641,6 @@ def _execute_moves_recursive(
                 ) or not _is_same_path(new_abs_target, abs_target)
 
                 if needs_update:
-                    import uuid
-
                     shadow_name = f"{dest_path}.shadow_{uuid.uuid4().hex}"
 
                     if link_info["type"] == "symlink":
@@ -1046,7 +1103,33 @@ def _process_move_item(
     filename = item["filename"]
     current_dest = item["current_dest"]
 
-    dest_dir = os.path.normpath(os.path.join(base_dir, current_dest))
+    # Downstream Barrier: Evaluate Sensitivity Metadata Before Physical Relocation
+    sens_rating = None
+    sens_score = 0.0
+    if isinstance(content, dict):
+        sens_rating = content.get("sensitivity_rating")
+        sens_score = content.get("sensitivity_score", 0.0)
+
+    sens_rating_str = str(sens_rating or "LOW").upper()
+    auto_ratings = [
+        r.upper()
+        for r in getattr(
+            runtime_settings, "AUTO_QUARANTINE_RATINGS", ["CRITICAL", "HIGH"]
+        )
+    ]
+    quarantine_dir_name = getattr(
+        runtime_settings, "QUARANTINE_DIR_NAME", "_Compliance_Quarantine"
+    )
+
+    active_dest = current_dest
+    if sens_rating_str in auto_ratings:
+        logging.warning(
+            f"Downstream Barrier Interception: File {source_path} has sensitivity rating {sens_rating_str}. "
+            f"Blocking move to '{current_dest}' and redirecting to '{quarantine_dir_name}'."
+        )
+        active_dest = quarantine_dir_name
+
+    dest_dir = os.path.normpath(os.path.join(base_dir, active_dest))
     dest_dir = unicodedata.normalize("NFC", dest_dir)
 
     if not os.path.exists(dest_dir):
@@ -1079,6 +1162,41 @@ def _process_move_item(
 
     source_rel_path = os.path.relpath(source_path, base_dir).replace("\\", "/")
     rel_dest = os.path.relpath(dest_path, base_dir).replace("\\", "/")
+
+    if sens_rating_str in auto_ratings and db:
+        with db_lock:
+            try:
+                job_id = f"qjob_mover_{uuid.uuid4().hex[:12]}"
+                if hasattr(db, "stage_quarantine_record"):
+                    db.stage_quarantine_record(
+                        job_id=job_id,
+                        base_dir=base_dir,
+                        original_filepath=source_rel_path,
+                        staged_filepath=rel_dest,
+                        policy_action="sensitivity_hold",
+                    )
+                if hasattr(db, "update_quarantine_status"):
+                    import time
+                    db.update_quarantine_status(
+                        job_id=job_id,
+                        status="QUARANTINED",
+                        policy_action="sensitivity_hold",
+                        audit_entry={
+                            "timestamp": time.time(),
+                            "status": "QUARANTINED",
+                            "policy_action": "sensitivity_hold",
+                            "details": (
+                                f"Downstream AsyncMoveEngine barrier intercepted {sens_rating_str} sensitivity file; "
+                                f"redirected to {quarantine_dir_name}"
+                            ),
+                            "sensitivity_rating": sens_rating_str,
+                            "sensitivity_score": sens_score,
+                            "source_path": source_rel_path,
+                            "destination_path": rel_dest,
+                        },
+                    )
+            except Exception as audit_err:
+                logging.warning(f"Failed to record mover compliance audit entry: {audit_err}")
 
     doc = None
     if db and hasattr(db, "get_document"):
@@ -1849,3 +1967,7 @@ async def execute_moves_async(
         priority=priority,
         progress_callback=progress_callback,
     )
+
+
+FileMover = AsyncMoveEngine
+
