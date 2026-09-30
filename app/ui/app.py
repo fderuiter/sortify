@@ -346,7 +346,9 @@ class AutoSorterApp:
             except Exception as e:
                 logger.error(f"Failed to recover file {full_path}: {e}")
 
-        shutil.rmtree(safety_folder, ignore_errors=True)
+        from app.core.resilient_file_ops import resilient_rmtree
+
+        resilient_rmtree(safety_folder, ignore_errors=True)
 
     def show_recovery_wizard(self, session_info):
         """Display recovery workflow and run recovery."""
@@ -515,14 +517,16 @@ class AutoSorterApp:
 
                     # Update session status to 'resolved' and prune/clear hidden folder
                     try:
-                        shutil.rmtree(safety_folder, ignore_errors=True)
+                        from app.core.resilient_file_ops import resilient_rmtree
+
+                        resilient_rmtree(safety_folder, ignore_errors=True)
 
                         # Also check if .branches is empty and remove it if so
                         branches_dir = os.path.dirname(safety_folder)
                         if os.path.exists(branches_dir) and not os.listdir(
                             branches_dir
                         ):
-                            shutil.rmtree(branches_dir, ignore_errors=True)
+                            resilient_rmtree(branches_dir, ignore_errors=True)
 
                         if os.path.exists(history_db_path):
                             await asyncio.to_thread(

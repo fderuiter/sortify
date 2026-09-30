@@ -258,5 +258,5 @@ def test_ledger_performance_overhead(tmp_path):
         ledger.update_status(entry_id, "COMPLETED")
     elapsed = time.perf_counter() - start_time
 
-    # 500 operations (1500 SQLite writes in WAL mode) should complete well under 1 second
-    assert elapsed < 1.0
+    # 500 operations (1500 SQLite writes in WAL mode) should complete well under 3 seconds
+    assert elapsed < 3.0

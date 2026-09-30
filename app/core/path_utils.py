@@ -37,8 +37,8 @@ RESERVED_NAMES = {
 ILLEGAL_PATH_CHARS_SET = set('<>:"|?*')
 ILLEGAL_NAME_CHARS_SET = ILLEGAL_PATH_CHARS_SET | set("/\\")
 
-_BOUND_LEFT = r"(?:^|(?<=[\s_\-/,;:()\[\]{}.]))"
-_BOUND_RIGHT = r"(?:$|(?=[\s_\-/,;:()\[\]{}.]))"
+_BOUND_LEFT = r"(?:^|(?<=[^a-zA-Z0-9]))"
+_BOUND_RIGHT = r"(?:$|(?=[^a-zA-Z0-9]))"
 
 PII_FILENAME_PATTERNS = [
     # SSN pattern
@@ -56,18 +56,45 @@ PII_FILENAME_PATTERNS = [
 ]
 
 
+def _split_name_ext(name: str) -> tuple[str, str, bool]:
+    """Split a name into (stem, ext, valid_ext)."""
+    if name.startswith(".") and re.match(r"^\.[a-zA-Z0-9]{1,5}$", name):
+        return "", name, True
+    last_component = re.split(r"[/\\]+", name)[-1]
+    _, ext = os.path.splitext(last_component)
+    valid_ext = bool(ext and re.match(r"^\.[a-zA-Z0-9]{1,5}$", ext))
+    if valid_ext:
+        stem = name[:-len(ext)]
+        return stem, ext, True
+    return name, "", False
+
+
 def scrub_pii_from_filename(name: str) -> str:
-    """Scrub PII expressions (SSN, credit card, email, phone number, health/patient IDs) from a filename or folder name."""
+    """Scrub PII expressions (SSN, credit card, email, phone number, health/patient IDs) and secret credentials from a filename or folder name."""
     if not isinstance(name, str) or not name:
         return name if isinstance(name, str) else ""
 
-    result = name
-    for pattern in PII_FILENAME_PATTERNS:
-        result = pattern.sub(" ", result)
+    from app.core.text_utils import sanitize_secret_patterns
 
-    result = re.sub(r"_[ \t]*_", "_", result)
-    result = re.sub(r"[ \t]+", " ", result).strip()
-    result = re.sub(r"_{2,}", "_", result)
+    stem, ext, valid_ext = _split_name_ext(name)
+
+    if valid_ext:
+        scrubbed = sanitize_secret_patterns(stem)
+        for pattern in PII_FILENAME_PATTERNS:
+            scrubbed = pattern.sub(" ", scrubbed)
+        scrubbed = re.sub(r"_[ \t]*_", "_", scrubbed)
+        scrubbed = re.sub(r"[ \t]+", " ", scrubbed).strip()
+        scrubbed = re.sub(r"_{2,}", "_", scrubbed)
+        result = (scrubbed + ext) if scrubbed else ext
+    else:
+        scrubbed = sanitize_secret_patterns(name)
+        for pattern in PII_FILENAME_PATTERNS:
+            scrubbed = pattern.sub(" ", scrubbed)
+        scrubbed = re.sub(r"_[ \t]*_", "_", scrubbed)
+        scrubbed = re.sub(r"[ \t]+", " ", scrubbed).strip()
+        scrubbed = re.sub(r"_{2,}", "_", scrubbed)
+        result = scrubbed
+
     return result
 
 
@@ -164,47 +191,36 @@ def sanitize_name(name: str) -> str:
     if not name:
         return name
 
-    from app.core.text_utils import sanitize_secret_patterns
+    import unicodedata
 
-    name = sanitize_secret_patterns(name)
     name = scrub_pii_from_filename(name)
     if not name or not name.strip():
         return "Unnamed_safe"
 
-    import unicodedata
+    stem, ext, valid_ext = _split_name_ext(name)
 
-    name = unicodedata.normalize("NFC", name)
-    name = name.replace("\x00", "")
-    name = re.sub(r"[\x00-\x1f\x7f]", "_", name)
+    target_text = stem if valid_ext else name
+    target_text = unicodedata.normalize("NFC", target_text)
+    target_text = target_text.replace("\x00", "")
+    target_text = re.sub(r"[\x00-\x1f\x7f]", "_", target_text)
 
-    # Replace illegal characters with underscore (or just strip them)
-    # The requirement says "strip illegal path characters" but in the example:
-    # "Data: Archives" -> "Data_ Archives" so we should replace `:` with `_`.
-    # Let's replace `< > : " / \\ | ? *` with `_`.
     escaped_chars = "".join(re.escape(c) for c in ILLEGAL_NAME_CHARS_SET)
-    safe_name = re.sub(f"[{escaped_chars}]", "_", name)
+    safe_text = re.sub(f"[{escaped_chars}]", "_", target_text)
 
-    # Strip trailing periods and spaces (also problematic on Windows)
-    safe_name = safe_name.rstrip(". ")
+    safe_text = safe_text.rstrip(". ")
+    clean_stem = safe_text.strip(". _")
 
-    # Check if the name matches a reserved name (case-insensitive, optionally with an extension)
-    upper_name = safe_name.upper()
-    base_name = upper_name.split(".")[0]
+    if not clean_stem:
+        return f"Unnamed_safe{ext}" if valid_ext else "Unnamed_safe"
 
-    if base_name in RESERVED_NAMES:
-        # Need to append _safe suffix. For "CON" -> "CON_safe".
-        # If there's an extension, e.g. "CON.txt" -> "CON_safe.txt"?
-        # The scenario says "CON" -> "CON_safe".
+    upper_name = clean_stem.upper()
+    if upper_name in RESERVED_NAMES:
+        clean_stem = clean_stem + "_safe"
 
-        # Let's preserve the original casing and just append _safe to the base name
-        parts = safe_name.split(".")
-        parts[0] = parts[0] + "_safe"
-        safe_name = ".".join(parts)
-
-    if not safe_name or not safe_name.strip(" ._"):
-        safe_name = "Unnamed_safe"
-
-    return safe_name
+    if valid_ext:
+        return f"{clean_stem}{ext}"
+    else:
+        return clean_stem
 
 
 def sanitize_folder_key(key: str) -> tuple[str, bool]:
@@ -322,8 +338,33 @@ def _merge_plan_dicts(target_dict: dict, source_dict: dict) -> list[str]:
     return warnings
 
 
+def _sanitize_plan_key(key: str, is_file: bool = False) -> tuple[str, bool]:
+    """Sanitize a plan dictionary key, handling relative paths with slashes segment-by-segment."""
+    if not isinstance(key, str) or not key:
+        return "Unnamed_safe", True
+
+    if "/" in key or "\\" in key:
+        delim = "/" if "/" in key else "\\"
+        parts = key.replace("\\", "/").split("/")
+        clean_parts = []
+        for i, part in enumerate(parts):
+            if i == len(parts) - 1 and is_file:
+                clean_parts.append(sanitize_name(part))
+            else:
+                k, _ = sanitize_folder_key(part)
+                clean_parts.append(k)
+        res = delim.join(clean_parts)
+        return res, res != key
+    else:
+        if is_file:
+            res = sanitize_name(key)
+            return res, res != key
+        else:
+            return sanitize_folder_key(key)
+
+
 def sanitize_plan(plan: Any) -> tuple[dict, list[str]]:
-    """Recursively sanitize folder keys in a plan dictionary or SortingPlan.
+    """Recursively sanitize folder keys, leaf file names, and target filenames in a plan dictionary or SortingPlan.
 
     Returns (sanitized_plan, warnings).
     """
@@ -335,6 +376,8 @@ def sanitize_plan(plan: Any) -> tuple[dict, list[str]]:
     if not isinstance(plan, dict):
         return plan, []
 
+    from app.core.text_utils import contains_secrets
+
     sanitized_plan = {}
     warnings = []
 
@@ -343,7 +386,13 @@ def sanitize_plan(plan: Any) -> tuple[dict, list[str]]:
             t = getattr(obj, "node_type", None) or getattr(obj, "__type__", None)
             return t == "file"
         if isinstance(obj, dict):
-            return obj.get("__type__") == "file"
+            return (
+                obj.get("__type__") == "file"
+                or "target_filename" in obj
+                or "relative_source" in obj
+                or "status" in obj
+                or "routed_by" in obj
+            )
         return False
 
     def _is_dir_node(obj):
@@ -356,19 +405,68 @@ def sanitize_plan(plan: Any) -> tuple[dict, list[str]]:
 
     for key, content in plan.items():
         if content is None:
-            sanitized_plan[key] = None
+            safe_file_key, transformed = _sanitize_plan_key(key, is_file=True)
+            if transformed:
+                warnings.append(f"Sanitized filename '{key}' to '{safe_file_key}'")
+            if safe_file_key in sanitized_plan:
+                safe_file_key = _disambiguate_key(
+                    sanitized_plan, safe_file_key, is_file=True
+                )
+            sanitized_plan[safe_file_key] = None
+
         elif _is_file_node(content):
-            sanitized_plan[key] = content
+            safe_file_key, transformed = _sanitize_plan_key(key, is_file=True)
+            if transformed:
+                warnings.append(f"Sanitized filename '{key}' to '{safe_file_key}'")
+
+            file_content = dict(content) if isinstance(content, dict) else content
+            if isinstance(file_content, dict):
+                if transformed:
+                    file_content["confirmed"] = True
+                    if "target_filename" in file_content:
+                        file_content["target_filename"] = re.split(r"[/\\]+", safe_file_key)[-1]
+                if "target_filename" in file_content and file_content["target_filename"]:
+                    old_tf = file_content["target_filename"]
+                    if contains_secrets(old_tf) or scrub_pii_from_filename(old_tf) != old_tf:
+                        leaf_tf = re.split(r"[/\\]+", old_tf)[-1]
+                        new_tf = sanitize_name(leaf_tf)
+                        if new_tf != old_tf:
+                            file_content["target_filename"] = new_tf
+                            file_content["confirmed"] = True
+                            warnings.append(
+                                f"Sanitized target filename '{old_tf}' to '{new_tf}'"
+                            )
+
+            if safe_file_key in sanitized_plan:
+                safe_file_key = _disambiguate_key(
+                    sanitized_plan, safe_file_key, is_file=True
+                )
+                if isinstance(file_content, dict) and "target_filename" in file_content:
+                    file_content["target_filename"] = safe_file_key
+                    file_content["confirmed"] = True
+
+            sanitized_plan[safe_file_key] = file_content
+
         elif _is_dir_node(content):
-            safe_key, transformed = sanitize_folder_key(key)
+            safe_key, transformed = _sanitize_plan_key(key, is_file=False)
             if transformed:
                 warnings.append(f"Sanitized folder key '{key}' to '{safe_key}'")
 
-            dir_content = content
+            children = {k: v for k, v in content.items() if not k.startswith("__")} if isinstance(content, dict) else {}
+            sub_sanitized, sub_warns = sanitize_plan(children)
+            warnings.extend(sub_warns)
+
+            dir_content = sub_sanitized
+            dir_content["__type__"] = "directory"
+            if isinstance(content, dict):
+                for k, v in content.items():
+                    if k.startswith("__") and k not in dir_content:
+                        dir_content[k] = v
+
             sanitized_plan[safe_key] = dir_content
 
         elif isinstance(content, (dict, BaseModel)):
-            safe_key, transformed = sanitize_folder_key(key)
+            safe_key, transformed = _sanitize_plan_key(key, is_file=False)
             if transformed:
                 warnings.append(f"Sanitized folder key '{key}' to '{safe_key}'")
 

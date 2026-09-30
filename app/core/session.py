@@ -2,7 +2,6 @@
 
 import json
 import os
-import shutil
 from typing import Any, Dict, Optional
 
 try:
@@ -350,4 +349,6 @@ class AppSession:
         except Exception:
             pass
         if self.session_dir and os.path.exists(self.session_dir):
-            shutil.rmtree(self.session_dir, ignore_errors=True)
+            from app.core.resilient_file_ops import resilient_rmtree
+
+            resilient_rmtree(self.session_dir, ignore_errors=True)

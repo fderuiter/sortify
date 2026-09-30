@@ -88,9 +88,9 @@ def secure_delete_dir(dir_path: Path):
         dir_path.rmdir()
     except Exception as e:
         logger.warning(f"Failed to securely delete directory '{dir_path}', using rmtree fallback: {e}")
-        import shutil
+        from app.core.resilient_file_ops import resilient_rmtree
 
-        shutil.rmtree(dir_path, ignore_errors=True)
+        resilient_rmtree(dir_path, ignore_errors=True)
 
 
 class SessionCrypto:

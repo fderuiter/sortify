@@ -25,31 +25,34 @@ TRUNCATED_TAG_PATTERN = re.compile(r"<[a-zA-Z0-9_\-:/]*$")
 HORIZONTAL_WHITESPACE_PATTERN = re.compile(r"[ \t]+")
 VERTICAL_WHITESPACE_PATTERN = re.compile(r"\s*\n\s*")
 
+_SECRET_BOUND_LEFT = r"(?:^|(?<=[^a-zA-Z0-9]))"
+_SECRET_BOUND_RIGHT = r"(?:$|(?=[^a-zA-Z0-9]))"
+
 # 6. Centralized Secret & Credential Patterns
 SECRET_KEY_PATTERNS = [
     # Stripe / General sk_ live or test keys
-    re.compile(r"sk_(?:live|test)_[a-zA-Z0-9]{20,}"),
+    re.compile(_SECRET_BOUND_LEFT + r"sk_(?:live|test)_[a-zA-Z0-9]{20,}" + _SECRET_BOUND_RIGHT),
     # GitHub Tokens (ghp_, gho_, ghu_, ghs_, ghr_)
-    re.compile(r"gh[pousr]_[a-zA-Z0-9]{36,}"),
+    re.compile(_SECRET_BOUND_LEFT + r"gh[pousr]_[a-zA-Z0-9]{20,}" + _SECRET_BOUND_RIGHT),
     # AWS Access Key ID (AKIA or ASIA followed by 16 alphanumeric characters)
-    re.compile(r"(?:AKIA|ASIA)[0-9A-Z]{16,}"),
+    re.compile(_SECRET_BOUND_LEFT + r"(?:AKIA|ASIA)[0-9A-Z]{16}" + _SECRET_BOUND_RIGHT),
     # AWS Secret Access Key or generic secret key key-value pairs
     re.compile(
-        r"(?:aws_secret_access_key|api[_-]?key|secret[_-]?key|access[_-]?token|auth[_-]?token)\s*[:=]\s*[a-zA-Z0-9_\-/+=]{16,}",
+        _SECRET_BOUND_LEFT + r"(?:aws_secret_access_key|api[_-]?key|secret[_-]?key|access[_-]?token|auth[_-]?token)\s*[:=]\s*[a-zA-Z0-9_\-/+=]{16,}" + _SECRET_BOUND_RIGHT,
         re.IGNORECASE,
     ),
     # Mailgun / Generic API key format (e.g. key-3ax6...)
-    re.compile(r"key-[a-zA-Z0-9]{32,}"),
+    re.compile(_SECRET_BOUND_LEFT + r"key-[a-zA-Z0-9]{32}" + _SECRET_BOUND_RIGHT),
     # Generic sk_ key format
-    re.compile(r"sk_[a-zA-Z0-9]{20,}"),
+    re.compile(_SECRET_BOUND_LEFT + r"sk_[a-zA-Z0-9_]{20,}" + _SECRET_BOUND_RIGHT),
 ]
 
 BEARER_TOKEN_PATTERN = re.compile(
-    r"Bearer[\s_]+(?:eyJ[a-zA-Z0-9\-_=]+\.eyJ[a-zA-Z0-9\-_=]+\.[a-zA-Z0-9\-_=]{43,88}?|[a-zA-Z0-9_\-\.=]{16,})",
+    _SECRET_BOUND_LEFT + r"Bearer[\s_]+(?:eyJ[a-zA-Z0-9\-_=]+\.eyJ[a-zA-Z0-9\-_=]+\.[a-zA-Z0-9\-_=]{43,88}?|[a-zA-Z0-9_\-\.=]{16,})" + _SECRET_BOUND_RIGHT,
     re.IGNORECASE,
 )
 JWT_PATTERN = re.compile(
-    r"eyJ[a-zA-Z0-9\-_=]+\.eyJ[a-zA-Z0-9\-_=]+\.[a-zA-Z0-9\-_=]{43,88}?"
+    _SECRET_BOUND_LEFT + r"eyJ[a-zA-Z0-9\-_=]+\.eyJ[a-zA-Z0-9\-_=]+\.[a-zA-Z0-9\-_=]{43,88}?" + _SECRET_BOUND_RIGHT
 )
 PRIVATE_KEY_PATTERN = re.compile(
     r"-----BEGIN\s+(?:[A-Z0-9_-]+\s+)?PRIVATE\s+KEY-----[\s\S]*?-----END\s+(?:[A-Z0-9_-]+\s+)?PRIVATE\s+KEY-----|"
@@ -75,19 +78,8 @@ def calculate_shannon_entropy(text: str) -> float:
     return entropy
 
 
-def _is_high_entropy_token(token: str) -> bool:
-    """Check if a single word/token exhibits high Shannon entropy indicative of secret credentials."""
-    if not token or "<USER_HOME>" in token or "REDACTED" in token or "[STATUS:" in token:
-        return False
-
-    clean_token = token.strip(".,;:\"'()[]{}<>!@#$%^&*+=/")
-    if not clean_token:
-        return False
-
-    parts = re.split(r"[_\-/\\.]", clean_token)
-    if len(parts) > 1:
-        return any(_is_high_entropy_token(p) for p in parts if p)
-
+def _is_high_entropy_single_token(clean_token: str) -> bool:
+    """Check if a single atomic token exhibits high Shannon entropy indicative of secret credentials."""
     if len(clean_token) < 20:
         return False
     has_digit = any(c.isdigit() for c in clean_token)
@@ -105,6 +97,21 @@ def _is_high_entropy_token(token: str) -> bool:
         if entropy >= 4.2 and len(clean_token) >= 20:
             return True
     return False
+
+
+def _is_high_entropy_token(token: str) -> bool:
+    """Check if a word/token exhibits high Shannon entropy indicative of secret credentials."""
+    if "<USER_HOME>" in token or "REDACTED" in token or "[STATUS:" in token:
+        return False
+    clean_token = token.strip(".,;:\"'()[]{}<>!@#$%^&*+=/\\")
+    if len(clean_token) < 20:
+        return False
+
+    segments = [s for s in re.split(r"[_\-/\\:]+", clean_token) if s]
+    if len(segments) > 1:
+        return any(_is_high_entropy_single_token(s) for s in segments)
+
+    return _is_high_entropy_single_token(clean_token)
 
 
 def contains_secrets(text: str) -> bool:

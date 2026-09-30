@@ -291,10 +291,10 @@ class DownloadManager:
                 except Exception as e:
                     logger.warning(f"Failed to unload in-memory model instances during deletion: {e}")
 
-                import shutil
+                from app.core.resilient_file_ops import resilient_rmtree
 
                 if os.path.exists(model_dir):
-                    shutil.rmtree(model_dir, ignore_errors=True)
+                    resilient_rmtree(model_dir, ignore_errors=True)
 
                 with self._manager_lock:
                     self.state["progress"] = 0.0

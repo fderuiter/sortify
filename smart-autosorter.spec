@@ -350,19 +350,38 @@ if "pytest" not in sys.modules:
             base_lower = sys.base_prefix.lower().replace('\\', '/') if sys.base_prefix else None
             
             # Check standard candidate paths inside virtualenv first
-            for sub in ["Library/bin", "Scripts", "Lib/site-packages/sqlcipher3"]:
+            for sub in [
+                "Library/bin", "DLLs", "Scripts",
+                "Lib/site-packages/sqlcipher3", "Lib/site-packages/sqlcipher3/.libs", "Lib/site-packages/sqlcipher3.libs",
+                "Lib/site-packages/pysqlcipher3", "Lib/site-packages/pysqlcipher3.libs", "Lib/site-packages/pysqlcipher3/dlls", "Lib/site-packages/pysqlcipher3/bin",
+                "app/binaries/windows/sqlcipher3"
+            ]:
                 candidate_dir = os.path.join(vd, sub.replace("/", os.sep))
                 if os.path.isdir(candidate_dir):
-                    candidate_path = os.path.abspath(os.path.join(candidate_dir, "sqlite3.dll"))
-                    if os.path.exists(candidate_path):
-                        custom_sqlite3_dll = candidate_path
-                        break
+                    try:
+                        for f in os.listdir(candidate_dir):
+                            if f.lower() in ("sqlite3.dll", "sqlcipher.dll", "libsqlcipher.dll"):
+                                candidate_path = os.path.abspath(os.path.join(candidate_dir, f))
+                                cand_lower = candidate_path.lower().replace('\\', '/')
+                                if not (base_lower and base_lower in cand_lower and base_lower != prefix_lower):
+                                    custom_sqlite3_dll = candidate_path
+                                    break
+                    except Exception:
+                        pass
+                if custom_sqlite3_dll:
+                    break
             if custom_sqlite3_dll:
                 break
                 
             for root, dirs, files in os.walk(vd):
                 # Filter out heavy directories in-place to prevent os.walk from recursing into them
-                dirs[:] = [d for d in dirs if d.lower() not in ("torch", "easyocr", "scipy", "transformers", "numpy", "pandas", "sklearn", "matplotlib", "jinja2", "anyio", "aiohttp", "pydantic", "pydantic_core")]
+                dirs[:] = [d for d in dirs if d.lower() not in (
+                    "torch", "easyocr", "scipy", "transformers", "numpy", "pandas",
+                    "sklearn", "matplotlib", "jinja2", "anyio", "aiohttp", "pydantic",
+                    "pydantic_core", "mypy", "pytest", "coverage", "docutils", "sphinx",
+                    "reportlab", "sympy", "skimage", "shapely", "pil", "pyzmq", "rich",
+                    "textual", "botocore", "boto3", "google", "grpc", "node_modules"
+                )]
                 # Skip some common heavy directories to make it faster
                 if any(p in root.lower().replace('\\', '/') for p in ('site-packages/torch', 'site-packages/easyocr', 'site-packages/scipy')):
                     continue
