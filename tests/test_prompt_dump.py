@@ -9,6 +9,7 @@ import pytest
 from app.config import get_debug_log_dir
 from app.core.analyzer_strategies import (
     GenerativeNamingStrategy,
+    _get_canonical_windows_path,
     _scrub_user_home_paths,
     is_debug_active,
     is_prompt_dump_enabled,
@@ -68,8 +69,8 @@ def test_validate_prompt_dump_path_valid():
             except ValueError:
                 is_rel = False
         if not is_rel and (sys.platform == "win32" or os.name == "nt"):
-            norm_res = os.path.normpath(str(resolved)).lower()
-            norm_deg = os.path.normpath(str(debug_dir)).lower()
+            norm_res = _get_canonical_windows_path(resolved)
+            norm_deg = _get_canonical_windows_path(debug_dir)
             try:
                 common = os.path.normpath(os.path.commonpath([norm_res, norm_deg])).lower()
                 is_rel = (common == norm_deg)

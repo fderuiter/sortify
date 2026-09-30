@@ -36,6 +36,22 @@ def is_prompt_dump_enabled() -> bool:
 ILLEGAL_DUMP_PATH_CHARS = set('<>?*|"\0')
 
 
+def _get_canonical_windows_path(p: str | Path) -> str:
+    """Normalize and resolve Win32 short 8.3 paths and drive letter casing for Windows path comparison."""
+    path_str = str(p)
+    if sys.platform == "win32" or os.name == "nt":
+        try:
+            import ctypes
+
+            buf = ctypes.create_unicode_buffer(1024)
+            res = ctypes.windll.kernel32.GetLongPathNameW(path_str, buf, 1024)
+            if res > 0:
+                path_str = buf.value
+        except Exception:
+            pass
+    return os.path.normpath(path_str).lower()
+
+
 def validate_prompt_dump_path(dump_file: str) -> Path:
     """Validate requested dump path to ensure it resolves strictly within the designated debug log directory.
 
@@ -93,8 +109,8 @@ def validate_prompt_dump_path(dump_file: str) -> Path:
         is_windows_subpath = False
         if sys.platform == "win32" or os.name == "nt":
             try:
-                norm_target = os.path.normpath(str(target_path)).lower()
-                norm_debug = os.path.normpath(str(debug_dir)).lower()
+                norm_target = _get_canonical_windows_path(target_path)
+                norm_debug = _get_canonical_windows_path(debug_dir)
                 common_path = os.path.normpath(os.path.commonpath([norm_target, norm_debug])).lower()
                 is_windows_subpath = (common_path == norm_debug)
             except Exception:
