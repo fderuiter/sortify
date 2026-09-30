@@ -209,54 +209,73 @@ def pre_fetch_historical_corpus(
     if not rows:
         return validate_corpus_prefetch_batch({"model_metadata": model_metadata, "examples": []})
 
-    # Decrypt and parse candidates
+    def _safe_decrypt_text(crypto_obj, enc_text):
+        if not enc_text:
+            return ""
+        try:
+            dec = crypto_obj.decrypt_text(enc_text)
+            return dec if dec is not None else ""
+        except Exception:
+            return ""
+
+    def _safe_decrypt_and_parse_vector(crypto_obj, vector_str):
+        if not vector_str:
+            return None
+        try:
+            if hasattr(crypto_obj, "decrypt_and_parse_vector"):
+                return crypto_obj.decrypt_and_parse_vector(vector_str)
+            decrypted_str = crypto_obj.decrypt_vector(vector_str)
+            return json.loads(decrypted_str) if decrypted_str else None
+        except Exception:
+            return None
+
+    # Store raw candidate payloads without initial decryption
     candidates = []
     for filepath, user_verified_target_path, vector_str, extracted_text_enc in rows:
-        try:
-            decrypted_text = (
-                db.crypto.decrypt_text(extracted_text_enc)
-                if extracted_text_enc is not None
-                else ""
-            )
-        except Exception:
-            decrypted_text = ""
-
-        vector = None
-        if vector_str:
-            try:
-                decrypted_vector_str = db.crypto.decrypt_vector(vector_str)
-                vector = json.loads(decrypted_vector_str)
-            except Exception:
-                pass
-
         candidates.append(
             {
                 "filepath": filepath,
                 "user_verified_target_path": user_verified_target_path,
-                "vector": vector,
-                "text": decrypted_text,
+                "vector_str": vector_str,
+                "extracted_text_enc": extracted_text_enc,
             }
         )
 
     # Restrict to maximum of 50 relevant historical examples
     if len(candidates) <= max_examples:
-        selected_examples = candidates
+        selected_examples = [
+            {
+                "filepath": c["filepath"],
+                "user_verified_target_path": c["user_verified_target_path"],
+                "vector": _safe_decrypt_and_parse_vector(db.crypto, c["vector_str"]),
+                "text": _safe_decrypt_text(db.crypto, c["extracted_text_enc"]),
+            }
+            for c in candidates
+        ]
     else:
         # Rank candidates by relevance
-        # Attempt semantic ranking if active vectors and candidate vectors exist
         ranked = False
+        selected_examples = []
         active_vectors = [v for v in (pre_fetched_vectors or []) if v is not None]
-        if active_vectors and any(c["vector"] is not None for c in candidates):
+
+        # Attempt semantic ranking if active vectors exist and candidate vector payloads exist
+        if active_vectors and any(c["vector_str"] for c in candidates):
             try:
                 centroid = np.mean(active_vectors, axis=0)
                 from sklearn.metrics.pairwise import cosine_similarity
 
                 cand_vectors = []
                 cand_indices = []
+                cand_parsed_vectors = {}
+
                 for idx, c in enumerate(candidates):
-                    if c["vector"] is not None and len(c["vector"]) == len(centroid):
-                        cand_vectors.append(c["vector"])
-                        cand_indices.append(idx)
+                    if c["vector_str"]:
+                        parsed_v = _safe_decrypt_and_parse_vector(db.crypto, c["vector_str"])
+                        if parsed_v is not None:
+                            cand_parsed_vectors[idx] = parsed_v
+                            if len(parsed_v) == len(centroid):
+                                cand_vectors.append(parsed_v)
+                                cand_indices.append(idx)
 
                 if cand_vectors:
                     sims = cosine_similarity([centroid], cand_vectors).flatten()
@@ -264,18 +283,30 @@ def pre_fetch_historical_corpus(
                         cand_indices[i] for i in sims.argsort()[::-1]
                     ]
                     selected_indices = set(sorted_cand_indices[:max_examples])
-                    selected_examples = []
-                    for idx, c in enumerate(candidates):
+                    chosen_indices = []
+                    for idx in range(len(candidates)):
                         if idx in selected_indices:
-                            selected_examples.append(c)
-                    if len(selected_examples) < max_examples:
-                        remaining = [
-                            c
-                            for idx, c in enumerate(candidates)
-                            if idx not in selected_indices
-                        ]
-                        selected_examples.extend(
-                            remaining[: max_examples - len(selected_examples)]
+                            chosen_indices.append(idx)
+                    if len(chosen_indices) < max_examples:
+                        for idx in range(len(candidates)):
+                            if idx not in selected_indices:
+                                chosen_indices.append(idx)
+                                if len(chosen_indices) == max_examples:
+                                    break
+
+                    for idx in chosen_indices:
+                        c = candidates[idx]
+                        v = cand_parsed_vectors.get(idx)
+                        if v is None and c["vector_str"]:
+                            v = _safe_decrypt_and_parse_vector(db.crypto, c["vector_str"])
+                        text = _safe_decrypt_text(db.crypto, c["extracted_text_enc"])
+                        selected_examples.append(
+                            {
+                                "filepath": c["filepath"],
+                                "user_verified_target_path": c["user_verified_target_path"],
+                                "vector": v,
+                                "text": text,
+                            }
                         )
                     ranked = True
             except Exception as e:
@@ -289,7 +320,12 @@ def pre_fetch_historical_corpus(
 
                 from app.core.text_utils import sanitize_text
 
-                hist_texts = [sanitize_text(c["text"] or "") for c in candidates]
+                # Decrypt texts for candidate evaluation during TF-IDF vectorization
+                decrypted_texts = [
+                    _safe_decrypt_text(db.crypto, c["extracted_text_enc"])
+                    for c in candidates
+                ]
+                hist_texts = [sanitize_text(t) for t in decrypted_texts]
                 active_text = sanitize_text(" ".join(documents or []))
 
                 vectorizer = TfidfVectorizer(max_features=1000, stop_words="english")
@@ -301,10 +337,30 @@ def pre_fetch_historical_corpus(
 
                 selected_examples = []
                 for idx in sorted_indices[:max_examples]:
-                    selected_examples.append(candidates[idx])
+                    c = candidates[idx]
+                    v = _safe_decrypt_and_parse_vector(db.crypto, c["vector_str"])
+                    selected_examples.append(
+                        {
+                            "filepath": c["filepath"],
+                            "user_verified_target_path": c["user_verified_target_path"],
+                            "vector": v,
+                            "text": decrypted_texts[idx],
+                        }
+                    )
             except Exception as e:
                 logging.error(f"TF-IDF ranking of historical examples failed: {e}")
-                selected_examples = candidates[:max_examples]
+                selected_examples = []
+                for c in candidates[:max_examples]:
+                    v = _safe_decrypt_and_parse_vector(db.crypto, c["vector_str"])
+                    text = _safe_decrypt_text(db.crypto, c["extracted_text_enc"])
+                    selected_examples.append(
+                        {
+                            "filepath": c["filepath"],
+                            "user_verified_target_path": c["user_verified_target_path"],
+                            "vector": v,
+                            "text": text,
+                        }
+                    )
 
     return validate_corpus_prefetch_batch({"model_metadata": model_metadata, "examples": selected_examples})
 
