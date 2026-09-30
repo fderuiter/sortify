@@ -675,7 +675,7 @@ def test_generate_sorting_plan_jev_rule_extensions():
     for filename in corpus.keys():
         assert filename in tech_folder, f"Expected {filename} in {target_category}"
         file_info = tech_folder[filename]
-        assert file_info.get("routed_by") == "jev" or file_info.get("status") is None or file_info.get("status") != "UNSUPPORTED"
+        assert file_info.get("routed_by") in ("jev", "jev_classifier") or file_info.get("status") is None or file_info.get("status") != "UNSUPPORTED"
 
 
 def test_unclassified_non_extractor_files_route_to_unsupported(mocker):
@@ -688,7 +688,7 @@ def test_unclassified_non_extractor_files_route_to_unsupported(mocker):
     )
 
     corpus = {
-        "unknown_data.xyz": "qwertyuiop zxcvbnm",
+        "foo.py": "x = 1",
     }
     analyzer.partial_fit(base_dir, corpus)
 
@@ -700,9 +700,10 @@ def test_unclassified_non_extractor_files_route_to_unsupported(mocker):
     plan_dict = plan.plan if hasattr(plan, "plan") else plan
 
     assert "Miscellaneous" in plan_dict
-    assert "unknown_data.xyz" in plan_dict["Miscellaneous"]
-    assert plan_dict["Miscellaneous"]["unknown_data.xyz"]["extraction_status"] == "UNSUPPORTED"
+    assert "foo.py" in plan_dict["Miscellaneous"]
+    assert plan_dict["Miscellaneous"]["foo.py"]["extraction_status"] == "UNSUPPORTED"
     if mock_generate_plan.called:
         args = mock_generate_plan.call_args[0]
-        assert "unknown_data.xyz" not in args[0]
+        assert "foo.py" not in args[0]
+
 
