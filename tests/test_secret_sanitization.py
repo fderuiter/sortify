@@ -151,17 +151,31 @@ def test_sanitize_name_removes_secrets_and_preserves_extensions():
     test_cases = [
         ("Invoice_sk_live_51Nxabc123XYZ4567890abcdef_2026.pdf", "Invoice_2026.pdf"),
         ("sk_live_51Nxabc123XYZ4567890abcdef.pdf", "Unnamed_safe.pdf"),
-        ("Project_ghp_1234567890abcdef1234567890abcdef123456_Notes.txt", "Project_Notes.txt"),
+        (
+            "Project_ghp_1234567890abcdef1234567890abcdef123456_Notes.txt",
+            "Project_Notes.txt",
+        ),
         ("AKIAIOSFODNN7EXAMPLE.docx", "Unnamed_safe.docx"),
-        ("Mailgun_key-12345678901234567890123456789012_Config.json", "Mailgun_Config.json"),
-        ("Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c.pdf", "Unnamed_safe.pdf"),
-        ("-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC...\n-----END PRIVATE KEY-----", "Unnamed_safe"),
+        (
+            "Mailgun_key-12345678901234567890123456789012_Config.json",
+            "Mailgun_Config.json",
+        ),
+        (
+            "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c.pdf",
+            "Unnamed_safe.pdf",
+        ),
+        (
+            "-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC...\n-----END PRIVATE KEY-----",
+            "Unnamed_safe",
+        ),
     ]
 
     for raw, expected in test_cases:
         result = sanitize_name(raw)
         assert result == expected, f"Expected '{expected}' for '{raw}', got '{result}'"
-        assert not contains_secrets(result), f"Sanitized result '{result}' still contains secrets!"
+        assert not contains_secrets(result), (
+            f"Sanitized result '{result}' still contains secrets!"
+        )
 
 
 def test_sanitize_folder_key_removes_secrets_from_path_segments():
@@ -265,4 +279,3 @@ def test_contextual_file_renamer_scrubs_secrets():
     assert not contains_secrets(new_fn)
     assert "sk_live_" not in new_fn
     assert "AKIA" not in new_fn
-

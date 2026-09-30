@@ -172,7 +172,11 @@ def test_phase1_and_phase2_organization_cleans_root_directory(
         routed_files = set()
         full_dict = full_plan.plan if hasattr(full_plan, "plan") else full_plan
         for cat_node in full_dict.values():
-            c_dict = cat_node.plan if hasattr(cat_node, "plan") and isinstance(cat_node.plan, dict) else cat_node
+            c_dict = (
+                cat_node.plan
+                if hasattr(cat_node, "plan") and isinstance(cat_node.plan, dict)
+                else cat_node
+            )
             if isinstance(c_dict, dict):
                 for filename in c_dict.keys():
                     routed_files.add(filename)

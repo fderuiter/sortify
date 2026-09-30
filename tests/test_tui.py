@@ -722,6 +722,7 @@ def test_tui_session_recovery_modal_actions(temp_workspace):
 
 def test_tui_jev_tree_node_tags_and_inspector(temp_workspace):
     """Verify TUI formats Jev tags in tree nodes and renders detailed metadata in inspector panel."""
+
     async def _test():
         settings = AppSettings()
         settings._settings_model.AI_CONSENT_GRANTED = True
@@ -809,6 +810,7 @@ def test_tui_expanded_settings_fields(temp_workspace):
 
 def test_tui_jev_partial_metadata(temp_workspace):
     """Verify TUI handles partial/missing Jev metadata without throwing exceptions."""
+
     async def _test():
         settings = AppSettings()
         settings._settings_model.AI_CONSENT_GRANTED = True
@@ -888,6 +890,7 @@ def test_run_tui_guardrails(monkeypatch):
 def test_tui_speech_binary_fallback_missing_binary(temp_workspace):
     """Verify announce succeeds, updates #status-bar, and records history when speech binaries are missing."""
     from unittest.mock import patch
+
     settings = AppSettings()
     settings._settings_model.AI_CONSENT_GRANTED = True
 
@@ -897,7 +900,10 @@ def test_tui_speech_binary_fallback_missing_binary(temp_workspace):
             async with app.run_test() as pilot:
                 result = app.announce("Speech binary missing fallback test message")
                 assert result == "Speech binary missing fallback test message"
-                assert app.get_last_announcement() == "Speech binary missing fallback test message"
+                assert (
+                    app.get_last_announcement()
+                    == "Speech binary missing fallback test message"
+                )
                 assert any(
                     a["message"] == "Speech binary missing fallback test message"
                     for a in app.announcements
@@ -911,22 +917,30 @@ def test_tui_speech_binary_fallback_missing_binary(temp_workspace):
 def test_tui_speech_binary_execution_exception_fallback(temp_workspace):
     """Verify announce handles subprocess execution exceptions without interrupting navigation."""
     from unittest.mock import patch
+
     settings = AppSettings()
     settings._settings_model.AI_CONSENT_GRANTED = True
     mock_speech_bin = "/usr/bin/spd-say"
 
     async def _test():
         app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
-        with patch("sys.platform", "linux"), patch("shutil.which", return_value=mock_speech_bin), patch(
-            "subprocess.run", side_effect=OSError("Exec format error")
+        with (
+            patch("sys.platform", "linux"),
+            patch("shutil.which", return_value=mock_speech_bin),
+            patch("subprocess.run", side_effect=OSError("Exec format error")),
         ):
             async with app.run_test() as pilot:
                 result = app.announce("Speech execution error fallback test message")
                 app.join_speech_thread(timeout=1.0)
                 assert result == "Speech execution error fallback test message"
-                assert app.get_last_announcement() == "Speech execution error fallback test message"
+                assert (
+                    app.get_last_announcement()
+                    == "Speech execution error fallback test message"
+                )
                 sb = app.query_one("#status-bar", Static)
-                assert "Speech execution error fallback test message" in str(sb.render())
+                assert "Speech execution error fallback test message" in str(
+                    sb.render()
+                )
 
     asyncio.run(_test())
 
@@ -934,14 +948,17 @@ def test_tui_speech_binary_execution_exception_fallback(temp_workspace):
 def test_tui_speech_binary_available_and_audit(temp_workspace):
     """Verify speech binary execution attempt when available and verify audit compliance output."""
     from unittest.mock import patch
+
     settings = AppSettings()
     settings._settings_model.AI_CONSENT_GRANTED = True
     mock_speech_bin = "/usr/bin/spd-say"
 
     async def _test():
         app1 = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
-        with patch("sys.platform", "linux"), patch("shutil.which", return_value=mock_speech_bin), patch(
-            "subprocess.run", return_value=None
+        with (
+            patch("sys.platform", "linux"),
+            patch("shutil.which", return_value=mock_speech_bin),
+            patch("subprocess.run", return_value=None),
         ):
             async with app1.run_test() as pilot:
                 audit_res = app1.audit_a11y_compliance()
@@ -967,6 +984,7 @@ def test_tui_speech_binary_available_and_audit(temp_workspace):
 def test_tui_speech_binary_windows_extension_filtering(temp_workspace):
     """Verify _get_speech_binary returns None on Windows (defaulting to visual live region status bar)."""
     from unittest.mock import patch
+
     settings = AppSettings()
     app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
 
@@ -977,6 +995,7 @@ def test_tui_speech_binary_windows_extension_filtering(temp_workspace):
 def test_tui_speech_binary_windows_posix_path_filtering(temp_workspace):
     """Verify _get_speech_binary filters out MSYS2/Cygwin/Git POSIX binary paths on Windows."""
     from unittest.mock import patch
+
     settings = AppSettings()
     app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
 
@@ -992,5 +1011,8 @@ def test_tui_speech_binary_windows_posix_path_filtering(temp_workspace):
         r"C:\runner\_work\spd-say.exe",
         r"C:\hostedtoolcache\windows\spd-say.exe",
     ]:
-        with patch("sys.platform", "win32"), patch("shutil.which", return_value=posix_path):
+        with (
+            patch("sys.platform", "win32"),
+            patch("shutil.which", return_value=posix_path),
+        ):
             assert app._get_speech_binary() is None

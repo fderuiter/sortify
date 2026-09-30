@@ -5,6 +5,7 @@ from typing import Callable
 from unittest.mock import MagicMock
 
 from app.core.path_utils import validate_target_path
+from app.core.policy_engine import is_masked_by
 from app.ui.dialog_helper import get_dialog_card_classes
 from app.ui.tokens import TOKENS
 from app.ui.toolbar import OverflowToolbar
@@ -33,7 +34,11 @@ def create_accessible_slider(
     def get_current_val():
         try:
             v = getattr(slider, "value", None)
-            if v is None and hasattr(slider, "_props") and isinstance(slider._props, dict):
+            if (
+                v is None
+                and hasattr(slider, "_props")
+                and isinstance(slider._props, dict)
+            ):
                 v = slider._props.get("value")
             if isinstance(v, (int, float)):
                 return v
@@ -216,25 +221,6 @@ def get_shadowed_policies(policies: list[dict]) -> list[bool]:
         indexed_policies, key=lambda item: item[1].get("priority", 0), reverse=True
     )
     shadowed_indices = set()
-
-    def is_masked_by(higher_rule, lower_rule) -> bool:
-        ha_type = higher_rule.get("type", "").lower()
-        lo_type = lower_rule.get("type", "").lower()
-        ha_expr = higher_rule.get("expression", "").lower()
-        lo_expr = lower_rule.get("expression", "").lower()
-
-        if not ha_expr or not lo_expr:
-            return False
-
-        if ha_expr in lo_expr:
-            if ha_type == "keyword":
-                return True
-            if ha_type == "pattern":
-                if lo_type in ("pattern", "override"):
-                    return True
-            if ha_type == "override" and lo_type == "override":
-                return True
-        return False
 
     for i, (orig_idx, lower_rule) in enumerate(sorted_indexed):
         for higher_orig_idx, higher_rule in sorted_indexed[:i]:
@@ -744,18 +730,15 @@ def show_settings(parent_app, settings):
                         "text-sm text-gray-700 mt-2"
                     )
                     with ui.row().classes("w-full items-center gap-4"):
-                        worker_slider = (
-                            create_accessible_slider(
-                                min=1,
-                                max=64,
-                                value=settings.MAX_WORKERS,
-                                step=1,
-                                on_change=on_worker_change,
-                                aria_label="Worker Concurrency Limit",
-                                value_formatter=lambda v: f"{int(v)}",
-                            )
-                            .classes("flex-grow")
-                        )
+                        worker_slider = create_accessible_slider(
+                            min=1,
+                            max=64,
+                            value=settings.MAX_WORKERS,
+                            step=1,
+                            on_change=on_worker_change,
+                            aria_label="Worker Concurrency Limit",
+                            value_formatter=lambda v: f"{int(v)}",
+                        ).classes("flex-grow")
                         ui.label().bind_text_from(
                             worker_slider, "value", backward=lambda v: f"{int(v)}"
                         )
@@ -779,18 +762,15 @@ def show_settings(parent_app, settings):
                         "text-sm text-gray-700 mt-2"
                     )
                     with ui.row().classes("w-full items-center gap-4"):
-                        audio_worker_slider = (
-                            create_accessible_slider(
-                                min=1,
-                                max=64,
-                                value=getattr(settings, "AUDIO_MAX_WORKERS", 2),
-                                step=1,
-                                on_change=on_audio_worker_change,
-                                aria_label="Audio Worker Concurrency Limit",
-                                value_formatter=lambda v: f"{int(v)}",
-                            )
-                            .classes("flex-grow")
-                        )
+                        audio_worker_slider = create_accessible_slider(
+                            min=1,
+                            max=64,
+                            value=getattr(settings, "AUDIO_MAX_WORKERS", 2),
+                            step=1,
+                            on_change=on_audio_worker_change,
+                            aria_label="Audio Worker Concurrency Limit",
+                            value_formatter=lambda v: f"{int(v)}",
+                        ).classes("flex-grow")
                         ui.label().bind_text_from(
                             audio_worker_slider, "value", backward=lambda v: f"{int(v)}"
                         )
@@ -813,18 +793,15 @@ def show_settings(parent_app, settings):
                         "text-sm text-gray-700 mt-4"
                     )
                     with ui.row().classes("w-full items-center gap-4"):
-                        timeout_slider = (
-                            create_accessible_slider(
-                                min=1,
-                                max=300,
-                                value=settings.VISUAL_TIMEOUT,
-                                step=1,
-                                on_change=on_timeout_change,
-                                aria_label="Visual Layout Timeout",
-                                value_formatter=lambda v: f"{int(v)}",
-                            )
-                            .classes("flex-grow")
-                        )
+                        timeout_slider = create_accessible_slider(
+                            min=1,
+                            max=300,
+                            value=settings.VISUAL_TIMEOUT,
+                            step=1,
+                            on_change=on_timeout_change,
+                            aria_label="Visual Layout Timeout",
+                            value_formatter=lambda v: f"{int(v)}",
+                        ).classes("flex-grow")
                         ui.label().bind_text_from(
                             timeout_slider, "value", backward=lambda v: f"{int(v)}"
                         )
@@ -854,18 +831,15 @@ def show_settings(parent_app, settings):
                         "text-sm text-gray-700 mt-4"
                     )
                     with ui.row().classes("w-full items-center gap-4"):
-                        debounce_slider = (
-                            create_accessible_slider(
-                                min=0.1,
-                                max=10.0,
-                                value=settings.DEBOUNCE_DELAY,
-                                step=0.1,
-                                on_change=on_debounce_delay_change,
-                                aria_label="Min Debounce Delay",
-                                value_formatter=lambda v: f"{float(v):.1f}",
-                            )
-                            .classes("flex-grow")
-                        )
+                        debounce_slider = create_accessible_slider(
+                            min=0.1,
+                            max=10.0,
+                            value=settings.DEBOUNCE_DELAY,
+                            step=0.1,
+                            on_change=on_debounce_delay_change,
+                            aria_label="Min Debounce Delay",
+                            value_formatter=lambda v: f"{float(v):.1f}",
+                        ).classes("flex-grow")
                         ui.label().bind_text_from(
                             debounce_slider,
                             "value",
@@ -899,18 +873,15 @@ def show_settings(parent_app, settings):
                         "text-sm text-gray-700 mt-4"
                     )
                     with ui.row().classes("w-full items-center gap-4"):
-                        max_debounce_slider = (
-                            create_accessible_slider(
-                                min=0.5,
-                                max=30.0,
-                                value=settings.MAX_DEBOUNCE_DELAY,
-                                step=0.5,
-                                on_change=on_max_debounce_delay_change,
-                                aria_label="Max Debounce Delay",
-                                value_formatter=lambda v: f"{float(v):.1f}",
-                            )
-                            .classes("flex-grow")
-                        )
+                        max_debounce_slider = create_accessible_slider(
+                            min=0.5,
+                            max=30.0,
+                            value=settings.MAX_DEBOUNCE_DELAY,
+                            step=0.5,
+                            on_change=on_max_debounce_delay_change,
+                            aria_label="Max Debounce Delay",
+                            value_formatter=lambda v: f"{float(v):.1f}",
+                        ).classes("flex-grow")
                         ui.label().bind_text_from(
                             max_debounce_slider,
                             "value",
@@ -1162,18 +1133,15 @@ def show_settings(parent_app, settings):
 
                     ui.label("ML Thread Count").classes("text-sm text-gray-700 mt-2")
                     with ui.row().classes("w-full items-center gap-4"):
-                        threads_slider = (
-                            create_accessible_slider(
-                                min=1,
-                                max=32,
-                                value=settings.MODEL_THREADS,
-                                step=1,
-                                on_change=on_threads_change,
-                                aria_label="ML Thread Count",
-                                value_formatter=lambda v: f"{int(v)}",
-                            )
-                            .classes("flex-grow")
-                        )
+                        threads_slider = create_accessible_slider(
+                            min=1,
+                            max=32,
+                            value=settings.MODEL_THREADS,
+                            step=1,
+                            on_change=on_threads_change,
+                            aria_label="ML Thread Count",
+                            value_formatter=lambda v: f"{int(v)}",
+                        ).classes("flex-grow")
                         ui.label().bind_text_from(
                             threads_slider, "value", backward=lambda v: f"{int(v)}"
                         )
@@ -1196,18 +1164,15 @@ def show_settings(parent_app, settings):
                         "text-sm text-gray-700 mt-4"
                     )
                     with ui.row().classes("w-full items-center gap-4"):
-                        img_dim_slider = (
-                            create_accessible_slider(
-                                min=1,
-                                max=5000,
-                                value=settings.IMAGE_MAX_DIMENSION,
-                                step=1,
-                                on_change=on_img_dim_change,
-                                aria_label="Image Max Dimension",
-                                value_formatter=lambda v: f"{int(v)}",
-                            )
-                            .classes("flex-grow")
-                        )
+                        img_dim_slider = create_accessible_slider(
+                            min=1,
+                            max=5000,
+                            value=settings.IMAGE_MAX_DIMENSION,
+                            step=1,
+                            on_change=on_img_dim_change,
+                            aria_label="Image Max Dimension",
+                            value_formatter=lambda v: f"{int(v)}",
+                        ).classes("flex-grow")
                         ui.label().bind_text_from(
                             img_dim_slider, "value", backward=lambda v: f"{int(v)}"
                         )
@@ -1232,18 +1197,15 @@ def show_settings(parent_app, settings):
                         "text-sm text-gray-700 mt-4"
                     )
                     with ui.row().classes("w-full items-center gap-4"):
-                        img_skip_slider = (
-                            create_accessible_slider(
-                                min=1,
-                                max=10000,
-                                value=settings.IMAGE_SKIP_THRESHOLD,
-                                step=1,
-                                on_change=on_img_skip_change,
-                                aria_label="Image Skip Threshold",
-                                value_formatter=lambda v: f"{int(v)}",
-                            )
-                            .classes("flex-grow")
-                        )
+                        img_skip_slider = create_accessible_slider(
+                            min=1,
+                            max=10000,
+                            value=settings.IMAGE_SKIP_THRESHOLD,
+                            step=1,
+                            on_change=on_img_skip_change,
+                            aria_label="Image Skip Threshold",
+                            value_formatter=lambda v: f"{int(v)}",
+                        ).classes("flex-grow")
                         ui.label().bind_text_from(
                             img_skip_slider, "value", backward=lambda v: f"{int(v)}"
                         )
@@ -1278,20 +1240,17 @@ def show_settings(parent_app, settings):
                     coherence_lbl.tooltip(coherence_tooltip)
 
                     with ui.row().classes("w-full items-center gap-4"):
-                        coherence_slider = (
-                            create_accessible_slider(
-                                min=0.0,
-                                max=1.0,
-                                value=getattr(settings, "COHERENCE_THRESHOLD", 0.5),
-                                step=0.01,
-                                on_change=on_coherence_change,
-                                aria_label="Coherence Threshold",
-                                value_formatter=lambda v: f"{float(v):.2f}"
-                                if v is not None
-                                else "0.50",
-                            )
-                            .classes("flex-grow")
-                        )
+                        coherence_slider = create_accessible_slider(
+                            min=0.0,
+                            max=1.0,
+                            value=getattr(settings, "COHERENCE_THRESHOLD", 0.5),
+                            step=0.01,
+                            on_change=on_coherence_change,
+                            aria_label="Coherence Threshold",
+                            value_formatter=lambda v: (
+                                f"{float(v):.2f}" if v is not None else "0.50"
+                            ),
+                        ).classes("flex-grow")
                         coherence_slider.tooltip(coherence_tooltip)
                         coherence_val_lbl = ui.label().bind_text_from(
                             coherence_slider,

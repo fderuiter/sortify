@@ -171,18 +171,47 @@ def test_compliance_overrides_manual_lock():
     )
 
     file_info = plan_dict["Secure Finance"]["confidential_finance.xlsx"]
-    assert getattr(file_info, "node_type", None) == "file" or (isinstance(file_info, dict) and file_info.get("__type__") == "file")
-    assert getattr(file_info, "routed_by", None) == "keyword" or (isinstance(file_info, dict) and file_info.get("routed_by") == "keyword")
-    assert getattr(file_info, "match", None) == "financial" or (isinstance(file_info, dict) and file_info.get("match") == "financial")
+    assert getattr(file_info, "node_type", None) == "file" or (
+        isinstance(file_info, dict) and file_info.get("__type__") == "file"
+    )
+    assert getattr(file_info, "routed_by", None) == "keyword" or (
+        isinstance(file_info, dict) and file_info.get("routed_by") == "keyword"
+    )
+    assert getattr(file_info, "match", None) == "financial" or (
+        isinstance(file_info, dict) and file_info.get("match") == "financial"
+    )
 
     # Verify override / correction flags
-    assert (getattr(file_info, "is_corrected", None) or (file_info.get("is_corrected") if isinstance(file_info, dict) else None)) is True
-    assert (getattr(file_info, "corrected", None) or (file_info.get("corrected") if isinstance(file_info, dict) else None)) is True
-    assert (getattr(file_info, "is_overridden", None) or (file_info.get("is_overridden") if isinstance(file_info, dict) else None)) is True
-    assert (getattr(file_info, "overridden", None) or (file_info.get("overridden") if isinstance(file_info, dict) else None)) is True
-    assert (getattr(file_info, "original_lock_path", None) or (file_info.get("original_lock_path") if isinstance(file_info, dict) else None)) == "Public Shared Folder"
-    assert (getattr(file_info, "new_policy_path", None) or (file_info.get("new_policy_path") if isinstance(file_info, dict) else None)) == "Secure Finance"
-    assert (getattr(file_info, "compliance_path", None) or (file_info.get("compliance_path") if isinstance(file_info, dict) else None)) == "Secure Finance"
+    assert (
+        getattr(file_info, "is_corrected", None)
+        or (file_info.get("is_corrected") if isinstance(file_info, dict) else None)
+    ) is True
+    assert (
+        getattr(file_info, "corrected", None)
+        or (file_info.get("corrected") if isinstance(file_info, dict) else None)
+    ) is True
+    assert (
+        getattr(file_info, "is_overridden", None)
+        or (file_info.get("is_overridden") if isinstance(file_info, dict) else None)
+    ) is True
+    assert (
+        getattr(file_info, "overridden", None)
+        or (file_info.get("overridden") if isinstance(file_info, dict) else None)
+    ) is True
+    assert (
+        getattr(file_info, "original_lock_path", None)
+        or (
+            file_info.get("original_lock_path") if isinstance(file_info, dict) else None
+        )
+    ) == "Public Shared Folder"
+    assert (
+        getattr(file_info, "new_policy_path", None)
+        or (file_info.get("new_policy_path") if isinstance(file_info, dict) else None)
+    ) == "Secure Finance"
+    assert (
+        getattr(file_info, "compliance_path", None)
+        or (file_info.get("compliance_path") if isinstance(file_info, dict) else None)
+    ) == "Secure Finance"
 
 
 def test_invalid_lock_path_raises_during_plan_generation():

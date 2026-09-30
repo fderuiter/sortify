@@ -165,4 +165,3 @@ def test_check_ai_status_packaged_lite_build_marker(tmp_path, monkeypatch):
         is_healthy, warn_msg = check_ai_status(settings)
         assert is_healthy is False
         assert "not installed" in warn_msg
-

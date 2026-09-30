@@ -182,9 +182,18 @@ def test_conflict_detection():
     plan_dict = plan.plan if hasattr(plan, "plan") else plan
     assert "Archive" in plan_dict
     file_info = plan_dict["Archive"]["invoice_2025.txt"]
-    assert (getattr(file_info, "is_conflicted", None) or (file_info.get("is_conflicted") if isinstance(file_info, dict) else None)) is True
-    assert (getattr(file_info, "compliance_path", None) or (file_info.get("compliance_path") if isinstance(file_info, dict) else None)) == "Accounting"
-    assert (getattr(file_info, "historical_path", None) or (file_info.get("historical_path") if isinstance(file_info, dict) else None)) == "Archive"
+    assert (
+        getattr(file_info, "is_conflicted", None)
+        or (file_info.get("is_conflicted") if isinstance(file_info, dict) else None)
+    ) is True
+    assert (
+        getattr(file_info, "compliance_path", None)
+        or (file_info.get("compliance_path") if isinstance(file_info, dict) else None)
+    ) == "Accounting"
+    assert (
+        getattr(file_info, "historical_path", None)
+        or (file_info.get("historical_path") if isinstance(file_info, dict) else None)
+    ) == "Archive"
 
 
 def test_conflict_resolution():
@@ -246,8 +255,15 @@ def test_document_to_document_similarity_matching():
     assert "Receipts" in plan_dict
     assert "new_receipt.txt" in plan_dict["Receipts"]
     file_info = plan_dict["Receipts"]["new_receipt.txt"]
-    assert (getattr(file_info, "routed_by", None) or (file_info.get("routed_by") if isinstance(file_info, dict) else None)) == "similarity"
-    match_str = getattr(file_info, "match", None) or (file_info.get("match") if isinstance(file_info, dict) else "") or ""
+    assert (
+        getattr(file_info, "routed_by", None)
+        or (file_info.get("routed_by") if isinstance(file_info, dict) else None)
+    ) == "similarity"
+    match_str = (
+        getattr(file_info, "match", None)
+        or (file_info.get("match") if isinstance(file_info, dict) else "")
+        or ""
+    )
     assert "similarity >= 0.8" in match_str
 
 
@@ -284,7 +300,10 @@ def test_document_similarity_no_dilution():
     assert "SharedFolder" in plan_dict
     assert "new_cooking.txt" in plan_dict["SharedFolder"]
     file_info = plan_dict["SharedFolder"]["new_cooking.txt"]
-    assert (getattr(file_info, "routed_by", None) or (file_info.get("routed_by") if isinstance(file_info, dict) else None)) == "similarity"
+    assert (
+        getattr(file_info, "routed_by", None)
+        or (file_info.get("routed_by") if isinstance(file_info, dict) else None)
+    ) == "similarity"
 
 
 def test_document_similarity_guardrail_unverified():
@@ -346,7 +365,14 @@ def test_empty_files_bypassed_from_ai_clustering(mocker):
     assert "Miscellaneous" in plan_dict
     assert "empty_file.txt" in plan_dict["Miscellaneous"]
     empty_node = plan_dict["Miscellaneous"]["empty_file.txt"]
-    assert (getattr(empty_node, "extraction_status", None) or (empty_node.get("extraction_status") if isinstance(empty_node, dict) else None)) == "EMPTY"
+    assert (
+        getattr(empty_node, "extraction_status", None)
+        or (
+            empty_node.get("extraction_status")
+            if isinstance(empty_node, dict)
+            else None
+        )
+    ) == "EMPTY"
 
     # Assert that generate_plan was called only with normal_file.txt
     mock_generate_plan.assert_called_once()

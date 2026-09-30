@@ -11,6 +11,7 @@ import sys
 from pathlib import Path
 
 from app.config import AppSettings
+from app.core.domain_contracts import _make_json_serializable
 
 # Dynamic Windows DLL Path Injection
 from app.core.path_utils import is_packaged
@@ -153,8 +154,14 @@ if sys.platform == "win32" and is_packaged():
         sqlcipher_dirs = [
             os.path.abspath(os.path.join(base_dir, "sqlcipher3")),
             os.path.abspath(os.path.join(base_dir, "_internal", "sqlcipher3")),
-            os.path.abspath(os.path.join(base_dir, "app", "binaries", "windows", "sqlcipher3")),
-            os.path.abspath(os.path.join(base_dir, "_internal", "app", "binaries", "windows", "sqlcipher3")),
+            os.path.abspath(
+                os.path.join(base_dir, "app", "binaries", "windows", "sqlcipher3")
+            ),
+            os.path.abspath(
+                os.path.join(
+                    base_dir, "_internal", "app", "binaries", "windows", "sqlcipher3"
+                )
+            ),
         ]
         for sqlcipher_dir in sqlcipher_dirs:
             if os.path.isdir(sqlcipher_dir):
@@ -442,16 +449,6 @@ def apply_config_overrides(settings: AppSettings, args: argparse.Namespace):
         settings.CONTEXTUAL_RENAMING = args.contextual_renaming
 
 
-def _make_json_serializable(obj):
-    if hasattr(obj, "model_dump"):
-        return obj.model_dump(mode="json")
-    if isinstance(obj, dict):
-        return {k: _make_json_serializable(v) for k, v in obj.items()}
-    if isinstance(obj, list):
-        return [_make_json_serializable(v) for v in obj]
-    return obj
-
-
 def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
     """Execute document batch sorting or launch interactive TUI."""
     import json
@@ -508,7 +505,11 @@ def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
             dest_base = Path(dest_dir).resolve()
             dest_base.mkdir(parents=True, exist_ok=True)
             re_rooted_plan = {}
-            plan_items = plan.plan.items() if hasattr(plan, "plan") and isinstance(plan.plan, dict) else plan.items()
+            plan_items = (
+                plan.plan.items()
+                if hasattr(plan, "plan") and isinstance(plan.plan, dict)
+                else plan.items()
+            )
             for k, v in plan_items:
                 if os.path.isabs(k):
                     re_rooted_plan[k] = v
@@ -524,9 +525,7 @@ def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
                 "dry_run": True,
                 "target_directory": str(target_path),
                 "destination_directory": (
-                    str(Path(dest_dir).resolve())
-                    if dest_dir
-                    else str(target_path)
+                    str(Path(dest_dir).resolve()) if dest_dir else str(target_path)
                 ),
                 "plan": serializable_plan,
             }
@@ -537,9 +536,7 @@ def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
                 "dry_run": False,
                 "target_directory": str(target_path),
                 "destination_directory": (
-                    str(Path(dest_dir).resolve())
-                    if dest_dir
-                    else str(target_path)
+                    str(Path(dest_dir).resolve()) if dest_dir else str(target_path)
                 ),
                 "plan": serializable_plan,
                 "summary": summary,

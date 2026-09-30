@@ -625,9 +625,7 @@ class ContinuousWatchdogDaemon:
             return
 
         # Execute deep forensic inspection, PII redaction, and compliance policy evaluation off-thread
-        raw_record = await asyncio.to_thread(
-            interceptor.process_quarantine_job, job_id
-        )
+        raw_record = await asyncio.to_thread(interceptor.process_quarantine_job, job_id)
 
         if cancel_check():
             return

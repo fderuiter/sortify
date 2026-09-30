@@ -21,7 +21,10 @@ def test_in_memory_lru_cache_hit_zero_snippet_reads(tmp_path: Path):
     assert "Financial" in res1.category
 
     # Mock open to verify zero file reads on repeat classification within same session
-    with patch("builtins.open", side_effect=AssertionError("Disk read should not occur on cached hit")):
+    with patch(
+        "builtins.open",
+        side_effect=AssertionError("Disk read should not occur on cached hit"),
+    ):
         t0 = time.perf_counter()
         res2 = engine.classify(str(test_file))
         latency_ms = (time.perf_counter() - t0) * 1000.0
@@ -91,7 +94,9 @@ def test_cache_invalidation_on_file_modification(tmp_path: Path):
         assert stat_key_old is not None
 
         # Change content to technical asset keywords
-        test_file.write_text("API spec build config log script README source repo schema.")
+        test_file.write_text(
+            "API spec build config log script README source repo schema."
+        )
         os.utime(str(test_file), (new_mtime + 5.0, new_mtime + 5.0))
 
         res2 = engine.classify(str(test_file))
@@ -120,9 +125,13 @@ def test_explicit_invalidation(tmp_path: Path):
 
         # Confirm DB record deleted
         from app.core.db_conn import get_db_connection
+
         conn = get_db_connection(db_path)
         with conn:
-            cursor = conn.execute("SELECT COUNT(*) FROM jev_classification_cache WHERE file_path = ?", (os.path.abspath(str(test_file)).replace("\\", "/"),))
+            cursor = conn.execute(
+                "SELECT COUNT(*) FROM jev_classification_cache WHERE file_path = ?",
+                (os.path.abspath(str(test_file)).replace("\\", "/"),),
+            )
             count = cursor.fetchone()[0]
             assert count == 0
     finally:

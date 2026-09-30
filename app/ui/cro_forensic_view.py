@@ -317,7 +317,9 @@ class CROForensicView:
 
                                 def open_html(path=study.audit_report_html_path):
                                     if os.path.exists(path):
-                                        logging.getLogger(__name__).info(f"Audit report generated: {path}")
+                                        logging.getLogger(__name__).info(
+                                            f"Audit report generated: {path}"
+                                        )
 
                                 ui.button(
                                     "View Audit Dossier",

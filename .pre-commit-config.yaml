@@ -54,12 +54,6 @@ repos:
         language: system
         files: '^\.github/AGENTS/.*$'
         pass_filenames: false
-      - id: validate-duplicates
-        name: Validate Duplicate System Utilities
-        entry: uv run python scripts/validate_duplicates.py
-        language: system
-        files: '\.py$'
-        pass_filenames: false
       - id: validate-signatures
         name: Validate API and CLI Signatures
         entry: uv run python scripts/validate_signatures.py
@@ -67,9 +61,10 @@ repos:
         files: '(\.py$|tests/snapshots/api_snapshot\.json$)'
         pass_filenames: false
       - id: validate-architecture
-        name: Validate Architectural Guardrails
+        name: Validate Architectural Guardrails and System Utilities
         entry: uv run python scripts/validate_architecture.py
         language: system
         files: '^app/.*\.py$'
         pass_filenames: false
+
 
