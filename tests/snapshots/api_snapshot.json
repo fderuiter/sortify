@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "0e9c828f8d805cc6a65682cdb923466123992c360fe87619baec3c2686f1e732"
+    "checksum": "621b99e30676746906b376d65e5466c5961cabb5670f3098685fa63f5bb51f15"
   },
   "cli": {
     "app/main.py": [
@@ -1502,6 +1502,19 @@
           "async": false,
           "decorators": [],
           "name": "redact_sensitive_text",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "text"
+            }
+          ],
+          "returns": "str"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "scrub_inference_prompt",
           "parameters": [
             {
               "annotation": "str",

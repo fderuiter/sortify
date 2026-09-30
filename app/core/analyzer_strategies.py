@@ -36,6 +36,73 @@ def is_prompt_dump_enabled() -> bool:
 ILLEGAL_DUMP_PATH_CHARS = set('<>?*|"\0')
 
 
+def _get_long_path_name(path_str: str) -> str | None:
+    """Safely resolve Win32 long path name using kernel32.GetLongPathNameW with dynamic buffer allocation."""
+    if sys.platform != "win32" and os.name != "nt":
+        return None
+    try:
+        import ctypes
+
+        buf_size = 1024
+        buf = ctypes.create_unicode_buffer(buf_size)
+        res = ctypes.windll.kernel32.GetLongPathNameW(path_str, buf, buf_size)
+        if res >= buf_size:
+            buf_size = res + 1
+            buf = ctypes.create_unicode_buffer(buf_size)
+            res = ctypes.windll.kernel32.GetLongPathNameW(path_str, buf, buf_size)
+        if 0 < res < buf_size and buf.value:
+            return buf.value
+    except Exception:
+        pass
+    return None
+
+
+def _get_short_path_name(path_str: str) -> str | None:
+    """Safely resolve Win32 short 8.3 path name using kernel32.GetShortPathNameW with dynamic buffer allocation."""
+    if sys.platform != "win32" and os.name != "nt":
+        return None
+    try:
+        import ctypes
+
+        buf_size = 1024
+        buf = ctypes.create_unicode_buffer(buf_size)
+        res = ctypes.windll.kernel32.GetShortPathNameW(path_str, buf, buf_size)
+        if res >= buf_size:
+            buf_size = res + 1
+            buf = ctypes.create_unicode_buffer(buf_size)
+            res = ctypes.windll.kernel32.GetShortPathNameW(path_str, buf, buf_size)
+        if 0 < res < buf_size and buf.value:
+            return buf.value
+    except Exception:
+        pass
+    return None
+
+
+def _get_canonical_windows_path(p: str | Path) -> str:
+    """Normalize and resolve Win32 short 8.3 paths and drive letter casing for Windows path comparison."""
+    path_str = str(p)
+    if sys.platform == "win32" or os.name == "nt":
+        try:
+            p_obj = Path(p)
+            tail_parts = []
+            curr = p_obj
+            while not curr.exists() and curr.parent != curr:
+                tail_parts.append(curr.name)
+                curr = curr.parent
+
+            long_base = _get_long_path_name(str(curr))
+            if long_base:
+                expanded_base = Path(long_base)
+                for part in reversed(tail_parts):
+                    expanded_base = expanded_base / part
+                path_str = str(expanded_base)
+            else:
+                path_str = str(p_obj)
+        except Exception:
+            pass
+    return os.path.normpath(path_str).lower()
+
+
 def validate_prompt_dump_path(dump_file: str) -> Path:
     """Validate requested dump path to ensure it resolves strictly within the designated debug log directory.
 
@@ -77,17 +144,32 @@ def validate_prompt_dump_path(dump_file: str) -> Path:
 
     is_absolute = os.path.isabs(dump_file) or bool(re.match(r"^[a-zA-Z]:", normalized_path))
 
-    if is_absolute:
-        target_path = Path(dump_file).resolve()
-    else:
-        target_path = (debug_dir / dump_file).resolve()
+    try:
+        if is_absolute:
+            target_path = Path(dump_file).resolve()
+        else:
+            target_path = (debug_dir / dump_file).resolve()
+    except Exception as e:
+        raise ValueError(
+            f"Invalid prompt dump path '{dump_file}': failed to resolve path ({e})."
+        ) from e
 
     try:
         target_path.relative_to(debug_dir)
     except ValueError:
-        raise ValueError(
-            f"Invalid prompt dump path '{dump_file}': target path resolves outside designated debug log directory '{debug_dir}'."
-        )
+        is_windows_subpath = False
+        if sys.platform == "win32" or os.name == "nt":
+            try:
+                norm_target = _get_canonical_windows_path(target_path)
+                norm_debug = _get_canonical_windows_path(debug_dir)
+                common_path = os.path.normpath(os.path.commonpath([norm_target, norm_debug])).lower()
+                is_windows_subpath = (common_path == norm_debug)
+            except Exception:
+                is_windows_subpath = False
+        if not is_windows_subpath:
+            raise ValueError(
+                f"Invalid prompt dump path '{dump_file}': target path resolves outside designated debug log directory '{debug_dir}'."
+            )
 
     return target_path
 
@@ -130,23 +212,103 @@ def redact_sensitive_text(text: str) -> str:
     return text
 
 
+def _scrub_user_home_paths(text: str) -> str:
+    """Replace all forms of the current user's home directory path with <USER_HOME>."""
+    if not isinstance(text, str) or not text:
+        return text if text is not None else ""
+
+    home_dirs = []
+    try:
+        ph = str(Path.home())
+        if ph:
+            home_dirs.append(ph)
+    except Exception:
+        pass
+    try:
+        eu = os.path.expanduser("~")
+        if eu and eu not in home_dirs:
+            home_dirs.append(eu)
+    except Exception:
+        pass
+    for env_var in ("USERPROFILE", "HOME", "HOMEPATH"):
+        val = os.environ.get(env_var)
+        if val and val not in home_dirs:
+            home_dirs.append(val)
+
+    if os.environ.get("HOMEDRIVE") and os.environ.get("HOMEPATH"):
+        combined = os.environ.get("HOMEDRIVE") + os.environ.get("HOMEPATH")
+        if combined and combined not in home_dirs:
+            home_dirs.append(combined)
+
+    if sys.platform == "win32" or os.name == "nt":
+        try:
+            for h_dir in list(home_dirs):
+                long_p = _get_long_path_name(h_dir)
+                if long_p and long_p not in home_dirs:
+                    home_dirs.append(long_p)
+                short_p = _get_short_path_name(h_dir)
+                if short_p and short_p not in home_dirs:
+                    home_dirs.append(short_p)
+        except Exception:
+            pass
+
+    home_dirs = sorted(home_dirs, key=len, reverse=True)
+
+    for h in home_dirs:
+        clean = h.strip("\\/ ")
+        if not h or clean in ("", "/", "\\") or len(clean) <= 2:
+            continue
+
+        raw_parts = [p for p in re.split(r"[\\/]+", h) if p]
+        if not raw_parts:
+            continue
+
+        if len(raw_parts[0]) == 2 and raw_parts[0][1] == ":":
+            body_parts = raw_parts[1:]
+        elif len(raw_parts[0]) == 1 and raw_parts[0].isalpha() and (h.startswith("/") or h.startswith("\\")):
+            body_parts = raw_parts[1:]
+        else:
+            body_parts = raw_parts
+
+        if not body_parts:
+            continue
+
+        pattern = (
+            r"(?<![a-zA-Z0-9_])"
+            + r"(?:[a-zA-Z]:[\/\\]*|[\/\\][a-zA-Z][\/\\]+)?"
+            + r"[\/\\]*"
+            + r"[\/\\]+".join([re.escape(p) for p in body_parts])
+            + r"(?=[\\/]|[^a-zA-Z0-9_-]|$)"
+        )
+        try:
+            text = re.sub(pattern, "<USER_HOME>", text, flags=re.IGNORECASE)
+        except Exception:
+            pass
+
+    return text
+
+
 def scrub_prompt_text(text: str) -> str:
     """Scrub user home directory paths and replace sensitive document text with placeholders prior to writing to disk."""
     if not isinstance(text, str) or not text:
         return text
 
     text = redact_sensitive_text(text)
+    text = _scrub_user_home_paths(text)
 
-    try:
-        home_dir = str(Path.home())
-    except Exception:
-        home_dir = None
+    from app.core.text_utils import sanitize_secret_patterns
 
-    if home_dir and home_dir != "/":
-        home_dir_fwd = home_dir.replace("\\", "/")
-        home_dir_back = home_dir.replace("/", "\\")
-        text = text.replace(home_dir_fwd, "<USER_HOME>")
-        text = text.replace(home_dir_back, "<USER_HOME>")
+    text = sanitize_secret_patterns(text, replacement="[REDACTED_SECRET]")
+
+    return text
+
+
+def scrub_inference_prompt(text: str) -> str:
+    """Sanitize secret patterns and user home paths from prompt text before model execution without structural document redaction."""
+    if not isinstance(text, str) or not text:
+        return text if text is not None else ""
+
+    text = _scrub_user_home_paths(text)
 
     from app.core.text_utils import sanitize_secret_patterns
 
@@ -1624,6 +1786,8 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                 logging.warning(
                     f"Failed to write prompt dump to '{dump_file}': {e}"
                 )
+
+        prompt = scrub_inference_prompt(prompt)
 
         if self._gguf_active and not self._gguf_failed:
             if not self._gguf_process or not self._gguf_process.is_alive():

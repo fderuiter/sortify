@@ -1,4 +1,3 @@
-import os
 import shutil
 import tempfile
 import time
@@ -40,7 +39,7 @@ def db(temp_dir, db_worker):
     clear_connection_cache()
 
 
-def test_multiprocess_few_shot_prefetch_flow(db, temp_dir):
+def test_multiprocess_few_shot_prefetch_flow(db, temp_dir, monkeypatch):
     """
     Verify:
     1. Parent process queries, decrypts, and packages historical examples.
@@ -115,10 +114,10 @@ def test_multiprocess_few_shot_prefetch_flow(db, temp_dir):
 
     # Set up prompt dump file path inside sandboxed debug directory
     from app.config import get_debug_log_dir
-    prompt_dump_path = get_debug_log_dir() / "prefetch_prompt_dump.txt"
-    os.environ["DEBUG"] = "1"
-    os.environ["PROMPT_DUMP_FILE"] = "prefetch_prompt_dump.txt"
-    os.environ["FORCE_MULTIPROCESSING_CLUSTERING"] = "1"
+    prompt_dump_path = get_debug_log_dir().resolve() / "prefetch_prompt_dump.txt"
+    monkeypatch.setenv("DEBUG", "1")
+    monkeypatch.setenv("PROMPT_DUMP_FILE", "prefetch_prompt_dump.txt")
+    monkeypatch.setenv("FORCE_MULTIPROCESSING_CLUSTERING", "1")
 
     # Instantiate Analyzer which runs clustering and generative folder naming
     analyzer = IncrementalAnalyzer(
@@ -154,11 +153,6 @@ def test_multiprocess_few_shot_prefetch_flow(db, temp_dir):
 
     # Wait briefly to ensure file writes finish
     time.sleep(0.5)
-
-    # Clean up environment variables
-    os.environ.pop("DEBUG", None)
-    os.environ.pop("PROMPT_DUMP_FILE", None)
-    os.environ.pop("FORCE_MULTIPROCESSING_CLUSTERING", None)
 
     # Read the dumped prompts
     assert prompt_dump_path.exists(), (
