@@ -121,8 +121,9 @@ def isolated_app_dir(monkeypatch, tmp_path):
         "scan_abandoned_sessions_async",
         AsyncMock(return_value=[]),
     )
-    monkeypatch.delenv("AUTOSORTER_PROTECTED_PATHS", raising=False)
-    monkeypatch.delenv("AUTOSORTER_IGNORED_EXTENSIONS", raising=False)
+    for k in list(os.environ.keys()):
+        if k.startswith("AUTOSORTER_") and k != "AUTOSORTER_APP_DIR":
+            monkeypatch.delenv(k, raising=False)
 
     try:
         from app.core.shared_registry import SharedModelRegistry
