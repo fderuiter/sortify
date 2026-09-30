@@ -113,8 +113,8 @@ def isolated_app_dir(monkeypatch, tmp_path):
     monkeypatch.delenv("AUTOSORTER_IGNORED_EXTENSIONS", raising=False)
 
     try:
-        from app.core.shared_registry import SharedRegistry
-        reg = getattr(SharedRegistry, "_instance", None)
+        from app.core.shared_registry import SharedModelRegistry
+        reg = getattr(SharedModelRegistry, "_instance", None)
         if reg is not None:
             monkeypatch.setattr(reg, "_cached_settings", None)
     except Exception:
