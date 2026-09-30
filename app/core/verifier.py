@@ -59,22 +59,27 @@ def check_ai_status(settings) -> tuple[bool, str | None]:
     if not is_ml_available():
         from app.core.path_utils import get_base_path
 
-        mei_lite = hasattr(sys, "_MEIPASS") and os.path.exists(
-            os.path.join(getattr(sys, "_MEIPASS", ""), "LITE_BUILD")
-        )
-        base_lite = False
+        mei = getattr(sys, "_MEIPASS", "")
         try:
-            base_lite = os.path.exists(
-                os.path.join(get_base_path(__file__), "LITE_BUILD")
-            )
+            base = get_base_path(__file__)
         except Exception:
-            pass
+            base = ""
+        exe_dir = os.path.dirname(sys.executable) if is_packaged() else ""
+
+        lite_candidates = [
+            os.path.join(mei, "LITE_BUILD") if mei else "",
+            os.path.join(mei, "_internal", "LITE_BUILD") if mei else "",
+            os.path.join(base, "LITE_BUILD") if base else "",
+            os.path.join(base, "_internal", "LITE_BUILD") if base else "",
+            os.path.join(exe_dir, "LITE_BUILD") if exe_dir else "",
+            os.path.join(exe_dir, "_internal", "LITE_BUILD") if exe_dir else "",
+        ]
+        marker_lite = any(c and os.path.exists(c) for c in lite_candidates)
 
         is_lite = (
             os.environ.get("LITE_BUILD") == "1"
             or getattr(settings, "LITE_BUILD", False)
-            or mei_lite
-            or base_lite
+            or marker_lite
         )
         if is_sandboxed and not is_lite:
             raise ValueError(

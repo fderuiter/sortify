@@ -139,3 +139,30 @@ def test_check_ai_status_florence2_integrity_failure(tmp_path, monkeypatch):
             ValueError, match="Florence-2 vision model integrity check failed"
         ):
             check_ai_status(settings)
+
+
+def test_check_ai_status_packaged_lite_build_marker(tmp_path, monkeypatch):
+    """Verify check_ai_status honors LITE_BUILD marker under _internal directory in packaged mode."""
+    import sys
+    from unittest.mock import patch
+
+    from app.config import AppSettings
+    from app.core.verifier import check_ai_status
+
+    settings = AppSettings()
+
+    internal_dir = tmp_path / "_internal"
+    internal_dir.mkdir()
+    marker = internal_dir / "LITE_BUILD"
+    marker.write_text("1\n", encoding="utf-8")
+
+    monkeypatch.setattr(sys, "_MEIPASS", str(tmp_path), raising=False)
+
+    with (
+        patch("app.core.verifier.is_ml_available", return_value=False),
+        patch("app.core.path_utils.is_packaged", return_value=True),
+    ):
+        is_healthy, warn_msg = check_ai_status(settings)
+        assert is_healthy is False
+        assert "not installed" in warn_msg
+
