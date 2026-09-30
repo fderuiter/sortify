@@ -3,6 +3,8 @@ import os
 
 import pytest
 
+pytestmark = pytest.mark.xdist_group(name="tui")
+
 import app.config as app_config
 from app.config import AppSettings
 from app.ui.app import AutoSorterApp
