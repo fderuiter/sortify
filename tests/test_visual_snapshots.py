@@ -146,6 +146,7 @@ def test_tui_main_screen_snapshot():
     """Verify visual layout of default AutoSorterTUI main screen."""
     async def _test():
         settings = AppSettings()
+        settings.AI_CONSENT_GRANTED = True
         app = AutoSorterTUI(settings=settings)
         async with app.run_test(size=(100, 30)) as pilot:
             await pilot.pause(0.1)
@@ -159,6 +160,7 @@ def test_tui_populated_plan_snapshot():
     """Verify visual layout of AutoSorterTUI with a populated tree plan."""
     async def _test():
         settings = AppSettings()
+        settings.AI_CONSENT_GRANTED = True
         app = AutoSorterTUI(settings=settings, base_dir="/dummy/workspace")
         async with app.run_test(size=(100, 30)) as pilot:
             app.plan = {
@@ -200,6 +202,7 @@ def test_wizard_modal_snapshot():
     """Verify visual layout of WizardModal onboarding screen."""
     async def _test():
         settings = AppSettings()
+        settings.AI_CONSENT_GRANTED = True
         app = AutoSorterTUI(settings=settings)
         async with app.run_test(size=(100, 30)) as pilot:
             app.push_screen(WizardModal(app.settings))
@@ -214,6 +217,7 @@ def test_settings_modal_snapshot():
     """Verify visual layout of SettingsModal screen."""
     async def _test():
         settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
         app = AutoSorterTUI(settings=settings)
         async with app.run_test(size=(100, 35)) as pilot:
             modal = SettingsModal(app.settings)
@@ -231,6 +235,7 @@ def test_rename_modal_snapshot():
     """Verify visual layout of RenameModal screen."""
     async def _test():
         settings = AppSettings()
+        settings.AI_CONSENT_GRANTED = True
         app = AutoSorterTUI(settings=settings)
         async with app.run_test(size=(100, 30)) as pilot:
             modal = RenameModal(
@@ -250,6 +255,7 @@ def test_cro_forensic_modal_snapshot():
     """Verify visual layout of CROForensicModal screen."""
     async def _test():
         settings = AppSettings()
+        settings.AI_CONSENT_GRANTED = True
         app = AutoSorterTUI(settings=settings, base_dir="/dummy/study_root")
         async with app.run_test(size=(100, 30)) as pilot:
             app.push_screen(CROForensicModal(app.settings, base_dir=app.base_dir))
@@ -264,6 +270,7 @@ def test_new_folder_modal_snapshot():
     """Verify visual layout of NewFolderModal screen."""
     async def _test():
         settings = AppSettings()
+        settings.AI_CONSENT_GRANTED = True
         app = AutoSorterTUI(settings=settings)
         async with app.run_test(size=(100, 30)) as pilot:
             app.push_screen(NewFolderModal())
@@ -278,6 +285,7 @@ def test_directory_select_modal_snapshot():
     """Verify visual layout of DirectorySelectModal screen."""
     async def _test():
         settings = AppSettings()
+        settings.AI_CONSENT_GRANTED = True
         app = AutoSorterTUI(settings=settings, base_dir="/dummy/projects")
         async with app.run_test(size=(100, 30)) as pilot:
             app.push_screen(DirectorySelectModal(current_dir=app.base_dir))
