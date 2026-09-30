@@ -2655,6 +2655,146 @@
     "app/core/crypto.py": {
       "classes": [
         {
+          "class_name": "CryptoManager",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [
+                "@staticmethod"
+              ],
+              "name": "decrypt_proxy_setting",
+              "parameters": [
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "proxy_str"
+                },
+                {
+                  "annotation": "Any",
+                  "default": "None",
+                  "name": "crypto"
+                },
+                {
+                  "annotation": "Path | str",
+                  "default": "None",
+                  "name": "db_path"
+                }
+              ],
+              "returns": "str"
+            },
+            {
+              "async": false,
+              "decorators": [
+                "@staticmethod"
+              ],
+              "name": "derive_db_hash",
+              "parameters": [
+                {
+                  "annotation": "Path | str",
+                  "default": null,
+                  "name": "db_path"
+                },
+                {
+                  "annotation": "str",
+                  "default": "'sha256'",
+                  "name": "algorithm"
+                }
+              ],
+              "returns": "str"
+            },
+            {
+              "async": false,
+              "decorators": [
+                "@staticmethod"
+              ],
+              "name": "derive_isolated_key_path",
+              "parameters": [
+                {
+                  "annotation": "Path | str",
+                  "default": null,
+                  "name": "db_path"
+                },
+                {
+                  "annotation": "bool",
+                  "default": "False",
+                  "name": "legacy_md5"
+                }
+              ],
+              "returns": "Path"
+            },
+            {
+              "async": false,
+              "decorators": [
+                "@staticmethod"
+              ],
+              "name": "derive_keyring_account",
+              "parameters": [
+                {
+                  "annotation": "Path | str",
+                  "default": null,
+                  "name": "db_path"
+                },
+                {
+                  "annotation": "bool",
+                  "default": "False",
+                  "name": "legacy_md5"
+                }
+              ],
+              "returns": "str"
+            },
+            {
+              "async": false,
+              "decorators": [
+                "@staticmethod"
+              ],
+              "name": "encrypt_proxy_setting",
+              "parameters": [
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "proxy_str"
+                },
+                {
+                  "annotation": "Any",
+                  "default": "None",
+                  "name": "crypto"
+                },
+                {
+                  "annotation": "Path | str",
+                  "default": "None",
+                  "name": "db_path"
+                }
+              ],
+              "returns": "str"
+            },
+            {
+              "async": false,
+              "decorators": [
+                "@staticmethod"
+              ],
+              "name": "generate_bootstrap_key",
+              "parameters": [],
+              "returns": "str"
+            },
+            {
+              "async": false,
+              "decorators": [
+                "@staticmethod"
+              ],
+              "name": "is_encrypted_proxy",
+              "parameters": [
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "proxy_str"
+                }
+              ],
+              "returns": "bool"
+            }
+          ]
+        },
+        {
           "class_name": "EphemeralSessionCrypto",
           "decorators": [],
           "methods": [
@@ -8323,6 +8463,34 @@
                 }
               ],
               "returns": "QuarantineRecordModel"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "resolve_safe_target_dir",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "base_dir"
+                },
+                {
+                  "annotation": "Optional[str]",
+                  "default": null,
+                  "name": "target_subfolder"
+                },
+                {
+                  "annotation": "str",
+                  "default": "''",
+                  "name": "default_subfolder"
+                }
+              ],
+              "returns": "str"
             },
             {
               "async": false,

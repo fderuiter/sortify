@@ -670,11 +670,7 @@ def test_tokenizer_files_missing_raises_validation_error(db, temp_dir):
     # Leave vocab.txt or tokenizer_config.json missing
     onnx_file.write_text("dummy onnx content")
 
-    with patch("hashlib.sha256") as mock_sha:
-        mock_instance = MagicMock()
-        mock_instance.hexdigest.return_value = expected_hash
-        mock_sha.return_value = mock_instance
-
+    with patch("app.core.resilient_file_ops.resilient_file_hash", return_value=expected_hash):
         # Initializing should raise ModelValidationError because required tokenizer files are missing
         with pytest.raises(ModelValidationError) as exc_info:
             SemanticEmbeddingManager(
@@ -1062,11 +1058,7 @@ def test_onnx_central_registry_session_routing_and_unloading(db, temp_dir):
         from app.core.hashes_registry import HASHES
 
         expected_hash = HASHES["generative_naming"]["model.onnx"]
-        with patch("hashlib.sha256") as mock_sha:
-            mock_inst = MagicMock()
-            mock_inst.hexdigest.return_value = expected_hash
-            mock_sha.return_value = mock_inst
-
+        with patch("app.core.resilient_file_ops.resilient_file_hash", return_value=expected_hash):
             SemanticEmbeddingManager(
                 db, model_path=str(model_dir), force_validation=True
             )
@@ -1110,12 +1102,8 @@ def test_malformed_model_validation_failure_cleans_up_registry(db, temp_dir):
 
     with (
         patch("onnxruntime.InferenceSession", return_value=mock_session),
-        patch("hashlib.sha256") as mock_sha,
+        patch("app.core.resilient_file_ops.resilient_file_hash", return_value=expected_hash),
     ):
-        mock_inst = MagicMock()
-        mock_inst.hexdigest.return_value = expected_hash
-        mock_sha.return_value = mock_inst
-
         with pytest.raises(ModelValidationError):
             SemanticEmbeddingManager(
                 db, model_path=str(model_dir), force_validation=True
