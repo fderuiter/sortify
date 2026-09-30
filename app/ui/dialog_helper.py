@@ -207,8 +207,22 @@ def ask_directory_async(
         path = ""
         success = False
 
+        is_ci = (
+            os.environ.get("CI", "").lower() == "true"
+            or os.environ.get("GITHUB_ACTIONS", "").lower() == "true"
+            or os.environ.get("TF_BUILD", "").lower() == "true"
+            or os.environ.get("HEADLESS_BUILD", "") == "1"
+        )
+        is_mock_run = (
+            isinstance(run_background_process, MagicMock)
+            or getattr(run_background_process, "__module__", "").startswith("unittest.mock")
+        )
+
         try:
-            if sys.platform == "darwin":
+            if is_ci and not is_mock_run:
+                logger.info("Running in headless CI environment; skipping native directory picker execution.")
+                success = False
+            elif sys.platform == "darwin":
                 # macOS AppleScript
                 cmd = [
                     "osascript",
