@@ -79,6 +79,7 @@ class ForensicScanner:
         )
         self.discovered_documents: List[DiscoveredDocument] = []
         self.seen_hashes: Dict[str, str] = {}  # sha256 -> source_path
+        self.seen_texts: Dict[str, str] = {}  # sha256 -> extracted text
         self._is_owned_staging_dir = temp_staging_dir is None
 
     @staticmethod
@@ -176,6 +177,7 @@ class ForensicScanner:
         """Perform comprehensive forensic scan of a source drive or directory."""
         self.discovered_documents.clear()
         self.seen_hashes.clear()
+        self.seen_texts.clear()
 
         source_root = os.path.abspath(source_root)
         count = 0
@@ -297,14 +299,20 @@ class ForensicScanner:
             self.seen_hashes[sha256] = source_path
 
         # Text extraction
-        if pre_extracted_text is not None:
+        if is_dup and sha256 != "ERROR" and pre_extracted_text is None:
+            text = self.seen_texts.get(sha256, "")
+        elif pre_extracted_text is not None:
             text = str(pre_extracted_text)
+            if sha256 != "ERROR":
+                self.seen_texts[sha256] = text
         else:
             try:
                 text = str(extract_file_text(actual_file_path) or "")
             except Exception as e:
                 logger.warning(f"Extraction error for {actual_file_path}: {e}")
                 text = ""
+            if sha256 != "ERROR":
+                self.seen_texts[sha256] = text
 
         doc = DiscoveredDocument(
             source_path=source_path,
