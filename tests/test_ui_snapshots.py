@@ -43,6 +43,14 @@ def headless_app(tmp_path, monkeypatch):
     app.plan_errors = {}
     yield app
 
+    try:
+        from app.core.shared_registry import SharedModelRegistry
+        reg = getattr(SharedModelRegistry, "_instance", None)
+        if reg is not None:
+            reg._cached_settings = None
+    except Exception:
+        pass
+
 
 def test_empty_plan_rendering(headless_app):
     headless_app.render_tree()
