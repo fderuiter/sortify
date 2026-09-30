@@ -97,6 +97,7 @@ def test_main_strict_flag():
             patch("scripts.generate_docs.generate_ui_docs") as mock_ui,
             patch("scripts.generate_docs.generate_admin_guide") as mock_admin,
             patch("scripts.generate_docs.update_security_md") as mock_sec,
+            patch("scripts.generate_docs.validate_mermaid_diagrams", return_value=[]),
             patch("subprocess.run") as mock_run,
         ):
             mock_run.return_value = MagicMock(returncode=0)
@@ -128,6 +129,7 @@ def test_main_default_strict():
             patch("scripts.generate_docs.generate_ui_docs") as mock_ui,
             patch("scripts.generate_docs.generate_admin_guide") as mock_admin,
             patch("scripts.generate_docs.update_security_md") as mock_sec,
+            patch("scripts.generate_docs.validate_mermaid_diagrams", return_value=[]),
             patch("subprocess.run") as mock_run,
         ):
             mock_run.return_value = MagicMock(returncode=0)
@@ -153,8 +155,10 @@ def test_main_detects_unsynced_files_on_check():
             patch("scripts.generate_docs.generate_ui_docs"),
             patch("scripts.generate_docs.generate_admin_guide"),
             patch("scripts.generate_docs.update_security_md"),
+            patch("scripts.generate_docs.validate_mermaid_diagrams", return_value=[]),
+            patch("scripts.generate_docs.audit_handwritten_docs", return_value=[]),
             patch("subprocess.run") as mock_run,
-            patch("os.path.exists", return_value=True),
+            patch("scripts.generate_docs.os.path.exists", return_value=True),
             patch("builtins.open") as mock_open,
             patch("sys.exit") as mock_exit,
         ):
@@ -238,8 +242,10 @@ def test_main_clean_on_check():
             patch("scripts.generate_docs.generate_ui_docs"),
             patch("scripts.generate_docs.generate_admin_guide"),
             patch("scripts.generate_docs.update_security_md"),
+            patch("scripts.generate_docs.validate_mermaid_diagrams", return_value=[]),
+            patch("scripts.generate_docs.audit_handwritten_docs", return_value=[]),
             patch("subprocess.run") as mock_run,
-            patch("os.path.exists", return_value=True),
+            patch("scripts.generate_docs.os.path.exists", return_value=True),
             patch("builtins.open") as mock_open,
             patch("sys.exit") as mock_exit,
         ):
@@ -523,13 +529,15 @@ def test_is_browser_available_when_present():
     from scripts.diagram_toolchain import is_browser_available, reset_browser_cache
 
     reset_browser_cache()
-    mock_res = MagicMock(returncode=0)
-    with (
-        patch("subprocess.run", return_value=mock_res),
-        patch("pathlib.Path.exists", return_value=True),
-        patch("pathlib.Path.stat") as mock_stat,
-    ):
-        mock_stat.return_value.st_size = 100
+
+    def fake_run(cmd, *args, **kwargs):
+        if "-o" in cmd:
+            out_idx = cmd.index("-o") + 1
+            out_path = Path(cmd[out_idx])
+            out_path.write_text("<svg>probe</svg>", encoding="utf-8")
+        return MagicMock(returncode=0)
+
+    with patch("subprocess.run", side_effect=fake_run):
         assert is_browser_available(mmdc_cmd=["mmdc"], force_check=True) is True
 
 
