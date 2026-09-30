@@ -35,6 +35,7 @@ For core contributors and development setup, please refer to the [Contributor Gu
 
 The application is structured to strictly separate business logic from the user interface:
 
+- **app/cli/**: Modular CLI subcommand registry and domain-specific command handlers (`crypto`, `ledger`, `quarantine`, `cro`).
 - **app/core/**: Contains the core business logic, text extraction, machine learning models, and file operations.
 - **app/ui/**: Contains graphical interface components, dialogs, and progress rendering.
 
