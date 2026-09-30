@@ -282,14 +282,11 @@ def pre_fetch_historical_corpus(
                     sorted_cand_indices = [
                         cand_indices[i] for i in sims.argsort()[::-1]
                     ]
-                    selected_indices = set(sorted_cand_indices[:max_examples])
-                    chosen_indices = []
-                    for idx in range(len(candidates)):
-                        if idx in selected_indices:
-                            chosen_indices.append(idx)
+                    chosen_indices = list(sorted_cand_indices[:max_examples])
                     if len(chosen_indices) < max_examples:
+                        selected_set = set(chosen_indices)
                         for idx in range(len(candidates)):
-                            if idx not in selected_indices:
+                            if idx not in selected_set:
                                 chosen_indices.append(idx)
                                 if len(chosen_indices) == max_examples:
                                     break
