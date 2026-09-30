@@ -163,15 +163,19 @@ def resilient_rmtree(path, ignore_errors=False):
         except Exception:
             pass
 
-    for attempt in range(MAX_ATTEMPTS):
+    max_attempts = 2 if ignore_errors else MAX_ATTEMPTS
+    for attempt in range(max_attempts):
         try:
+            if ignore_errors and attempt == max_attempts - 1:
+                shutil.rmtree(path, ignore_errors=True)
+                return
             # Pass both onerror and onexc for maximum compatibility across Python versions
             shutil.rmtree(path, onerror=_handle_error, onexc=_handle_error)
             return
         except (OSError, PermissionError) as e:
-            if attempt == MAX_ATTEMPTS - 1:
+            if attempt == max_attempts - 1:
                 logging.warning(
-                    f"Failed to rmtree {path} after {MAX_ATTEMPTS} attempts: {e}"
+                    f"Failed to rmtree {path} after {max_attempts} attempts: {e}"
                 )
                 if ignore_errors:
                     return
