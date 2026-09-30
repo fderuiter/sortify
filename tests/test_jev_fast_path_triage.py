@@ -400,6 +400,7 @@ def test_jev_fast_snippet_extraction_pdf_docx_xlsx(tmp_path):
     ws.append(["Payroll", "Ledger", "Balance"])
     ws.append([1000, 500, 1500])
     wb.save(str(xlsx_path))
+    wb.close()
 
     res_xlsx = engine.classify(str(xlsx_path))
     assert res_xlsx.is_classified is True
