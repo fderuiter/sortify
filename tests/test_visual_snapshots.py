@@ -208,7 +208,7 @@ def test_settings_modal_snapshot():
             modal = SettingsModal(app.settings)
             app.push_screen(modal)
             await pilot.pause(0.1)
-            modal.scroll_home(animate=False)
+            modal.query_one(".modal-box").scroll_home(animate=False)
             await pilot.pause(0.1)
             svg = app.export_screenshot()
             assert_svg_snapshot("settings_modal", svg)
