@@ -613,3 +613,25 @@ def test_prefetch_semantic_ranking_order(mocker):
     assert fp_1 == "file_10.txt"
 
 
+def test_in_memory_db_mock():
+    """Verify InMemoryDBMock initialization and get/set metadata operations."""
+    from app.core.analyzer_strategies import InMemoryDBMock
+
+    # 1. Test None metadata fallback
+    db_none = InMemoryDBMock(None)
+    assert db_none.get_model_metadata("key1") is None
+    db_none.set_model_metadata("key1", "val1")
+    assert db_none.get_model_metadata("key1") == "val1"
+
+    # 2. Test empty metadata dict
+    db_empty = InMemoryDBMock({})
+    assert db_empty.get_model_metadata("key2") is None
+
+    # 3. Test initialized metadata dict
+    meta = {"model_name": "test_model", "dim": 384}
+    db_meta = InMemoryDBMock(meta)
+    assert db_meta.get_model_metadata("model_name") == "test_model"
+    assert db_meta.get_model_metadata("dim") == 384
+    db_meta.set_model_metadata("version", 1)
+    assert db_meta.get_model_metadata("version") == 1
+
