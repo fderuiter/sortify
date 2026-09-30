@@ -449,16 +449,6 @@ def apply_config_overrides(settings: AppSettings, args: argparse.Namespace):
         settings.CONTEXTUAL_RENAMING = args.contextual_renaming
 
 
-def _make_json_serializable(obj):
-    if hasattr(obj, "model_dump"):
-        return obj.model_dump(mode="json")
-    if isinstance(obj, dict):
-        return {k: _make_json_serializable(v) for k, v in obj.items()}
-    if isinstance(obj, list):
-        return [_make_json_serializable(v) for v in obj]
-    return obj
-
-
 def resolve_preset_and_directory(args: argparse.Namespace) -> Path:
     """Resolve preset choice or target directory path from CLI arguments."""
     preset = getattr(args, "preset", None)
