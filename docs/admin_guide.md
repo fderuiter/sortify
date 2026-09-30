@@ -255,6 +255,14 @@ options:
                         launches terminal interface)
 ```
 
+#### Non-Interactive / Headless Execution Guard
+
+When executing `app/main.py` in non-interactive or detached standard input streams (such as CI automation pipelines or script redirections using `< /dev/null` where `sys.stdin.isatty()` returns `False`):
+
+- **Target Path Auto-Routing**: If a positional target directory path is supplied without an explicit subcommand (e.g. `python3 app/main.py /tmp/docs < /dev/null`), execution is automatically routed to headless batch document sorting (`handle_sort_command`).
+- **CLI Guidance & Exit Code 2**: If no target directory path or subcommand is supplied (e.g. `python3 app/main.py < /dev/null`), the application outputs CLI usage guidance to `sys.stderr` and exits cleanly with exit code `2`. This prevents non-interactive streams from hanging on terminal UI initialization.
+- **Explicit Interface Flag Overrides**: If explicit UI flags (`--gui`, `--tui`, `--demo`, `--daemon`, `FORCE_GUI`) or the packaged standalone GUI executable (`smart-autosorter-gui`) are invoked, the requested interface launcher is executed as explicitly requested.
+
 #### Subcommands
 
 ##### `sort`

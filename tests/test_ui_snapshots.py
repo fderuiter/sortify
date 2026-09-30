@@ -7,6 +7,8 @@ import app.config as app_config
 from app.config import AppSettings
 from app.ui.app import AutoSorterApp
 
+pytestmark = pytest.mark.xdist_group(name="ui_snapshots")
+
 SNAPSHOT_DIR = os.path.join(os.path.dirname(__file__), "snapshots")
 
 
