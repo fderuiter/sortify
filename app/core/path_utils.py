@@ -148,21 +148,34 @@ def resolve_db_crypto(db_path: Path | str):
 
 
 def validate_target_path(target_path: str, keyword: str = None) -> None:
-    """Validate a target folder path for safety and correct structure.
+    """Validate a target folder path for cross-platform safety and correct structure.
 
-    Raises ValueError if invalid.
+    Args:
+        target_path: Candidate relative directory path string to validate.
+        keyword: Optional keyword context label for error reporting.
+
+    Raises
+    ------
+        ValueError: If target_path is not a string, contains absolute path roots, Windows drive prefixes,
+            illegal OS characters, directory traversal segments ('..'), reserved names, or trailing dots/spaces.
     """
     if not isinstance(target_path, str):
         suffix = f" for keyword '{keyword}'" if keyword else ""
         raise ValueError(f"Target path{suffix} must be a string.")
 
+    # Check for absolute path roots (/ or \), platform-specific drive roots, or Windows drive prefixes
+    if (
+        target_path.startswith("/")
+        or target_path.startswith("\\")
+        or os.path.isabs(target_path)
+        or Path(target_path).is_absolute()
+        or bool(re.match(r"^[a-zA-Z]:", target_path))
+    ):
+        raise ValueError(f"Target path '{target_path}' cannot be an absolute path.")
+
     # Check for illegal OS characters
     if any(char in ILLEGAL_PATH_CHARS_SET for char in target_path):
         raise ValueError(f"Target path '{target_path}' contains illegal characters.")
-
-    # Check for absolute path roots (/ or \)
-    if target_path.startswith("/") or target_path.startswith("\\"):
-        raise ValueError(f"Target path '{target_path}' cannot be an absolute path.")
 
     # Check for directory traversal segments (..)
     segments = target_path.replace("\\", "/").split("/")

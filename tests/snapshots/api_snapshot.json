@@ -8449,6 +8449,34 @@
             {
               "async": false,
               "decorators": [],
+              "name": "resolve_safe_target_dir",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "base_dir"
+                },
+                {
+                  "annotation": "Optional[str]",
+                  "default": null,
+                  "name": "target_subfolder"
+                },
+                {
+                  "annotation": "str",
+                  "default": "''",
+                  "name": "default_subfolder"
+                }
+              ],
+              "returns": "str"
+            },
+            {
+              "async": false,
+              "decorators": [],
               "name": "stage_incoming_file",
               "parameters": [
                 {
