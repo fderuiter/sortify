@@ -110,7 +110,7 @@ def update_binaries_and_manifest(system_platform=None, bypass_pytest_check=False
                     if found_for_pattern:
                         break
 
-                    # If not found in candidate paths, walk the venv directory recursively
+                    # If not found in candidate paths, walk the venv directory recursively (excluding heavy site-packages subtrees)
                     for root, dirs, files in os.walk(vd):
                         # Filter out heavy directories in-place to prevent os.walk from recursing into them
                         dirs[:] = [
@@ -131,6 +131,8 @@ def update_binaries_and_manifest(system_platform=None, bypass_pytest_check=False
                                 "aiohttp",
                                 "pydantic",
                                 "pydantic_core",
+                                "site-packages",
+                                "node_modules",
                             )
                         ]
 
