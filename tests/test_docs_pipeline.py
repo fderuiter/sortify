@@ -1,4 +1,4 @@
-import os
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from scripts.generate_docs import (
@@ -97,6 +97,7 @@ def test_main_strict_flag():
             patch("scripts.generate_docs.generate_ui_docs") as mock_ui,
             patch("scripts.generate_docs.generate_admin_guide") as mock_admin,
             patch("scripts.generate_docs.update_security_md") as mock_sec,
+            patch("scripts.generate_docs.validate_mermaid_diagrams", return_value=[]),
             patch("subprocess.run") as mock_run,
         ):
             mock_run.return_value = MagicMock(returncode=0)
@@ -128,6 +129,7 @@ def test_main_default_strict():
             patch("scripts.generate_docs.generate_ui_docs") as mock_ui,
             patch("scripts.generate_docs.generate_admin_guide") as mock_admin,
             patch("scripts.generate_docs.update_security_md") as mock_sec,
+            patch("scripts.generate_docs.validate_mermaid_diagrams", return_value=[]),
             patch("subprocess.run") as mock_run,
         ):
             mock_run.return_value = MagicMock(returncode=0)
@@ -153,39 +155,43 @@ def test_main_detects_unsynced_files_on_check():
             patch("scripts.generate_docs.generate_ui_docs"),
             patch("scripts.generate_docs.generate_admin_guide"),
             patch("scripts.generate_docs.update_security_md"),
+            patch("scripts.generate_docs.validate_mermaid_diagrams", return_value=[]),
+            patch("scripts.generate_docs.audit_handwritten_docs", return_value=[]),
             patch("subprocess.run") as mock_run,
-            patch("os.path.exists", return_value=True),
+            patch("scripts.generate_docs.os.path.exists", return_value=True),
             patch("builtins.open") as mock_open,
             patch("sys.exit") as mock_exit,
         ):
             mock_run.return_value = MagicMock(returncode=0)
 
             file_contents = {
-                os.path.join("notebooks", "01_ml_analyzer_clustering.ipynb"): [
+                Path("notebooks/01_ml_analyzer_clustering.ipynb").as_posix(): [
                     "nb1",
                     "nb1",
                 ],
-                os.path.join("notebooks", "02_multi_format_text_extraction.ipynb"): [
+                Path("notebooks/02_multi_format_text_extraction.ipynb").as_posix(): [
                     "nb2",
                     "nb2",
                 ],
-                os.path.join("notebooks", "03_virtual_sorting_verification.ipynb"): [
+                Path("notebooks/03_virtual_sorting_verification.ipynb").as_posix(): [
                     "nb3",
                     "nb3",
                 ],
-                os.path.join("docs", "tutorials", "01_ml_analyzer_clustering.md"): [
+                Path("docs/tutorials/01_ml_analyzer_clustering.md").as_posix(): [
                     "tut1",
                     "tut1",
                 ],
-                os.path.join(
-                    "docs", "tutorials", "02_multi_format_text_extraction.md"
-                ): ["tut2", "tut2"],
-                os.path.join(
-                    "docs", "tutorials", "03_virtual_sorting_verification.md"
-                ): ["tut3", "tut3"],
-                os.path.join("docs", "api_reference.md"): ["content1", "content1"],
-                os.path.join("docs", "ui.md"): ["content2", "different_content2"],
-                os.path.join("docs", "admin_guide.md"): ["content3", "content3"],
+                Path("docs/tutorials/02_multi_format_text_extraction.md").as_posix(): [
+                    "tut2",
+                    "tut2",
+                ],
+                Path("docs/tutorials/03_virtual_sorting_verification.md").as_posix(): [
+                    "tut3",
+                    "tut3",
+                ],
+                Path("docs/api_reference.md").as_posix(): ["content1", "content1"],
+                Path("docs/ui.md").as_posix(): ["content2", "different_content2"],
+                Path("docs/admin_guide.md").as_posix(): ["content3", "content3"],
                 "SECURITY.md": ["content4", "content4"],
             }
 
@@ -209,8 +215,13 @@ def test_main_detects_unsynced_files_on_check():
                     return file_contents[self.filepath][idx]
 
             def mock_open_side_effect(filepath, *args, **kwargs):
-                if filepath in file_contents:
-                    return MockFile(filepath)
+                key = (
+                    Path(filepath).as_posix()
+                    if isinstance(filepath, (str, Path))
+                    else str(filepath)
+                )
+                if key in file_contents:
+                    return MockFile(key)
                 return original_open(filepath, *args, **kwargs)
 
             mock_open.side_effect = mock_open_side_effect
@@ -231,39 +242,43 @@ def test_main_clean_on_check():
             patch("scripts.generate_docs.generate_ui_docs"),
             patch("scripts.generate_docs.generate_admin_guide"),
             patch("scripts.generate_docs.update_security_md"),
+            patch("scripts.generate_docs.validate_mermaid_diagrams", return_value=[]),
+            patch("scripts.generate_docs.audit_handwritten_docs", return_value=[]),
             patch("subprocess.run") as mock_run,
-            patch("os.path.exists", return_value=True),
+            patch("scripts.generate_docs.os.path.exists", return_value=True),
             patch("builtins.open") as mock_open,
             patch("sys.exit") as mock_exit,
         ):
             mock_run.return_value = MagicMock(returncode=0)
 
             file_contents = {
-                os.path.join("notebooks", "01_ml_analyzer_clustering.ipynb"): [
+                Path("notebooks/01_ml_analyzer_clustering.ipynb").as_posix(): [
                     "nb1",
                     "nb1",
                 ],
-                os.path.join("notebooks", "02_multi_format_text_extraction.ipynb"): [
+                Path("notebooks/02_multi_format_text_extraction.ipynb").as_posix(): [
                     "nb2",
                     "nb2",
                 ],
-                os.path.join("notebooks", "03_virtual_sorting_verification.ipynb"): [
+                Path("notebooks/03_virtual_sorting_verification.ipynb").as_posix(): [
                     "nb3",
                     "nb3",
                 ],
-                os.path.join("docs", "tutorials", "01_ml_analyzer_clustering.md"): [
+                Path("docs/tutorials/01_ml_analyzer_clustering.md").as_posix(): [
                     "tut1",
                     "tut1",
                 ],
-                os.path.join(
-                    "docs", "tutorials", "02_multi_format_text_extraction.md"
-                ): ["tut2", "tut2"],
-                os.path.join(
-                    "docs", "tutorials", "03_virtual_sorting_verification.md"
-                ): ["tut3", "tut3"],
-                os.path.join("docs", "api_reference.md"): ["content1", "content1"],
-                os.path.join("docs", "ui.md"): ["content2", "content2"],
-                os.path.join("docs", "admin_guide.md"): ["content3", "content3"],
+                Path("docs/tutorials/02_multi_format_text_extraction.md").as_posix(): [
+                    "tut2",
+                    "tut2",
+                ],
+                Path("docs/tutorials/03_virtual_sorting_verification.md").as_posix(): [
+                    "tut3",
+                    "tut3",
+                ],
+                Path("docs/api_reference.md").as_posix(): ["content1", "content1"],
+                Path("docs/ui.md").as_posix(): ["content2", "content2"],
+                Path("docs/admin_guide.md").as_posix(): ["content3", "content3"],
                 "SECURITY.md": ["content4", "content4"],
             }
 
@@ -287,8 +302,13 @@ def test_main_clean_on_check():
                     return file_contents[self.filepath][idx]
 
             def mock_open_side_effect(filepath, *args, **kwargs):
-                if filepath in file_contents:
-                    return MockFile(filepath)
+                key = (
+                    Path(filepath).as_posix()
+                    if isinstance(filepath, (str, Path))
+                    else str(filepath)
+                )
+                if key in file_contents:
+                    return MockFile(key)
                 return original_open(filepath, *args, **kwargs)
 
             mock_open.side_effect = mock_open_side_effect
@@ -477,7 +497,7 @@ def test_find_mmdc_executable():
 
     cmd = find_mmdc_executable()
     if cmd and any("npx" in arg for arg in cmd):
-        assert "--yes" in cmd
+        assert "--no-install" in cmd or "--yes" in cmd
 
 
 def test_generate_fallback_svg():
@@ -509,13 +529,15 @@ def test_is_browser_available_when_present():
     from scripts.diagram_toolchain import is_browser_available, reset_browser_cache
 
     reset_browser_cache()
-    mock_res = MagicMock(returncode=0)
-    with (
-        patch("subprocess.run", return_value=mock_res),
-        patch("pathlib.Path.exists", return_value=True),
-        patch("pathlib.Path.stat") as mock_stat,
-    ):
-        mock_stat.return_value.st_size = 100
+
+    def fake_run(cmd, *args, **kwargs):
+        if "-o" in cmd:
+            out_idx = cmd.index("-o") + 1
+            out_path = Path(cmd[out_idx])
+            out_path.write_text("<svg>probe</svg>", encoding="utf-8")
+        return MagicMock(returncode=0)
+
+    with patch("subprocess.run", side_effect=fake_run):
         assert is_browser_available(mmdc_cmd=["mmdc"], force_check=True) is True
 
 
@@ -711,3 +733,64 @@ def test_check_no_raw_mermaid_in_docs_detects_blocks(tmp_path):
     bad_doc = tmp_path / "bad.md"
     bad_doc.write_text("# Bad doc\n```mermaid\ngraph TD\nA-->B\n```\n")
     assert check_no_raw_mermaid_in_docs(docs_dir=tmp_path) is False
+
+
+def test_validate_mermaid_syntax_pure_python():
+    from scripts.diagram_toolchain import validate_mermaid_syntax
+
+    # Valid diagram
+    valid_mmd = "graph TD\n  A[Start] --> B(Process)\n  subgraph Sub\n    B --> C{Decision}\n  end\n"
+    assert validate_mermaid_syntax(valid_mmd) == []
+
+    # Unknown diagram header type
+    invalid_header = "invalidGraph TD\n  A --> B\n"
+    errs = validate_mermaid_syntax(invalid_header)
+    assert len(errs) > 0
+    assert "Line 1" in errs[0]
+    assert "unknown diagram type 'invalidGraph'" in errs[0]
+
+    # Unbalanced brackets
+    invalid_brackets = "flowchart TD\n  Line 2: A[Unclosed Bracket\n  Line 3: B --> C\n"
+    errs = validate_mermaid_syntax(invalid_brackets)
+    assert len(errs) > 0
+    assert "Line 2" in errs[0]
+    assert "unbalanced brackets" in errs[0]
+
+    # Hanging relationship arrow
+    hanging_arrow = "graph TD\n  A --> B\n  C -->\n"
+    errs = validate_mermaid_syntax(hanging_arrow)
+    assert len(errs) > 0
+    assert "Line 3" in errs[0]
+    assert "Hanging relationship arrow" in errs[0]
+
+    # Unclosed subgraph
+    unclosed_subgraph = "graph TD\n  subgraph Group1\n  A --> B\n"
+    errs = validate_mermaid_syntax(unclosed_subgraph)
+    assert len(errs) > 0
+    assert "Unclosed structural block" in errs[0]
+
+
+def test_diagram_toolchain_cli_verify_failure_on_bad_syntax(tmp_path):
+    import scripts.diagram_toolchain as dt
+
+    class BadSyntaxSpec:
+        id = "bad_syntax_spec"
+        title = "Bad Syntax Spec"
+
+        def to_mermaid(self):
+            return "graph TD\n  A[Node A --> B\n"
+
+    dt.reset_browser_cache()
+    with (
+        patch(
+            "sys.argv",
+            ["diagram_toolchain.py", "verify", "--output-dir", str(tmp_path)],
+        ),
+        patch(
+            "scripts.diagram_toolchain.collect_all_specs",
+            return_value={"bad_syntax_spec": BadSyntaxSpec()},
+        ),
+        patch("sys.exit") as mock_exit,
+    ):
+        dt.main()
+        mock_exit.assert_called_once_with(1)
