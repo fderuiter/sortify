@@ -125,11 +125,14 @@ def test_analyzer_locked_files_override():
     plan_with_override = analyzer.generate_sorting_plan(
         "dummy_base", settings, locked_files=locked_files
     )
-    override_dict = plan_with_override.plan if hasattr(plan_with_override, "plan") else plan_with_override
+    override_dict = (
+        plan_with_override.plan
+        if hasattr(plan_with_override, "plan")
+        else plan_with_override
+    )
 
-    assert (
-        "KeywordFolder" not in override_dict
-        or "file1.txt" not in override_dict.get("KeywordFolder", {})
+    assert "KeywordFolder" not in override_dict or "file1.txt" not in override_dict.get(
+        "KeywordFolder", {}
     )
     assert "ManualOverrideFolder" in override_dict
     assert "file1.txt" in override_dict["ManualOverrideFolder"]

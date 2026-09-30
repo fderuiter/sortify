@@ -17,18 +17,9 @@ from typing import Callable, Dict, List, Optional
 
 from app.core.extractor import extract_file_text
 from app.core.progress import emit_progress
-from app.core.resilient_file_ops import resilient_rmtree
+from app.core.resilient_file_ops import _set_posix_mode, resilient_rmtree
 
 logger = logging.getLogger(__name__)
-
-
-def _set_posix_mode(path: str, mode: int) -> None:
-    """Apply POSIX permissions (mode) to a path gracefully across platforms."""
-    if os.name == "posix":
-        try:
-            os.chmod(path, mode)
-        except OSError as err:
-            logger.debug(f"Failed to set mode {oct(mode)} on '{path}': {err}")
 
 
 SUPPORTED_DOC_EXTENSIONS = {
@@ -119,9 +110,7 @@ class ForensicScanner:
                         extracted_path = os.path.join(destination_dir, member.name)
                         if os.path.isfile(extracted_path):
                             _set_posix_mode(extracted_path, 0o600)
-                        extracted_files.append(
-                            extracted_path
-                        )
+                        extracted_files.append(extracted_path)
         except Exception as e:
             logger.warning(f"Error unpacking archive {archive_path}: {e}")
 

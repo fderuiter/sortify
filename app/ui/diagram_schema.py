@@ -521,42 +521,68 @@ CORE_ARCHITECTURE_SPEC = ComponentDiagramSpec(
         DiagramNode(id="ui_diagram_schema", label="app.ui.diagram_schema"),
         # Orchestration
         DiagramNode(id="core_session", label="app.core.session"),
-        DiagramNode(id="core_user_space_bootstrap", label="app.core.user_space_bootstrap"),
+        DiagramNode(
+            id="core_user_space_bootstrap", label="app.core.user_space_bootstrap"
+        ),
         DiagramNode(id="core_daemon", label="app.core.daemon"),
         DiagramNode(id="core_integration", label="app.core.integration"),
         # Ingestion & Extraction
         DiagramNode(id="core_extractor", label="app.core.extractor"),
-        DiagramNode(id="core_extractor_strategies", label="app.core.extractor_strategies"),
+        DiagramNode(
+            id="core_extractor_strategies", label="app.core.extractor_strategies"
+        ),
         DiagramNode(id="core_forensic_scanner", label="app.core.forensic_scanner"),
         DiagramNode(id="core_offline_loader", label="app.core.offline_loader"),
         DiagramNode(id="core_downloader", label="app.core.downloader"),
         # Analytics & ML
         DiagramNode(id="core_analyzer", label="app.core.analyzer"),
-        DiagramNode(id="core_analyzer_strategies", label="app.core.analyzer_strategies"),
+        DiagramNode(
+            id="core_analyzer_strategies", label="app.core.analyzer_strategies"
+        ),
         DiagramNode(id="core_jev_classifier", label="app.core.jev_classifier"),
-        DiagramNode(id="core_semantic_embeddings", label="app.core.semantic_embeddings"),
+        DiagramNode(
+            id="core_semantic_embeddings", label="app.core.semantic_embeddings"
+        ),
         # Clinical
-        DiagramNode(id="core_cro_multi_study_pipeline", label="app.core.cro_multi_study_pipeline"),
-        DiagramNode(id="core_study_disambiguator", label="app.core.study_disambiguator"),
+        DiagramNode(
+            id="core_cro_multi_study_pipeline",
+            label="app.core.cro_multi_study_pipeline",
+        ),
+        DiagramNode(
+            id="core_study_disambiguator", label="app.core.study_disambiguator"
+        ),
         DiagramNode(id="core_clinical_taxonomy", label="app.core.clinical_taxonomy"),
-        DiagramNode(id="core_clinical_compliance", label="app.core.clinical_compliance"),
+        DiagramNode(
+            id="core_clinical_compliance", label="app.core.clinical_compliance"
+        ),
         DiagramNode(id="core_clinical_renamer", label="app.core.clinical_renamer"),
         DiagramNode(id="core_clinical_strategy", label="app.core.clinical_strategy"),
         # Memory & Cache
-        DiagramNode(id="core_cache", label="app.core.cache (BoundedMemoryCache)", shape="database"),
+        DiagramNode(
+            id="core_cache",
+            label="app.core.cache (BoundedMemoryCache)",
+            shape="database",
+        ),
         DiagramNode(id="core_db_conn", label="app.core.db_conn"),
         DiagramNode(id="core_link_manager", label="app.core.link_manager"),
         DiagramNode(id="core_hashes_registry", label="app.core.hashes_registry"),
         # Concurrency & Shared
-        DiagramNode(id="core_shared_registry", label="app.core.shared_registry (SharedWorkerPool)"),
+        DiagramNode(
+            id="core_shared_registry",
+            label="app.core.shared_registry (SharedWorkerPool)",
+        ),
         DiagramNode(id="core_db_worker", label="app.core.db_worker"),
         # Storage
         DiagramNode(id="core_db", label="app.core.db", shape="database"),
         DiagramNode(id="core_ledger", label="app.core.ledger", shape="database"),
         DiagramNode(id="core_history", label="app.core.history", shape="database"),
         # Policy & Execution
-        DiagramNode(id="core_policy_engine", label="app.core.policy_engine", shape="rhombus"),
-        DiagramNode(id="core_quarantine_interceptor", label="app.core.quarantine_interceptor"),
+        DiagramNode(
+            id="core_policy_engine", label="app.core.policy_engine", shape="rhombus"
+        ),
+        DiagramNode(
+            id="core_quarantine_interceptor", label="app.core.quarantine_interceptor"
+        ),
         DiagramNode(id="core_domain_contracts", label="app.core.domain_contracts"),
         DiagramNode(id="core_verifier", label="app.core.verifier", shape="rhombus"),
         DiagramNode(id="core_domain_contracts", label="app.core.domain_contracts"),
@@ -599,10 +625,18 @@ CORE_ARCHITECTURE_SPEC = ComponentDiagramSpec(
         DiagramEdge(source="core_analyzer", target="core_analyzer_strategies"),
         DiagramEdge(source="core_analyzer", target="core_jev_classifier"),
         DiagramEdge(source="core_analyzer", target="core_semantic_embeddings"),
-        DiagramEdge(source="core_cro_multi_study_pipeline", target="core_study_disambiguator"),
-        DiagramEdge(source="core_cro_multi_study_pipeline", target="core_clinical_taxonomy"),
-        DiagramEdge(source="core_cro_multi_study_pipeline", target="core_clinical_compliance"),
-        DiagramEdge(source="core_cro_multi_study_pipeline", target="core_clinical_renamer"),
+        DiagramEdge(
+            source="core_cro_multi_study_pipeline", target="core_study_disambiguator"
+        ),
+        DiagramEdge(
+            source="core_cro_multi_study_pipeline", target="core_clinical_taxonomy"
+        ),
+        DiagramEdge(
+            source="core_cro_multi_study_pipeline", target="core_clinical_compliance"
+        ),
+        DiagramEdge(
+            source="core_cro_multi_study_pipeline", target="core_clinical_renamer"
+        ),
         DiagramEdge(source="core_clinical_renamer", target="core_clinical_strategy"),
         DiagramEdge(source="core_db_conn", target="core_cache"),
         DiagramEdge(source="core_link_manager", target="core_cache"),
@@ -616,7 +650,9 @@ CORE_ARCHITECTURE_SPEC = ComponentDiagramSpec(
         DiagramEdge(source="core_ledger", target="core_db"),
         DiagramEdge(source="core_history", target="core_db"),
         DiagramEdge(source="core_policy_engine", target="core_quarantine_interceptor"),
-        DiagramEdge(source="core_quarantine_interceptor", target="core_domain_contracts"),
+        DiagramEdge(
+            source="core_quarantine_interceptor", target="core_domain_contracts"
+        ),
         DiagramEdge(source="core_policy_engine", target="core_mover"),
         DiagramEdge(source="core_verifier", target="core_mover"),
         DiagramEdge(source="core_mover", target="core_file_renamer"),
@@ -737,19 +773,49 @@ CRO_MULTI_STUDY_PIPELINE_SPEC = ComponentDiagramSpec(
         ),
     ],
     nodes=[
-        DiagramNode(id="forensic_scan", label="app.core.forensic_scanner", shape="subroutine"),
-        DiagramNode(id="study_disambiguation", label="app.core.study_disambiguator", shape="rhombus"),
+        DiagramNode(
+            id="forensic_scan", label="app.core.forensic_scanner", shape="subroutine"
+        ),
+        DiagramNode(
+            id="study_disambiguation",
+            label="app.core.study_disambiguator",
+            shape="rhombus",
+        ),
         DiagramNode(id="clinical_taxonomy", label="app.core.clinical_taxonomy"),
-        DiagramNode(id="clinical_compliance", label="app.core.clinical_compliance", shape="rhombus"),
+        DiagramNode(
+            id="clinical_compliance",
+            label="app.core.clinical_compliance",
+            shape="rhombus",
+        ),
         DiagramNode(id="clinical_renamer", label="app.core.clinical_renamer"),
-        DiagramNode(id="cro_pipeline_output", label="TMF Clean Binders Output", shape="stadium"),
+        DiagramNode(
+            id="cro_pipeline_output", label="TMF Clean Binders Output", shape="stadium"
+        ),
     ],
     edges=[
-        DiagramEdge(source="forensic_scan", target="study_disambiguation", label="Raw Drives"),
-        DiagramEdge(source="study_disambiguation", target="clinical_taxonomy", label="Protocols Disambiguated"),
-        DiagramEdge(source="clinical_taxonomy", target="clinical_compliance", label="Mapped Taxonomy"),
-        DiagramEdge(source="clinical_compliance", target="clinical_renamer", label="Compliance Validated"),
-        DiagramEdge(source="clinical_renamer", target="cro_pipeline_output", label="Compiled Binders"),
+        DiagramEdge(
+            source="forensic_scan", target="study_disambiguation", label="Raw Drives"
+        ),
+        DiagramEdge(
+            source="study_disambiguation",
+            target="clinical_taxonomy",
+            label="Protocols Disambiguated",
+        ),
+        DiagramEdge(
+            source="clinical_taxonomy",
+            target="clinical_compliance",
+            label="Mapped Taxonomy",
+        ),
+        DiagramEdge(
+            source="clinical_compliance",
+            target="clinical_renamer",
+            label="Compliance Validated",
+        ),
+        DiagramEdge(
+            source="clinical_renamer",
+            target="cro_pipeline_output",
+            label="Compiled Binders",
+        ),
     ],
 )
 
@@ -777,18 +843,31 @@ MEMORY_CACHE_LAYERS_SPEC = ComponentDiagramSpec(
         ),
     ],
     nodes=[
-        DiagramNode(id="bounded_cache", label="BoundedMemoryCache[K, V]", shape="database"),
+        DiagramNode(
+            id="bounded_cache", label="BoundedMemoryCache[K, V]", shape="database"
+        ),
         DiagramNode(id="db_conn_cache", label="app.core.db_conn (_connection_cache)"),
         DiagramNode(id="link_manager_cache", label="app.core.link_manager (_registry)"),
-        DiagramNode(id="semantic_cache", label="app.core.semantic_embeddings (_model_properties_cache)"),
+        DiagramNode(
+            id="semantic_cache",
+            label="app.core.semantic_embeddings (_model_properties_cache)",
+        ),
         DiagramNode(id="jev_cache", label="app.core.jev_classifier (memory_cache)"),
         DiagramNode(id="db_cache", label="app.core.db (doc_cache)"),
     ],
     edges=[
-        DiagramEdge(source="db_conn_cache", target="bounded_cache", label="Max Size: 50"),
-        DiagramEdge(source="link_manager_cache", target="bounded_cache", label="Max Size: 10000"),
-        DiagramEdge(source="semantic_cache", target="bounded_cache", label="Max Size: 500"),
-        DiagramEdge(source="jev_cache", target="bounded_cache", label="Fast Path Cache"),
+        DiagramEdge(
+            source="db_conn_cache", target="bounded_cache", label="Max Size: 50"
+        ),
+        DiagramEdge(
+            source="link_manager_cache", target="bounded_cache", label="Max Size: 10000"
+        ),
+        DiagramEdge(
+            source="semantic_cache", target="bounded_cache", label="Max Size: 500"
+        ),
+        DiagramEdge(
+            source="jev_cache", target="bounded_cache", label="Fast Path Cache"
+        ),
         DiagramEdge(source="db_cache", target="bounded_cache", label="Max Size: 10000"),
     ],
 )
@@ -817,19 +896,51 @@ WORKER_POOL_CONCURRENCY_SPEC = ComponentDiagramSpec(
         ),
     ],
     nodes=[
-        DiagramNode(id="shared_worker_pool", label="SharedWorkerPool Singleton", shape="stadium"),
-        DiagramNode(id="session_tasks", label="app.core.session (Lifecycle Management)"),
-        DiagramNode(id="mover_tasks", label="app.core.mover (Parallel File Relocation)"),
-        DiagramNode(id="db_worker_tasks", label="app.core.db_worker (Background Heavy Tasks)"),
-        DiagramNode(id="extractor_tasks", label="app.core.extractor (Parallel Text Ingestion)"),
-        DiagramNode(id="analyzer_tasks", label="app.core.analyzer_strategies (Parallel NLP)"),
+        DiagramNode(
+            id="shared_worker_pool", label="SharedWorkerPool Singleton", shape="stadium"
+        ),
+        DiagramNode(
+            id="session_tasks", label="app.core.session (Lifecycle Management)"
+        ),
+        DiagramNode(
+            id="mover_tasks", label="app.core.mover (Parallel File Relocation)"
+        ),
+        DiagramNode(
+            id="db_worker_tasks", label="app.core.db_worker (Background Heavy Tasks)"
+        ),
+        DiagramNode(
+            id="extractor_tasks", label="app.core.extractor (Parallel Text Ingestion)"
+        ),
+        DiagramNode(
+            id="analyzer_tasks", label="app.core.analyzer_strategies (Parallel NLP)"
+        ),
     ],
     edges=[
-        DiagramEdge(source="session_tasks", target="shared_worker_pool", label="get_instance() / shutdown()"),
-        DiagramEdge(source="mover_tasks", target="shared_worker_pool", label="submit() relocation tasks"),
-        DiagramEdge(source="db_worker_tasks", target="shared_worker_pool", label="offload VLM/OCR/GGUF"),
-        DiagramEdge(source="extractor_tasks", target="shared_worker_pool", label="parallel document extraction"),
-        DiagramEdge(source="analyzer_tasks", target="shared_worker_pool", label="offload embedding vector calculations"),
+        DiagramEdge(
+            source="session_tasks",
+            target="shared_worker_pool",
+            label="get_instance() / shutdown()",
+        ),
+        DiagramEdge(
+            source="mover_tasks",
+            target="shared_worker_pool",
+            label="submit() relocation tasks",
+        ),
+        DiagramEdge(
+            source="db_worker_tasks",
+            target="shared_worker_pool",
+            label="offload VLM/OCR/GGUF",
+        ),
+        DiagramEdge(
+            source="extractor_tasks",
+            target="shared_worker_pool",
+            label="parallel document extraction",
+        ),
+        DiagramEdge(
+            source="analyzer_tasks",
+            target="shared_worker_pool",
+            label="offload embedding vector calculations",
+        ),
     ],
 )
 
@@ -840,14 +951,28 @@ POLICY_EVALUATION_FLOW_SPEC = ComponentDiagramSpec(
     direction="TD",
     nodes=[
         DiagramNode(id="A", label="Incoming Document", shape="round"),
-        DiagramNode(id="B", label="Sort Rules by Priority High to Low", shape="rectangle"),
+        DiagramNode(
+            id="B", label="Sort Rules by Priority High to Low", shape="rectangle"
+        ),
         DiagramNode(id="C", label="Evaluate Next Rule", shape="rhombus"),
-        DiagramNode(id="D", label="Route Document via Override Path", shape="rectangle"),
-        DiagramNode(id="E", label="Route Document via Keyword Category", shape="rectangle"),
-        DiagramNode(id="F", label="Route Document via Pattern Category", shape="rectangle"),
-        DiagramNode(id="G", label="Stop Processing & Halt Evaluation", shape="rectangle"),
+        DiagramNode(
+            id="D", label="Route Document via Override Path", shape="rectangle"
+        ),
+        DiagramNode(
+            id="E", label="Route Document via Keyword Category", shape="rectangle"
+        ),
+        DiagramNode(
+            id="F", label="Route Document via Pattern Category", shape="rectangle"
+        ),
+        DiagramNode(
+            id="G", label="Stop Processing & Halt Evaluation", shape="rectangle"
+        ),
         DiagramNode(id="H", label="More Rules Remaining?", shape="rhombus"),
-        DiagramNode(id="I", label="Proceed to General Classification / AI Sorting", shape="rectangle"),
+        DiagramNode(
+            id="I",
+            label="Proceed to General Classification / AI Sorting",
+            shape="rectangle",
+        ),
     ],
     edges=[
         DiagramEdge(source="A", target="B"),
@@ -855,7 +980,9 @@ POLICY_EVALUATION_FLOW_SPEC = ComponentDiagramSpec(
         DiagramEdge(source="C", target="D", label="Override Rule Match"),
         DiagramEdge(source="C", target="E", label="Keyword Rule Match"),
         DiagramEdge(source="C", target="F", label="Pattern Rule Match"),
-        DiagramEdge(source="C", target="G", label="No Match & Halt on Mismatch Enabled"),
+        DiagramEdge(
+            source="C", target="G", label="No Match & Halt on Mismatch Enabled"
+        ),
         DiagramEdge(source="C", target="H", label="No Match & Halt Disabled"),
         DiagramEdge(source="H", target="C", label="Yes"),
         DiagramEdge(source="H", target="I", label="No"),
@@ -870,11 +997,17 @@ SETUP_WIZARD_FLOW_SPEC = ComponentDiagramSpec(
     nodes=[
         DiagramNode(id="A", label="Setup Wizard Download Triggered", shape="round"),
         DiagramNode(id="B", label="Network Connection OK?", shape="rhombus"),
-        DiagramNode(id="C", label="Check Firewall & Disconnected Status", shape="rectangle"),
-        DiagramNode(id="D", label="Fallback to Offline Non-Semantic Mode", shape="rectangle"),
+        DiagramNode(
+            id="C", label="Check Firewall & Disconnected Status", shape="rectangle"
+        ),
+        DiagramNode(
+            id="D", label="Fallback to Offline Non-Semantic Mode", shape="rectangle"
+        ),
         DiagramNode(id="E", label="Sufficient Disk Space >= 200MB?", shape="rhombus"),
         DiagramNode(id="F", label="Clear Free Disk Space", shape="rectangle"),
-        DiagramNode(id="G", label="Retry Model Download via Settings", shape="rectangle"),
+        DiagramNode(
+            id="G", label="Retry Model Download via Settings", shape="rectangle"
+        ),
         DiagramNode(id="H", label="Download 80MB AI Model", shape="rectangle"),
         DiagramNode(id="I", label="Enable Semantic AI Sorting", shape="round"),
     ],

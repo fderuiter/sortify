@@ -58,14 +58,27 @@ Now, we initialize our stateful `IncrementalAnalyzer`. We'll configure it with a
 
 ```python
 # Stop words to filter out noise words during clustering
-stop_words = {"the", "and", "for", "this", "that", "with", "from", "your", "will", "are", "not", "can"}
+stop_words = {
+    "the",
+    "and",
+    "for",
+    "this",
+    "that",
+    "with",
+    "from",
+    "your",
+    "will",
+    "are",
+    "not",
+    "can",
+}
 
 analyzer = IncrementalAnalyzer(
     max_folders=3,
     stop_words=stop_words,
     db=db,
     strategy_name="default",
-    model_path=None  # Fallback to local keyword-based recursive KMeans strategy
+    model_path=None,  # Fallback to local keyword-based recursive KMeans strategy
 )
 print("[+] Stateful IncrementalAnalyzer successfully initialized!")
 ```
@@ -80,7 +93,7 @@ sample_corpus = {
     "neural_net_notes.txt": "machine learning artificial intelligence deep learning algorithms computer science software python neural networks model train GPU CPU programming git",
     "api_integration.txt": "software engineering python computer science developers api git source code debug program system architecture database query server",
     "clinical_trial_a.txt": "medical patient medicine health clinical trial cardiology pharmaceutical dosage diagnosis therapy disease doctor physician hospital treatment",
-    "patient_health_summary.txt": "health patient medical clinic diagnosis doctor medicine therapy hospital pharmaceutical cardiology trial disease treatment blood pressure dosage"
+    "patient_health_summary.txt": "health patient medical clinic diagnosis doctor medicine therapy hospital pharmaceutical cardiology trial disease treatment blood pressure dosage",
 }
 
 print("[*] Training the stateful analyzer on the sample corpus...")

@@ -90,7 +90,10 @@ def run_demo(settings):
         db_worker.stop()
 
         if plan and isinstance(plan, dict):
-            print("[+] Success: Demo completed. Sorting plan successfully generated.", file=sys.stderr)
+            print(
+                "[+] Success: Demo completed. Sorting plan successfully generated.",
+                file=sys.stderr,
+            )
             sys.exit(0)
         else:
             print("[-] Failure: Failed to generate sorting plan.", file=sys.stderr)

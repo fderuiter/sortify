@@ -85,7 +85,12 @@ def test_keyword_rules():
         if not isinstance(curr_dict, dict):
             return None
         for k, v in curr_dict.items():
-            is_file = v is None or isinstance(v, SortingPlanNode) or (hasattr(v, "node_type") and getattr(v, "node_type") == "file") or (isinstance(v, dict) and v.get("__type__") == "file")
+            is_file = (
+                v is None
+                or isinstance(v, SortingPlanNode)
+                or (hasattr(v, "node_type") and getattr(v, "node_type") == "file")
+                or (isinstance(v, dict) and v.get("__type__") == "file")
+            )
             if is_file:
                 if k == filename:
                     return current_path
@@ -133,7 +138,12 @@ def test_empty_keyword_rules_ignored():
         if not isinstance(curr_dict, dict):
             return None
         for k, v in curr_dict.items():
-            is_file = v is None or isinstance(v, SortingPlanNode) or (hasattr(v, "node_type") and getattr(v, "node_type") == "file") or (isinstance(v, dict) and v.get("__type__") == "file")
+            is_file = (
+                v is None
+                or isinstance(v, SortingPlanNode)
+                or (hasattr(v, "node_type") and getattr(v, "node_type") == "file")
+                or (isinstance(v, dict) and v.get("__type__") == "file")
+            )
             if is_file:
                 if k == filename:
                     return current_path

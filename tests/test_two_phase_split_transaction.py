@@ -94,7 +94,9 @@ def test_fast_path_plan_isolation(temp_environment):
     # compliance_report.pdf matches policy "compliance" -> "Compliance"
     # invoice_12345.txt matches keyword "invoice" -> "Invoices"
     # unknown_document.txt does NOT match fast-path rules and is omitted!
-    fast_dict = fast_path_plan.plan if hasattr(fast_path_plan, "plan") else fast_path_plan
+    fast_dict = (
+        fast_path_plan.plan if hasattr(fast_path_plan, "plan") else fast_path_plan
+    )
     assert "Compliance" in fast_dict
     assert "Invoices" in fast_dict
     assert "Miscellaneous" not in fast_dict
@@ -108,7 +110,9 @@ def test_fast_path_plan_isolation(temp_environment):
 
     # 2. Generate plan with fast_path_only=False (includes AI/Miscellaneous)
     slow_path_plan = session.generate_sorting_plan(fast_path_only=False)
-    slow_dict = slow_path_plan.plan if hasattr(slow_path_plan, "plan") else slow_path_plan
+    slow_dict = (
+        slow_path_plan.plan if hasattr(slow_path_plan, "plan") else slow_path_plan
+    )
     # The slow-path plan should contain the remaining unorganized file in Miscellaneous/AI strategies
     all_files_in_slow_plan = []
     for folder, files in slow_dict.items():
@@ -143,7 +147,9 @@ def test_ocr_bypassing_for_fast_path_moved_files(temp_environment):
 
     # Generate and execute fast-path moves
     fast_path_plan = session.generate_sorting_plan(fast_path_only=True)
-    fast_dict = fast_path_plan.plan if hasattr(fast_path_plan, "plan") else fast_path_plan
+    fast_dict = (
+        fast_path_plan.plan if hasattr(fast_path_plan, "plan") else fast_path_plan
+    )
     assert temp_environment["keyword_file"] in fast_dict.get("Invoices", {})
 
     session.execute_moves(fast_path_plan)

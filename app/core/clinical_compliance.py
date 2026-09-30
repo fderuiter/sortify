@@ -238,10 +238,16 @@ class ClinicalComplianceEngine:
         return output_path
 
     def generate_html_report(
-        self, compliance_data: Union[ClinicalComplianceResult, Dict[str, Any]], output_path: str
+        self,
+        compliance_data: Union[ClinicalComplianceResult, Dict[str, Any]],
+        output_path: str,
     ) -> str:
         """Generate a standalone HTML compliance audit dossier."""
-        data = compliance_data.model_dump() if isinstance(compliance_data, BaseModel) else compliance_data
+        data = (
+            compliance_data.model_dump()
+            if isinstance(compliance_data, BaseModel)
+            else compliance_data
+        )
         score = data["compliance_score_percent"]
         status = data["audit_readiness_status"]
         status_color = (

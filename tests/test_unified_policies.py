@@ -209,7 +209,12 @@ def test_policy_priority_routing():
         if not isinstance(curr_dict, dict):
             return None
         for k, v in curr_dict.items():
-            is_file = v is None or isinstance(v, SortingPlanNode) or (hasattr(v, "node_type") and getattr(v, "node_type") == "file") or (isinstance(v, dict) and v.get("__type__") == "file")
+            is_file = (
+                v is None
+                or isinstance(v, SortingPlanNode)
+                or (hasattr(v, "node_type") and getattr(v, "node_type") == "file")
+                or (isinstance(v, dict) and v.get("__type__") == "file")
+            )
             if is_file:
                 if k == filename:
                     return current_path
@@ -295,7 +300,12 @@ def test_policy_override_bypasses_historical_and_ml():
         if not isinstance(curr_dict, dict):
             return None
         for k, v in curr_dict.items():
-            is_file = v is None or isinstance(v, SortingPlanNode) or (hasattr(v, "node_type") and getattr(v, "node_type") == "file") or (isinstance(v, dict) and v.get("__type__") == "file")
+            is_file = (
+                v is None
+                or isinstance(v, SortingPlanNode)
+                or (hasattr(v, "node_type") and getattr(v, "node_type") == "file")
+                or (isinstance(v, dict) and v.get("__type__") == "file")
+            )
             if is_file:
                 if k == filename:
                     return current_path
@@ -310,11 +320,22 @@ def test_policy_override_bypasses_historical_and_ml():
     # Under the PolicyEngine architecture, compliance policies take absolute precedence,
     # overriding manual user decisions and routing the file to the compliance path while raising a conflict.
     assert find_folder_for("corp_restricted.xlsx", plan) == "Strict Compliance"
-    node = plan.plan["Strict Compliance"]["corp_restricted.xlsx"] if hasattr(plan, "plan") else plan["Strict Compliance"]["corp_restricted.xlsx"]
-    assert (getattr(node, "is_conflicted", None) or (node.get("is_conflicted") if isinstance(node, dict) else None)) is True
-    assert (getattr(node, "is_corrected", None) or (node.get("is_corrected") if isinstance(node, dict) else None)) is True
+    node = (
+        plan.plan["Strict Compliance"]["corp_restricted.xlsx"]
+        if hasattr(plan, "plan")
+        else plan["Strict Compliance"]["corp_restricted.xlsx"]
+    )
     assert (
-        getattr(node, "original_lock_path", None) or (node.get("original_lock_path") if isinstance(node, dict) else None)
+        getattr(node, "is_conflicted", None)
+        or (node.get("is_conflicted") if isinstance(node, dict) else None)
+    ) is True
+    assert (
+        getattr(node, "is_corrected", None)
+        or (node.get("is_corrected") if isinstance(node, dict) else None)
+    ) is True
+    assert (
+        getattr(node, "original_lock_path", None)
+        or (node.get("original_lock_path") if isinstance(node, dict) else None)
         == "Manual User Folder"
     )
 
@@ -363,7 +384,12 @@ def test_policy_halting_and_cascading():
         if not isinstance(curr_dict, dict):
             return None
         for k, v in curr_dict.items():
-            is_file = v is None or isinstance(v, SortingPlanNode) or (hasattr(v, "node_type") and getattr(v, "node_type") == "file") or (isinstance(v, dict) and v.get("__type__") == "file")
+            is_file = (
+                v is None
+                or isinstance(v, SortingPlanNode)
+                or (hasattr(v, "node_type") and getattr(v, "node_type") == "file")
+                or (isinstance(v, dict) and v.get("__type__") == "file")
+            )
             if is_file:
                 if k == filename:
                     return current_path

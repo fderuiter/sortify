@@ -31,13 +31,25 @@ def test_recursive_kmeans_strategy_leaf_metadata():
     )
 
     def _verify_leaves(node):
-        curr_dict = node.plan if hasattr(node, "plan") and isinstance(node.plan, dict) else node
+        curr_dict = (
+            node.plan if hasattr(node, "plan") and isinstance(node.plan, dict) else node
+        )
         for k, v in curr_dict.items():
-            is_file = getattr(v, "node_type", None) == "file" or (isinstance(v, dict) and v.get("__type__") == "file") or isinstance(v, SortingPlanNode)
+            is_file = (
+                getattr(v, "node_type", None) == "file"
+                or (isinstance(v, dict) and v.get("__type__") == "file")
+                or isinstance(v, SortingPlanNode)
+            )
             if is_file:
-                rel_src = getattr(v, "relative_source", None) or (v.get("relative_source") if isinstance(v, dict) else None)
-                src_path = getattr(v, "source_path", None) or (v.get("source_path") if isinstance(v, dict) else None)
-                routed_by = getattr(v, "routed_by", None) or (v.get("routed_by") if isinstance(v, dict) else None)
+                rel_src = getattr(v, "relative_source", None) or (
+                    v.get("relative_source") if isinstance(v, dict) else None
+                )
+                src_path = getattr(v, "source_path", None) or (
+                    v.get("source_path") if isinstance(v, dict) else None
+                )
+                routed_by = getattr(v, "routed_by", None) or (
+                    v.get("routed_by") if isinstance(v, dict) else None
+                )
                 assert rel_src is not None
                 assert src_path is not None
                 assert routed_by == "clustering"
@@ -68,12 +80,22 @@ def test_generative_naming_strategy_leaf_metadata():
     )
 
     def _verify_leaves(node):
-        curr_dict = node.plan if hasattr(node, "plan") and isinstance(node.plan, dict) else node
+        curr_dict = (
+            node.plan if hasattr(node, "plan") and isinstance(node.plan, dict) else node
+        )
         for k, v in curr_dict.items():
-            is_file = getattr(v, "node_type", None) == "file" or (isinstance(v, dict) and v.get("__type__") == "file") or isinstance(v, SortingPlanNode)
+            is_file = (
+                getattr(v, "node_type", None) == "file"
+                or (isinstance(v, dict) and v.get("__type__") == "file")
+                or isinstance(v, SortingPlanNode)
+            )
             if is_file:
-                rel_src = getattr(v, "relative_source", None) or (v.get("relative_source") if isinstance(v, dict) else None)
-                src_path = getattr(v, "source_path", None) or (v.get("source_path") if isinstance(v, dict) else None)
+                rel_src = getattr(v, "relative_source", None) or (
+                    v.get("relative_source") if isinstance(v, dict) else None
+                )
+                src_path = getattr(v, "source_path", None) or (
+                    v.get("source_path") if isinstance(v, dict) else None
+                )
                 assert rel_src is not None
                 assert src_path is not None
             elif hasattr(v, "plan") or isinstance(v, dict):
@@ -101,13 +123,25 @@ def test_clinical_strategy_leaf_metadata():
     )
 
     def _verify_leaves(node):
-        curr_dict = node.plan if hasattr(node, "plan") and isinstance(node.plan, dict) else node
+        curr_dict = (
+            node.plan if hasattr(node, "plan") and isinstance(node.plan, dict) else node
+        )
         for k, v in curr_dict.items():
-            is_file = getattr(v, "node_type", None) == "file" or (isinstance(v, dict) and v.get("__type__") == "file") or isinstance(v, SortingPlanNode)
+            is_file = (
+                getattr(v, "node_type", None) == "file"
+                or (isinstance(v, dict) and v.get("__type__") == "file")
+                or isinstance(v, SortingPlanNode)
+            )
             if is_file:
-                rel_src = getattr(v, "relative_source", None) or (v.get("relative_source") if isinstance(v, dict) else None)
-                src_path = getattr(v, "source_path", None) or (v.get("source_path") if isinstance(v, dict) else None)
-                routed_by = getattr(v, "routed_by", None) or (v.get("routed_by") if isinstance(v, dict) else None)
+                rel_src = getattr(v, "relative_source", None) or (
+                    v.get("relative_source") if isinstance(v, dict) else None
+                )
+                src_path = getattr(v, "source_path", None) or (
+                    v.get("source_path") if isinstance(v, dict) else None
+                )
+                routed_by = getattr(v, "routed_by", None) or (
+                    v.get("routed_by") if isinstance(v, dict) else None
+                )
                 assert rel_src is not None
                 assert src_path is not None
                 assert routed_by is not None
@@ -205,19 +239,32 @@ def test_end_to_end_phase_splitting_and_model_unloading(tmp_path):
     # Verify invoice is under Invoices folder with keyword routing
     assert "Invoices" in plan_dict
     inv_node = plan_dict["Invoices"]["invoice_123.txt"]
-    assert (getattr(inv_node, "routed_by", None) or (inv_node.get("routed_by") if isinstance(inv_node, dict) else None)) == "keyword"
+    assert (
+        getattr(inv_node, "routed_by", None)
+        or (inv_node.get("routed_by") if isinstance(inv_node, dict) else None)
+    ) == "keyword"
 
     # Verify AI documents are under clustering folders with complete leaf dicts
     all_ai_files = []
     for folder, content in plan_dict.items():
         if folder == "Invoices":
             continue
-        c_dict = content.plan if hasattr(content, "plan") and isinstance(content.plan, dict) else content
+        c_dict = (
+            content.plan
+            if hasattr(content, "plan") and isinstance(content.plan, dict)
+            else content
+        )
         for f_name, f_info in c_dict.items():
             all_ai_files.append(f_name)
-            is_file = getattr(f_info, "node_type", None) == "file" or (isinstance(f_info, dict) and f_info.get("__type__") == "file") or isinstance(f_info, SortingPlanNode)
+            is_file = (
+                getattr(f_info, "node_type", None) == "file"
+                or (isinstance(f_info, dict) and f_info.get("__type__") == "file")
+                or isinstance(f_info, SortingPlanNode)
+            )
             assert is_file
-            assert getattr(f_info, "relative_source", None) is not None or (isinstance(f_info, dict) and "relative_source" in f_info)
+            assert getattr(f_info, "relative_source", None) is not None or (
+                isinstance(f_info, dict) and "relative_source" in f_info
+            )
 
     assert "ai_doc1.txt" in all_ai_files
     assert "ai_doc2.txt" in all_ai_files
@@ -264,4 +311,3 @@ def test_plan_splitter_routes_jev_classifier_to_fast_path():
     assert "Uncategorized" in slow_plan
     assert "ai_doc.pdf" in slow_plan["Uncategorized"]
     assert "jev_doc.pdf" not in slow_plan.get("Finance", {})
-

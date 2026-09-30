@@ -59,6 +59,7 @@ except Exception:
         sys.modules["sqlite3"] = sqlite3_mock
         sqlite3 = sqlite3_mock
 
+
 # Global connection cache and lock
 def _close_evicted_connection(key, conn):
     if conn:
