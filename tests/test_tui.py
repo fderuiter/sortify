@@ -346,6 +346,7 @@ def test_tui_wizard_modal_cancel_preserves_defaults(temp_workspace):
 
     async def _test():
         settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = None
         app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
 
         async with app.run_test() as pilot:
@@ -367,6 +368,7 @@ def test_tui_wizard_modal_finish_persists_settings(temp_workspace):
 
     async def _test():
         settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = None
         app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
 
         async with app.run_test() as pilot:
