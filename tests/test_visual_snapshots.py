@@ -7,8 +7,6 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-pytestmark = pytest.mark.xdist_group(name="visual_snapshots")
-
 from app.config import AppSettings
 from app.ui.tui import (
     AutoSorterTUI,

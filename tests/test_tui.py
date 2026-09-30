@@ -6,8 +6,6 @@ import tempfile
 from unittest.mock import MagicMock, patch
 
 import pytest
-
-pytestmark = pytest.mark.xdist_group(name="tui")
 from textual.widgets import Input, Static, Switch, Tree
 
 from app.config import AppSettings
@@ -20,6 +18,8 @@ from app.ui.tui import (
     SettingsModal,
     WizardModal,
 )
+
+pytestmark = pytest.mark.xdist_group(name="tui")
 
 
 @pytest.fixture(autouse=True)
