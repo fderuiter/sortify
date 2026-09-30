@@ -27,6 +27,10 @@ from app.core.crypto import (
 from app.core.exceptions import CryptoError
 
 
+def _same_path(p1, p2) -> bool:
+    return os.path.normcase(os.path.abspath(str(p1))) == os.path.normcase(os.path.abspath(str(p2)))
+
+
 def test_key_generation_keyring(tmp_path):
     key_path = tmp_path / "secret.key"
     db_path = tmp_path / "autosorter.db"
@@ -631,6 +635,7 @@ def test_get_fallback_keys_dir_windows_and_posix(monkeypatch):
     # 3. Non-Windows with HOME and USERPROFILE unset, Path.home() throwing error
     monkeypatch.delenv("HOME", raising=False)
     monkeypatch.delenv("USERPROFILE", raising=False)
+    monkeypatch.delenv("APPDATA", raising=False)
     monkeypatch.setattr(
         Path, "home", MagicMock(side_effect=Exception("Path.home failed"))
     )
@@ -754,7 +759,7 @@ def test_session_crypto_get_raw_key_resolution(tmp_path, monkeypatch):
     original_open = builtins.open
 
     def mock_open_isolated_err(file, *args, **kwargs):
-        if str(file) == str(crypto.isolated_key_path):
+        if _same_path(file, crypto.isolated_key_path):
             raise OSError("Isolated key read error")
         return original_open(file, *args, **kwargs)
 
@@ -813,7 +818,7 @@ def test_session_crypto_get_cipher_os_error_branches(tmp_path, monkeypatch):
 
     def mock_open_read_fail(file, mode="r", *args, **kwargs):
         if ("r" in mode) and ("w" not in mode) and any(
-            str(file) == str(p)
+            _same_path(file, p)
             for p in (
                 crypto.isolated_key_path,
                 crypto.legacy_isolated_key_path,
@@ -861,7 +866,7 @@ def test_session_crypto_get_cipher_os_error_branches(tmp_path, monkeypatch):
     orig_iterdir = Path.iterdir
 
     def mock_iterdir(self_path):
-        if str(self_path) == str(crypto3.legacy_isolated_dir):
+        if _same_path(self_path, crypto3.legacy_isolated_dir):
             raise OSError("iterdir error")
         return orig_iterdir(self_path)
 
@@ -938,9 +943,9 @@ def test_session_crypto_generated_key_os_errors_and_invalid_key(
         crypto2.get_cipher()
 
 
-def test_encrypt_decrypt_text_and_vector_methods():
+def test_encrypt_decrypt_text_and_vector_methods(tmp_path):
     """Verify text and vector encryption/decryption helpers with None, string, and invalid inputs."""
-    crypto = SessionCrypto(Path("/tmp/k.key"), Path("/tmp/d.db"))
+    crypto = SessionCrypto(tmp_path / "k.key", tmp_path / "d.db")
     crypto._key = Fernet.generate_key()
     crypto._cipher = Fernet(crypto._key)
 
@@ -967,9 +972,9 @@ def test_encrypt_decrypt_text_and_vector_methods():
         crypto.decrypt_vector(b"invalid_vector")
 
 
-def test_decrypt_and_parse_vector_cache_and_eviction(caplog):
+def test_decrypt_and_parse_vector_cache_and_eviction(tmp_path, caplog):
     """Verify decrypt_and_parse_vector caching, LRU eviction, string inputs, and decryption failures."""
-    crypto = SessionCrypto(Path("/tmp/k.key"), Path("/tmp/d.db"))
+    crypto = SessionCrypto(tmp_path / "k.key", tmp_path / "d.db")
     crypto._key = Fernet.generate_key()
     crypto._cipher = Fernet(crypto._key)
 
@@ -1187,54 +1192,32 @@ def test_top_level_import_fallbacks_and_missing_key_branch(tmp_path, monkeypatch
 
 
 def test_import_fallbacks():
-    """Verify import fallbacks when numpy or sqlite3 / sqlcipher3 are unavailable."""
-    import importlib
+    """Verify import fallbacks when numpy or sqlite3 / sqlcipher3 are unavailable in isolated processes."""
+    import subprocess
     import sys
 
-    import app.core.crypto
+    # 1. Simulate numpy import error
+    code_np = (
+        "import sys\n"
+        "sys.modules['numpy'] = None\n"
+        "import app.core.crypto\n"
+        "assert app.core.crypto.np is None\n"
+    )
+    res_np = subprocess.run(
+        [sys.executable, "-c", code_np], capture_output=True, text=True
+    )
+    assert res_np.returncode == 0, f"Numpy fallback failed: {res_np.stderr}"
 
-    # Backup original modules
-    orig_np = sys.modules.get("numpy")
-    orig_sqlite3 = sys.modules.get("sqlite3")
-    orig_sqlcipher3 = sys.modules.get("sqlcipher3")
-
-    # Save original class references to preserve isinstance identity across reloads
-    orig_vector_buffer = getattr(app.core.crypto, "VectorBuffer", None)
-    orig_session_crypto = getattr(app.core.crypto, "SessionCrypto", None)
-
-    try:
-        # 1. Simulate numpy import error
-        sys.modules["numpy"] = None
-        import app.core.crypto
-
-        importlib.reload(app.core.crypto)
-        assert app.core.crypto.np is None
-
-        # 2. Simulate sqlite3 and sqlcipher3 import error
-        sys.modules["sqlite3"] = None
-        sys.modules["sqlcipher3"] = None
-        importlib.reload(app.core.crypto)
-        assert app.core.crypto.sqlite3 is None
-    finally:
-        # Restore original modules
-        if orig_np is not None:
-            sys.modules["numpy"] = orig_np
-        else:
-            sys.modules.pop("numpy", None)
-        if orig_sqlite3 is not None:
-            sys.modules["sqlite3"] = orig_sqlite3
-        else:
-            sys.modules.pop("sqlite3", None)
-        if orig_sqlcipher3 is not None:
-            sys.modules["sqlcipher3"] = orig_sqlcipher3
-        else:
-            sys.modules.pop("sqlcipher3", None)
-
-        import app.core.crypto
-
-        importlib.reload(app.core.crypto)
-        if orig_vector_buffer:
-            app.core.crypto.VectorBuffer = orig_vector_buffer
-        if orig_session_crypto:
-            app.core.crypto.SessionCrypto = orig_session_crypto
+    # 2. Simulate sqlite3 and sqlcipher3 import error
+    code_sql = (
+        "import sys\n"
+        "sys.modules['sqlite3'] = None\n"
+        "sys.modules['sqlcipher3'] = None\n"
+        "import app.core.crypto\n"
+        "assert app.core.crypto.sqlite3 is None\n"
+    )
+    res_sql = subprocess.run(
+        [sys.executable, "-c", code_sql], capture_output=True, text=True
+    )
+    assert res_sql.returncode == 0, f"SQLite fallback failed: {res_sql.stderr}"
 
