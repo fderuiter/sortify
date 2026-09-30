@@ -888,12 +888,12 @@ def test_session_crypto_database_guard_checks(tmp_path, monkeypatch):
     monkeypatch.setattr(keyring, "get_password", lambda *args: None)
 
     # 1. sqlite3.DatabaseError in guard check
-    import sqlite3 as real_sqlite3
+    import app.core.crypto
 
     def mock_connect_db_err(*args, **kwargs):
-        raise real_sqlite3.DatabaseError("file is not a database")
+        raise app.core.crypto.sqlite3.DatabaseError("file is not a database")
 
-    monkeypatch.setattr("sqlite3.connect", mock_connect_db_err)
+    monkeypatch.setattr("app.core.crypto.sqlite3.connect", mock_connect_db_err)
 
     with pytest.raises(
         CryptoError, match="Database accessed but key file is missing."
@@ -902,9 +902,9 @@ def test_session_crypto_database_guard_checks(tmp_path, monkeypatch):
 
     # 2. sqlite3.Error in guard check (general error)
     def mock_connect_err(*args, **kwargs):
-        raise real_sqlite3.Error("Operational SQLite error")
+        raise app.core.crypto.sqlite3.Error("Operational SQLite error")
 
-    monkeypatch.setattr("sqlite3.connect", mock_connect_err)
+    monkeypatch.setattr("app.core.crypto.sqlite3.connect", mock_connect_err)
 
     # Should proceed to generate key
     cipher = crypto.get_cipher()
