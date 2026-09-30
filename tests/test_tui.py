@@ -1078,7 +1078,7 @@ def test_modal_screens_responsive_layout(temp_workspace):
             assert modal.has_class("narrow")
 
             # Resize to wide
-            modal.post_message(Resize(size=Size(100, 30), virtual_size=Size(100, 30)))
+            app.post_message(Resize(size=Size(100, 30), virtual_size=Size(100, 30)))
             await pilot.pause()
             assert not modal.has_class("narrow")
 
@@ -1090,7 +1090,7 @@ def test_modal_screens_responsive_layout(temp_workspace):
             await pilot.pause()
             assert modal2.has_class("narrow")
 
-            modal2.post_message(Resize(size=Size(100, 30), virtual_size=Size(100, 30)))
+            app2.post_message(Resize(size=Size(100, 30), virtual_size=Size(100, 30)))
             await pilot.pause()
             assert not modal2.has_class("narrow")
 
