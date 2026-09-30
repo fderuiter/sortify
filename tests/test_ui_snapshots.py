@@ -90,6 +90,9 @@ def restore_ui_modules():
             sys.modules.pop(name, None)
         else:
             sys.modules[name] = orig
+    for name in list(sys.modules.keys()):
+        if name.startswith("app"):
+            sys.modules.pop(name, None)
 
 # Inject dummy settings
 from app.config import AppSettings  # noqa: E402
