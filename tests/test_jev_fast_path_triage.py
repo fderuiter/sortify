@@ -420,6 +420,7 @@ def test_jev_fast_snippet_extraction_encrypted_and_corrupt(tmp_path):
     writer.encrypt("secret_password")
     with open(encrypted_pdf, "wb") as f:
         writer.write(f)
+    writer.close()
 
     res_enc = engine.classify(str(encrypted_pdf))
     assert isinstance(res_enc, JevClassificationResult)
