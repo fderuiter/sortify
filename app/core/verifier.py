@@ -58,7 +58,30 @@ def check_ai_status(settings) -> tuple[bool, str | None]:
     is_sandboxed = is_packaged() or getattr(settings, "SANDBOXED", False)
 
     if not is_ml_available():
-        is_lite = os.environ.get("LITE_BUILD") == "1" or getattr(settings, "LITE_BUILD", False)
+        from app.core.path_utils import get_base_path
+
+        mei = getattr(sys, "_MEIPASS", "")
+        try:
+            base = get_base_path(__file__)
+        except Exception:
+            base = ""
+        exe_dir = os.path.dirname(sys.executable) if is_packaged() else ""
+
+        lite_candidates = [
+            os.path.join(mei, "LITE_BUILD") if mei else "",
+            os.path.join(mei, "_internal", "LITE_BUILD") if mei else "",
+            os.path.join(base, "LITE_BUILD") if base else "",
+            os.path.join(base, "_internal", "LITE_BUILD") if base else "",
+            os.path.join(exe_dir, "LITE_BUILD") if exe_dir else "",
+            os.path.join(exe_dir, "_internal", "LITE_BUILD") if exe_dir else "",
+        ]
+        marker_lite = any(c and os.path.exists(c) for c in lite_candidates)
+
+        is_lite = (
+            os.environ.get("LITE_BUILD") == "1"
+            or getattr(settings, "LITE_BUILD", False)
+            or marker_lite
+        )
         if is_sandboxed and not is_lite:
             raise ValueError(
                 "Machine learning dependencies (PyTorch/EasyOCR) are missing in sandboxed execution."
@@ -719,9 +742,7 @@ class VirtualFilesystemTracker:
                 )
 
         # Check rename proposals
-        invalid_renames, unconfirmed_renames = self.check_rename_proposals(
-            base_dir, plan
-        )
+        invalid_renames, unconfirmed_renames = self.check_rename_proposals(base_dir, plan)
 
         # Consolidate all warnings
         warnings = []
@@ -800,7 +821,9 @@ class VirtualFilesystemTracker:
                         src_stem, src_ext = os.path.splitext(src_filename)
                         tgt_stem, tgt_ext = os.path.splitext(target_filename)
 
-                        source_path = os.path.normpath(os.path.join(base_dir, rel_src))
+                        source_path = os.path.normpath(
+                            os.path.join(base_dir, rel_src)
+                        )
                         dest_dir = os.path.normpath(
                             os.path.join(base_dir, current_dest)
                         )
