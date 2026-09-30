@@ -48,8 +48,8 @@ normal_plan = {
             "__type__": "file",
             "relative_source": "document_B.txt",
             "target_filename": "renamed_B.txt",
-        },
-    },
+        }
+    }
 }
 
 print("[*] Verifying normal sorting plan integrity...")
@@ -76,8 +76,8 @@ colliding_plan = {
         "receipt_9.txt": {
             "__type__": "file",
             "relative_source": "receipt_9.txt",
-            "target_filename": "clashing_name.txt",  # Collision!
-        },
+            "target_filename": "clashing_name.txt", # Collision!
+        }
     }
 }
 
@@ -109,7 +109,7 @@ result = VerificationEngine.verify_plan_integrity(base_dir, long_path_plan)
 print("\n[-] Verification Result:")
 print(f"  Success: {result['success']}")
 print(f"  Long Paths Found: {len(result['long_paths'])}")
-if result["long_paths"]:
+if result['long_paths']:
     print(f"  Example long path truncated: {result['long_paths'][0]['path'][:80]}...")
 print(f"  Warnings: {result['warnings']}")
 ```
