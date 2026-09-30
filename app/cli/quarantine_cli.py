@@ -159,6 +159,8 @@ def handle_quarantine_command(args: argparse.Namespace, settings: AppSettings) -
     )
     db = Database(db_path_obj, DBWorker())
 
+    from app.cli import json_default
+
     quiet = getattr(args, "quiet", False)
     is_json = getattr(args, "json", False)
 
@@ -196,7 +198,7 @@ def handle_quarantine_command(args: argparse.Namespace, settings: AppSettings) -
             }
 
             if is_json:
-                sys.stdout.write(json.dumps(res, indent=2) + "\n")
+                sys.stdout.write(json.dumps(res, indent=2, default=json_default) + "\n")
                 sys.stdout.flush()
             else:
                 if not quiet:
@@ -226,7 +228,7 @@ def handle_quarantine_command(args: argparse.Namespace, settings: AppSettings) -
             }
 
             if is_json:
-                sys.stdout.write(json.dumps(res, indent=2) + "\n")
+                sys.stdout.write(json.dumps(res, indent=2, default=json_default) + "\n")
                 sys.stdout.flush()
             else:
                 print(f"Quarantine Job Record: {job_id}")
@@ -259,7 +261,7 @@ def handle_quarantine_command(args: argparse.Namespace, settings: AppSettings) -
                 }
 
                 if is_json:
-                    sys.stdout.write(json.dumps(res, indent=2) + "\n")
+                    sys.stdout.write(json.dumps(res, indent=2, default=json_default) + "\n")
                     sys.stdout.flush()
                 else:
                     if not quiet:
@@ -321,7 +323,7 @@ def handle_quarantine_command(args: argparse.Namespace, settings: AppSettings) -
             }
 
             if is_json:
-                sys.stdout.write(json.dumps(res, indent=2) + "\n")
+                sys.stdout.write(json.dumps(res, indent=2, default=json_default) + "\n")
                 sys.stdout.flush()
             else:
                 if not quiet:
