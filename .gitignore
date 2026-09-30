@@ -27,3 +27,6 @@ offline_bundle/*
 !offline_bundle/requirements.txt
 offline_bundle.zip
 
+LITE_BUILD
+smoke_test_error.txt
+

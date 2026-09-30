@@ -14,15 +14,21 @@ block_cipher = None
 # Core machine learning and NLP dependencies required for offline processing
 is_lite = os.environ.get("LITE_BUILD") == "1"
 ml_packages = []
-if not is_lite:
+datas = []
+binaries = []
+hiddenimports = []
+
+if is_lite:
+    lite_marker_path = os.path.join(os.path.dirname(os.path.abspath(SPEC)), "LITE_BUILD") if 'SPEC' in locals() else os.path.join(os.getcwd(), "LITE_BUILD")
+    with open(lite_marker_path, "w", encoding="utf-8") as f:
+        f.write("1\n")
+    datas.append((os.path.abspath(lite_marker_path), "."))
+    datas.append((os.path.abspath(lite_marker_path), "_internal"))
+else:
     ml_packages = [
         'torch', 'easyocr', 'transformers', 'sklearn', 'llama_cpp',
         'onnxruntime', 'numpy', 'pandas', 'PIL'
     ]
-
-datas = []
-binaries = []
-hiddenimports = []
 
 # Collect all dynamic libraries, weights, and hidden imports for ML packages
 for pkg in ml_packages:
@@ -34,8 +40,8 @@ for pkg in ml_packages:
     except Exception as e:
         print(f"Warning: Could not collect package {pkg}: {e}")
 
-# Bundle jsonschema, rfc3987 syntax, pydantic schema data assets, plus textual TUI dependencies
-for schema_pkg in ('jsonschema', 'jsonschema_specifications', 'referencing', 'rfc3987_syntax', 'rfc3987', 'pydantic', 'pydantic_settings', 'pydantic_core', 'annotated_types', 'typing_extensions', 'dotenv', 'textual'):
+# Bundle jsonschema and rfc3987 syntax data assets
+for schema_pkg in ('jsonschema', 'jsonschema_specifications', 'referencing', 'rfc3987_syntax', 'rfc3987'):
     try:
         s_datas, s_binaries, s_hiddenimports = collect_all(schema_pkg)
         datas.extend(s_datas)
@@ -43,16 +49,6 @@ for schema_pkg in ('jsonschema', 'jsonschema_specifications', 'referencing', 'rf
         hiddenimports.extend(s_hiddenimports)
     except Exception as e:
         print(f"Warning: Could not collect package {schema_pkg}: {e}")
-
-hiddenimports.extend([
-    'pydantic',
-    'pydantic_settings',
-    'pydantic_core',
-    'pydantic_core._pydantic_core',
-    'annotated_types',
-    'typing_extensions',
-    'dotenv',
-])
 # Bundle secure database shared libraries directly from the active virtual environment
 sqlcipher_spec = importlib.util.find_spec("sqlcipher3")
 if sqlcipher_spec and sqlcipher_spec.submodule_search_locations:
@@ -271,7 +267,7 @@ def is_prunable_asset(name):
     parts = name_lower.split('/')
     
     # Safety Rule: Core weights, model files, and crucial bin targets must NEVER be pruned.
-    safety_keywords = ("weight", "bin", "model", "checkpoint", "offline_bundle", "easyocr", "user_guide", "pydantic", "pydantic_core", "pydantic_settings", "annotated_types", "typing_extensions", "dotenv", "textual")
+    safety_keywords = ("weight", "bin", "model", "checkpoint", "offline_bundle", "easyocr", "user_guide")
     if any(sk in name_lower for sk in safety_keywords):
         return False
         
@@ -424,8 +420,6 @@ if "pytest" not in sys.modules:
 # Exclude Quasar framework files, Vue assets, HTML templates, and static web assets
 def is_web_asset(name):
     name_lower = name.lower().replace('\\', '/')
-    if 'textual' in name_lower:
-        return False
     parts = name_lower.split('/')
     for p in parts:
         if p in ('quasar', 'vue', 'nicegui', 'static_assets', 'templates', 'vbuild'):
