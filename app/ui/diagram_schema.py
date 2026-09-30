@@ -503,6 +503,7 @@ CORE_ARCHITECTURE_SPEC = ComponentDiagramSpec(
                 "core_path_utils",
                 "core_env_helper",
                 "core_crypto",
+                "core_domain_contracts",
                 "core_exceptions",
                 "core_domain_contracts",
             ],
@@ -568,6 +569,7 @@ CORE_ARCHITECTURE_SPEC = ComponentDiagramSpec(
         DiagramNode(id="core_path_utils", label="app.core.path_utils"),
         DiagramNode(id="core_env_helper", label="app.core.env_helper"),
         DiagramNode(id="core_crypto", label="app.core.crypto"),
+        DiagramNode(id="core_domain_contracts", label="app.core.domain_contracts"),
         DiagramNode(id="core_exceptions", label="app.core.exceptions"),
     ],
     edges=[

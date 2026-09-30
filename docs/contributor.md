@@ -49,9 +49,12 @@ All shared system utilities must reside in or be exposed through `app.core.path_
 * **`validate_target_path(target_path: str, keyword: str = None) -> None`**: Standard target path validation for illegal characters, absolute paths, or traversal segments.
 * **`setup_session_directory(session_id: str = None) -> tuple[str, Path]`**: Sets up the standard data/session directory in the OS temp folder.
 * **`resolve_db_crypto(db_path: Path | str) -> SessionCrypto`**: Standard lookup function for session encryption keys and database decrypters.
+* **`CryptoManager`**: Centralized facade (`app.core.crypto`) providing static methods for key derivation (`derive_db_hash`, `derive_keyring_account`, `derive_isolated_key_path`), envelope encryption (`encrypt_proxy_setting`, `decrypt_proxy_setting`), and pre-flight key generation (`generate_bootstrap_key`).
+* **`sanitize_secret_patterns(text: str, replacement: str = "") -> str`**: Centralized secret scrubbing delegate (`app.core.text_utils`) that redacts API keys, JWTs, Bearer tokens, private keys, and high-entropy secret payloads across text streams and logging filters.
 
 ### 2. Architectural Decisions & Rules
 * **No Direct `sys.frozen` Checks:** Never use `getattr(sys, "frozen", False)` in modules. Use `is_packaged()` instead.
 * **Consolidated Illegal Characters:** All paths and filenames must validate against `ILLEGAL_PATH_CHARS_SET` or `ILLEGAL_NAME_CHARS_SET` inside `app/core/path_utils.py`.
 * **Standard Key Resolution:** Any database connection or database initialization must obtain its `SessionCrypto` instance via `resolve_db_crypto(db_path)`. Do not hardcode standard `secret.key` filenames or paths inside database modules.
+* **Centralized Cryptography & Secret Scrubbing:** Use `CryptoManager` static methods for key derivation and proxy envelope encryption. Route diagnostic and log scrubbing through `sanitize_secret_patterns()`.
 
