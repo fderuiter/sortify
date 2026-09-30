@@ -42,17 +42,42 @@ def _resolve_path(p: Path) -> Path:
 
     Returns
     -------
-        Resolved Path object with symlinks and 8.3 short names expanded.
+        Resolved Path object with symlinks and 8.3 short names expanded for existing ancestors.
     """
     try:
-        p_str = str(p.expanduser())
+        p = p.expanduser()
     except Exception:
-        p_str = str(p)
+        pass
 
     try:
-        return Path(os.path.realpath(p_str))
+        if p.exists():
+            return p.resolve()
     except Exception:
-        return Path(os.path.abspath(p_str))
+        pass
+
+    parts = []
+    curr = p
+    while True:
+        try:
+            if curr.exists():
+                break
+        except Exception:
+            pass
+        parent_curr = curr.parent
+        if parent_curr == curr:
+            break
+        parts.append(curr.name)
+        curr = parent_curr
+
+    try:
+        curr_resolved = curr.resolve()
+    except Exception:
+        curr_resolved = curr
+
+    for part in reversed(parts):
+        curr_resolved = curr_resolved / part
+
+    return curr_resolved
 
 
 def is_subpath_or_equal(child: str, parent: str) -> bool:
