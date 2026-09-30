@@ -243,7 +243,7 @@ def test_settings_modal_snapshot():
             app.push_screen(modal)
             for _ in range(5):
                 await pilot.pause()
-            modal.scroll_home(animate=False)
+            modal.query_one(".modal-box").scroll_home(animate=False)
             for _ in range(5):
                 await pilot.pause()
             svg = app.export_screenshot()
