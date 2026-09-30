@@ -1196,6 +1196,10 @@ def test_import_fallbacks():
     import subprocess
     import sys
 
+    repo_root = str(Path(__file__).resolve().parent.parent)
+    env = dict(os.environ)
+    env["PYTHONPATH"] = repo_root + os.pathsep + os.pathsep.join(sys.path)
+
     # 1. Simulate numpy import error
     code_np = (
         "import sys\n"
@@ -1204,7 +1208,11 @@ def test_import_fallbacks():
         "assert app.core.crypto.np is None\n"
     )
     res_np = subprocess.run(
-        [sys.executable, "-c", code_np], capture_output=True, text=True
+        [sys.executable, "-c", code_np],
+        capture_output=True,
+        text=True,
+        env=env,
+        cwd=repo_root,
     )
     assert res_np.returncode == 0, f"Numpy fallback failed: {res_np.stderr}"
 
@@ -1217,7 +1225,11 @@ def test_import_fallbacks():
         "assert app.core.crypto.sqlite3 is None\n"
     )
     res_sql = subprocess.run(
-        [sys.executable, "-c", code_sql], capture_output=True, text=True
+        [sys.executable, "-c", code_sql],
+        capture_output=True,
+        text=True,
+        env=env,
+        cwd=repo_root,
     )
     assert res_sql.returncode == 0, f"SQLite fallback failed: {res_sql.stderr}"
 
