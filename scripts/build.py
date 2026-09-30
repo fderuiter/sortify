@@ -41,7 +41,9 @@ def update_binaries_and_manifest(system_platform=None, bypass_pytest_check=False
     target_dir = Path("app") / "binaries" / platform_key / "sqlcipher3"
 
     if target_dir.exists():
-        shutil.rmtree(target_dir)
+        from app.core.resilient_file_ops import resilient_rmtree
+
+        resilient_rmtree(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
 
     copied_files = []

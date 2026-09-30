@@ -336,7 +336,6 @@ def write_smoke_test_error(message, include_traceback=False):
 def run_smoke_test():
     """Run a complete database smoke test to verify SQLCipher encryption and connectivity."""
     print("Starting automated database connection and encryption smoke test...")
-    import shutil
     import tempfile
 
     # Create a temporary directory for testing to avoid side effects
@@ -424,6 +423,8 @@ def run_smoke_test():
         except Exception:
             pass
         try:
+            import shutil
+
             shutil.rmtree(temp_dir)
         except Exception:
             pass
