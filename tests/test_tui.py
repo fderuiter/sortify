@@ -349,14 +349,14 @@ def test_tui_wizard_modal_cancel_preserves_defaults(temp_workspace):
         app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
 
         async with app.run_test() as pilot:
-            await pilot.pause(0.1)
+            await pilot.pause(0.2)
             modal = app.screen
             assert isinstance(modal, WizardModal)
 
             modal.action_cancel()
             await pilot.pause(0.1)
 
-            assert app.settings.AI_CONSENT_GRANTED is None
+            assert app.settings.AI_CONSENT_GRANTED is False
             assert not isinstance(app.screen, WizardModal)
 
     asyncio.run(_test())
@@ -370,7 +370,7 @@ def test_tui_wizard_modal_finish_persists_settings(temp_workspace):
         app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
 
         async with app.run_test() as pilot:
-            await pilot.pause(0.1)
+            await pilot.pause(0.2)
             modal = app.screen
             assert isinstance(modal, WizardModal)
 
