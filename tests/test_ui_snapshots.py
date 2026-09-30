@@ -47,6 +47,7 @@ def headless_app(tmp_path, monkeypatch):
 
     try:
         from app.core.shared_registry import SharedModelRegistry
+
         reg = getattr(SharedModelRegistry, "_instance", None)
         if reg is not None:
             reg._cached_settings = None

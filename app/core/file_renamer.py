@@ -206,7 +206,9 @@ class ContextExtractor:
         # Clean and tokenize text
         words = re.findall(r"\b[a-zA-Z]{3,20}\b", text.lower())
         filtered_words = [
-            w for w in words if w not in all_stop_words and not _is_high_entropy_token(w)
+            w
+            for w in words
+            if w not in all_stop_words and not _is_high_entropy_token(w)
         ]
 
         if not filtered_words:

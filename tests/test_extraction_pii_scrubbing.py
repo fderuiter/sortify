@@ -78,7 +78,9 @@ def test_db_persistence_stores_redacted_text(tmp_path):
 
     base_dir = str(tmp_path)
     rel_path = "secret_notes.txt"
-    raw_secret_text = "Internal Notes: sk_live_51Nxabc123XYZ4567890abcdef SSN: 123-45-6789"
+    raw_secret_text = (
+        "Internal Notes: sk_live_51Nxabc123XYZ4567890abcdef SSN: 123-45-6789"
+    )
 
     db.upsert_document(base_dir, rel_path, "hash_abc", raw_secret_text)
 
@@ -99,7 +101,9 @@ def test_vector_embedding_receives_redacted_text():
     secret_input = "User API Key: sk_live_51Nxabc123XYZ4567890abcdef"
 
     with patch.object(
-        manager, "_generate_fallback_embedding", wraps=manager._generate_fallback_embedding
+        manager,
+        "_generate_fallback_embedding",
+        wraps=manager._generate_fallback_embedding,
     ) as mock_fallback:
         _ = manager.generate_embedding(secret_input)
         mock_fallback.assert_called_once()

@@ -46,11 +46,22 @@ PII_FILENAME_PATTERNS = [
     # Credit Card pattern
     re.compile(_BOUND_LEFT + r"(?:\d[ -]*?){13,16}" + _BOUND_RIGHT),
     # Email pattern
-    re.compile(_BOUND_LEFT + r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}" + _BOUND_RIGHT),
+    re.compile(
+        _BOUND_LEFT + r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}" + _BOUND_RIGHT
+    ),
     # Phone number pattern
-    re.compile(_BOUND_LEFT + r"(?:\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}" + _BOUND_RIGHT),
+    re.compile(
+        _BOUND_LEFT
+        + r"(?:\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}"
+        + _BOUND_RIGHT
+    ),
     # Health ID / Patient ID / Medical Record patterns
-    re.compile(r"(?i)" + _BOUND_LEFT + r"(?:MRN|PATIENT[ _-]?ID|SUBJECT[ _-]?ID|MED[ _-]?REC|HCID)[ _-]?#?:?\s*[A-Za-z0-9-]+" + _BOUND_RIGHT),
+    re.compile(
+        r"(?i)"
+        + _BOUND_LEFT
+        + r"(?:MRN|PATIENT[ _-]?ID|SUBJECT[ _-]?ID|MED[ _-]?REC|HCID)[ _-]?#?:?\s*[A-Za-z0-9-]+"
+        + _BOUND_RIGHT
+    ),
     re.compile(r"(?i)" + _BOUND_LEFT + r"(?:PATIENT|SUBJECT)[ _-]?\d+" + _BOUND_RIGHT),
     re.compile(r"(?i)(Confidential Medical Report|Diagnosis:[^\n]*)"),
 ]
@@ -64,7 +75,7 @@ def _split_name_ext(name: str) -> tuple[str, str, bool]:
     _, ext = os.path.splitext(last_component)
     valid_ext = bool(ext and re.match(r"^\.[a-zA-Z0-9]{1,5}$", ext))
     if valid_ext:
-        stem = name[:-len(ext)]
+        stem = name[: -len(ext)]
         return stem, ext, True
     return name, "", False
 
@@ -328,13 +339,12 @@ def _merge_plan_dicts(target_dict: dict, source_dict: dict) -> list[str]:
             target_dict[k] = v
         else:
             existing_val = target_dict[k]
-            is_existing_subfolder = (
-                isinstance(existing_val, dict)
-                and existing_val.get("__type__") not in ("file", "directory")
-            )
-            is_v_subfolder = (
-                isinstance(v, dict)
-                and v.get("__type__") not in ("file", "directory")
+            is_existing_subfolder = isinstance(existing_val, dict) and existing_val.get(
+                "__type__"
+            ) not in ("file", "directory")
+            is_v_subfolder = isinstance(v, dict) and v.get("__type__") not in (
+                "file",
+                "directory",
             )
 
             if is_existing_subfolder and is_v_subfolder:
@@ -442,10 +452,18 @@ def sanitize_plan(plan: Any) -> tuple[dict, list[str]]:
                 if transformed:
                     file_content["confirmed"] = True
                     if "target_filename" in file_content:
-                        file_content["target_filename"] = re.split(r"[/\\]+", safe_file_key)[-1]
-                if "target_filename" in file_content and file_content["target_filename"]:
+                        file_content["target_filename"] = re.split(
+                            r"[/\\]+", safe_file_key
+                        )[-1]
+                if (
+                    "target_filename" in file_content
+                    and file_content["target_filename"]
+                ):
                     old_tf = file_content["target_filename"]
-                    if contains_secrets(old_tf) or scrub_pii_from_filename(old_tf) != old_tf:
+                    if (
+                        contains_secrets(old_tf)
+                        or scrub_pii_from_filename(old_tf) != old_tf
+                    ):
                         leaf_tf = re.split(r"[/\\]+", old_tf)[-1]
                         new_tf = sanitize_name(leaf_tf)
                         if new_tf != old_tf:
@@ -470,7 +488,11 @@ def sanitize_plan(plan: Any) -> tuple[dict, list[str]]:
             if transformed:
                 warnings.append(f"Sanitized folder key '{key}' to '{safe_key}'")
 
-            children = {k: v for k, v in content.items() if not k.startswith("__")} if isinstance(content, dict) else {}
+            children = (
+                {k: v for k, v in content.items() if not k.startswith("__")}
+                if isinstance(content, dict)
+                else {}
+            )
             sub_sanitized, sub_warns = sanitize_plan(children)
             warnings.extend(sub_warns)
 
@@ -564,4 +586,3 @@ def is_junction_entry(entry) -> bool:
         return os.path.isjunction(path)
     except (AttributeError, OSError):
         return False
-

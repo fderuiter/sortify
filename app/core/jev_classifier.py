@@ -59,9 +59,7 @@ class JevClassificationResult(BaseModel):
     def __contains__(self, item: str) -> bool:
         """Support membership check for dictionary compatibility."""
         extra = getattr(self, "__pydantic_extra__", None)
-        return hasattr(self, item) or (
-            extra is not None and item in extra
-        )
+        return hasattr(self, item) or (extra is not None and item in extra)
 
 
 def _extract_pdf_snippet(file_path: str) -> str:
@@ -115,7 +113,9 @@ def _extract_xlsx_snippet(file_path: str) -> str:
                     text_parts = []
                     curr_len = 0
                     for row in sheet.iter_rows(values_only=True):
-                        row_str = " ".join(str(cell) for cell in row if cell is not None).strip()
+                        row_str = " ".join(
+                            str(cell) for cell in row if cell is not None
+                        ).strip()
                         if not row_str:
                             continue
                         text_parts.append(row_str)
@@ -142,7 +142,11 @@ def _extract_xls_snippet(file_path: str) -> str:
                 text_parts = []
                 curr_len = 0
                 for row_idx in range(min(sheet.nrows, 100)):
-                    row_vals = [str(cell.value) for cell in sheet.row(row_idx) if cell.value is not None]
+                    row_vals = [
+                        str(cell.value)
+                        for cell in sheet.row(row_idx)
+                        if cell.value is not None
+                    ]
                     row_str = " ".join(row_vals).strip()
                     if not row_str:
                         continue
@@ -344,9 +348,9 @@ class JevClassifierEngine:
         self.confidence_threshold = confidence_threshold
         self.db_path = db_path
         self.worker = worker
-        self.memory_cache = BoundedMemoryCache[Tuple[str, float, int], JevClassificationResult](
-            max_size=max_cache_size
-        )
+        self.memory_cache = BoundedMemoryCache[
+            Tuple[str, float, int], JevClassificationResult
+        ](max_size=max_cache_size)
         if self.db_path:
             self._init_db()
 
@@ -386,12 +390,18 @@ class JevClassifierEngine:
                     "CREATE INDEX IF NOT EXISTS idx_jev_cache_lookup ON jev_classification_cache (file_path, mtime, size)"
                 )
         except Exception as e:
-            logger.warning(f"Failed to initialize jev_classification_cache DB table: {e}")
+            logger.warning(
+                f"Failed to initialize jev_classification_cache DB table: {e}"
+            )
 
     def _get_file_stat_key(self, file_path: str) -> Optional[Tuple[str, float, int]]:
         """Calculate a fast file stat key (abs_path, mtime, size) before inspecting file contents."""
         try:
-            if not file_path or not os.path.exists(file_path) or not os.path.isfile(file_path):
+            if (
+                not file_path
+                or not os.path.exists(file_path)
+                or not os.path.isfile(file_path)
+            ):
                 return None
             abs_path = os.path.abspath(file_path).replace("\\", "/")
             stat = os.stat(file_path)
@@ -405,13 +415,15 @@ class JevClassifierEngine:
         try:
             abs_path = os.path.abspath(file_path).replace("\\", "/")
             keys_to_purge = [
-                k for k in self.memory_cache.keys()
+                k
+                for k in self.memory_cache.keys()
                 if (isinstance(k, tuple) and k[0] == abs_path) or k == abs_path
             ]
             for k in keys_to_purge:
                 self.memory_cache.invalidate(k)
 
             if self.db_path:
+
                 def _write_delete():
                     from app.core.db_conn import get_db_connection
 
@@ -429,7 +441,9 @@ class JevClassifierEngine:
         except Exception as e:
             logger.warning(f"Failed to invalidate cache for {file_path}: {e}")
 
-    def _get_from_db(self, stat_key: Tuple[str, float, int]) -> Optional[JevClassificationResult]:
+    def _get_from_db(
+        self, stat_key: Tuple[str, float, int]
+    ) -> Optional[JevClassificationResult]:
         """Query persistent SQLite database table for a cached result matching file path, mtime, and size."""
         if not self.db_path:
             return None
@@ -450,7 +464,16 @@ class JevClassifierEngine:
                 row = cursor.fetchone()
 
             if row:
-                category, sens_rat, sens_score, arch_prio, arch_score, conf, is_class, meta_json = row
+                (
+                    category,
+                    sens_rat,
+                    sens_score,
+                    arch_prio,
+                    arch_score,
+                    conf,
+                    is_class,
+                    meta_json,
+                ) = row
                 try:
                     metadata = json.loads(meta_json) if meta_json else {}
                 except Exception:
@@ -478,7 +501,9 @@ class JevClassifierEngine:
             logger.warning(f"Database cache query failed for {abs_path}: {e}")
         return None
 
-    def _save_to_db(self, stat_key: Tuple[str, float, int], result: JevClassificationResult) -> None:
+    def _save_to_db(
+        self, stat_key: Tuple[str, float, int], result: JevClassificationResult
+    ) -> None:
         """Persist a classification result into SQLite database via DBWorker."""
         if not self.db_path:
             return
@@ -532,7 +557,9 @@ class JevClassifierEngine:
             else:
                 _write_upsert()
         except Exception as e:
-            logger.warning(f"Failed to persist classification result for {abs_path}: {e}")
+            logger.warning(
+                f"Failed to persist classification result for {abs_path}: {e}"
+            )
 
     def classify(
         self, file_path: str, text_content: Optional[str] = None

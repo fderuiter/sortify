@@ -120,7 +120,10 @@ def test_statistical_fallback_on_mock(db, temp_dir):
             assert "Space" in plan_dict
             assert "new_space.txt" in plan_dict["Space"]
             node1 = plan_dict["Space"]["new_space.txt"]
-            assert (getattr(node1, "routed_by", None) or (node1.get("routed_by") if isinstance(node1, dict) else None)) == "similarity"
+            assert (
+                getattr(node1, "routed_by", None)
+                or (node1.get("routed_by") if isinstance(node1, dict) else None)
+            ) == "similarity"
 
             # 2. Embedding generation & background vector reconstruction loops must NOT be triggered
             mock_gen.assert_not_called()
@@ -212,6 +215,9 @@ def test_dynamic_transition_to_semantic(db, temp_dir):
             assert "Space" in plan_dict
             assert "new_space.txt" in plan_dict["Space"]
             node2 = plan_dict["Space"]["new_space.txt"]
-            assert (getattr(node2, "routed_by", None) or (node2.get("routed_by") if isinstance(node2, dict) else None)) == "similarity"
+            assert (
+                getattr(node2, "routed_by", None)
+                or (node2.get("routed_by") if isinstance(node2, dict) else None)
+            ) == "similarity"
     finally:
         analyzer.close()

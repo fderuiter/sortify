@@ -523,7 +523,12 @@ class Database:
                 if hasattr(self._cached_documents, "items"):
                     for fp, row in list(self._cached_documents.items()):
                         if row[2] == file_hash:
-                            self._cached_documents[fp] = (row[0], row[1], row[2], target_path)
+                            self._cached_documents[fp] = (
+                                row[0],
+                                row[1],
+                                row[2],
+                                target_path,
+                            )
                 elif isinstance(self._cached_documents, list):
                     new_docs = []
                     for row in self._cached_documents:

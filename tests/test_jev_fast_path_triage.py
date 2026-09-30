@@ -329,7 +329,12 @@ def test_file_analyzer_internal_jev_fallback_windows_paths(tmp_path):
     mock_db = Mock()
     mock_db.get_model_metadata.return_value = None
     mock_db.get_all_documents.return_value = [
-        ("sub\\invoice_2026_win.csv", "Invoice ID, Amount, Tax, Total\n1001, $500, $50, $550\n", "hash_win", None)
+        (
+            "sub\\invoice_2026_win.csv",
+            "Invoice ID, Amount, Tax, Total\n1001, $500, $50, $550\n",
+            "hash_win",
+            None,
+        )
     ]
 
     analyzer = FileAnalyzer(max_folders=5, stop_words=set(), db=mock_db)
@@ -458,4 +463,3 @@ def test_jev_fast_snippet_extraction_encrypted_and_corrupt(tmp_path):
     assert isinstance(res_corrupt_docx, JevClassificationResult)
     assert res_corrupt_docx.confidence < 0.50
     assert res_corrupt_docx.is_classified is False
-

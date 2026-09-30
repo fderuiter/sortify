@@ -135,7 +135,9 @@ def analyze_all(json_output=False):
 
     import json
 
-    serializable_plan = plan.model_dump(mode="json") if hasattr(plan, "model_dump") else plan
+    serializable_plan = (
+        plan.model_dump(mode="json") if hasattr(plan, "model_dump") else plan
+    )
 
     if json_output:
         print(json.dumps(serializable_plan, indent=2))

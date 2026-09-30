@@ -178,7 +178,9 @@ def test_all_9_settings_sliders_have_aria_attributes(tmp_path, monkeypatch):
             s = MagicMock()
             s._props = {}
             s.classes.return_value = s
-            s.props.side_effect = lambda str_props: s._props.update({"_last_props": str_props}) or s
+            s.props.side_effect = lambda str_props: (
+                s._props.update({"_last_props": str_props}) or s
+            )
             sliders_created.append((s, kwargs))
             return s
 

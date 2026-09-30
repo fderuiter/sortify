@@ -8,6 +8,7 @@ from unittest.mock import MagicMock
 from pydantic import BaseModel
 
 from app.core.analyzer import SortingPlanNode
+from app.core.domain_contracts import _get_val
 from app.core.progress import ProgressUpdate
 from app.core.session import AppSession
 from app.ui.dialog_helper import ask_directory_async, get_dialog_card_classes
@@ -1042,15 +1043,35 @@ class AutoSorterApp:
                 dialog.open()
                 return
 
-            score = getattr(comp_data, "compliance_score_percent", 0.0) if not isinstance(comp_data, dict) else comp_data.get("compliance_score_percent", 0.0)
-            status = getattr(comp_data, "audit_readiness_status", "UNKNOWN") if not isinstance(comp_data, dict) else comp_data.get("audit_readiness_status", "UNKNOWN")
+            score = (
+                getattr(comp_data, "compliance_score_percent", 0.0)
+                if not isinstance(comp_data, dict)
+                else comp_data.get("compliance_score_percent", 0.0)
+            )
+            status = (
+                getattr(comp_data, "audit_readiness_status", "UNKNOWN")
+                if not isinstance(comp_data, dict)
+                else comp_data.get("audit_readiness_status", "UNKNOWN")
+            )
             badge_color = (
                 "positive" if score >= 90 else "warning" if score >= 60 else "negative"
             )
 
-            total_found = getattr(comp_data, "total_essential_found", 0) if not isinstance(comp_data, dict) else comp_data.get("total_essential_found", 0)
-            total_required = getattr(comp_data, "total_essential_required", 0) if not isinstance(comp_data, dict) else comp_data.get("total_essential_required", 0)
-            total_missing = getattr(comp_data, "total_essential_missing", 0) if not isinstance(comp_data, dict) else comp_data.get("total_essential_missing", 0)
+            total_found = (
+                getattr(comp_data, "total_essential_found", 0)
+                if not isinstance(comp_data, dict)
+                else comp_data.get("total_essential_found", 0)
+            )
+            total_required = (
+                getattr(comp_data, "total_essential_required", 0)
+                if not isinstance(comp_data, dict)
+                else comp_data.get("total_essential_required", 0)
+            )
+            total_missing = (
+                getattr(comp_data, "total_essential_missing", 0)
+                if not isinstance(comp_data, dict)
+                else comp_data.get("total_essential_missing", 0)
+            )
 
             with ui.row().classes(
                 "w-full items-center gap-4 my-2 p-3 bg-gray-50 rounded border"
@@ -1058,40 +1079,58 @@ class AutoSorterApp:
                 ui.badge(f"{status} ({score}%)", color=badge_color).classes(
                     "text-sm p-2"
                 )
-                ui.label(
-                    f"Essential Found: {total_found} / {total_required}"
-                ).classes("font-semibold")
-                ui.label(
-                    f"Missing Gaps: {total_missing}"
-                ).classes("text-red-500 font-semibold")
+                ui.label(f"Essential Found: {total_found} / {total_required}").classes(
+                    "font-semibold"
+                )
+                ui.label(f"Missing Gaps: {total_missing}").classes(
+                    "text-red-500 font-semibold"
+                )
 
-            missing_docs = getattr(comp_data, "missing_essential_documents", []) if not isinstance(comp_data, dict) else comp_data.get("missing_essential_documents", [])
+            missing_docs = (
+                getattr(comp_data, "missing_essential_documents", [])
+                if not isinstance(comp_data, dict)
+                else comp_data.get("missing_essential_documents", [])
+            )
             if missing_docs:
                 ui.label(
                     "Missing Regulatory Essential Documents (Action Required):"
                 ).classes("text-sm font-bold text-red-600 mt-2")
                 with ui.column().classes("w-full gap-1 pl-2"):
                     for m in missing_docs:
-                        m_title = getattr(m, "title", None) or (m.get("title") if isinstance(m, dict) else "")
-                        m_gcp_ref = getattr(m, "gcp_ref", None) or (m.get("gcp_ref") if isinstance(m, dict) else "")
-                        m_importance = getattr(m, "importance", None) or (m.get("importance") if isinstance(m, dict) else "")
+                        m_title = getattr(m, "title", None) or (
+                            m.get("title") if isinstance(m, dict) else ""
+                        )
+                        m_gcp_ref = getattr(m, "gcp_ref", None) or (
+                            m.get("gcp_ref") if isinstance(m, dict) else ""
+                        )
+                        m_importance = getattr(m, "importance", None) or (
+                            m.get("importance") if isinstance(m, dict) else ""
+                        )
                         with ui.row().classes(
                             "items-center gap-2 text-xs text-red-700"
                         ):
                             ui.icon("warning", size="xs", color="red")
-                            ui.label(
-                                f"{m_title} ({m_gcp_ref}) - {m_importance}"
-                            )
+                            ui.label(f"{m_title} ({m_gcp_ref}) - {m_importance}")
 
-            found_docs = getattr(comp_data, "found_essential_documents", []) if not isinstance(comp_data, dict) else comp_data.get("found_essential_documents", [])
+            found_docs = (
+                getattr(comp_data, "found_essential_documents", [])
+                if not isinstance(comp_data, dict)
+                else comp_data.get("found_essential_documents", [])
+            )
             if found_docs:
                 ui.label("Verified & Present Documents:").classes(
                     "text-sm font-bold text-green-700 mt-3"
                 )
                 with ui.column().classes("w-full gap-1 pl-2"):
                     for f in found_docs:
-                        f_title = getattr(f, "title", None) or (f.get("title") if isinstance(f, dict) else "")
-                        f_count = getattr(f, "count", 0) if not isinstance(f, dict) else f.get("count", 0)
+                        f_title = getattr(f, "title", None) or (
+                            f.get("title") if isinstance(f, dict) else ""
+                        )
+                        f_count = (
+                            getattr(f, "count", 0)
+                            if not isinstance(f, dict)
+                            else f.get("count", 0)
+                        )
                         with ui.row().classes(
                             "items-center gap-2 text-xs text-green-800"
                         ):
@@ -1384,26 +1423,47 @@ class AutoSorterApp:
 
         def _find(node):
             nonlocal file_info
-            curr_dict = node.plan if hasattr(node, "plan") and isinstance(node.plan, dict) else node
+            curr_dict = (
+                node.plan
+                if hasattr(node, "plan") and isinstance(node.plan, dict)
+                else node
+            )
             if not isinstance(curr_dict, dict):
                 return
             for k, v in curr_dict.items():
                 if k == file_key or k == file_id:
-                    if isinstance(v, SortingPlanNode) or (isinstance(v, dict) and v.get("__type__") == "file") or (hasattr(v, "node_type") and getattr(v, "node_type") == "file"):
+                    if (
+                        isinstance(v, SortingPlanNode)
+                        or (isinstance(v, dict) and v.get("__type__") == "file")
+                        or (
+                            hasattr(v, "node_type")
+                            and getattr(v, "node_type") == "file"
+                        )
+                    ):
                         file_info = v
                         return
                     elif v is None:
                         file_info = SortingPlanNode()
                         curr_dict[k] = file_info
                         return
-                if isinstance(v, (dict, BaseModel)) and not isinstance(v, SortingPlanNode):
+                if isinstance(v, (dict, BaseModel)) and not isinstance(
+                    v, SortingPlanNode
+                ):
                     _find(v)
 
         _find(self.plan)
         if file_info is None:
             file_info = SortingPlanNode()
 
-        current_target = getattr(file_info, "target_filename", None) or (file_info.get("target_filename") if isinstance(file_info, dict) else None) or file_key
+        current_target = (
+            getattr(file_info, "target_filename", None)
+            or (
+                file_info.get("target_filename")
+                if isinstance(file_info, dict)
+                else None
+            )
+            or file_key
+        )
         orig_stem, orig_ext = os.path.splitext(file_key)
         curr_stem, _ = os.path.splitext(current_target)
 
@@ -1652,15 +1712,6 @@ class AutoSorterApp:
         else:
             node_items = []
 
-        def _get_val(obj, attr_name, default=None):
-            if hasattr(obj, attr_name):
-                val = getattr(obj, attr_name)
-                if val is not None:
-                    return val
-            if isinstance(obj, dict):
-                return obj.get(attr_name, default)
-            return default
-
         def _is_file_node(obj):
             if obj is None:
                 return True
@@ -1705,11 +1756,7 @@ class AutoSorterApp:
                 icon = "insert_drive_file"
                 locked_files = getattr(self, "locked_files", {})
                 v_is_locked = bool(_get_val(v, "is_locked"))
-                is_locked = (
-                    k in locked_files
-                    or node_id in locked_files
-                    or v_is_locked
-                )
+                is_locked = k in locked_files or node_id in locked_files or v_is_locked
                 if is_locked:
                     icon = "lock"
 
@@ -1734,7 +1781,9 @@ class AutoSorterApp:
                         badge = "AI Semantic"
                         badge_color = "emerald-8"
                     elif routed_by == "jev_classifier":
-                        category = _get_val(v, "category") or _get_val(v, "jev_category")
+                        category = _get_val(v, "category") or _get_val(
+                            v, "jev_category"
+                        )
                         badge = f"Jev: {category}" if category else "Jev Fast-Path"
                         badge_color = "teal-8"
 
@@ -1836,15 +1885,6 @@ class AutoSorterApp:
                 src_dict = src_node
             else:
                 return
-
-            def _get_val(obj, attr_name, default=None):
-                if hasattr(obj, attr_name):
-                    val = getattr(obj, attr_name)
-                    if val is not None:
-                        return val
-                if isinstance(obj, dict):
-                    return obj.get(attr_name, default)
-                return default
 
             for k, v in src_dict.items():
                 node_type = _get_val(v, "node_type") or _get_val(v, "__type__")
@@ -2535,7 +2575,9 @@ def find_and_remove_file(node, file_key):
 
 def insert_file_into_plan(plan, target_folder, file_key, file_info):
     """Insert a file into the plan under a target folder path."""
-    current = plan.plan if hasattr(plan, "plan") and isinstance(plan.plan, dict) else plan
+    current = (
+        plan.plan if hasattr(plan, "plan") and isinstance(plan.plan, dict) else plan
+    )
     parts = [p for p in target_folder.replace("\\", "/").split("/") if p]
     for part in parts:
         if part not in current or not isinstance(current[part], dict):
