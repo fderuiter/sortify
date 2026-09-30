@@ -20,6 +20,7 @@ from app.core.crypto import (
     encrypt_ipc_payload,
     zero_vector_buffer,
 )
+from app.core.domain_contracts import validate_corpus_prefetch_batch
 from app.core.text_utils import sanitize_text
 
 
@@ -142,7 +143,9 @@ def validate_prompt_dump_path(dump_file: str) -> Path:
 
     debug_dir = get_debug_log_dir().resolve()
 
-    is_absolute = os.path.isabs(dump_file) or bool(re.match(r"^[a-zA-Z]:", normalized_path))
+    is_absolute = os.path.isabs(dump_file) or bool(
+        re.match(r"^[a-zA-Z]:", normalized_path)
+    )
 
     try:
         if is_absolute:
@@ -534,7 +537,10 @@ def recursive_kmeans_worker_main(
                 raw_encrypted = conn.recv_bytes()
                 payload = decrypt_ipc_payload(raw_encrypted, key)
             except Exception as e:
-                err_data = {"status": "error", "message": f"Failed receiving IPC payload: {e}"}
+                err_data = {
+                    "status": "error",
+                    "message": f"Failed receiving IPC payload: {e}",
+                }
                 try:
                     if key is not None:
                         conn.send_bytes(encrypt_ipc_payload(err_data, key))
@@ -561,9 +567,16 @@ def recursive_kmeans_worker_main(
             max_depth = payload.get("max_depth", 5)
             max_features = payload.get("max_features", 3)
             pre_fetched_vectors = payload.get("pre_fetched_vectors")
-            strategy_class_name = payload.get("strategy_class_name", "RecursiveKMeansStrategy")
+            strategy_class_name = payload.get(
+                "strategy_class_name", "RecursiveKMeansStrategy"
+            )
             thread_limit = payload.get("thread_limit")
-            pre_fetched_corpus = payload.get("pre_fetched_corpus")
+            raw_corpus = payload.get("pre_fetched_corpus")
+            pre_fetched_corpus = (
+                validate_corpus_prefetch_batch(raw_corpus)
+                if raw_corpus is not None
+                else None
+            )
         elif is_ipc:
             input_q = filenames_or_input_queue
             out_q = documents_or_output_queue
@@ -582,9 +595,16 @@ def recursive_kmeans_worker_main(
             max_depth = payload.get("max_depth", 5)
             max_features = payload.get("max_features", 3)
             pre_fetched_vectors = payload.get("pre_fetched_vectors")
-            strategy_class_name = payload.get("strategy_class_name", "RecursiveKMeansStrategy")
+            strategy_class_name = payload.get(
+                "strategy_class_name", "RecursiveKMeansStrategy"
+            )
             thread_limit = payload.get("thread_limit")
-            pre_fetched_corpus = payload.get("pre_fetched_corpus")
+            raw_corpus_ipc = payload.get("pre_fetched_corpus")
+            pre_fetched_corpus = (
+                validate_corpus_prefetch_batch(raw_corpus_ipc)
+                if raw_corpus_ipc is not None
+                else None
+            )
         else:
             filenames = filenames_or_input_queue
             documents = documents_or_output_queue
@@ -645,9 +665,7 @@ def recursive_kmeans_worker_main(
             vector_buffers = [
                 VectorBuffer(v) if v is not None else None for v in pre_fetched_vectors
             ]
-            strategy._vector_map = {
-                f: vb for f, vb in zip(filenames, vector_buffers)
-            }
+            strategy._vector_map = {f: vb for f, vb in zip(filenames, vector_buffers)}
         else:
             strategy._vector_map = {}
 
@@ -866,10 +884,16 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
             "filenames": filenames,
             "documents": documents,
             "max_folders": max_folders,
-            "stop_words": list(stop_words) if isinstance(stop_words, set) else stop_words,
+            "stop_words": list(stop_words)
+            if isinstance(stop_words, set)
+            else stop_words,
             "max_depth": max_depth,
             "max_features": max_features,
-            "pre_fetched_vectors": [vb.to_list() if vb else None for vb in vector_buffers] if vector_buffers else None,
+            "pre_fetched_vectors": [
+                vb.to_list() if vb else None for vb in vector_buffers
+            ]
+            if vector_buffers
+            else None,
             "strategy_class_name": strategy_class_name,
             "thread_limit": parent_thread_limit,
             "pre_fetched_corpus": pre_fetched_corpus,
@@ -979,7 +1003,9 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
             validated_p = _validate_sorting_plan_nodes(result["plan"])
             return SortingPlan(plan=validated_p), result["error"]
         else:
-            err_msg = result.get("message") if isinstance(result, dict) else "Unknown error"
+            err_msg = (
+                result.get("message") if isinstance(result, dict) else "Unknown error"
+            )
             logging.error(
                 f"Clustering child process failed: {err_msg}. Falling back to inline execution."
             )
@@ -1077,7 +1103,9 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
             try:
                 from sklearn.feature_extraction.text import TfidfVectorizer
 
-                sanitized_docs = [sanitize_text(doc) if doc else "" for doc in documents]
+                sanitized_docs = [
+                    sanitize_text(doc) if doc else "" for doc in documents
+                ]
 
                 vectorizer = TfidfVectorizer(
                     stop_words=list(self.stop_words), max_features=1000
@@ -1500,7 +1528,8 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                     for f, f_val in files:
                         leaf_info = (
                             f_val
-                            if isinstance(f_val, dict) and f_val.get("__type__") == "file"
+                            if isinstance(f_val, dict)
+                            and f_val.get("__type__") == "file"
                             else {
                                 "__type__": "file",
                                 "relative_source": f,
@@ -1518,7 +1547,10 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                                 if f_norm == 0:
                                     sim = 0.0
                                 else:
-                                    sim = float(np.dot(f_arr, centroid) / (f_norm * centroid_norm))
+                                    sim = float(
+                                        np.dot(f_arr, centroid)
+                                        / (f_norm * centroid_norm)
+                                    )
                             if sim < threshold:
                                 low_confidence_files[f] = leaf_info
                             else:
@@ -1529,7 +1561,8 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                     for f, f_val in files:
                         leaf_info = (
                             f_val
-                            if isinstance(f_val, dict) and f_val.get("__type__") == "file"
+                            if isinstance(f_val, dict)
+                            and f_val.get("__type__") == "file"
                             else {
                                 "__type__": "file",
                                 "relative_source": f,
@@ -1601,9 +1634,12 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         if self._generator is not None:
             return self._generator
         from app.core.shared_registry import SharedModelRegistry
+
         registry = SharedModelRegistry.get_instance()
         if not registry.is_model_loaded("generative_naming"):
-            if getattr(self, "_model_initialized", False) and getattr(self, "model_path", None):
+            if getattr(self, "_model_initialized", False) and getattr(
+                self, "model_path", None
+            ):
                 gen, task, tok = registry.get_generative_model(self.model_path)
                 self.task = task
                 if tok:
@@ -1658,7 +1694,9 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                 self._gguf_process.start()
 
                 raw_res = cooperative_queue_get(self._gguf_output_queue, timeout=10.0)
-                if isinstance(raw_res, bytes) and getattr(self, "_gguf_session_key", None):
+                if isinstance(raw_res, bytes) and getattr(
+                    self, "_gguf_session_key", None
+                ):
                     res = decrypt_ipc_payload(raw_res, self._gguf_session_key)
                 else:
                     res = raw_res
@@ -1783,9 +1821,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                     f.write(scrubbed_prompt + "\n===PROMPT_END===\n")
                 return "Mock Generated Folder Name"
             except Exception as e:
-                logging.warning(
-                    f"Failed to write prompt dump to '{dump_file}': {e}"
-                )
+                logging.warning(f"Failed to write prompt dump to '{dump_file}': {e}")
 
         prompt = scrub_inference_prompt(prompt)
 
@@ -1803,14 +1839,18 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                     if stop_seqs is not None:
                         task_data["stop"] = stop_seqs
                     if getattr(self, "_gguf_session_key", None):
-                        task_data = encrypt_ipc_payload(task_data, self._gguf_session_key)
+                        task_data = encrypt_ipc_payload(
+                            task_data, self._gguf_session_key
+                        )
                     self._gguf_input_queue.put(task_data)
                     estimated_tokens = len(prompt) // 4
                     timeout = max(8.0, min(60.0, 8.0 + (estimated_tokens / 20.0)))
                     raw_res = cooperative_queue_get(
                         self._gguf_output_queue, timeout=timeout
                     )
-                    if isinstance(raw_res, bytes) and getattr(self, "_gguf_session_key", None):
+                    if isinstance(raw_res, bytes) and getattr(
+                        self, "_gguf_session_key", None
+                    ):
                         res = decrypt_ipc_payload(raw_res, self._gguf_session_key)
                     else:
                         res = raw_res
@@ -1831,7 +1871,9 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         torch = sys.modules.get("torch")
         if torch is None:
             import torch
-        elif hasattr(torch, "__spec__") and type(torch.__spec__).__name__ == "MagicMock":
+        elif (
+            hasattr(torch, "__spec__") and type(torch.__spec__).__name__ == "MagicMock"
+        ):
             from importlib.machinery import ModuleSpec
 
             torch.__spec__ = ModuleSpec("torch", None)
@@ -2074,7 +2116,9 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                         else "english",
                         max_features=1000,
                     )
-                    safe_docs = [sanitize_text(doc) if doc else "" for doc in filtered_documents]
+                    safe_docs = [
+                        sanitize_text(doc) if doc else "" for doc in filtered_documents
+                    ]
                     X = vectorizer.fit_transform(safe_docs)
                     cluster_vectors = [row.toarray()[0] for row in X]
                 except Exception as e:
@@ -2223,7 +2267,9 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                                 for folder, texts in historical_folder_texts.items():
                                     for text in texts:
                                         sanitized_t = sanitize_text(text or "")
-                                        if sanitized_t and not sanitized_t.startswith("[STATUS:"):
+                                        if sanitized_t and not sanitized_t.startswith(
+                                            "[STATUS:"
+                                        ):
                                             all_texts.append(sanitized_t)
                                             folder_indices.append(folder)
 
@@ -2527,7 +2573,10 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                             sublinear_tf=True,
                         )
 
-                        hist_texts = [sanitize_text(ex["text"] or "") for ex in historical_examples]
+                        hist_texts = [
+                            sanitize_text(ex["text"] or "")
+                            for ex in historical_examples
+                        ]
                         target_text = sanitize_text(" ".join(filtered_documents or []))
 
                         hist_vectors = vectorizer.fit_transform(hist_texts)
@@ -2881,7 +2930,9 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
 
                         if hist_vectors:
                             # Tokenize target text
-                            target_text = sanitize_text(" ".join(filtered_documents or []))
+                            target_text = sanitize_text(
+                                " ".join(filtered_documents or [])
+                            )
                             stop_words_list = (
                                 list(self.stop_words)
                                 if getattr(self, "stop_words", None)
@@ -3015,7 +3066,10 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                             sublinear_tf=True,
                         )
 
-                        hist_texts = [sanitize_text(ex["text"] or "") for ex in historical_examples]
+                        hist_texts = [
+                            sanitize_text(ex["text"] or "")
+                            for ex in historical_examples
+                        ]
                         target_text = sanitize_text(" ".join(filtered_documents or []))
 
                         # Fit vocabulary and IDF weights exclusively using historical document data to prevent target-driven weight warping

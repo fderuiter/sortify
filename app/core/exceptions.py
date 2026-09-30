@@ -35,3 +35,11 @@ class CacheError(SortifyBaseError):
     """Base exception for database-backed cache operations."""
 
     pass
+
+
+class SchemaValidationError(SortifyBaseError, ValueError):
+    """Base exception for schema contract validation failures across event loop boundaries."""
+
+    def __init__(self, message: str, payload_context: str | None = None) -> None:
+        super().__init__(message)
+        self.payload_context = payload_context

@@ -250,6 +250,21 @@ def render_settings_modal_card(container, state="default", viewport_width=1280):
                 ui.switch("Preserve Original Folder Hierarchy", value=False).props(
                     'aria-label="Preserve Hierarchy Switch"'
                 )
+                from app.ui.settings import create_accessible_slider
+
+                ui.label("Worker Concurrency Limit").classes("text-sm text-gray-700 mt-2")
+                create_accessible_slider(
+                    min=1, max=64, value=4, step=1, aria_label="Worker Concurrency Limit"
+                )
+                ui.label("Coherence Threshold").classes("text-sm text-gray-700 mt-2")
+                create_accessible_slider(
+                    min=0.0,
+                    max=1.0,
+                    value=0.5,
+                    step=0.01,
+                    aria_label="Coherence Threshold",
+                    value_formatter=lambda v: f"{float(v):.2f}",
+                )
 
             with ui.row().classes("w-full justify-end gap-2 mt-4 flex-wrap"):
                 ui.button("Save Settings", icon="save").classes(
