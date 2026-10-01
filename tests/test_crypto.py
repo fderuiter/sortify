@@ -617,9 +617,11 @@ def test_get_fallback_keys_dir_windows_and_posix(monkeypatch):
     """Verify fallback key store directory resolution for Windows and POSIX environments."""
     import pathlib
 
+    # Use PurePath for cross-platform os.name mocking
+    monkeypatch.setattr("app.core.crypto.Path", pathlib.PurePath)
+
     # 1. Windows with APPDATA set
     monkeypatch.setattr(os, "name", "nt")
-    monkeypatch.setattr("app.core.crypto.Path", pathlib.PurePath)
     monkeypatch.setenv("APPDATA", "/fake/appdata")
     assert (
         get_fallback_keys_dir()
@@ -628,19 +630,18 @@ def test_get_fallback_keys_dir_windows_and_posix(monkeypatch):
 
     # 2. Windows without APPDATA or POSIX with HOME set
     monkeypatch.setattr(os, "name", "posix")
-    monkeypatch.setattr("app.core.crypto.Path", pathlib.Path)
     monkeypatch.setenv("HOME", "/fake/home")
-    assert get_fallback_keys_dir() == Path("/fake/home") / ".sortify" / "keys"
+    assert get_fallback_keys_dir() == pathlib.PurePath("/fake/home") / ".sortify" / "keys"
 
     # 3. Non-Windows with HOME and USERPROFILE unset, Path.home() throwing error
     monkeypatch.delenv("HOME", raising=False)
     monkeypatch.delenv("USERPROFILE", raising=False)
     monkeypatch.delenv("APPDATA", raising=False)
     monkeypatch.setattr(
-        Path, "home", MagicMock(side_effect=Exception("Path.home failed"))
+        pathlib.Path, "home", MagicMock(side_effect=Exception("Path.home failed"))
     )
     monkeypatch.setattr(os.path, "expanduser", lambda p: "/fake/expanduser")
-    assert get_fallback_keys_dir() == Path("/fake/expanduser") / ".sortify" / "keys"
+    assert get_fallback_keys_dir() == pathlib.PurePath("/fake/expanduser") / ".sortify" / "keys"
 
 
 def test_secure_delete_file_edge_cases(tmp_path, monkeypatch, caplog):

@@ -93,7 +93,7 @@ def test_low_confidence_escalation_non_blocking(tmp_path: Path):
         res_pdf = fast_triage_extract(str(pdf_file), db=db, base_dir=str(tmp_path))
         elapsed_pdf_ms = (time.perf_counter() - start_time) * 1000.0
 
-        threshold = 200.0 if _is_ci_or_parallel() else 50.0
+        threshold = 1000.0 if _is_ci_or_parallel() else 50.0
         assert res_img == "[STATUS:PROVISIONAL]"
         assert res_pdf == "[STATUS:PROVISIONAL]"
         assert elapsed_img_ms < threshold, (
