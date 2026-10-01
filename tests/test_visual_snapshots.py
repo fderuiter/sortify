@@ -109,6 +109,10 @@ def assert_svg_snapshot(snapshot_name: str, actual_svg: str) -> None:
     with open(snapshot_path, "r", encoding="utf-8", newline="\n") as f:
         expected_svg = f.read().replace("\r\n", "\n")
 
+    if sanitized_actual != expected_svg:
+        with open(snapshot_path + ".actual", "w", encoding="utf-8", newline="\n") as f:
+            f.write(sanitized_actual)
+
     assert sanitized_actual == expected_svg, (
         f"SVG visual snapshot mismatch for '{snapshot_name}'. Set UPDATE_SNAPSHOTS=1 to re-baseline."
     )
@@ -236,16 +240,21 @@ def test_settings_modal_snapshot():
 
     async def _test():
         settings = AppSettings()
-        settings.AI_CONSENT_GRANTED = True
+        settings._settings_model.AI_CONSENT_GRANTED = True
         app = AutoSorterTUI(settings=settings)
         async with app.run_test(size=(100, 35)) as pilot:
             modal = SettingsModal(app.settings)
             app.push_screen(modal)
             for _ in range(5):
                 await pilot.pause()
-            modal.query_one(".modal-box").scroll_home(animate=False)
-            for _ in range(5):
-                await pilot.pause()
+            # scroll any scrollable container inside the modal to the top
+            for w in modal.query("*"):
+                if getattr(w, "allow_vertical_scroll", False):
+                    w.scroll_home(animate=False)
+            modal.scroll_home(animate=False)
+            await pilot.pause()
+            await pilot.wait_for_scheduled_animations()
+            await pilot.pause()
             svg = app.export_screenshot()
             assert_svg_snapshot("settings_modal", svg)
 
