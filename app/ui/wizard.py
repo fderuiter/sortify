@@ -10,6 +10,7 @@ from app.core.downloader import (
     DownloadManager,
     ModelVerificationError,
 )
+from app.core.path_utils import check_local_models_exist
 from app.ui.dialog_helper import get_dialog_card_classes
 from app.ui.tokens import TOKENS
 from app.ui.toolbar import OverflowToolbar
@@ -40,6 +41,8 @@ class ThreadSafeState:
 
 def show_wizard(parent_app, settings):
     """Show the initial setup wizard."""
+    models_exist = check_local_models_exist()
+
     with ui.dialog() as dialog, ui.card().classes(get_dialog_card_classes("md")):
         ui.label("AI Features Setup").classes("text-xl font-bold mb-4").props(
             'aria-label="Setup Wizard Title"'
@@ -189,7 +192,14 @@ def show_wizard(parent_app, settings):
             action_row_welcome.set_visibility(True)
 
         def accept():
-            start_download()
+            if models_exist:
+                settings.AI_CONSENT_GRANTED = True
+                ui.notify("AI Features Enabled.", type="positive")
+                if hasattr(parent_app, "update_ai_warning"):
+                    parent_app.update_ai_warning()
+                dialog.close()
+            else:
+                start_download()
 
         def decline():
             settings.AI_CONSENT_GRANTED = False
@@ -199,15 +209,21 @@ def show_wizard(parent_app, settings):
             dialog.close()
 
         # Welcome Buttons Layout
+        button_label = "Enable AI Features" if models_exist else "Accept & Download"
+        button_tooltip = (
+            "Enable AI features using local model files"
+            if models_exist
+            else "Accept setup and download required AI models"
+        )
         action_row_welcome = OverflowToolbar(classes="w-full justify-between gap-2")
         action_row_welcome.add_action(
-            "Accept & Download",
+            button_label,
             on_click=accept,
             is_primary=True,
             priority=10,
             classes="bg-green-500 text-white",
-            props='aria-label="Accept and Download Button"',
-            tooltip="Accept setup and download required AI models",
+            props=f'aria-label="{button_label} Button"',
+            tooltip=button_tooltip,
         )
         action_row_welcome.add_action(
             "Decline",

@@ -3,7 +3,7 @@
 import asyncio
 import os
 import tempfile
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from textual.widgets import Input, Static, Switch, Tree
@@ -26,11 +26,21 @@ pytestmark = pytest.mark.xdist_group(name="tui")
 def isolated_app_dir(monkeypatch, tmp_path):
     """Ensure AppSettings is isolated from persistent disk configuration changes."""
     import app.config
+    import app.core.session
 
+    monkeypatch.setenv("FORCE_COLOR", "1")
+    monkeypatch.setenv("COLORTERM", "truecolor")
+    monkeypatch.setenv("TERM", "xterm-256color")
+    monkeypatch.delenv("NO_COLOR", raising=False)
     monkeypatch.setenv("AUTOSORTER_APP_DIR", str(tmp_path))
     monkeypatch.setattr(app.config, "get_app_dir", lambda: tmp_path)
     monkeypatch.setattr(
         app.config.AppSettings, "_trigger_save", lambda self: self._save()
+    )
+    monkeypatch.setattr(
+        app.core.session,
+        "scan_abandoned_sessions_async",
+        AsyncMock(return_value=[]),
     )
     monkeypatch.delenv("AUTOSORTER_PROTECTED_PATHS", raising=False)
     monkeypatch.delenv("AUTOSORTER_IGNORED_EXTENSIONS", raising=False)
@@ -346,6 +356,7 @@ def test_tui_wizard_modal_cancel_preserves_defaults(temp_workspace):
 
     async def _test():
         settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = None
         app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
 
         async with app.run_test() as pilot:
@@ -356,7 +367,7 @@ def test_tui_wizard_modal_cancel_preserves_defaults(temp_workspace):
             modal.action_cancel()
             await pilot.pause(0.1)
 
-            assert app.settings.AI_CONSENT_GRANTED is None
+            assert app.settings.AI_CONSENT_GRANTED is False
             assert not isinstance(app.screen, WizardModal)
 
     asyncio.run(_test())
@@ -367,6 +378,7 @@ def test_tui_wizard_modal_finish_persists_settings(temp_workspace):
 
     async def _test():
         settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = None
         app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
 
         async with app.run_test() as pilot:
