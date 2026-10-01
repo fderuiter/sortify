@@ -1036,9 +1036,6 @@ def test_tui_speech_binary_windows_posix_path_filtering(temp_workspace):
 
 def test_tui_adaptive_breakpoint_layout_narrow_and_wide(temp_workspace):
     """Verify AutoSorterTUI toggles narrow container class based on 100-column breakpoint."""
-    from textual.events import Resize
-    from textual.geometry import Size
-
     async def _test():
         settings = AppSettings()
         app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
@@ -1049,12 +1046,12 @@ def test_tui_adaptive_breakpoint_layout_narrow_and_wide(temp_workspace):
             assert dual_pane.has_class("narrow")
 
             # Simulate resize event to wide viewport (120 cols >= 100)
-            app.post_message(Resize(size=Size(120, 30), virtual_size=Size(120, 30)))
+            await pilot.resize_terminal(120, 30)
             await pilot.pause()
             assert not dual_pane.has_class("narrow")
 
             # Simulate resize back to narrow viewport (80 cols < 100)
-            app.post_message(Resize(size=Size(80, 24), virtual_size=Size(80, 24)))
+            await pilot.resize_terminal(80, 24)
             await pilot.pause()
             assert dual_pane.has_class("narrow")
 
@@ -1063,9 +1060,6 @@ def test_tui_adaptive_breakpoint_layout_narrow_and_wide(temp_workspace):
 
 def test_modal_screens_responsive_layout(temp_workspace):
     """Verify modal screens toggle narrow class when resized below 80 columns."""
-    from textual.events import Resize
-    from textual.geometry import Size
-
     async def _test():
         settings = AppSettings()
 
@@ -1078,7 +1072,7 @@ def test_modal_screens_responsive_layout(temp_workspace):
             assert modal.has_class("narrow")
 
             # Resize to wide
-            app.post_message(Resize(size=Size(100, 30), virtual_size=Size(100, 30)))
+            await pilot.resize_terminal(100, 30)
             await pilot.pause()
             assert not modal.has_class("narrow")
 
@@ -1090,7 +1084,7 @@ def test_modal_screens_responsive_layout(temp_workspace):
             await pilot.pause()
             assert modal2.has_class("narrow")
 
-            app2.post_message(Resize(size=Size(100, 30), virtual_size=Size(100, 30)))
+            await pilot.resize_terminal(100, 30)
             await pilot.pause()
             assert not modal2.has_class("narrow")
 
