@@ -1687,18 +1687,47 @@ class Database:
         """Retrieve quarantine staging records for a base directory."""
         import json
 
+        if not base_dir:
+            all_recs = self.get_all_quarantine_records()
+            return [r for r in all_recs if r["status"] == status] if status else all_recs
+
         conn = get_db_connection(self.db_path)
         with conn:
+            b_norm = os.path.normpath(base_dir)
+            b_slash = base_dir.replace("\\", "/")
+            b_backslash = base_dir.replace("/", "\\")
+            try:
+                b_abs = os.path.normpath(os.path.abspath(base_dir))
+                b_abs_slash = b_abs.replace("\\", "/")
+                b_abs_backslash = b_abs.replace("/", "\\")
+            except Exception:
+                b_abs = b_norm
+                b_abs_slash = b_slash
+                b_abs_backslash = b_backslash
+
+            candidates = [
+                base_dir, b_norm, b_slash, b_backslash,
+                b_abs, b_abs_slash, b_abs_backslash
+            ]
+
             if status:
                 cursor = conn.execute(
                     """
                     SELECT job_id, base_dir, original_filepath, staged_filepath, file_hash,
                            status, policy_action, audit_log, created_at, updated_at, error_message
                     FROM quarantine_records
-                    WHERE base_dir = ? AND status = ?
+                    WHERE (
+                        LOWER(base_dir) = LOWER(?) OR
+                        LOWER(base_dir) = LOWER(?) OR
+                        LOWER(base_dir) = LOWER(?) OR
+                        LOWER(base_dir) = LOWER(?) OR
+                        LOWER(base_dir) = LOWER(?) OR
+                        LOWER(base_dir) = LOWER(?) OR
+                        LOWER(base_dir) = LOWER(?)
+                    ) AND status = ?
                     ORDER BY created_at ASC
                     """,
-                    (base_dir, status),
+                    (*candidates, status),
                 )
             else:
                 cursor = conn.execute(
@@ -1706,10 +1735,18 @@ class Database:
                     SELECT job_id, base_dir, original_filepath, staged_filepath, file_hash,
                            status, policy_action, audit_log, created_at, updated_at, error_message
                     FROM quarantine_records
-                    WHERE base_dir = ?
+                    WHERE (
+                        LOWER(base_dir) = LOWER(?) OR
+                        LOWER(base_dir) = LOWER(?) OR
+                        LOWER(base_dir) = LOWER(?) OR
+                        LOWER(base_dir) = LOWER(?) OR
+                        LOWER(base_dir) = LOWER(?) OR
+                        LOWER(base_dir) = LOWER(?) OR
+                        LOWER(base_dir) = LOWER(?)
+                    )
                     ORDER BY created_at ASC
                     """,
-                    (base_dir,),
+                    candidates,
                 )
             rows = cursor.fetchall()
             results = []
@@ -1720,21 +1757,37 @@ class Database:
                         audit = json.loads(row[7])
                     except Exception:
                         audit = []
-                results.append(
-                    {
-                        "job_id": row[0],
-                        "base_dir": row[1],
-                        "original_filepath": row[2],
-                        "staged_filepath": row[3],
-                        "file_hash": row[4],
-                        "status": row[5],
-                        "policy_action": row[6],
-                        "audit_log": audit,
-                        "created_at": row[8],
-                        "updated_at": row[9],
-                        "error_message": row[10],
-                    }
-                )
+                results.append({
+                    "job_id": row[0],
+                    "base_dir": row[1],
+                    "original_filepath": row[2],
+                    "staged_filepath": row[3],
+                    "file_hash": row[4],
+                    "status": row[5],
+                    "policy_action": row[6],
+                    "audit_log": audit,
+                    "created_at": row[8],
+                    "updated_at": row[9],
+                    "error_message": row[10],
+                })
+
+            if not results:
+                # Fallback matching for unusual or relative path representations
+                try:
+                    target_norm = os.path.normcase(os.path.abspath(base_dir)).rstrip("\\/")
+                    for r in self.get_all_quarantine_records():
+                        rec_base = r.get("base_dir")
+                        if rec_base:
+                            try:
+                                rec_norm = os.path.normcase(os.path.abspath(rec_base)).rstrip("\\/")
+                                if rec_norm == target_norm:
+                                    if status is None or r["status"] == status:
+                                        results.append(r)
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
+
             return results
 
     def get_all_quarantine_records(self) -> list[dict]:

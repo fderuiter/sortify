@@ -1,10 +1,9 @@
 """Global log filter to scrub sensitive user paths from log output."""
 
 import logging
-import os
 import traceback
-from pathlib import Path
 
+from app.core.path_utils import scrub_user_home_paths
 from app.core.text_utils import sanitize_secret_patterns
 
 
@@ -13,30 +12,7 @@ def scrub_diagnostic_text(text: str, home_dir: str = None) -> str:
     if not isinstance(text, str) or not text:
         return text
 
-    if home_dir is None:
-        try:
-            home_dir = str(Path.home())
-        except Exception:
-            home_dir = None
-
-    if home_dir and home_dir not in ("/", "\\", ""):
-        home_dirs = [home_dir]
-        try:
-            expanded = os.path.expanduser("~")
-            if expanded and expanded not in home_dirs:
-                home_dirs.append(expanded)
-        except Exception:
-            pass
-
-        for h in home_dirs:
-            if not h or h in ("/", "\\"):
-                continue
-            fwd = h.replace("\\", "/")
-            back = h.replace("/", "\\")
-            dbl_back = back.replace("\\", "\\\\")
-            text = text.replace(dbl_back, "<USER_HOME>")
-            text = text.replace(back, "<USER_HOME>")
-            text = text.replace(fwd, "<USER_HOME>")
+    text = scrub_user_home_paths(text, home_dir=home_dir)
 
     # Delegate secret credential scrubbing directly to app.core.text_utils
     text = sanitize_secret_patterns(text)

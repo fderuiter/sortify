@@ -82,6 +82,14 @@ The following parameters are extracted directly from the application's configura
 - **Default**: `PydanticUndefined`
 - **Required**: `False`
 
+### `AUTO_QUARANTINE_RATINGS`
+- **Default**: `['CRITICAL', 'HIGH']`
+- **Required**: `False`
+
+### `QUARANTINE_DIR_NAME`
+- **Default**: `_Compliance_Quarantine`
+- **Required**: `False`
+
 ### `PROXY`
 - **Default**: ``
 - **Required**: `False`
