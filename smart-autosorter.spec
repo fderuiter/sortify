@@ -476,27 +476,8 @@ exe_cli = EXE(
     entitlements_file=None,
 )
 
-exe_gui = EXE(
-    pyz,
-    a.scripts,
-    [],
-    exclude_binaries=True,
-    name='smart-autosorter-gui',
-    debug=False,
-    bootloader_ignore_signals=False,
-    strip=False,
-    upx=False,
-    console=False,
-    disable_windowed_traceback=False,
-    argv_emulation=False,
-    target_arch=None,
-    codesign_identity=None,
-    entitlements_file=None,
-)
-
 coll = COLLECT(
     exe_cli,
-    exe_gui,
     a.binaries,
     a.zipfiles,
     a.datas,
