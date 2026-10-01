@@ -221,6 +221,21 @@ def get_decryption_executor():
     return SharedWorkerPool.get_instance()
 
 
+class InMemoryDBMock:
+    """In-memory database mock for querying pre-fetched model metadata in strategy evaluation."""
+
+    def __init__(self, meta: dict | None = None):
+        self._meta = meta or {}
+
+    def get_model_metadata(self, key: str):
+        """Retrieve model metadata value for key."""
+        return self._meta.get(key)
+
+    def set_model_metadata(self, key: str, value):
+        """Store model metadata key-value pair."""
+        self._meta[key] = value
+
+
 class IsolatedStrategyMixin:
     """Mixin class to isolate execution parameters, target paths, and active document maps to the executing thread/context."""
 
@@ -1958,16 +1973,6 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                             SemanticEmbeddingManager,
                         )
 
-                        class InMemoryDBMock:
-                            def __init__(self, meta):
-                                self._meta = meta or {}
-
-                            def get_model_metadata(self, key):
-                                return self._meta.get(key)
-
-                            def set_model_metadata(self, key, value):
-                                self._meta[key] = value
-
                         dummy_db = InMemoryDBMock(model_metadata)
                         embedding_manager = SemanticEmbeddingManager(
                             dummy_db, model_path=self.model_path
@@ -2328,16 +2333,6 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
             if model_metadata and getattr(self, "model_path", None):
                 try:
                     from app.core.semantic_embeddings import SemanticEmbeddingManager
-
-                    class InMemoryDBMock:
-                        def __init__(self, meta):
-                            self._meta = meta or {}
-
-                        def get_model_metadata(self, key):
-                            return self._meta.get(key)
-
-                        def set_model_metadata(self, key, value):
-                            self._meta[key] = value
 
                     dummy_db = InMemoryDBMock(model_metadata)
                     embedding_manager = SemanticEmbeddingManager(
