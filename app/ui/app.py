@@ -2305,7 +2305,7 @@ class AutoSorterApp:
                 if self.ai_warnings_label:
                     self.ai_warnings_label.set_visibility(False)
 
-        asyncio.create_task(_run())
+        self._run_async(_run())
 
     def print_terminal_tree(self):
         """Print formatted organization plan tree to terminal stdout."""
