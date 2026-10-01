@@ -363,6 +363,20 @@ class AppSession:
         except Exception:
             pass
         if self.session_dir and os.path.exists(self.session_dir):
-            from app.core.resilient_file_ops import resilient_rmtree
+            has_history = False
+            history_db = self.session_dir / "history.db"
+            if history_db.exists():
+                try:
+                    from app.core.db_conn import get_db_connection
 
-            resilient_rmtree(self.session_dir, ignore_errors=True)
+                    conn = get_db_connection(str(history_db))
+                    with conn:
+                        cur = conn.execute("SELECT COUNT(*) FROM sessions")
+                        row = cur.fetchone()
+                        has_history = bool(row and row[0] > 0)
+                except Exception:
+                    pass
+            if not has_history:
+                from app.core.resilient_file_ops import resilient_rmtree
+
+                resilient_rmtree(self.session_dir, ignore_errors=True)

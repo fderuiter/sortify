@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "a387239e0d0e12847899e0d763165bab49dba632267269919835cab9944d6a20"
+    "checksum": "6930e28a86c01b428da57d429c057c64ad9c423b11dcc4480d443488be1cbc48"
   },
   "cli": {
     "app/main.py": [
@@ -133,7 +133,26 @@
         ],
         "caller": "parser_sort",
         "keywords": {
+          "default": null,
           "help": "Target directory to sort",
+          "nargs": "?",
+          "type": "str"
+        },
+        "method": "add_argument"
+      },
+      {
+        "args": [
+          "--preset"
+        ],
+        "caller": "parser_sort",
+        "keywords": {
+          "choices": [
+            "demo",
+            "downloads",
+            "documents"
+          ],
+          "default": null,
+          "help": "Use standard workspace preset directory (demo, downloads, documents)",
           "type": "str"
         },
         "method": "add_argument"
@@ -188,7 +207,26 @@
         ],
         "caller": "parser_scan",
         "keywords": {
+          "default": null,
           "help": "Target directory to scan",
+          "nargs": "?",
+          "type": "str"
+        },
+        "method": "add_argument"
+      },
+      {
+        "args": [
+          "--preset"
+        ],
+        "caller": "parser_scan",
+        "keywords": {
+          "choices": [
+            "demo",
+            "downloads",
+            "documents"
+          ],
+          "default": null,
+          "help": "Use standard workspace preset directory (demo, downloads, documents)",
           "type": "str"
         },
         "method": "add_argument"
@@ -271,6 +309,72 @@
           "default": null,
           "help": "Directory to watch",
           "nargs": "?"
+        },
+        "method": "add_argument"
+      },
+      {
+        "args": [
+          "undo"
+        ],
+        "caller": "subparsers",
+        "keywords": {
+          "help": "Rollback sorting operations and manage history sessions"
+        },
+        "method": "add_parser"
+      },
+      {
+        "args": [
+          "--session-id"
+        ],
+        "caller": "parser_undo",
+        "keywords": {
+          "default": null,
+          "help": "Specific historical session ID UUID to rollback",
+          "type": "str"
+        },
+        "method": "add_argument"
+      },
+      {
+        "args": [
+          "--list"
+        ],
+        "caller": "parser_undo",
+        "keywords": {
+          "action": "store_true",
+          "help": "List active and completed historical sorting sessions"
+        },
+        "method": "add_argument"
+      },
+      {
+        "args": [
+          "--latest"
+        ],
+        "caller": "parser_undo",
+        "keywords": {
+          "action": "store_true",
+          "help": "Rollback the latest historical sorting session"
+        },
+        "method": "add_argument"
+      },
+      {
+        "args": [
+          "--force"
+        ],
+        "caller": "parser_undo",
+        "keywords": {
+          "action": "store_true",
+          "help": "Force rollback even if original files are missing"
+        },
+        "method": "add_argument"
+      },
+      {
+        "args": [
+          "--json"
+        ],
+        "caller": "parser_undo",
+        "keywords": {
+          "action": "store_true",
+          "help": "Output session list or rollback status in structured JSON format"
         },
         "method": "add_argument"
       },

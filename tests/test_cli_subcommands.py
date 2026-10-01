@@ -321,7 +321,16 @@ def test_build_parser_factory():
         "ledger",
         "quarantine",
         "cro",
+        "undo",
     }
+
+    undo_parser = subparsers_action.choices["undo"]
+    undo_help = undo_parser.format_help()
+    assert "--session-id" in undo_help
+    assert "--list" in undo_help
+    assert "--latest" in undo_help
+    assert "--force" in undo_help
+    assert "--json" in undo_help
 
     sort_parser = subparsers_action.choices["sort"]
     sort_help = sort_parser.format_help()
@@ -387,3 +396,78 @@ def test_headless_gui_exe_name_honored():
         code, stdout, stderr = run_cli([], prog="smart-autosorter-gui.exe")
         assert code == 0
         mock_run_tui.assert_called_once()
+
+
+@pytest.mark.xdist_group(name="cli_subcommands")
+def test_preset_demo_sorting(tmp_path, monkeypatch):
+    """Test sort --preset demo runs batch sorting against sandbox/demo_workspace."""
+    demo_dir = tmp_path / "sandbox" / "demo_workspace"
+    create_sample_corpus(demo_dir)
+    monkeypatch.chdir(tmp_path)
+
+    code, stdout, stderr = run_cli(["sort", "--preset", "demo", "--json"])
+    assert code == 0, f"Expected exit code 0, got {code}. Stderr: {stderr}"
+    data = json.loads(stdout)
+    assert data["status"] == "success"
+    assert Path(data["target_directory"]).resolve() == demo_dir.resolve()
+
+
+@pytest.mark.xdist_group(name="cli_subcommands")
+def test_preset_downloads_scan_json(tmp_path, monkeypatch):
+    """Test scan --preset downloads --json outputs directory scan JSON for ~/Downloads."""
+    fake_home = tmp_path / "user_home"
+    downloads_dir = fake_home / "Downloads"
+    create_sample_corpus(downloads_dir)
+    monkeypatch.setattr(Path, "home", lambda: fake_home)
+
+    code, stdout, stderr = run_cli(["scan", "--preset", "downloads", "--json"])
+    assert code == 0, f"Expected exit code 0, got {code}. Stderr: {stderr}"
+    data = json.loads(stdout)
+    assert data["status"] == "success"
+    assert Path(data["target_directory"]).resolve() == downloads_dir.resolve()
+    assert "plan" in data
+
+
+@pytest.mark.xdist_group(name="cli_subcommands")
+def test_preset_nonexistent_directory_error(tmp_path, monkeypatch):
+    """Test preset with non-existent directory fails gracefully with descriptive error."""
+    fake_home = tmp_path / "nonexistent_home"
+    monkeypatch.setattr(Path, "home", lambda: fake_home)
+
+    code, stdout, stderr = run_cli(["scan", "--preset", "downloads"])
+    assert code == 1
+    assert "does not exist" in stderr or "Error" in stderr
+
+
+@pytest.mark.xdist_group(name="cli_subcommands")
+def test_undo_subcommand_list_and_rollback(tmp_path, monkeypatch):
+    """Test undo --list and undo --latest / --session-id commands."""
+    app_dir = tmp_path / "app_dir"
+    monkeypatch.setenv("AUTOSORTER_APP_DIR", str(app_dir))
+
+    src_dir = tmp_path / "workspace"
+    create_sample_corpus(src_dir)
+
+    # First, run live sort to create a historical session
+    code_sort, stdout_sort, stderr_sort = run_cli(["sort", str(src_dir), "--json"])
+    assert code_sort == 0, f"Sort failed: {stderr_sort}"
+
+    # Test undo --list --json
+    code_list, stdout_list, stderr_list = run_cli(["undo", "--list", "--json"])
+    assert code_list == 0, f"Undo list failed: {stderr_list}"
+    sessions = json.loads(stdout_list)
+    assert isinstance(sessions, list)
+    assert len(sessions) >= 1
+    session_id = sessions[0]["session_id"]
+
+    # Test undo --list human readable text
+    code_list_txt, stdout_list_txt, stderr_list_txt = run_cli(["undo", "--list"])
+    assert code_list_txt == 0
+    assert "Session ID:" in stdout_list_txt or "Session ID:" in stderr_list_txt
+
+    # Test undo --session-id <UUID> --json
+    code_undo, stdout_undo, stderr_undo = run_cli(["undo", "--session-id", session_id, "--json"])
+    assert code_undo == 0, f"Undo failed: {stderr_undo}"
+    data_undo = json.loads(stdout_undo)
+    assert data_undo["status"] == "success"
+    assert data_undo["session_id"] == session_id
