@@ -8489,6 +8489,21 @@
                   "annotation": "float",
                   "default": "300.0",
                   "name": "worker_timeout"
+                },
+                {
+                  "annotation": "Optional[Any]",
+                  "default": "None",
+                  "name": "jev_classifier"
+                },
+                {
+                  "annotation": "Optional[List[str]]",
+                  "default": "None",
+                  "name": "auto_quarantine_ratings"
+                },
+                {
+                  "annotation": "Optional[Any]",
+                  "default": "None",
+                  "name": "runtime_settings"
                 }
               ],
               "returns": null

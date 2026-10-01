@@ -115,6 +115,22 @@
       "title": "Protected Paths",
       "type": "array"
     },
+    "AUTO_QUARANTINE_RATINGS": {
+      "default": [
+        "CRITICAL",
+        "HIGH"
+      ],
+      "items": {
+        "type": "string"
+      },
+      "title": "Auto Quarantine Ratings",
+      "type": "array"
+    },
+    "QUARANTINE_DIR_NAME": {
+      "default": "_Compliance_Quarantine",
+      "title": "Quarantine Dir Name",
+      "type": "string"
+    },
     "PROXY": {
       "default": "",
       "title": "Proxy",

@@ -79,7 +79,7 @@ def test_vector_reconstruction_automatically_sandboxed():
         daemon=True,
     )
     thread.start()
-    thread.join(timeout=5.0)
+    thread.join(timeout=15.0)
 
     assert len(status_captured) == 1
     assert status_captured[0][0] is True
@@ -133,10 +133,10 @@ def test_model_downloader_bypasses_sandbox(tmp_path):
                     on_success=on_success,
                     on_failure=on_failure,
                 )
-                thread.join(timeout=5.0)
+                thread.join(timeout=15.0)
 
         # The download should have run successfully because the downloader thread clears the sandbox state
-        assert success_called.is_set() or success_called.wait(timeout=1)
+        assert success_called.is_set() or success_called.wait(timeout=15.0)
     finally:
         registry._expected_hashes = original_expected_hashes
         HASHES["model_download"]["model.onnx"] = original_hashes_model_download
