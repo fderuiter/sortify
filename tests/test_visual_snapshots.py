@@ -159,7 +159,7 @@ def test_tui_main_screen_snapshot():
 
     async def _test():
         settings = AppSettings()
-        settings.AI_CONSENT_GRANTED = True
+        settings._settings_model.AI_CONSENT_GRANTED = True
         app = AutoSorterTUI(settings=settings)
         async with app.run_test(size=(100, 30)) as pilot:
             for _ in range(5):
@@ -175,7 +175,7 @@ def test_tui_populated_plan_snapshot():
 
     async def _test():
         settings = AppSettings()
-        settings.AI_CONSENT_GRANTED = True
+        settings._settings_model.AI_CONSENT_GRANTED = True
         app = AutoSorterTUI(settings=settings, base_dir="/dummy/workspace")
         async with app.run_test(size=(100, 30)) as pilot:
             app.plan = {
