@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "79247a26b2254c3eb852e29d30cc8822106b2fc9ba75de417f8e8e84b779b60c"
+    "checksum": "43f445aba9d28236832eef89dc8c698d5bad6545db1cb57827d8c0a8b195a052"
   },
   "cli": {
     "app/main.py": [
@@ -4797,6 +4797,35 @@
           ]
         },
         {
+          "class_name": "DataFlowDiagramSpec",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "to_mermaid",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": "str"
+            }
+          ]
+        },
+        {
+          "class_name": "DataStoreNode",
+          "decorators": [],
+          "methods": []
+        },
+        {
+          "class_name": "DataStreamEdge",
+          "decorators": [],
+          "methods": []
+        },
+        {
           "class_name": "DiagramEdge",
           "decorators": [],
           "methods": []
@@ -4830,6 +4859,11 @@
         },
         {
           "class_name": "DiagramSubgraph",
+          "decorators": [],
+          "methods": []
+        },
+        {
+          "class_name": "ExternalEntityNode",
           "decorators": [],
           "methods": []
         },
@@ -4913,6 +4947,11 @@
               "returns": null
             }
           ]
+        },
+        {
+          "class_name": "ProcessNode",
+          "decorators": [],
+          "methods": []
         },
         {
           "class_name": "SequenceActivation",

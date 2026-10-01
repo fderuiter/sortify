@@ -13,10 +13,15 @@ from unittest.mock import MagicMock
 from app.core.diagram_schema import (
     SYSTEM_DIAGRAM_SPECS,
     ComponentDiagramSpec,
+    DataFlowDiagramSpec,
+    DataStoreNode,
+    DataStreamEdge,
     DiagramEdge,
     DiagramNode,
     DiagramSpec,
     DiagramSubgraph,
+    ExternalEntityNode,
+    ProcessNode,
 )
 from app.ui.a11y_runner import (
     run_all_catalog_scans,
@@ -27,6 +32,11 @@ __all__ = [
     "CATALOG_REGISTRY",
     "SYSTEM_DIAGRAM_SPECS",
     "ComponentDiagramSpec",
+    "DataFlowDiagramSpec",
+    "DataStoreNode",
+    "ProcessNode",
+    "ExternalEntityNode",
+    "DataStreamEdge",
     "DiagramSpec",
     "DiagramNode",
     "DiagramEdge",

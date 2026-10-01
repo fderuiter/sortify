@@ -385,7 +385,153 @@ class StateDiagramSpec(BaseModel, defer_build=True):
         return "\n".join(lines) + "\n"
 
 
-BaseDiagramSpec = Union[ComponentDiagramSpec, SequenceDiagramSpec, StateDiagramSpec]
+
+# Data Flow Diagram (DFD) Models
+class DataStoreNode(DiagramNode):
+    """Specification model for a data store node in a Data Flow Diagram."""
+
+    shape: Optional[str] = "database"
+
+
+class ProcessNode(DiagramNode):
+    """Specification model for a process transform node in a Data Flow Diagram."""
+
+    shape: Optional[str] = "stadium"
+
+
+class ExternalEntityNode(DiagramNode):
+    """Specification model for an external entity node in a Data Flow Diagram."""
+
+    shape: Optional[str] = "rectangle"
+
+
+class DataStreamEdge(DiagramEdge):
+    """Specification model for a data stream contract edge in a Data Flow Diagram."""
+
+    contract: Optional[str] = None
+
+
+class DataFlowDiagramSpec(BaseModel):
+    """Declarative specification model for Data Flow Diagrams (DFD)."""
+
+    id: str
+    title: str
+    diagram_type: str = "flowchart"
+    direction: Literal["TD", "LR", "BT", "RL"] = "TD"
+    nodes: List[
+        Union[DataStoreNode, ProcessNode, ExternalEntityNode, DiagramNode]
+    ] = Field(default_factory=list)
+    edges: List[Union[DataStreamEdge, DiagramEdge]] = Field(default_factory=list)
+    subgraphs: List[DiagramSubgraph] = Field(default_factory=list)
+
+    def to_mermaid(self) -> str:
+        """Compile DFD specification object into standard Mermaid flowchart markup string."""
+        if self.diagram_type in ("graph", "flowchart"):
+            lines = [f"{self.diagram_type} {self.direction}"]
+
+            def format_node(
+                node: Union[
+                    DataStoreNode, ProcessNode, ExternalEntityNode, DiagramNode
+                ]
+            ) -> str:
+                s = node.shape or "rectangle"
+                if isinstance(node, DataStoreNode) and not node.shape:
+                    s = "database"
+                elif isinstance(node, ProcessNode) and not node.shape:
+                    s = "stadium"
+                elif isinstance(node, ExternalEntityNode) and not node.shape:
+                    s = "rectangle"
+
+                lbl = node.label.replace('"', '\\"')
+                if s in ("database", "cylinder"):
+                    return f'{node.id}[("{lbl}")]'
+                elif s in ("stadium", "process"):
+                    return f'{node.id}(["{lbl}"])'
+                elif s in ("round", "rounded"):
+                    return f'{node.id}("{lbl}")'
+                elif s in ("rhombus", "decision"):
+                    return f"{node.id}{{{lbl}}}"
+                elif s in ("subroutine",):
+                    return f'{node.id}[["{lbl}"]]'
+                else:  # rectangle / default / external_entity
+                    return f'{node.id}["{lbl}"]'
+
+            subgraph_node_ids = set()
+            for sub in self.subgraphs:
+                lines.append(f'    subgraph {sub.id} ["{sub.title}"]')
+                for nid in sub.nodes:
+                    subgraph_node_ids.add(nid)
+                    node = next((n for n in self.nodes if n.id == nid), None)
+                    if node:
+                        lines.append(f"        {format_node(node)}")
+                    else:
+                        lines.append(f"        {nid}")
+                lines.append("    end")
+
+            for node in self.nodes:
+                if node.id not in subgraph_node_ids:
+                    lines.append(f"    {format_node(node)}")
+
+            for edge in self.edges:
+                lbl_text = edge.label
+                if hasattr(edge, "contract") and edge.contract:
+                    if lbl_text:
+                        lbl_text = f"{lbl_text}: {edge.contract}"
+                    else:
+                        lbl_text = edge.contract
+                lbl_part = f"|{lbl_text}|" if lbl_text else ""
+                lines.append(
+                    f"    {edge.source} {edge.arrow_type}{lbl_part} {edge.target}"
+                )
+
+            for node in self.nodes:
+                if node.style:
+                    lines.append(f"    style {node.id} {node.style}")
+
+            for node in self.nodes:
+                tooltip_str = node.tooltip
+                if not tooltip_str:
+                    if node.step_number is not None and node.step_description:
+                        tooltip_str = (
+                            f"Step {node.step_number}: {node.step_description}"
+                        )
+                    elif node.step_description:
+                        tooltip_str = node.step_description
+                    elif node.step_number is not None:
+                        tooltip_str = f"Step {node.step_number}"
+
+                if node.url or tooltip_str:
+                    if node.url:
+                        clean_url = node.url.replace('"', '\\"')
+                        if tooltip_str:
+                            clean_tip = tooltip_str.replace('"', '\\"')
+                            if node.target:
+                                lines.append(
+                                    f'    click {node.id} "{clean_url}" "{clean_tip}" {node.target}'
+                                )
+                            else:
+                                lines.append(
+                                    f'    click {node.id} "{clean_url}" "{clean_tip}"'
+                                )
+                        else:
+                            if node.target:
+                                lines.append(
+                                    f'    click {node.id} "{clean_url}" {node.target}'
+                                )
+                            else:
+                                lines.append(f'    click {node.id} "{clean_url}"')
+                    elif tooltip_str:
+                        clean_tip = tooltip_str.replace('"', '\\"')
+                        lines.append(f'    click {node.id} tooltip "{clean_tip}"')
+
+            return "\n".join(lines) + "\n"
+
+        return f"{self.diagram_type}\n"
+
+
+BaseDiagramSpec = Union[
+    ComponentDiagramSpec, SequenceDiagramSpec, StateDiagramSpec, DataFlowDiagramSpec
+]
 
 
 # System Default Diagram Specifications
@@ -657,75 +803,67 @@ def _create_core_architecture_spec() -> ComponentDiagramSpec:
     ],
 )
 
-ARCHITECTURE_DATAFLOW_SPEC = ComponentDiagramSpec(
+ARCHITECTURE_DATAFLOW_SPEC = DataFlowDiagramSpec(
     id="architecture_dataflow",
     title="Data Flow: Directory Selection to Reorganization Plan",
     diagram_type="graph",
     direction="TD",
     nodes=[
-        DiagramNode(
+        ExternalEntityNode(
             id="A",
             label="Directory Selection",
-            shape="round",
             url="docs/user_guide.md#first-run-steps--setup-wizard",
             tooltip="Directory Selection Step",
             step_number=1,
             step_description="Select target directory to organize",
         ),
-        DiagramNode(
+        ProcessNode(
             id="B",
             label="File Extraction & Generator",
-            shape="rectangle",
             url="docs/user_guide.md#supported-file-formats",
             tooltip="File Extraction Step",
             step_number=2,
             step_description="Extract files and prepare generator",
         ),
-        DiagramNode(
+        ProcessNode(
             id="C",
             label="Chunked Yielding",
-            shape="rectangle",
             tooltip="Chunked Yielding Step",
             step_number=3,
             step_description="Yield file chunks incrementally",
         ),
-        DiagramNode(
+        ProcessNode(
             id="D",
             label="Incremental Analyzer (partial_fit)",
-            shape="rectangle",
             tooltip="Analyzer Step",
             step_number=4,
             step_description="Run incremental analyzer",
         ),
-        DiagramNode(
+        ProcessNode(
             id="E",
             label="TF-IDF & NMF Clustering",
-            shape="rectangle",
             url="docs/user_guide.md#ai-clustering-constraints",
             tooltip="Clustering Step",
             step_number=5,
             step_description="Cluster file features with TF-IDF & NMF",
         ),
-        DiagramNode(
+        ProcessNode(
             id="F",
             label="Recursive Topic Grouping",
-            shape="rectangle",
             tooltip="Topic Grouping Step",
             step_number=6,
             step_description="Recursively group file topics",
         ),
-        DiagramNode(
+        DataStoreNode(
             id="G",
             label="Generate Sorting Plan",
-            shape="rectangle",
             tooltip="Sorting Plan Step",
             step_number=7,
             step_description="Generate final file sorting plan",
         ),
-        DiagramNode(
+        ExternalEntityNode(
             id="H",
             label="UI Tree Rendering",
-            shape="round",
             url="docs/ui.md#appuiplan_treeview",
             tooltip="UI Rendering Step",
             step_number=8,
@@ -733,13 +871,13 @@ ARCHITECTURE_DATAFLOW_SPEC = ComponentDiagramSpec(
         ),
     ],
     edges=[
-        DiagramEdge(source="A", target="B"),
-        DiagramEdge(source="B", target="C"),
-        DiagramEdge(source="C", target="D"),
-        DiagramEdge(source="D", target="E"),
-        DiagramEdge(source="E", target="F"),
-        DiagramEdge(source="F", target="G"),
-        DiagramEdge(source="G", target="H"),
+        DataStreamEdge(source="A", target="B", contract="DirectoryPath"),
+        DataStreamEdge(source="B", target="C", contract="FileStream"),
+        DataStreamEdge(source="C", target="D", contract="ChunkBatch"),
+        DataStreamEdge(source="D", target="E", contract="FeatureVectors"),
+        DataStreamEdge(source="E", target="F", contract="TopicClusters"),
+        DataStreamEdge(source="F", target="G", contract="SortingPlan"),
+        DataStreamEdge(source="G", target="H", contract="PlanViewModel"),
     ],
 )
 
@@ -1755,77 +1893,69 @@ API_CORE_ARCHITECTURE_SPEC = ComponentDiagramSpec(
 )
 
 
-def _create_architecture_dataflow_spec() -> ComponentDiagramSpec:
+def _create_architecture_dataflow_spec() -> DataFlowDiagramSpec:
     """Build architecture_dataflow diagram specification."""
-    return ComponentDiagramSpec(
+    return DataFlowDiagramSpec(
         id="architecture_dataflow",
         title="Data Flow: Directory Selection to Reorganization Plan",
         diagram_type="graph",
         direction="TD",
         nodes=[
-            DiagramNode(
+            ExternalEntityNode(
                 id="A",
                 label="Directory Selection",
-                shape="round",
                 url="docs/user_guide.md#first-run-steps--setup-wizard",
                 tooltip="Directory Selection Step",
                 step_number=1,
                 step_description="Select target directory to organize",
             ),
-            DiagramNode(
+            ProcessNode(
                 id="B",
                 label="File Extraction & Generator",
-                shape="rectangle",
                 url="docs/user_guide.md#supported-file-formats",
                 tooltip="File Extraction Step",
                 step_number=2,
                 step_description="Extract files and prepare generator",
             ),
-            DiagramNode(
+            ProcessNode(
                 id="C",
                 label="Chunked Yielding",
-                shape="rectangle",
                 tooltip="Chunked Yielding Step",
                 step_number=3,
                 step_description="Yield file chunks incrementally",
             ),
-            DiagramNode(
+            ProcessNode(
                 id="D",
                 label="Incremental Analyzer (partial_fit)",
-                shape="rectangle",
                 tooltip="Analyzer Step",
                 step_number=4,
                 step_description="Run incremental analyzer",
             ),
-            DiagramNode(
+            ProcessNode(
                 id="E",
                 label="TF-IDF & NMF Clustering",
-                shape="rectangle",
                 url="docs/user_guide.md#ai-clustering-constraints",
                 tooltip="Clustering Step",
                 step_number=5,
                 step_description="Cluster file features with TF-IDF & NMF",
             ),
-            DiagramNode(
+            ProcessNode(
                 id="F",
                 label="Recursive Topic Grouping",
-                shape="rectangle",
                 tooltip="Topic Grouping Step",
                 step_number=6,
                 step_description="Recursively group file topics",
             ),
-            DiagramNode(
+            DataStoreNode(
                 id="G",
                 label="Generate Sorting Plan",
-                shape="rectangle",
                 tooltip="Sorting Plan Step",
                 step_number=7,
                 step_description="Generate final file sorting plan",
             ),
-            DiagramNode(
+            ExternalEntityNode(
                 id="H",
                 label="UI Tree Rendering",
-                shape="round",
                 url="docs/ui.md#appuiplan_treeview",
                 tooltip="UI Rendering Step",
                 step_number=8,
@@ -1833,13 +1963,13 @@ def _create_architecture_dataflow_spec() -> ComponentDiagramSpec:
             ),
         ],
         edges=[
-            DiagramEdge(source="A", target="B"),
-            DiagramEdge(source="B", target="C"),
-            DiagramEdge(source="C", target="D"),
-            DiagramEdge(source="D", target="E"),
-            DiagramEdge(source="E", target="F"),
-            DiagramEdge(source="F", target="G"),
-            DiagramEdge(source="G", target="H"),
+            DataStreamEdge(source="A", target="B", contract="DirectoryPath"),
+            DataStreamEdge(source="B", target="C", contract="FileStream"),
+            DataStreamEdge(source="C", target="D", contract="ChunkBatch"),
+            DataStreamEdge(source="D", target="E", contract="FeatureVectors"),
+            DataStreamEdge(source="E", target="F", contract="TopicClusters"),
+            DataStreamEdge(source="F", target="G", contract="SortingPlan"),
+            DataStreamEdge(source="G", target="H", contract="PlanViewModel"),
         ],
     )
 

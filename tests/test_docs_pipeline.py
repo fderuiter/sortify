@@ -710,15 +710,109 @@ def test_state_diagram_spec_serialization():
     assert "note left of Idle: Watchdog note" in mmd
 
 
+def test_data_flow_diagram_spec_serialization():
+    from app.ui.diagram_schema import (
+        ARCHITECTURE_DATAFLOW_SPEC,
+        DataFlowDiagramSpec,
+        DataStoreNode,
+        DataStreamEdge,
+        ExternalEntityNode,
+        ProcessNode,
+    )
+
+    spec = DataFlowDiagramSpec(
+        id="dfd_test",
+        title="Test DFD Spec",
+        diagram_type="flowchart",
+        direction="TD",
+        nodes=[
+            ExternalEntityNode(
+                id="ext1",
+                label="External Client",
+                url="https://example.com/api",
+                tooltip="Client App",
+            ),
+            ProcessNode(
+                id="proc1",
+                label="Inbound Ingestion Engine",
+                tooltip="Process Step 1",
+            ),
+            DataStoreNode(
+                id="ds1",
+                label="Document Store DB",
+                tooltip="Persisted Database",
+            ),
+        ],
+        edges=[
+            DataStreamEdge(
+                source="ext1",
+                target="proc1",
+                label="Ingest Payload",
+                contract="RawPayloadSchema",
+            ),
+            DataStreamEdge(
+                source="proc1",
+                target="ds1",
+                contract="PersistedDocumentModel",
+            ),
+        ],
+    )
+
+    mmd = spec.to_mermaid()
+    assert "flowchart TD" in mmd
+    assert 'ext1["External Client"]' in mmd
+    assert 'proc1(["Inbound Ingestion Engine"])' in mmd
+    assert 'ds1[("Document Store DB")]' in mmd
+    assert "ext1 -->|Ingest Payload: RawPayloadSchema| proc1" in mmd
+    assert "proc1 -->|PersistedDocumentModel| ds1" in mmd
+    assert 'click ext1 "https://example.com/api" "Client App"' in mmd
+
+    # Also verify system architecture spec
+    assert isinstance(ARCHITECTURE_DATAFLOW_SPEC, DataFlowDiagramSpec)
+    arch_mmd = ARCHITECTURE_DATAFLOW_SPEC.to_mermaid()
+    assert 'A["Directory Selection"]' in arch_mmd
+    assert 'B(["File Extraction & Generator"])' in arch_mmd
+    assert 'G[("Generate Sorting Plan")]' in arch_mmd
+    assert "A -->|DirectoryPath| B" in arch_mmd
+
+
+def test_dfd_node_url_validation():
+    import pytest
+    from pydantic import ValidationError
+
+    from app.ui.diagram_schema import ExternalEntityNode, ProcessNode
+
+    # Valid URLs
+    proc = ProcessNode(id="p1", label="Process", url="https://example.com/doc")
+    assert proc.url == "https://example.com/doc"
+
+    ext = ExternalEntityNode(id="e1", label="External", url="docs/user_guide.md#step1")
+    assert ext.url == "docs/user_guide.md#step1"
+
+    # Invalid javascript scheme on ProcessNode
+    with pytest.raises(ValidationError):
+        ProcessNode(id="p2", label="Process", url="javascript:alert('xss')")
+
+    # Disallowed URI scheme on ExternalEntityNode
+    with pytest.raises(ValidationError):
+        ExternalEntityNode(id="e2", label="External", url="ftp://unsupported.schema")
+
+
 def test_collect_all_specs_contains_sequence_and_state():
-    from app.core.diagram_schema import SequenceDiagramSpec, StateDiagramSpec
+    from app.core.diagram_schema import (
+        DataFlowDiagramSpec,
+        SequenceDiagramSpec,
+        StateDiagramSpec,
+    )
     from scripts.diagram_toolchain import collect_all_specs
 
     specs = collect_all_specs()
     has_seq = any(isinstance(s, SequenceDiagramSpec) for s in specs.values())
     has_state = any(isinstance(s, StateDiagramSpec) for s in specs.values())
+    has_dfd = any(isinstance(s, DataFlowDiagramSpec) for s in specs.values())
     assert has_seq is True
     assert has_state is True
+    assert has_dfd is True
 
 
 def test_check_no_raw_mermaid_in_docs_detects_blocks(tmp_path):
