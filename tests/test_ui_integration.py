@@ -27,7 +27,6 @@ async def test_terminal_autosorter_app_workflow(tmp_path):
     settings = AppSettings()
     app = AutoSorterApp(settings)
     app.base_dir = str(target_dir)
-    app.build_ui()
 
     # 3. Test synchronous analysis and plan generation
     await app._scan_and_process_worker()
