@@ -160,3 +160,74 @@ def test_write_smoke_test_error_fallback_scrubs_diagnostic_file(tmp_path, monkey
     assert "enc:" not in content
     assert "SecretFallbackKey123" not in content
     assert "<USER_HOME>/user_data" in content
+
+
+def test_scrub_user_home_paths_win32_short_paths(monkeypatch):
+    from app.core.path_utils import scrub_user_home_paths
+
+    monkeypatch.setenv("USERPROFILE", r"C:\USERS\RUNNER~1")
+    raw_text = r"Error at C:\USERS\RUNNER~1\AppData\Local\Temp\file.log"
+    scrubbed = scrub_user_home_paths(raw_text)
+    assert scrubbed == r"Error at <USER_HOME>\AppData\Local\Temp\file.log"
+
+
+def test_scrub_user_home_paths_env_var_aliases(monkeypatch):
+    from app.core.path_utils import scrub_user_home_paths
+
+    monkeypatch.setenv("HOMEDRIVE", "D:")
+    monkeypatch.setenv("HOMEPATH", r"\Users\CustomUser")
+
+    raw_text = (
+        r"Logs saved in D:\Users\CustomUser\logs\app.log and \Users\CustomUser\data.csv"
+    )
+    scrubbed = scrub_user_home_paths(raw_text)
+    assert r"D:\Users\CustomUser" not in scrubbed
+    assert r"\Users\CustomUser" not in scrubbed
+    assert (
+        scrubbed == r"Logs saved in <USER_HOME>\logs\app.log and <USER_HOME>\data.csv"
+    )
+
+
+def test_scrub_user_home_paths_edge_cases():
+    from app.core.path_utils import scrub_user_home_paths
+
+    assert scrub_user_home_paths(None) is None
+    assert scrub_user_home_paths("") == ""
+    assert scrub_user_home_paths(12345) == 12345
+
+    root_text = "Root path / or \\ or C:\\ should not be scrubbed."
+    assert scrub_user_home_paths(root_text) == root_text
+
+
+def test_scrubbing_parity_between_logging_and_prompt(monkeypatch):
+    from app.core.analyzer_strategies import _scrub_user_home_paths
+    from app.core.path_utils import scrub_user_home_paths
+    from app.log_filter import scrub_diagnostic_text
+
+    monkeypatch.setenv("USERPROFILE", r"C:\Users\TestUser")
+    monkeypatch.setenv("HOME", r"/home/testuser")
+
+    sample_win = r"Failed to load C:\Users\TestUser\documents\report.pdf"
+    sample_posix = r"Failed to load /home/testuser/documents/report.pdf"
+
+    log_win = scrub_diagnostic_text(sample_win)
+    prompt_win = _scrub_user_home_paths(sample_win)
+    util_win = scrub_user_home_paths(sample_win)
+
+    assert (
+        log_win
+        == prompt_win
+        == util_win
+        == r"Failed to load <USER_HOME>\documents\report.pdf"
+    )
+
+    log_posix = scrub_diagnostic_text(sample_posix)
+    prompt_posix = _scrub_user_home_paths(sample_posix)
+    util_posix = scrub_user_home_paths(sample_posix)
+
+    assert (
+        log_posix
+        == prompt_posix
+        == util_posix
+        == r"Failed to load <USER_HOME>/documents/report.pdf"
+    )

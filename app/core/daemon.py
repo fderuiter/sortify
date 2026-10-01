@@ -15,6 +15,7 @@ from watchdog.observers import Observer
 from app.config import AppSettings
 from app.core.domain_contracts import validate_quarantine_record
 from app.core.metadata import MetadataPass
+from app.core.mover import is_subpath_or_equal
 from app.core.quarantine_interceptor import QuarantineInterceptorService
 from app.core.resilient_file_ops import resilient_remove
 from app.core.scanner import get_files_recursively
@@ -570,11 +571,18 @@ class ContinuousWatchdogDaemon:
         if self.should_ignore_path(abs_path):
             return
 
-        rel_path = (
-            os.path.relpath(abs_path, self.base_dir).replace("\\", "/")
-            if self.base_dir and abs_path.startswith(self.base_dir)
-            else os.path.basename(abs_path)
-        )
+        if self.base_dir and is_subpath_or_equal(abs_path, self.base_dir):
+            try:
+                rel_path = os.path.relpath(abs_path, self.base_dir).replace("\\", "/")
+            except ValueError:
+                norm_abs = os.path.abspath(abs_path)
+                norm_base = os.path.abspath(self.base_dir)
+                if norm_abs.lower().startswith(norm_base.lower()):
+                    rel_path = norm_abs[len(norm_base):].lstrip("\\/").replace("\\", "/")
+                else:
+                    rel_path = os.path.basename(abs_path)
+        else:
+            rel_path = os.path.basename(abs_path)
 
         app_session = self._get_or_create_session()
 
@@ -596,6 +604,7 @@ class ContinuousWatchdogDaemon:
             db=app_session.db,
             policies=policies,
             worker_timeout=worker_timeout,
+            runtime_settings=self.settings,
         )
 
         try:
@@ -647,8 +656,8 @@ class ContinuousWatchdogDaemon:
             )
             return
 
-        # If a compliance action (redact, archive, quarantine, retain) was executed, triage is complete
-        if policy_action in ("redact", "archive", "quarantine", "retain"):
+        # If a compliance action (redact, archive, quarantine, retain, sensitivity_hold) was executed, triage is complete
+        if policy_action in ("redact", "archive", "quarantine", "retain", "sensitivity_hold"):
             logger.info(
                 f"Quarantine interceptor compliance action {policy_action} executed for {rel_path}"
             )

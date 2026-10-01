@@ -21,6 +21,11 @@ from app.core.crypto import (
     zero_vector_buffer,
 )
 from app.core.domain_contracts import validate_corpus_prefetch_batch
+from app.core.path_utils import (
+    _get_long_path_name,
+    _get_short_path_name,  # noqa: F401
+    scrub_user_home_paths,
+)
 from app.core.text_utils import sanitize_text
 
 
@@ -35,48 +40,6 @@ def is_prompt_dump_enabled() -> bool:
 
 
 ILLEGAL_DUMP_PATH_CHARS = set('<>?*|"\0')
-
-
-def _get_long_path_name(path_str: str) -> str | None:
-    """Safely resolve Win32 long path name using kernel32.GetLongPathNameW with dynamic buffer allocation."""
-    if sys.platform != "win32" and os.name != "nt":
-        return None
-    try:
-        import ctypes
-
-        buf_size = 1024
-        buf = ctypes.create_unicode_buffer(buf_size)
-        res = ctypes.windll.kernel32.GetLongPathNameW(path_str, buf, buf_size)
-        if res >= buf_size:
-            buf_size = res + 1
-            buf = ctypes.create_unicode_buffer(buf_size)
-            res = ctypes.windll.kernel32.GetLongPathNameW(path_str, buf, buf_size)
-        if 0 < res < buf_size and buf.value:
-            return buf.value
-    except Exception:
-        pass
-    return None
-
-
-def _get_short_path_name(path_str: str) -> str | None:
-    """Safely resolve Win32 short 8.3 path name using kernel32.GetShortPathNameW with dynamic buffer allocation."""
-    if sys.platform != "win32" and os.name != "nt":
-        return None
-    try:
-        import ctypes
-
-        buf_size = 1024
-        buf = ctypes.create_unicode_buffer(buf_size)
-        res = ctypes.windll.kernel32.GetShortPathNameW(path_str, buf, buf_size)
-        if res >= buf_size:
-            buf_size = res + 1
-            buf = ctypes.create_unicode_buffer(buf_size)
-            res = ctypes.windll.kernel32.GetShortPathNameW(path_str, buf, buf_size)
-        if 0 < res < buf_size and buf.value:
-            return buf.value
-    except Exception:
-        pass
-    return None
 
 
 def _get_canonical_windows_path(p: str | Path) -> str:
@@ -219,82 +182,7 @@ def redact_sensitive_text(text: str) -> str:
 
 def _scrub_user_home_paths(text: str) -> str:
     """Replace all forms of the current user's home directory path with <USER_HOME>."""
-    if not isinstance(text, str) or not text:
-        return text if text is not None else ""
-
-    home_dirs = []
-    try:
-        ph = str(Path.home())
-        if ph:
-            home_dirs.append(ph)
-    except Exception:
-        pass
-    try:
-        eu = os.path.expanduser("~")
-        if eu and eu not in home_dirs:
-            home_dirs.append(eu)
-    except Exception:
-        pass
-    for env_var in ("USERPROFILE", "HOME", "HOMEPATH"):
-        val = os.environ.get(env_var)
-        if val and val not in home_dirs:
-            home_dirs.append(val)
-
-    if os.environ.get("HOMEDRIVE") and os.environ.get("HOMEPATH"):
-        combined = os.environ.get("HOMEDRIVE") + os.environ.get("HOMEPATH")
-        if combined and combined not in home_dirs:
-            home_dirs.append(combined)
-
-    if sys.platform == "win32" or os.name == "nt":
-        try:
-            for h_dir in list(home_dirs):
-                long_p = _get_long_path_name(h_dir)
-                if long_p and long_p not in home_dirs:
-                    home_dirs.append(long_p)
-                short_p = _get_short_path_name(h_dir)
-                if short_p and short_p not in home_dirs:
-                    home_dirs.append(short_p)
-        except Exception:
-            pass
-
-    home_dirs = sorted(home_dirs, key=len, reverse=True)
-
-    for h in home_dirs:
-        clean = h.strip("\\/ ")
-        if not h or clean in ("", "/", "\\") or len(clean) <= 2:
-            continue
-
-        raw_parts = [p for p in re.split(r"[\\/]+", h) if p]
-        if not raw_parts:
-            continue
-
-        if len(raw_parts[0]) == 2 and raw_parts[0][1] == ":":
-            body_parts = raw_parts[1:]
-        elif (
-            len(raw_parts[0]) == 1
-            and raw_parts[0].isalpha()
-            and (h.startswith("/") or h.startswith("\\"))
-        ):
-            body_parts = raw_parts[1:]
-        else:
-            body_parts = raw_parts
-
-        if not body_parts:
-            continue
-
-        pattern = (
-            r"(?<![a-zA-Z0-9_])"
-            + r"(?:[a-zA-Z]:[\/\\]*|[\/\\][a-zA-Z][\/\\]+)?"
-            + r"[\/\\]*"
-            + r"[\/\\]+".join([re.escape(p) for p in body_parts])
-            + r"(?=[\\/]|[^a-zA-Z0-9_-]|$)"
-        )
-        try:
-            text = re.sub(pattern, "<USER_HOME>", text, flags=re.IGNORECASE)
-        except Exception:
-            pass
-
-    return text
+    return scrub_user_home_paths(text)
 
 
 def scrub_prompt_text(text: str) -> str:
@@ -331,6 +219,21 @@ def get_decryption_executor():
     from app.core.shared_registry import SharedWorkerPool
 
     return SharedWorkerPool.get_instance()
+
+
+class InMemoryDBMock:
+    """In-memory database mock for querying pre-fetched model metadata in strategy evaluation."""
+
+    def __init__(self, meta: dict | None = None):
+        self._meta = meta or {}
+
+    def get_model_metadata(self, key: str):
+        """Retrieve model metadata value for key."""
+        return self._meta.get(key)
+
+    def set_model_metadata(self, key: str, value):
+        """Store model metadata key-value pair."""
+        self._meta[key] = value
 
 
 class IsolatedStrategyMixin:
@@ -2070,16 +1973,6 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                             SemanticEmbeddingManager,
                         )
 
-                        class InMemoryDBMock:
-                            def __init__(self, meta):
-                                self._meta = meta or {}
-
-                            def get_model_metadata(self, key):
-                                return self._meta.get(key)
-
-                            def set_model_metadata(self, key, value):
-                                self._meta[key] = value
-
                         dummy_db = InMemoryDBMock(model_metadata)
                         embedding_manager = SemanticEmbeddingManager(
                             dummy_db, model_path=self.model_path
@@ -2440,16 +2333,6 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
             if model_metadata and getattr(self, "model_path", None):
                 try:
                     from app.core.semantic_embeddings import SemanticEmbeddingManager
-
-                    class InMemoryDBMock:
-                        def __init__(self, meta):
-                            self._meta = meta or {}
-
-                        def get_model_metadata(self, key):
-                            return self._meta.get(key)
-
-                        def set_model_metadata(self, key, value):
-                            self._meta[key] = value
 
                     dummy_db = InMemoryDBMock(model_metadata)
                     embedding_manager = SemanticEmbeddingManager(

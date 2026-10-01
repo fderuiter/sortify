@@ -1264,6 +1264,71 @@
           ]
         },
         {
+          "class_name": "InMemoryDBMock",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "__init__",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "dict | None",
+                  "default": "None",
+                  "name": "meta"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "get_model_metadata",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "key"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "set_model_metadata",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "key"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "value"
+                }
+              ],
+              "returns": null
+            }
+          ]
+        },
+        {
           "class_name": "IsolatedStrategyMixin",
           "decorators": [],
           "methods": [
@@ -8165,6 +8230,24 @@
         {
           "async": false,
           "decorators": [],
+          "name": "scrub_user_home_paths",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "text"
+            },
+            {
+              "annotation": "str | Path | None",
+              "default": "None",
+              "name": "home_dir"
+            }
+          ],
+          "returns": "str"
+        },
+        {
+          "async": false,
+          "decorators": [],
           "name": "setup_session_directory",
           "parameters": [
             {
@@ -8478,6 +8561,21 @@
                   "annotation": "float",
                   "default": "300.0",
                   "name": "worker_timeout"
+                },
+                {
+                  "annotation": "Optional[Any]",
+                  "default": "None",
+                  "name": "jev_classifier"
+                },
+                {
+                  "annotation": "Optional[List[str]]",
+                  "default": "None",
+                  "name": "auto_quarantine_ratings"
+                },
+                {
+                  "annotation": "Optional[Any]",
+                  "default": "None",
+                  "name": "runtime_settings"
                 }
               ],
               "returns": null

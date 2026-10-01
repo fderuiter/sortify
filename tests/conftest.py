@@ -98,7 +98,6 @@ if sys.platform == "win32":
     except Exception:
         pass
 
-import shutil
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
@@ -194,6 +193,8 @@ def reset_shared_registry():
 
 @pytest.fixture(scope="session", autouse=True)
 def isolate_test_environment(monkeypatch_session):
+    from app.core.resilient_file_ops import resilient_rmtree
+
     temp_dir = tempfile.mkdtemp(prefix="test_autosorter_appdir_")
     monkeypatch_session.setenv("AUTOSORTER_APP_DIR", temp_dir)
 
@@ -209,7 +210,7 @@ def isolate_test_environment(monkeypatch_session):
 
     yield
 
-    shutil.rmtree(temp_dir, ignore_errors=True)
+    resilient_rmtree(temp_dir, ignore_errors=True)
 
 
 @pytest.fixture(autouse=True)
@@ -312,17 +313,17 @@ def socket_mock(monkeypatch):
 
 
 def pytest_runtest_logreport(report):
-    """Intercept pytest failures and output them as GitHub Actions error annotations to capture raw tracebacks."""
-    if report.when == "call" and report.failed:
+    """Intercept pytest failures across all phases and output them as GitHub Actions error annotations to capture raw tracebacks."""
+    if report.failed:
         import sys
 
         tb = str(report.longrepr)
-        message = f"Test Failed: {report.nodeid}\n\n{tb}"
+        message = f"Test Failed ({report.when}): {report.nodeid}\n\n{tb}"
 
         # Write to pytest_failures.txt
         try:
             with open("pytest_failures.txt", "a", encoding="utf-8") as f:
-                f.write(f"=== {report.nodeid} ===\n{tb}\n\n")
+                f.write(f"=== [{report.when}] {report.nodeid} ===\n{tb}\n\n")
         except Exception:
             pass
 
