@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "d1349d6ab07730a6d536357aa4bae2b920f8e17c22328177e6835208a5ceedfa"
+    "checksum": "358f417f58a33971239db0b1ce4d2e5b94c47cab2f6bb0e86e8dddc9f34508cb"
   },
   "cli": {
     "app/main.py": [
@@ -4834,6 +4834,87 @@
           "methods": []
         },
         {
+          "class_name": "LazyDiagramSpecsDict",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "copy",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": "Dict[str, BaseDiagramSpec]"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "get",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "key"
+                },
+                {
+                  "annotation": "Any",
+                  "default": "None",
+                  "name": "default"
+                }
+              ],
+              "returns": "Any"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "items",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "keys",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "values",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": null
+            }
+          ]
+        },
+        {
           "class_name": "SequenceActivation",
           "decorators": [],
           "methods": []
@@ -4939,6 +5020,26 @@
           "name": "get_all_diagram_specs",
           "parameters": [],
           "returns": "Dict[str, BaseDiagramSpec]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_diagram_spec",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "key"
+            }
+          ],
+          "returns": "BaseDiagramSpec"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "reset_diagram_specs_cache",
+          "parameters": [],
+          "returns": "None"
         }
       ]
     },
