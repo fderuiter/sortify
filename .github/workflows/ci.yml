@@ -23,7 +23,6 @@ jobs:
       uses: astral-sh/setup-uv@v5
       with:
         version: "0.6.0"
-        enable-cache: true
 
     - name: Set up Python
       uses: actions/setup-python@v5
@@ -64,7 +63,6 @@ jobs:
       uses: astral-sh/setup-uv@v5
       with:
         version: "0.6.0"
-        enable-cache: true
 
     - name: Set up Python
       uses: actions/setup-python@v5
@@ -95,7 +93,6 @@ jobs:
       uses: astral-sh/setup-uv@v5
       with:
         version: "0.6.0"
-        enable-cache: true
 
     - name: Set up Python
       uses: actions/setup-python@v5
@@ -241,7 +238,6 @@ jobs:
       uses: astral-sh/setup-uv@v5
       with:
         version: "0.6.0"
-        enable-cache: true
 
     - name: Set up Python
       uses: actions/setup-python@v5
@@ -279,7 +275,6 @@ jobs:
       uses: astral-sh/setup-uv@v5
       with:
         version: "0.6.0"
-        enable-cache: true
 
     - name: Set up Python
       uses: actions/setup-python@v5
