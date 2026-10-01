@@ -12,10 +12,12 @@ from app.core.downloader import (
 )
 from app.core.path_utils import check_local_models_exist
 from app.ui.dialog_helper import get_dialog_card_classes
+from app.ui.notifications import notify
 from app.ui.tokens import TOKENS
 from app.ui.toolbar import OverflowToolbar
 
 ui = MagicMock()
+ui.notify = notify
 
 
 class ThreadSafeState:

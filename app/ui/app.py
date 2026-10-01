@@ -12,9 +12,11 @@ from app.core.domain_contracts import _get_val
 from app.core.progress import ProgressUpdate
 from app.core.session import AppSession
 from app.ui.dialog_helper import ask_directory_async, get_dialog_card_classes
+from app.ui.notifications import notify
 from app.ui.tokens import TOKENS
 
 ui = MagicMock()
+ui.notify = notify
 
 logger = logging.getLogger(__name__)
 
