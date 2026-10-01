@@ -377,19 +377,23 @@ def test_tui_wizard_modal_finish_persists_settings(temp_workspace):
     """Verify wizard modal allows toggling consent, persists settings, and completes onboarding."""
 
     async def _test():
-        settings = AppSettings()
+        settings = AppSettings(
+            filepath=os.path.join(temp_workspace, "settings.json")
+        )
         settings._settings_model.AI_CONSENT_GRANTED = None
         app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
 
         async with app.run_test() as pilot:
-            await pilot.pause(0.2)
+            for _ in range(5):
+                await pilot.pause()
             modal = app.screen
             assert isinstance(modal, WizardModal)
 
             modal.query_one("#switch-consent", Switch).value = False
             with patch.object(AppSettings, "_save") as mock_save:
                 modal.action_finish()
-                await pilot.pause(0.1)
+                for _ in range(5):
+                    await pilot.pause()
 
                 assert app.settings.AI_CONSENT_GRANTED is False
                 assert mock_save.called

@@ -607,8 +607,9 @@ class IncrementalAnalyzer:
                 docs = []
 
             from app.core.extractor_strategies import registry
+            from app.core.jev_classifier import JevClassifierEngine
 
-            supported_exts = set(registry._extractors.keys())
+            supported_exts = set(registry._extractors.keys()) | JevClassifierEngine.get_supported_extensions()
 
             keyword_rules = (
                 getattr(runtime_settings, "KEYWORD_RULES", {})
@@ -804,8 +805,8 @@ class IncrementalAnalyzer:
                             )
                             processed_files.add(f_path)
 
-            # Internal Jev Classifier Fallback execution for unclassified candidate documents in fast-path
-            if fast_path_only and ai_filenames:
+            # Internal Jev Classifier Fallback execution for unclassified candidate documents in fast-path or for non-extractor files
+            if ai_filenames and (fast_path_only or any(not registry.is_supported(os.path.splitext(fn)[1].lower()) for fn in ai_filenames)):
                 unclassified_docs_map = (
                     {d[0]: d[1] for d in docs if len(d) > 1} if docs else {}
                 )
@@ -905,6 +906,22 @@ class IncrementalAnalyzer:
                 ai_filenames = []
                 ai_documents = []
                 unsupported_files = []
+
+            # Route unclassified files without text extractor strategies to unsupported_files before generative AI / similarity fallback
+            if ai_filenames:
+                from app.core.extractor_strategies import registry
+
+                filtered_ai_filenames = []
+                filtered_ai_documents = []
+                for f, doc in zip(ai_filenames, ai_documents):
+                    ext = os.path.splitext(f)[1].lower()
+                    if not registry.is_supported(ext):
+                        unsupported_files.append((f, "UNSUPPORTED"))
+                    else:
+                        filtered_ai_filenames.append(f)
+                        filtered_ai_documents.append(doc)
+                ai_filenames = filtered_ai_filenames
+                ai_documents = filtered_ai_documents
 
             # Document-to-Document Content Similarity Matching Phase
             historical_docs = []

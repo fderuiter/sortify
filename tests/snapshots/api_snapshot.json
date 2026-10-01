@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "af3ac1dd0f2cb6e5c577abd464aefdf083d4f4e4f808b56758c00c5082898d8b"
+    "checksum": "d1349d6ab07730a6d536357aa4bae2b920f8e17c22328177e6835208a5ceedfa"
   },
   "cli": {
     "app/main.py": [
@@ -7415,6 +7415,21 @@
                 }
               ],
               "returns": "JevClassificationResult"
+            },
+            {
+              "async": false,
+              "decorators": [
+                "@classmethod"
+              ],
+              "name": "get_supported_extensions",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "cls"
+                }
+              ],
+              "returns": "set"
             },
             {
               "async": false,

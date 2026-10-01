@@ -630,8 +630,12 @@ def test_get_fallback_keys_dir_windows_and_posix(monkeypatch):
 
     # 2. Windows without APPDATA or POSIX with HOME set
     monkeypatch.setattr(os, "name", "posix")
+    monkeypatch.setattr("app.core.crypto.Path", pathlib.PurePath)
     monkeypatch.setenv("HOME", "/fake/home")
-    assert get_fallback_keys_dir() == pathlib.PurePath("/fake/home") / ".sortify" / "keys"
+    assert (
+        get_fallback_keys_dir()
+        == pathlib.PurePath("/fake/home") / ".sortify" / "keys"
+    )
 
     # 3. Non-Windows with HOME and USERPROFILE unset, Path.home() throwing error
     monkeypatch.delenv("HOME", raising=False)
@@ -641,7 +645,10 @@ def test_get_fallback_keys_dir_windows_and_posix(monkeypatch):
         pathlib.Path, "home", MagicMock(side_effect=Exception("Path.home failed"))
     )
     monkeypatch.setattr(os.path, "expanduser", lambda p: "/fake/expanduser")
-    assert get_fallback_keys_dir() == pathlib.PurePath("/fake/expanduser") / ".sortify" / "keys"
+    assert (
+        get_fallback_keys_dir()
+        == pathlib.PurePath("/fake/expanduser") / ".sortify" / "keys"
+    )
 
 
 def test_secure_delete_file_edge_cases(tmp_path, monkeypatch, caplog):
