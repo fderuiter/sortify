@@ -6,7 +6,7 @@ import pytest
 
 from app.config import AppSettings
 from app.core.integration import is_admin, register_context_menu
-from app.ui.app import AutoSorterApp, run_app
+from app.ui.app import run_app
 from app.ui.settings import show_settings
 
 pytestmark = [pytest.mark.slow, pytest.mark.integration]
@@ -345,16 +345,6 @@ def test_run_app_directory_preload():
         # Verify base_dir set on the created instance
         inst = mock_app_class.return_value
         assert inst.base_dir == os.path.abspath("some_dir")
-
-
-def test_autosorterapp_build_ui_schedules_analysis():
-    """Verify that if base_dir is set on the app, build_ui initializes terminal control components."""
-    settings = AppSettings()
-    app = AutoSorterApp(settings)
-    app.base_dir = "/mock/dir"
-
-    app.build_ui()
-    assert app.base_dir == "/mock/dir"
 
 
 def test_main_cli_directory_argument():

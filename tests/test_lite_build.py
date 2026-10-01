@@ -430,8 +430,8 @@ def test_update_binaries_and_manifest_win32_dll_detection(tmp_path):
         os.chdir(original_cwd)
 
 
-def test_spec_file_dual_target_executables():
-    """Verify smart-autosorter.spec defines exe_cli and exe_gui targets correctly in COLLECT."""
+def test_spec_file_cli_target_executable():
+    """Verify smart-autosorter.spec defines exe_cli target correctly in COLLECT."""
     spec_path = os.path.join(
         os.path.dirname(os.path.dirname(__file__)), "smart-autosorter.spec"
     )
@@ -464,18 +464,17 @@ def test_spec_file_dual_target_executables():
         exec(spec_content, mock_globals)
 
     assert "exe_cli" in mock_globals
-    assert "exe_gui" in mock_globals
+    assert "exe_gui" not in mock_globals
 
     exe_calls = mock_exe.call_args_list
-    assert len(exe_calls) >= 2
+    assert len(exe_calls) >= 1
 
     exe_kwargs = [call.kwargs for call in exe_calls]
     names_and_consoles = [(kw.get("name"), kw.get("console")) for kw in exe_kwargs]
 
     assert ("smart-autosorter", True) in names_and_consoles
-    assert ("smart-autosorter-gui", False) in names_and_consoles
+    assert ("smart-autosorter-gui", False) not in names_and_consoles
 
     assert mock_collect.called
     collect_args = mock_collect.call_args.args
     assert mock_globals["exe_cli"] in collect_args
-    assert mock_globals["exe_gui"] in collect_args

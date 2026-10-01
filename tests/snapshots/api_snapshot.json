@@ -4775,6 +4775,173 @@
       ],
       "functions": []
     },
+    "app/core/diagram_schema.py": {
+      "classes": [
+        {
+          "class_name": "ComponentDiagramSpec",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "to_mermaid",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": "str"
+            }
+          ]
+        },
+        {
+          "class_name": "DiagramEdge",
+          "decorators": [],
+          "methods": []
+        },
+        {
+          "class_name": "DiagramNode",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [
+                "@field_validator('url')",
+                "@classmethod"
+              ],
+              "name": "validate_url_scheme",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "cls"
+                },
+                {
+                  "annotation": "Optional[str]",
+                  "default": null,
+                  "name": "v"
+                }
+              ],
+              "returns": "Optional[str]"
+            }
+          ]
+        },
+        {
+          "class_name": "DiagramSubgraph",
+          "decorators": [],
+          "methods": []
+        },
+        {
+          "class_name": "SequenceActivation",
+          "decorators": [],
+          "methods": []
+        },
+        {
+          "class_name": "SequenceAlt",
+          "decorators": [],
+          "methods": []
+        },
+        {
+          "class_name": "SequenceAltBranch",
+          "decorators": [],
+          "methods": []
+        },
+        {
+          "class_name": "SequenceDiagramSpec",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "to_mermaid",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": "str"
+            }
+          ]
+        },
+        {
+          "class_name": "SequenceLoop",
+          "decorators": [],
+          "methods": []
+        },
+        {
+          "class_name": "SequenceMessage",
+          "decorators": [],
+          "methods": []
+        },
+        {
+          "class_name": "SequenceNote",
+          "decorators": [],
+          "methods": []
+        },
+        {
+          "class_name": "SequenceOpt",
+          "decorators": [],
+          "methods": []
+        },
+        {
+          "class_name": "SequenceParticipant",
+          "decorators": [],
+          "methods": []
+        },
+        {
+          "class_name": "StateComposite",
+          "decorators": [],
+          "methods": []
+        },
+        {
+          "class_name": "StateDiagramSpec",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "to_mermaid",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": "str"
+            }
+          ]
+        },
+        {
+          "class_name": "StateNode",
+          "decorators": [],
+          "methods": []
+        },
+        {
+          "class_name": "StateNote",
+          "decorators": [],
+          "methods": []
+        },
+        {
+          "class_name": "StateTransition",
+          "decorators": [],
+          "methods": []
+        }
+      ],
+      "functions": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_all_diagram_specs",
+          "parameters": [],
+          "returns": "Dict[str, BaseDiagramSpec]"
+        }
+      ]
+    },
     "app/core/domain_contracts.py": {
       "classes": [
         {

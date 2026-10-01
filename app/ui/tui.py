@@ -1263,6 +1263,11 @@ class AutoSorterTUI(A11yMixin, App):
     def on_mount(self) -> None:
         """Mount event handler."""
         try:
+            from app.ui.notifications import NotificationManager
+            NotificationManager.get_instance().register_tui(self)
+        except Exception:
+            pass
+        try:
             tree = self.query_one("#plan-tree", Tree)
             tree.show_root = True
             tree.root.expand()
@@ -1272,6 +1277,14 @@ class AutoSorterTUI(A11yMixin, App):
         self.check_abandoned_sessions()
         if getattr(self.settings, "AI_CONSENT_GRANTED", None) is None:
             self.call_after_refresh(self.action_open_wizard)
+
+    def on_unmount(self) -> None:
+        """Lifecycle hook called when application is unmounted."""
+        try:
+            from app.ui.notifications import NotificationManager
+            NotificationManager.get_instance().unregister_tui(self)
+        except Exception:
+            pass
 
     @work
     async def check_abandoned_sessions(self) -> None:

@@ -285,7 +285,7 @@ def validate_codebase_duplication(errors: list) -> None:
 def validate_diagram_schema_and_assets(errors: list) -> None:
     """Validate that Pydantic diagram specifications represent all active core modules and match generated assets."""
     try:
-        from app.ui.diagram_schema import CORE_ARCHITECTURE_SPEC, SYSTEM_DIAGRAM_SPECS
+        from app.core.diagram_schema import CORE_ARCHITECTURE_SPEC, SYSTEM_DIAGRAM_SPECS
 
         # 1. Verify all active app/core/*.py submodules are represented in core_architecture diagram spec
         core_files = glob.glob("app/core/*.py")

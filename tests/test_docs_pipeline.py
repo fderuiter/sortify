@@ -319,7 +319,7 @@ def test_main_clean_on_check():
 
 
 def test_component_diagram_spec_serialization():
-    from app.ui.diagram_schema import (
+    from app.core.diagram_schema import (
         ComponentDiagramSpec,
         DiagramEdge,
         DiagramNode,
@@ -353,7 +353,7 @@ def test_diagram_node_click_attributes_and_url_validation():
     import pytest
     from pydantic import ValidationError
 
-    from app.ui.diagram_schema import DiagramNode
+    from app.core.diagram_schema import DiagramNode
 
     # 1. Valid click attributes
     node = DiagramNode(
@@ -396,7 +396,7 @@ def test_diagram_node_click_attributes_and_url_validation():
 
 
 def test_component_diagram_spec_click_serialization():
-    from app.ui.diagram_schema import ComponentDiagramSpec, DiagramNode
+    from app.core.diagram_schema import ComponentDiagramSpec, DiagramNode
 
     spec = ComponentDiagramSpec(
         id="click_spec",
@@ -589,7 +589,7 @@ def test_diagram_toolchain_cli_verify_failure_on_bad_schema(tmp_path):
 
 
 def test_sequence_diagram_spec_serialization():
-    from app.ui.diagram_schema import (
+    from app.core.diagram_schema import (
         SequenceActivation,
         SequenceAlt,
         SequenceAltBranch,
@@ -665,7 +665,7 @@ def test_sequence_diagram_spec_serialization():
 
 
 def test_state_diagram_spec_serialization():
-    from app.ui.diagram_schema import (
+    from app.core.diagram_schema import (
         StateComposite,
         StateDiagramSpec,
         StateNode,
@@ -711,7 +711,7 @@ def test_state_diagram_spec_serialization():
 
 
 def test_collect_all_specs_contains_sequence_and_state():
-    from app.ui.diagram_schema import SequenceDiagramSpec, StateDiagramSpec
+    from app.core.diagram_schema import SequenceDiagramSpec, StateDiagramSpec
     from scripts.diagram_toolchain import collect_all_specs
 
     specs = collect_all_specs()

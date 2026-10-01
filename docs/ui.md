@@ -40,6 +40,10 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.ui.help_modal
 
+## `app.ui.notifications`
+
+::: app.ui.notifications
+
 ## `app.ui.settings`
 
 ::: app.ui.settings
