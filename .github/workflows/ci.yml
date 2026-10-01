@@ -123,9 +123,18 @@ jobs:
         uv run python scripts/validate_architecture.py
 
     - name: Terminal Interface Snapshot Validation
-
       run: |
         uv run pytest tests/test_ui_snapshots.py tests/test_visual_snapshots.py
+
+    - name: Upload Snapshot Mismatch Artifacts
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: snapshot-mismatches-${{ matrix.os }}
+        path: |
+          tests/snapshots/tui_svg/*.actual
+          tests/snapshots/*.actual
+        retention-days: 7
 
     - name: Validate Agent Prompts Manifest
       if: matrix.os == 'ubuntu-latest'

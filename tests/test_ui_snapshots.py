@@ -30,6 +30,10 @@ def assert_snapshot(snapshot_name, actual_state):
     with open(snapshot_path, "r") as f:
         expected_state = json.load(f)
 
+    if actual_state != expected_state:
+        with open(snapshot_path + ".actual", "w", encoding="utf-8") as f:
+            json.dump(actual_state, f, indent=2)
+
     assert actual_state == expected_state, f"Snapshot mismatch for {snapshot_name}"
 
 

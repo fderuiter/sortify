@@ -52,6 +52,8 @@ def sanitize_svg(svg: str) -> str:
         lambda m: "/dummy" + m.group(1).replace("\\", "/"),
         svg,
     )
+    svg = re.sub(r"\b[A-Za-z]:[/\\]", "/", svg)
+    svg = svg.replace("\\", "/")
 
     style_match = re.search(r"<style>(.*?)</style>", svg, re.DOTALL)
     if style_match:
