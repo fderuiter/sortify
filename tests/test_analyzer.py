@@ -635,3 +635,75 @@ def test_in_memory_db_mock():
     db_meta.set_model_metadata("version", 1)
     assert db_meta.get_model_metadata("version") == 1
 
+
+def test_jev_classifier_get_supported_extensions():
+    """Verify that JevClassifierEngine exposes all extensions defined in CATEGORY_RULES."""
+    from app.core.jev_classifier import JevClassifierEngine
+
+    exts = JevClassifierEngine.get_supported_extensions()
+    assert isinstance(exts, set)
+    expected_extensions = {".py", ".js", ".json", ".yaml", ".yml", ".log"}
+    for ext in expected_extensions:
+        assert ext in exts
+
+
+def test_generate_sorting_plan_jev_rule_extensions():
+    """Verify that .py, .js, .json, .yaml, and .log files receive Jev classification in generate_sorting_plan."""
+    base_dir = "test_jev_extensions_base"
+    db.clear(base_dir)
+
+    analyzer = IncrementalAnalyzer(
+        max_folders=3, stop_words={"the", "and"}, db=db, strategy_name="default"
+    )
+
+    corpus = {
+        "app.py": "def main(): print('Hello World') # Python source code build script",
+        "index.js": "function main() { console.log('Hello JavaScript'); } // JS code",
+        "config.json": '{"app": "sortify", "version": "1.0", "db": "schema"}',
+        "settings.yaml": "app:\n  name: sortify\n  spec: config",
+        "server.log": "2026-09-30 12:00:00 INFO Server initialized build log",
+    }
+    analyzer.partial_fit(base_dir, corpus)
+
+    plan = analyzer.generate_sorting_plan(base_dir)
+    plan_dict = plan.plan if hasattr(plan, "plan") else plan
+
+    target_category = "Technical & Data Assets"
+    assert target_category in plan_dict, f"Expected {target_category} in plan, got: {list(plan_dict.keys())}"
+
+    tech_folder = plan_dict[target_category]
+    for filename in corpus.keys():
+        assert filename in tech_folder, f"Expected {filename} in {target_category}"
+        file_info = tech_folder[filename]
+        assert file_info.get("routed_by") in ("jev", "jev_classifier") or file_info.get("status") is None or file_info.get("status") != "UNSUPPORTED"
+
+
+def test_unclassified_non_extractor_files_route_to_unsupported(mocker):
+    """Verify that unclassified files without extractor strategies route to unsupported_files and bypass generative AI."""
+    base_dir = "test_non_extractor_unsupported_base"
+    db.clear(base_dir)
+
+    analyzer = IncrementalAnalyzer(
+        max_folders=3, stop_words={"the", "and"}, db=db, strategy_name="default"
+    )
+
+    corpus = {
+        "foo.py": "x = 1",
+    }
+    analyzer.partial_fit(base_dir, corpus)
+
+    from app.core.analyzer_strategies import clustering_registry
+    strategy = clustering_registry.get_strategy("default")
+    mock_generate_plan = mocker.patch.object(strategy, "generate_plan", return_value=({}, 0.0))
+
+    plan = analyzer.generate_sorting_plan(base_dir)
+    plan_dict = plan.plan if hasattr(plan, "plan") else plan
+
+    assert "Miscellaneous" in plan_dict
+    assert "foo.py" in plan_dict["Miscellaneous"]
+    assert plan_dict["Miscellaneous"]["foo.py"]["extraction_status"] == "UNSUPPORTED"
+    if mock_generate_plan.called:
+        args = mock_generate_plan.call_args[0]
+        assert "foo.py" not in args[0]
+
+

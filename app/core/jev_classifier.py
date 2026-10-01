@@ -337,6 +337,16 @@ class JevClassifierEngine:
         },
     }
 
+    @classmethod
+    def get_supported_extensions(cls) -> set:
+        """Collect all extension strings defined in CATEGORY_RULES in lowercase."""
+        exts = set()
+        for rules in cls.CATEGORY_RULES.values():
+            for ext in rules.get("extensions", []):
+                if ext:
+                    exts.add(ext.lower())
+        return exts
+
     def __init__(
         self,
         confidence_threshold: float = 0.5,
