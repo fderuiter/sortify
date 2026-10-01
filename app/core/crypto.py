@@ -18,15 +18,15 @@ logger = logging.getLogger(__name__)
 try:
     import numpy as np
 except Exception:
-    np = None
+    np = None  # type: ignore[assignment]
 
 try:
     import sqlite3
 except Exception:
     try:
-        from sqlcipher3 import dbapi2 as sqlite3
+        from sqlcipher3 import dbapi2 as sqlite3  # type: ignore[no-redef]
     except Exception:
-        sqlite3 = None
+        sqlite3 = None  # type: ignore[assignment]
 
 
 def get_fallback_keys_dir() -> Path:
@@ -143,9 +143,15 @@ class CryptoManager:
         return isinstance(proxy_str, str) and proxy_str.startswith("enc:")
 
     @staticmethod
-    def encrypt_proxy_setting(proxy_str: str, crypto: Any = None, db_path: Path | str = None) -> str:
+    def encrypt_proxy_setting(
+        proxy_str: str, crypto: Any = None, db_path: Path | str | None = None
+    ) -> str:
         """Encrypt a proxy setting string using envelope encryption and return formatted string with 'enc:' prefix."""
-        if not proxy_str or proxy_str == "<DECRYPTION_FAILED>" or CryptoManager.is_encrypted_proxy(proxy_str):
+        if (
+            not proxy_str
+            or proxy_str == "<DECRYPTION_FAILED>"
+            or CryptoManager.is_encrypted_proxy(proxy_str)
+        ):
             return proxy_str
 
         if crypto is None and db_path is not None:
@@ -161,7 +167,9 @@ class CryptoManager:
         return proxy_str
 
     @staticmethod
-    def decrypt_proxy_setting(proxy_str: str, crypto: Any = None, db_path: Path | str = None) -> str:
+    def decrypt_proxy_setting(
+        proxy_str: str, crypto: Any = None, db_path: Path | str | None = None
+    ) -> str:
         """Decrypt a formatted proxy setting string starting with 'enc:' prefix."""
         if not proxy_str or not CryptoManager.is_encrypted_proxy(proxy_str):
             return proxy_str
@@ -191,14 +199,14 @@ class SessionCrypto:
 
         self.db_path = Path(db_path).resolve()
         self.key_path = Path(key_path).resolve()
-        self._cipher = None
-        self._key = None
+        self._cipher: Any = None
+        self._key: bytes | None = None
         self.keyring_service = "AutoSorter"
 
         # SHA-256 derived account and key path
         self.keyring_account = CryptoManager.derive_keyring_account(self.db_path)
         self._vector_cache_max_entries = 10000
-        self._vector_parsed_cache = {}
+        self._vector_parsed_cache: dict[Any, Any] = {}
         self._vector_decrypt_lock = threading.Lock()
 
         # Centralized key store location under user's home directory / APPDATA
@@ -263,7 +271,11 @@ class SessionCrypto:
                 )
 
         # 3b. Legacy MD5 Isolated Key File
-        if key is None and legacy_key is None and self.legacy_md5_isolated_key_path.exists():
+        if (
+            key is None
+            and legacy_key is None
+            and self.legacy_md5_isolated_key_path.exists()
+        ):
             try:
                 with open(self.legacy_md5_isolated_key_path, "rb") as f:
                     legacy_key = f.read().strip()
@@ -469,7 +481,7 @@ class SessionCrypto:
                 "Database accessed but key file is missing or invalid."
             ) from e
 
-    def get_raw_key(self) -> str:
+    def get_raw_key(self) -> str | None:
         """Get the raw key string for SQLCipher."""
         if hasattr(self, "_key") and self._key:
             return self._key.decode("utf-8")
@@ -508,7 +520,9 @@ class SessionCrypto:
                 with open(self.legacy_md5_isolated_key_path, "rb") as f:
                     key = f.read().strip()
             except OSError as e:
-                logger.warning(f"Failed to read legacy MD5 isolated key in get_raw_key: {e}")
+                logger.warning(
+                    f"Failed to read legacy MD5 isolated key in get_raw_key: {e}"
+                )
         if key is None and self.key_path.exists():
             try:
                 with open(self.key_path, "rb") as f:
@@ -806,8 +820,8 @@ class EphemeralSessionCrypto:
 
     def purge(self) -> None:
         """Purge the session key."""
-        self.session_key = None
-        self._cipher = None
+        self._key = None
+        self._cipher = None  # type: ignore[assignment]
 
 
 def encrypt_ipc_payload(payload: Any, session_key: bytes | str) -> bytes:

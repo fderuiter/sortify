@@ -60,6 +60,47 @@ docstring-code-format = true
 [tool.mypy]
 ignore_missing_imports = true
 implicit_optional = true
+
+[[tool.mypy.overrides]]
+module = [
+    "app.ui.*",
+    "app.cli.*",
+    "app.main",
+    "app.core.analyzer",
+    "app.core.analyzer_strategies",
+    "app.core.cache",
+    "app.core.clinical_compliance",
+    "app.core.clinical_renamer",
+    "app.core.clinical_strategy",
+    "app.core.clinical_taxonomy",
+    "app.core.cro_multi_study_pipeline",
+    "app.core.daemon",
+    "app.core.db",
+    "app.core.db_conn",
+    "app.core.db_worker",
+    "app.core.downloader",
+    "app.core.env_helper",
+    "app.core.extractor",
+    "app.core.extractor_strategies",
+    "app.core.file_renamer",
+    "app.core.forensic_scanner",
+    "app.core.hashes_registry",
+    "app.core.integration",
+    "app.core.jev_classifier",
+    "app.core.ledger",
+    "app.core.link_manager",
+    "app.core.metadata",
+    "app.core.offline_loader",
+    "app.core.path_utils",
+    "app.core.quarantine_interceptor",
+    "app.core.scanner",
+    "app.core.semantic_embeddings",
+    "app.core.session",
+    "app.core.shared_registry",
+    "app.core.study_disambiguator",
+    "app.core.text_utils",
+    "app.core.user_space_bootstrap",
+]
 ignore_errors = true
 
 [dependency-groups]

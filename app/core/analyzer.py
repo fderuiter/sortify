@@ -283,7 +283,9 @@ def pre_fetch_historical_corpus(
 
                 for idx, c in enumerate(candidates):
                     if c["vector_str"]:
-                        parsed_v = _safe_decrypt_and_parse_vector(db.crypto, c["vector_str"])
+                        parsed_v = _safe_decrypt_and_parse_vector(
+                            db.crypto, c["vector_str"]
+                        )
                         if parsed_v is not None:
                             cand_parsed_vectors[idx] = parsed_v
                             if len(parsed_v) == len(centroid):
@@ -308,12 +310,16 @@ def pre_fetch_historical_corpus(
                         c = candidates[idx]
                         v = cand_parsed_vectors.get(idx)
                         if v is None and c["vector_str"]:
-                            v = _safe_decrypt_and_parse_vector(db.crypto, c["vector_str"])
+                            v = _safe_decrypt_and_parse_vector(
+                                db.crypto, c["vector_str"]
+                            )
                         text = _safe_decrypt_text(db.crypto, c["extracted_text_enc"])
                         selected_examples.append(
                             {
                                 "filepath": c["filepath"],
-                                "user_verified_target_path": c["user_verified_target_path"],
+                                "user_verified_target_path": c[
+                                    "user_verified_target_path"
+                                ],
                                 "vector": v,
                                 "text": text,
                             }
@@ -609,7 +615,10 @@ class IncrementalAnalyzer:
             from app.core.extractor_strategies import registry
             from app.core.jev_classifier import JevClassifierEngine
 
-            supported_exts = set(registry._extractors.keys()) | JevClassifierEngine.get_supported_extensions()
+            supported_exts = (
+                set(registry._extractors.keys())
+                | JevClassifierEngine.get_supported_extensions()
+            )
 
             keyword_rules = (
                 getattr(runtime_settings, "KEYWORD_RULES", {})
@@ -806,7 +815,13 @@ class IncrementalAnalyzer:
                             processed_files.add(f_path)
 
             # Internal Jev Classifier Fallback execution for unclassified candidate documents in fast-path or for non-extractor files
-            if ai_filenames and (fast_path_only or any(not registry.is_supported(os.path.splitext(fn)[1].lower()) for fn in ai_filenames)):
+            if ai_filenames and (
+                fast_path_only
+                or any(
+                    not registry.is_supported(os.path.splitext(fn)[1].lower())
+                    for fn in ai_filenames
+                )
+            ):
                 unclassified_docs_map = (
                     {d[0]: d[1] for d in docs if len(d) > 1} if docs else {}
                 )

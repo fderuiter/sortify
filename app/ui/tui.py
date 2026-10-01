@@ -1456,6 +1456,7 @@ class AutoSorterTUI(A11yMixin, App):
         self._update_layout(self.size.width)
         try:
             from app.ui.notifications import NotificationManager
+
             NotificationManager.get_instance().register_tui(self)
         except Exception:
             pass
@@ -1504,6 +1505,7 @@ class AutoSorterTUI(A11yMixin, App):
         """Lifecycle hook called when application is unmounted."""
         try:
             from app.ui.notifications import NotificationManager
+
             NotificationManager.get_instance().unregister_tui(self)
         except Exception:
             pass

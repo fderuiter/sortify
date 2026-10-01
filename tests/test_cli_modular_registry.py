@@ -152,12 +152,22 @@ def test_quarantine_lifecycle():
 
             # Stage file
             service = QuarantineInterceptorService(db=db)
-            staged_info = service.stage_incoming_file(str(src_file), base_dir=str(tmp_path))
+            staged_info = service.stage_incoming_file(
+                str(src_file), base_dir=str(tmp_path)
+            )
             job_id = staged_info["job_id"]
 
             # 1. List
             code_list, stdout_list, stderr_list = run_cli(
-                ["quarantine", "list", "--db-path", db_path, "--status", "STAGED", "--json"]
+                [
+                    "quarantine",
+                    "list",
+                    "--db-path",
+                    db_path,
+                    "--status",
+                    "STAGED",
+                    "--json",
+                ]
             )
             assert code_list == 0, (
                 f"Expected 0 exit code, got {code_list}. Stderr: {stderr_list}"

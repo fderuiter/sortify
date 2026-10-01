@@ -261,7 +261,9 @@ def handle_quarantine_command(args: argparse.Namespace, settings: AppSettings) -
                 }
 
                 if is_json:
-                    sys.stdout.write(json.dumps(res, indent=2, default=json_default) + "\n")
+                    sys.stdout.write(
+                        json.dumps(res, indent=2, default=json_default) + "\n"
+                    )
                     sys.stdout.flush()
                 else:
                     if not quiet:
@@ -273,7 +275,9 @@ def handle_quarantine_command(args: argparse.Namespace, settings: AppSettings) -
 
                 sys.exit(0)
             except Exception as e:
-                print(f"Error processing quarantine job '{job_id}': {e}", file=sys.stderr)
+                print(
+                    f"Error processing quarantine job '{job_id}': {e}", file=sys.stderr
+                )
                 sys.exit(1)
 
         elif quarantine_cmd == "release":

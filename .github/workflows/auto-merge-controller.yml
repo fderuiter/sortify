@@ -1,0 +1,48 @@
+name: Auto-Merge Controller
+
+on:
+  workflow_run:
+    workflows: ["CI Pipeline"]
+    types: [completed]
+  workflow_dispatch:
+  schedule:
+    - cron: '*/15 * * * *'
+
+permissions:
+  contents: write
+  pull-requests: write
+  statuses: read
+  checks: read
+
+concurrency:
+  group: auto-merge-controller
+  cancel-in-progress: false
+
+jobs:
+  auto-merge:
+    name: Execute Serialized Auto-Merge
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.6.0"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          uv sync --group dev
+
+      - name: Run Auto-Merge Controller
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          uv run python scripts/auto_merge_controller.py

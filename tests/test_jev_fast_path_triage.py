@@ -369,7 +369,11 @@ def test_file_analyzer_internal_jev_fallback_windows_paths(tmp_path):
         if k in category_plan:
             node = category_plan[k]
             break
-        elif "sub" in category_plan and isinstance(category_plan["sub"], dict) and k in category_plan["sub"]:
+        elif (
+            "sub" in category_plan
+            and isinstance(category_plan["sub"], dict)
+            and k in category_plan["sub"]
+        ):
             node = category_plan["sub"][k]
             break
     if node is None:
@@ -381,7 +385,9 @@ def test_file_analyzer_internal_jev_fallback_windows_paths(tmp_path):
                         break
                 if node:
                     break
-    assert node is not None, f"Could not find node in plan['Financial Reports']: {category_plan}"
+    assert node is not None, (
+        f"Could not find node in plan['Financial Reports']: {category_plan}"
+    )
     assert node["routed_by"] == "jev_classifier"
     assert node["category"] == "Financial Reports"
 

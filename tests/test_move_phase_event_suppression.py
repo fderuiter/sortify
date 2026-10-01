@@ -182,7 +182,9 @@ def test_end_to_end_move_execution_suppresses_cancellation(tmp_path):
     try:
         with (
             mock.patch("app.core.daemon.AppSession", mock_app_session_class),
-            mock.patch("app.core.daemon.get_files_recursively", return_value=["doc.pdf"]),
+            mock.patch(
+                "app.core.daemon.get_files_recursively", return_value=["doc.pdf"]
+            ),
             mock.patch("app.core.daemon.MetadataPass.run", return_value=[]),
         ):
             cancel_event = threading.Event()

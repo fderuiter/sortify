@@ -42,10 +42,8 @@ class PolicyEvaluationResult(BaseModel):
 
     def __contains__(self, item: str) -> bool:
         """Check if key exists in attributes or extra fields."""
-        return hasattr(self, item) or (
-            getattr(self, "__pydantic_extra__", None) is not None
-            and item in self.__pydantic_extra__
-        )
+        extra = getattr(self, "__pydantic_extra__", None) or {}
+        return hasattr(self, item) or item in extra
 
 
 class PolicyEngine:

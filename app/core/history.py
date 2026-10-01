@@ -451,10 +451,10 @@ class HistoryManager:
 
         current_files = get_files_recursively(base_dir, include_hidden=True)
 
-        inode_counts = {}
-        current_inodes = {}
-        active_files_by_rel_path = {}
-        active_files_by_sig = {}
+        inode_counts: dict[Any, Any] = {}
+        current_inodes: dict[Any, Any] = {}
+        active_files_by_rel_path: dict[Any, Any] = {}
+        active_files_by_sig: dict[Any, Any] = {}
         inodes_reliable = True
 
         for rel_path in current_files:
@@ -1104,11 +1104,11 @@ class HistoryManager:
             current_files = get_files_recursively(base_dir, include_hidden=True)
 
             with conn:
-                inode_counts = {}
-                current_inodes = {}
-                active_files_by_rel_path = {}
-                active_files_by_sig = {}
-                active_files_by_size = {}
+                inode_counts: dict[Any, Any] = {}
+                current_inodes: dict[Any, Any] = {}
+                active_files_by_rel_path: dict[Any, Any] = {}
+                active_files_by_sig: dict[Any, Any] = {}
+                active_files_by_size: dict[Any, Any] = {}
                 inodes_reliable = True
 
                 for rel_path in current_files:

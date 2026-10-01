@@ -88,6 +88,7 @@ class QuarantineInterceptorService:
         else:
             try:
                 from app.core.jev_classifier import JevClassifierEngine
+
                 self.jev_classifier = JevClassifierEngine()
             except Exception:
                 self.jev_classifier = None
@@ -96,7 +97,8 @@ class QuarantineInterceptorService:
             self.auto_quarantine_ratings = [r.upper() for r in auto_quarantine_ratings]
         elif runtime_settings and hasattr(runtime_settings, "AUTO_QUARANTINE_RATINGS"):
             self.auto_quarantine_ratings = [
-                r.upper() for r in getattr(runtime_settings, "AUTO_QUARANTINE_RATINGS", [])
+                r.upper()
+                for r in getattr(runtime_settings, "AUTO_QUARANTINE_RATINGS", [])
             ]
         else:
             self.auto_quarantine_ratings = ["CRITICAL", "HIGH"]
@@ -127,9 +129,7 @@ class QuarantineInterceptorService:
             a security warning and safely returns the fallback directory.
         """
         fallback_dir = os.path.normpath(
-            os.path.join(base_dir, default_subfolder)
-            if default_subfolder
-            else base_dir
+            os.path.join(base_dir, default_subfolder) if default_subfolder else base_dir
         )
 
         if not target_subfolder or not target_subfolder.strip():
@@ -357,7 +357,10 @@ class QuarantineInterceptorService:
                 )
 
             # 4b. Upstream Barrier: Jev Pre-Classification & Sensitivity Hold for unguided / default documents
-            if action not in ("redact", "archive", "quarantine", "retain") and self.jev_classifier is not None:
+            if (
+                action not in ("redact", "archive", "quarantine", "retain")
+                and self.jev_classifier is not None
+            ):
                 try:
                     jev_res = self.jev_classifier.classify(
                         file_path=staged_path,
@@ -381,7 +384,12 @@ class QuarantineInterceptorService:
                         else jev_res.get("category", "Uncategorized")
                     )
 
-                    auto_ratings = [r.upper() for r in getattr(self, "auto_quarantine_ratings", ["CRITICAL", "HIGH"])]
+                    auto_ratings = [
+                        r.upper()
+                        for r in getattr(
+                            self, "auto_quarantine_ratings", ["CRITICAL", "HIGH"]
+                        )
+                    ]
                     if sens_rating in auto_ratings:
                         logger.info(
                             f"Jev pre-classification assigned sensitivity rating '{sens_rating}' to {orig_rel_path}. "
@@ -411,7 +419,9 @@ class QuarantineInterceptorService:
                         record["policy_action"] = "sensitivity_hold"
                         return record
                 except Exception as jev_err:
-                    logger.warning(f"Jev pre-classification warning for {orig_rel_path}: {jev_err}")
+                    logger.warning(
+                        f"Jev pre-classification warning for {orig_rel_path}: {jev_err}"
+                    )
 
             # 5. Policy Lifecycle Action Execution
             if action == "redact":
@@ -489,7 +499,9 @@ class QuarantineInterceptorService:
                 archive_dir = self.resolve_safe_target_dir(
                     base_dir, target_subfolder, default_subfolder="Archive"
                 )
-                archive_subfolder = os.path.relpath(archive_dir, base_dir).replace("\\", "/")
+                archive_subfolder = os.path.relpath(archive_dir, base_dir).replace(
+                    "\\", "/"
+                )
                 if archive_subfolder == ".":
                     archive_subfolder = ""
                 os.makedirs(archive_dir, exist_ok=True)

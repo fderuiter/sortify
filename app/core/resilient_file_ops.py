@@ -21,7 +21,7 @@ try:
     import importlib.util
 
     _spec = importlib.util.find_spec("shutil")
-    if _spec is not None:
+    if _spec is not None and _spec.loader is not None:
         _m = importlib.util.module_from_spec(_spec)
         _spec.loader.exec_module(_m)
         _ORIGINAL_SHUTIL_MOVE = _m.move

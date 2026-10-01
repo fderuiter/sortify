@@ -1,0 +1,91 @@
+name: PR Risk Classifier
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+  statuses: write
+
+jobs:
+  classify:
+    name: Classify PR Risk
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.6.0"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Extract PR Metadata
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const { data: files } = await github.rest.pulls.listFiles({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pr.number,
+              per_page: 100
+            });
+
+            const filenames = files.map(f => f.filename);
+            const additions = files.reduce((acc, f) => acc + f.additions, 0);
+            const deletions = files.reduce((acc, f) => acc + f.deletions, 0);
+            const labels = pr.labels.map(l => l.name);
+            const isDependabot = pr.user.login.includes('dependabot');
+
+            let dependencyUpdateType = 'minor';
+            if (isDependabot || labels.includes('dependencies')) {
+              if (pr.title.toLowerCase().includes('major') || pr.title.toLowerCase().includes('breaking')) {
+                dependencyUpdateType = 'major';
+              }
+            }
+
+            const meta = {
+              pr_number: pr.number,
+              title: pr.title,
+              author: pr.user.login,
+              is_draft: pr.draft,
+              labels: labels,
+              changed_files: filenames,
+              additions: additions,
+              deletions: deletions,
+              is_dependabot: isDependabot,
+              dependency_update_type: dependencyUpdateType,
+              unresolved_threads: 0
+            };
+
+            const fs = require('fs');
+            fs.writeFileSync('pr_meta.json', JSON.stringify(meta, null, 2));
+
+      - name: Run Classifier Script
+        run: |
+          python scripts/classify_pr.py --json-input pr_meta.json --output classification_result.json
+
+      - name: Post Classification Status Check
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const result = JSON.parse(fs.readFileSync('classification_result.json', 'utf8'));
+
+            console.log("Classification result:", result);
+
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.payload.pull_request.head.sha,
+              state: result.eligible ? 'success' : 'pending',
+              context: 'automerge/classification',
+              description: result.eligible ? 'Eligible for auto-merge' : `Blocked: ${result.risk_level}`,
+            });

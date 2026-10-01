@@ -52,7 +52,9 @@ def test_upstream_barrier_jev_classification_and_hold():
 
     med_file = os.path.join(sample_dir, "medical_patient_chart.txt")
     with open(med_file, "w", encoding="utf-8") as f:
-        f.write("Patient Medical Record: John Doe\nDiagnosis: Confidential Clinical Trial Subject Data\nPrescription: Regimen 4")
+        f.write(
+            "Patient Medical Record: John Doe\nDiagnosis: Confidential Clinical Trial Subject Data\nPrescription: Regimen 4"
+        )
 
     staged_info = service.stage_incoming_file(source_path=med_file, base_dir=sample_dir)
     job_id = staged_info["job_id"]
@@ -62,8 +64,19 @@ def test_upstream_barrier_jev_classification_and_hold():
     elapsed_ms = (time.perf_counter() - start_t) * 1000.0
 
     # Sub-150ms SLA verification (with tolerance for CI runner overhead)
-    threshold = 1000.0 if ("CI" in os.environ or "PYTEST_XDIST_WORKER" in os.environ or os.name == "nt" or os.environ.get("GITHUB_ACTIONS") == "true") else 150.0
-    assert elapsed_ms < threshold, f"Jev classification took {elapsed_ms:.2f}ms (SLA: <{threshold}ms)"
+    threshold = (
+        1000.0
+        if (
+            "CI" in os.environ
+            or "PYTEST_XDIST_WORKER" in os.environ
+            or os.name == "nt"
+            or os.environ.get("GITHUB_ACTIONS") == "true"
+        )
+        else 150.0
+    )
+    assert elapsed_ms < threshold, (
+        f"Jev classification took {elapsed_ms:.2f}ms (SLA: <{threshold}ms)"
+    )
 
     assert result["status"] == "QUARANTINED"
     assert result["policy_action"] == "sensitivity_hold"
@@ -128,10 +141,17 @@ def test_analyzer_plan_node_sensitivity_metadata():
     with open(pub_file, "w", encoding="utf-8") as f:
         f.write("General public documentation file")
 
-    db.upsert_documents([
-        (sample_dir, "clinical_trial_report.txt", "hash1", "Clinical Trial Report Patient Medical Diagnosis SSN 123-45-6789"),
-        (sample_dir, "readme.txt", "hash2", "General public documentation file"),
-    ])
+    db.upsert_documents(
+        [
+            (
+                sample_dir,
+                "clinical_trial_report.txt",
+                "hash1",
+                "Clinical Trial Report Patient Medical Diagnosis SSN 123-45-6789",
+            ),
+            (sample_dir, "readme.txt", "hash2", "General public documentation file"),
+        ]
+    )
 
     from app.core.jev_classifier import JevClassifierEngine
 
@@ -142,7 +162,9 @@ def test_analyzer_plan_node_sensitivity_metadata():
     }
 
     analyzer = FileAnalyzer(max_folders=12, stop_words=set(), db=db)
-    sorting_plan = analyzer.generate_sorting_plan(base_dir=sample_dir, jev_results=jev_results)
+    sorting_plan = analyzer.generate_sorting_plan(
+        base_dir=sample_dir, jev_results=jev_results
+    )
 
     plan_dict = dict(sorting_plan)
 
@@ -155,7 +177,10 @@ def test_analyzer_plan_node_sensitivity_metadata():
         if isinstance(node, dict):
             for k, v in node.items():
                 if isinstance(v, dict) and v.get("__type__") == "file":
-                    if "clinical_trial_report.txt" in k or v.get("relative_source") == "clinical_trial_report.txt":
+                    if (
+                        "clinical_trial_report.txt" in k
+                        or v.get("relative_source") == "clinical_trial_report.txt"
+                    ):
                         med_node = v
                     elif "readme.txt" in k or v.get("relative_source") == "readme.txt":
                         pub_node = v
@@ -210,7 +235,9 @@ def test_downstream_barrier_mover_interception():
     assert not os.path.exists(std_target)
 
     # File MUST be redirected to '_Compliance_Quarantine'
-    quarantine_target = os.path.join(sample_dir, "_Compliance_Quarantine", "patient_health_data.txt")
+    quarantine_target = os.path.join(
+        sample_dir, "_Compliance_Quarantine", "patient_health_data.txt"
+    )
     assert os.path.exists(quarantine_target)
 
     # Verify structured audit log recorded in quarantine_records
@@ -255,5 +282,7 @@ def test_administrative_controls_custom_settings():
     )
 
     # File must be intercepted and redirected to 'Custom_Quarantine_Vault'
-    custom_target = os.path.join(sample_dir, "Custom_Quarantine_Vault", "medium_risk_invoice.txt")
+    custom_target = os.path.join(
+        sample_dir, "Custom_Quarantine_Vault", "medium_risk_invoice.txt"
+    )
     assert os.path.exists(custom_target)

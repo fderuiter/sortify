@@ -12,10 +12,6 @@ This document is automatically generated. Do not edit manually.
 
 ![UI Component Hierarchy](assets/diagrams/ui_component_hierarchy.svg)
 
-## `app.ui.notifications`
-
-::: app.ui.notifications
-
 ## `app.ui.tui`
 
 ::: app.ui.tui
