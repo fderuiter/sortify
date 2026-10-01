@@ -9,6 +9,7 @@ on:
 permissions:
   contents: read
   actions: write
+  security-events: write
 
 jobs:
   security-and-audit:
@@ -23,6 +24,7 @@ jobs:
       uses: astral-sh/setup-uv@v5
       with:
         version: "0.6.0"
+        enable-cache: false
 
     - name: Set up Python
       uses: actions/setup-python@v5
@@ -45,7 +47,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: '1.25'
+        go-version: '1.23'
 
     - name: Workflow Linting
       run: |
@@ -63,6 +65,7 @@ jobs:
       uses: astral-sh/setup-uv@v5
       with:
         version: "0.6.0"
+        enable-cache: false
 
     - name: Set up Python
       uses: actions/setup-python@v5
@@ -93,6 +96,7 @@ jobs:
       uses: astral-sh/setup-uv@v5
       with:
         version: "0.6.0"
+        enable-cache: false
 
     - name: Set up Python
       uses: actions/setup-python@v5
@@ -238,6 +242,7 @@ jobs:
       uses: astral-sh/setup-uv@v5
       with:
         version: "0.6.0"
+        enable-cache: false
 
     - name: Set up Python
       uses: actions/setup-python@v5
@@ -275,6 +280,7 @@ jobs:
       uses: astral-sh/setup-uv@v5
       with:
         version: "0.6.0"
+        enable-cache: false
 
     - name: Set up Python
       uses: actions/setup-python@v5
