@@ -1,9 +1,9 @@
 """Unified context-aware notification bus for NiceGUI, Textual TUI, and CLI runtime environments."""
 
-from enum import Enum
 import logging
 import sys
 import threading
+from enum import Enum
 from typing import Any, Callable, Dict, Optional
 
 from app.core.path_utils import scrub_user_home_paths
@@ -107,8 +107,9 @@ class NotificationManager:
     def _is_nicegui_active(self) -> bool:
         try:
             if "nicegui" in sys.modules:
-                import nicegui.ui as nicegui_ui
                 from unittest.mock import MagicMock
+
+                import nicegui.ui as nicegui_ui
                 if not isinstance(nicegui_ui, MagicMock):
                     if getattr(nicegui_ui, "context", None) and getattr(nicegui_ui.context, "client", None):
                         return True
@@ -133,7 +134,8 @@ class NotificationManager:
             timeout: Display timeout in milliseconds or seconds.
             **kwargs: Additional parameters passed to target UI handler.
 
-        Returns:
+        Returns
+        -------
             Dict containing event summary details.
         """
         msg_str = str(message) if message is not None else ""
