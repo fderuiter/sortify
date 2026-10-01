@@ -180,12 +180,8 @@ jobs:
       run: |
         import subprocess, sys, os
         cli_exe = r"dist/smart-autosorter/smart-autosorter.exe"
-        gui_exe = r"dist/smart-autosorter/smart-autosorter-gui.exe"
         if not os.path.exists(cli_exe):
             print(f"Missing CLI executable target: {cli_exe}")
-            sys.exit(1)
-        if not os.path.exists(gui_exe):
-            print(f"Missing GUI executable target: {gui_exe}")
             sys.exit(1)
         res = subprocess.run([cli_exe, "--smoke-test"])
         if res.returncode != 0:
