@@ -78,6 +78,10 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.core.db_worker
 
+## `app.core.diagram_schema`
+
+::: app.core.diagram_schema
+
 ## `app.core.domain_contracts`
 
 ::: app.core.domain_contracts

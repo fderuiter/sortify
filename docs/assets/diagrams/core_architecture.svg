@@ -4,20 +4,20 @@
   <text x="20" y="70" font-family="sans-serif" font-size="12" fill="#64748b">Mermaid Diagram Specification (Fallback View):</text>
   <foreignObject x="20" y="90" width="760" height="210">
     <pre xmlns="http://www.w3.org/1999/xhtml" style="font-family: monospace; font-size: 12px; color: #334155; background: #ffffff; padding: 12px; border-radius: 6px; border: 1px solid #e2e8f0; overflow: auto; height: 180px;">flowchart TD
-subgraph ui_layer ["Presentation &amp; User Interfaces (app.ui)"]
+subgraph ui_layer ["Presentation &amp; User Interfaces (app.tui)"]
 app_main("app.main (CLI Entry Point)")
-ui_app["app.ui.app (AutoSorterApp)"]
-ui_catalog["app.ui.catalog (Component Catalog)"]
-ui_wizard["app.ui.wizard (Setup Wizard)"]
-ui_dialog_helper["app.ui.dialog_helper"]
-ui_a11y_runner["app.ui.a11y_runner"]
-ui_diagram_schema["app.ui.diagram_schema"]
+app_tui["app.tui (Textual Terminal Interface)"]
 end
 subgraph session_orchestration ["Session Orchestration &amp; Lifecycle (app.core)"]
 core_session["app.core.session"]
 core_user_space_bootstrap["app.core.user_space_bootstrap"]
 core_daemon["app.core.daemon"]
-core_integration["app.core.integration"]</pre>
+core_integration["app.core.integration"]
+core_diagram_schema["app.core.diagram_schema"]
+core_domain_contracts["app.core.domain_contracts"]
+end
+subgraph ingestion_extraction ["Ingestion &amp; Extraction Engine (app.core)"]
+core_extractor["app.core.extractor"]</pre>
   </foreignObject>
 
 </svg>

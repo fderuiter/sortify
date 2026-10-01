@@ -10,16 +10,16 @@ import sys
 from typing import Any, Dict, List
 from unittest.mock import MagicMock
 
-from app.ui.a11y_runner import (
-    run_all_catalog_scans,
-)
-from app.ui.diagram_schema import (
+from app.core.diagram_schema import (
     SYSTEM_DIAGRAM_SPECS,
     ComponentDiagramSpec,
     DiagramEdge,
     DiagramNode,
     DiagramSpec,
     DiagramSubgraph,
+)
+from app.ui.a11y_runner import (
+    run_all_catalog_scans,
 )
 from app.ui.dialog_helper import get_dialog_card_classes
 
