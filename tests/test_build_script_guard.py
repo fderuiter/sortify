@@ -220,15 +220,14 @@ def test_build_script_cpu_profile_scan_fails_if_gpu_binaries_exist():
                 )
 
 
-def test_build_script_dual_target_verification_missing_executable(tmp_path):
-    """Verify that build fails if dist directory exists but is missing target executables."""
+def test_build_script_target_verification_missing_executable(tmp_path):
+    """Verify that build fails if dist directory exists but is missing target executable."""
     import os
 
     dist_dir = tmp_path / "dist" / "smart-autosorter"
     dist_dir.mkdir(parents=True, exist_ok=True)
-    # Create only cli target, omit gui target
+    # dist_dir exists but smart-autosorter is missing
     exe_ext = ".exe" if sys.platform == "win32" else ""
-    (dist_dir / f"smart-autosorter{exe_ext}").write_text("mock_cli")
 
     original_cwd = os.getcwd()
     os.chdir(tmp_path)
@@ -252,21 +251,20 @@ def test_build_script_dual_target_verification_missing_executable(tmp_path):
                 printed_messages = "".join(
                     [call.args[0] for call in mock_print.call_args_list if call.args]
                 )
-                assert "Missing expected executable target(s)" in printed_messages
-                assert f"smart-autosorter-gui{exe_ext}" in printed_messages
+                assert "Missing expected executable target" in printed_messages
+                assert f"smart-autosorter{exe_ext}" in printed_messages
     finally:
         os.chdir(original_cwd)
 
 
-def test_build_script_dual_target_verification_success(tmp_path):
-    """Verify that build passes when both executables exist and shortcuts are generated."""
+def test_build_script_target_verification_success(tmp_path):
+    """Verify that build passes when executable target exists."""
     import os
 
     dist_dir = tmp_path / "dist" / "smart-autosorter"
     dist_dir.mkdir(parents=True, exist_ok=True)
     exe_ext = ".exe" if sys.platform == "win32" else ""
     (dist_dir / f"smart-autosorter{exe_ext}").write_text("mock_cli")
-    (dist_dir / f"smart-autosorter-gui{exe_ext}").write_text("mock_gui")
 
     original_cwd = os.getcwd()
     os.chdir(tmp_path)
@@ -290,6 +288,6 @@ def test_build_script_dual_target_verification_success(tmp_path):
                     [call.args[0] for call in mock_print.call_args_list if call.args]
                 )
                 assert "Verification passed" in printed_messages
-                assert (dist_dir / "smart-autosorter.desktop").exists()
+                assert not (dist_dir / "smart-autosorter.desktop").exists()
     finally:
         os.chdir(original_cwd)
