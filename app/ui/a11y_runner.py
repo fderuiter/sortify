@@ -10,6 +10,7 @@ import sys
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
+from unittest.mock import MagicMock
 
 
 def parse_prop_str(prop_str: str) -> Dict[str, Any]:
@@ -43,6 +44,7 @@ class MockElement:
 
     def __init__(self, tag: str, *args, **kwargs):
         self._tag = tag
+        self._type_name = tag.capitalize() if isinstance(tag, str) and tag else "Element"
         self._props: Dict[str, Any] = {}
         self._classes: List[str] = []
         self._text: Optional[str] = None
@@ -620,7 +622,7 @@ def scan_catalog_component(
     import app.ui.catalog as catalog_module
 
     ui_obj = getattr(catalog_module, "ui", None)
-    has_proxy = hasattr(ui_obj, "set_target")
+    has_proxy = not isinstance(ui_obj, MagicMock) and hasattr(ui_obj, "set_target")
     old_target = getattr(ui_obj, "_target", None) if has_proxy else None
 
     if has_proxy:

@@ -19,71 +19,6 @@ ui = MagicMock()
 logger = logging.getLogger(__name__)
 
 
-class TerminalControl:
-    """Mock/terminal control element to emulate UI widgets."""
-
-    def __init__(self, name=""):
-        self.name = name
-        self.text = ""
-        self.value = 0.0
-        self.visible = True
-        self.enabled = True
-        self._props = {}
-
-    def set_text(self, text: str):
-        """Set text content."""
-        self.text = str(text)
-        if text:
-            logger.info(f"[{self.name}] {text}")
-
-    def set_value(self, val: float):
-        """Set progress value."""
-        try:
-            self.value = float(val)
-        except Exception:
-            self.value = 0.0
-
-    def set_visibility(self, visible: bool):
-        """Set visibility state."""
-        self.visible = bool(visible)
-
-    def enable(self):
-        """Enable the control."""
-        self.enabled = True
-
-    def disable(self):
-        """Disable the control."""
-        self.enabled = False
-
-    def props(self, *args, **kwargs):
-        """Chain property configuration."""
-        return self
-
-    def classes(self, *args, **kwargs):
-        """Chain style classes configuration."""
-        return self
-
-    def on(self, *args, **kwargs):
-        """Bind event handler."""
-        return self
-
-    def add_slot(self, *args, **kwargs):
-        """Add slot template."""
-        return self
-
-    def update(self, *args, **kwargs):
-        """Update element rendering."""
-        return self
-
-    def close(self, *args, **kwargs):
-        """Close dialog or component."""
-        return self
-
-    def open(self, *args, **kwargs):
-        """Open dialog or component."""
-        return self
-
-
 class AutoSorterApp:
     """Main application class for the terminal interface."""
 
@@ -123,29 +58,23 @@ class AutoSorterApp:
             self.settings, "CLINICAL_GENERATE_AUDIT_REPORT", True
         )
 
-    def build_ui(self):
-        """Build the terminal user interface control bindings."""
-        self.path_input = TerminalControl("PATH_INPUT")
-        self.path_input.value = self.base_dir
-        self.status_label = TerminalControl("STATUS")
-        self.status_label.text = "Ready."
-        self.progress_bar = TerminalControl("PROGRESS")
-        self.file_progress_bar = TerminalControl("FILE_PROGRESS")
-        self.file_progress_label = TerminalControl("FILE_PROGRESS_LABEL")
-        self.cancel_btn = TerminalControl("CANCEL")
-        self.meta_label = TerminalControl("META")
-        self.warnings_label = TerminalControl("WARNINGS")
-        self.ai_warnings_label = TerminalControl("AI_WARNINGS")
-        self.strategy_selector = TerminalControl("STRATEGY_SELECTOR")
-        self.strategy_selector.value = self.sorting_strategy
-        self.clinical_controls_row = TerminalControl("CLINICAL_CONTROLS")
-        self.folder_count_badge = TerminalControl("FOLDER_COUNT")
-        self.file_count_badge = TerminalControl("FILE_COUNT")
-        self.tree_view = TerminalControl("TREE")
-        self.tree_view._props = {}
-        self.execute_btn = TerminalControl("EXECUTE")
-        self.undo_btn = TerminalControl("UNDO")
-        self.recalc_dialog = TerminalControl("RECALC_DIALOG")
+        self.status_label = None
+        self.path_input = None
+        self.progress_bar = None
+        self.file_progress_bar = None
+        self.file_progress_label = None
+        self.cancel_btn = None
+        self.meta_label = None
+        self.warnings_label = None
+        self.ai_warnings_label = None
+        self.strategy_selector = None
+        self.clinical_controls_row = None
+        self.folder_count_badge = None
+        self.file_count_badge = None
+        self.tree_view = None
+        self.execute_btn = None
+        self.undo_btn = None
+        self.recalc_dialog = None
 
     def check_abandoned_sessions(self):
         """Check for abandoned sessions on startup and prompt for recovery."""
@@ -258,7 +187,8 @@ class AutoSorterApp:
         self.app_session = AppSession(
             self.settings, self.base_dir, session_id=session_info["session_id"]
         )
-        self.status_label.set_text("Resuming rollback operation...")
+        if self.status_label:
+            self.status_label.set_text("Resuming rollback operation...")
 
         async def run():
             success = False
@@ -268,12 +198,14 @@ class AutoSorterApp:
                     session_info["session_id"],
                 )
                 ui.notify("Rollback resumed and completed successfully.")
-                self.status_label.set_text("Rollback resume complete.")
+                if self.status_label:
+                    self.status_label.set_text("Rollback resume complete.")
                 success = True
             except Exception as e:
                 logger.error(f"Error resuming rollback: {e}")
                 ui.notify(f"Error: {e}", type="negative")
-                self.status_label.set_text("Rollback resume failed.")
+                if self.status_label:
+                    self.status_label.set_text("Rollback resume failed.")
             finally:
                 self.plan = {}
                 self.render_tree()
@@ -289,7 +221,8 @@ class AutoSorterApp:
         self.app_session = AppSession(
             self.settings, self.base_dir, session_id=session_info["session_id"]
         )
-        self.status_label.set_text("Reverting rollback operation...")
+        if self.status_label:
+            self.status_label.set_text("Reverting rollback operation...")
 
         async def run():
             success = False
@@ -299,12 +232,14 @@ class AutoSorterApp:
                     session_info["safety_session_id"],
                 )
                 ui.notify("Rollback reverted successfully.")
-                self.status_label.set_text("Rollback reversion complete.")
+                if self.status_label:
+                    self.status_label.set_text("Rollback reversion complete.")
                 success = True
             except Exception as e:
                 logger.error(f"Error reverting rollback: {e}")
                 ui.notify(f"Error: {e}", type="negative")
-                self.status_label.set_text("Rollback reversion failed.")
+                if self.status_label:
+                    self.status_label.set_text("Rollback reversion failed.")
             finally:
                 self.plan = {}
                 self.render_tree()
@@ -371,7 +306,6 @@ class AutoSorterApp:
                 sqlite3 = None
 
         from app.core.mover import get_safe_path
-        from app.ui.dialog_helper import ask_directory_async
 
         base_dir = session_info["base_dir"]
         safety_folder = session_info["safety_folder"]
@@ -592,7 +526,8 @@ class AutoSorterApp:
             self.app_session.close()
             return
 
-        self.status_label.set_text("Resuming sorting operation...")
+        if self.status_label:
+            self.status_label.set_text("Resuming sorting operation...")
         try:
             self.loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -604,9 +539,11 @@ class AutoSorterApp:
 
             def update_ui():
                 if hasattr(self, "progress_bar"):
-                    self.progress_bar.set_value(pct_val)
+                    if self.progress_bar:
+                        self.progress_bar.set_value(pct_val)
                 if hasattr(self, "status_label"):
-                    self.status_label.set_text(stage_text)
+                    if self.status_label:
+                        self.status_label.set_text(stage_text)
 
             if self.loop and not getattr(self.loop, "is_closed", lambda: False)():
                 try:
@@ -621,12 +558,14 @@ class AutoSorterApp:
                     self.app_session.execute_moves, self.plan, True, progress_callback=resume_progress_cb
                 )
                 ui.notify(f"Resumed and sorted successfully: {summary}")
-                self.status_label.set_text("Sorting complete.")
+                if self.status_label:
+                    self.status_label.set_text("Sorting complete.")
                 success = True
             except Exception as e:
                 logger.error(f"Error resuming sort: {e}")
                 ui.notify(f"Error: {e}", type="negative")
-                self.status_label.set_text("Sorting failed.")
+                if self.status_label:
+                    self.status_label.set_text("Sorting failed.")
             finally:
                 self.plan = {}
                 self.render_tree()
@@ -642,7 +581,8 @@ class AutoSorterApp:
         self.app_session = AppSession(
             self.settings, self.base_dir, session_id=session_info["session_id"]
         )
-        self.status_label.set_text("Reverting sorting operation...")
+        if self.status_label:
+            self.status_label.set_text("Reverting sorting operation...")
 
         async def run():
             success = False
@@ -651,12 +591,14 @@ class AutoSorterApp:
                     self.app_session.rollback, session_info["session_id"], True
                 )
                 ui.notify("Reverted successfully.")
-                self.status_label.set_text("Reversion complete.")
+                if self.status_label:
+                    self.status_label.set_text("Reversion complete.")
                 success = True
             except Exception as e:
                 logger.error(f"Error reverting sort: {e}")
                 ui.notify(f"Error: {e}", type="negative")
-                self.status_label.set_text("Reversion failed.")
+                if self.status_label:
+                    self.status_label.set_text("Reversion failed.")
             finally:
                 self.plan = {}
                 self.render_tree()
@@ -676,55 +618,6 @@ class AutoSorterApp:
 
         show_wizard(self, self.settings)
 
-    def show_settings_view(self):
-        """Show the settings dialog."""
-        from app.ui.settings import show_settings
-
-        show_settings(self, self.settings)
-
-    def show_help_view(self):
-        """Display help information."""
-        from app.ui.help_modal import show_help
-
-        show_help(self)
-
-    def select_directory(self):
-        """Prompt the user to select a directory for analysis."""
-
-        def on_selected(path):
-            if path:
-                self.base_dir = path
-                if hasattr(self, "path_input"):
-                    self.path_input.set_value(path)
-                self.start_analysis()
-
-        ask_directory_async(None, "Select Directory", on_selected, None, None)
-
-    def on_scan_clicked(self):
-        """Handle click on Scan & Organize button."""
-        if hasattr(self, "path_input"):
-            val = self.path_input.value.strip()
-            if val and os.path.isdir(val):
-                self.base_dir = os.path.abspath(val)
-                self.start_analysis()
-            else:
-                ui.notify(
-                    "Please enter a valid existing folder directory.", type="warning"
-                )
-        elif self.base_dir:
-            self.start_analysis()
-
-    def load_preset(self, path: str):
-        """Load a quick preset folder path."""
-        abs_path = os.path.abspath(path)
-        if os.path.exists(abs_path) and os.path.isdir(abs_path):
-            if hasattr(self, "path_input"):
-                self.path_input.set_value(abs_path)
-            self.base_dir = abs_path
-            self.start_analysis()
-        else:
-            ui.notify(f"Preset path does not exist: {abs_path}", type="warning")
-
     def start_analysis(self):
         """Start the background analysis workflow for the selected directory.
 
@@ -740,7 +633,8 @@ class AutoSorterApp:
         self.locked_files = {}
         self._ratings_cache = {}
         if hasattr(self, "undo_btn"):
-            self.undo_btn.set_visibility(False)
+            if self.undo_btn:
+                self.undo_btn.set_visibility(False)
         if self.app_session:
             try:
                 self.app_session.close()
@@ -748,8 +642,10 @@ class AutoSorterApp:
                 logger.warning(f"Error closing previous session: {e}")
             self.app_session = None
         self.app_session = AppSession(self.settings, self.base_dir)
-        self.status_label.set_text("Scanning directory...")
-        self.cancel_btn.set_visibility(True)
+        if self.status_label:
+            self.status_label.set_text("Scanning directory...")
+        if self.cancel_btn:
+            self.cancel_btn.set_visibility(True)
         self._cancel_analysis_flag = False
 
         asyncio.create_task(self._scan_and_process_worker())
@@ -799,7 +695,8 @@ class AutoSorterApp:
             )
             self.completed_files += len(bypassed_files)
             if self.total_files > 0:
-                self.progress_bar.set_value(self.completed_files / self.total_files)
+                if self.progress_bar:
+                    self.progress_bar.set_value(self.completed_files / self.total_files)
 
             bypassed_set = set(bypassed_files)
             items_to_sort = [f for f in files if f not in bypassed_set]
@@ -810,15 +707,19 @@ class AutoSorterApp:
 
                 def update_ui():
                     if hasattr(self, "file_progress_bar"):
-                        self.file_progress_bar.set_visibility(True)
-                        self.file_progress_bar.set_value(pct_val)
+                        if self.file_progress_bar:
+                            self.file_progress_bar.set_visibility(True)
+                        if self.file_progress_bar:
+                            self.file_progress_bar.set_value(pct_val)
                     if hasattr(self, "file_progress_label"):
-                        self.file_progress_label.set_visibility(True)
+                        if self.file_progress_label:
+                            self.file_progress_label.set_visibility(True)
                         if stage_text:
                             text = f"Active file progress: {pct_val * 100:.1f}% - {stage_text}"
                         else:
                             text = f"Active file progress: {pct_val * 100:.1f}%"
-                        self.file_progress_label.set_text(text)
+                        if self.file_progress_label:
+                            self.file_progress_label.set_text(text)
 
                 if self.loop and not getattr(self.loop, "is_closed", lambda: False)():
                     try:
@@ -855,32 +756,41 @@ class AutoSorterApp:
 
                 self.completed_files += 1
                 if self.total_files > 0:
-                    self.progress_bar.set_value(self.completed_files / self.total_files)
+                    if self.progress_bar:
+                        self.progress_bar.set_value(self.completed_files / self.total_files)
 
                 # Reset/hide file progress elements after processing an item
                 if hasattr(self, "file_progress_bar"):
-                    self.file_progress_bar.set_value(0)
-                    self.file_progress_bar.set_visibility(False)
+                    if self.file_progress_bar:
+                        self.file_progress_bar.set_value(0)
+                    if self.file_progress_bar:
+                        self.file_progress_bar.set_visibility(False)
                 if hasattr(self, "file_progress_label"):
-                    self.file_progress_label.set_text("")
-                    self.file_progress_label.set_visibility(False)
+                    if self.file_progress_label:
+                        self.file_progress_label.set_text("")
+                    if self.file_progress_label:
+                        self.file_progress_label.set_visibility(False)
 
                 if was_skipped:
                     msg = f"Processed {self.completed_files}/{self.total_files} files (skipped unchanged: {item})"
-                    self.status_label.set_text(msg)
+                    if self.status_label:
+                        self.status_label.set_text(msg)
                     logger.info(msg)
                 else:
                     msg = f"Processed {self.completed_files}/{self.total_files} files (extracted: {item})"
-                    self.status_label.set_text(msg)
+                    if self.status_label:
+                        self.status_label.set_text(msg)
                     logger.info(msg)
 
                 await asyncio.sleep(0.01)
 
             # Hide file progress elements when done
             if hasattr(self, "file_progress_bar"):
-                self.file_progress_bar.set_visibility(False)
+                if self.file_progress_bar:
+                    self.file_progress_bar.set_visibility(False)
             if hasattr(self, "file_progress_label"):
-                self.file_progress_label.set_visibility(False)
+                if self.file_progress_label:
+                    self.file_progress_label.set_visibility(False)
 
             if not self._cancel_analysis_flag:
                 await asyncio.to_thread(self.load_locked_files_from_db)
@@ -890,28 +800,35 @@ class AutoSorterApp:
                 )
                 await self.verify_current_plan()
                 self.render_tree()
-                self.status_label.set_text("Analysis complete.")
-                self.execute_btn.enable()
+                if self.status_label:
+                    self.status_label.set_text("Analysis complete.")
+                if self.execute_btn:
+                    self.execute_btn.enable()
                 self.start_watcher()
         except Exception as e:
             logger.error(f"Error scanning directory: {e}")
-            self.status_label.set_text(f"Error: {e}")
+            if self.status_label:
+                self.status_label.set_text(f"Error: {e}")
         finally:
-            self.cancel_btn.set_visibility(False)
+            if self.cancel_btn:
+                self.cancel_btn.set_visibility(False)
 
     def cancel_analysis(self):
         """Cancel an ongoing analysis."""
         self._cancel_analysis_flag = True
         if hasattr(self, "status_label") and self.status_label:
-            self.status_label.set_text("Analysis cancelled.")
+            if self.status_label:
+                self.status_label.set_text("Analysis cancelled.")
         if hasattr(self, "cancel_btn") and self.cancel_btn:
-            self.cancel_btn.set_visibility(False)
+            if self.cancel_btn:
+                self.cancel_btn.set_visibility(False)
 
     def cancel_recalc(self):
         """Cancel the recalculation process."""
         self._cancel_recalc_flag = True
         if hasattr(self, "recalc_dialog") and self.recalc_dialog:
-            self.recalc_dialog.close()
+            if self.recalc_dialog:
+                self.recalc_dialog.close()
 
     def toggle_contextual_rename(self, e):
         """Toggle contextual renaming and rebuild the sorting plan."""
@@ -943,7 +860,8 @@ class AutoSorterApp:
         self.settings.SORTING_STRATEGY = strat
         is_clinical = strat in ("clinical_tmf", "clinical_isf")
         if hasattr(self, "clinical_controls_row"):
-            self.clinical_controls_row.set_visibility(is_clinical)
+            if self.clinical_controls_row:
+                self.clinical_controls_row.set_visibility(is_clinical)
         if hasattr(self, "compliance_btn"):
             self.compliance_btn.set_visibility(is_clinical)
 
@@ -1198,8 +1116,10 @@ class AutoSorterApp:
             if token.is_set():
                 return
 
-            self.recalc_dialog.open()
-            self.status_label.set_text("Rebuilding plan...")
+            if self.recalc_dialog:
+                self.recalc_dialog.open()
+            if self.status_label:
+                self.status_label.set_text("Rebuilding plan...")
 
             def check_cancel():
                 return token.is_set()
@@ -1214,7 +1134,8 @@ class AutoSorterApp:
                 )
 
                 if token.is_set():
-                    self.status_label.set_text("Recalculation cancelled.")
+                    if self.status_label:
+                        self.status_label.set_text("Recalculation cancelled.")
                     return
 
                 self.plan = plan
@@ -1222,13 +1143,16 @@ class AutoSorterApp:
                 if token.is_set():
                     return
                 self.render_tree()
-                self.status_label.set_text("Plan rebuilt.")
+                if self.status_label:
+                    self.status_label.set_text("Plan rebuilt.")
             except Exception as e:
                 logger.error(f"Error rebuilding plan: {e}")
-                self.status_label.set_text("Error rebuilding plan.")
+                if self.status_label:
+                    self.status_label.set_text("Error rebuilding plan.")
             finally:
                 if getattr(self, "_current_recalc_token", None) == token:
-                    self.recalc_dialog.close()
+                    if self.recalc_dialog:
+                        self.recalc_dialog.close()
 
         self._debounce_task = asyncio.create_task(delayed_run(token))
 
@@ -1259,7 +1183,8 @@ class AutoSorterApp:
         """Expand all nodes in the tree view."""
         if hasattr(self, "tree_view"):
             try:
-                self.tree_view.run_method("expandAll")
+                if self.tree_view:
+                    self.tree_view.run_method("expandAll")
             except Exception:
                 pass
 
@@ -1267,7 +1192,8 @@ class AutoSorterApp:
         """Collapse all nodes in the tree view."""
         if hasattr(self, "tree_view"):
             try:
-                self.tree_view.run_method("collapseAll")
+                if self.tree_view:
+                    self.tree_view.run_method("collapseAll")
             except Exception:
                 pass
 
@@ -1666,16 +1592,20 @@ class AutoSorterApp:
         self.tree_nodes = []
         folder_count, file_count = self._flatten(self.plan, "", self.tree_nodes)
         if hasattr(self, "folder_count_badge"):
-            self.folder_count_badge.set_text(
+            if self.folder_count_badge:
+                self.folder_count_badge.set_text(
                 f"{folder_count} folder{'s' if folder_count != 1 else ''}"
             )
         if hasattr(self, "file_count_badge"):
-            self.file_count_badge.set_text(
+            if self.file_count_badge:
+                self.file_count_badge.set_text(
                 f"{file_count} file{'s' if file_count != 1 else ''}"
             )
         if hasattr(self, "tree_view"):
-            self.tree_view._props["nodes"] = self.tree_nodes
-            self.tree_view.update()
+            if self.tree_view:
+                self.tree_view._props["nodes"] = self.tree_nodes
+            if self.tree_view:
+                self.tree_view.update()
 
     def _flatten(self, node, current_path, nodes_list):
         folder_count = 0
@@ -1915,8 +1845,10 @@ class AutoSorterApp:
                 type="negative",
             )
             if hasattr(self, "warnings_label"):
-                self.warnings_label.set_text(warn_msg)
-                self.warnings_label.set_visibility(True)
+                if self.warnings_label:
+                    self.warnings_label.set_text(warn_msg)
+                if self.warnings_label:
+                    self.warnings_label.set_visibility(True)
             asyncio.create_task(self.verify_current_plan())
             return
 
@@ -1931,15 +1863,20 @@ class AutoSorterApp:
         if hasattr(self, "_current_recalc_token") and self._current_recalc_token:
             self._current_recalc_token.set()
         try:
-            self.recalc_dialog.close()
+            if self.recalc_dialog:
+                self.recalc_dialog.close()
         except Exception:
             pass
 
-        self.execute_btn.disable()
+        if self.execute_btn:
+            self.execute_btn.disable()
         if hasattr(self, "undo_btn"):
-            self.undo_btn.set_visibility(False)
-        self.status_label.set_text("Executing sort...")
-        self.progress_bar.set_value(0)
+            if self.undo_btn:
+                self.undo_btn.set_visibility(False)
+        if self.status_label:
+            self.status_label.set_text("Executing sort...")
+        if self.progress_bar:
+            self.progress_bar.set_value(0)
         self.stop_watcher()
 
         try:
@@ -1954,9 +1891,11 @@ class AutoSorterApp:
 
                 def update_ui():
                     if hasattr(self, "progress_bar"):
-                        self.progress_bar.set_value(pct_val)
+                        if self.progress_bar:
+                            self.progress_bar.set_value(pct_val)
                     if hasattr(self, "status_label"):
-                        self.status_label.set_text(stage_text)
+                        if self.status_label:
+                            self.status_label.set_text(stage_text)
 
                 if self.loop and not getattr(self.loop, "is_closed", lambda: False)():
                     try:
@@ -1977,16 +1916,20 @@ class AutoSorterApp:
                 fast_path_summary = None
                 if fast_path_plan:
                     # Phase 1: Fast-path deterministic moves
-                    self.status_label.set_text(
+                    if self.status_label:
+                        self.status_label.set_text(
                         "Phase 1/2: Executing fast-path rules..."
                     )
-                    self.progress_bar.set_value(0.1)
+                    if self.progress_bar:
+                        self.progress_bar.set_value(0.1)
                     fast_path_summary = await asyncio.to_thread(
                         self.app_session.execute_moves, fast_path_plan, progress_callback=phase1_progress_cb
                     )
 
-                self.progress_bar.set_value(0.4)
-                self.status_label.set_text(
+                if self.progress_bar:
+                    self.progress_bar.set_value(0.4)
+                if self.status_label:
+                    self.status_label.set_text(
                     "Phase 1 complete. Initiating AI classification..."
                 )
 
@@ -2003,11 +1946,13 @@ class AutoSorterApp:
                 await asyncio.to_thread(self.load_locked_files_from_db)
                 await asyncio.to_thread(self.load_ratings_from_db)
 
-                self.progress_bar.set_value(0.5)
+                if self.progress_bar:
+                    self.progress_bar.set_value(0.5)
 
                 slow_path_summary = None
                 if slow_path_plan:
-                    self.status_label.set_text(
+                    if self.status_label:
+                        self.status_label.set_text(
                         "Phase 2/2: Executing AI classification..."
                     )
                     slow_path_summary = await asyncio.to_thread(
@@ -2017,7 +1962,8 @@ class AutoSorterApp:
                 # Explicitly unload all models at the end of sorting execution
                 registry.unload_all_models()
 
-                self.progress_bar.set_value(0.9)
+                if self.progress_bar:
+                    self.progress_bar.set_value(0.9)
 
                 summary = {}
                 for s in (fast_path_summary, slow_path_summary):
@@ -2029,17 +1975,21 @@ class AutoSorterApp:
                                 summary[k] = v
 
                 ui.notify(f"Sorted successfully: {summary}", type="positive")
-                self.status_label.set_text(
+                if self.status_label:
+                    self.status_label.set_text(
                     "Sorting complete. You can click 'Undo Last Sort' to revert anytime."
                 )
-                self.progress_bar.set_value(1.0)
+                if self.progress_bar:
+                    self.progress_bar.set_value(1.0)
                 if hasattr(self, "undo_btn"):
-                    self.undo_btn.set_visibility(True)
+                    if self.undo_btn:
+                        self.undo_btn.set_visibility(True)
                 success = True
             except Exception as e:
                 logger.error(f"Error executing sort: {e}")
                 ui.notify(f"Error: {e}", type="negative")
-                self.status_label.set_text("Sorting failed.")
+                if self.status_label:
+                    self.status_label.set_text("Sorting failed.")
 
                 with (
                     ui.dialog() as error_dialog,
@@ -2061,11 +2011,13 @@ class AutoSorterApp:
                 self._sorting_in_progress = False
                 self.plan = {}
                 self.render_tree()
-                self.execute_btn.enable()
+                if self.execute_btn:
+                    self.execute_btn.enable()
                 self.start_watcher()
                 if success and self.app_session:
                     try:
-                        self.status_label.set_text(
+                        if self.status_label:
+                            self.status_label.set_text(
                             "Running background classifier updates..."
                         )
                         await asyncio.to_thread(
@@ -2075,7 +2027,8 @@ class AutoSorterApp:
                         )
                     except Exception as train_err:
                         logger.error(f"Error during incremental training: {train_err}")
-                    self.status_label.set_text("Sorting complete.")
+                    if self.status_label:
+                        self.status_label.set_text("Sorting complete.")
 
         asyncio.create_task(run())
 
@@ -2086,7 +2039,8 @@ class AutoSorterApp:
             return
 
         async def run_undo():
-            self.status_label.set_text("Evaluating sort history...")
+            if self.status_label:
+                self.status_label.set_text("Evaluating sort history...")
 
             if (
                 not self.app_session
@@ -2094,9 +2048,11 @@ class AutoSorterApp:
                 or not self.app_session.history_manager
             ):
                 ui.notify("No sort history available to undo.", type="info")
-                self.status_label.set_text("No sort history available.")
+                if self.status_label:
+                    self.status_label.set_text("No sort history available.")
                 if hasattr(self, "undo_btn"):
-                    self.undo_btn.set_visibility(False)
+                    if self.undo_btn:
+                        self.undo_btn.set_visibility(False)
                 return
 
             try:
@@ -2107,33 +2063,41 @@ class AutoSorterApp:
 
             if not sessions:
                 ui.notify("No sort history available to undo.", type="info")
-                self.status_label.set_text("No sort history available.")
+                if self.status_label:
+                    self.status_label.set_text("No sort history available.")
                 if hasattr(self, "undo_btn"):
-                    self.undo_btn.set_visibility(False)
+                    if self.undo_btn:
+                        self.undo_btn.set_visibility(False)
                 return
 
             latest_session = sessions[0]
             session_id = latest_session["session_id"]
 
-            self.status_label.set_text("Rolling back files to previous locations...")
-            self.progress_bar.set_value(0.5)
+            if self.status_label:
+                self.status_label.set_text("Rolling back files to previous locations...")
+            if self.progress_bar:
+                self.progress_bar.set_value(0.5)
 
             try:
                 await asyncio.to_thread(self.app_session.rollback, session_id)
 
                 if hasattr(self, "undo_btn"):
-                    self.undo_btn.set_visibility(False)
-                self.progress_bar.set_value(1.0)
+                    if self.undo_btn:
+                        self.undo_btn.set_visibility(False)
+                if self.progress_bar:
+                    self.progress_bar.set_value(1.0)
                 ui.notify(
                     "Rollback completed successfully! Files restored.", type="positive"
                 )
-                self.status_label.set_text("Rollback complete.")
+                if self.status_label:
+                    self.status_label.set_text("Rollback complete.")
                 await asyncio.sleep(0.5)
                 self.start_analysis()
             except Exception as e:
                 logger.error(f"Rollback failed: {e}")
                 ui.notify(f"Rollback failed: {e}", type="negative")
-                self.status_label.set_text("Rollback failed.")
+                if self.status_label:
+                    self.status_label.set_text("Rollback failed.")
 
         return asyncio.create_task(run_undo())
 
@@ -2215,8 +2179,10 @@ class AutoSorterApp:
         self.update_ai_warning()
         if not self.base_dir or not self.plan:
             if hasattr(self, "warnings_label"):
-                self.warnings_label.set_text("")
-                self.warnings_label.set_visibility(False)
+                if self.warnings_label:
+                    self.warnings_label.set_text("")
+                if self.warnings_label:
+                    self.warnings_label.set_visibility(False)
             return
 
         from app.core.verifier import VerificationEngine
@@ -2295,17 +2261,23 @@ class AutoSorterApp:
 
             warnings_text = "\n".join(integrity_result.get("warnings", []))
             if hasattr(self, "warnings_label"):
-                self.warnings_label.set_text(warnings_text)
-                self.warnings_label.set_visibility(True)
+                if self.warnings_label:
+                    self.warnings_label.set_text(warnings_text)
+                if self.warnings_label:
+                    self.warnings_label.set_visibility(True)
         else:
             warnings_text = "\n".join(integrity_result.get("warnings", []))
             if hasattr(self, "warnings_label"):
                 if warnings_text:
-                    self.warnings_label.set_text(warnings_text)
-                    self.warnings_label.set_visibility(True)
+                    if self.warnings_label:
+                        self.warnings_label.set_text(warnings_text)
+                    if self.warnings_label:
+                        self.warnings_label.set_visibility(True)
                 else:
-                    self.warnings_label.set_text("")
-                    self.warnings_label.set_visibility(False)
+                    if self.warnings_label:
+                        self.warnings_label.set_text("")
+                    if self.warnings_label:
+                        self.warnings_label.set_visibility(False)
 
         self.render_tree()
 
@@ -2321,15 +2293,19 @@ class AutoSorterApp:
                 check_ai_status, self.settings
             )
             if not is_healthy:
-                self.ai_warnings_label.set_text(
+                if self.ai_warnings_label:
+                    self.ai_warnings_label.set_text(
                     warn_msg or "AI models are corrupt or missing."
                 )
-                self.ai_warnings_label.set_visibility(True)
+                if self.ai_warnings_label:
+                    self.ai_warnings_label.set_visibility(True)
             else:
-                self.ai_warnings_label.set_text("")
-                self.ai_warnings_label.set_visibility(False)
+                if self.ai_warnings_label:
+                    self.ai_warnings_label.set_text("")
+                if self.ai_warnings_label:
+                    self.ai_warnings_label.set_visibility(False)
 
-        asyncio.create_task(_run())
+        self._run_async(_run())
 
     def print_terminal_tree(self):
         """Print formatted organization plan tree to terminal stdout."""
@@ -2635,7 +2611,6 @@ def run_app(settings, directory=None, port=8080, show=True, debug_layout=False) 
     import sys
 
     app_instance = AutoSorterApp(settings, debug_layout=debug_layout)
-    app_instance.build_ui()
 
     if directory:
         abs_dir = os.path.abspath(directory)

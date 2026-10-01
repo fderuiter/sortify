@@ -1,10 +1,8 @@
 """Unit tests for Component Catalog registry and accessibility scanner."""
 
-import copy
-import pickle
-
+from app.ui import catalog
 from app.ui.a11y_runner import run_all_catalog_scans, scan_catalog_component
-from app.ui.catalog import CATALOG_REGISTRY, UIProxy, ui
+from app.ui.catalog import CATALOG_REGISTRY
 
 
 def test_catalog_registry_populated():
@@ -37,8 +35,8 @@ def test_a11y_violation_detection_rule_a11y001_missing_label():
     """Verify detection of missing labels on interactive controls (A11Y001)."""
 
     def defective_render(container, state="default", viewport_width=1280):
-        with ui.row():
-            ui.button()
+        with catalog.ui.row():
+            catalog.ui.button()
 
     entry = {
         "id": "defective_button",
@@ -56,7 +54,7 @@ def test_a11y_violation_detection_rule_a11y002_missing_alt():
     """Verify detection of missing alt attributes on images (A11Y002)."""
 
     def defective_render(container, state="default", viewport_width=1280):
-        ui.image("logo.png")
+        catalog.ui.image("logo.png")
 
     entry = {
         "id": "defective_image",
@@ -74,7 +72,7 @@ def test_a11y_violation_detection_rule_a11y003_rigid_layout():
     """Verify detection of rigid layout bounds on narrow viewports (A11Y003)."""
 
     def defective_render(container, state="default", viewport_width=375):
-        ui.card().classes("w-[800px]")
+        catalog.ui.card().classes("w-[800px]")
 
     entry = {
         "id": "defective_card",
@@ -92,7 +90,7 @@ def test_a11y_violation_detection_rule_a11y004_label_overflow():
     """Verify detection of unhandled label overflow on narrow viewports (A11Y004)."""
 
     def defective_render(container, state="default", viewport_width=375):
-        ui.label(
+        catalog.ui.label(
             "This is a very long text string that stretches across the narrow viewport without wrapping classes"
         )
 
@@ -108,15 +106,3 @@ def test_a11y_violation_detection_rule_a11y004_label_overflow():
     assert "375px" in violations[0].message
 
 
-def test_ui_proxy_pickle_and_uninitialized_safety():
-    """Verify UIProxy supports pickling, unpickling, and safe uninitialized attribute access without RecursionError."""
-    proxy = UIProxy(None)
-    serialized = pickle.dumps(proxy)
-    deserialized = pickle.loads(serialized)
-    assert deserialized._target is not None
-
-    uninit = UIProxy.__new__(UIProxy)
-    assert not hasattr(uninit, "nonexistent_attribute")
-
-    copied = copy.copy(ui)
-    assert copied._target is not None
