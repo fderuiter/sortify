@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Dict, List, Optional
 
 if TYPE_CHECKING:
-    from app.ui.diagram_schema import BaseDiagramSpec
+    from app.core.diagram_schema import BaseDiagramSpec
 
 # Add project root to sys.path so we can import app modules
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -293,24 +293,16 @@ def check_no_raw_mermaid_in_docs(docs_dir: Path = Path("docs")) -> bool:
 
 
 def collect_all_specs() -> Dict[str, "BaseDiagramSpec"]:
-    """Collect all registered system and component diagram specifications."""
-    from app.ui.catalog import CATALOG_REGISTRY
-    from app.ui.diagram_schema import (
-        SYSTEM_DIAGRAM_SPECS,
+    """Collect all registered system diagram specifications."""
+    from app.core.diagram_schema import (
         BaseDiagramSpec,
+        get_all_diagram_specs,
     )
 
     specs: Dict[str, BaseDiagramSpec] = {}
 
-    # System diagrams
-    for key, spec in SYSTEM_DIAGRAM_SPECS.items():
+    for key, spec in get_all_diagram_specs().items():
         specs[spec.id] = spec
-
-    # Catalog component specs
-    for entry in CATALOG_REGISTRY:
-        if "diagram_spec" in entry and hasattr(entry["diagram_spec"], "to_mermaid"):
-            spec = entry["diagram_spec"]
-            specs[spec.id] = spec
 
     return specs
 
@@ -418,7 +410,7 @@ def parse_and_validate_click_directives(mmd_content: str) -> List[str]:
                     or ":" in url_candidate
                 ):
                     try:
-                        from app.ui.diagram_schema import DiagramNode
+                        from app.core.diagram_schema import DiagramNode
 
                         DiagramNode.validate_url_scheme(url_candidate)
                     except ValueError as ve:
@@ -479,17 +471,21 @@ def build_diagrams(
         print("No diagram specifications registered.")
         return True
 
-    mmdc_cmd = find_mmdc_executable(verify_browser=True)
-    has_browser = mmdc_cmd is not None and is_browser_available(mmdc_cmd)
+    if verify_only:
+        mmdc_cmd = None
+        has_browser = False
+    else:
+        mmdc_cmd = find_mmdc_executable(verify_browser=True)
+        has_browser = mmdc_cmd is not None and is_browser_available(mmdc_cmd)
 
-    if not has_browser:
-        candidate_cmd = find_mmdc_executable(verify_browser=False)
-        if candidate_cmd:
-            sys.stderr.write(
-                "Warning: mmdc executable found but browser execution environment is unavailable.\n"
-            )
-        else:
-            sys.stderr.write("Warning: mmdc executable not found in PATH.\n")
+        if not has_browser:
+            candidate_cmd = find_mmdc_executable(verify_browser=False)
+            if candidate_cmd:
+                sys.stderr.write(
+                    "Warning: mmdc executable found but browser execution environment is unavailable.\n"
+                )
+            else:
+                sys.stderr.write("Warning: mmdc executable not found in PATH.\n")
 
     cache_path = output_dir / CACHE_FILE_NAME
     cache = load_cache(cache_path)

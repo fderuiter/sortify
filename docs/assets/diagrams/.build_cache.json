@@ -1,6 +1,6 @@
 {
   "core_architecture": {
-    "sha256": "a5d2a36bb9c9d45be1d6ed392c586c5c5ded7138d33f1e736c94fbb5e65efbea",
+    "sha256": "afc0d636ccbfa82af2e4b37d9d51c3223d928bd871556072e99a8af5c707f5f7",
     "fallback": true
   },
   "architecture_dataflow": {
