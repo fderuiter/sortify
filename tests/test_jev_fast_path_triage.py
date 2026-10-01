@@ -12,6 +12,8 @@ from app.core.daemon import ContinuousWatchdogDaemon
 from app.core.jev_classifier import JevClassificationResult, JevClassifierEngine
 from app.core.shared_registry import SharedModelRegistry
 
+pytestmark = pytest.mark.xdist_group(name="jev_triage")
+
 
 def _is_ci_or_parallel() -> bool:
     return (
@@ -163,6 +165,7 @@ async def test_daemon_triage_file_path_jev_fast_path(tmp_path, monkeypatch):
     """Verify ContinuousWatchdogDaemon._triage_file_path routes via Jev fast-path triage."""
     from app.core.db_conn import clear_connection_cache
 
+    SharedModelRegistry._instance = None
     base_dir = tmp_path / "monitored"
     base_dir.mkdir()
 
