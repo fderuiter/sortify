@@ -356,7 +356,7 @@ def test_tui_wizard_modal_cancel_preserves_defaults(temp_workspace):
             modal.action_cancel()
             await pilot.pause(0.1)
 
-            assert app.settings.AI_CONSENT_GRANTED is None
+            assert app.settings.AI_CONSENT_GRANTED is False
             assert not isinstance(app.screen, WizardModal)
 
     asyncio.run(_test())

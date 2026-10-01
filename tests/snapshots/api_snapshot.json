@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "729cb5d0d5d29c7abc4b63a5a5b8d006fb0fd9342339d93459c134a0bcd25238"
+    "checksum": "746a4c2be47e7c61142a4222ff8cd41478feae4ce2d3dac88a0c04702a276b46"
   },
   "cli": {
     "app/main.py": [
@@ -8071,6 +8071,13 @@
     "app/core/path_utils.py": {
       "classes": [],
       "functions": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "check_local_models_exist",
+          "parameters": [],
+          "returns": "bool"
+        },
         {
           "async": false,
           "decorators": [],

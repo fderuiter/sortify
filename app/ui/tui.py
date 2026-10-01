@@ -832,9 +832,9 @@ class WizardModal(A11yMixin, ModalScreen[None]):
             yield Label("Enable AI semantic categorization consent below:")
 
             with Horizontal(classes="switch-row"):
-                consent_val = getattr(self.settings, "AI_CONSENT_GRANTED", True)
+                consent_val = getattr(self.settings, "AI_CONSENT_GRANTED", None)
                 if consent_val is None:
-                    consent_val = True
+                    consent_val = False
                 sw = Switch(value=bool(consent_val), id="switch-consent")
                 sw.tooltip = "Toggle AI consent for semantic document classification"
                 yield sw
@@ -869,6 +869,10 @@ class WizardModal(A11yMixin, ModalScreen[None]):
 
     def action_cancel(self) -> None:
         """Cancel wizard on Escape key press."""
+        if getattr(self.settings, "AI_CONSENT_GRANTED", None) is None:
+            self.settings.AI_CONSENT_GRANTED = False
+            if hasattr(self.settings, "_save"):
+                self.settings._save()
         self.announce("Closed model onboarding wizard dialog.")
         self.dismiss(None)
 

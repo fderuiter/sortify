@@ -719,3 +719,40 @@ def is_junction_entry(entry) -> bool:
         return os.path.isjunction(path)
     except (AttributeError, OSError):
         return False
+
+
+def check_local_models_exist() -> bool:
+    """Check if local AI model assets exist in any standard bundle location."""
+    try:
+        base_path = get_base_path(__file__)
+    except Exception:
+        base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+    local_model_dir = os.path.join(base_path, "offline_bundle", "model")
+
+    try:
+        from app.config import get_app_dir
+
+        user_model_dir = get_app_dir() / "model"
+    except Exception:
+        user_model_dir = Path("~/.smart-autosorter/model").expanduser()
+
+    if hasattr(sys, "_MEIPASS"):
+        mei_model_dir = os.path.join(
+            getattr(sys, "_MEIPASS", ""), "offline_bundle", "model"
+        )
+        if os.path.exists(os.path.join(mei_model_dir, "config.json")) or os.path.exists(
+            mei_model_dir
+        ):
+            return True
+
+    if os.path.exists(os.path.join(local_model_dir, "config.json")) or os.path.exists(
+        local_model_dir
+    ):
+        return True
+
+    if (user_model_dir / "config.json").exists() or user_model_dir.exists():
+        return True
+
+    return False
+
