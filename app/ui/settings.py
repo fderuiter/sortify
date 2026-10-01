@@ -7,10 +7,12 @@ from unittest.mock import MagicMock
 from app.core.path_utils import validate_target_path
 from app.core.policy_engine import is_masked_by
 from app.ui.dialog_helper import get_dialog_card_classes
+from app.ui.notifications import notify
 from app.ui.tokens import TOKENS
 from app.ui.toolbar import OverflowToolbar
 
 ui = MagicMock()
+ui.notify = notify
 
 
 def create_accessible_slider(
