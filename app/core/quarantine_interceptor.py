@@ -73,6 +73,9 @@ class QuarantineInterceptorService:
         db: Database,
         policies: Optional[List[Dict[str, Any]]] = None,
         worker_timeout: float = 300.0,
+        jev_classifier: Optional[Any] = None,
+        auto_quarantine_ratings: Optional[List[str]] = None,
+        runtime_settings: Optional[Any] = None,
     ):
         self.db = db
         self.policies = policies or []
@@ -80,6 +83,23 @@ class QuarantineInterceptorService:
         self.forensic_scanner = ForensicScanner()
         self.clinical_engine = ClinicalComplianceEngine()
         self.dlq_records: List[Dict[str, Any]] = []
+        if jev_classifier is not None:
+            self.jev_classifier = jev_classifier
+        else:
+            try:
+                from app.core.jev_classifier import JevClassifierEngine
+                self.jev_classifier = JevClassifierEngine()
+            except Exception:
+                self.jev_classifier = None
+
+        if auto_quarantine_ratings is not None:
+            self.auto_quarantine_ratings = [r.upper() for r in auto_quarantine_ratings]
+        elif runtime_settings and hasattr(runtime_settings, "AUTO_QUARANTINE_RATINGS"):
+            self.auto_quarantine_ratings = [
+                r.upper() for r in getattr(runtime_settings, "AUTO_QUARANTINE_RATINGS", [])
+            ]
+        else:
+            self.auto_quarantine_ratings = ["CRITICAL", "HIGH"]
 
     def resolve_safe_target_dir(
         self,
@@ -335,6 +355,63 @@ class QuarantineInterceptorService:
                 raise TimeoutError(
                     f"Forensic scanning job exceeded timeout of {effective_timeout}s"
                 )
+
+            # 4b. Upstream Barrier: Jev Pre-Classification & Sensitivity Hold for unguided / default documents
+            if action not in ("redact", "archive", "quarantine", "retain") and self.jev_classifier is not None:
+                try:
+                    jev_res = self.jev_classifier.classify(
+                        file_path=staged_path,
+                        text_content=extracted_text,
+                    )
+                    sens_rating = (
+                        getattr(jev_res, "sensitivity_rating", "LOW")
+                        if not isinstance(jev_res, dict)
+                        else jev_res.get("sensitivity_rating", "LOW")
+                    ) or "LOW"
+                    sens_rating = str(sens_rating).upper()
+
+                    sens_score = (
+                        getattr(jev_res, "sensitivity_score", 0.0)
+                        if not isinstance(jev_res, dict)
+                        else jev_res.get("sensitivity_score", 0.0)
+                    )
+                    category_val = (
+                        getattr(jev_res, "category", "Uncategorized")
+                        if not isinstance(jev_res, dict)
+                        else jev_res.get("category", "Uncategorized")
+                    )
+
+                    auto_ratings = [r.upper() for r in getattr(self, "auto_quarantine_ratings", ["CRITICAL", "HIGH"])]
+                    if sens_rating in auto_ratings:
+                        logger.info(
+                            f"Jev pre-classification assigned sensitivity rating '{sens_rating}' to {orig_rel_path}. "
+                            f"Holding file in quarantine staging on compliance hold."
+                        )
+                        self.db.update_quarantine_status(
+                            job_id=job_id,
+                            status="QUARANTINED",
+                            policy_action="sensitivity_hold",
+                            audit_entry={
+                                "timestamp": time.time(),
+                                "status": "QUARANTINED",
+                                "policy_action": "sensitivity_hold",
+                                "details": (
+                                    f"Jev sensitivity pre-classification assigned {sens_rating} rating "
+                                    f"(score: {sens_score:.2f}); retained in quarantine staging on compliance hold"
+                                ),
+                                "sensitivity_rating": sens_rating,
+                                "sensitivity_score": sens_score,
+                                "category": category_val,
+                            },
+                        )
+                        rec = self.db.get_quarantine_record(job_id)
+                        if rec:
+                            return rec
+                        record["status"] = "QUARANTINED"
+                        record["policy_action"] = "sensitivity_hold"
+                        return record
+                except Exception as jev_err:
+                    logger.warning(f"Jev pre-classification warning for {orig_rel_path}: {jev_err}")
 
             # 5. Policy Lifecycle Action Execution
             if action == "redact":

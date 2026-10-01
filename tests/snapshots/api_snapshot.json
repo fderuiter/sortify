@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "d75a71563766de8d5ac9dc7f51c42cc0bab5e41c0707765dcb82000e48a01e2e"
+    "checksum": "06f0c29223d5fdd0fec1ceab388acd298211b385777f419a40f6b6f6a21f1592"
   },
   "cli": {
     "app/main.py": [
@@ -8471,6 +8471,21 @@
                   "annotation": "float",
                   "default": "300.0",
                   "name": "worker_timeout"
+                },
+                {
+                  "annotation": "Optional[Any]",
+                  "default": "None",
+                  "name": "jev_classifier"
+                },
+                {
+                  "annotation": "Optional[List[str]]",
+                  "default": "None",
+                  "name": "auto_quarantine_ratings"
+                },
+                {
+                  "annotation": "Optional[Any]",
+                  "default": "None",
+                  "name": "runtime_settings"
                 }
               ],
               "returns": null

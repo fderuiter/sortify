@@ -107,6 +107,8 @@ class Settings(BaseSettings):
     MODEL_THREADS: int = Field(default=2, ge=1, le=32)
     SNAPSHOT_RETENTION_DAYS: int = Field(default=30, gt=0)
     PROTECTED_PATHS: list[str] = Field(default_factory=list)
+    AUTO_QUARANTINE_RATINGS: list[str] = Field(default=["CRITICAL", "HIGH"])
+    QUARANTINE_DIR_NAME: str = Field(default="_Compliance_Quarantine")
     PROXY: str = Field(default="")
     OCR_GPU_ENABLED: bool = Field(default=False)
     AUDIO_GPU_ENABLED: bool = Field(default=False)

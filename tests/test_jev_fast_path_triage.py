@@ -159,8 +159,10 @@ def test_file_analyzer_generate_sorting_plan_with_jev_results(tmp_path):
 
 
 @pytest.mark.anyio
-async def test_daemon_triage_file_path_jev_fast_path(tmp_path):
+async def test_daemon_triage_file_path_jev_fast_path(tmp_path, monkeypatch):
     """Verify ContinuousWatchdogDaemon._triage_file_path routes via Jev fast-path triage."""
+    from app.core.db_conn import clear_connection_cache
+
     base_dir = tmp_path / "monitored"
     base_dir.mkdir()
 
@@ -168,20 +170,28 @@ async def test_daemon_triage_file_path_jev_fast_path(tmp_path):
     invoice_file.write_text("Invoice ID, Total\n1, 100")
 
     settings = AppSettings()
+    settings.AUTO_QUARANTINE_RATINGS = []
+    monkeypatch.setattr(AppSettings, "load", lambda self: None)
     daemon = ContinuousWatchdogDaemon(settings, str(base_dir))
     daemon._is_running = True
 
-    await daemon._triage_file_path(str(invoice_file))
+    try:
+        await daemon._triage_file_path(str(invoice_file))
 
-    # Verify file was categorized and moved into Financial Reports target directory
-    expected_moved_file = base_dir / "Financial Reports" / "invoice_2026.csv"
-    assert expected_moved_file.exists()
-    assert not invoice_file.exists()
+        # Verify file was categorized and moved into Financial Reports target directory
+        expected_moved_file = base_dir / "Financial Reports" / "invoice_2026.csv"
+        assert expected_moved_file.exists()
+        assert not invoice_file.exists()
+    finally:
+        daemon.stop()
+        clear_connection_cache(only_current_and_inactive=False)
 
 
 @pytest.mark.anyio
 async def test_daemon_triage_unclassified_fallback(tmp_path):
     """Verify ContinuousWatchdogDaemon._triage_file_path falls back cleanly when unclassified."""
+    from app.core.db_conn import clear_connection_cache
+
     base_dir = tmp_path / "monitored"
     base_dir.mkdir()
 
@@ -192,8 +202,12 @@ async def test_daemon_triage_unclassified_fallback(tmp_path):
     daemon = ContinuousWatchdogDaemon(settings, str(base_dir))
     daemon._is_running = True
 
-    # Execution should not throw error and fall through to slow path gracefully
-    await daemon._triage_file_path(str(unclassified_file))
+    try:
+        # Execution should not throw error and fall through to slow path gracefully
+        await daemon._triage_file_path(str(unclassified_file))
+    finally:
+        daemon.stop()
+        clear_connection_cache(only_current_and_inactive=False)
 
 
 def test_file_analyzer_internal_jev_fallback_when_jev_results_none(tmp_path):

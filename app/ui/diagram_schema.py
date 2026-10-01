@@ -417,6 +417,7 @@ CORE_ARCHITECTURE_SPEC = ComponentDiagramSpec(
                 "core_user_space_bootstrap",
                 "core_daemon",
                 "core_integration",
+                "core_domain_contracts",
             ],
         ),
         DiagramSubgraph(
@@ -527,6 +528,7 @@ CORE_ARCHITECTURE_SPEC = ComponentDiagramSpec(
         ),
         DiagramNode(id="core_daemon", label="app.core.daemon"),
         DiagramNode(id="core_integration", label="app.core.integration"),
+        DiagramNode(id="core_domain_contracts", label="app.core.domain_contracts"),
         # Ingestion & Extraction
         DiagramNode(id="core_extractor", label="app.core.extractor"),
         DiagramNode(

@@ -8,6 +8,7 @@ from unittest import mock
 from watchdog.events import FileModifiedEvent
 
 from app.core.daemon import ContinuousWatchdogDaemon, DaemonFolderHandler
+from app.core.db_conn import clear_connection_cache
 
 
 class DummySettings:
@@ -27,15 +28,19 @@ def test_move_phase_flag_initial_and_scoped_toggle(tmp_path):
     settings = DummySettings()
     daemon = ContinuousWatchdogDaemon(settings, str(tmp_path))
 
-    # Initial state must be False
-    assert daemon.is_moving is False
+    try:
+        # Initial state must be False
+        assert daemon.is_moving is False
 
-    # Within scoped move phase, state must be True
-    with daemon.scoped_move_phase():
-        assert daemon.is_moving is True
+        # Within scoped move phase, state must be True
+        with daemon.scoped_move_phase():
+            assert daemon.is_moving is True
 
-    # After exiting move phase, state must return to False
-    assert daemon.is_moving is False
+        # After exiting move phase, state must return to False
+        assert daemon.is_moving is False
+    finally:
+        daemon.stop()
+        clear_connection_cache(only_current_and_inactive=False)
 
 
 def test_event_suppression_during_active_move_phase(tmp_path):
@@ -46,19 +51,21 @@ def test_event_suppression_during_active_move_phase(tmp_path):
 
     initial_cancel_event = daemon._cancel_event
 
-    with daemon.scoped_move_phase():
-        # Simulate filesystem event while move is active
-        event = FileModifiedEvent(str(tmp_path / "moved_file.txt"))
-        handler.on_any_event(event)
+    try:
+        with daemon.scoped_move_phase():
+            # Simulate filesystem event while move is active
+            event = FileModifiedEvent(str(tmp_path / "moved_file.txt"))
+            handler.on_any_event(event)
 
-        # Triggering recalculation directly during move phase must also be suppressed
-        daemon.trigger_recalculation()
+            # Triggering recalculation directly during move phase must also be suppressed
+            daemon.trigger_recalculation()
 
-        # Cancellation event should NOT be set and debounce timer should NOT be created
-        assert initial_cancel_event.is_set() is False
-        assert daemon._debounce_timer is None
-
-    daemon.stop()
+            # Cancellation event should NOT be set and debounce timer should NOT be created
+            assert initial_cancel_event.is_set() is False
+            assert daemon._debounce_timer is None
+    finally:
+        daemon.stop()
+        clear_connection_cache(only_current_and_inactive=False)
 
 
 def test_events_outside_move_phase_enqueue_change_event(tmp_path):
@@ -68,14 +75,16 @@ def test_events_outside_move_phase_enqueue_change_event(tmp_path):
     daemon._event_queue = asyncio.Queue()
     handler = DaemonFolderHandler(daemon)
 
-    # When not in move phase, event must enqueue FileChangeEvent without legacy global recalculation
-    event = FileModifiedEvent(str(tmp_path / "new_file.txt"))
-    handler.on_any_event(event)
+    try:
+        # When not in move phase, event must enqueue FileChangeEvent without legacy global recalculation
+        event = FileModifiedEvent(str(tmp_path / "new_file.txt"))
+        handler.on_any_event(event)
 
-    assert daemon._event_queue.qsize() == 1
-    assert daemon._debounce_timer is None
-
-    daemon.stop()
+        assert daemon._event_queue.qsize() == 1
+        assert daemon._debounce_timer is None
+    finally:
+        daemon.stop()
+        clear_connection_cache(only_current_and_inactive=False)
 
 
 def test_exception_handling_releases_move_phase_flag(tmp_path):
@@ -84,24 +93,26 @@ def test_exception_handling_releases_move_phase_flag(tmp_path):
     daemon._is_running = True
 
     try:
-        with daemon.scoped_move_phase():
-            assert daemon.is_moving is True
-            raise RuntimeError("Simulated error during file movement")
-    except RuntimeError:
-        pass
+        try:
+            with daemon.scoped_move_phase():
+                assert daemon.is_moving is True
+                raise RuntimeError("Simulated error during file movement")
+        except RuntimeError:
+            pass
 
-    # Flag must be released even after an exception
-    assert daemon.is_moving is False
+        # Flag must be released even after an exception
+        assert daemon.is_moving is False
 
-    # Subsequent event must enqueue FileChangeEvent properly
-    daemon._event_queue = asyncio.Queue()
-    handler = DaemonFolderHandler(daemon)
-    event = FileModifiedEvent(str(tmp_path / "file_after_error.txt"))
-    handler.on_any_event(event)
+        # Subsequent event must enqueue FileChangeEvent properly
+        daemon._event_queue = asyncio.Queue()
+        handler = DaemonFolderHandler(daemon)
+        event = FileModifiedEvent(str(tmp_path / "file_after_error.txt"))
+        handler.on_any_event(event)
 
-    assert daemon._event_queue.qsize() == 1
-
-    daemon.stop()
+        assert daemon._event_queue.qsize() == 1
+    finally:
+        daemon.stop()
+        clear_connection_cache(only_current_and_inactive=False)
 
 
 def test_thread_safety_concurrent_access(tmp_path):
@@ -130,15 +141,18 @@ def test_thread_safety_concurrent_access(tmp_path):
         threading.Thread(target=move_worker),
     ]
 
-    for t in threads:
-        t.start()
+    try:
+        for t in threads:
+            t.start()
 
-    for t in threads:
-        t.join()
+        for t in threads:
+            t.join()
 
-    # Verify move_worker saw is_moving == True while in context
-    assert all(r is True for r in results)
-    daemon.stop()
+        # Verify move_worker saw is_moving == True while in context
+        assert all(r is True for r in results)
+    finally:
+        daemon.stop()
+        clear_connection_cache(only_current_and_inactive=False)
 
 
 def test_end_to_end_move_execution_suppresses_cancellation(tmp_path):
@@ -165,19 +179,21 @@ def test_end_to_end_move_execution_suppresses_cancellation(tmp_path):
         {},
     ]
 
-    with (
-        mock.patch("app.core.daemon.AppSession", mock_app_session_class),
-        mock.patch("app.core.daemon.get_files_recursively", return_value=["doc.pdf"]),
-        mock.patch("app.core.daemon.MetadataPass.run", return_value=[]),
-    ):
-        cancel_event = threading.Event()
-        daemon._run_sorting_sync(cancel_event)
+    try:
+        with (
+            mock.patch("app.core.daemon.AppSession", mock_app_session_class),
+            mock.patch("app.core.daemon.get_files_recursively", return_value=["doc.pdf"]),
+            mock.patch("app.core.daemon.MetadataPass.run", return_value=[]),
+        ):
+            cancel_event = threading.Event()
+            daemon._run_sorting_sync(cancel_event)
 
-        # The active run must NOT have been canceled by the event emitted during execute_moves
-        assert cancel_event.is_set() is False
-        assert mock_app_session_inst.execute_moves.call_count == 1
-
-    daemon.stop()
+            # The active run must NOT have been canceled by the event emitted during execute_moves
+            assert cancel_event.is_set() is False
+            assert mock_app_session_inst.execute_moves.call_count == 1
+    finally:
+        daemon.stop()
+        clear_connection_cache(only_current_and_inactive=False)
 
 
 def test_external_event_during_move_sets_pending_dirty(tmp_path):
@@ -187,21 +203,23 @@ def test_external_event_during_move_sets_pending_dirty(tmp_path):
     handler = DaemonFolderHandler(daemon)
 
     plan = {"a.txt": "sorted/a.txt"}
-    with daemon.scoped_move_phase(plan=plan):
+    try:
+        with daemon.scoped_move_phase(plan=plan):
+            assert daemon.pending_dirty is False
+            # External event occurs during move phase
+            event = FileModifiedEvent(str(tmp_path / "external.txt"))
+            handler.on_any_event(event)
+            # Pending dirty flag must be set
+            assert daemon.pending_dirty is True
+            # Debounce timer should not be set yet while move is active
+            assert daemon._debounce_timer is None
+
+        # Exiting move phase must trigger recalculation and clear pending dirty flag
         assert daemon.pending_dirty is False
-        # External event occurs during move phase
-        event = FileModifiedEvent(str(tmp_path / "external.txt"))
-        handler.on_any_event(event)
-        # Pending dirty flag must be set
-        assert daemon.pending_dirty is True
-        # Debounce timer should not be set yet while move is active
-        assert daemon._debounce_timer is None
-
-    # Exiting move phase must trigger recalculation and clear pending dirty flag
-    assert daemon.pending_dirty is False
-    assert daemon._debounce_timer is not None
-
-    daemon.stop()
+        assert daemon._debounce_timer is not None
+    finally:
+        daemon.stop()
+        clear_connection_cache(only_current_and_inactive=False)
 
 
 def test_self_generated_move_event_does_not_set_pending_dirty(tmp_path):
@@ -211,23 +229,25 @@ def test_self_generated_move_event_does_not_set_pending_dirty(tmp_path):
     handler = DaemonFolderHandler(daemon)
 
     plan = {"doc.pdf": "sorted/doc.pdf"}
-    with daemon.scoped_move_phase(plan=plan):
+    try:
+        with daemon.scoped_move_phase(plan=plan):
+            assert daemon.pending_dirty is False
+            # Internal self-generated event for source
+            event_src = FileModifiedEvent(str(tmp_path / "doc.pdf"))
+            handler.on_any_event(event_src)
+            # Internal self-generated event for target
+            event_dst = FileModifiedEvent(str(tmp_path / "sorted" / "doc.pdf"))
+            handler.on_any_event(event_dst)
+
+            # Pending dirty flag must remain False
+            assert daemon.pending_dirty is False
+
+        # Exiting move phase without external events must not trigger recalculation
         assert daemon.pending_dirty is False
-        # Internal self-generated event for source
-        event_src = FileModifiedEvent(str(tmp_path / "doc.pdf"))
-        handler.on_any_event(event_src)
-        # Internal self-generated event for target
-        event_dst = FileModifiedEvent(str(tmp_path / "sorted" / "doc.pdf"))
-        handler.on_any_event(event_dst)
-
-        # Pending dirty flag must remain False
-        assert daemon.pending_dirty is False
-
-    # Exiting move phase without external events must not trigger recalculation
-    assert daemon.pending_dirty is False
-    assert daemon._debounce_timer is None
-
-    daemon.stop()
+        assert daemon._debounce_timer is None
+    finally:
+        daemon.stop()
+        clear_connection_cache(only_current_and_inactive=False)
 
 
 def test_exit_move_phase_without_external_events_no_recalculation(tmp_path):
@@ -235,10 +255,12 @@ def test_exit_move_phase_without_external_events_no_recalculation(tmp_path):
     daemon = ContinuousWatchdogDaemon(settings, str(tmp_path))
     daemon._is_running = True
 
-    with daemon.scoped_move_phase(plan={"doc.pdf": "sorted/doc.pdf"}):
-        pass
+    try:
+        with daemon.scoped_move_phase(plan={"doc.pdf": "sorted/doc.pdf"}):
+            pass
 
-    assert daemon.pending_dirty is False
-    assert daemon._debounce_timer is None
-
-    daemon.stop()
+        assert daemon.pending_dirty is False
+        assert daemon._debounce_timer is None
+    finally:
+        daemon.stop()
+        clear_connection_cache(only_current_and_inactive=False)
