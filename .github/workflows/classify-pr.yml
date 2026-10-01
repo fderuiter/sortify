@@ -6,6 +6,7 @@ on:
 
 permissions:
   contents: read
+  issues: write
   pull-requests: write
   statuses: write
 
@@ -31,7 +32,7 @@ jobs:
         with:
           script: |
             const pr = context.payload.pull_request;
-            const { data: files } = await github.rest.pulls.listFiles({
+            const files = await github.paginate(github.rest.pulls.listFiles, {
               owner: context.repo.owner,
               repo: context.repo.repo,
               pull_number: pr.number,
@@ -62,7 +63,6 @@ jobs:
               deletions: deletions,
               is_dependabot: isDependabot,
               dependency_update_type: dependencyUpdateType,
-              unresolved_threads: 0
             };
 
             const fs = require('fs');
@@ -72,14 +72,62 @@ jobs:
         run: |
           python scripts/classify_pr.py --json-input pr_meta.json --output classification_result.json
 
-      - name: Post Classification Status Check
+      - name: Sync PR Labels & Post Status Check
         uses: actions/github-script@v7
         with:
           script: |
             const fs = require('fs');
             const result = JSON.parse(fs.readFileSync('classification_result.json', 'utf8'));
+            const prNumber = context.payload.pull_request.number;
 
             console.log("Classification result:", result);
+
+            // Fetch current PR labels to sync dynamically
+            const { data: currentLabelsData } = await github.rest.issues.listLabelsOnIssue({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+            });
+            const currentLabelNames = currentLabelsData.map(l => l.name);
+
+            const labelsToAdd = result.labels_to_add || [];
+            const riskLevels = ['risk:low', 'risk:medium', 'risk:high', 'risk:sensitive', 'risk:baseline-change'];
+
+            const riskLabelsToRemove = currentLabelNames.filter(name =>
+              riskLevels.includes(name) && !labelsToAdd.includes(name)
+            );
+
+            const eligibilityLabelsToRemove = [];
+            if (result.eligible && currentLabelNames.includes('automerge:blocked')) {
+              eligibilityLabelsToRemove.push('automerge:blocked');
+            }
+            if (!result.eligible && currentLabelNames.includes('automerge:eligible')) {
+              eligibilityLabelsToRemove.push('automerge:eligible');
+            }
+
+            const labelsToRemove = [...riskLabelsToRemove, ...eligibilityLabelsToRemove];
+
+            for (const label of labelsToRemove) {
+              try {
+                await github.rest.issues.removeLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: prNumber,
+                  name: label,
+                });
+              } catch (err) {
+                console.log(`Label ${label} not present or failed to remove:`, err.message);
+              }
+            }
+
+            if (labelsToAdd.length > 0) {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                labels: labelsToAdd,
+              });
+            }
 
             await github.rest.repos.createCommitStatus({
               owner: context.repo.owner,

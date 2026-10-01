@@ -16,15 +16,19 @@ Every Pull Request undergoes automated risk classification via `.github/workflow
 - **Documentation-only changes** (`docs/**`, `README.md`, `mkdocs.yml`) that do not touch sensitive/security files.
 - **Dependabot minor or patch updates** (pip or github-actions) after full CI verification.
 
-### B. Explicit Opt-In (`automerge` label)
-Production-code maintenance and refactor PRs (from Stitch, Jules, or human contributors) require an explicit **`automerge`** label to authorize automated evaluation.
+### B. Explicit Opt-In (`automerge` label) vs Classifier Approval (`automerge:eligible`)
+Production-code maintenance and refactor PRs require an explicit **`automerge`** label to authorize automated evaluation.
+When present, `.github/workflows/classify-pr.yml` runs `scripts/classify_pr.py` to evaluate the PR. If low-risk criteria are met, the classifier applies the **`automerge:eligible`** label and posts a successful `automerge/classification` commit status.
+The auto-merge controller strictly requires `automerge:eligible` (not raw `automerge`) to proceed.
+
 Thresholds for low-risk opt-in PRs:
 - $\le 10$ changed files
 - $\le 500$ non-generated changed lines
 - No sensitive paths touched
 - No snapshot or API baseline modifications
-- No unresolved conversation threads
 - Not draft
+
+*(Note: Resolved review conversations are mandatory and enforced directly by GitHub main branch rulesets.)*
 
 ### C. Never Auto-Merge (Human Review Mandatory)
 The controller **fails closed** and blocks auto-merge for PRs touching any of the following sensitive categories:

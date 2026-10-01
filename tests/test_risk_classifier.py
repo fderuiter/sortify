@@ -152,19 +152,6 @@ def test_dependabot_major_is_blocked():
     assert any("Major dependency upgrades" in r for r in res.blocking_reasons)
 
 
-def test_unresolved_threads_blocked():
-    meta = PRMetadata(
-        pr_number=110,
-        title="docs: update readme",
-        author="fderuiter",
-        changed_files=["README.md"],
-        unresolved_threads=2,
-    )
-    res = classify_pr(meta)
-    assert res.eligible is False
-    assert any("unresolved conversation" in r for r in res.blocking_reasons)
-
-
 def test_disable_automerge_label_blocked():
     meta = PRMetadata(
         pr_number=111,

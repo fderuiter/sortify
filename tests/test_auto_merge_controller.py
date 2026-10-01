@@ -15,8 +15,9 @@ def test_is_pr_eligible_for_automerge():
     pr_eligible = {"labels": [{"name": "automerge:eligible"}]}
     assert is_pr_eligible_for_automerge(pr_eligible) is True
 
+    # Raw automerge label alone is NOT eligible for the controller
     pr_automerge = {"labels": [{"name": "automerge"}]}
-    assert is_pr_eligible_for_automerge(pr_automerge) is True
+    assert is_pr_eligible_for_automerge(pr_automerge) is False
 
     pr_blocked = {
         "labels": [{"name": "automerge:eligible"}, {"name": "automerge:blocked"}]
@@ -60,7 +61,10 @@ def test_process_queue_merges_eligible_pr():
         "mergeable_state": "clean",
         "user": {"login": "fderuiter"},
     }
-    client.get_check_runs.return_value = {"Required CI": "success"}
+    client.get_check_runs.return_value = {
+        "Required CI": "success",
+        "automerge/classification": "success",
+    }
     client.get_commit_status_checks.return_value = {}
     client.merge_pull_request.return_value = True
 
@@ -94,6 +98,30 @@ def test_process_queue_updates_behind_branch():
     res = process_auto_merge_queue(client)
     assert res == 201
     client.update_branch.assert_called_once_with(201, "sha67890")
+    client.merge_pull_request.assert_not_called()
+
+
+def test_process_queue_does_not_update_blocked_mergeable_state():
+    client = MagicMock(spec=GitHubClient)
+    client.list_open_pull_requests.return_value = [
+        {"number": 203, "labels": [{"name": "automerge:eligible"}], "draft": False}
+    ]
+    client.get_pull_request.return_value = {
+        "number": 203,
+        "title": "fix: minor bug",
+        "draft": False,
+        "state": "open",
+        "head": {"sha": "sha99999"},
+        "mergeable": True,
+        "mergeable_state": "blocked",  # blocked due to requirements, not base staleness
+        "user": {"login": "stitch"},
+    }
+    client.get_check_runs.return_value = {}
+    client.get_commit_status_checks.return_value = {}
+
+    res = process_auto_merge_queue(client)
+    assert res is None
+    client.update_branch.assert_not_called()
     client.merge_pull_request.assert_not_called()
 
 

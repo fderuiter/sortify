@@ -820,7 +820,7 @@ class EphemeralSessionCrypto:
 
     def purge(self) -> None:
         """Purge the session key."""
-        self._key = None
+        self.session_key = None  # type: ignore[assignment]
         self._cipher = None  # type: ignore[assignment]
 
 

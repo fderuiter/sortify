@@ -123,7 +123,7 @@ def is_pr_eligible_for_automerge(pr: Dict[str, Any]) -> bool:
         or "automerge:conflict" in labels
     ):
         return False
-    return "automerge:eligible" in labels or "automerge" in labels
+    return "automerge:eligible" in labels
 
 
 def process_auto_merge_queue(client: GitHubClient) -> Optional[int]:
@@ -166,7 +166,7 @@ def process_auto_merge_queue(client: GitHubClient) -> Optional[int]:
             continue
 
         # Check if branch is behind main
-        if mergeable_state in ("behind", "blocked"):
+        if mergeable_state == "behind":
             logger.info(f"PR #{pr_number} is behind main. Requesting branch update...")
             success = client.update_branch(pr_number, head_sha)
             if not success:
@@ -190,10 +190,14 @@ def process_auto_merge_queue(client: GitHubClient) -> Optional[int]:
             check_runs.get("Required CI") == "success"
             or statuses.get("Required CI") == "success"
         )
+        classification_passed = (
+            check_runs.get("automerge/classification") == "success"
+            or statuses.get("automerge/classification") == "success"
+        )
 
-        if not required_ci_passed:
+        if not (required_ci_passed and classification_passed):
             logger.info(
-                f"PR #{pr_number} Required CI check is not yet green (check_runs: {check_runs.get('Required CI')}, statuses: {statuses.get('Required CI')})."
+                f"PR #{pr_number} checks not green on head SHA (Required CI: {required_ci_passed}, automerge/classification: {classification_passed})."
             )
             continue
 

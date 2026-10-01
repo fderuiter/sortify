@@ -63,7 +63,6 @@ class PRMetadata:
     deletions: int = 0
     is_dependabot: bool = False
     dependency_update_type: str = "minor"  # 'major', 'minor', 'patch'
-    unresolved_threads: int = 0
 
 
 @dataclass
@@ -103,13 +102,7 @@ def classify_pr(meta: PRMetadata) -> ClassificationResult:
     if meta.is_draft:
         blocking_reasons.append("Draft PRs cannot be auto-merged.")
 
-    # 3. Unresolved threads check
-    if meta.unresolved_threads > 0:
-        blocking_reasons.append(
-            f"PR has {meta.unresolved_threads} unresolved conversation thread(s)."
-        )
-
-    # 4. Path analysis
+    # 3. Path analysis
     sensitive_file_matches = []
     baseline_file_matches = []
     non_docs_files = []
@@ -247,7 +240,6 @@ def main() -> None:
         deletions=data.get("deletions", 0),
         is_dependabot=data.get("is_dependabot", False),
         dependency_update_type=data.get("dependency_update_type", "minor"),
-        unresolved_threads=data.get("unresolved_threads", 0),
     )
 
     result = classify_pr(meta)
