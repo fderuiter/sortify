@@ -27,7 +27,7 @@ def _is_ci_or_parallel() -> bool:
 
 
 def test_diagram_schema_import_performance():
-    """Verify app.ui.diagram_schema import latency is under 50ms with zero top-level spec instantiations."""
+    """Verify app.core.diagram_schema import latency is under 50ms with zero top-level spec instantiations."""
     ds.reset_diagram_specs_cache()
     assert len(ds._INSTANTIATED_SPECS) == 0
 

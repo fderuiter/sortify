@@ -4,7 +4,7 @@
     "fallback": true
   },
   "architecture_dataflow": {
-    "sha256": "89d07680b3161c5e93a955a1a61e80c605e71726ba8690d4cb67cc556c903b20",
+    "sha256": "d5b750b2bddc3b55cd13542be01e6abc5b7b0709c5501e8f47444f7e07c21eec",
     "fallback": true
   },
   "architecture_async_processing": {

@@ -54,6 +54,8 @@ def sanitize_svg(svg: str) -> str:
         lambda m: "/dummy" + m.group(1).replace("\\", "/"),
         svg,
     )
+    svg = re.sub(r"\b[A-Za-z]:[/\\]", "/", svg)
+    svg = svg.replace("\\", "/")
 
     style_match = re.search(r"<style>(.*?)</style>", svg, re.DOTALL)
     if style_match:
@@ -110,6 +112,10 @@ def assert_svg_snapshot(snapshot_name: str, actual_svg: str) -> None:
 
     with open(snapshot_path, "r", encoding="utf-8", newline="\n") as f:
         expected_svg = f.read().replace("\r\n", "\n")
+
+    if sanitized_actual != expected_svg:
+        with open(snapshot_path + ".actual", "w", encoding="utf-8", newline="\n") as f:
+            f.write(sanitized_actual)
 
     assert sanitized_actual == expected_svg, (
         f"SVG visual snapshot mismatch for '{snapshot_name}'. Set UPDATE_SNAPSHOTS=1 to re-baseline."
@@ -235,7 +241,7 @@ def test_settings_modal_snapshot():
 
     async def _test():
         settings = AppSettings()
-        settings.AI_CONSENT_GRANTED = True
+        settings._settings_model.AI_CONSENT_GRANTED = True
         app = AutoSorterTUI(settings=settings)
         async with app.run_test(size=(100, 35)) as pilot:
             modal = SettingsModal(app.settings)
