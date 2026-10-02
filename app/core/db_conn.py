@@ -10,6 +10,14 @@ from app.core.cache import BoundedMemoryCache
 
 logger = logging.getLogger(__name__)
 
+
+def escape_pragma_key(key_str: str) -> str:
+    """Sanitize raw key string for PRAGMA queries by doubling single quotes."""
+    if not key_str:
+        return ""
+    return str(key_str).replace("'", "''")
+
+
 # Run user-space bootstrapping to download, register, and verify precompiled native binaries
 try:
     from app.core.user_space_bootstrap import bootstrap_binaries
@@ -173,7 +181,8 @@ def get_db_connection(db_path: str):
         if raw_key and HAS_SQLCIPHER:
             try:
                 with closing(conn.cursor()) as cursor:
-                    cursor.execute(f"PRAGMA key = '{raw_key}'")
+                    escaped_key = escape_pragma_key(raw_key)
+                    cursor.execute(f"PRAGMA key = '{escaped_key}'")
             except Exception as pragma_err:
                 logger.warning(
                     f"PRAGMA key configuration encountered error in fallback context: {pragma_err}"
@@ -320,7 +329,8 @@ def get_db_connection(db_path: str):
                             str(temp_db_path), timeout=5.0, check_same_thread=False
                         )
                         with closing(temp_conn.cursor()) as cursor:
-                            cursor.execute(f"PRAGMA key = '{raw_key}'")
+                            escaped_key = escape_pragma_key(raw_key)
+                            cursor.execute(f"PRAGMA key = '{escaped_key}'")
                             cursor.execute("PRAGMA user_version;")
                         determined_is_decryption_err = False
                     except Exception as temp_e:
