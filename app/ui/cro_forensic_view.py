@@ -11,35 +11,17 @@ from app.core.cro_multi_study_pipeline import (
     MasterPipelineResult,
 )
 from app.core.progress import ProgressUpdate
-from app.ui.dialog_helper import ask_directory_async, get_dialog_card_classes
+from app.ui.dialog_helper import (
+    ask_directory_async,
+    get_dialog_card_classes,
+    show_file_preview_dialog,
+)
 from app.ui.notifications import notify
 from app.ui.tokens import TOKENS
 from app.ui.toolbar import OverflowToolbar
 
 ui = MagicMock()
 ui.notify = notify
-
-
-def show_file_preview_dialog(filepath: str):
-    """Fallback in NiceGUI that opens a ui.dialog with scrollable text when browser dispatch fails."""
-    try:
-        if filepath and os.path.exists(filepath):
-            with open(filepath, "r", encoding="utf-8", errors="replace") as f:
-                content = f.read()
-        else:
-            content = f"File not found: {filepath}"
-    except Exception as err:
-        content = f"Error reading file {filepath}: {err}"
-
-    with ui.dialog() as dialog, ui.card().classes("w-full max-w-4xl p-4"):
-        ui.label(f"Preview: {os.path.basename(filepath)}").classes(
-            "text-lg font-bold mb-2"
-        )
-        with ui.scroll_area().classes("h-96 w-full border p-2"):
-            ui.label(content).classes("font-mono whitespace-pre-wrap text-sm")
-        with ui.row().classes("w-full justify-end mt-4"):
-            ui.button("Close", on_click=dialog.close).props('color="primary"')
-    dialog.open()
 
 
 class CROForensicView:
