@@ -8619,6 +8619,36 @@
               "decorators": [
                 "@classmethod"
               ],
+              "name": "hydrate_sidecar_models",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "cls"
+                },
+                {
+                  "annotation": "Optional[str]",
+                  "default": "None",
+                  "name": "sidecar_zip_path"
+                },
+                {
+                  "annotation": "Optional[str]",
+                  "default": "None",
+                  "name": "target_dir"
+                },
+                {
+                  "annotation": "Optional[Callable[..., Any]]",
+                  "default": "None",
+                  "name": "progress_callback"
+                }
+              ],
+              "returns": "bool"
+            },
+            {
+              "async": false,
+              "decorators": [
+                "@classmethod"
+              ],
               "name": "load_model",
               "parameters": [
                 {
@@ -8690,6 +8720,11 @@
                   "annotation": "str",
                   "default": null,
                   "name": "model_id"
+                },
+                {
+                  "annotation": "Optional[Callable[..., Any]]",
+                  "default": "None",
+                  "name": "progress_callback"
                 }
               ],
               "returns": "str"

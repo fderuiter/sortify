@@ -82,18 +82,7 @@ if os.path.exists(app_binaries_src):
                 dest_dir = os.path.join('app', 'binaries', rel_sub)
             datas.append((abs_file_path, dest_dir))
 
-# Explicitly bundle offline_bundle models and EasyOCR weights
-offline_bundle_src = 'offline_bundle'
-if os.path.exists(offline_bundle_src):
-    for root, dirs, files in os.walk(offline_bundle_src):
-        for file in files:
-            abs_file_path = os.path.abspath(os.path.join(root, file))
-            rel_sub = os.path.relpath(root, offline_bundle_src)
-            if rel_sub == '.':
-                dest_dir = 'offline_bundle'
-            else:
-                dest_dir = os.path.join('offline_bundle', rel_sub)
-            datas.append((abs_file_path, dest_dir))
+# Note: offline_bundle model weights are excluded from embedded datas and packaged into sidecar smart-autosorter-models.zip
 
 # Explicitly bundle documentation files
 docs_src = os.path.join('docs', 'user_guide.md')
