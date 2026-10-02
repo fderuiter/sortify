@@ -15,7 +15,17 @@ from app.ui.notifications import notify
 from app.ui.tokens import TOKENS
 from app.ui.toolbar import OverflowToolbar
 
-ui = MagicMock()
+try:
+    from nicegui import ui
+except (ImportError, ModuleNotFoundError):
+    ui = MagicMock()
+
+if hasattr(ui, "notify") and not getattr(ui.notify, "_is_app_notify", False):
+    try:
+        ui._original_notify = ui.notify
+    except Exception:
+        pass
+
 ui.notify = notify
 
 

@@ -176,7 +176,23 @@ class NotificationManager:
     ) -> None:
         try:
             import nicegui.ui as nicegui_ui
-            nicegui_ui.notify(message, type=type, caption=caption, timeout=timeout, **kwargs)
+
+            def _is_our_notify(fn):
+                if fn is None:
+                    return False
+                return getattr(fn, "_is_app_notify", False) is True
+
+            target_notify = None
+            if "_original_notify" in getattr(nicegui_ui, "__dict__", {}):
+                target_notify = getattr(nicegui_ui, "_original_notify", None)
+
+            if target_notify is None or _is_our_notify(target_notify):
+                target_notify = getattr(nicegui_ui, "notify", None)
+
+            if target_notify is not None and not _is_our_notify(target_notify) and callable(target_notify):
+                target_notify(message, type=type, caption=caption, timeout=timeout, **kwargs)
+            else:
+                self._dispatch_cli(message, type=type, caption=caption, **kwargs)
         except Exception as e:
             logger.warning(f"GUI notification fallback due to error: {e}")
             self._dispatch_cli(message, type=type, caption=caption, **kwargs)
@@ -271,3 +287,6 @@ def notify(
     return NotificationManager.get_instance().notify(
         message, type=type, caption=caption, timeout=timeout, **kwargs
     )
+
+
+notify._is_app_notify = True
