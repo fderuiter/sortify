@@ -623,13 +623,6 @@ class ContinuousWatchdogDaemon:
         job_id = staged_info["job_id"]
         staged_filepath = staged_info.get("staged_filepath")
 
-        # Unlink/remove original unisolated file from base_dir post-staging
-        if staged_filepath and os.path.abspath(abs_path) != os.path.abspath(
-            staged_filepath
-        ):
-            if os.path.exists(abs_path):
-                resilient_remove(abs_path)
-
         if cancel_check():
             return
 
@@ -651,6 +644,8 @@ class ContinuousWatchdogDaemon:
             "MANUAL_REVIEW_REQUIRED",
             "DEAD_LETTER_QUEUE",
         ):
+            if os.path.exists(abs_path):
+                resilient_remove(abs_path)
             logger.info(
                 f"Quarantine interceptor completed for {rel_path} with status {status}"
             )
@@ -658,10 +653,20 @@ class ContinuousWatchdogDaemon:
 
         # If a compliance action (redact, archive, quarantine, retain, sensitivity_hold) was executed, triage is complete
         if policy_action in ("redact", "archive", "quarantine", "retain", "sensitivity_hold"):
+            if os.path.exists(abs_path):
+                resilient_remove(abs_path)
             logger.info(
                 f"Quarantine interceptor compliance action {policy_action} executed for {rel_path}"
             )
             return
+
+        # Cleanup staging copy if present after quarantine release
+        if (
+            staged_filepath
+            and os.path.exists(staged_filepath)
+            and os.path.abspath(abs_path) != os.path.abspath(staged_filepath)
+        ):
+            resilient_remove(staged_filepath)
 
         # Phase 1: Fast-Path Rule Evaluation for released / non-sensitive files
         if not os.path.exists(abs_path):
