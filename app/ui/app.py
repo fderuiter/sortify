@@ -15,7 +15,17 @@ from app.ui.dialog_helper import ask_directory_async, get_dialog_card_classes
 from app.ui.notifications import notify
 from app.ui.tokens import TOKENS
 
-ui = MagicMock()
+try:
+    from nicegui import ui
+except (ImportError, ModuleNotFoundError):
+    ui = MagicMock()
+
+if hasattr(ui, "notify") and not getattr(ui.notify, "_is_app_notify", False):
+    try:
+        ui._original_notify = ui.notify
+    except Exception:
+        pass
+
 ui.notify = notify
 
 logger = logging.getLogger(__name__)

@@ -1,9 +1,13 @@
 """Tests for setup wizard and app initialization."""
 
+import importlib
+import sys
+import types
 from unittest.mock import MagicMock, patch
 
 from app.config import AppSettings
 from app.ui.app import AutoSorterApp
+from app.ui.notifications import notify
 from app.ui.wizard import show_wizard
 
 
@@ -70,3 +74,60 @@ def test_show_wizard_decline():
         decline_fn()
 
         assert settings.AI_CONSENT_GRANTED is False
+
+
+def test_conditional_import_nicegui_active():
+    """Verify wizard, settings, and app modules use real nicegui.ui when available."""
+    import app.ui.app as app_mod
+    import app.ui.settings as settings_mod
+    import app.ui.wizard as wizard_mod
+
+    fake_nicegui = types.ModuleType("nicegui")
+    fake_ui = MagicMock()
+    fake_dialog = MagicMock()
+    fake_ui.dialog = MagicMock(return_value=fake_dialog)
+    fake_nicegui.ui = fake_ui
+
+    with patch.dict(sys.modules, {"nicegui": fake_nicegui, "nicegui.ui": fake_ui}):
+        importlib.reload(wizard_mod)
+        importlib.reload(settings_mod)
+        importlib.reload(app_mod)
+
+        assert wizard_mod.ui is fake_ui
+        assert settings_mod.ui is fake_ui
+        assert app_mod.ui is fake_ui
+        assert wizard_mod.ui.notify == notify
+
+        # Calling show_wizard uses fake_ui (the imported nicegui module), not a MagicMock
+        settings = AppSettings()
+        app_mock = MagicMock()
+        wizard_mod.show_wizard(app_mock, settings)
+        assert fake_ui.dialog.called
+        assert fake_ui.card.called
+
+    # Clean reload back to headless mode after test
+    sys.modules.pop("nicegui", None)
+    sys.modules.pop("nicegui.ui", None)
+    importlib.reload(wizard_mod)
+    importlib.reload(settings_mod)
+    importlib.reload(app_mod)
+
+
+def test_conditional_import_nicegui_missing():
+    """Verify wizard, settings, and app modules fall back to MagicMock when nicegui is not installed."""
+    sys.modules.pop("nicegui", None)
+    sys.modules.pop("nicegui.ui", None)
+
+    import app.ui.app as app_mod
+    import app.ui.settings as settings_mod
+    import app.ui.wizard as wizard_mod
+
+    importlib.reload(wizard_mod)
+    importlib.reload(settings_mod)
+    importlib.reload(app_mod)
+
+    assert isinstance(wizard_mod.ui, MagicMock)
+    assert isinstance(settings_mod.ui, MagicMock)
+    assert isinstance(app_mod.ui, MagicMock)
+    assert wizard_mod.ui.notify == notify
+

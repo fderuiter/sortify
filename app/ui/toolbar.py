@@ -3,7 +3,10 @@
 from typing import Any, Callable, List, Optional
 from unittest.mock import MagicMock
 
-ui = MagicMock()
+try:
+    from nicegui import ui
+except (ImportError, ModuleNotFoundError):
+    ui = MagicMock()
 
 _TOOLBAR_CSS_HEAD_INJECTED = False
 

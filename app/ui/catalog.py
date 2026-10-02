@@ -44,7 +44,10 @@ __all__ = [
 ]
 
 
-ui = MagicMock()
+try:
+    from nicegui import ui
+except (ImportError, ModuleNotFoundError):
+    ui = MagicMock()
 
 # --- COMPONENT CATALOG RENDERERS ---
 
