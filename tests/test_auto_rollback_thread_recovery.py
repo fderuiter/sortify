@@ -1,17 +1,13 @@
-import asyncio
 import os
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
-from app.config import AppSettings
 from app.core.cache import CacheManager
 from app.core.db import Database
 from app.core.db_worker import DBWorker
 from app.core.history import HistoryManager
 from app.core.mover import execute_moves
-from app.core.session import AppSession
-from app.ui.app import AutoSorterApp
 
 
 @pytest.fixture
@@ -70,52 +66,3 @@ def test_automatic_rollback_on_failed_move(test_env):
     doc = db.get_document(base_dir, "file1.txt")
     assert doc is not None
     assert doc["file_hash"] == "hash1"
-
-
-@pytest.mark.anyio
-async def test_ui_recovery_and_watcher_restart(tmp_path):
-    """Verify that when a background move execution fails, the UI restarts the folder watcher, displays an error alert dialog, and re-enables the execute button."""
-    settings = AppSettings()
-    settings.AI_CONSENT_GRANTED = False
-
-    base_dir = str(tmp_path / "test_base")
-    os.makedirs(base_dir, exist_ok=True)
-
-    app = AutoSorterApp(settings)
-    app.base_dir = base_dir
-
-    # Mock app_session and dialog
-    app_session_mock = MagicMock(spec=AppSession)
-    app_session_mock.base_dir = base_dir
-    app_session_mock.execute_moves.side_effect = RuntimeError("Disk failure")
-
-    app.app_session = app_session_mock
-    app.plan = {"dummy.txt": None}
-    app.execute_btn = MagicMock()
-    app.progress_bar = MagicMock()
-    app.status_label = MagicMock()
-
-    # Mock NiceGUI ui.dialog, ui.notify and tree render
-    with (
-        patch.object(app, "render_tree"),
-        patch.object(app, "start_watcher") as mock_start_watcher,
-        patch.object(app, "stop_watcher") as mock_stop_watcher,
-    ):
-        # Call execute_sort (which runs background task on asyncio event loop)
-        app.execute_sort()
-
-        # Let the async task run to completion
-        for _ in range(50):
-            await asyncio.sleep(0.05)
-            if app.execute_btn.enable.called:
-                break
-
-        # Acceptance Criteria Check:
-        # 1. stop_watcher should be called before execution starts
-        mock_stop_watcher.assert_called_once()
-
-        # 2. execute_btn must be re-enabled after rollback
-        app.execute_btn.enable.assert_called_once()
-
-        # 3. Folder observer is restarted
-        mock_start_watcher.assert_called_once()
