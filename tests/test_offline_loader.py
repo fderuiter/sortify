@@ -502,3 +502,66 @@ def test_florence2_chunked_hash_verification(tmp_path):
     file_path.write_bytes(large_data + b"TAMPERED")
     with pytest.raises(ValueError, match="Integrity check failed"):
         registry.verify_integrity("florence-2", str(tmp_path))
+
+
+def test_sidecar_model_hydration_success(tmp_path, monkeypatch):
+    """Verify that OfflineModelLoader.resolve_model_path hydrates model weights from smart-autosorter-models.zip."""
+    import zipfile
+
+    # Create dummy model files inside a zip
+    zip_dir = tmp_path / "sidecar"
+    zip_dir.mkdir()
+    sidecar_zip = zip_dir / "smart-autosorter-models.zip"
+
+    target_home = tmp_path / "user_home"
+    target_home.mkdir()
+
+    monkeypatch.setenv("HOME", str(target_home))
+    monkeypatch.setenv("USERPROFILE", str(target_home))
+    monkeypatch.setenv("SMART_AUTOSORTER_MODELS_ZIP", str(sidecar_zip))
+
+    with zipfile.ZipFile(sidecar_zip, "w") as zf:
+        zf.writestr("model/config.json", '{"model_type": "minilm"}')
+        zf.writestr("model/model.onnx", "dummy_onnx_weights")
+
+    OfflineModelLoader._registered_models.clear()
+    OfflineModelLoader.register_model("model", expected_files=["config.json"])
+
+    progress_updates = []
+
+    def progress_cb(update):
+        progress_updates.append(update)
+
+    resolved = OfflineModelLoader.resolve_model_path("model", progress_callback=progress_cb)
+
+    assert os.path.exists(resolved)
+    assert os.path.exists(os.path.join(resolved, "config.json"))
+    assert len(progress_updates) > 0
+    stages = [u.stage for u in progress_updates if getattr(u, "stage", None)]
+    assert any("Verifying sidecar model package" in s for s in stages)
+    assert any("Sidecar model hydration complete" in s for s in stages)
+
+
+def test_sidecar_hydration_tampered_weights_error(tmp_path, monkeypatch):
+    """Verify that sidecar hydration aborts if extracted weights fail integrity verification."""
+    import zipfile
+
+    sidecar_zip = tmp_path / "smart-autosorter-models.zip"
+    target_home = tmp_path / "user_home"
+    target_home.mkdir()
+
+    monkeypatch.setenv("HOME", str(target_home))
+    monkeypatch.setenv("USERPROFILE", str(target_home))
+    monkeypatch.setenv("SMART_AUTOSORTER_MODELS_ZIP", str(sidecar_zip))
+
+    with zipfile.ZipFile(sidecar_zip, "w") as zf:
+        zf.writestr("easyocr/craft_mlt_25k.pth", "TAMPERED_WEIGHT_DATA")
+
+    SharedModelRegistry._instance = None
+    registry = SharedModelRegistry.get_instance()
+    registry.register_expected_hashes(
+        "easyocr", {"craft_mlt_25k.pth": "0000000000000000000000000000000000000000000000000000000000000000"}
+    )
+
+    with pytest.raises(OfflineModelLoadError, match="integrity check"):
+        OfflineModelLoader.hydrate_sidecar_models(sidecar_zip_path=str(sidecar_zip), target_dir=str(target_home / ".smart-autosorter" / "offline_bundle"))

@@ -75,5 +75,6 @@ jobs:
           files: |
             dist/${{ matrix.artifact_name }}
             dist/${{ matrix.artifact_name }}.sha256
+            dist/smart-autosorter-models.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
