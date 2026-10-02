@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "5690dac217d6d8d0fde04b0b53555380ef070785646623e5e365a3807dc8e9f8"
+    "checksum": "9bb9af72ef2ff7e30f0294ba0f8381f4bcd76d403c7676072a73eff08b485405"
   },
   "cli": {
     "app/main.py": [
@@ -3086,6 +3086,31 @@
                 }
               ],
               "returns": "bool"
+            },
+            {
+              "async": false,
+              "decorators": [
+                "@staticmethod"
+              ],
+              "name": "rotate_database_key",
+              "parameters": [
+                {
+                  "annotation": "Path | str",
+                  "default": null,
+                  "name": "db_path"
+                },
+                {
+                  "annotation": "Path | str",
+                  "default": null,
+                  "name": "key_path"
+                },
+                {
+                  "annotation": "str | None",
+                  "default": "None",
+                  "name": "new_key_str"
+                }
+              ],
+              "returns": "str"
             }
           ]
         },
@@ -4757,6 +4782,19 @@
           "name": "clear_dead_thread_connections",
           "parameters": [],
           "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "escape_pragma_key",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "key_str"
+            }
+          ],
+          "returns": "str"
         },
         {
           "async": false,
@@ -8715,6 +8753,36 @@
               "decorators": [
                 "@classmethod"
               ],
+              "name": "hydrate_sidecar_models",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "cls"
+                },
+                {
+                  "annotation": "Optional[str]",
+                  "default": "None",
+                  "name": "sidecar_zip_path"
+                },
+                {
+                  "annotation": "Optional[str]",
+                  "default": "None",
+                  "name": "target_dir"
+                },
+                {
+                  "annotation": "Optional[Callable[..., Any]]",
+                  "default": "None",
+                  "name": "progress_callback"
+                }
+              ],
+              "returns": "bool"
+            },
+            {
+              "async": false,
+              "decorators": [
+                "@classmethod"
+              ],
               "name": "load_model",
               "parameters": [
                 {
@@ -8786,6 +8854,11 @@
                   "annotation": "str",
                   "default": null,
                   "name": "model_id"
+                },
+                {
+                  "annotation": "Optional[Callable[..., Any]]",
+                  "default": "None",
+                  "name": "progress_callback"
                 }
               ],
               "returns": "str"

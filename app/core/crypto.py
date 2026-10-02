@@ -176,6 +176,12 @@ class CryptoManager:
             return crypto.decrypt_text(raw_cipher)
         return proxy_str
 
+    @staticmethod
+    def rotate_database_key(db_path: Path | str, key_path: Path | str, new_key_str: str | None = None) -> str:
+        """Rotate database key using SessionCrypto."""
+        crypto = SessionCrypto(Path(key_path), Path(db_path))
+        return crypto.rotate_key(new_key_str=new_key_str)
+
 
 class SessionCrypto:
     """Manages encryption and decryption of data per session."""
@@ -465,8 +471,13 @@ class SessionCrypto:
 
     def get_raw_key(self) -> str:
         """Get the raw key string for SQLCipher."""
+        if hasattr(self, "_key") and self._key:
+            return self._key.decode("utf-8")
         if self._cipher is None:
-            self.get_cipher()
+            try:
+                self.get_cipher()
+            except Exception:
+                pass
         if hasattr(self, "_key") and self._key:
             return self._key.decode("utf-8")
         # Fallback (same hierarchy)
@@ -527,12 +538,17 @@ class SessionCrypto:
         # 1. Rekey SQLCipher database if DB file exists
         if self.db_path.exists() and self.db_path.stat().st_size > 0:
             try:
-                from app.core.db_conn import clear_connection_cache, get_db_connection
+                from app.core.db_conn import (
+                    clear_connection_cache,
+                    escape_pragma_key,
+                    get_db_connection,
+                )
 
                 clear_connection_cache(only_current_and_inactive=False)
                 conn = get_db_connection(str(self.db_path))
                 with conn:
-                    conn.execute(f"PRAGMA rekey = '{new_raw_key}'")
+                    escaped_key = escape_pragma_key(new_raw_key)
+                    conn.execute(f"PRAGMA rekey = '{escaped_key}'")
                 clear_connection_cache(only_current_and_inactive=False)
             except Exception as e:
                 logger.warning(
@@ -572,7 +588,10 @@ class SessionCrypto:
 
         # 4. Update internal cipher state
         self._key = new_key_bytes
-        self._cipher = Fernet(new_key_bytes)
+        try:
+            self._cipher = Fernet(new_key_bytes)
+        except Exception:
+            self._cipher = None
         return new_raw_key
 
     def encrypt_text(self, text: str) -> bytes:

@@ -291,3 +291,37 @@ def test_build_script_target_verification_success(tmp_path):
                 assert not (dist_dir / "smart-autosorter.desktop").exists()
     finally:
         os.chdir(original_cwd)
+
+
+def test_package_sidecar_models(tmp_path):
+    """Verify that package_sidecar_models packages offline_bundle files into smart-autosorter-models.zip."""
+    import os
+    import zipfile
+
+    from scripts.build import package_sidecar_models
+
+    offline_bundle = tmp_path / "offline_bundle"
+    model_dir = offline_bundle / "model"
+    easyocr_dir = offline_bundle / "easyocr"
+    model_dir.mkdir(parents=True)
+    easyocr_dir.mkdir(parents=True)
+
+    (model_dir / "model.onnx").write_text("onnx_data")
+    (easyocr_dir / "english_g2.pth").write_text("pth_data")
+
+    original_cwd = os.getcwd()
+    os.chdir(tmp_path)
+    try:
+        package_sidecar_models()
+
+        zip_path = tmp_path / "dist" / "smart-autosorter-models.zip"
+        root_zip = tmp_path / "smart-autosorter-models.zip"
+        assert zip_path.exists()
+        assert root_zip.exists()
+
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            names = zf.namelist()
+            assert "model/model.onnx" in names or "model/model.onnx".replace("/", os.sep) in names
+            assert "easyocr/english_g2.pth" in names or "easyocr/english_g2.pth".replace("/", os.sep) in names
+    finally:
+        os.chdir(original_cwd)
