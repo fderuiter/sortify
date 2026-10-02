@@ -12,12 +12,12 @@ subgraph session_orchestration ["Session Orchestration &amp; Lifecycle (app.core
 core_session["app.core.session"]
 core_user_space_bootstrap["app.core.user_space_bootstrap"]
 core_daemon["app.core.daemon"]
+core_ipc["app.core.ipc"]
 core_integration["app.core.integration"]
 core_diagram_schema["app.core.diagram_schema"]
 core_domain_contracts["app.core.domain_contracts"]
 end
-subgraph ingestion_extraction ["Ingestion &amp; Extraction Engine (app.core)"]
-core_extractor["app.core.extractor"]</pre>
+subgraph ingestion_extraction ["Ingestion &amp; Extraction Engine (app.core)"]</pre>
   </foreignObject>
 
 </svg>

@@ -1089,3 +1089,171 @@ def test_modal_screens_responsive_layout(temp_workspace):
 
     asyncio.run(_test())
 
+
+def test_tui_vim_tree_navigation(temp_workspace):
+    """Verify native vim motion navigation (h, j, k, l) on Tree control."""
+    async def _test():
+        settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
+
+        async with app.run_test() as pilot:
+            app.plan = {
+                "FolderA": {
+                    "file1.txt": {
+                        "__type__": "file",
+                        "filepath": os.path.join(temp_workspace, "file1.txt"),
+                        "target_filename": "file1.txt",
+                    }
+                },
+                "FolderB": {},
+            }
+            app.rebuild_tree()
+
+            tree = app.query_one("#plan-tree")
+            tree.focus()
+            await pilot.pause(0.05)
+
+            folder_a_node = tree.root.children[0]
+            tree.move_cursor(folder_a_node)
+            assert tree.cursor_node == folder_a_node
+
+            # Test 'j' (down)
+            await pilot.press("j")
+            await pilot.pause(0.05)
+            assert tree.cursor_node != folder_a_node
+
+            # Test 'k' (up)
+            await pilot.press("k")
+            await pilot.pause(0.05)
+            assert tree.cursor_node == folder_a_node
+
+            # Test 'h' (collapse folder)
+            assert folder_a_node.is_expanded
+            await pilot.press("h")
+            await pilot.pause(0.05)
+            assert not folder_a_node.is_expanded
+
+            # Test 'l' (expand folder)
+            await pilot.press("l")
+            await pilot.pause(0.05)
+            assert folder_a_node.is_expanded
+
+            # Test 'l' again on expanded folder (move to first child)
+            await pilot.press("l")
+            await pilot.pause(0.05)
+            child_node = folder_a_node.children[0]
+            assert tree.cursor_node == child_node
+
+            # Test 'h' on child leaf node (move to parent folder node)
+            await pilot.press("h")
+            await pilot.pause(0.05)
+            assert tree.cursor_node == folder_a_node
+
+            # Test unfocused tree ignores vim keys
+            tree.blur()
+            await pilot.pause(0.05)
+            assert not tree.has_focus
+
+            tree.move_cursor(folder_a_node)
+            await pilot.press("j")
+            await pilot.pause(0.05)
+            assert tree.cursor_node == folder_a_node
+
+    asyncio.run(_test())
+
+
+def test_tui_scoped_hotkeys_ctrl_combinations(temp_workspace):
+    """Verify remapped Ctrl+... modifier hotkey actions."""
+    from app.ui.tui import DirectorySelectModal
+
+    async def _test():
+        settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
+
+        async with app.run_test() as pilot:
+            filepath = os.path.join(temp_workspace, "doc.pdf")
+            app.plan = {
+                "FolderA": {
+                    "doc.pdf": {
+                        "__type__": "file",
+                        "filepath": filepath,
+                        "target_filename": "doc.pdf",
+                    }
+                }
+            }
+            app.rebuild_tree()
+
+            tree = app.query_one("#plan-tree")
+            file_node = tree.root.children[0].children[0]
+            app.active_tree_node = file_node
+
+            # Ctrl+L -> Lock
+            await pilot.press("ctrl+l")
+            await pilot.pause(0.05)
+            assert "doc.pdf" in app.locked_files or filepath in app.locked_files
+
+            # Ctrl+N -> New Folder modal
+            await pilot.press("ctrl+n")
+            await pilot.pause(0.05)
+            assert isinstance(app.screen, NewFolderModal)
+            await pilot.press("escape")
+            await pilot.pause(0.05)
+
+            # Ctrl+O -> Settings modal
+            await pilot.press("ctrl+o")
+            await pilot.pause(0.05)
+            assert isinstance(app.screen, SettingsModal)
+            await pilot.press("escape")
+            await pilot.pause(0.05)
+
+            # Ctrl+B -> Directory Select modal
+            await pilot.press("ctrl+b")
+            await pilot.pause(0.05)
+            assert isinstance(app.screen, DirectorySelectModal)
+            await pilot.press("escape")
+            await pilot.pause(0.05)
+
+    asyncio.run(_test())
+
+
+def test_tui_input_focus_guard_clauses(temp_workspace):
+    """Verify input fields guard against triggering background application hotkey actions."""
+    async def _test():
+        settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
+
+        async with app.run_test() as pilot:
+            app.plan = {"FolderA": {}}
+            app.rebuild_tree()
+
+            modal = NewFolderModal()
+            app.push_screen(modal)
+            await pilot.pause(0.05)
+
+            input_widget = modal.query_one("#input-folder-name", Input)
+            input_widget.focus()
+            await pilot.pause(0.05)
+
+            assert app._is_text_control_focused() is True
+
+            # Invoking action handlers directly when text control is focused must return early
+            initial_plan_keys = set(app.plan.keys())
+            app.action_new_folder()
+            assert app.screen is modal  # No new modal opened
+
+            app.action_toggle_lock()
+            app.action_scan_directory()
+            app.action_execute_sort()
+
+            # Fast typing inside input field does not trigger background application actions
+            await pilot.press("l", "r", "n", "s", "e", "b", "q")
+            await pilot.pause(0.05)
+
+            assert input_widget.value == "lrnsebq"
+            assert set(app.plan.keys()) == initial_plan_keys
+
+    asyncio.run(_test())
+
