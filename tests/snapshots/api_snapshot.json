@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "594d08bea1dea998ba1e546f7d391bbb980786312907e90414c5851e7dfaa973"
+    "checksum": "0391e00b270ce0ea3c23b66308991028103913a14aa6e074d872d2acd591fcad"
   },
   "cli": {
     "app/main.py": [
@@ -8382,6 +8382,36 @@
               "decorators": [
                 "@classmethod"
               ],
+              "name": "hydrate_sidecar_models",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "cls"
+                },
+                {
+                  "annotation": "Optional[str]",
+                  "default": "None",
+                  "name": "sidecar_zip_path"
+                },
+                {
+                  "annotation": "Optional[str]",
+                  "default": "None",
+                  "name": "target_dir"
+                },
+                {
+                  "annotation": "Optional[Callable[..., Any]]",
+                  "default": "None",
+                  "name": "progress_callback"
+                }
+              ],
+              "returns": "bool"
+            },
+            {
+              "async": false,
+              "decorators": [
+                "@classmethod"
+              ],
               "name": "load_model",
               "parameters": [
                 {
@@ -8453,6 +8483,11 @@
                   "annotation": "str",
                   "default": null,
                   "name": "model_id"
+                },
+                {
+                  "annotation": "Optional[Callable[..., Any]]",
+                  "default": "None",
+                  "name": "progress_callback"
                 }
               ],
               "returns": "str"

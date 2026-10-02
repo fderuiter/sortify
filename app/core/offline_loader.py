@@ -70,13 +70,152 @@ class OfflineModelLoader:
         cls._registered_models[model_id] = {"expected_files": expected_files or []}
 
     @classmethod
-    def resolve_model_path(cls, model_id: str) -> str:
+    def _find_sidecar_zip_candidates(cls) -> List[str]:
+        """Find potential filesystem paths where smart-autosorter-models.zip may reside."""
+        candidates = []
+
+        # Environment variables
+        for env_key in ("SMART_AUTOSORTER_MODELS_ZIP", "MODELS_ZIP_PATH"):
+            p = os.environ.get(env_key)
+            if p:
+                candidates.append(p)
+
+        from app.core.path_utils import get_base_path, is_packaged
+
+        if is_packaged() and hasattr(sys, "executable"):
+            exe_dir = os.path.dirname(sys.executable)
+            candidates.append(os.path.join(exe_dir, "smart-autosorter-models.zip"))
+
+        if hasattr(sys, "_MEIPASS"):
+            candidates.append(os.path.join(sys._MEIPASS, "smart-autosorter-models.zip"))
+
+        candidates.append(os.path.join(os.getcwd(), "smart-autosorter-models.zip"))
+        candidates.append(os.path.join(os.getcwd(), "dist", "smart-autosorter-models.zip"))
+
+        try:
+            base_dir = get_base_path()
+            candidates.append(os.path.join(base_dir, "smart-autosorter-models.zip"))
+            candidates.append(os.path.join(base_dir, "dist", "smart-autosorter-models.zip"))
+        except Exception:
+            pass
+
+        candidates.append(os.path.expanduser("~/.smart-autosorter/smart-autosorter-models.zip"))
+        candidates.append(os.path.expanduser("~/.smart-autosorter/offline_bundle/smart-autosorter-models.zip"))
+
+        unique_cands = []
+        for c in candidates:
+            norm = os.path.abspath(c)
+            if norm not in unique_cands:
+                unique_cands.append(norm)
+
+        return unique_cands
+
+    @classmethod
+    def hydrate_sidecar_models(
+        cls,
+        sidecar_zip_path: Optional[str] = None,
+        target_dir: Optional[str] = None,
+        progress_callback: Optional[Callable[..., Any]] = None,
+    ) -> bool:
+        """Extract and verify sidecar model weights archive into local user profile directory.
+
+        Parameters
+        ----------
+        sidecar_zip_path : str, optional
+            Path to the smart-autosorter-models.zip file.
+        target_dir : str, optional
+            Destination extraction directory (defaults to ~/.smart-autosorter/offline_bundle).
+        progress_callback : Callable, optional
+            Callback for reporting hydration progress and status updates.
+
+        Returns
+        -------
+        bool
+            True if hydration and hash verification succeeded.
+        """
+        import zipfile
+
+        from app.core.progress import emit_progress
+        from app.core.shared_registry import SharedModelRegistry
+
+        if target_dir is None:
+            target_dir = os.path.expanduser("~/.smart-autosorter/offline_bundle")
+
+        target_path = os.path.abspath(target_dir)
+        os.makedirs(target_path, exist_ok=True)
+
+        if sidecar_zip_path is None or not os.path.exists(sidecar_zip_path):
+            zip_candidates = cls._find_sidecar_zip_candidates()
+            found_zip = None
+            for cand in zip_candidates:
+                if os.path.exists(cand) and os.path.isfile(cand):
+                    found_zip = cand
+                    break
+            if not found_zip:
+                logger.error("No sidecar model archive (smart-autosorter-models.zip) found for hydration.")
+                return False
+            sidecar_zip_path = found_zip
+
+        emit_progress(
+            progress_callback,
+            progress=0.1,
+            stage="Verifying sidecar model package...",
+        )
+
+        try:
+            with zipfile.ZipFile(sidecar_zip_path, "r") as zip_file:
+                file_list = [f for f in zip_file.infolist() if not f.is_dir()]
+                total_files = len(file_list)
+
+                for idx, zip_info in enumerate(file_list):
+                    zip_file.extract(zip_info, target_path)
+                    current_progress = 0.1 + (0.6 * ((idx + 1) / max(total_files, 1)))
+                    emit_progress(
+                        progress_callback,
+                        progress=current_progress,
+                        stage=f"Hydrating sidecar model weights ({idx + 1}/{total_files})...",
+                    )
+        except Exception as e:
+            logger.error(f"Failed to extract sidecar model zip archive '{sidecar_zip_path}': {e}")
+            raise OfflineModelLoadError(f"Failed to extract sidecar model package: {e}") from e
+
+        emit_progress(
+            progress_callback,
+            progress=0.8,
+            stage="Verifying model cryptographic SHA-256 hashes...",
+        )
+
+        registry = SharedModelRegistry.get_instance()
+        try:
+            for item in os.listdir(target_path):
+                subpath = os.path.join(target_path, item)
+                if os.path.isdir(subpath):
+                    check_id = "generative_naming" if item == "model" else item
+                    registry.verify_integrity(check_id, subpath)
+        except Exception as err:
+            logger.error(f"Cryptographic hash verification failed after hydration: {err}")
+            raise OfflineModelLoadError(f"Hydrated sidecar weights failed integrity check: {err}") from err
+
+        emit_progress(
+            progress_callback,
+            progress=1.0,
+            stage="Sidecar model hydration complete.",
+        )
+
+        return True
+
+    @classmethod
+    def resolve_model_path(
+        cls, model_id: str, progress_callback: Optional[Callable[..., Any]] = None
+    ) -> str:
         """Resolve the local path of a model by checking pre-defined fallback search directories.
 
         Parameters
         ----------
         model_id : str
             The model ID to locate.
+        progress_callback : Callable, optional
+            Optional callback to report hydration/verification progress.
 
         Returns
         -------
@@ -88,11 +227,15 @@ class OfflineModelLoader:
         ModelWeightsNotFoundError
             If the model cannot be resolved in any search paths.
         """
+        folder_name = "model" if model_id in ("generative_naming", "model") else model_id
         searched_paths = []
 
         # Precedence 1: Environment variable custom path
         env_var_name = f"{model_id.upper().replace('-', '_')}_PATH"
         env_path = os.environ.get(env_var_name)
+        if not env_path and folder_name != model_id:
+            env_var_name_alt = f"{folder_name.upper().replace('-', '_')}_PATH"
+            env_path = os.environ.get(env_var_name_alt)
         if env_path:
             searched_paths.append(env_path)
 
@@ -100,11 +243,11 @@ class OfflineModelLoader:
         from app.core.path_utils import is_packaged
 
         if is_packaged() and hasattr(sys, "_MEIPASS"):
-            meipass_path = os.path.join(sys._MEIPASS, "offline_bundle", model_id)
+            meipass_path = os.path.join(sys._MEIPASS, "offline_bundle", folder_name)
             searched_paths.append(meipass_path)
 
         # Precedence 3: Local workspace directory
-        workspace_path = os.path.join(os.getcwd(), "offline_bundle", model_id)
+        workspace_path = os.path.join(os.getcwd(), "offline_bundle", folder_name)
         searched_paths.append(workspace_path)
 
         # Also resolve workspace path relative to path_utils base path
@@ -112,46 +255,79 @@ class OfflineModelLoader:
             from app.core.path_utils import get_base_path
 
             base_dir = get_base_path()
-            workspace_base_path = os.path.join(base_dir, "offline_bundle", model_id)
+            workspace_base_path = os.path.join(base_dir, "offline_bundle", folder_name)
             if workspace_base_path not in searched_paths:
                 searched_paths.append(workspace_base_path)
         except Exception as e:
             logger.debug(f"Could not resolve base path for model '{model_id}': {e}")
 
         # Precedence 4: User home directory fallback
-        home_path = os.path.expanduser(f"~/.smart-autosorter/offline_bundle/{model_id}")
+        home_path = os.path.expanduser(f"~/.smart-autosorter/offline_bundle/{folder_name}")
         searched_paths.append(home_path)
 
-        # Deduplicate paths while preserving order
-        unique_paths = []
-        for p in searched_paths:
-            normalized_p = os.path.abspath(p)
-            if normalized_p not in unique_paths:
-                unique_paths.append(normalized_p)
+        # Helper to test path existence
+        def check_paths(paths: List[str]) -> Optional[str]:
+            unique_paths = []
+            for p in paths:
+                normalized_p = os.path.abspath(p)
+                if normalized_p not in unique_paths:
+                    unique_paths.append(normalized_p)
 
-        # Check path existence
-        for path in unique_paths:
-            if os.path.exists(path) and os.path.isdir(path):
-                meta = cls._registered_models.get(model_id, {})
-                expected_files = meta.get("expected_files", [])
+            for path in unique_paths:
+                if os.path.exists(path) and os.path.isdir(path):
+                    meta = cls._registered_models.get(model_id, {})
+                    expected_files = meta.get("expected_files", [])
 
-                if expected_files:
-                    all_exist = True
-                    for f in expected_files:
-                        if not os.path.exists(os.path.join(path, f)):
-                            all_exist = False
-                            break
-                    if all_exist:
-                        return path
-                else:
-                    # If no specific expected files registered, ensure the directory has content
-                    try:
-                        if os.listdir(path):
+                    if expected_files:
+                        all_exist = True
+                        for f in expected_files:
+                            if not os.path.exists(os.path.join(path, f)):
+                                all_exist = False
+                                break
+                        if all_exist:
                             return path
-                    except Exception as e:
-                        logger.debug(f"Could not list directory '{path}': {e}")
+                    else:
+                        try:
+                            if os.listdir(path):
+                                return path
+                        except Exception as e:
+                            logger.debug(f"Could not list directory '{path}': {e}")
+            return None
 
-        raise ModelWeightsNotFoundError(model_id, unique_paths)
+        found_path = check_paths(searched_paths)
+        if found_path:
+            return found_path
+
+        # If model weights missing from all searched locations, attempt dynamic sidecar hydration
+        zip_candidates = cls._find_sidecar_zip_candidates()
+        found_zip = None
+        for cand in zip_candidates:
+            if os.path.exists(cand) and os.path.isfile(cand):
+                found_zip = cand
+                break
+
+        if found_zip:
+            logger.info(f"Sidecar package detected at '{found_zip}'. Hydrating model weights...")
+            try:
+                hydrated = cls.hydrate_sidecar_models(
+                    sidecar_zip_path=found_zip,
+                    progress_callback=progress_callback,
+                )
+                if hydrated:
+                    found_path = check_paths(searched_paths)
+                    if found_path:
+                        return found_path
+            except Exception as e:
+                logger.error(f"Sidecar model hydration failed: {e}")
+
+        # Deduplicate searched_paths for exception message
+        unique_searched = []
+        for p in searched_paths:
+            norm = os.path.abspath(p)
+            if norm not in unique_searched:
+                unique_searched.append(norm)
+
+        raise ModelWeightsNotFoundError(model_id, unique_searched)
 
     @classmethod
     def load_model(
@@ -189,9 +365,13 @@ class OfflineModelLoader:
                 f"Execution of remote code (trust_remote_code=True) is strictly prohibited for model '{model_id}'."
             )
 
+        progress_callback = kwargs.pop("progress_callback", None)
+
         # 1. Resolve path first
         try:
-            model_path = cls.resolve_model_path(model_id)
+            model_path = cls.resolve_model_path(
+                model_id, progress_callback=progress_callback
+            )
         except ModelWeightsNotFoundError as e:
             logger.error(f"Failed to resolve path for offline model '{model_id}': {e}")
             raise
