@@ -232,6 +232,8 @@ Main command-line interface for Smart AutoSorter AI Pro.
 usage: app/main.py [-h] [-q] [--no-color] [--demo] [--smoke-test]
                    [--update-snapshots] [--daemon] [--debug-layout] [--tui]
                    [--interactive]
+                   [--accept-ai-consent | --decline-ai-consent]
+                   [--skip-wizard] [--non-interactive]
                    {sort,scan,config,daemon,undo,ledger,quarantine} ...
 
 Smart AutoSorter AI Pro
@@ -265,6 +267,13 @@ options:
                         mode
   --tui                 Launch full-screen Textual TUI interface
   --interactive         Launch full-screen interactive TUI mode
+  --accept-ai-consent   Pre-configure AI consent as granted and bypass
+                        onboarding wizard
+  --decline-ai-consent  Pre-configure AI consent as declined and bypass
+                        onboarding wizard
+  --skip-wizard         Bypass onboarding wizard modal during startup
+  --non-interactive     Run in non-interactive mode and bypass interactive
+                        modal dialogs
 ```
 
 #### Non-Interactive / Headless Execution Guard
@@ -286,6 +295,8 @@ usage: app/main.py sort [-h] [--preset {demo,downloads,documents}] [--json]
                         [--conflict-policy {skip,rename}]
                         [--contextual-renaming] [--no-contextual-renaming]
                         [--tui] [--interactive]
+                        [--accept-ai-consent | --decline-ai-consent]
+                        [--skip-wizard] [--non-interactive]
                         [directory]
 
 positional arguments:
@@ -315,6 +326,13 @@ options:
                         Disable AI contextual renaming
   --tui                 Launch full-screen Textual TUI interface
   --interactive         Launch full-screen interactive TUI mode
+  --accept-ai-consent   Pre-configure AI consent as granted and bypass
+                        onboarding wizard
+  --decline-ai-consent  Pre-configure AI consent as declined and bypass
+                        onboarding wizard
+  --skip-wizard         Bypass onboarding wizard modal during startup
+  --non-interactive     Run in non-interactive mode and bypass interactive
+                        modal dialogs
 ```
 
 ##### `scan`
@@ -325,6 +343,8 @@ usage: app/main.py scan [-h] [--preset {demo,downloads,documents}] [--json]
                         [--conflict-policy {skip,rename}]
                         [--contextual-renaming] [--no-contextual-renaming]
                         [--tui] [--interactive]
+                        [--accept-ai-consent | --decline-ai-consent]
+                        [--skip-wizard] [--non-interactive]
                         [directory]
 
 positional arguments:
@@ -351,6 +371,13 @@ options:
                         Disable AI contextual renaming
   --tui                 Launch full-screen Textual TUI interface
   --interactive         Launch full-screen interactive TUI mode
+  --accept-ai-consent   Pre-configure AI consent as granted and bypass
+                        onboarding wizard
+  --decline-ai-consent  Pre-configure AI consent as declined and bypass
+                        onboarding wizard
+  --skip-wizard         Bypass onboarding wizard modal during startup
+  --non-interactive     Run in non-interactive mode and bypass interactive
+                        modal dialogs
 ```
 
 ##### `config`
@@ -361,6 +388,8 @@ usage: app/main.py config [-h] [--show] [--json] [--set KEY VALUE] [-q]
                           [--conflict-policy {skip,rename}]
                           [--contextual-renaming] [--no-contextual-renaming]
                           [--tui] [--interactive]
+                          [--accept-ai-consent | --decline-ai-consent]
+                          [--skip-wizard] [--non-interactive]
 
 options:
   -h, --help            show this help message and exit
@@ -382,6 +411,13 @@ options:
                         Disable AI contextual renaming
   --tui                 Launch full-screen Textual TUI interface
   --interactive         Launch full-screen interactive TUI mode
+  --accept-ai-consent   Pre-configure AI consent as granted and bypass
+                        onboarding wizard
+  --decline-ai-consent  Pre-configure AI consent as declined and bypass
+                        onboarding wizard
+  --skip-wizard         Bypass onboarding wizard modal during startup
+  --non-interactive     Run in non-interactive mode and bypass interactive
+                        modal dialogs
 ```
 
 ##### `daemon`
@@ -392,6 +428,8 @@ usage: app/main.py daemon [-h] [--watch] [-q] [--no-color]
                           [--conflict-policy {skip,rename}]
                           [--contextual-renaming] [--no-contextual-renaming]
                           [--tui] [--interactive]
+                          [--accept-ai-consent | --decline-ai-consent]
+                          [--skip-wizard] [--non-interactive]
                           [action] [directory]
 
 positional arguments:
@@ -417,6 +455,13 @@ options:
                         Disable AI contextual renaming
   --tui                 Launch full-screen Textual TUI interface
   --interactive         Launch full-screen interactive TUI mode
+  --accept-ai-consent   Pre-configure AI consent as granted and bypass
+                        onboarding wizard
+  --decline-ai-consent  Pre-configure AI consent as declined and bypass
+                        onboarding wizard
+  --skip-wizard         Bypass onboarding wizard modal during startup
+  --non-interactive     Run in non-interactive mode and bypass interactive
+                        modal dialogs
 ```
 
 ##### `undo`
@@ -428,6 +473,8 @@ usage: app/main.py undo [-h] [--session-id SESSION_ID] [--list] [--latest]
                         [--conflict-policy {skip,rename}]
                         [--contextual-renaming] [--no-contextual-renaming]
                         [--tui] [--interactive]
+                        [--accept-ai-consent | --decline-ai-consent]
+                        [--skip-wizard] [--non-interactive]
 
 options:
   -h, --help            show this help message and exit
@@ -453,6 +500,13 @@ options:
                         Disable AI contextual renaming
   --tui                 Launch full-screen Textual TUI interface
   --interactive         Launch full-screen interactive TUI mode
+  --accept-ai-consent   Pre-configure AI consent as granted and bypass
+                        onboarding wizard
+  --decline-ai-consent  Pre-configure AI consent as declined and bypass
+                        onboarding wizard
+  --skip-wizard         Bypass onboarding wizard modal during startup
+  --non-interactive     Run in non-interactive mode and bypass interactive
+                        modal dialogs
 ```
 
 ##### `ledger`

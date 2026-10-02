@@ -1378,7 +1378,13 @@ class AutoSorterTUI(A11yMixin, App):
     }
     """
 
-    def __init__(self, settings, base_dir: Optional[str] = None):
+    def __init__(
+        self,
+        settings,
+        base_dir: Optional[str] = None,
+        skip_wizard: bool = False,
+        non_interactive: bool = False,
+    ):
         super().__init__()
         self.settings = settings
         if base_dir and str(base_dir).startswith("/"):
@@ -1387,6 +1393,8 @@ class AutoSorterTUI(A11yMixin, App):
             self.base_dir = os.path.abspath(base_dir)
         else:
             self.base_dir = ""
+        self.skip_wizard = skip_wizard
+        self.non_interactive = non_interactive
         self.plan: Dict[str, Any] = {}
         self.locked_files: Dict[str, str] = {}
         self._ratings_cache: Dict[str, str] = {}
@@ -1459,8 +1467,38 @@ class AutoSorterTUI(A11yMixin, App):
             pass
         self.announce("Sortify AI Pro TUI initialized and ready.")
         self.check_abandoned_sessions()
+
+        env_non_interactive = os.environ.get("NON_INTERACTIVE")
+        is_non_interactive_env = bool(
+            env_non_interactive
+            and env_non_interactive.strip().lower() in ("1", "true", "yes", "on")
+        )
+        env_consent = os.environ.get("SORTIFY_AI_CONSENT")
+        if env_consent is not None:
+            env_consent_clean = env_consent.strip().lower()
+            if env_consent_clean in ("1", "true", "yes", "on"):
+                self.settings.AI_CONSENT_GRANTED = True
+            elif env_consent_clean in ("0", "false", "no", "off"):
+                self.settings.AI_CONSENT_GRANTED = False
+
+        is_bypass = (
+            self.skip_wizard
+            or self.non_interactive
+            or getattr(self.settings, "_skip_wizard", False)
+            or getattr(self.settings, "_non_interactive", False)
+            or is_non_interactive_env
+        )
+
         if getattr(self.settings, "AI_CONSENT_GRANTED", None) is None:
-            self.call_after_refresh(self.action_open_wizard)
+            if is_bypass:
+                self.settings.AI_CONSENT_GRANTED = False
+                if hasattr(self.settings, "_save"):
+                    try:
+                        self.settings._save()
+                    except Exception:
+                        pass
+            else:
+                self.call_after_refresh(self.action_open_wizard)
 
     def on_unmount(self) -> None:
         """Lifecycle hook called when application is unmounted."""
@@ -2110,7 +2148,12 @@ class AutoSorterTUI(A11yMixin, App):
         self.announce(msg)
 
 
-def run_tui(settings, base_dir: Optional[str] = None) -> None:
+def run_tui(
+    settings,
+    base_dir: Optional[str] = None,
+    skip_wizard: bool = False,
+    non_interactive: bool = False,
+) -> None:
     """Run the Textual full-screen terminal interface."""
     import shutil
 
@@ -2163,7 +2206,12 @@ def run_tui(settings, base_dir: Optional[str] = None) -> None:
         )
         sys.exit(1)
 
-    app = AutoSorterTUI(settings=settings, base_dir=base_dir)
+    app = AutoSorterTUI(
+        settings=settings,
+        base_dir=base_dir,
+        skip_wizard=skip_wizard,
+        non_interactive=non_interactive,
+    )
     app.run()
 
 
