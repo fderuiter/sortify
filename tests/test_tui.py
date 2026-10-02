@@ -3,6 +3,7 @@
 import asyncio
 import os
 import tempfile
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -1149,7 +1150,7 @@ def test_tui_clipboard_hotkeys_and_guardrails(temp_workspace):
                 assert f"Copied source path: {filepath}" in app.get_last_announcement()
 
             # Test Copy Target Path [shift+y]
-            expected_target_path = os.path.join(temp_workspace, "Invoices", "invoice_2026.pdf")
+            expected_target_path = Path(temp_workspace, "Invoices", "invoice_2026.pdf").as_posix()
             with patch.object(app.clipboard_service, "copy", return_value=True) as mock_copy:
                 app.action_copy_target_path()
                 mock_copy.assert_called_once_with(expected_target_path)
