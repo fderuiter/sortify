@@ -35,22 +35,22 @@ For core contributors and development setup, please refer to the [Contributor Gu
 
 The application is structured to strictly separate business logic from the user interface:
 
-- **app/cli/**: Modular CLI subcommand registry and domain-specific command handlers (`crypto`, `ledger`, `quarantine`, `cro`).
-- **app/core/**: Contains the core business logic, text extraction, machine learning models, and file operations.
-- **app/ui/**: Contains graphical interface components, dialogs, and progress rendering.
+- **app/cli/**: Modular CLI subcommand registry and domain-specific command handlers (`ledger`, `quarantine`).
+- **app/core/**: Contains the core business logic, security helpers, text extraction, machine learning models, and file operations.
+- **app/ui/**: Terminal User Interface (Textual TUI) and notification dispatchers.
 
-## Headless UI and Visual Snapshot Testing
+## Terminal UI and Visual Snapshot Testing
 
-To catch UI structural and visual regressions before they reach the user, we employ headless UI and visual snapshot testing frameworks (`tests/test_ui_snapshots.py` and `tests/test_visual_snapshots.py`).
+To catch UI structural and visual regressions before they reach the user, we employ visual snapshot testing frameworks (`tests/test_visual_snapshots.py`).
 
 To run the UI snapshot tests:
 ```bash
-uv run pytest tests/test_ui_snapshots.py tests/test_visual_snapshots.py
+uv run pytest tests/test_visual_snapshots.py
 ```
 
 If you intentionally alter the structure of the sorting tree or UI components, you must update the golden snapshots:
 ```bash
-UPDATE_SNAPSHOTS=1 uv run pytest tests/test_ui_snapshots.py
+UPDATE_SNAPSHOTS=1 uv run pytest tests/test_visual_snapshots.py
 ```
 Commit the updated snapshot files located in `tests/snapshots/` so reviewers can verify the visual and structural differences.
 ## Security & Privacy
@@ -76,7 +76,6 @@ This package contains the domain logic and data manipulation features. New extra
 *   **`app/core/mover.py`**: Manages physical file organization according to the AI's plan.
 
 ### `app/ui/` Package (Presentation Layer)
-This package contains all graphical interface code. Interface updates should be confined to these modules.
-*   **`app/ui/app.py`**: Main terminal user interface and interactive CLI.
-*   **`app/ui/dialog_helper.py`**: Styling and helper routines for terminal dialogs and card components.
-*   **`app/ui/wizard.py`**: Interactive setup and onboarding wizard interface.
+This package contains all Terminal User Interface and notification code.
+*   **`app/ui/tui.py`**: Active Textual terminal user interface and accessibility auditing hooks.
+*   **`app/ui/notifications.py`**: Runtime notification dispatcher for TUI and CLI.

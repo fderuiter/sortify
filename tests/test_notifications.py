@@ -35,10 +35,6 @@ def test_notification_mode_enum():
     assert mgr.get_mode() == NotificationMode.TUI
     assert mgr.detect_mode() == NotificationMode.TUI
 
-    mgr.set_mode("gui")
-    assert mgr.get_mode() == NotificationMode.GUI
-    assert mgr.detect_mode() == NotificationMode.GUI
-
 
 def test_cli_notification_dispatch(caplog):
     """Test that CLI notification writes formatted messages to standard stream and logger."""
@@ -97,21 +93,6 @@ def test_tui_notification_dispatch():
     mock_log_widget.write_line.assert_called_once_with("[WARNING] Automatic recovery in progress")
 
 
-def test_gui_notification_dispatch():
-    """Test routing notifications to NiceGUI ui.notify."""
-    mgr = NotificationManager.get_instance()
-    mgr.set_mode(NotificationMode.GUI)
-
-    mock_nicegui = MagicMock()
-    with mock.patch.dict("sys.modules", {"nicegui": mock_nicegui, "nicegui.ui": mock_nicegui.ui}):
-        res = notify("System status normal", type="positive", timeout=2000)
-
-    assert res["mode"] == "gui"
-    mock_nicegui.ui.notify.assert_called_once_with(
-        "System status normal", type="positive", caption=None, timeout=2000
-    )
-
-
 def test_custom_notification_handler():
     """Test registering and invoking custom notification callbacks."""
     mgr = NotificationManager.get_instance()
@@ -125,26 +106,6 @@ def test_custom_notification_handler():
 
     assert len(received_events) == 1
     assert received_events[0]["message"] == "Custom event payload"
-
-
-def test_app_ui_and_settings_integration():
-    """Test integration of notification bus in app.ui.app and app.ui.settings."""
-    from app.ui.app import ui as app_ui
-    from app.ui.settings import ui as settings_ui
-
-    mgr = NotificationManager.get_instance()
-    stream = io.StringIO()
-    mgr.set_output_stream(stream)
-    mgr.set_mode(NotificationMode.CLI)
-
-    app_ui.notify("App rollback succeeded", type="positive")
-    assert "[NOTIFICATION] [POSITIVE] App rollback succeeded" in stream.getvalue()
-
-    stream.seek(0)
-    stream.truncate(0)
-
-    settings_ui.notify("Settings updated", type="info")
-    assert "[NOTIFICATION] [INFO] Settings updated" in stream.getvalue()
 
 
 def test_notification_error_fallback():

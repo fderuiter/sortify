@@ -24,7 +24,6 @@ from app.core.db_worker import DBWorker
 from app.core.extractor_strategies import AudioExtractor
 from app.core.mover import _remove_empty_dirs, get_safe_path
 from app.core.semantic_embeddings import ModelProperties, SemanticEmbeddingManager
-from app.ui.app import AutoSorterApp
 
 pytestmark = [pytest.mark.slow, pytest.mark.integration]
 
@@ -326,38 +325,3 @@ def test_holistic_resiliency_guards_and_rollback(db, temp_workspace):
         _remove_empty_dirs(str(temp_workspace))
     except (OSError, NotImplementedError):
         pass
-
-
-def test_holistic_dynamic_virtual_tree_expansion(temp_workspace):
-    """Test dynamic virtual tree expansion on demand."""
-    settings = AppSettings()
-    app = AutoSorterApp(settings)
-    app.base_dir = str(temp_workspace)
-
-    # Create nested folder structure
-    (temp_workspace / "FolderA" / "SubFolder").mkdir(parents=True, exist_ok=True)
-    (temp_workspace / "FolderA" / "SubFolder" / "nested.txt").write_text(
-        "nested", encoding="utf-8"
-    )
-    (temp_workspace / "FolderA" / "root_child.txt").write_text(
-        "child", encoding="utf-8"
-    )
-
-    app.plan = {
-        "FolderA": {
-            "root_child.txt": None,
-            "SubFolder": {
-                "nested.txt": None,
-            },
-        }
-    }
-
-    nodes = []
-    app._flatten(app.plan, "", nodes)
-
-    assert len(nodes) == 1
-    assert nodes[0]["id"] == "FolderA"
-    assert nodes[0]["is_file"] is False
-    child_ids = [c["id"] for c in nodes[0]["children"]]
-    assert "FolderA/root_child.txt" in child_ids
-    assert "FolderA/SubFolder" in child_ids
