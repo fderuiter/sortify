@@ -243,7 +243,7 @@ positional arguments:
     scan                Run directory scanning and analysis without moving
                         files
     config              View or update application configuration settings
-    daemon              Launch the persistent directory-watching daemon
+    daemon              Launch or control persistent directory-watching daemon
     undo                Rollback sorting operations and manage history
                         sessions
     ledger              Manage transaction ledger entries and automated
@@ -386,18 +386,22 @@ options:
 
 ##### `daemon`
 ```text
-usage: app/main.py daemon [-h] [-q] [--no-color] [--max-folders MAX_FOLDERS]
+usage: app/main.py daemon [-h] [--watch] [-q] [--no-color]
+                          [--max-folders MAX_FOLDERS]
                           [--strategy {default,generative,clinical_tmf,clinical_isf}]
                           [--conflict-policy {skip,rename}]
                           [--contextual-renaming] [--no-contextual-renaming]
                           [--tui] [--interactive]
-                          [directory]
+                          [action] [directory]
 
 positional arguments:
-  directory             Directory to watch
+  action                Action (start, status, health, metrics, pause, resume,
+                        stop) or directory to watch
+  directory             Directory to watch or control
 
 options:
   -h, --help            show this help message and exit
+  --watch               Continuously monitor status telemetry in real time
   -q, --quiet           Suppress informational prints and non-essential
                         progress output
   --no-color            Disable ANSI color and style formatting
