@@ -7,7 +7,7 @@ import os
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Any, Optional
 
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
@@ -140,8 +140,92 @@ class ContinuousWatchdogDaemon:
         self._app_session: Optional[AppSession] = None
         self._queue_sequence_counter: int = 0
 
+        # Telemetry & IPC Server State
+        self._is_paused: bool = False
+        self._events_enqueued_count: int = 0
+        self._events_processed_count: int = 0
+        self._start_time: Optional[float] = None
+        self._ipc_server: Any = None
+
         # We run the actual sorting loop on a dedicated background execution thread
         self._execution_thread = None
+
+    @property
+    def is_paused(self) -> bool:
+        """Check if daemon triage processing is currently paused."""
+        with self._lock:
+            return self._is_paused
+
+    def pause(self):
+        """Pause processing of queued file triage events."""
+        with self._lock:
+            self._is_paused = True
+        logger.info("Daemon triage processing paused.")
+
+    def resume(self):
+        """Resume processing of queued file triage events."""
+        with self._lock:
+            self._is_paused = False
+        logger.info("Daemon triage processing resumed.")
+
+    def get_status_telemetry(self) -> dict:
+        """Get real-time operational status telemetry for IPC inspection."""
+        queue_depth = self._event_queue.qsize() if self._event_queue is not None else 0
+        active_workers = len([t for t in self._worker_tasks if not t.done()])
+        uptime = time.time() - self._start_time if self._start_time else 0.0
+        with self._lock:
+            active_triages = list(self._active_triage_paths)
+            paused = self._is_paused
+
+        return {
+            "status": "paused" if paused else ("running" if self._is_running else "stopped"),
+            "is_paused": paused,
+            "is_running": self._is_running,
+            "pid": os.getpid(),
+            "base_dir": self.base_dir,
+            "queue_depth": queue_depth,
+            "max_queue_capacity": self.max_queue_capacity,
+            "active_workers": active_workers,
+            "active_triage_paths": active_triages,
+            "is_moving": self.is_moving,
+            "pending_dirty": self.pending_dirty,
+            "uptime_seconds": round(uptime, 2),
+        }
+
+    def get_health_telemetry(self) -> dict:
+        """Get process health check telemetry for IPC monitoring."""
+        queue_depth = self._event_queue.qsize() if self._event_queue is not None else 0
+        queue_full = self._event_queue.full() if self._event_queue is not None else False
+        uptime = time.time() - self._start_time if self._start_time else 0.0
+        with self._lock:
+            paused = self._is_paused
+
+        status_str = "paused" if paused else ("degraded" if queue_full else "ok")
+        return {
+            "status": status_str,
+            "uptime_seconds": round(uptime, 2),
+            "queue_full": queue_full,
+            "queue_depth": queue_depth,
+            "pid": os.getpid(),
+        }
+
+    def get_metrics_telemetry(self) -> dict:
+        """Get cumulative performance and event metrics for IPC monitoring."""
+        queue_depth = self._event_queue.qsize() if self._event_queue is not None else 0
+        active_workers = len([t for t in self._worker_tasks if not t.done()])
+        uptime = time.time() - self._start_time if self._start_time else 0.0
+        with self._lock:
+            enqueued = self._events_enqueued_count
+            processed = self._events_processed_count
+
+        return {
+            "events_enqueued": enqueued,
+            "events_processed": processed,
+            "queue_depth": queue_depth,
+            "max_queue_capacity": self.max_queue_capacity,
+            "active_workers": active_workers,
+            "uptime_seconds": round(uptime, 2),
+        }
 
     @property
     def is_moving(self) -> bool:
@@ -413,6 +497,7 @@ class ContinuousWatchdogDaemon:
 
             self._queue_sequence_counter += 1
             seq = self._queue_sequence_counter
+            self._events_enqueued_count += 1
 
         queue_entry = (change_event.priority_key, seq, change_event)
 
@@ -457,6 +542,7 @@ class ContinuousWatchdogDaemon:
 
     def _start_pipeline_event_loop(self):
         """Initialize and launch the background asyncio event loop thread for streaming event processing."""
+        from app.core.ipc import DaemonIPCServer
         from app.core.shared_registry import ContextPropagatingThread
 
         ready_event = threading.Event()
@@ -466,6 +552,14 @@ class ContinuousWatchdogDaemon:
             asyncio.set_event_loop(loop)
             self._event_loop = loop
             self._event_queue = asyncio.PriorityQueue(maxsize=self.max_queue_capacity)
+            self._start_time = time.time()
+
+            # Initialize and launch the IPC server on the daemon event loop
+            self._ipc_server = DaemonIPCServer(self)
+            try:
+                loop.run_until_complete(self._ipc_server.start())
+            except Exception as e:
+                logger.error(f"Failed to start daemon IPC server: {e}")
 
             self._worker_tasks = [
                 loop.create_task(self._triage_worker(i))
@@ -478,6 +572,12 @@ class ContinuousWatchdogDaemon:
             try:
                 loop.run_forever()
             finally:
+                if self._ipc_server:
+                    try:
+                        self._ipc_server.stop()
+                    except Exception:
+                        pass
+                    self._ipc_server = None
                 for task in self._worker_tasks:
                     task.cancel()
                 if self._reconciliation_task:
@@ -507,6 +607,9 @@ class ContinuousWatchdogDaemon:
         """Async worker task that continuously consumes FileChangeEvents and triages paths."""
         logger.info(f"Async triage worker {worker_id} started.")
         while self._is_running and not self._cancel_event.is_set():
+            if self._is_paused:
+                await asyncio.sleep(0.05)
+                continue
             try:
                 if self._event_queue is None:
                     await asyncio.sleep(0.05)
@@ -528,6 +631,8 @@ class ContinuousWatchdogDaemon:
 
             try:
                 await self._process_single_event(event)
+                with self._lock:
+                    self._events_processed_count += 1
             except Exception as e:
                 logger.error(
                     f"Worker {worker_id} error processing event {event}: {e}",
@@ -863,6 +968,14 @@ class ContinuousWatchdogDaemon:
             if self._debounce_timer:
                 self._debounce_timer.cancel()
                 self._debounce_timer = None
+
+        if self._ipc_server:
+            try:
+                self._ipc_server.stop()
+            except Exception as e:
+                logger.error(f"Error stopping IPC server: {e}")
+            finally:
+                self._ipc_server = None
 
         if self.observer:
             try:
