@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "594d08bea1dea998ba1e546f7d391bbb980786312907e90414c5851e7dfaa973"
+    "checksum": "7c4365c4f3863a1d4f7efd13f4cf0a3c02d7ad5467753cb968b6b8a2e1fc6748"
   },
   "cli": {
     "app/main.py": [
@@ -7338,31 +7338,6 @@
         }
       ],
       "functions": []
-    },
-    "app/core/integration.py": {
-      "classes": [],
-      "functions": [
-        {
-          "async": false,
-          "decorators": [],
-          "name": "is_admin",
-          "parameters": [],
-          "returns": null
-        },
-        {
-          "async": false,
-          "decorators": [],
-          "name": "register_context_menu",
-          "parameters": [
-            {
-              "annotation": "bool",
-              "default": null,
-              "name": "enable"
-            }
-          ],
-          "returns": null
-        }
-      ]
     },
     "app/core/jev_classifier.py": {
       "classes": [

@@ -412,7 +412,6 @@ def _create_core_architecture_spec() -> ComponentDiagramSpec:
                 "core_session",
                 "core_user_space_bootstrap",
                 "core_daemon",
-                "core_integration",
                 "core_diagram_schema",
                 "core_domain_contracts",
             ],
@@ -521,7 +520,6 @@ def _create_core_architecture_spec() -> ComponentDiagramSpec:
             id="core_user_space_bootstrap", label="app.core.user_space_bootstrap"
         ),
         DiagramNode(id="core_daemon", label="app.core.daemon"),
-        DiagramNode(id="core_integration", label="app.core.integration"),
         DiagramNode(id="core_domain_contracts", label="app.core.domain_contracts"),
         # Ingestion & Extraction
         DiagramNode(id="core_extractor", label="app.core.extractor"),
@@ -612,7 +610,6 @@ def _create_core_architecture_spec() -> ComponentDiagramSpec:
         DiagramEdge(source="core_session", target="core_verifier"),
         DiagramEdge(source="core_session", target="core_mover"),
         DiagramEdge(source="core_daemon", target="core_session"),
-        DiagramEdge(source="core_integration", target="core_session"),
         DiagramEdge(source="core_extractor", target="core_extractor_strategies"),
         DiagramEdge(source="core_extractor", target="core_forensic_scanner"),
         DiagramEdge(source="core_extractor", target="core_offline_loader"),
