@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "f5e1edf2143f2a628c85ce993b57e35fc65c52897dc5824c31d7a2d8ea1f6adb"
+    "checksum": "86cf00e01b96af82c06cc43445d02a5d919b219cc45dd26bc03a1ef6279f7e33"
   },
   "cli": {
     "app/main.py": [
@@ -2990,6 +2990,31 @@
                 }
               ],
               "returns": "bool"
+            },
+            {
+              "async": false,
+              "decorators": [
+                "@staticmethod"
+              ],
+              "name": "rotate_database_key",
+              "parameters": [
+                {
+                  "annotation": "Path | str",
+                  "default": null,
+                  "name": "db_path"
+                },
+                {
+                  "annotation": "Path | str",
+                  "default": null,
+                  "name": "key_path"
+                },
+                {
+                  "annotation": "str | None",
+                  "default": "None",
+                  "name": "new_key_str"
+                }
+              ],
+              "returns": "str"
             }
           ]
         },
@@ -4661,6 +4686,19 @@
           "name": "clear_dead_thread_connections",
           "parameters": [],
           "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "escape_pragma_key",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "key_str"
+            }
+          ],
+          "returns": "str"
         },
         {
           "async": false,
