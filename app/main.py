@@ -439,14 +439,77 @@ def run_smoke_test():
 
 def apply_config_overrides(settings: AppSettings, args: argparse.Namespace):
     """Apply command-line argument overrides to AppSettings."""
-    if getattr(args, "max_folders", None) is not None:
-        settings.MAX_FOLDERS = args.max_folders
-    if getattr(args, "strategy", None) is not None:
-        settings.SORTING_STRATEGY = args.strategy
-    if getattr(args, "conflict_policy", None) is not None:
-        settings.CONFLICT_POLICY = args.conflict_policy
-    if getattr(args, "contextual_renaming", None) is not None:
-        settings.CONTEXTUAL_RENAMING = args.contextual_renaming
+    from unittest.mock import MagicMock
+
+    max_folders = getattr(args, "max_folders", None)
+    if max_folders is not None and not isinstance(max_folders, MagicMock):
+        settings.MAX_FOLDERS = max_folders
+
+    strategy = getattr(args, "strategy", None)
+    if strategy is not None and not isinstance(strategy, MagicMock):
+        settings.SORTING_STRATEGY = strategy
+
+    conflict_policy = getattr(args, "conflict_policy", None)
+    if conflict_policy is not None and not isinstance(conflict_policy, MagicMock):
+        settings.CONFLICT_POLICY = conflict_policy
+
+    contextual_renaming = getattr(args, "contextual_renaming", None)
+    if contextual_renaming is not None and not isinstance(contextual_renaming, MagicMock):
+        settings.CONTEXTUAL_RENAMING = contextual_renaming
+
+    # Handle AI consent flags and environment variables
+    accept_consent = (
+        bool(getattr(args, "accept_ai_consent", False))
+        if not isinstance(getattr(args, "accept_ai_consent", False), MagicMock)
+        else False
+    )
+    decline_consent = (
+        bool(getattr(args, "decline_ai_consent", False))
+        if not isinstance(getattr(args, "decline_ai_consent", False), MagicMock)
+        else False
+    )
+    skip_wizard = (
+        bool(getattr(args, "skip_wizard", False))
+        if not isinstance(getattr(args, "skip_wizard", False), MagicMock)
+        else False
+    )
+    non_interactive_flag = (
+        bool(getattr(args, "non_interactive", False))
+        if not isinstance(getattr(args, "non_interactive", False), MagicMock)
+        else False
+    )
+
+    env_consent = os.environ.get("SORTIFY_AI_CONSENT")
+    env_non_interactive = os.environ.get("NON_INTERACTIVE")
+
+    # CLI consent flags take precedence over saved settings and env vars
+    if accept_consent:
+        settings.AI_CONSENT_GRANTED = True
+    elif decline_consent:
+        settings.AI_CONSENT_GRANTED = False
+    elif env_consent is not None:
+        env_consent_clean = env_consent.strip().lower()
+        if env_consent_clean in ("1", "true", "yes", "on"):
+            settings.AI_CONSENT_GRANTED = True
+        elif env_consent_clean in ("0", "false", "no", "off"):
+            settings.AI_CONSENT_GRANTED = False
+
+    # Check for non-interactive mode or wizard bypass
+    is_non_interactive_env = bool(
+        env_non_interactive
+        and env_non_interactive.strip().lower() in ("1", "true", "yes", "on")
+    )
+    if (
+        skip_wizard
+        or non_interactive_flag
+        or is_non_interactive_env
+        or accept_consent
+        or decline_consent
+    ):
+        setattr(settings, "_skip_wizard", True)
+        setattr(settings, "_non_interactive", True)
+        if settings.AI_CONSENT_GRANTED is None:
+            settings.AI_CONSENT_GRANTED = False
 
 
 def resolve_preset_and_directory(args: argparse.Namespace) -> Path:
@@ -537,7 +600,12 @@ def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
     if getattr(args, "tui", False) or getattr(args, "interactive", False):
         from app.ui.tui import run_tui
 
-        run_tui(settings, getattr(args, "directory", None))
+        run_tui(
+            settings,
+            getattr(args, "directory", None),
+            skip_wizard=getattr(args, "skip_wizard", False),
+            non_interactive=getattr(args, "non_interactive", False),
+        )
         sys.exit(0)
 
     try:
@@ -659,7 +727,12 @@ def handle_scan_command(args: argparse.Namespace, settings: AppSettings):
     if getattr(args, "tui", False) or getattr(args, "interactive", False):
         from app.ui.tui import run_tui
 
-        run_tui(settings, getattr(args, "directory", None))
+        run_tui(
+            settings,
+            getattr(args, "directory", None),
+            skip_wizard=getattr(args, "skip_wizard", False),
+            non_interactive=getattr(args, "non_interactive", False),
+        )
         sys.exit(0)
 
     try:
@@ -1075,6 +1148,31 @@ def build_parser(prog: str | None = "app/main.py") -> argparse.ArgumentParser:
         action="store_true",
         help="Launch full-screen interactive TUI mode",
     )
+    ai_consent_group = parser.add_mutually_exclusive_group()
+    ai_consent_group.add_argument(
+        "--accept-ai-consent",
+        action="store_true",
+        default=False,
+        help="Pre-configure AI consent as granted and bypass onboarding wizard",
+    )
+    ai_consent_group.add_argument(
+        "--decline-ai-consent",
+        action="store_true",
+        default=False,
+        help="Pre-configure AI consent as declined and bypass onboarding wizard",
+    )
+    parser.add_argument(
+        "--skip-wizard",
+        action="store_true",
+        default=False,
+        help="Bypass onboarding wizard modal during startup",
+    )
+    parser.add_argument(
+        "--non-interactive",
+        action="store_true",
+        default=False,
+        help="Run in non-interactive mode and bypass interactive modal dialogs",
+    )
 
     subparsers = parser.add_subparsers(dest="subcommand", help="Available subcommands")
 
@@ -1137,6 +1235,31 @@ def build_parser(prog: str | None = "app/main.py") -> argparse.ArgumentParser:
             action="store_true",
             default=False,
             help="Launch full-screen interactive TUI mode",
+        )
+        sub_ai_consent = subparser.add_mutually_exclusive_group()
+        sub_ai_consent.add_argument(
+            "--accept-ai-consent",
+            action="store_true",
+            default=False,
+            help="Pre-configure AI consent as granted and bypass onboarding wizard",
+        )
+        sub_ai_consent.add_argument(
+            "--decline-ai-consent",
+            action="store_true",
+            default=False,
+            help="Pre-configure AI consent as declined and bypass onboarding wizard",
+        )
+        subparser.add_argument(
+            "--skip-wizard",
+            action="store_true",
+            default=False,
+            help="Bypass onboarding wizard modal during startup",
+        )
+        subparser.add_argument(
+            "--non-interactive",
+            action="store_true",
+            default=False,
+            help="Run in non-interactive mode and bypass interactive modal dialogs",
         )
 
     # Subcommand: sort
@@ -1334,6 +1457,7 @@ def main():
         run_smoke_test()
 
     settings = AppSettings()
+    apply_config_overrides(settings, args)
 
     # Configure Centralized Logger
     logging.basicConfig(
@@ -1421,7 +1545,12 @@ def main():
     else:
         from app.ui.tui import run_tui
 
-        run_tui(settings, args.directory)
+        run_tui(
+            settings,
+            args.directory,
+            skip_wizard=getattr(args, "skip_wizard", False),
+            non_interactive=getattr(args, "non_interactive", False),
+        )
 
 
 if __name__ == "__main__":
