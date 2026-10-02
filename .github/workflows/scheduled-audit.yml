@@ -1,0 +1,95 @@
+name: Scheduled Dependency Vulnerability Audit
+
+on:
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  scheduled-vulnerability-audit:
+    name: Scheduled Vulnerability Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+          enable-cache: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          uv sync --all-groups
+
+      - name: Run Dependency Audit
+        id: audit
+        run: |
+          set +e
+          uv audit --color never --ignore-until-fixed GHSA-w8v5-vhqr-4h9v 2>&1 | tee audit_report.txt
+          EXIT_CODE=${PIPESTATUS[0]}
+          if [ "$EXIT_CODE" -ne 0 ]; then
+            echo "Vulnerabilities detected by uv audit."
+            exit "$EXIT_CODE"
+          fi
+
+      - name: Report Security Vulnerabilities
+        if: failure() && steps.audit.outcome == 'failure'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            let report = '';
+            if (fs.existsSync('audit_report.txt')) {
+              report = fs.readFileSync('audit_report.txt', 'utf8').trim();
+            } else {
+              report = 'No audit report output captured.';
+            }
+
+            const issueTitle = '[Security] Automated Dependency Audit Failure';
+            const labelName = 'security';
+
+            const { data: openIssues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: labelName,
+            });
+
+            const existingIssue = openIssues.find(issue =>
+              issue.title === issueTitle ||
+              issue.title.includes('Automated Dependency Audit Failure') ||
+              issue.title.includes('Automated Vulnerability Audit Alert')
+            );
+
+            const body = `## ⚠️ Security Vulnerability Audit Failure Alert\n\nThe scheduled automated vulnerability audit detected one or more unexempted security vulnerabilities in production dependencies (\`uv.lock\`).\n\n### Audit Report Details\n\n\`\`\`text\n${report}\n\`\`\`\n\n---\n*Last audited at: ${new Date().toUTCString()}*\n*Triggered by scheduled workflow run: [Run Details](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})*\n`;
+
+            if (existingIssue) {
+              console.log(`Updating existing open security issue #${existingIssue.number}`);
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existingIssue.number,
+                body: body,
+              });
+            } else {
+              console.log('Creating new security issue');
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: issueTitle,
+                body: body,
+                labels: [labelName],
+              });
+            }

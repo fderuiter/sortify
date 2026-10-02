@@ -1684,3 +1684,42 @@ class IncrementalAnalyzer:
 
 
 FileAnalyzer = IncrementalAnalyzer
+
+
+def run_incremental_training_in_background(session: Any, base_dir: str) -> None:
+    """Trigger background incremental model training for user-verified documents."""
+    if not session or not hasattr(session, "db") or not hasattr(session, "analyzer"):
+        return
+    db = session.db
+    docs = db.get_all_documents(base_dir) if hasattr(db, "get_all_documents") else []
+    if not docs:
+        return
+    new_corpus = {}
+    for doc in docs:
+        if isinstance(doc, (tuple, list)) and len(doc) >= 4:
+            filepath, text, f_hash, verified_target = doc[0], doc[1], doc[2], doc[3]
+        elif isinstance(doc, dict):
+            filepath = doc.get("filepath") or ""
+            text = doc.get("extracted_text") or doc.get("text") or ""
+            f_hash = doc.get("file_hash") or doc.get("hash") or ""
+            verified_target = doc.get("user_verified_target_path") or doc.get("verified_target")
+        else:
+            continue
+        if not verified_target:
+            continue
+        if text and text.strip() and text.strip() != "[STATUS:EMPTY]":
+            try:
+                if (
+                    hasattr(session.analyzer, "embedding_manager")
+                    and session.analyzer.embedding_manager
+                ):
+                    session.analyzer.embedding_manager.generate_embedding(text)
+            except Exception:
+                pass
+            new_corpus[filepath] = {"text": text, "hash": f_hash}
+    if new_corpus:
+        if hasattr(session.analyzer, "partial_fit"):
+            session.analyzer.partial_fit(
+                base_dir, new_corpus, getattr(session, "settings", None)
+            )
+

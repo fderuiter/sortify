@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "ecc15bd991ec9c16a7c06fd2f05a3ee799b91f29b6c8b0ffb3ac19a328dc9e14"
+    "checksum": "0391e00b270ce0ea3c23b66308991028103913a14aa6e074d872d2acd591fcad"
   },
   "cli": {
     "app/main.py": [
@@ -103,17 +103,6 @@
         "keywords": {
           "action": "store_true",
           "help": "Launch full-screen interactive TUI mode"
-        },
-        "method": "add_argument"
-      },
-      {
-        "args": [
-          "--gui"
-        ],
-        "caller": "parser",
-        "keywords": {
-          "action": "store_true",
-          "help": "Force launch graphical web interface (Deprecated: launches terminal interface)"
         },
         "method": "add_argument"
       },
@@ -1083,6 +1072,24 @@
             }
           ],
           "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "run_incremental_training_in_background",
+          "parameters": [
+            {
+              "annotation": "Any",
+              "default": null,
+              "name": "session"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            }
+          ],
+          "returns": "None"
         }
       ]
     },
@@ -9233,6 +9240,60 @@
         }
       ]
     },
+    "app/core/security.py": {
+      "classes": [],
+      "functions": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "export_database_key",
+          "parameters": [
+            {
+              "annotation": "Optional[Union[str, Path]]",
+              "default": "None",
+              "name": "db_path"
+            },
+            {
+              "annotation": "Optional[Union[str, Path]]",
+              "default": "None",
+              "name": "output_path"
+            }
+          ],
+          "returns": "str"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_key_info",
+          "parameters": [
+            {
+              "annotation": "Optional[Union[str, Path]]",
+              "default": "None",
+              "name": "db_path"
+            }
+          ],
+          "returns": "Dict[str, str]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "rotate_database_key",
+          "parameters": [
+            {
+              "annotation": "Optional[Union[str, Path]]",
+              "default": "None",
+              "name": "db_path"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "new_key"
+            }
+          ],
+          "returns": "str"
+        }
+      ]
+    },
     "app/core/semantic_embeddings.py": {
       "classes": [
         {
@@ -9715,6 +9776,19 @@
           "name": "scan_abandoned_sessions_async",
           "parameters": [],
           "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "split_plan_phases",
+          "parameters": [
+            {
+              "annotation": "Dict[str, Any]",
+              "default": null,
+              "name": "plan"
+            }
+          ],
+          "returns": "Tuple[Dict[str, Any], Dict[str, Any]]"
         }
       ]
     },

@@ -407,7 +407,7 @@ def test_empty_files_bypass_incremental_training(mocker):
         analyzer.embedding_manager, "generate_embedding"
     )
 
-    from app.ui.app import run_incremental_training_in_background
+    from app.core.analyzer import run_incremental_training_in_background
 
     run_incremental_training_in_background(mock_session, base_dir)
 

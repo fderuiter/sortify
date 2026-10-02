@@ -2,7 +2,7 @@
 
 import json
 import os
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 try:
     import sqlite3
@@ -380,3 +380,36 @@ class AppSession:
                 from app.core.resilient_file_ops import resilient_rmtree
 
                 resilient_rmtree(self.session_dir, ignore_errors=True)
+
+
+def split_plan_phases(plan: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    """Split plan items into Phase 1 (deterministic/fast path) and Phase 2 (AI/clustering/slow path)."""
+    fast_plan: Dict[str, Any] = {}
+    slow_plan: Dict[str, Any] = {}
+
+    FAST_ROUTES = {"keyword", "override", "rule", "extension", "jev_classifier", "preset"}
+
+    def process_node(node: Any, fast_target: Dict[str, Any], slow_target: Dict[str, Any]):
+        if not isinstance(node, dict):
+            return
+        for key, val in node.items():
+            if isinstance(val, dict) and "__type__" in val and val["__type__"] == "file":
+                routed_by = val.get("routed_by")
+                if routed_by in FAST_ROUTES:
+                    fast_target[key] = val
+                else:
+                    slow_target[key] = val
+            elif isinstance(val, dict):
+                sub_fast: Dict[str, Any] = {}
+                sub_slow: Dict[str, Any] = {}
+                process_node(val, sub_fast, sub_slow)
+                if sub_fast:
+                    fast_target[key] = sub_fast
+                if sub_slow:
+                    slow_target[key] = sub_slow
+            else:
+                slow_target[key] = val
+
+    process_node(plan, fast_plan, slow_plan)
+    return fast_plan, slow_plan
+

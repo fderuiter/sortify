@@ -625,8 +625,7 @@ def test_tui_wcag_tooltips_and_attributes(temp_workspace):
 
 def test_tui_automated_audit_hooks(temp_workspace):
     """Verify automated audit hooks pass with zero WCAG 2.1 violations across all TUI components."""
-    from app.ui.a11y_runner import inspect_tui_component
-    from app.ui.tui import DirectorySelectModal
+    from app.ui.tui import DirectorySelectModal, inspect_tui_component
 
     settings = AppSettings()
     settings._settings_model.AI_CONSENT_GRANTED = True
@@ -1032,3 +1031,61 @@ def test_tui_speech_binary_windows_posix_path_filtering(temp_workspace):
             patch("shutil.which", return_value=posix_path),
         ):
             assert app._get_speech_binary() is None
+
+
+def test_tui_adaptive_breakpoint_layout_narrow_and_wide(temp_workspace):
+    """Verify AutoSorterTUI toggles narrow container class based on 100-column breakpoint."""
+    async def _test():
+        settings = AppSettings()
+        app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
+
+        # Test narrow viewport (< 100 cols)
+        async with app.run_test(size=(80, 24)) as pilot:
+            dual_pane = app.query_one("#main-dual-pane")
+            assert dual_pane.has_class("narrow")
+
+            # Simulate resize event to wide viewport (120 cols >= 100)
+            await pilot.resize_terminal(120, 30)
+            await pilot.pause()
+            assert not dual_pane.has_class("narrow")
+
+            # Simulate resize back to narrow viewport (80 cols < 100)
+            await pilot.resize_terminal(80, 24)
+            await pilot.pause()
+            assert dual_pane.has_class("narrow")
+
+    asyncio.run(_test())
+
+
+def test_modal_screens_responsive_layout(temp_workspace):
+    """Verify modal screens toggle narrow class when resized below 80 columns."""
+    async def _test():
+        settings = AppSettings()
+
+        # Test RenameModal on narrow viewport
+        app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
+        async with app.run_test(size=(75, 24)) as pilot:
+            modal = RenameModal("Test Item", "test.txt")
+            app.push_screen(modal)
+            await pilot.pause()
+            assert modal.has_class("narrow")
+
+            # Resize to wide
+            await pilot.resize_terminal(100, 30)
+            await pilot.pause()
+            assert not modal.has_class("narrow")
+
+        # Test SettingsModal on narrow viewport
+        app2 = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
+        async with app2.run_test(size=(75, 24)) as pilot:
+            modal2 = SettingsModal(settings)
+            app2.push_screen(modal2)
+            await pilot.pause()
+            assert modal2.has_class("narrow")
+
+            await pilot.resize_terminal(100, 30)
+            await pilot.pause()
+            assert not modal2.has_class("narrow")
+
+    asyncio.run(_test())
+
