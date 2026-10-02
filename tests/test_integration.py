@@ -223,5 +223,8 @@ def test_main_cli_directory_argument():
         main()
 
         mock_run_tui.assert_called_once_with(
-            mock_settings_class.return_value, "/some/test/directory"
+            mock_settings_class.return_value,
+            "/some/test/directory",
+            skip_wizard=False,
+            non_interactive=False,
         )

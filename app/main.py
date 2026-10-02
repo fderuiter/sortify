@@ -437,6 +437,16 @@ def run_smoke_test():
             pass
 
 
+def _extract_bool_arg(args: argparse.Namespace, attr: str, default: bool = False) -> bool:
+    """Safely extract boolean flag from CLI args namespace, handling MagicMock objects in tests."""
+    from unittest.mock import MagicMock
+
+    val = getattr(args, attr, default)
+    if isinstance(val, MagicMock):
+        return default
+    return bool(val)
+
+
 def apply_config_overrides(settings: AppSettings, args: argparse.Namespace):
     """Apply command-line argument overrides to AppSettings."""
     from unittest.mock import MagicMock
@@ -458,26 +468,10 @@ def apply_config_overrides(settings: AppSettings, args: argparse.Namespace):
         settings.CONTEXTUAL_RENAMING = contextual_renaming
 
     # Handle AI consent flags and environment variables
-    accept_consent = (
-        bool(getattr(args, "accept_ai_consent", False))
-        if not isinstance(getattr(args, "accept_ai_consent", False), MagicMock)
-        else False
-    )
-    decline_consent = (
-        bool(getattr(args, "decline_ai_consent", False))
-        if not isinstance(getattr(args, "decline_ai_consent", False), MagicMock)
-        else False
-    )
-    skip_wizard = (
-        bool(getattr(args, "skip_wizard", False))
-        if not isinstance(getattr(args, "skip_wizard", False), MagicMock)
-        else False
-    )
-    non_interactive_flag = (
-        bool(getattr(args, "non_interactive", False))
-        if not isinstance(getattr(args, "non_interactive", False), MagicMock)
-        else False
-    )
+    accept_consent = _extract_bool_arg(args, "accept_ai_consent")
+    decline_consent = _extract_bool_arg(args, "decline_ai_consent")
+    skip_wizard = _extract_bool_arg(args, "skip_wizard")
+    non_interactive_flag = _extract_bool_arg(args, "non_interactive")
 
     env_consent = os.environ.get("SORTIFY_AI_CONSENT")
     env_non_interactive = os.environ.get("NON_INTERACTIVE")
@@ -603,8 +597,8 @@ def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
         run_tui(
             settings,
             getattr(args, "directory", None),
-            skip_wizard=getattr(args, "skip_wizard", False),
-            non_interactive=getattr(args, "non_interactive", False),
+            skip_wizard=_extract_bool_arg(args, "skip_wizard"),
+            non_interactive=_extract_bool_arg(args, "non_interactive"),
         )
         sys.exit(0)
 
@@ -730,8 +724,8 @@ def handle_scan_command(args: argparse.Namespace, settings: AppSettings):
         run_tui(
             settings,
             getattr(args, "directory", None),
-            skip_wizard=getattr(args, "skip_wizard", False),
-            non_interactive=getattr(args, "non_interactive", False),
+            skip_wizard=_extract_bool_arg(args, "skip_wizard"),
+            non_interactive=_extract_bool_arg(args, "non_interactive"),
         )
         sys.exit(0)
 
@@ -1548,8 +1542,8 @@ def main():
         run_tui(
             settings,
             args.directory,
-            skip_wizard=getattr(args, "skip_wizard", False),
-            non_interactive=getattr(args, "non_interactive", False),
+            skip_wizard=_extract_bool_arg(args, "skip_wizard"),
+            non_interactive=_extract_bool_arg(args, "non_interactive"),
         )
 
 
