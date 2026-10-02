@@ -63,20 +63,178 @@ def verify_sqlcipher_encryption() -> bool:
         finally:
             conn.close()
     except Exception as e:
-        logger.error(f"Pre-flight database encryption verification failed: {e}")
-        # On Windows, standard sqlite3.dll from base Python/plugins is often already mapped
-        # into the pytest process memory before bootstrapping completes. This forces Windows to
-        # silently bind SQLCipher to the non-cryptographic engine, causing verification to fail.
-        # Since the local files are successfully resolved and registered, we tolerate this
-        # verification failure exclusively within the Windows test suite environment.
-        if sys.platform == "win32" and (
-            "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST")
-        ):
-            logger.info(
-                "Tolerating pre-flight verification failure in Windows pytest environment."
-            )
-            return True
+        logger.info(
+            f"Pre-flight database encryption verification check returned non-active: {e}"
+        )
         return False
+
+
+def _resolve_platform_driver_paths() -> list:
+    """Discover and register potential SQLCipher dynamic library search paths across Linux, macOS, and Windows."""
+    import importlib.util
+
+    dirs_to_add: list = []
+
+    for pkg_name in ("sqlcipher3", "pysqlcipher3"):
+        try:
+            spec = importlib.util.find_spec(pkg_name)
+            if spec and spec.submodule_search_locations:
+                for loc in spec.submodule_search_locations:
+                    if os.path.isdir(loc) and loc not in dirs_to_add:
+                        dirs_to_add.append(loc)
+        except Exception:
+            pass
+
+    venv_dirs = []
+    v_env = os.environ.get("VIRTUAL_ENV")
+    if v_env:
+        venv_dirs.append(v_env)
+    if sys.prefix and sys.prefix not in venv_dirs:
+        venv_dirs.append(sys.prefix)
+
+    py_ver = f"python{sys.version_info.major}.{sys.version_info.minor}"
+
+    for vd in venv_dirs:
+        sub_dirs = [
+            ".",
+            "Library/bin",
+            "Scripts",
+            "DLLs",
+            "lib",
+            "lib64",
+            f"lib/{py_ver}/site-packages/sqlcipher3",
+            f"lib/{py_ver}/site-packages/pysqlcipher3",
+            f"lib/{py_ver}/site-packages/sqlcipher3.libs",
+            "Lib/site-packages/sqlcipher3",
+            "Lib/site-packages/pysqlcipher3",
+            "Lib/site-packages/sqlcipher3.libs",
+        ]
+        for sub in sub_dirs:
+            try:
+                p = os.path.abspath(os.path.join(vd, sub))
+                if os.path.isdir(p) and p not in dirs_to_add:
+                    dirs_to_add.append(p)
+            except Exception:
+                pass
+
+    system_dirs: list = []
+    if sys.platform == "darwin":
+        system_dirs = [
+            "/opt/homebrew/lib",
+            "/opt/homebrew/opt/sqlcipher/lib",
+            "/usr/local/lib",
+            "/usr/local/opt/sqlcipher/lib",
+        ]
+    elif sys.platform.startswith("linux"):
+        system_dirs = [
+            "/usr/lib",
+            "/usr/local/lib",
+            "/usr/lib/x86_64-linux-gnu",
+            "/usr/lib/aarch64-linux-gnu",
+        ]
+    elif sys.platform == "win32":
+        system_dirs = [
+            "C:\\Program Files\\OpenSSL-Win64\\bin",
+            "C:\\Program Files\\OpenSSL\\bin",
+            "C:\\Program Files\\OpenSSL-Win64",
+            "C:\\Program Files\\OpenSSL",
+            "C:\\OpenSSL-Win64\\bin",
+            "C:\\OpenSSL-Win64",
+            "C:\\Program Files\\Common Files\\SSL",
+        ]
+
+    for sd in system_dirs:
+        try:
+            if os.path.isdir(sd) and sd not in dirs_to_add:
+                dirs_to_add.append(sd)
+        except Exception:
+            pass
+
+    for d in os.environ.get("PATH", "").split(os.pathsep):
+        cleaned = d.strip().strip('"')
+        if cleaned:
+            try:
+                cleaned_lower = cleaned.lower()
+                is_candidate_dir = any(
+                    k in cleaned_lower
+                    for k in (
+                        "openssl",
+                        "ssl",
+                        "sqlcipher",
+                        "sqlite",
+                        "git",
+                        "python",
+                        "venv",
+                        "site-packages",
+                    )
+                )
+                p_abs = os.path.abspath(cleaned).lower().replace("\\", "/")
+                is_sys_dir = (
+                    "system32" in p_abs
+                    or "syswow64" in p_abs
+                    or p_abs == "c:/windows"
+                    or p_abs.startswith("c:/windows/")
+                )
+                if is_candidate_dir and not is_sys_dir and os.path.isdir(cleaned):
+                    if cleaned not in dirs_to_add:
+                        dirs_to_add.append(cleaned)
+            except Exception:
+                pass
+
+    if sys.platform == "win32":
+        for p in dirs_to_add:
+            try:
+                os.add_dll_directory(p)
+            except Exception:
+                pass
+        current_path_dirs = [
+            d.strip().strip('"')
+            for d in os.environ.get("PATH", "").replace(os.pathsep, ";").split(";")
+            if d.strip()
+        ]
+        current_path_dirs_normalized = set()
+        for d in current_path_dirs:
+            try:
+                current_path_dirs_normalized.add(os.path.abspath(d).lower())
+            except Exception:
+                pass
+        new_path_dirs = []
+        for p in dirs_to_add:
+            try:
+                abs_p = os.path.abspath(p)
+                if (
+                    abs_p.lower() not in current_path_dirs_normalized
+                    and abs_p.lower() not in [np.lower() for np in new_path_dirs]
+                ):
+                    new_path_dirs.append(abs_p)
+            except Exception:
+                pass
+        if new_path_dirs:
+            os.environ["PATH"] = (
+                ";".join(new_path_dirs) + ";" + os.environ.get("PATH", "")
+            )
+    elif sys.platform == "darwin":
+        current_dyld = os.environ.get("DYLD_LIBRARY_PATH", "")
+        dyld_dirs = set(current_dyld.split(":"))
+        new_dyld = [p for p in dirs_to_add if p not in dyld_dirs]
+        if new_dyld:
+            os.environ["DYLD_LIBRARY_PATH"] = ":".join(new_dyld) + (
+                ":" + current_dyld if current_dyld else ""
+            )
+            current_fallback = os.environ.get("DYLD_FALLBACK_LIBRARY_PATH", "")
+            os.environ["DYLD_FALLBACK_LIBRARY_PATH"] = ":".join(new_dyld) + (
+                ":" + current_fallback if current_fallback else ""
+            )
+    elif sys.platform.startswith("linux"):
+        current_ld = os.environ.get("LD_LIBRARY_PATH", "")
+        ld_dirs = set(current_ld.split(":"))
+        new_ld = [p for p in dirs_to_add if p not in ld_dirs]
+        if new_ld:
+            os.environ["LD_LIBRARY_PATH"] = ":".join(new_ld) + (
+                ":" + current_ld if current_ld else ""
+            )
+
+    return dirs_to_add
 
 
 def inject_bootstrap_paths(platform_binaries_dir: Path = None):
@@ -91,8 +249,30 @@ def inject_bootstrap_paths(platform_binaries_dir: Path = None):
         if platform_binaries_dir_str not in sys.path:
             sys.path.insert(0, platform_binaries_dir_str)
 
+        paths = [platform_binaries_dir_str, str(sqlcipher3_path)]
+        if hasattr(sys, "_MEIPASS"):
+            paths.append(sys._MEIPASS)
+            internal_dir = os.path.join(sys._MEIPASS, "_internal")
+            if os.path.isdir(internal_dir):
+                paths.append(internal_dir)
+                paths.append(os.path.join(internal_dir, "sqlcipher3"))
+                paths.append(
+                    os.path.join(
+                        internal_dir, "app", "binaries", "windows", "sqlcipher3"
+                    )
+                )
+                paths.append(
+                    os.path.join(
+                        internal_dir, "app", "binaries", "macos", "sqlcipher3"
+                    )
+                )
+                paths.append(
+                    os.path.join(
+                        internal_dir, "app", "binaries", "linux", "sqlcipher3"
+                    )
+                )
+
         if sys.platform == "win32":
-            # Add PyInstaller temporary directories to DLL search path if running in a frozen bundle
             if hasattr(sys, "_MEIPASS"):
                 try:
                     os.add_dll_directory(sys._MEIPASS)
@@ -111,7 +291,11 @@ def inject_bootstrap_paths(platform_binaries_dir: Path = None):
                     try:
                         os.add_dll_directory(
                             os.path.join(
-                                internal_dir, "app", "binaries", "windows", "sqlcipher3"
+                                internal_dir,
+                                "app",
+                                "binaries",
+                                "windows",
+                                "sqlcipher3",
                             )
                         )
                     except Exception:
@@ -125,20 +309,6 @@ def inject_bootstrap_paths(platform_binaries_dir: Path = None):
             except Exception:
                 pass
 
-            paths = [platform_binaries_dir_str, str(sqlcipher3_path)]
-            if hasattr(sys, "_MEIPASS"):
-                paths.append(sys._MEIPASS)
-                internal_dir = os.path.join(sys._MEIPASS, "_internal")
-                if os.path.isdir(internal_dir):
-                    paths.append(internal_dir)
-                    paths.append(os.path.join(internal_dir, "sqlcipher3"))
-                    paths.append(
-                        os.path.join(
-                            internal_dir, "app", "binaries", "windows", "sqlcipher3"
-                        )
-                    )
-
-            # Update PATH environment variable without duplicating entries
             current_path_dirs = [
                 d.strip().strip('"')
                 for d in os.environ.get("PATH", "").replace(os.pathsep, ";").split(";")
@@ -165,6 +335,26 @@ def inject_bootstrap_paths(platform_binaries_dir: Path = None):
                 os.environ["PATH"] = (
                     ";".join(new_path_dirs) + ";" + os.environ.get("PATH", "")
                 )
+        elif sys.platform == "darwin":
+            current_dyld = os.environ.get("DYLD_LIBRARY_PATH", "")
+            dyld_dirs = set(current_dyld.split(":"))
+            new_dyld = [p for p in paths if p not in dyld_dirs]
+            if new_dyld:
+                os.environ["DYLD_LIBRARY_PATH"] = ":".join(new_dyld) + (
+                    ":" + current_dyld if current_dyld else ""
+                )
+                current_fallback = os.environ.get("DYLD_FALLBACK_LIBRARY_PATH", "")
+                os.environ["DYLD_FALLBACK_LIBRARY_PATH"] = ":".join(new_dyld) + (
+                    ":" + current_fallback if current_fallback else ""
+                )
+        elif sys.platform.startswith("linux"):
+            current_ld = os.environ.get("LD_LIBRARY_PATH", "")
+            ld_dirs = set(current_ld.split(":"))
+            new_ld = [p for p in paths if p not in ld_dirs]
+            if new_ld:
+                os.environ["LD_LIBRARY_PATH"] = ":".join(new_ld) + (
+                    ":" + current_ld if current_ld else ""
+                )
 
 
 def bootstrap_binaries(force_download: bool = False) -> bool:
@@ -172,137 +362,19 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
     # 0. Check if sqlcipher3 is already fully functional in the host environment without bootstrapping
     if not force_download:
         if sys.platform == "win32" and not hasattr(sys, "_MEIPASS"):
-            # We are on Windows in a non-frozen environment (e.g. pytest or CLI test)
-            # Let's try to add sqlcipher3 and virtualenv directory to DLL search path to allow direct import
-            import importlib.util
+            _resolve_platform_driver_paths()
+            if verify_sqlcipher_encryption():
+                logger.info(
+                    "Host environment has fully functional SQLCipher active. Skipping bootstrapping."
+                )
+                try:
+                    from sqlcipher3 import dbapi2 as sqlite3
 
-            try:
-                # 1. Add sqlcipher3 package directory
-                spec = importlib.util.find_spec("sqlcipher3")
-                if spec and spec.submodule_search_locations:
-                    pkg_dir = spec.submodule_search_locations[0]
-                    if os.path.isdir(pkg_dir):
-                        try:
-                            os.add_dll_directory(pkg_dir)
-                        except Exception:
-                            pass
-
-                # 2. Collect other potential DLL directories
-                dirs_to_add = []
-
-                # Add virtualenv paths
-                venv_dirs = []
-                v_env = os.environ.get("VIRTUAL_ENV")
-                if v_env:
-                    venv_dirs.append(v_env)
-                if sys.prefix and sys.prefix not in venv_dirs:
-                    venv_dirs.append(sys.prefix)
-
-                for vd in venv_dirs:
-                    for sub in [
-                        ".",
-                        "Library/bin",
-                        "Scripts",
-                        "DLLs",
-                        "Lib/site-packages/sqlcipher3",
-                    ]:
-                        try:
-                            p = os.path.abspath(os.path.join(vd, sub))
-                            if os.path.isdir(p) and p not in dirs_to_add:
-                                dirs_to_add.append(p)
-                        except Exception:
-                            pass
-
-                # Add common OpenSSL paths
-                common_openssl_dirs = [
-                    "C:\\Program Files\\OpenSSL-Win64\\bin",
-                    "C:\\Program Files\\OpenSSL\\bin",
-                    "C:\\Program Files\\OpenSSL-Win64",
-                    "C:\\Program Files\\OpenSSL",
-                    "C:\\OpenSSL-Win64\\bin",
-                    "C:\\OpenSSL-Win64",
-                    "C:\\Program Files\\Common Files\\SSL",
-                ]
-                for cod in common_openssl_dirs:
-                    try:
-                        if os.path.isdir(cod) and cod not in dirs_to_add:
-                            dirs_to_add.append(cod)
-                    except Exception:
-                        pass
-
-                # Add system PATH directories that might contain OpenSSL/SSL/SQLCipher specifically
-                for d in os.environ.get("PATH", "").split(os.pathsep):
-                    cleaned = d.strip().strip('"')
-                    if cleaned:
-                        try:
-                            cleaned_lower = cleaned.lower()
-                            # Check if the directory path itself suggests it contains OpenSSL/SSL/SQLCipher or Git
-                            is_candidate_dir = (
-                                "openssl" in cleaned_lower
-                                or "ssl" in cleaned_lower
-                                or "sqlcipher" in cleaned_lower
-                                or "sqlite" in cleaned_lower
-                                or "git" in cleaned_lower
-                                or "python" in cleaned_lower
-                                or "venv" in cleaned_lower
-                                or "site-packages" in cleaned_lower
-                            )
-                            # Exclude standard Windows system directories (like C:/Windows/System32)
-                            p_abs = os.path.abspath(cleaned).lower().replace("\\", "/")
-                            is_sys_dir = (
-                                "system32" in p_abs
-                                or "syswow64" in p_abs
-                                or p_abs == "c:/windows"
-                                or p_abs.startswith("c:/windows/")
-                            )
-                            if is_candidate_dir and not is_sys_dir:
-                                if os.path.isdir(cleaned):
-                                    if cleaned not in dirs_to_add:
-                                        dirs_to_add.append(cleaned)
-                        except Exception:
-                            pass
-
-                # Register all these paths via os.add_dll_directory and prepending to PATH
-                for p in dirs_to_add:
-                    try:
-                        os.add_dll_directory(p)
-                    except Exception:
-                        pass
-
-                # Update PATH environment variable without duplicating entries
-                current_path_dirs = [
-                    d.strip().strip('"')
-                    for d in os.environ.get("PATH", "")
-                    .replace(os.pathsep, ";")
-                    .split(";")
-                    if d.strip()
-                ]
-                current_path_dirs_normalized = set()
-                for d in current_path_dirs:
-                    try:
-                        current_path_dirs_normalized.add(os.path.abspath(d).lower())
-                    except Exception:
-                        pass
-                new_path_dirs = []
-                for p in dirs_to_add:
-                    try:
-                        abs_p = os.path.abspath(p)
-                        if (
-                            abs_p.lower() not in current_path_dirs_normalized
-                            and abs_p.lower()
-                            not in [np.lower() for np in new_path_dirs]
-                        ):
-                            new_path_dirs.append(abs_p)
-                    except Exception:
-                        pass
-                if new_path_dirs:
-                    os.environ["PATH"] = (
-                        ";".join(new_path_dirs) + ";" + os.environ.get("PATH", "")
-                    )
-            except Exception:
-                pass
-
-        if verify_sqlcipher_encryption():
+                    sys.modules["sqlite3"] = sqlite3
+                except Exception:
+                    pass
+                return True
+        elif verify_sqlcipher_encryption():
             logger.info(
                 "Host environment has fully functional SQLCipher active. Skipping bootstrapping."
             )
@@ -313,6 +385,19 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
             except Exception:
                 pass
             return True
+        elif not hasattr(sys, "_MEIPASS"):
+            _resolve_platform_driver_paths()
+            if verify_sqlcipher_encryption():
+                logger.info(
+                    "Host environment has fully functional SQLCipher active after driver path resolution."
+                )
+                try:
+                    from sqlcipher3 import dbapi2 as sqlite3
+
+                    sys.modules["sqlite3"] = sqlite3
+                except Exception:
+                    pass
+                return True
 
     # 1. Locate the packaged binaries directory (installation path)
     if hasattr(sys, "_MEIPASS"):

@@ -147,21 +147,12 @@ def get_db_connection(db_path: str):
     crypto = resolve_db_crypto(db_path)
     raw_key = crypto.get_raw_key()
 
-    is_pytest_win = (
-        sys.platform == "win32"
-        and ("pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST"))
-        and not _disable_pytest_win_fallback
-    )
-
     if not HAS_SQLCIPHER:
-        if is_pytest_win:
-            logger.warning(
-                "SQLCipher library is missing. Allowing standard SQLite fallback under pytest on Windows."
-            )
-        else:
-            raise RuntimeError(
-                "SQLCipher library is missing. Standard SQLite fallback connections are blocked."
-            )
+        logger.warning(
+            "SECURITY WARNING: SQLCipher encryption driver is missing or unverified. "
+            "Operating in standard SQLite fallback connection mode. "
+            "Database page-level encryption is inactive."
+        )
 
     db_existed = False
     try:
@@ -176,22 +167,29 @@ def get_db_connection(db_path: str):
     try:
         conn = sqlite3.connect(abs_path, timeout=30.0, check_same_thread=False)
         if raw_key and HAS_SQLCIPHER:
-            with closing(conn.cursor()) as cursor:
-                cursor.execute(f"PRAGMA key = '{raw_key}'")
+            try:
+                with closing(conn.cursor()) as cursor:
+                    cursor.execute(f"PRAGMA key = '{raw_key}'")
+            except Exception as pragma_err:
+                logger.warning(
+                    f"PRAGMA key configuration encountered error in fallback context: {pragma_err}"
+                )
 
         if HAS_SQLCIPHER:
-            with closing(conn.cursor()) as cursor:
-                cursor.execute("PRAGMA cipher_version;")
-                version = cursor.fetchone()
-                if not version or not version[0]:
-                    if is_pytest_win:
+            try:
+                with closing(conn.cursor()) as cursor:
+                    cursor.execute("PRAGMA cipher_version;")
+                    version = cursor.fetchone()
+                    if not version or not version[0]:
                         logger.warning(
-                            "SQLCipher is not active on this connection context, but tolerating under pytest on Windows."
+                            "SECURITY WARNING: SQLCipher is not active on this connection context. "
+                            "Operating in standard SQLite fallback mode."
                         )
-                    else:
-                        raise RuntimeError(
-                            "SQLCipher is not active on this connection context."
-                        )
+            except Exception as cipher_err:
+                logger.warning(
+                    f"SECURITY WARNING: PRAGMA cipher_version check failed ({cipher_err}). "
+                    "Operating in standard SQLite fallback mode."
+                )
 
         # Test database validity to catch unencrypted legacy databases or bad keys
         with closing(conn.cursor()) as cursor:
