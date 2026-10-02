@@ -38,9 +38,9 @@ jobs:
           set +e
           uv audit --color never --ignore-until-fixed GHSA-w8v5-vhqr-4h9v 2>&1 | tee audit_report.txt
           EXIT_CODE=${PIPESTATUS[0]}
-          if [ $EXIT_CODE -ne 0 ]; then
+          if [ "$EXIT_CODE" -ne 0 ]; then
             echo "Vulnerabilities detected by uv audit."
-            exit $EXIT_CODE
+            exit "$EXIT_CODE"
           fi
 
       - name: Report Security Vulnerabilities
