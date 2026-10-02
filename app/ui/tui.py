@@ -31,6 +31,7 @@ from textual.widgets import (
 from textual.widgets.tree import TreeNode
 
 from app.core.progress import ProgressUpdate
+from app.ui.clipboard import ClipboardService
 
 logger = logging.getLogger(__name__)
 
@@ -1308,6 +1309,13 @@ class AutoSorterTUI(A11yMixin, App):
         Binding("ctrl+n", "new_folder", "New Folder", show=True),
         Binding("plus", "rate_positive", "Rating (+)", show=True),
         Binding("minus", "rate_negative", "Rating (-)", show=True),
+        Binding("y", "copy_source_path", "Copy Path", show=True),
+        Binding("ctrl+y", "copy_source_path", "Copy Path", show=False),
+        Binding("shift+y", "copy_target_path", "Copy Target", show=True),
+        Binding("shift+Y", "copy_target_path", "Copy Target", show=False),
+        Binding("Y", "copy_target_path", "Copy Target", show=False),
+        Binding("ctrl+m", "copy_metadata", "Copy Meta", show=True),
+        Binding("ctrl+g", "copy_logs", "Copy Logs", show=True),
         Binding("ctrl+o", "open_settings", "Settings", show=True),
         Binding("ctrl+w", "open_wizard", "Wizard", show=True),
         Binding("ctrl+c", "open_cro_forensic", "CRO Ingest", show=True),
@@ -1392,6 +1400,7 @@ class AutoSorterTUI(A11yMixin, App):
         self._ratings_cache: Dict[str, str] = {}
         self.app_session = None
         self.active_tree_node = None
+        self.clipboard_service = ClipboardService(self)
 
     def compose(self) -> ComposeResult:
         """Compose main dual-pane TUI layout."""
@@ -2107,6 +2116,135 @@ class AutoSorterTUI(A11yMixin, App):
         data["rating"] = rating_to_set
         self.rebuild_tree()
         msg = f"Set rating '{rating_to_set or 'cleared'}' for '{data['key']}'"
+        self.announce(msg)
+
+    def action_copy_source_path(self) -> None:
+        """Copy source file path of selected tree node [y / Ctrl+Y]."""
+        if self._is_text_control_focused():
+            return
+        node = self._get_active_node()
+        if not node or not node.data:
+            msg = "No node selected to copy source path."
+            self.update_status(msg)
+            self.announce(msg)
+            return
+
+        data = node.data
+        is_file = data.get("is_file")
+        if is_file:
+            path = data.get("filepath") or data.get("key") or ""
+        else:
+            path = data.get("folder") or data.get("key") or ""
+
+        if not path:
+            msg = "No path available for selected node."
+            self.update_status(msg)
+            self.announce(msg)
+            return
+
+        self.clipboard_service.copy(path)
+        msg = f"Copied source path: {path}"
+        self.update_status(msg)
+        self.announce(msg)
+
+    def action_copy_target_path(self) -> None:
+        """Copy target folder and target filename path of selected tree node [shift+Y]."""
+        if self._is_text_control_focused():
+            return
+        node = self._get_active_node()
+        if not node or not node.data:
+            msg = "No node selected to copy target path."
+            self.update_status(msg)
+            self.announce(msg)
+            return
+
+        data = node.data
+        is_file = data.get("is_file")
+        if is_file:
+            file_key = data.get("key", "")
+            folder = data.get("folder", "")
+            info = data.get("info") if isinstance(data.get("info"), dict) else {}
+            target_fn = info.get("target_filename") or file_key
+
+            if self.base_dir:
+                target_path = (Path(self.base_dir) / folder / target_fn).as_posix()
+            else:
+                target_path = (Path(folder) / target_fn).as_posix() if folder else target_fn
+        else:
+            folder = data.get("folder") or data.get("key") or ""
+            target_path = (Path(self.base_dir) / folder).as_posix() if self.base_dir else folder
+
+        if not target_path:
+            msg = "No target path available for selected node."
+            self.update_status(msg)
+            self.announce(msg)
+            return
+
+        self.clipboard_service.copy(target_path)
+        msg = f"Copied target path: {target_path}"
+        self.update_status(msg)
+        self.announce(msg)
+
+    def action_copy_metadata(self) -> None:
+        """Copy formatted metadata details of selected node [Ctrl+M]."""
+        if self._is_text_control_focused():
+            return
+        from rich.text import Text
+
+        node = self._get_active_node()
+        if not node or not node.data:
+            msg = "No node selected to copy metadata."
+            self.update_status(msg)
+            self.announce(msg)
+            return
+
+        raw_meta_text = self._update_inspector(node)
+        clean_meta_text = Text.from_markup(raw_meta_text).plain
+
+        node_key = node.data.get("key", "selected node")
+        self.clipboard_service.copy(clean_meta_text)
+        msg = f"Copied metadata to clipboard for '{node_key}'"
+        self.update_status(msg)
+        self.announce(msg)
+
+    def action_copy_logs(self) -> None:
+        """Copy latest execution log line or selected log buffer text [Ctrl+G]."""
+        if self._is_text_control_focused():
+            return
+        from rich.text import Text
+
+        try:
+            log_w = self.query_one("#tui-log", Log)
+        except Exception:
+            log_w = None
+
+        if not log_w or not hasattr(log_w, "lines") or not log_w.lines:
+            msg = "No log output available to copy."
+            self.update_status(msg)
+            self.announce(msg)
+            return
+
+        log_text = ""
+        try:
+            if hasattr(log_w, "text_selection") and log_w.text_selection:
+                # Text selection if active
+                pass
+        except Exception:
+            pass
+
+        if not log_text:
+            latest_line = log_w.lines[-1]
+            log_text = Text.from_markup(str(latest_line)).plain
+
+        if not log_text:
+            msg = "No log entry available to copy."
+            self.update_status(msg)
+            self.announce(msg)
+            return
+
+        self.clipboard_service.copy(log_text)
+        msg = f"Copied log line to clipboard: {log_text}"
+        self.update_status(msg)
         self.announce(msg)
 
 

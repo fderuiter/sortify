@@ -2,6 +2,7 @@
 
 import asyncio
 import os
+from pathlib import Path
 import tempfile
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -1247,6 +1248,10 @@ def test_tui_input_focus_guard_clauses(temp_workspace):
             app.action_toggle_lock()
             app.action_scan_directory()
             app.action_execute_sort()
+            app.action_copy_source_path()
+            app.action_copy_target_path()
+            app.action_copy_metadata()
+            app.action_copy_logs()
 
             # Fast typing inside input field does not trigger background application actions
             await pilot.press("l", "r", "n", "s", "e", "b", "q")
@@ -1254,6 +1259,82 @@ def test_tui_input_focus_guard_clauses(temp_workspace):
 
             assert input_widget.value == "lrnsebq"
             assert set(app.plan.keys()) == initial_plan_keys
+
+    asyncio.run(_test())
+
+
+def test_tui_clipboard_hotkeys_and_guardrails(temp_workspace):
+    """Verify TUI clipboard hotkeys (y, ctrl+y, shift+y, ctrl+m, ctrl+g) and error guardrails."""
+    from unittest.mock import patch
+
+    from textual.widgets import Log
+
+    settings = AppSettings()
+    settings._settings_model.AI_CONSENT_GRANTED = True
+
+    async def _test():
+        app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
+
+        async with app.run_test() as pilot:
+            # 1. Test copy actions when no tree node is selected (Guardrails check)
+            app.active_tree_node = None
+
+            app.action_copy_source_path()
+            assert "No node selected to copy source path." in app.get_last_announcement()
+
+            app.action_copy_target_path()
+            assert "No node selected to copy target path." in app.get_last_announcement()
+
+            app.action_copy_metadata()
+            assert "No node selected to copy metadata." in app.get_last_announcement()
+
+            # 2. Test copy logs when log widget has entries
+            log_w = app.query_one("#tui-log", Log)
+            log_w.write_line("2026-10-02 Execution log entry line")
+
+            with patch.object(app.clipboard_service, "copy", return_value=True) as mock_copy:
+                app.action_copy_logs()
+                mock_copy.assert_called_once_with("2026-10-02 Execution log entry line")
+                assert "Copied log line to clipboard" in app.get_last_announcement()
+
+            # 3. Test node copy actions with active file node
+            filepath = os.path.join(temp_workspace, "invoice_999.pdf")
+            app.plan = {
+                "Invoices": {
+                    "invoice_999.pdf": {
+                        "__type__": "file",
+                        "filepath": filepath,
+                        "target_filename": "invoice_2026.pdf",
+                        "confidence": 0.98,
+                    }
+                }
+            }
+            app.rebuild_tree()
+
+            tree = app.query_one("#plan-tree", Tree)
+            file_node = tree.root.children[0].children[0]
+            app.active_tree_node = file_node
+
+            # Test Copy Source Path [y]
+            with patch.object(app.clipboard_service, "copy", return_value=True) as mock_copy:
+                app.action_copy_source_path()
+                mock_copy.assert_called_once_with(filepath)
+                assert f"Copied source path: {filepath}" in app.get_last_announcement()
+
+            # Test Copy Target Path [shift+y]
+            expected_target_path = Path(os.path.join(temp_workspace, "Invoices", "invoice_2026.pdf")).as_posix()
+            with patch.object(app.clipboard_service, "copy", return_value=True) as mock_copy:
+                app.action_copy_target_path()
+                mock_copy.assert_called_once_with(expected_target_path)
+                assert f"Copied target path: {expected_target_path}" in app.get_last_announcement()
+
+            # Test Copy Metadata [Ctrl+M]
+            with patch.object(app.clipboard_service, "copy", return_value=True) as mock_copy:
+                app.action_copy_metadata()
+                assert mock_copy.called
+                copied_text = mock_copy.call_args[0][0]
+                assert "File: invoice_999.pdf" in copied_text or "Path:" in copied_text
+                assert "Copied metadata to clipboard for 'invoice_999.pdf'" in app.get_last_announcement()
 
     asyncio.run(_test())
 
