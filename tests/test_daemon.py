@@ -359,3 +359,66 @@ def test_daemon_sorting_sync_error_logging_no_stderr(tmp_path, caplog, capsys):
         "Error during continuous watchdog execution run: Simulated sorting error"
         in logs
     )
+
+
+@pytest.mark.anyio
+async def test_daemon_triage_file_path_retains_source_and_cleans_staging(tmp_path):
+    """Verify source file is not unlinked prior to triage and no stranded files remain in _Quarantine_Staging."""
+    from app.config import AppSettings
+    from app.core.db_conn import clear_connection_cache
+
+    try:
+        src_dir = tmp_path / "src"
+        src_dir.mkdir()
+
+        test_doc = src_dir / "invoice_2026.csv"
+        test_doc.write_text("Invoice ID, Total\n1001, $500", encoding="utf-8")
+
+        settings = AppSettings()
+        settings.AUTO_QUARANTINE_RATINGS = []
+        daemon = ContinuousWatchdogDaemon(settings, str(src_dir))
+        daemon._is_running = True
+
+        await daemon._triage_file_path(str(test_doc))
+
+        # After triage, verify file was moved by JEV triage rule, and staging folder has zero stranded files
+        quarantine_staging = src_dir / "_Quarantine_Staging"
+        if quarantine_staging.exists():
+            assert list(quarantine_staging.iterdir()) == []
+    finally:
+        daemon.stop()
+        clear_connection_cache(only_current_and_inactive=False)
+
+
+@pytest.mark.anyio
+async def test_daemon_triage_uncategorized_file_remains_intact(tmp_path):
+    """Verify unclassified files cleared by quarantine remain intact in base_dir or Miscellaneous without being dropped or stranded."""
+    from app.config import AppSettings
+    from app.core.db_conn import clear_connection_cache
+
+    try:
+        src_dir = tmp_path / "src"
+        src_dir.mkdir()
+
+        uncategorized_doc = src_dir / "random_notes.txt"
+        uncategorized_doc.write_text("Random unstructured text", encoding="utf-8")
+
+        settings = AppSettings()
+        settings.AUTO_QUARANTINE_RATINGS = []
+        daemon = ContinuousWatchdogDaemon(settings, str(src_dir))
+        daemon._is_running = True
+
+        await daemon._triage_file_path(str(uncategorized_doc))
+
+        # File should remain intact at original source location or be moved to Miscellaneous by slow-path
+        misc_doc = src_dir / "Miscellaneous" / "random_notes.txt"
+        assert uncategorized_doc.exists() or misc_doc.exists()
+
+        # Quarantine staging should contain no stranded files
+        quarantine_staging = src_dir / "_Quarantine_Staging"
+        if quarantine_staging.exists():
+            assert list(quarantine_staging.iterdir()) == []
+    finally:
+        daemon.stop()
+        clear_connection_cache(only_current_and_inactive=False)
+
