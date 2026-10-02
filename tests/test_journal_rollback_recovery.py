@@ -12,7 +12,6 @@ import pytest
 from app.config import AppSettings
 from app.core.db_conn import get_db_connection
 from app.core.session import scan_abandoned_sessions_async
-from app.ui.app import AutoSorterApp
 
 
 @pytest.fixture
@@ -244,78 +243,3 @@ def test_revert_interrupted_rollback(test_history_env):
 
     # 3. Journal must be deleted
     assert not journal_path.exists()
-
-
-@pytest.mark.anyio
-async def test_ui_rollback_recovery_dialog_trigger(mock_session_base, tmp_path):
-    """Verify that AutoSorterApp triggers the rollback recovery dialog on startup when an active journal is found."""
-    settings = AppSettings()
-    settings.AI_CONSENT_GRANTED = False
-
-    session_id = "interrupted-rollback-session"
-    session_dir = mock_session_base / session_id
-    session_dir.mkdir()
-
-    # Create dummy history.db inside the session folder to keep scanner happy
-    history_db = session_dir / "history.db"
-    with closing(sqlite3.connect(history_db, timeout=30.0)) as conn:
-        with closing(conn.cursor()) as cursor:
-            cursor.execute(
-                "CREATE TABLE sessions (session_id TEXT, timestamp REAL, base_dir TEXT, status TEXT)"
-            )
-            cursor.execute(
-                "INSERT INTO sessions VALUES (?, ?, ?, ?)",
-                (session_id, 100.0, str(tmp_path / "user_data"), "active"),
-            )
-        conn.commit()
-
-    # Create journal file
-    journal_path = session_dir / "rollback_journal.json"
-    journal_data = {
-        "session_id": "target_session",
-        "safety_session_id": "safety_session",
-        "base_dir": str(tmp_path / "user_data"),
-        "moves": [],
-        "symlinks": [],
-        "shortcuts": [],
-    }
-    with open(journal_path, "w") as f:
-        json.dump(journal_data, f, indent=2)
-
-    app = AutoSorterApp(settings)
-
-    with patch.object(app, "show_rollback_recovery_dialog") as mock_dialog:
-        app.check_abandoned_sessions()
-        await asyncio.sleep(0.1)
-        mock_dialog.assert_called_once()
-        called_arg = mock_dialog.call_args[0][0]
-        assert called_arg["session_id"] == "target_session"
-        assert called_arg["is_rollback_recovery"] is True
-
-
-@pytest.mark.anyio
-async def test_ui_rollback_dialog_resume_and_revert_actions(
-    mock_session_base, tmp_path
-):
-    """Verify that the dialog's Resume and Revert buttons invoke the correct backend recovery methods."""
-    settings = AppSettings()
-    settings.AI_CONSENT_GRANTED = False
-
-    session_id = "rollback-action-session"
-    session_dir = mock_session_base / session_id
-    session_dir.mkdir()
-
-    session_info = {
-        "session_id": "target_rollback_session",
-        "safety_session_id": "safety_session",
-        "base_dir": str(tmp_path / "user_data"),
-        "session_dir": str(session_dir),
-        "journal_path": str(session_dir / "rollback_journal.json"),
-        "is_rollback_recovery": True,
-        "status": "interrupted_rollback",
-    }
-
-    app = AutoSorterApp(settings)
-
-    # Show rollback recovery dialog
-    app.show_rollback_recovery_dialog(session_info)

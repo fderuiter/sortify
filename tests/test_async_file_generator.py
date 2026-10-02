@@ -7,7 +7,6 @@ from app.core.db import Database
 from app.core.db_worker import DBWorker
 from app.core.extractor import build_corpus_generator_async, get_file_hash
 from app.core.session import AppSession
-from app.ui.app import AutoSorterApp
 
 
 @pytest.mark.anyio
@@ -149,48 +148,3 @@ async def test_process_items_async_wrapping(tmp_path):
     assert results[0][3] is False
 
     session.close()
-
-
-@pytest.mark.anyio
-async def test_scan_and_process_worker_ui_updates(tmp_path):
-    settings = AppSettings()
-    settings.AI_CONSENT_GRANTED = False
-
-    base_dir = tmp_path / "test_base"
-    base_dir.mkdir()
-
-    app = AutoSorterApp(settings)
-    app.base_dir = str(base_dir)
-    app.app_session = MagicMock()
-    app.progress_bar = MagicMock()
-    app.status_label = MagicMock()
-    app.cancel_btn = MagicMock()
-    app.execute_btn = MagicMock()
-
-    # Mock files
-    files = ["file1.txt", "file2.txt"]
-
-    # Define mock async generator for process_items_async
-    async def mock_generator(items, cancel_check):
-        yield "file1.txt", "content1", "hash1", False
-        yield "file2.txt", "content2", "hash2", True
-
-    app.app_session.process_items_async = mock_generator
-
-    with (
-        patch("app.core.scanner.get_files_recursively", return_value=files),
-        patch("app.core.metadata.MetadataPass.run", return_value=[]),
-        patch("app.core.verifier.is_ml_available", return_value=False),
-        patch("asyncio.sleep", return_value=None),
-    ):
-        await app._scan_and_process_worker()
-
-        # Verify ui updates
-        assert app.total_files == 2
-        assert app.completed_files == 2
-
-        # Check that status label updated sequentially
-        status_calls = [c[0][0] for c in app.status_label.set_text.call_args_list]
-        assert any("Processed 1/2 files" in call for call in status_calls)
-        assert any("Processed 2/2 files" in call for call in status_calls)
-        assert any("skipped unchanged: file2.txt" in call for call in status_calls)

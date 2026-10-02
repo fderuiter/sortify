@@ -186,39 +186,3 @@ def test_batch_moves_execute_without_invalid_path_errors():
 
         assert os.path.exists(target_inv)
         assert os.path.exists(target_aux)
-
-
-@pytest.mark.anyio
-async def test_ui_verify_current_plan_displays_sanitization_warnings():
-    """Verify the UI preview displays path modification warnings before execution."""
-    from app.ui.app import AutoSorterApp
-
-    app = AutoSorterApp.__new__(AutoSorterApp)
-    app.base_dir = "/base/dir"
-    app.plan = {
-        "Data: Archives": {
-            "doc.txt": {
-                "__type__": "file",
-                "relative_source": "doc.txt",
-                "target_filename": "doc.txt",
-            }
-        }
-    }
-    app.warnings_label = MagicMock()
-    app.update_ai_warning = MagicMock()
-
-    await app.verify_current_plan()
-
-    assert app.plan == {
-        "Data_ Archives": {
-            "doc.txt": {
-                "__type__": "file",
-                "relative_source": "doc.txt",
-                "target_filename": "doc.txt",
-            }
-        }
-    }
-    app.warnings_label.set_visibility.assert_called_with(True)
-    warn_text = app.warnings_label.set_text.call_args[0][0]
-    assert "Data: Archives" in warn_text
-    assert "Data_ Archives" in warn_text

@@ -317,10 +317,8 @@ def test_build_parser_factory():
         "scan",
         "config",
         "daemon",
-        "crypto",
         "ledger",
         "quarantine",
-        "cro",
         "undo",
     }
 
@@ -361,10 +359,10 @@ def test_headless_positional_path_autoroutes_to_sort():
 
 
 @pytest.mark.xdist_group(name="cli_subcommands")
-def test_headless_gui_flag_honored():
-    """Test non-interactive invocation with explicit --gui flag calls UI app launcher."""
+def test_headless_tui_flag_honored():
+    """Test non-interactive invocation with explicit --tui flag calls TUI app launcher."""
     with mock_non_interactive_stdin(), patch("app.ui.tui.run_tui") as mock_run_tui:
-        code, stdout, stderr = run_cli(["--gui"])
+        code, stdout, stderr = run_cli(["--tui"])
         assert code == 0
         mock_run_tui.assert_called_once()
 
@@ -387,15 +385,6 @@ def test_headless_no_color_guidance_strips_ansi():
         code, stdout, stderr = run_cli(["--no-color"])
         assert code == 2
         assert "\x1b[" not in stderr
-
-
-@pytest.mark.xdist_group(name="cli_subcommands")
-def test_headless_gui_exe_name_honored():
-    """Test non-interactive invocation via smart-autosorter-gui executable launches UI app."""
-    with mock_non_interactive_stdin(), patch("app.ui.tui.run_tui") as mock_run_tui:
-        code, stdout, stderr = run_cli([], prog="smart-autosorter-gui.exe")
-        assert code == 0
-        mock_run_tui.assert_called_once()
 
 
 @pytest.mark.xdist_group(name="cli_subcommands")

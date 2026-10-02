@@ -2095,3 +2095,46 @@ def run_tui(settings, base_dir: Optional[str] = None) -> None:
 
     app = AutoSorterTUI(settings=settings, base_dir=base_dir)
     app.run()
+
+
+from dataclasses import dataclass
+
+
+@dataclass
+class A11yViolation:
+    rule_id: str
+    component_id: str
+    component_name: str
+    viewport_name: str
+    viewport_width: int
+    locator: str
+    message: str
+
+
+def inspect_tui_component(component: Any) -> List[A11yViolation]:
+    """Inspect a TUI App or Modal component for WCAG 2.1 accessibility compliance.
+
+    Leverages the component's internal audit hook method 'audit_a11y_compliance'
+    to perform programmatic verification.
+    """
+    violations: List[A11yViolation] = []
+    comp_name = type(component).__name__
+
+    if hasattr(component, "audit_a11y_compliance") and callable(
+        component.audit_a11y_compliance
+    ):
+        res = component.audit_a11y_compliance()
+        for v in res.get("violations", []):
+            violations.append(
+                A11yViolation(
+                    rule_id=v.get("rule", "A11Y_UNKNOWN"),
+                    component_id=comp_name,
+                    component_name=comp_name,
+                    viewport_name="terminal",
+                    viewport_width=80,
+                    locator=v.get("widget_id", comp_name),
+                    message=v.get("message", "A11y violation detected"),
+                )
+            )
+
+    return violations
