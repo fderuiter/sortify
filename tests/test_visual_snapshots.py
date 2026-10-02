@@ -34,6 +34,8 @@ def sanitize_svg(svg: str) -> str:
     svg = svg.replace("\r\n", "\n")
     svg = re.sub(r"terminal-\d+-", "terminal-test-", svg)
     svg = re.sub(r"\b\d{2}:\d{2}:\d{2}\b", "00:00:00", svg)
+    # Normalize cursor blink dim fill color #495259 to standard text fill color #a0a3a6
+    svg = svg.replace("fill: #495259", "fill: #a0a3a6")
 
     # Normalize Windows drive letters, backslashes, and HTML entities in test paths
     svg = (
@@ -168,8 +170,7 @@ def test_tui_main_screen_snapshot():
         settings._settings_model.AI_CONSENT_GRANTED = True
         app = AutoSorterTUI(settings=settings)
         async with app.run_test(size=(100, 30)) as pilot:
-            for _ in range(5):
-                await pilot.pause()
+            await pilot.pause(0.3)
             svg = app.export_screenshot()
             assert_svg_snapshot("tui_main_screen", svg)
 
@@ -212,8 +213,7 @@ def test_tui_populated_plan_snapshot():
                 },
             }
             app.rebuild_tree()
-            for _ in range(5):
-                await pilot.pause()
+            await pilot.pause(0.3)
             svg = app.export_screenshot()
             assert_svg_snapshot("tui_populated_plan", svg)
 
@@ -229,8 +229,7 @@ def test_wizard_modal_snapshot():
         app = AutoSorterTUI(settings=settings)
         async with app.run_test(size=(100, 30)) as pilot:
             app.push_screen(WizardModal(app.settings))
-            for _ in range(5):
-                await pilot.pause()
+            await pilot.pause(0.3)
             svg = app.export_screenshot()
             assert_svg_snapshot("wizard_modal", svg)
 
@@ -247,16 +246,15 @@ def test_settings_modal_snapshot():
         async with app.run_test(size=(100, 35)) as pilot:
             modal = SettingsModal(app.settings)
             app.push_screen(modal)
-            for _ in range(5):
-                await pilot.pause()
+            await pilot.pause(0.3)
             # scroll any scrollable container inside the modal to the top
             for w in modal.query("*"):
                 if getattr(w, "allow_vertical_scroll", False):
                     w.scroll_home(animate=False)
             modal.scroll_home(animate=False)
-            await pilot.pause()
+            await pilot.pause(0.3)
             await pilot.wait_for_scheduled_animations()
-            await pilot.pause()
+            await pilot.pause(0.3)
             svg = app.export_screenshot()
             assert_svg_snapshot("settings_modal", svg)
 
@@ -277,8 +275,7 @@ def test_rename_modal_snapshot():
                 extension=".pdf",
             )
             app.push_screen(modal)
-            for _ in range(5):
-                await pilot.pause()
+            await pilot.pause(0.3)
             svg = app.export_screenshot()
             assert_svg_snapshot("rename_modal", svg)
 
@@ -294,8 +291,7 @@ def test_cro_forensic_modal_snapshot():
         app = AutoSorterTUI(settings=settings, base_dir="/dummy/study_root")
         async with app.run_test(size=(100, 30)) as pilot:
             app.push_screen(CROForensicModal(app.settings, base_dir=app.base_dir))
-            for _ in range(5):
-                await pilot.pause()
+            await pilot.pause(0.3)
             svg = app.export_screenshot()
             assert_svg_snapshot("cro_forensic_modal", svg)
 
@@ -311,8 +307,7 @@ def test_new_folder_modal_snapshot():
         app = AutoSorterTUI(settings=settings)
         async with app.run_test(size=(100, 30)) as pilot:
             app.push_screen(NewFolderModal())
-            for _ in range(5):
-                await pilot.pause()
+            await pilot.pause(0.3)
             svg = app.export_screenshot()
             assert_svg_snapshot("new_folder_modal", svg)
 
@@ -328,8 +323,7 @@ def test_directory_select_modal_snapshot():
         app = AutoSorterTUI(settings=settings, base_dir="/dummy/projects")
         async with app.run_test(size=(100, 30)) as pilot:
             app.push_screen(DirectorySelectModal(current_dir=app.base_dir))
-            for _ in range(5):
-                await pilot.pause()
+            await pilot.pause(0.3)
             svg = app.export_screenshot()
             assert_svg_snapshot("directory_select_modal", svg)
 
