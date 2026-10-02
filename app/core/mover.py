@@ -279,13 +279,21 @@ def _resolve_source_path(
     depth: int = 0,
 ) -> str:
     """Resolve normalized absolute source path for a plan node."""
+    src_p = _get_val(content, "source_path")
+    if src_p:
+        abs_sp = os.path.normpath(src_p if os.path.isabs(src_p) else os.path.join(base_dir, src_p))
+        if os.path.lexists(abs_sp):
+            return abs_sp
+
     rel_src = _get_val(content, "relative_source") or key
 
     if depth > 0 and active_parent_path:
+        alt = os.path.normpath(os.path.join(base_dir, rel_src))
         primary = os.path.normpath(os.path.join(base_dir, active_parent_path, rel_src))
+        if os.path.lexists(alt) and not _is_same_path(alt, primary):
+            return alt
         if os.path.lexists(primary):
             return primary
-        alt = os.path.normpath(os.path.join(base_dir, rel_src))
         if os.path.lexists(alt):
             return alt
         return primary
@@ -768,7 +776,8 @@ def _execute_moves_recursive(
             if not moved_as_link:
                 from app.core.resilient_file_ops import resilient_move
 
-                resilient_move(source_path, dest_path)
+                dest_path = resilient_move(source_path, dest_path)
+                rel_dest = os.path.relpath(dest_path, base_dir).replace("\\", "/")
 
             if ledger and entry_id:
                 try:
@@ -1384,7 +1393,8 @@ def _process_move_item(
         else:
             from app.core.resilient_file_ops import resilient_move
 
-            resilient_move(source_path, dest_path)
+            dest_path = resilient_move(source_path, dest_path)
+            rel_dest = os.path.relpath(dest_path, base_dir).replace("\\", "/")
 
     if ledger and entry_id:
         with db_lock:
