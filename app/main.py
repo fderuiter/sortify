@@ -784,25 +784,111 @@ def handle_config_command(args: argparse.Namespace, settings: AppSettings):
 
 
 def handle_daemon_command(args: argparse.Namespace, settings: AppSettings):
-    """Launch persistent directory-watching daemon."""
+    """Launch or send control commands to persistent directory-watching daemon."""
+    import asyncio
+    import json
+    import time
     from pathlib import Path
 
     from app.core.daemon import start_daemon
+    from app.core.ipc import DaemonIPCClient
 
     apply_config_overrides(settings, args)
 
-    target_dir = args.directory
-    if target_dir:
-        target_path = Path(target_dir).resolve()
+    known_actions = {"status", "health", "metrics", "pause", "resume", "stop", "start"}
+
+    first_arg = getattr(args, "action", None)
+    second_arg = getattr(args, "directory", None)
+
+    if first_arg in known_actions:
+        action = first_arg
+        target_dir = second_arg or os.getcwd()
+    elif first_arg is not None:
+        action = "start"
+        target_dir = first_arg
+    else:
+        action = "start"
+        target_dir = second_arg or os.getcwd()
+
+    target_path = Path(target_dir).resolve()
+
+    if action == "start":
         if not target_path.exists() or not target_path.is_dir():
             print(
                 f"Error: Target directory '{target_dir}' does not exist or is not a directory.",
                 file=sys.stderr,
             )
             sys.exit(1)
-        target_dir = str(target_path)
+        start_daemon(settings, str(target_path))
+    else:
+        client = DaemonIPCClient(str(target_path))
+        is_watch = getattr(args, "watch", False)
 
-    start_daemon(settings, target_dir)
+        if action == "status" and is_watch:
+            print(
+                f"Monitoring daemon status telemetry for '{target_path}' (Press Ctrl+C to exit)..."
+            )
+            try:
+                while True:
+                    try:
+                        res = asyncio.run(client.send_command("status"))
+                        status_str = str(res.get("status", "unknown")).upper()
+                        pid = res.get("pid", "unknown")
+                        qd = res.get("queue_depth", 0)
+                        max_cap = res.get("max_queue_capacity", 1000)
+                        workers = res.get("active_workers", 0)
+                        uptime = res.get("uptime_seconds", 0)
+                        triages = res.get("active_triage_paths", [])
+                        print(
+                            f"[{time.strftime('%H:%M:%S')}] Status: {status_str} (PID {pid}) | Queue: {qd}/{max_cap} | Workers: {workers} | Uptime: {uptime}s | Active Triage: {len(triages)}"
+                        )
+                    except Exception as err:
+                        print(f"Error querying daemon status: {err}", file=sys.stderr)
+                    time.sleep(1.0)
+            except KeyboardInterrupt:
+                print("\nStopped watch monitoring.")
+                sys.exit(0)
+
+        try:
+            res = asyncio.run(client.send_command(action))
+            if action == "status":
+                print(f"Daemon Status (PID: {res.get('pid')}):")
+                print(f"  Status: {str(res.get('status', '')).upper()}")
+                print(f"  Base Directory: {res.get('base_dir')}")
+                print(f"  Uptime: {res.get('uptime_seconds')}s")
+                print(
+                    f"  Queue Depth: {res.get('queue_depth')} / {res.get('max_queue_capacity')}"
+                )
+                print(f"  Active Workers: {res.get('active_workers')}")
+                print(f"  Relocating Files: {res.get('is_moving')}")
+                print(
+                    f"  Active Triage Paths: {res.get('active_triage_paths') or 'None'}"
+                )
+            elif action == "health":
+                print("Daemon Health Check:")
+                print(f"  Health Status: {str(res.get('status', '')).upper()}")
+                print(f"  PID: {res.get('pid')}")
+                print(f"  Queue Depth: {res.get('queue_depth')}")
+                print(f"  Queue Full: {res.get('queue_full')}")
+                print(f"  Uptime: {res.get('uptime_seconds')}s")
+            elif action == "metrics":
+                print("Daemon Metrics:")
+                print(f"  Events Enqueued: {res.get('events_enqueued')}")
+                print(f"  Events Processed: {res.get('events_processed')}")
+                print(f"  Queue Depth: {res.get('queue_depth')}")
+                print(f"  Active Workers: {res.get('active_workers')}")
+                print(f"  Uptime: {res.get('uptime_seconds')}s")
+            elif action == "pause":
+                print(f"Daemon paused successfully ({res.get('message')}).")
+            elif action == "resume":
+                print(f"Daemon resumed successfully ({res.get('message')}).")
+            elif action == "stop":
+                print(f"Daemon shutdown initiated ({res.get('message')}).")
+            else:
+                print(json.dumps(res, indent=2))
+        except Exception as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
 
 
 def handle_undo_command(args: argparse.Namespace, settings: AppSettings):
@@ -1131,13 +1217,24 @@ def build_parser(prog: str | None = "app/main.py") -> argparse.ArgumentParser:
 
     # Subcommand: daemon
     parser_daemon = subparsers.add_parser(
-        "daemon", help="Launch the persistent directory-watching daemon"
+        "daemon", help="Launch or control persistent directory-watching daemon"
+    )
+    parser_daemon.add_argument(
+        "action",
+        nargs="?",
+        default=None,
+        help="Action (start, status, health, metrics, pause, resume, stop) or directory to watch",
     )
     parser_daemon.add_argument(
         "directory",
         nargs="?",
         default=None,
-        help="Directory to watch",
+        help="Directory to watch or control",
+    )
+    parser_daemon.add_argument(
+        "--watch",
+        action="store_true",
+        help="Continuously monitor status telemetry in real time",
     )
     add_common_override_args(parser_daemon)
 
