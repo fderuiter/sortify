@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "594d08bea1dea998ba1e546f7d391bbb980786312907e90414c5851e7dfaa973"
+    "checksum": "f5e1edf2143f2a628c85ce993b57e35fc65c52897dc5824c31d7a2d8ea1f6adb"
   },
   "cli": {
     "app/main.py": [
@@ -285,9 +285,21 @@
         ],
         "caller": "subparsers",
         "keywords": {
-          "help": "Launch the persistent directory-watching daemon"
+          "help": "Launch or control persistent directory-watching daemon"
         },
         "method": "add_parser"
+      },
+      {
+        "args": [
+          "action"
+        ],
+        "caller": "parser_daemon",
+        "keywords": {
+          "default": null,
+          "help": "Action (start, status, health, metrics, pause, resume, stop) or directory to watch",
+          "nargs": "?"
+        },
+        "method": "add_argument"
       },
       {
         "args": [
@@ -296,8 +308,19 @@
         "caller": "parser_daemon",
         "keywords": {
           "default": null,
-          "help": "Directory to watch",
+          "help": "Directory to watch or control",
           "nargs": "?"
+        },
+        "method": "add_argument"
+      },
+      {
+        "args": [
+          "--watch"
+        ],
+        "caller": "parser_daemon",
+        "keywords": {
+          "action": "store_true",
+          "help": "Continuously monitor status telemetry in real time"
         },
         "method": "add_argument"
       },
@@ -3417,10 +3440,64 @@
             },
             {
               "async": false,
+              "decorators": [],
+              "name": "get_health_telemetry",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": "dict"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "get_metrics_telemetry",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": "dict"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "get_status_telemetry",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": "dict"
+            },
+            {
+              "async": false,
               "decorators": [
                 "@property"
               ],
               "name": "is_moving",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": "bool"
+            },
+            {
+              "async": false,
+              "decorators": [
+                "@property"
+              ],
+              "name": "is_paused",
               "parameters": [
                 {
                   "annotation": null,
@@ -3463,6 +3540,19 @@
             },
             {
               "async": false,
+              "decorators": [],
+              "name": "pause",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
               "decorators": [
                 "@property"
               ],
@@ -3475,6 +3565,19 @@
                 }
               ],
               "returns": "bool"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "resume",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": null
             },
             {
               "async": false,
@@ -7361,6 +7464,140 @@
             }
           ],
           "returns": null
+        }
+      ]
+    },
+    "app/core/ipc.py": {
+      "classes": [
+        {
+          "class_name": "DaemonIPCClient",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "__init__",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "base_dir"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": true,
+              "decorators": [],
+              "name": "send_command",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "method"
+                },
+                {
+                  "annotation": "Optional[dict]",
+                  "default": "None",
+                  "name": "params"
+                },
+                {
+                  "annotation": "float",
+                  "default": "5.0",
+                  "name": "timeout"
+                }
+              ],
+              "returns": "Dict[str, Any]"
+            }
+          ]
+        },
+        {
+          "class_name": "DaemonIPCServer",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "__init__",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "daemon"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": true,
+              "decorators": [],
+              "name": "start",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "stop",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": null
+            }
+          ]
+        }
+      ],
+      "functions": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "is_process_alive",
+          "parameters": [
+            {
+              "annotation": "int",
+              "default": null,
+              "name": "pid"
+            }
+          ],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "read_pid_file",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            }
+          ],
+          "returns": "Optional[Dict[str, Any]]"
         }
       ]
     },

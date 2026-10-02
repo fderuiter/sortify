@@ -7,6 +7,7 @@ flowchart TD
         core_session["app.core.session"]
         core_user_space_bootstrap["app.core.user_space_bootstrap"]
         core_daemon["app.core.daemon"]
+        core_ipc["app.core.ipc"]
         core_integration["app.core.integration"]
         core_diagram_schema["app.core.diagram_schema"]
         core_domain_contracts["app.core.domain_contracts"]
@@ -82,6 +83,7 @@ flowchart TD
     core_session --> core_verifier
     core_session --> core_mover
     core_daemon --> core_session
+    core_daemon --> core_ipc
     core_integration --> core_session
     core_extractor --> core_extractor_strategies
     core_extractor --> core_forensic_scanner
