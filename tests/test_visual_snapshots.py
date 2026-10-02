@@ -12,6 +12,7 @@ from app.ui.tui import (
     AutoSorterTUI,
     CROForensicModal,
     DirectorySelectModal,
+    FilePreviewModal,
     NewFolderModal,
     RenameModal,
     SettingsModal,
@@ -314,5 +315,25 @@ def test_directory_select_modal_snapshot():
             await pilot.pause(0.3)
             svg = app.export_screenshot()
             assert_svg_snapshot("directory_select_modal", svg)
+
+    asyncio.run(_test())
+
+
+def test_file_preview_modal_snapshot(tmp_path):
+    """Verify visual layout of FilePreviewModal screen."""
+    sample_file = tmp_path / "preview_sample.txt"
+    sample_file.write_text(
+        "Header line\nContent row 1\nContent row 2", encoding="utf-8"
+    )
+
+    async def _test():
+        settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        app = AutoSorterTUI(settings=settings)
+        async with app.run_test(size=(100, 30)) as pilot:
+            app.push_screen(FilePreviewModal(filepath=str(sample_file)))
+            await pilot.pause(0.3)
+            svg = app.export_screenshot()
+            assert_svg_snapshot("file_preview_modal", svg)
 
     asyncio.run(_test())

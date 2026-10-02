@@ -1260,6 +1260,108 @@ class SessionRecoveryModal(A11yMixin, ModalScreen[Optional[str]]):
         self.dismiss(None)
 
 
+class FilePreviewModal(A11yMixin, ModalScreen[None]):
+    """Modal dialog for previewing file contents when pager execution fails or in non-TTY mode."""
+
+    BINDINGS = [
+        Binding("escape", "close", "Close dialog", show=True),
+        Binding("q", "close", "Close dialog", show=False),
+    ]
+
+    CSS = """
+    FilePreviewModal {
+        align: center middle;
+        background: rgba(0, 0, 0, 0.6);
+    }
+    .modal-box {
+        padding: 1 2;
+        background: $panel;
+        border: thick $primary;
+        width: 90%;
+        max-width: 90;
+        min-width: 30;
+        height: 80%;
+        max-height: 90%;
+        overflow-y: auto;
+    }
+    .narrow .modal-box {
+        padding: 0 1;
+        width: 95%;
+    }
+    .modal-title {
+        text-style: bold;
+        color: $accent;
+        margin-bottom: 1;
+    }
+    .preview-log {
+        height: 1fr;
+        min-height: 8;
+        margin-top: 1;
+        margin-bottom: 1;
+        border: solid $secondary;
+    }
+    .button-row {
+        margin-top: 1;
+        height: 3;
+        align: right middle;
+    }
+    Button:focus, Log:focus {
+        border: heavy $accent;
+        text-style: bold;
+    }
+    """
+
+    def __init__(self, filepath: str):
+        super().__init__()
+        self.filepath = filepath
+        self.filename = os.path.basename(filepath) if filepath else "Preview"
+
+    def compose(self) -> ComposeResult:
+        """Compose child widgets for file preview modal."""
+        with Vertical(classes="modal-box"):
+            yield Label(f"File Preview: {self.filename}", classes="modal-title")
+            log_w = Log(classes="preview-log", id="preview-log-widget")
+            log_w.tooltip = "Scrollable preview of file contents"
+            yield log_w
+            with Horizontal(classes="button-row"):
+                btn_close = Button("Close [Esc]", id="btn-close", variant="primary")
+                btn_close.tooltip = "Close file preview dialog"
+                yield btn_close
+
+    def _update_layout(self, width: int) -> None:
+        """Update modal layout based on viewport width breakpoint."""
+        if width < 80:
+            self.add_class("narrow")
+        else:
+            self.remove_class("narrow")
+
+    def on_resize(self, event: events.Resize) -> None:
+        """Handle modal viewport resize event."""
+        self._update_layout(event.size.width)
+
+    def on_mount(self) -> None:
+        """Load file content into preview log and focus close button."""
+        self._update_layout(self.size.width)
+        log_w = self.query_one(Log)
+        try:
+            if self.filepath and os.path.exists(self.filepath):
+                with open(self.filepath, "r", encoding="utf-8", errors="replace") as f:
+                    for line in f:
+                        log_w.write_line(line.rstrip("\r\n"))
+            else:
+                log_w.write_line(f"File not found: {self.filepath}")
+        except Exception as err:
+            log_w.write_line(f"Error reading file '{self.filepath}': {err}")
+        self.query_one("#btn-close", Button).focus()
+        self.announce(f"Opened file preview modal for '{self.filename}'.")
+
+    @on(Button.Pressed, "#btn-close")
+    def action_close(self) -> None:
+        """Dismiss file preview modal."""
+        self.announce("Closed file preview dialog.")
+        self.dismiss(None)
+
+
 class AutoSorterTUI(A11yMixin, App):
     """Textual full-screen interactive TUI application for Sortify AI Pro."""
 
@@ -1272,6 +1374,7 @@ class AutoSorterTUI(A11yMixin, App):
         Binding("n", "new_folder", "New Folder", show=True),
         Binding("plus", "rate_positive", "Rating (+)", show=True),
         Binding("minus", "rate_negative", "Rating (-)", show=True),
+        Binding("v", "view_pager", "View Pager", show=True),
         Binding("ctrl+s", "open_settings", "Settings", show=True),
         Binding("ctrl+w", "open_wizard", "Wizard", show=True),
         Binding("ctrl+c", "open_cro_forensic", "CRO Ingest", show=True),
@@ -1412,6 +1515,7 @@ class AutoSorterTUI(A11yMixin, App):
         self._update_layout(self.size.width)
         try:
             from app.ui.notifications import NotificationManager
+
             NotificationManager.get_instance().register_tui(self)
         except Exception:
             pass
@@ -1430,6 +1534,7 @@ class AutoSorterTUI(A11yMixin, App):
         """Lifecycle hook called when application is unmounted."""
         try:
             from app.ui.notifications import NotificationManager
+
             NotificationManager.get_instance().unregister_tui(self)
         except Exception:
             pass
@@ -1940,6 +2045,50 @@ class AutoSorterTUI(A11yMixin, App):
 
         self.announce(msg)
         self.rebuild_tree()
+
+    def action_view_pager(self) -> None:
+        """View highlighted file in system pager with TUI process suspension [V]."""
+        node = self._get_active_node()
+        if not node or not node.data or not node.data.get("is_file"):
+            self.announce("Select a file node to view pager [V].")
+            return
+
+        filepath = node.data.get("filepath")
+        if not filepath or not os.path.exists(filepath) or not os.path.isfile(filepath):
+            self.announce(f"File path does not exist on disk: {filepath}")
+            return
+
+        # Constraint: Check sys.stdout.isatty() and sys.stdin.isatty() for interactive TTY
+        if not sys.stdout.isatty() or not sys.stdin.isatty():
+            self.announce(
+                "Non-interactive TTY session detected. Opening file preview modal."
+            )
+            self.push_screen(FilePreviewModal(filepath))
+            return
+
+        pager = os.environ.get("PAGER")
+        if not pager:
+            if sys.platform == "win32":
+                pager = "more"
+            else:
+                pager = shutil.which("less") or shutil.which("more") or "less"
+
+        try:
+            self.announce(
+                f"Launching pager '{pager}' for '{os.path.basename(filepath)}'..."
+            )
+            with self.suspend():
+                proc = subprocess.run([pager, filepath], timeout=60)
+                if proc.returncode != 0:
+                    raise subprocess.SubprocessError(
+                        f"Pager exited with code {proc.returncode}"
+                    )
+        except Exception as err:
+            logger.warning(
+                f"Failed to execute pager '{pager}': {err}. Triggering modal fallback."
+            )
+            self.announce("Pager launch failed. Opening file preview modal.")
+            self.push_screen(FilePreviewModal(filepath))
 
     def action_rename_node(self) -> None:
         """Rename file or folder category node [R]."""
