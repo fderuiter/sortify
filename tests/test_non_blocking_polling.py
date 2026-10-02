@@ -1,11 +1,9 @@
 import queue
 import threading
 import time
-from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.config import AppSettings
 from app.core.analyzer_strategies import cooperative_join, cooperative_queue_get
 
 

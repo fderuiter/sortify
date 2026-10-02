@@ -1,15 +1,11 @@
-import asyncio
 import json
 import os
 import shutil
-import sqlite3
-from contextlib import closing
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
-from app.config import AppSettings
 from app.core.db_conn import get_db_connection
 from app.core.session import scan_abandoned_sessions_async
 

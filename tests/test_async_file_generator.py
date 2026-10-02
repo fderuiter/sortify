@@ -1,5 +1,3 @@
-from unittest.mock import MagicMock, patch
-
 import pytest
 
 from app.config import AppSettings

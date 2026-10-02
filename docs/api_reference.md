@@ -6,14 +6,6 @@ This document is automatically generated. Do not edit manually.
 
 ![Core Architecture Diagram](assets/diagrams/core_architecture.svg)
 
-## `app.cli.cro_cli`
-
-::: app.cli.cro_cli
-
-## `app.cli.crypto_cli`
-
-::: app.cli.crypto_cli
-
 ## `app.cli.ledger_cli`
 
 ::: app.cli.ledger_cli
@@ -173,6 +165,10 @@ This document is automatically generated. Do not edit manually.
 ## `app.core.scanner`
 
 ::: app.core.scanner
+
+## `app.core.security`
+
+::: app.core.security
 
 ## `app.core.semantic_embeddings`
 

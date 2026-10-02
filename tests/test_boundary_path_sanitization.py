@@ -2,8 +2,6 @@ import os
 import tempfile
 from unittest.mock import MagicMock
 
-import pytest
-
 from app.core.path_utils import sanitize_folder_key
 from app.core.verifier import VerificationEngine
 

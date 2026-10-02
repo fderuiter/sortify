@@ -7,6 +7,7 @@ import subprocess
 import sys
 import threading
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -2097,11 +2098,10 @@ def run_tui(settings, base_dir: Optional[str] = None) -> None:
     app.run()
 
 
-from dataclasses import dataclass
-
-
 @dataclass
 class A11yViolation:
+    """Representation of an accessibility violation in a TUI component."""
+
     rule_id: str
     component_id: str
     component_name: str

@@ -1,16 +1,13 @@
-import asyncio
 import os
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
-from app.config import AppSettings
 from app.core.cache import CacheManager
 from app.core.db import Database
 from app.core.db_worker import DBWorker
 from app.core.history import HistoryManager
 from app.core.mover import execute_moves
-from app.core.session import AppSession
 
 
 @pytest.fixture

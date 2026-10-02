@@ -1,10 +1,8 @@
-import os
 import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.config import AppSettings
 from app.core.integration import is_admin, register_context_menu
 
 pytestmark = [pytest.mark.slow, pytest.mark.integration]
@@ -207,134 +205,12 @@ def test_windows_admin_registry_operations_disable(mock_winreg_and_ctypes):
         )
 
 
-def test_settings_toggle_on_explorer_integration_non_windows():
-    """Verify the UI toggle rejects context integration on non-Windows with a warning."""
-    parent_app = MagicMock()
-    settings = AppSettings()
-    settings.EXPLORER_INTEGRATION = False
-
-    with patch("app.ui.settings.ui") as mock_ui, patch("sys.platform", "linux"):
-        show_settings(parent_app, settings)
-
-        # Find the switch call for context menu
-        switch_on_change = None
-        for call_args in mock_ui.switch.call_args_list:
-            args, kwargs = call_args
-            if "Explorer" in args[0] or "Context Menu" in args[0]:
-                switch_on_change = kwargs.get("on_change")
-                break
-
-        assert switch_on_change is not None
-
-        # Simulate toggling to True
-        mock_sender = MagicMock()
-        mock_sender.value = True
-        mock_event = MagicMock()
-        mock_event.value = True
-        mock_event.sender = mock_sender
-
-        switch_on_change(mock_event)
-
-        # Verify warning notification
-        mock_ui.notify.assert_called_once_with(
-            "Context menu integration is only available on Windows.", type="warning"
-        )
-        assert mock_sender.value is False
-        assert settings.EXPLORER_INTEGRATION is False
-
-
-def test_settings_toggle_on_explorer_integration_windows_success(
-    mock_winreg_and_ctypes,
-):
-    """Verify the UI toggle registers correctly on Windows when enabled."""
-    parent_app = MagicMock()
-    settings = AppSettings()
-    settings.EXPLORER_INTEGRATION = False
-
-    with (
-        patch("app.ui.settings.ui") as mock_ui,
-        patch("sys.platform", "win32"),
-        patch("app.core.integration.is_admin", return_value=True),
-    ):
-        show_settings(parent_app, settings)
-
-        # Find the switch call
-        switch_on_change = None
-        for call_args in mock_ui.switch.call_args_list:
-            args, kwargs = call_args
-            if "Explorer" in args[0] or "Context Menu" in args[0]:
-                switch_on_change = kwargs.get("on_change")
-                break
-
-        assert switch_on_change is not None
-
-        # Simulate toggling to True
-        mock_sender = MagicMock()
-        mock_sender.value = True
-        mock_event = MagicMock()
-        mock_event.value = True
-        mock_event.sender = mock_sender
-
-        switch_on_change(mock_event)
-
-        mock_ui.notify.assert_called_once_with(
-            "Explorer integration updated successfully.", type="positive"
-        )
-        assert settings.EXPLORER_INTEGRATION is True
-
-
-def test_settings_toggle_on_explorer_integration_windows_failure(
-    mock_winreg_and_ctypes,
-):
-    """Verify the UI toggle safely reverts and notifies on failure."""
-    parent_app = MagicMock()
-    settings = AppSettings()
-    settings.EXPLORER_INTEGRATION = False
-
-    with (
-        patch("app.ui.settings.ui") as mock_ui,
-        patch("sys.platform", "win32"),
-        patch(
-            "app.core.integration.register_context_menu",
-            side_effect=RuntimeError("Elevation refused"),
-        ),
-    ):
-        show_settings(parent_app, settings)
-
-        # Find the switch call
-        switch_on_change = None
-        for call_args in mock_ui.switch.call_args_list:
-            args, kwargs = call_args
-            if "Explorer" in args[0] or "Context Menu" in args[0]:
-                switch_on_change = kwargs.get("on_change")
-                break
-
-        assert switch_on_change is not None
-
-        # Simulate toggling to True
-        mock_sender = MagicMock()
-        mock_sender.value = True
-        mock_event = MagicMock()
-        mock_event.value = True
-        mock_event.sender = mock_sender
-
-        switch_on_change(mock_event)
-
-        # Verify negative notification and revert
-        mock_ui.notify.assert_called_once_with(
-            "Failed to update Explorer integration: Elevation refused", type="negative"
-        )
-        assert mock_sender.value is False
-        assert settings.EXPLORER_INTEGRATION is False
-
-
 def test_main_cli_directory_argument():
     """Verify that launching main() with a directory argument executes run_tui with that directory."""
     from app.main import main
 
     mock_args = MagicMock()
     mock_args.tui = True
-    mock_args.gui = False
     mock_args.daemon = False
     mock_args.demo = False
     mock_args.directory = "/some/test/directory"

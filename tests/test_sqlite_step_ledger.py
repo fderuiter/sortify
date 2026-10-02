@@ -1,11 +1,9 @@
-import asyncio
 import os
 import shutil
 from unittest.mock import patch
 
 import pytest
 
-from app.config import AppSettings
 from app.core.cache import CacheManager
 from app.core.db import Database
 from app.core.db_conn import get_db_connection
