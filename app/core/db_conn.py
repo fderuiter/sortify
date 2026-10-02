@@ -148,6 +148,10 @@ def get_db_connection(db_path: str):
     raw_key = crypto.get_raw_key()
 
     if not HAS_SQLCIPHER:
+        if _disable_pytest_win_fallback:
+            raise RuntimeError(
+                "SQLCipher library is missing. Standard SQLite fallback connections are blocked."
+            )
         logger.warning(
             "SECURITY WARNING: SQLCipher encryption driver is missing or unverified. "
             "Operating in standard SQLite fallback connection mode. "
@@ -181,11 +185,19 @@ def get_db_connection(db_path: str):
                     cursor.execute("PRAGMA cipher_version;")
                     version = cursor.fetchone()
                     if not version or not version[0]:
+                        if _disable_pytest_win_fallback:
+                            raise RuntimeError(
+                                "SQLCipher is not active on this connection context."
+                            )
                         logger.warning(
                             "SECURITY WARNING: SQLCipher is not active on this connection context. "
                             "Operating in standard SQLite fallback mode."
                         )
             except Exception as cipher_err:
+                if _disable_pytest_win_fallback:
+                    raise RuntimeError(
+                        "SQLCipher is not active on this connection context."
+                    ) from cipher_err
                 logger.warning(
                     f"SECURITY WARNING: PRAGMA cipher_version check failed ({cipher_err}). "
                     "Operating in standard SQLite fallback mode."
