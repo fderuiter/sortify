@@ -449,6 +449,36 @@ def download_and_prepare_weights():
     print(
         f"Successfully prepared weights and wrote model hashes to {hashes_registry_path}"
     )
+    package_sidecar_models()
+
+
+def package_sidecar_models():
+    """Package offline_bundle model weights into smart-autosorter-models.zip sidecar artifact."""
+    import zipfile
+    from pathlib import Path
+
+    offline_bundle = Path("offline_bundle")
+    if not offline_bundle.exists() or not any(offline_bundle.iterdir()):
+        print("Warning: offline_bundle directory empty or missing. Skipping sidecar packaging.")
+        return
+
+    dist_dir = Path("dist")
+    dist_dir.mkdir(parents=True, exist_ok=True)
+    zip_path = dist_dir / "smart-autosorter-models.zip"
+
+    print(f"Creating sidecar model package at {zip_path}...")
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zip_file:
+        for file_path in offline_bundle.rglob("*"):
+            if file_path.is_file():
+                rel_path = file_path.relative_to(offline_bundle)
+                zip_file.write(file_path, arcname=rel_path)
+
+    root_zip = Path("smart-autosorter-models.zip")
+    if zip_path.exists():
+        import shutil
+        shutil.copy2(zip_path, root_zip)
+
+    print(f"Successfully packaged sidecar model archive: {zip_path}")
 
 
 def main():
