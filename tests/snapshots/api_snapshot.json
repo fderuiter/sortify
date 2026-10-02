@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "86cf00e01b96af82c06cc43445d02a5d919b219cc45dd26bc03a1ef6279f7e33"
+    "checksum": "9bb9af72ef2ff7e30f0294ba0f8381f4bcd76d403c7676072a73eff08b485405"
   },
   "cli": {
     "app/main.py": [
@@ -103,6 +103,54 @@
         "keywords": {
           "action": "store_true",
           "help": "Launch full-screen interactive TUI mode"
+        },
+        "method": "add_argument"
+      },
+      {
+        "args": [
+          "--accept-ai-consent"
+        ],
+        "caller": "ai_consent_group",
+        "keywords": {
+          "action": "store_true",
+          "default": false,
+          "help": "Pre-configure AI consent as granted and bypass onboarding wizard"
+        },
+        "method": "add_argument"
+      },
+      {
+        "args": [
+          "--decline-ai-consent"
+        ],
+        "caller": "ai_consent_group",
+        "keywords": {
+          "action": "store_true",
+          "default": false,
+          "help": "Pre-configure AI consent as declined and bypass onboarding wizard"
+        },
+        "method": "add_argument"
+      },
+      {
+        "args": [
+          "--skip-wizard"
+        ],
+        "caller": "parser",
+        "keywords": {
+          "action": "store_true",
+          "default": false,
+          "help": "Bypass onboarding wizard modal during startup"
+        },
+        "method": "add_argument"
+      },
+      {
+        "args": [
+          "--non-interactive"
+        ],
+        "caller": "parser",
+        "keywords": {
+          "action": "store_true",
+          "default": false,
+          "help": "Run in non-interactive mode and bypass interactive modal dialogs"
         },
         "method": "add_argument"
       },
@@ -508,6 +556,54 @@
           "action": "store_true",
           "default": false,
           "help": "Launch full-screen interactive TUI mode"
+        },
+        "method": "add_argument"
+      },
+      {
+        "args": [
+          "--accept-ai-consent"
+        ],
+        "caller": "sub_ai_consent",
+        "keywords": {
+          "action": "store_true",
+          "default": false,
+          "help": "Pre-configure AI consent as granted and bypass onboarding wizard"
+        },
+        "method": "add_argument"
+      },
+      {
+        "args": [
+          "--decline-ai-consent"
+        ],
+        "caller": "sub_ai_consent",
+        "keywords": {
+          "action": "store_true",
+          "default": false,
+          "help": "Pre-configure AI consent as declined and bypass onboarding wizard"
+        },
+        "method": "add_argument"
+      },
+      {
+        "args": [
+          "--skip-wizard"
+        ],
+        "caller": "subparser",
+        "keywords": {
+          "action": "store_true",
+          "default": false,
+          "help": "Bypass onboarding wizard modal during startup"
+        },
+        "method": "add_argument"
+      },
+      {
+        "args": [
+          "--non-interactive"
+        ],
+        "caller": "subparser",
+        "keywords": {
+          "action": "store_true",
+          "default": false,
+          "help": "Run in non-interactive mode and bypass interactive modal dialogs"
         },
         "method": "add_argument"
       }
