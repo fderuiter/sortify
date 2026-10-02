@@ -118,6 +118,10 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.core.integration
 
+## `app.core.ipc`
+
+::: app.core.ipc
+
 ## `app.core.jev_classifier`
 
 ::: app.core.jev_classifier

@@ -1241,3 +1241,53 @@ def test_import_fallbacks():
     )
     assert res_sql.returncode == 0, f"SQLite fallback failed: {res_sql.stderr}"
 
+
+def test_key_rotation_with_single_quote_escaping(tmp_path):
+    """Verify that key rotation succeeds when the new key contains single quotes."""
+    db_path = tmp_path / "test_rotate_quote.db"
+    key_path = tmp_path / "test_rotate_quote.key"
+
+    from app.core.crypto import CryptoManager, SessionCrypto
+    from app.core.db_conn import clear_connection_cache, get_db_connection
+
+    # Create initial database with standard key
+    session_crypto = SessionCrypto(key_path, db_path)
+    session_crypto.get_cipher()
+
+    clear_connection_cache(only_current_and_inactive=False)
+    conn = get_db_connection(str(db_path))
+    cursor = conn.cursor()
+    cursor.execute("CREATE TABLE rotate_test (id INT, val TEXT);")
+    cursor.execute("INSERT INTO rotate_test VALUES (1, 'initial');")
+    conn.commit()
+    clear_connection_cache(only_current_and_inactive=False)
+
+    # Rotate key using a new key with single quotes
+    new_quote_key = "rotated'key'with'single'quotes"
+    rotated_key = session_crypto.rotate_key(new_key_str=new_quote_key)
+    assert rotated_key == new_quote_key
+
+    # Verify we can read data back using the new key
+    clear_connection_cache(only_current_and_inactive=False)
+    conn2 = get_db_connection(str(db_path))
+    cursor2 = conn2.cursor()
+    cursor2.execute("SELECT val FROM rotate_test WHERE id = 1;")
+    row = cursor2.fetchone()
+    assert row is not None
+    assert row[0] == "initial"
+    clear_connection_cache(only_current_and_inactive=False)
+
+    # Verify CryptoManager.rotate_database_key facade method
+    second_quote_key = "another'key'with'quotes'2"
+    CryptoManager.rotate_database_key(db_path, key_path, new_key_str=second_quote_key)
+
+    clear_connection_cache(only_current_and_inactive=False)
+    conn3 = get_db_connection(str(db_path))
+    cursor3 = conn3.cursor()
+    cursor3.execute("SELECT val FROM rotate_test WHERE id = 1;")
+    row3 = cursor3.fetchone()
+    assert row3 is not None
+    assert row3[0] == "initial"
+    clear_connection_cache(only_current_and_inactive=False)
+
+

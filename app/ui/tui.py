@@ -685,7 +685,7 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
     def compose(self) -> ComposeResult:
         """Compose modal dialog children."""
         with Vertical(classes="modal-box"):
-            yield Label("Application Settings [Ctrl+S]", classes="modal-title")
+            yield Label("Application Settings [Ctrl+O]", classes="modal-title")
 
             yield Label(
                 "Protected Directories (comma-separated):", classes="field-label"
@@ -1260,6 +1260,42 @@ class SessionRecoveryModal(A11yMixin, ModalScreen[Optional[str]]):
         self.dismiss(None)
 
 
+class VimTree(Tree):
+    """Tree control with native vim motion navigation (h, j, k, l)."""
+
+    def on_key(self, event: events.Key) -> None:
+        """Handle key events for native vim tree navigation."""
+        if not self.has_focus:
+            return
+
+        if event.key == "j":
+            self.action_cursor_down()
+            event.stop()
+            event.prevent_default()
+        elif event.key == "k":
+            self.action_cursor_up()
+            event.stop()
+            event.prevent_default()
+        elif event.key == "h":
+            node = self.cursor_node
+            if node:
+                if node.is_expanded and node.children:
+                    node.collapse()
+                else:
+                    self.action_cursor_parent()
+            event.stop()
+            event.prevent_default()
+        elif event.key == "l":
+            node = self.cursor_node
+            if node:
+                if not node.is_expanded and (node.children or node.allow_expand):
+                    node.expand()
+                elif node.is_expanded and node.children:
+                    self.action_cursor_down()
+            event.stop()
+            event.prevent_default()
+
+
 class AutoSorterTUI(A11yMixin, App):
     """Textual full-screen interactive TUI application for Sortify AI Pro."""
 
@@ -1267,19 +1303,19 @@ class AutoSorterTUI(A11yMixin, App):
     SUB_TITLE = "Interactive Tree & Modal Controls"
 
     BINDINGS = [
-        Binding("l", "toggle_lock", "Lock/Unlock", show=True),
-        Binding("r", "rename_node", "Rename Node", show=True),
-        Binding("n", "new_folder", "New Folder", show=True),
+        Binding("ctrl+l", "toggle_lock", "Lock/Unlock", show=True),
+        Binding("ctrl+r", "rename_node", "Rename Node", show=True),
+        Binding("ctrl+n", "new_folder", "New Folder", show=True),
         Binding("plus", "rate_positive", "Rating (+)", show=True),
         Binding("minus", "rate_negative", "Rating (-)", show=True),
-        Binding("ctrl+s", "open_settings", "Settings", show=True),
+        Binding("ctrl+o", "open_settings", "Settings", show=True),
         Binding("ctrl+w", "open_wizard", "Wizard", show=True),
         Binding("ctrl+c", "open_cro_forensic", "CRO Ingest", show=True),
-        Binding("s", "scan_directory", "Scan", show=True),
-        Binding("e", "execute_sort", "Execute", show=True),
+        Binding("ctrl+s", "scan_directory", "Scan", show=True),
+        Binding("ctrl+e", "execute_sort", "Execute", show=True),
         Binding("enter", "execute_sort", "Execute", show=False),
-        Binding("b", "select_dir", "Browse Dir", show=True),
-        Binding("q", "quit", "Quit", show=True),
+        Binding("ctrl+b", "select_dir", "Browse Dir", show=True),
+        Binding("ctrl+q", "quit", "Quit", show=True),
     ]
 
     CSS = """
@@ -1361,7 +1397,7 @@ class AutoSorterTUI(A11yMixin, App):
         """Compose main dual-pane TUI layout."""
         yield Header(show_clock=True)
         with Horizontal(id="main-dual-pane"):
-            tree = Tree("Proposed Organization Plan", id="plan-tree")
+            tree = VimTree("Proposed Organization Plan", id="plan-tree")
             tree.tooltip = "Interactive tree view of proposed file organization plan"
             yield tree
             with Vertical(id="right-meta-pane"):
@@ -1376,7 +1412,7 @@ class AutoSorterTUI(A11yMixin, App):
                 tui_log.tooltip = "Live operation execution log output feed"
                 yield tui_log
         sb = Static(
-            "Ready. Press [S] to Scan or [B] to select Directory.", id="status-bar"
+            "Ready. Press [Ctrl+S] to Scan or [Ctrl+B] to select Directory.", id="status-bar"
         )
         sb.tooltip = "Application status and screen reader announcement bar"
         yield sb
@@ -1549,10 +1585,17 @@ class AutoSorterTUI(A11yMixin, App):
             pass
         return None
 
+    def _is_text_control_focused(self) -> bool:
+        """Check if a text input or selection control currently holds focus."""
+        focused = self.focused
+        return focused is not None and isinstance(focused, (Input, Select))
+
     # --- Actions ---
 
     def action_select_dir(self) -> None:
         """Open directory selection modal."""
+        if self._is_text_control_focused():
+            return
 
         def on_selected(path: Optional[str]) -> None:
             if path and os.path.exists(path):
@@ -1565,6 +1608,8 @@ class AutoSorterTUI(A11yMixin, App):
 
     def action_open_settings(self) -> None:
         """Open settings modal screen."""
+        if self._is_text_control_focused():
+            return
 
         def on_saved(res: Optional[Dict[str, Any]]) -> None:
             if res:
@@ -1603,14 +1648,20 @@ class AutoSorterTUI(A11yMixin, App):
 
     def action_open_wizard(self) -> None:
         """Open model onboarding wizard modal screen."""
+        if self._is_text_control_focused():
+            return
         self.push_screen(WizardModal(self.settings))
 
     def action_open_cro_forensic(self) -> None:
         """Open CRO multi-study forensic ingestion modal screen."""
+        if self._is_text_control_focused():
+            return
         self.push_screen(CROForensicModal(self.settings, base_dir=self.base_dir))
 
     def action_scan_directory(self) -> None:
         """Trigger directory scanning background worker."""
+        if self._is_text_control_focused():
+            return
         if not self.base_dir or not os.path.exists(self.base_dir):
             self.action_select_dir()
             return
@@ -1673,8 +1724,10 @@ class AutoSorterTUI(A11yMixin, App):
 
     def action_execute_sort(self) -> None:
         """Trigger sorting plan execution worker."""
+        if self._is_text_control_focused():
+            return
         if not self.plan or not self.app_session:
-            self.announce("No plan available to execute. Run [S] Scan first.")
+            self.announce("No plan available to execute. Run [Ctrl+S] Scan first.")
             return
 
         self.announce("Executing file moves according to plan...")
@@ -1909,10 +1962,12 @@ class AutoSorterTUI(A11yMixin, App):
     # --- Keyboard Action Hotkeys ---
 
     def action_toggle_lock(self) -> None:
-        """Toggle node lock state [L]."""
+        """Toggle node lock state [Ctrl+L]."""
+        if self._is_text_control_focused():
+            return
         node = self._get_active_node()
         if not node or not node.data or not node.data.get("is_file"):
-            self.announce("Select a file node to toggle lock [L].")
+            self.announce("Select a file node to toggle lock [Ctrl+L].")
             return
 
         data = node.data
@@ -1942,10 +1997,12 @@ class AutoSorterTUI(A11yMixin, App):
         self.rebuild_tree()
 
     def action_rename_node(self) -> None:
-        """Rename file or folder category node [R]."""
+        """Rename file or folder category node [Ctrl+R]."""
+        if self._is_text_control_focused():
+            return
         node = self._get_active_node()
         if not node or not node.data:
-            self.announce("Select a file or folder node to rename [R].")
+            self.announce("Select a file or folder node to rename [Ctrl+R].")
             return
 
         data = node.data
@@ -1992,7 +2049,9 @@ class AutoSorterTUI(A11yMixin, App):
             self.push_screen(modal, on_folder_renamed)
 
     def action_new_folder(self) -> None:
-        """Create a new folder category node [N]."""
+        """Create a new folder category node [Ctrl+N]."""
+        if self._is_text_control_focused():
+            return
 
         def on_created(folder_name: Optional[str]) -> None:
             if not folder_name:
@@ -2008,11 +2067,21 @@ class AutoSorterTUI(A11yMixin, App):
 
     def action_rate_positive(self) -> None:
         """Set positive ML rating feedback [+] for selected node."""
+        if self._is_text_control_focused():
+            return
         self._set_rating_for_selected("positive")
 
     def action_rate_negative(self) -> None:
         """Set negative ML rating feedback [-] for selected node."""
+        if self._is_text_control_focused():
+            return
         self._set_rating_for_selected("negative")
+
+    def action_quit(self) -> None:
+        """Quit application [Ctrl+Q]."""
+        if self._is_text_control_focused():
+            return
+        super().action_quit()
 
     def _set_rating_for_selected(self, rating: str) -> None:
         node = self._get_active_node()
