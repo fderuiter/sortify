@@ -100,6 +100,8 @@ def export_database_key(
     key_path = resolved_db.parent / f"{resolved_db.name}.key"
     session_crypto = SessionCrypto(key_path=key_path, db_path=resolved_db)
     raw_key = session_crypto.get_raw_key()
+    if raw_key is None:
+        raise RuntimeError(f"No encryption key found for database at {resolved_db}")
 
     if output_path:
         p = Path(output_path).resolve()
