@@ -247,13 +247,7 @@ def test_settings_modal_snapshot():
             modal = SettingsModal(app.settings)
             app.push_screen(modal)
             await pilot.pause(0.3)
-            # scroll any scrollable container inside the modal to the top
-            for w in modal.query("*"):
-                if getattr(w, "allow_vertical_scroll", False):
-                    w.scroll_home(animate=False)
-            modal.scroll_home(animate=False)
-            await pilot.pause(0.3)
-            await pilot.wait_for_scheduled_animations()
+            modal.query_one(".modal-box").scroll_home(animate=False)
             await pilot.pause(0.3)
             svg = app.export_screenshot()
             assert_svg_snapshot("settings_modal", svg)

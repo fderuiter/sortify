@@ -711,7 +711,7 @@ def test_state_diagram_spec_serialization():
 
 
 def test_data_flow_diagram_spec_serialization():
-    from app.ui.diagram_schema import (
+    from app.core.diagram_schema import (
         ARCHITECTURE_DATAFLOW_SPEC,
         DataFlowDiagramSpec,
         DataStoreNode,
@@ -780,7 +780,7 @@ def test_dfd_node_url_validation():
     import pytest
     from pydantic import ValidationError
 
-    from app.ui.diagram_schema import ExternalEntityNode, ProcessNode
+    from app.core.diagram_schema import ExternalEntityNode, ProcessNode
 
     # Valid URLs
     proc = ProcessNode(id="p1", label="Process", url="https://example.com/doc")
