@@ -231,14 +231,13 @@ Main command-line interface for Smart AutoSorter AI Pro.
 ```text
 usage: app/main.py [-h] [-q] [--no-color] [--demo] [--smoke-test]
                    [--update-snapshots] [--daemon] [--debug-layout] [--tui]
-                   [--interactive] [--gui]
-                   {sort,scan,config,daemon,undo,crypto,ledger,quarantine,cro}
-                   ...
+                   [--interactive]
+                   {sort,scan,config,daemon,undo,ledger,quarantine} ...
 
 Smart AutoSorter AI Pro
 
 positional arguments:
-  {sort,scan,config,daemon,undo,crypto,ledger,quarantine,cro}
+  {sort,scan,config,daemon,undo,ledger,quarantine}
                         Available subcommands
     sort                Run document sorting in headless batch processing mode
     scan                Run directory scanning and analysis without moving
@@ -247,14 +246,10 @@ positional arguments:
     daemon              Launch the persistent directory-watching daemon
     undo                Rollback sorting operations and manage history
                         sessions
-    crypto              Manage database encryption keys and cryptographic
-                        status
     ledger              Manage transaction ledger entries and automated
                         reconciliation
     quarantine          Manage compliance quarantine staging, inspection, and
                         release
-    cro                 CRO multi-study forensic ingestion and regulatory
-                        binder generation
 
 options:
   -h, --help            show this help message and exit
@@ -270,8 +265,6 @@ options:
                         mode
   --tui                 Launch full-screen Textual TUI interface
   --interactive         Launch full-screen interactive TUI mode
-  --gui                 Force launch graphical web interface (Deprecated:
-                        launches terminal interface)
 ```
 
 #### Non-Interactive / Headless Execution Guard
@@ -458,23 +451,6 @@ options:
   --interactive         Launch full-screen interactive TUI mode
 ```
 
-##### `crypto`
-```text
-usage: app/main.py crypto [-h] {info,rotate-key,export-key} ...
-
-positional arguments:
-  {info,rotate-key,export-key}
-                        Crypto subcommands
-    info                Report active encryption key location and storage
-                        backend
-    rotate-key          Safely re-encrypt database keys with new
-                        Fernet/SQLCipher key
-    export-key          Export active raw encryption key
-
-options:
-  -h, --help            show this help message and exit
-```
-
 ##### `ledger`
 ```text
 usage: app/main.py ledger [-h] {status,reconcile,purge} ...
@@ -509,19 +485,6 @@ positional arguments:
 
 options:
   -h, --help            show this help message and exit
-```
-
-##### `cro`
-```text
-usage: app/main.py cro [-h] {ingest,manifest} ...
-
-positional arguments:
-  {ingest,manifest}  CRO subcommands
-    ingest           Run CRO multi-study forensic ingestion pipeline
-    manifest         View or inspect regulatory chain-of-custody manifest
-
-options:
-  -h, --help         show this help message and exit
 ```
 
 ### `sandbox_cli.py`

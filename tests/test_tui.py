@@ -625,8 +625,7 @@ def test_tui_wcag_tooltips_and_attributes(temp_workspace):
 
 def test_tui_automated_audit_hooks(temp_workspace):
     """Verify automated audit hooks pass with zero WCAG 2.1 violations across all TUI components."""
-    from app.ui.a11y_runner import inspect_tui_component
-    from app.ui.tui import DirectorySelectModal
+    from app.ui.tui import DirectorySelectModal, inspect_tui_component
 
     settings = AppSettings()
     settings._settings_model.AI_CONSENT_GRANTED = True

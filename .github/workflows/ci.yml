@@ -125,7 +125,7 @@ jobs:
     - name: Terminal Interface Snapshot Validation
 
       run: |
-        uv run pytest tests/test_ui_snapshots.py tests/test_visual_snapshots.py
+        uv run pytest tests/test_visual_snapshots.py
 
     - name: Validate Agent Prompts Manifest
       if: matrix.os == 'ubuntu-latest'

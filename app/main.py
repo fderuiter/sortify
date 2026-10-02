@@ -989,11 +989,6 @@ def build_parser(prog: str | None = "app/main.py") -> argparse.ArgumentParser:
         action="store_true",
         help="Launch full-screen interactive TUI mode",
     )
-    parser.add_argument(
-        "--gui",
-        action="store_true",
-        help="Force launch graphical web interface (Deprecated: launches terminal interface)",
-    )
 
     subparsers = parser.add_subparsers(dest="subcommand", help="Available subcommands")
 
@@ -1200,10 +1195,8 @@ def main():
         "scan",
         "config",
         "daemon",
-        "crypto",
         "ledger",
         "quarantine",
-        "cro",
         "undo",
     )
     legacy_directory = None
@@ -1279,24 +1272,9 @@ def main():
             return
 
     # Explicit Headless Guard for non-interactive streams without subcommands
-    argv0 = sys.argv[0] if sys.argv and sys.argv[0] else ""
-    exe0 = sys.executable if sys.executable else ""
-    is_gui_exe = (
-        "smart-autosorter-gui" in os.path.basename(argv0).lower()
-        or "smart-autosorter-gui" in os.path.basename(exe0).lower()
-    )
-    is_interactive = False
-    if sys.stdin is not None:
-        try:
-            isatty_fn = getattr(sys.stdin, "isatty", None)
-            is_interactive = bool(isatty_fn and isatty_fn())
-        except Exception:
-            is_interactive = False
+    is_interactive = sys.stdin is not None and sys.stdin.isatty()
     is_explicit_ui = (
-        is_gui_exe
-        or getattr(args, "gui", False)
-        or bool(os.environ.get("FORCE_GUI"))
-        or getattr(args, "tui", False)
+        getattr(args, "tui", False)
         or getattr(args, "interactive", False)
         or getattr(args, "demo", False)
         or getattr(args, "daemon", False)
@@ -1345,12 +1323,6 @@ def main():
         run_demo(settings)
     else:
         from app.ui.tui import run_tui
-
-        if getattr(args, "gui", False) or os.environ.get("FORCE_GUI"):
-            print(
-                "Notice: Web GUI interface is deprecated. Launching native terminal TUI interface...",
-                file=sys.stderr,
-            )
 
         run_tui(settings, args.directory)
 

@@ -155,7 +155,7 @@ def test_clinical_strategy_leaf_metadata():
 
 def test_interactive_plan_splitter_defaults_non_dict_and_unclassified_leaves_to_slow_path():
     """Verify interactive plan splitter routes non-dict and unclassified leaves to Phase 2."""
-    from app.ui.app import AutoSorterApp
+    from app.core.session import split_plan_phases
 
     # Construct plan with deterministic rules, AI clustering leaves, and non-dict/unclassified leaves
     test_plan = {
@@ -185,7 +185,7 @@ def test_interactive_plan_splitter_defaults_non_dict_and_unclassified_leaves_to_
         },
     }
 
-    fast_plan, slow_plan = AutoSorterApp.split_plan_phases(test_plan)
+    fast_plan, slow_plan = split_plan_phases(test_plan)
 
     # Phase 1 Fast-Path assertions:
     assert "Invoices" in fast_plan
@@ -274,8 +274,8 @@ def test_end_to_end_phase_splitting_and_model_unloading(tmp_path):
 
 
 def test_plan_splitter_routes_jev_classifier_to_fast_path():
-    """Verify AutoSorterApp.split_plan_phases assigns jev_classifier routed files to Phase 1 fast-path."""
-    from app.ui.app import AutoSorterApp
+    """Verify split_plan_phases assigns jev_classifier routed files to Phase 1 fast-path."""
+    from app.core.session import split_plan_phases
 
     test_plan = {
         "Finance": {
@@ -302,7 +302,7 @@ def test_plan_splitter_routes_jev_classifier_to_fast_path():
         },
     }
 
-    fast_plan, slow_plan = AutoSorterApp.split_plan_phases(test_plan)
+    fast_plan, slow_plan = split_plan_phases(test_plan)
 
     assert "Finance" in fast_plan
     assert "jev_doc.pdf" in fast_plan["Finance"]

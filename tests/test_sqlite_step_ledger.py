@@ -1,11 +1,9 @@
-import asyncio
 import os
 import shutil
 from unittest.mock import patch
 
 import pytest
 
-from app.config import AppSettings
 from app.core.cache import CacheManager
 from app.core.db import Database
 from app.core.db_conn import get_db_connection
@@ -13,7 +11,6 @@ from app.core.db_worker import DBWorker
 from app.core.history import HistoryManager
 from app.core.mover import execute_moves
 from app.core.session import scan_abandoned_sessions_async
-from app.ui.app import AutoSorterApp
 
 
 @pytest.fixture
@@ -320,28 +317,5 @@ async def test_startup_recovery_triggers_uncommitted_batch_unwind(
     assert abandoned[0]["session_id"] == session_id
     assert abandoned[0]["has_step_ledger"] is True
     assert abandoned[0]["uncommitted_batch"] is True
-
-    # 2. Test UI check_abandoned_sessions triggers automatic recovery
-    settings = AppSettings()
-    settings.AI_CONSENT_GRANTED = False
-
-    app = AutoSorterApp(settings)
-
-    created_tasks = []
-    original_create_task = asyncio.create_task
-
-    def mock_create_task(coro, *args, **kwargs):
-        task = original_create_task(coro, *args, **kwargs)
-        created_tasks.append(task)
-        return task
-
-    with patch("asyncio.create_task", side_effect=mock_create_task):
-        app.check_abandoned_sessions()
-        if created_tasks:
-            await asyncio.gather(*created_tasks)
-
-    # File must be restored to original location
-    assert os.path.exists(src_file)
-    assert not os.path.exists(target_file)
 
     db_worker.stop()
