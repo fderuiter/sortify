@@ -11,6 +11,7 @@ import shutil
 import stat
 import sys
 import time
+import uuid
 
 from app.core.path_utils import is_junction_path
 
@@ -37,8 +38,128 @@ MAX_ATTEMPTS = 15 if IS_WINDOWS else 1
 RETRY_DELAY = 0.05 if IS_WINDOWS else 0.0
 
 
-def resilient_move(src, dst):
-    """Resiliently move a file or directory, retrying on transient locks/sharing violations on Windows."""
+def _is_same_path(p1: str, p2: str) -> bool:
+    if p1 is None or p2 is None:
+        return p1 == p2
+    try:
+        if os.path.lexists(p1) and os.path.lexists(p2):
+            return os.path.samefile(p1, p2)
+    except OSError:
+        pass
+    return os.path.normcase(os.path.abspath(p1)) == os.path.normcase(
+        os.path.abspath(p2)
+    )
+
+
+def _cross_volume_atomic_move(src: str, dst: str) -> None:
+    """Perform atomic non-clobber cross-volume file transfer with transient staging and target verification."""
+    dst_dir = os.path.dirname(dst)
+    if dst_dir and not os.path.exists(dst_dir):
+        os.makedirs(dst_dir, exist_ok=True)
+
+    if os.path.lexists(dst):
+        if _is_same_path(src, dst):
+            return
+        raise FileExistsError(f"Target path already exists: {dst}")
+
+    stage_path = os.path.join(dst_dir, f".tmp_stage_{uuid.uuid4().hex}")
+
+    try:
+        if os.path.isdir(src) and not os.path.islink(src):
+            shutil.copytree(src, stage_path)
+        else:
+            shutil.copy2(src, stage_path)
+
+        if os.path.lexists(dst):
+            raise FileExistsError(f"Target path already exists: {dst}")
+
+        if IS_WINDOWS:
+            os.rename(stage_path, dst)
+        else:
+            if os.path.isdir(stage_path) and not os.path.islink(stage_path):
+                os.rename(stage_path, dst)
+            else:
+                try:
+                    os.link(stage_path, dst)
+                    resilient_remove(stage_path)
+                except FileExistsError:
+                    raise
+                except OSError:
+                    if os.path.lexists(dst):
+                        raise FileExistsError(f"Target path already exists: {dst}")
+                    os.rename(stage_path, dst)
+
+        # Verify target availability and integrity before finalizing source file deletion
+        if not os.path.lexists(dst):
+            raise RuntimeError(f"Target verification failed: {dst} does not exist after move.")
+
+        if not os.path.isdir(src) and os.path.lexists(src):
+            src_sz = os.path.getsize(src)
+            dst_sz = os.path.getsize(dst)
+            if src_sz != dst_sz:
+                raise RuntimeError(f"Target verification failed: Size mismatch ({dst_sz} vs {src_sz}).")
+
+        # Target verified! Now safely remove source file/directory.
+        resilient_remove(src)
+
+    except Exception:
+        # Clean up transient staging file upon failure
+        if os.path.lexists(stage_path):
+            try:
+                resilient_remove(stage_path)
+            except Exception:
+                pass
+        raise
+
+
+def atomic_move_non_clobber(src: str, dst: str) -> None:
+    """Atomically move src to dst without modifying or replacing target files if dst exists."""
+    if _is_same_path(src, dst):
+        return
+
+    if os.path.lexists(dst):
+        raise FileExistsError(f"Target path already exists: {dst}")
+
+    dst_dir = os.path.dirname(dst)
+    if dst_dir and not os.path.exists(dst_dir):
+        os.makedirs(dst_dir, exist_ok=True)
+
+    if IS_WINDOWS:
+        try:
+            os.rename(src, dst)
+            return
+        except FileExistsError:
+            raise
+        except OSError:
+            _cross_volume_atomic_move(src, dst)
+            return
+    else:
+        if os.path.isdir(src) and not os.path.islink(src):
+            try:
+                os.rename(src, dst)
+                return
+            except FileExistsError:
+                raise
+            except OSError:
+                _cross_volume_atomic_move(src, dst)
+                return
+        else:
+            try:
+                os.link(src, dst)
+                resilient_remove(src)
+                return
+            except FileExistsError:
+                raise
+            except OSError:
+                _cross_volume_atomic_move(src, dst)
+                return
+
+
+def resilient_move(src: str, dst: str) -> str:
+    """Resiliently move a file or directory using atomic non-clobber moves with dynamic target retry.
+
+    Returns the actual target path where the file was moved.
+    """
     import unittest.mock
 
     # If shutil.move is mocked/patched by pytest/unittest, call it directly to preserve test assertions/side_effects
@@ -49,40 +170,49 @@ def resilient_move(src, dst):
         is_mocked = True
     elif not hasattr(shutil.move, "__code__"):
         is_mocked = True
-    elif _ORIGINAL_SHUTIL_MOVE is not None:
-        try:
-            if shutil.move.__code__ != _ORIGINAL_SHUTIL_MOVE.__code__:
-                is_mocked = True
-        except Exception:
-            is_mocked = True
+    if _is_same_path(src, dst):
+        return dst
 
-    for attempt in range(MAX_ATTEMPTS):
+    current_dst = dst
+    dest_dir = os.path.dirname(dst) or "."
+    orig_filename = os.path.basename(dst)
+
+    from app.core.mover import get_safe_path
+
+    max_attempts = MAX_ATTEMPTS if IS_WINDOWS else 15
+
+    for attempt in range(max_attempts):
         try:
             if is_mocked:
-                shutil.move(src, dst)
-                return
+                shutil.move(src, current_dst)
+                return current_dst
 
-            if os.path.lexists(src):
-                try:
-                    os.replace(src, dst)
-                    return
-                except OSError:
-                    shutil.move(src, dst)
-                    return
-            else:
-                shutil.move(src, dst)
-                return
+            if not os.path.lexists(src):
+                raise FileNotFoundError(f"Source file does not exist: {src}")
+
+            atomic_move_non_clobber(src, current_dst)
+            return current_dst
+
+        except FileExistsError as fe:
+            current_dst = os.path.normpath(get_safe_path(dest_dir, orig_filename, src))
+            if attempt == max_attempts - 1:
+                logging.warning(
+                    f"Target collision retry limit reached ({max_attempts}) moving {src} to {current_dst}: {fe}"
+                )
+                raise FileExistsError(f"Target collision retry limit reached: {fe}")
+
         except (OSError, PermissionError) as e:
-            if attempt == MAX_ATTEMPTS - 1:
-                logging.error(
-                    f"Failed to move {src} to {dst} after {MAX_ATTEMPTS} attempts: {e}"
+            if attempt == max_attempts - 1:
+                logging.warning(
+                    f"Unrecoverable move conflict moving {src} to {current_dst} after {max_attempts} attempts: {e}"
                 )
                 raise e
 
-            # Force a garbage collection cycle immediately before every retry attempt
             gc.collect()
             if RETRY_DELAY > 0:
                 time.sleep(RETRY_DELAY)
+
+    return current_dst
 
 
 def resilient_remove(path):

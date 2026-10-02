@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "358f417f58a33971239db0b1ce4d2e5b94c47cab2f6bb0e86e8dddc9f34508cb"
+    "checksum": "79247a26b2254c3eb852e29d30cc8822106b2fc9ba75de417f8e8e84b779b60c"
   },
   "cli": {
     "app/main.py": [
@@ -9076,6 +9076,24 @@
         {
           "async": false,
           "decorators": [],
+          "name": "atomic_move_non_clobber",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "src"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "dst"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
           "name": "resilient_file_hash",
           "parameters": [
             {
@@ -9107,17 +9125,17 @@
           "name": "resilient_move",
           "parameters": [
             {
-              "annotation": null,
+              "annotation": "str",
               "default": null,
               "name": "src"
             },
             {
-              "annotation": null,
+              "annotation": "str",
               "default": null,
               "name": "dst"
             }
           ],
-          "returns": null
+          "returns": "str"
         },
         {
           "async": false,
