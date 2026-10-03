@@ -19,8 +19,10 @@ sandbox/*.db*
 autosorter.db
 tests/corpus/
 
-# Auto-generated documentation
+# Build caches and diagram caches
 quality_guardrails_cache.db
+.build_cache.json
+**/.build_cache.json
 
 # Offline bundles
 offline_bundle/*
@@ -29,4 +31,5 @@ offline_bundle.zip
 
 LITE_BUILD
 smoke_test_error.txt
+pytest_failures.txt
 

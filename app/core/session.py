@@ -304,7 +304,13 @@ class AppSession:
         self.history_manager.rollback(session_id, ignore_missing=ignore_missing)
 
     def execute_moves(
-        self, plan, resume=False, cancel_check=None, chunk_size=None, progress_callback=None, **kwargs
+        self,
+        plan,
+        resume=False,
+        cancel_check=None,
+        chunk_size=None,
+        progress_callback=None,
+        **kwargs,
     ):
         """Execute move operations using asynchronous chunked worker pipeline.
 

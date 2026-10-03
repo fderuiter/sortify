@@ -266,7 +266,7 @@ class VerificationEngine:
     ) -> list:
         """Get a flat list of moves from the plan."""
         base_dir = os.path.normpath(base_dir)
-        moves = []
+        moves: list[Any] = []
         if hasattr(plan, "plan") and isinstance(plan.plan, dict):
             plan = plan.plan
 
@@ -517,7 +517,7 @@ class VirtualFilesystemTracker:
         collisions = []
         base_dir_abs = os.path.abspath(base_dir) if base_dir else ""
 
-        dest_to_srcs = {}
+        dest_to_srcs: dict[Any, Any] = {}
         for rel_path, src, dst in moves_list:
             abs_src = os.path.abspath(src)
             abs_dst = os.path.abspath(dst)
@@ -610,7 +610,7 @@ class VirtualFilesystemTracker:
                 continue
 
             path = start_path
-            current_chain = []
+            current_chain: list[Any] = []
             chain_set = set()
 
             while path in move_map:

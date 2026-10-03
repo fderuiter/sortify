@@ -327,29 +327,43 @@ def test_resolve_safe_target_dir_validation_and_containment(caplog):
     os.makedirs(base_workspace, exist_ok=True)
 
     # 1. Valid relative subfolders
-    valid_res = service.resolve_safe_target_dir(base_workspace, "Approved_Archive", default_subfolder="Default_Folder")
+    valid_res = service.resolve_safe_target_dir(
+        base_workspace, "Approved_Archive", default_subfolder="Default_Folder"
+    )
     assert valid_res == os.path.join(base_workspace, "Approved_Archive")
 
-    valid_nested = service.resolve_safe_target_dir(base_workspace, "sub/folder", default_subfolder="Default_Folder")
+    valid_nested = service.resolve_safe_target_dir(
+        base_workspace, "sub/folder", default_subfolder="Default_Folder"
+    )
     assert valid_nested == os.path.join(base_workspace, "sub", "folder")
 
     # 2. None or empty target_subfolder
-    none_res = service.resolve_safe_target_dir(base_workspace, None, default_subfolder="Default_Folder")
+    none_res = service.resolve_safe_target_dir(
+        base_workspace, None, default_subfolder="Default_Folder"
+    )
     assert none_res == os.path.join(base_workspace, "Default_Folder")
 
-    empty_res = service.resolve_safe_target_dir(base_workspace, "", default_subfolder="Default_Folder")
+    empty_res = service.resolve_safe_target_dir(
+        base_workspace, "", default_subfolder="Default_Folder"
+    )
     assert empty_res == os.path.join(base_workspace, "Default_Folder")
 
     # 3. Path traversal target_subfolder (e.g. "../../etc")
-    traversal_res = service.resolve_safe_target_dir(base_workspace, "../../etc", default_subfolder="Default_Folder")
+    traversal_res = service.resolve_safe_target_dir(
+        base_workspace, "../../etc", default_subfolder="Default_Folder"
+    )
     assert traversal_res == os.path.join(base_workspace, "Default_Folder")
     assert "Security warning" in caplog.text
 
     # 4. Absolute path target_subfolder
-    abs_res = service.resolve_safe_target_dir(base_workspace, "/etc/passwd", default_subfolder="Default_Folder")
+    abs_res = service.resolve_safe_target_dir(
+        base_workspace, "/etc/passwd", default_subfolder="Default_Folder"
+    )
     assert abs_res == os.path.join(base_workspace, "Default_Folder")
 
-    abs_win_res = service.resolve_safe_target_dir(base_workspace, "C:\\Windows\\System32", default_subfolder="Default_Folder")
+    abs_win_res = service.resolve_safe_target_dir(
+        base_workspace, "C:\\Windows\\System32", default_subfolder="Default_Folder"
+    )
     assert abs_win_res == os.path.join(base_workspace, "Default_Folder")
 
 
@@ -372,7 +386,9 @@ def test_quarantine_job_sanitizes_traversal_target_path():
     with open(file_path, "w", encoding="utf-8") as f:
         f.write("This document contains malicious keywords")
 
-    staged_info = service.stage_incoming_file(source_path=file_path, base_dir=sample_dir)
+    staged_info = service.stage_incoming_file(
+        source_path=file_path, base_dir=sample_dir
+    )
     result = service.process_quarantine_job(staged_info["job_id"])
 
     assert result["status"] == "ARCHIVED"
@@ -381,5 +397,9 @@ def test_quarantine_job_sanitizes_traversal_target_path():
     assert os.path.exists(expected_archived_file)
 
     # File must NOT exist outside sample_dir
-    escaped_file = os.path.join(os.path.dirname(os.path.dirname(sample_dir)), "system_files", "malicious_doc.txt")
+    escaped_file = os.path.join(
+        os.path.dirname(os.path.dirname(sample_dir)),
+        "system_files",
+        "malicious_doc.txt",
+    )
     assert not os.path.exists(escaped_file)

@@ -533,4 +533,3 @@ def test_bootstrap_binaries_pyinstaller_alternate_candidate_locations(tmp_path):
         res = bootstrap_binaries(force_download=True)
         assert res is True
         mock_inject.assert_called_once()
-

@@ -468,7 +468,12 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
                     meipass / "sqlcipher3" / rel_base,
                     meipass / "_internal" / rel_base,
                     meipass / rel_base,
-                    meipass / "_internal" / "app" / "binaries" / platform_key / rel_path_str,
+                    meipass
+                    / "_internal"
+                    / "app"
+                    / "binaries"
+                    / platform_key
+                    / rel_path_str,
                     meipass / "app" / "binaries" / platform_key / rel_path_str,
                 ]
                 found = False

@@ -377,9 +377,7 @@ def test_tui_wizard_modal_finish_persists_settings(temp_workspace):
     """Verify wizard modal allows toggling consent, persists settings, and completes onboarding."""
 
     async def _test():
-        settings = AppSettings(
-            filepath=os.path.join(temp_workspace, "settings.json")
-        )
+        settings = AppSettings(filepath=os.path.join(temp_workspace, "settings.json"))
         settings._settings_model.AI_CONSENT_GRANTED = None
         app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
 

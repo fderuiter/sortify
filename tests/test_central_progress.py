@@ -220,7 +220,13 @@ def test_emit_progress_string_stage_and_kwargs():
     assert received[-1].stage == "StringStage"
 
     # unit_count and unit_type via kwargs when positional parameters are None
-    emit_progress(cb, 0.5, unit_count=None, unit_type=None, kwargs={"unit_count": 42, "unit_type": "items"})
+    emit_progress(
+        cb,
+        0.5,
+        unit_count=None,
+        unit_type=None,
+        kwargs={"unit_count": 42, "unit_type": "items"},
+    )
     assert received[-1].unit_count == 42
     assert received[-1].unit_type == "items"
 
@@ -280,7 +286,11 @@ def test_emit_progress_generic_fallback_paths(monkeypatch):
     import inspect
 
     # Force inspect.signature to raise ValueError
-    monkeypatch.setattr(inspect, "signature", MagicMock(side_effect=ValueError("Signature inspect not supported")))
+    monkeypatch.setattr(
+        inspect,
+        "signature",
+        MagicMock(side_effect=ValueError("Signature inspect not supported")),
+    )
 
     # 1. Callback accepting ProgressUpdate directly in fallback
     recv_fallback_update = []
@@ -354,4 +364,3 @@ def test_emit_progress_generic_fallback_paths(monkeypatch):
         raise ValueError("Outer error in fallback")
 
     emit_progress(cb_outer_exception, 1.0)
-
