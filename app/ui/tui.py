@@ -59,13 +59,14 @@ class A11yMixin:
 
     def join_speech_thread(self, timeout: float = 1.0) -> None:
         """Wait for active speech synthesis thread to finish."""
-        if self._speech_thread is not None:
-            if self._speech_thread.is_alive():
+        speech_thread = self._speech_thread
+        if speech_thread is not None:
+            if speech_thread.is_alive():
                 try:
-                    self._speech_thread.join(timeout=timeout)
+                    speech_thread.join(timeout=timeout)
                 except Exception:
                     pass
-            if not self._speech_thread.is_alive():
+            if not speech_thread.is_alive():
                 self._speech_thread = None
         if (
             hasattr(self, "app")
@@ -133,7 +134,8 @@ class A11yMixin:
             speech_bin = self._get_speech_binary()
 
             if speech_bin:
-                if self._speech_thread is None or not self._speech_thread.is_alive():
+                speech_thread = self._speech_thread
+                if speech_thread is None or not speech_thread.is_alive():
                     try:
 
                         def _speak():

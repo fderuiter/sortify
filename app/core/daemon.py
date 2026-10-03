@@ -697,6 +697,12 @@ class ContinuousWatchdogDaemon:
             return self._cancel_event.is_set() or not self._is_running
 
         try:
+            if getattr(self.settings, "_save_timer", None) is not None:
+                try:
+                    self.settings._save_timer.cancel()
+                except Exception:
+                    pass
+                self.settings._save()
             self.settings.load()
         except Exception:
             pass
@@ -1083,6 +1089,12 @@ class ContinuousWatchdogDaemon:
 
         # Dynamic reload of settings
         try:
+            if getattr(self.settings, "_save_timer", None) is not None:
+                try:
+                    self.settings._save_timer.cancel()
+                except Exception:
+                    pass
+                self.settings._save()
             self.settings.load()
         except Exception as e:
             logger.error(f"Error loading settings dynamically: {e}")
