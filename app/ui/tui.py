@@ -1262,6 +1262,145 @@ class SessionRecoveryModal(A11yMixin, ModalScreen[Optional[str]]):
         self.dismiss(None)
 
 
+class ShortcutCheatSheetModal(A11yMixin, ModalScreen[None]):
+    """Modal dialog displaying categorized TUI keyboard shortcuts cheat sheet."""
+
+    BINDINGS = [
+        Binding("escape", "close", "Close dialog", show=True),
+        Binding("question_mark", "close", "Close dialog", show=False),
+        Binding("f1", "close", "Close dialog", show=False),
+    ]
+
+    CSS = """
+    ShortcutCheatSheetModal {
+        align: center middle;
+        background: rgba(0, 0, 0, 0.6);
+    }
+    .modal-box {
+        padding: 1 2;
+        background: $panel;
+        border: thick $primary;
+        width: 90%;
+        max-width: 80;
+        min-width: 30;
+        height: auto;
+        max-height: 90%;
+        overflow-y: auto;
+    }
+    .narrow .modal-box {
+        padding: 0 1;
+        width: 95%;
+    }
+    .modal-title {
+        text-style: bold;
+        color: $accent;
+        margin-bottom: 1;
+    }
+    .section-title {
+        text-style: bold;
+        color: $primary-lighten-2;
+        margin-top: 1;
+        margin-bottom: 0;
+    }
+    .shortcut-row {
+        margin-bottom: 0;
+    }
+    .button-row {
+        margin-top: 1;
+        height: 3;
+        align: right middle;
+    }
+    Button:focus {
+        border: heavy $accent;
+        text-style: bold;
+    }
+    """
+
+    def compose(self) -> ComposeResult:
+        """Compose shortcut cheat sheet modal children."""
+        with Vertical(classes="modal-box"):
+            yield Label(
+                "Keyboard Shortcuts Cheat Sheet [? / F1]", classes="modal-title"
+            )
+
+            yield Label("Navigation & Tree Controls:", classes="section-title")
+            yield Label(
+                "  j / k       - Move selection down / up (Vim motions)",
+                classes="shortcut-row",
+            )
+            yield Label(
+                "  h / l       - Collapse / expand folder or go to parent/child",
+                classes="shortcut-row",
+            )
+            yield Label(
+                "  Ctrl+L      - Toggle file lock state", classes="shortcut-row"
+            )
+            yield Label("  Ctrl+R      - Rename selected node", classes="shortcut-row")
+            yield Label(
+                "  Ctrl+N      - Create new target folder", classes="shortcut-row"
+            )
+            yield Label(
+                "  + / -       - Rate classification quality (+ / -)",
+                classes="shortcut-row",
+            )
+
+            yield Label("Application Operations:", classes="section-title")
+            yield Label(
+                "  Ctrl+S      - Scan directory and generate plan",
+                classes="shortcut-row",
+            )
+            yield Label("  Ctrl+E/Enter- Execute sorting plan", classes="shortcut-row")
+            yield Label(
+                "  Ctrl+B      - Browse / select target directory",
+                classes="shortcut-row",
+            )
+            yield Label(
+                "  Ctrl+O      - Open application settings", classes="shortcut-row"
+            )
+            yield Label(
+                "  Ctrl+W      - Open model onboarding wizard", classes="shortcut-row"
+            )
+            yield Label(
+                "  Ctrl+C      - Open CRO multi-study forensic ingestion",
+                classes="shortcut-row",
+            )
+
+            yield Label("Help & System:", classes="section-title")
+            yield Label(
+                "  ? / F1      - Open shortcut cheat sheet", classes="shortcut-row"
+            )
+            yield Label("  Escape      - Close modal dialog", classes="shortcut-row")
+            yield Label("  Ctrl+Q      - Quit application", classes="shortcut-row")
+
+            with Horizontal(classes="button-row"):
+                btn_close = Button("Close", id="btn-close", variant="primary")
+                btn_close.tooltip = "Close keyboard shortcut cheat sheet modal dialog"
+                yield btn_close
+
+    def _update_layout(self, width: int) -> None:
+        """Update modal layout based on viewport width breakpoint."""
+        if width < 80:
+            self.add_class("narrow")
+        else:
+            self.remove_class("narrow")
+
+    def on_resize(self, event: events.Resize) -> None:
+        """Handle modal viewport resize event."""
+        self._update_layout(event.size.width)
+
+    def on_mount(self) -> None:
+        """Focus close button on mount and emit screen reader announcement."""
+        self._update_layout(self.size.width)
+        self.query_one("#btn-close", Button).focus()
+        self.announce("Opened keyboard shortcut cheat sheet dialog.")
+
+    @on(Button.Pressed, "#btn-close")
+    def action_close(self) -> None:
+        """Close shortcut cheat sheet modal."""
+        self.announce("Closed keyboard shortcut cheat sheet dialog.")
+        self.dismiss(None)
+
+
 class VimTree(Tree):
     """Tree control with native vim motion navigation (h, j, k, l)."""
 
@@ -1317,6 +1456,8 @@ class AutoSorterTUI(A11yMixin, App):
         Binding("ctrl+e", "execute_sort", "Execute", show=True),
         Binding("enter", "execute_sort", "Execute", show=False),
         Binding("ctrl+b", "select_dir", "Browse Dir", show=True),
+        Binding("question_mark", "open_cheat_sheet", "Help (?)", show=True),
+        Binding("f1", "open_cheat_sheet", "Help (F1)", show=False),
         Binding("ctrl+q", "quit", "Quit", show=True),
     ]
 
@@ -1422,7 +1563,8 @@ class AutoSorterTUI(A11yMixin, App):
                 tui_log.tooltip = "Live operation execution log output feed"
                 yield tui_log
         sb = Static(
-            "Ready. Press [Ctrl+S] to Scan or [Ctrl+B] to select Directory.", id="status-bar"
+            "Ready. Press [Ctrl+S] to Scan or [Ctrl+B] to select Directory.",
+            id="status-bar",
         )
         sb.tooltip = "Application status and screen reader announcement bar"
         yield sb
@@ -1699,6 +1841,12 @@ class AutoSorterTUI(A11yMixin, App):
         if self._is_text_control_focused():
             return
         self.push_screen(CROForensicModal(self.settings, base_dir=self.base_dir))
+
+    def action_open_cheat_sheet(self) -> None:
+        """Open keyboard shortcut cheat sheet modal screen."""
+        if self._is_text_control_focused():
+            return
+        self.push_screen(ShortcutCheatSheetModal())
 
     def action_scan_directory(self) -> None:
         """Trigger directory scanning background worker."""
