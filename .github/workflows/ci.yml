@@ -294,6 +294,7 @@ jobs:
     - name: Heavy ML and Integration Tests
       shell: bash
       run: |
+        uv sync --all-groups --extra ml
         if ! uv run pytest -m "slow" -n auto --cov --cov-report=term tests/; then
           if [ -f pytest_failures.txt ]; then
             echo "=== PYTEST FAILURES ==="
