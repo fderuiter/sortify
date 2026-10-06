@@ -569,14 +569,16 @@ def find_all_history_sessions() -> list:
                     sid, ts, base_dir, status = row
                     if sid not in seen_sids:
                         seen_sids.add(sid)
-                        all_sessions.append({
-                            "session_id": sid,
-                            "timestamp": ts,
-                            "base_dir": base_dir,
-                            "status": status,
-                            "history_db_path": str(db_path),
-                            "session_dir": str(db_path.parent),
-                        })
+                        all_sessions.append(
+                            {
+                                "session_id": sid,
+                                "timestamp": ts,
+                                "base_dir": base_dir,
+                                "status": status,
+                                "history_db_path": str(db_path),
+                                "session_dir": str(db_path.parent),
+                            }
+                        )
         except Exception:
             pass
 

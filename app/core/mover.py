@@ -566,6 +566,7 @@ def _execute_moves_recursive(
                         )
                     if hasattr(db, "update_quarantine_status"):
                         import time
+
                         db.update_quarantine_status(
                             job_id=job_id,
                             status="QUARANTINED",
@@ -585,7 +586,9 @@ def _execute_moves_recursive(
                             },
                         )
                 except Exception as audit_err:
-                    logging.warning(f"Failed to record mover compliance audit entry: {audit_err}")
+                    logging.warning(
+                        f"Failed to record mover compliance audit entry: {audit_err}"
+                    )
             doc = (
                 db.get_document(base_dir, source_rel_path)
                 if hasattr(db, "get_document")
@@ -1186,6 +1189,7 @@ def _process_move_item(
                     )
                 if hasattr(db, "update_quarantine_status"):
                     import time
+
                     db.update_quarantine_status(
                         job_id=job_id,
                         status="QUARANTINED",
@@ -1205,7 +1209,9 @@ def _process_move_item(
                         },
                     )
             except Exception as audit_err:
-                logging.warning(f"Failed to record mover compliance audit entry: {audit_err}")
+                logging.warning(
+                    f"Failed to record mover compliance audit entry: {audit_err}"
+                )
 
     doc = None
     if db and hasattr(db, "get_document"):
@@ -1543,7 +1549,9 @@ class AsyncMoveEngine:
         """
         base_dir = os.path.normpath(base_dir)
 
-        effective_progress_cb = progress_callback or getattr(runtime_settings, "progress_callback", None)
+        effective_progress_cb = progress_callback or getattr(
+            runtime_settings, "progress_callback", None
+        )
 
         integrity_result = VerificationEngine.verify_plan_integrity(base_dir, plan)
         if (
@@ -1638,7 +1646,7 @@ class AsyncMoveEngine:
             )
 
         db_lock = threading.Lock()
-        db_updates_batch = []
+        db_updates_batch: list[Any] = []
         step_counter = [1]
         has_flushed_db = False
         summary = {"deleted_folders": 0, "protected_folders": 0, "cancelled": False}
@@ -1716,8 +1724,12 @@ class AsyncMoveEngine:
                             db_updates_batch.clear()
                             has_flushed_db = True
 
-                    processed_count = min((chunk_idx + 1) * effective_chunk_size, total_items)
-                    progress_ratio = (chunk_idx + 1) / total_chunks if total_chunks > 0 else 1.0
+                    processed_count = min(
+                        (chunk_idx + 1) * effective_chunk_size, total_items
+                    )
+                    progress_ratio = (
+                        (chunk_idx + 1) / total_chunks if total_chunks > 0 else 1.0
+                    )
                     emit_progress(
                         effective_progress_cb,
                         progress_ratio,
@@ -1980,4 +1992,3 @@ async def execute_moves_async(
 
 
 FileMover = AsyncMoveEngine
-

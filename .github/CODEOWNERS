@@ -1,5 +1,14 @@
 * @fderuiter
-/app/config.py @config-specialist
-/app/core/ @database-specialist
-/app/ui/ @ui-specialist
-/tests/snapshots/api_snapshot.json @api-owner
+
+# Sensitive paths requiring intentional code owner review
+.github/ @fderuiter
+SECURITY.md @fderuiter
+PRIVACY.md @fderuiter
+app/config.py @fderuiter
+app/core/crypto.py @fderuiter
+app/core/mover.py @fderuiter
+app/core/history.py @fderuiter
+app/core/session.py @fderuiter
+app/core/quarantine_interceptor.py @fderuiter
+tests/snapshots/api_snapshot.json @fderuiter
+tests/snapshots/tui_svg/ @fderuiter

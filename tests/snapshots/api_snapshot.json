@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "83fd5e766aa769566eb92f0790c15d7cb8278c5ce6401e690a24f5ddefa548cb"
+    "checksum": "23f91576de55752a9d8bcbe2f9a3df3d96618a6f7aa7face4707dcada028901a"
   },
   "cli": {
     "app/main.py": [
@@ -2971,7 +2971,7 @@
                   "name": "crypto"
                 },
                 {
-                  "annotation": "Path | str",
+                  "annotation": "Path | str | None",
                   "default": "None",
                   "name": "db_path"
                 }
@@ -3056,7 +3056,7 @@
                   "name": "crypto"
                 },
                 {
-                  "annotation": "Path | str",
+                  "annotation": "Path | str | None",
                   "default": "None",
                   "name": "db_path"
                 }
@@ -3328,7 +3328,7 @@
                   "name": "self"
                 }
               ],
-              "returns": "str"
+              "returns": "str | None"
             },
             {
               "async": false,

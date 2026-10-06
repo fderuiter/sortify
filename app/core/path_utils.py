@@ -755,4 +755,3 @@ def check_local_models_exist() -> bool:
         return True
 
     return False
-

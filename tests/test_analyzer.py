@@ -545,8 +545,16 @@ def test_prefetch_corrupt_payload_handling(mocker):
     db.set_user_verified_target(base_dir, "hash_c", "FolderCorrupt")
 
     # Mock decrypt_text to raise CryptoError on corrupt input
-    mocker.patch.object(db.crypto, "decrypt_text", side_effect=Exception("Corrupt text decryption failed"))
-    mocker.patch.object(db.crypto, "decrypt_and_parse_vector", side_effect=Exception("Corrupt vector parse failed"))
+    mocker.patch.object(
+        db.crypto,
+        "decrypt_text",
+        side_effect=Exception("Corrupt text decryption failed"),
+    )
+    mocker.patch.object(
+        db.crypto,
+        "decrypt_and_parse_vector",
+        side_effect=Exception("Corrupt vector parse failed"),
+    )
 
     batch = pre_fetch_historical_corpus(
         db,
@@ -607,8 +615,16 @@ def test_prefetch_semantic_ranking_order(mocker):
     examples = batch.examples if hasattr(batch, "examples") else batch["examples"]
     assert len(examples) == 50
     # First returned candidate must be file_55.txt (highest similarity 1.0), second file_10.txt (similarity 0.8)
-    fp_0 = examples[0].get("filepath") if isinstance(examples[0], dict) else examples[0].filepath
-    fp_1 = examples[1].get("filepath") if isinstance(examples[1], dict) else examples[1].filepath
+    fp_0 = (
+        examples[0].get("filepath")
+        if isinstance(examples[0], dict)
+        else examples[0].filepath
+    )
+    fp_1 = (
+        examples[1].get("filepath")
+        if isinstance(examples[1], dict)
+        else examples[1].filepath
+    )
     assert fp_0 == "file_55.txt"
     assert fp_1 == "file_10.txt"
 
@@ -669,13 +685,19 @@ def test_generate_sorting_plan_jev_rule_extensions():
     plan_dict = plan.plan if hasattr(plan, "plan") else plan
 
     target_category = "Technical & Data Assets"
-    assert target_category in plan_dict, f"Expected {target_category} in plan, got: {list(plan_dict.keys())}"
+    assert target_category in plan_dict, (
+        f"Expected {target_category} in plan, got: {list(plan_dict.keys())}"
+    )
 
     tech_folder = plan_dict[target_category]
     for filename in corpus.keys():
         assert filename in tech_folder, f"Expected {filename} in {target_category}"
         file_info = tech_folder[filename]
-        assert file_info.get("routed_by") in ("jev", "jev_classifier") or file_info.get("status") is None or file_info.get("status") != "UNSUPPORTED"
+        assert (
+            file_info.get("routed_by") in ("jev", "jev_classifier")
+            or file_info.get("status") is None
+            or file_info.get("status") != "UNSUPPORTED"
+        )
 
 
 def test_unclassified_non_extractor_files_route_to_unsupported(mocker):
@@ -693,8 +715,11 @@ def test_unclassified_non_extractor_files_route_to_unsupported(mocker):
     analyzer.partial_fit(base_dir, corpus)
 
     from app.core.analyzer_strategies import clustering_registry
+
     strategy = clustering_registry.get_strategy("default")
-    mock_generate_plan = mocker.patch.object(strategy, "generate_plan", return_value=({}, 0.0))
+    mock_generate_plan = mocker.patch.object(
+        strategy, "generate_plan", return_value=({}, 0.0)
+    )
 
     plan = analyzer.generate_sorting_plan(base_dir)
     plan_dict = plan.plan if hasattr(plan, "plan") else plan
@@ -705,5 +730,3 @@ def test_unclassified_non_extractor_files_route_to_unsupported(mocker):
     if mock_generate_plan.called:
         args = mock_generate_plan.call_args[0]
         assert "foo.py" not in args[0]
-
-

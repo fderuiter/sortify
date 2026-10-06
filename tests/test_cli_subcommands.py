@@ -455,7 +455,9 @@ def test_undo_subcommand_list_and_rollback(tmp_path, monkeypatch):
     assert "Session ID:" in stdout_list_txt or "Session ID:" in stderr_list_txt
 
     # Test undo --session-id <UUID> --json
-    code_undo, stdout_undo, stderr_undo = run_cli(["undo", "--session-id", session_id, "--json"])
+    code_undo, stdout_undo, stderr_undo = run_cli(
+        ["undo", "--session-id", session_id, "--json"]
+    )
     assert code_undo == 0, f"Undo failed: {stderr_undo}"
     data_undo = json.loads(stdout_undo)
     assert data_undo["status"] == "success"

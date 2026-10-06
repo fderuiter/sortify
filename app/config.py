@@ -274,6 +274,8 @@ class Settings(BaseSettings):
                 raise ValueError("Policy expression must be a non-empty string.")
 
             target_path = rule.get("target_path")
+            if target_path is None or not isinstance(target_path, str):
+                raise ValueError("Policy target_path must be a string.")
             validate_target_path(target_path, keyword=expression)
 
             if "priority" not in rule or not isinstance(rule["priority"], int):
@@ -375,7 +377,7 @@ class Settings(BaseSettings):
 class AppSettings:
     """A registry for application settings that provides persistence and validation."""
 
-    _class_observers = defaultdict(list)
+    _class_observers: dict[Any, list[Any]] = defaultdict(list)
     _class_observer_lock = threading.Lock()
 
     def __init__(self, filepath=None):
@@ -523,7 +525,9 @@ class AppSettings:
                             proxy_val, crypto=crypto
                         )
                     except Exception as e:
-                        logging.error(f"Failed to encrypt proxy string during save: {e}")
+                        logging.error(
+                            f"Failed to encrypt proxy string during save: {e}"
+                        )
 
             parent_dir = os.path.dirname(self._filepath)
             if parent_dir and not os.path.exists(parent_dir):

@@ -28,7 +28,9 @@ from app.core.exceptions import CryptoError
 
 
 def _same_path(p1, p2) -> bool:
-    return os.path.normcase(os.path.abspath(str(p1))) == os.path.normcase(os.path.abspath(str(p2)))
+    return os.path.normcase(os.path.abspath(str(p1))) == os.path.normcase(
+        os.path.abspath(str(p2))
+    )
 
 
 def test_key_generation_keyring(tmp_path):
@@ -633,8 +635,7 @@ def test_get_fallback_keys_dir_windows_and_posix(monkeypatch):
     monkeypatch.setattr("app.core.crypto.Path", pathlib.PurePath)
     monkeypatch.setenv("HOME", "/fake/home")
     assert (
-        get_fallback_keys_dir()
-        == pathlib.PurePath("/fake/home") / ".sortify" / "keys"
+        get_fallback_keys_dir() == pathlib.PurePath("/fake/home") / ".sortify" / "keys"
     )
 
     # 3. Non-Windows with HOME and USERPROFILE unset, Path.home() throwing error
@@ -696,9 +697,7 @@ def test_secure_delete_file_edge_cases(tmp_path, monkeypatch, caplog):
     fail_file2 = tmp_path / "fail2.txt"
     fail_file2.write_bytes(b"content")
 
-    monkeypatch.setattr(
-        Path, "unlink", MagicMock(side_effect=OSError("Unlink error"))
-    )
+    monkeypatch.setattr(Path, "unlink", MagicMock(side_effect=OSError("Unlink error")))
     secure_delete_file(fail_file2)
 
 
@@ -825,13 +824,17 @@ def test_session_crypto_get_cipher_os_error_branches(tmp_path, monkeypatch):
             raise OSError("Strip error inside strip()")
 
     def mock_open_read_fail(file, mode="r", *args, **kwargs):
-        if ("r" in mode) and ("w" not in mode) and any(
-            _same_path(file, p)
-            for p in (
-                crypto.isolated_key_path,
-                crypto.legacy_isolated_key_path,
-                candidate,
-                key_path,
+        if (
+            ("r" in mode)
+            and ("w" not in mode)
+            and any(
+                _same_path(file, p)
+                for p in (
+                    crypto.isolated_key_path,
+                    crypto.legacy_isolated_key_path,
+                    candidate,
+                    key_path,
+                )
             )
         ):
             return MockFailFile()
@@ -903,9 +906,7 @@ def test_session_crypto_database_guard_checks(tmp_path, monkeypatch):
 
     monkeypatch.setattr("app.core.crypto.sqlite3.connect", mock_connect_db_err)
 
-    with pytest.raises(
-        CryptoError, match="Database accessed but key file is missing."
-    ):
+    with pytest.raises(CryptoError, match="Database accessed but key file is missing."):
         crypto.get_cipher()
 
     # 2. sqlite3.Error in guard check (general error)
@@ -919,9 +920,7 @@ def test_session_crypto_database_guard_checks(tmp_path, monkeypatch):
     assert cipher is not None
 
 
-def test_session_crypto_generated_key_os_errors_and_invalid_key(
-    tmp_path, monkeypatch
-):
+def test_session_crypto_generated_key_os_errors_and_invalid_key(tmp_path, monkeypatch):
     """Verify chmod and fdopen error handling during generated key persistence, and invalid key handling."""
     key_path = tmp_path / "secret.key"
     db_path = tmp_path / "autosorter.db"
@@ -1193,9 +1192,7 @@ def test_top_level_import_fallbacks_and_missing_key_branch(tmp_path, monkeypatch
     monkeypatch.setattr(os, "open", lambda *args, **kwargs: 123)
     monkeypatch.setattr(os, "fdopen", lambda *args, **kwargs: mock_file)
 
-    with pytest.raises(
-        CryptoError, match="Database accessed but key file is missing."
-    ):
+    with pytest.raises(CryptoError, match="Database accessed but key file is missing."):
         crypto.get_cipher()
 
 
@@ -1240,8 +1237,6 @@ def test_import_fallbacks():
         cwd=repo_root,
     )
     assert res_sql.returncode == 0, f"SQLite fallback failed: {res_sql.stderr}"
-
-
 def test_key_rotation_with_single_quote_escaping(tmp_path):
     """Verify that key rotation succeeds when the new key contains single quotes."""
     db_path = tmp_path / "test_rotate_quote.db"
@@ -1289,5 +1284,3 @@ def test_key_rotation_with_single_quote_escaping(tmp_path):
     assert row3 is not None
     assert row3[0] == "initial"
     clear_connection_cache(only_current_and_inactive=False)
-
-

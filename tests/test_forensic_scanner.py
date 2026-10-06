@@ -120,7 +120,9 @@ def test_duplicate_text_extraction_bypassed():
             f.write("Unique file content")
 
         with patch("app.core.forensic_scanner.extract_file_text") as mock_extract:
-            mock_extract.side_effect = lambda path: f"Extracted text from {os.path.basename(path)}"
+            mock_extract.side_effect = lambda path: (
+                f"Extracted text from {os.path.basename(path)}"
+            )
             docs = scanner.scan_drive(tmpdir)
 
             # extract_file_text should be called only 2 times (for doc1/doc2 first seen, and doc3)
@@ -133,7 +135,9 @@ def test_duplicate_text_extraction_bypassed():
             # Check that duplicate document reused the extracted text of the original document
             dup_docs = [d for d in docs if d.is_duplicate]
             assert len(dup_docs) == 1
-            orig_docs = [d for d in docs if not d.is_duplicate and "unique" not in d.file_name]
+            orig_docs = [
+                d for d in docs if not d.is_duplicate and "unique" not in d.file_name
+            ]
             assert len(orig_docs) == 1
             assert dup_docs[0].extracted_text == orig_docs[0].extracted_text
 
@@ -149,6 +153,7 @@ def test_error_hash_not_cached():
             f.write("Some text")
 
         from unittest.mock import patch
+
         with patch.object(scanner, "compute_sha256", return_value="ERROR"):
             d1 = scanner._ingest_file(
                 source_path=doc,
@@ -159,4 +164,3 @@ def test_error_hash_not_cached():
             assert "ERROR" not in scanner.seen_texts
 
         scanner.cleanup()
-

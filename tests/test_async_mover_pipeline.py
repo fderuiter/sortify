@@ -196,7 +196,9 @@ def test_async_mover_progress_callback_propagation(tmp_path):
     def progress_cb(update: ProgressUpdate):
         progress_updates.append(update)
 
-    summary = execute_moves(base_dir, plan, db, hm, chunk_size=2, progress_callback=progress_cb)
+    summary = execute_moves(
+        base_dir, plan, db, hm, chunk_size=2, progress_callback=progress_cb
+    )
 
     assert not summary.get("cancelled")
     assert len(progress_updates) == 5
@@ -205,4 +207,3 @@ def test_async_mover_progress_callback_propagation(tmp_path):
         assert abs(up.progress - expected_ratio) < 1e-5
         assert up.unit_type == "files"
         assert up.unit_count == (idx + 1) * 2
-

@@ -197,7 +197,8 @@ def handle_ledger_command(args: argparse.Namespace, settings: AppSettings) -> bo
             else:
                 if not quiet:
                     print(
-                        "Transaction ledger records purged successfully.", file=sys.stderr
+                        "Transaction ledger records purged successfully.",
+                        file=sys.stderr,
                     )
 
             sys.exit(0)

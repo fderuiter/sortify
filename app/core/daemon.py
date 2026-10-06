@@ -683,7 +683,9 @@ class ContinuousWatchdogDaemon:
                 norm_abs = os.path.abspath(abs_path)
                 norm_base = os.path.abspath(self.base_dir)
                 if norm_abs.lower().startswith(norm_base.lower()):
-                    rel_path = norm_abs[len(norm_base):].lstrip("\\/").replace("\\", "/")
+                    rel_path = (
+                        norm_abs[len(norm_base) :].lstrip("\\/").replace("\\", "/")
+                    )
                 else:
                     rel_path = os.path.basename(abs_path)
         else:
@@ -695,6 +697,12 @@ class ContinuousWatchdogDaemon:
             return self._cancel_event.is_set() or not self._is_running
 
         try:
+            if getattr(self.settings, "_save_timer", None) is not None:
+                try:
+                    self.settings._save_timer.cancel()
+                except Exception:
+                    pass
+                self.settings._save()
             self.settings.load()
         except Exception:
             pass
@@ -757,7 +765,13 @@ class ContinuousWatchdogDaemon:
             return
 
         # If a compliance action (redact, archive, quarantine, retain, sensitivity_hold) was executed, triage is complete
-        if policy_action in ("redact", "archive", "quarantine", "retain", "sensitivity_hold"):
+        if policy_action in (
+            "redact",
+            "archive",
+            "quarantine",
+            "retain",
+            "sensitivity_hold",
+        ):
             if os.path.exists(abs_path):
                 resilient_remove(abs_path)
             logger.info(
@@ -1075,6 +1089,12 @@ class ContinuousWatchdogDaemon:
 
         # Dynamic reload of settings
         try:
+            if getattr(self.settings, "_save_timer", None) is not None:
+                try:
+                    self.settings._save_timer.cancel()
+                except Exception:
+                    pass
+                self.settings._save()
             self.settings.load()
         except Exception as e:
             logger.error(f"Error loading settings dynamically: {e}")

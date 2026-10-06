@@ -76,6 +76,5 @@ This package contains the domain logic and data manipulation features. New extra
 *   **`app/core/mover.py`**: Manages physical file organization according to the AI's plan.
 
 ### `app/ui/` Package (Presentation Layer)
-This package contains all Terminal User Interface and notification code.
+This package contains all Terminal User Interface code.
 *   **`app/ui/tui.py`**: Active Textual terminal user interface and accessibility auditing hooks.
-*   **`app/ui/notifications.py`**: Runtime notification dispatcher for TUI and CLI.

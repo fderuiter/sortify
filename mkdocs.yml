@@ -33,6 +33,8 @@ nav:
   - Developer Reference:
     - API Reference: api_reference.md
     - Architecture & Internals: architecture.md
+    - Auto-Merge Policy: auto_merge_policy.md
+    - Branch Protection Rules: branch_protection.md
     - Contributor Guide: contributor.md
     - Developer Guides:
       - Core: core.md
