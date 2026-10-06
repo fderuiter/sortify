@@ -2,6 +2,7 @@ import os
 import shutil
 import tempfile
 import time
+import unittest.mock
 from pathlib import Path
 
 import pytest
@@ -10,6 +11,7 @@ from app.core.db import Database
 from app.core.db_worker import DBWorker
 from app.core.policy_engine import PolicyEngine
 from app.core.quarantine_interceptor import QuarantineInterceptorService
+from app.core.resilient_file_ops import atomic_quarantine_relocation
 from app.core.scanner import get_files_recursively
 
 _test_dir = None
@@ -403,3 +405,126 @@ def test_quarantine_job_sanitizes_traversal_target_path():
         "malicious_doc.txt",
     )
     assert not os.path.exists(escaped_file)
+
+
+def test_atomic_quarantine_relocation_context_manager_rollback():
+    """Test atomic_quarantine_relocation moves file on entry and rolls back on exception."""
+    sample_dir = os.path.join(_test_dir, "context_manager_test")
+    os.makedirs(sample_dir, exist_ok=True)
+
+    staged_path = os.path.join(sample_dir, "staged_file.txt")
+    dest_path = os.path.join(sample_dir, "dest_file.txt")
+
+    with open(staged_path, "w", encoding="utf-8") as f:
+        f.write("Important staged content")
+
+    # 1. Verify successful relocation when no error occurs
+    with atomic_quarantine_relocation(staged_path, dest_path):
+        assert not os.path.exists(staged_path)
+        assert os.path.exists(dest_path)
+
+    # File stays at dest_path on success
+    assert not os.path.exists(staged_path)
+    assert os.path.exists(dest_path)
+
+    # 2. Verify rollback when an exception is raised
+    with pytest.raises(RuntimeError, match="Simulated DB error"):
+        with atomic_quarantine_relocation(dest_path, staged_path):
+            assert os.path.exists(staged_path)
+            assert not os.path.exists(dest_path)
+            raise RuntimeError("Simulated DB error")
+
+    # File is restored back to dest_path
+    assert os.path.exists(dest_path)
+    assert not os.path.exists(staged_path)
+    with open(dest_path, "r", encoding="utf-8") as f:
+        assert f.read() == "Important staged content"
+
+
+def test_quarantine_worker_db_failure_rollback():
+    """Test worker action restores file to staged_path when database update fails."""
+    service = QuarantineInterceptorService(db=db)
+
+    sample_dir = os.path.join(_test_dir, "worker_rollback_test")
+    out_dir = os.path.join(sample_dir, "output")
+    os.makedirs(sample_dir, exist_ok=True)
+    sample_file = os.path.join(sample_dir, "doc_to_release.txt")
+    with open(sample_file, "w", encoding="utf-8") as f:
+        f.write("Normal document content")
+
+    staged_info = service.stage_incoming_file(
+        source_path=sample_file, base_dir=sample_dir
+    )
+    job_id = staged_info["job_id"]
+    staged_path = staged_info["staged_filepath"]
+
+    dest_file = os.path.join(out_dir, "doc_to_release.txt")
+
+    orig_update = db.update_quarantine_status
+
+    def side_effect_update(job_id, status, **kwargs):
+        if status == "RELEASED":
+            raise RuntimeError("Database connection lost during release")
+        return orig_update(job_id, status, **kwargs)
+
+    db.update_quarantine_status = unittest.mock.MagicMock(
+        side_effect=side_effect_update
+    )
+
+    try:
+        result = service.process_quarantine_job(job_id)
+        # Service should handle error and route to DLQ / MANUAL_REVIEW_REQUIRED
+        assert result["status"] in ("DEAD_LETTER_QUEUE", "MANUAL_REVIEW_REQUIRED")
+
+        # Crucial check: physical file must be restored back to staged_path
+        assert os.path.exists(staged_path)
+        assert not os.path.exists(dest_file)
+    finally:
+        db.update_quarantine_status = orig_update
+
+
+def test_quarantine_cli_release_db_failure_rollback():
+    """Test CLI release command restores file to staged_path when database update fails."""
+    import argparse
+
+    from app.cli.quarantine_cli import handle_quarantine_command
+
+    sample_dir = os.path.join(_test_dir, "cli_rollback_test")
+    out_dir = os.path.join(sample_dir, "output")
+    os.makedirs(sample_dir, exist_ok=True)
+    sample_file = os.path.join(sample_dir, "cli_doc.txt")
+    with open(sample_file, "w", encoding="utf-8") as f:
+        f.write("CLI release test content")
+
+    service = QuarantineInterceptorService(db=db)
+    staged_info = service.stage_incoming_file(
+        source_path=sample_file, base_dir=sample_dir
+    )
+    job_id = staged_info["job_id"]
+    staged_path = staged_info["staged_filepath"]
+
+    released_dest = os.path.join(out_dir, "cli_doc.txt")
+
+    args = argparse.Namespace(
+        subcommand="quarantine",
+        quarantine_command="release",
+        job_id=job_id,
+        job_id_pos=None,
+        dest_dir=out_dir,
+        db_path=str(Path(_test_dir) / "autosorter.db"),
+        quiet=True,
+        json=False,
+    )
+
+    with unittest.mock.patch.object(
+        Database,
+        "update_quarantine_status",
+        side_effect=RuntimeError("DB update failed during CLI release"),
+    ):
+        with pytest.raises(RuntimeError, match="DB update failed during CLI release"):
+            handle_quarantine_command(args, None)
+
+    # Verify physical file was rolled back to staged_path
+    assert os.path.exists(staged_path)
+    assert not os.path.exists(released_dest)
+

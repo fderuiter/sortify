@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "c0d4717f29b675947e8054f650471b483f34468e1b22ef23643883c1c3440692"
+    "checksum": "5025250e2695493328166383ec7f1a5a50edaf7377fa7cc5b5e4c9feb3db5524"
   },
   "cli": {
     "app/main.py": [
@@ -9209,6 +9209,26 @@
             }
           ],
           "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@contextmanager"
+          ],
+          "name": "atomic_quarantine_relocation",
+          "parameters": [
+            {
+              "annotation": "Optional[str | os.PathLike]",
+              "default": null,
+              "name": "staged_path"
+            },
+            {
+              "annotation": "str | os.PathLike",
+              "default": null,
+              "name": "dest_file_path"
+            }
+          ],
+          "returns": null
         },
         {
           "async": false,

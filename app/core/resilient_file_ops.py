@@ -12,6 +12,8 @@ import stat
 import sys
 import time
 import uuid
+from contextlib import contextmanager
+from typing import Optional
 
 from app.core.path_utils import is_junction_path
 
@@ -213,6 +215,43 @@ def resilient_move(src: str, dst: str) -> str:
                 time.sleep(RETRY_DELAY)
 
     return current_dst
+
+
+@contextmanager
+def atomic_quarantine_relocation(
+    staged_path: Optional[str | os.PathLike],
+    dest_file_path: str | os.PathLike,
+):
+    """Context-managed resilient file relocation with automatic rollback.
+
+    Relocates a file from `staged_path` to `dest_file_path` on context entry using `resilient_move`.
+    If an exception is raised within the context block (e.g., database update failure),
+    the file is automatically moved back to `staged_path` before re-raising the exception.
+    """
+    moved = False
+    actual_dest = str(dest_file_path)
+    src_str = str(staged_path) if staged_path else None
+
+    if (
+        src_str
+        and os.path.exists(src_str)
+        and os.path.abspath(src_str) != os.path.abspath(actual_dest)
+    ):
+        actual_dest = resilient_move(src_str, actual_dest)
+        moved = True
+
+    try:
+        yield actual_dest
+    except Exception:
+        if moved and os.path.exists(actual_dest) and src_str:
+            if not os.path.exists(src_str) or os.path.abspath(src_str) != os.path.abspath(actual_dest):
+                try:
+                    resilient_move(actual_dest, src_str)
+                except Exception as rollback_err:
+                    logging.error(
+                        f"Failed to rollback file relocation from {actual_dest} to {src_str}: {rollback_err}"
+                    )
+        raise
 
 
 def resilient_remove(path):
