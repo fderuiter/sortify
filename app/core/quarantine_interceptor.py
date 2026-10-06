@@ -11,6 +11,7 @@ from app.core.analyzer_strategies import redact_sensitive_text
 from app.core.crypto import zero_vector_buffer
 from app.core.db import Database
 from app.core.domain_contracts import QuarantineRecordModel, validate_quarantine_record
+from app.core.exceptions import ArchiveSafetyError
 from app.core.extractor import extract_file_text
 from app.core.forensic_scanner import ForensicScanner
 from app.core.mover import is_subpath_or_equal
@@ -275,17 +276,44 @@ class QuarantineInterceptorService:
             if os.path.exists(staged_path):
                 ext = os.path.splitext(staged_path)[1].lower()
                 if ext in (".zip", ".tar", ".gz", ".tgz", ".tar.gz"):
-                    extracted_files = self.forensic_scanner.unpack_archive(
-                        staged_path, os.path.dirname(staged_path)
-                    )
-                    extracted_texts = []
-                    for ef in extracted_files:
-                        if os.path.isfile(ef):
-                            _set_posix_mode(ef, 0o600)
-                            t = str(extract_file_text(ef) or "")
-                            if t:
-                                extracted_texts.append(t)
-                    extracted_text = "\n".join(extracted_texts)
+                    try:
+                        extracted_files = self.forensic_scanner.unpack_archive(
+                            staged_path, os.path.dirname(staged_path)
+                        )
+                        extracted_texts = []
+                        for ef in extracted_files:
+                            if os.path.isfile(ef):
+                                _set_posix_mode(ef, 0o600)
+                                t = str(extract_file_text(ef) or "")
+                                if t:
+                                    extracted_texts.append(t)
+                        extracted_text = "\n".join(extracted_texts)
+                    except ArchiveSafetyError as ase:
+                        logger.warning(
+                            f"Archive safety limit error in job {job_id}: {ase}"
+                        )
+                        err_msg = f"Archive safety violation: {ase}"
+                        self.db.update_quarantine_status(
+                            job_id=job_id,
+                            status="MANUAL_REVIEW_REQUIRED",
+                            error_message=err_msg,
+                            audit_entry={
+                                "timestamp": time.time(),
+                                "status": "MANUAL_REVIEW_REQUIRED",
+                                "details": f"Archive safety limit exceeded: {ase}",
+                            },
+                        )
+                        dlq_item = self.db.get_quarantine_record(job_id)
+                        if dlq_item:
+                            dlq_item["status"] = "DEAD_LETTER_QUEUE"
+                            self.dlq_records.append(dlq_item)
+                            return validate_quarantine_record(dlq_item)
+                        fallback = {
+                            "job_id": job_id,
+                            "status": "DEAD_LETTER_QUEUE",
+                            "error": err_msg,
+                        }
+                        return validate_quarantine_record(fallback)
                 else:
                     extracted_text = extract_file_text(staged_path) or ""
 
