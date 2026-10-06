@@ -8,8 +8,8 @@ from app.core.analyzer_strategies import (
     GenerativeNamingStrategy,
     RecursiveKMeansStrategy,
 )
-from app.core.clinical_strategy import ClinicalTMFStrategy
 from app.core.session import AppSession
+from app.plugins.clinical_compliance.clinical_strategy import ClinicalTMFStrategy
 
 
 def test_recursive_kmeans_strategy_leaf_metadata():

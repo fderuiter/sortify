@@ -6,9 +6,11 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from app.core.cro_multi_study_pipeline import CROMultiStudyPipeline
 from app.core.downloader import DownloadManager
 from app.core.shared_registry import SharedModelRegistry
+from app.plugins.clinical_compliance.cro_multi_study_pipeline import (
+    CROMultiStudyPipeline,
+)
 
 pytestmark = [pytest.mark.slow, pytest.mark.ml]
 

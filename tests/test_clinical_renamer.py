@@ -1,6 +1,6 @@
 """Tests for clinical document renamer and metadata extraction."""
 
-from app.core.clinical_renamer import ClinicalRenamer
+from app.plugins.clinical_compliance.clinical_renamer import ClinicalRenamer
 
 
 def test_extract_protocol_id_from_filename():

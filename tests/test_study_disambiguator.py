@@ -1,7 +1,7 @@
 """Tests for StudyDisambiguator: multi-study discovery and investigator co-occurrence network resolution."""
 
 from app.core.forensic_scanner import DiscoveredDocument
-from app.core.study_disambiguator import StudyDisambiguator
+from app.plugins.clinical_compliance.study_disambiguator import StudyDisambiguator
 
 
 def test_discover_multi_studies():

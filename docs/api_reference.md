@@ -30,26 +30,6 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.core.cache
 
-## `app.core.clinical_compliance`
-
-::: app.core.clinical_compliance
-
-## `app.core.clinical_renamer`
-
-::: app.core.clinical_renamer
-
-## `app.core.clinical_strategy`
-
-::: app.core.clinical_strategy
-
-## `app.core.clinical_taxonomy`
-
-::: app.core.clinical_taxonomy
-
-## `app.core.cro_multi_study_pipeline`
-
-::: app.core.cro_multi_study_pipeline
-
 ## `app.core.crypto`
 
 ::: app.core.crypto
@@ -150,6 +130,10 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.core.path_utils
 
+## `app.core.plugin_registry`
+
+::: app.core.plugin_registry
+
 ## `app.core.policy_engine`
 
 ::: app.core.policy_engine
@@ -186,10 +170,6 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.core.shared_registry
 
-## `app.core.study_disambiguator`
-
-::: app.core.study_disambiguator
-
 ## `app.core.text_utils`
 
 ::: app.core.text_utils
@@ -213,4 +193,36 @@ This document is automatically generated. Do not edit manually.
 ## `app.main`
 
 ::: app.main
+
+## `app.plugins.clinical_compliance.clinical_compliance`
+
+::: app.plugins.clinical_compliance.clinical_compliance
+
+## `app.plugins.clinical_compliance.clinical_renamer`
+
+::: app.plugins.clinical_compliance.clinical_renamer
+
+## `app.plugins.clinical_compliance.clinical_strategy`
+
+::: app.plugins.clinical_compliance.clinical_strategy
+
+## `app.plugins.clinical_compliance.clinical_taxonomy`
+
+::: app.plugins.clinical_compliance.clinical_taxonomy
+
+## `app.plugins.clinical_compliance.cro_multi_study_pipeline`
+
+::: app.plugins.clinical_compliance.cro_multi_study_pipeline
+
+## `app.plugins.clinical_compliance.plugin`
+
+::: app.plugins.clinical_compliance.plugin
+
+## `app.plugins.clinical_compliance.study_disambiguator`
+
+::: app.plugins.clinical_compliance.study_disambiguator
+
+## `app.plugins.clinical_compliance.tui_views`
+
+::: app.plugins.clinical_compliance.tui_views
 

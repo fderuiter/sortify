@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "23f91576de55752a9d8bcbe2f9a3df3d96618a6f7aa7face4707dcada028901a"
+    "checksum": "c0d4717f29b675947e8054f650471b483f34468e1b22ef23643883c1c3440692"
   },
   "cli": {
     "app/main.py": [
@@ -1247,7 +1247,7 @@
                   "name": "name"
                 }
               ],
-              "returns": "ClusteringStrategy"
+              "returns": "Optional[ClusteringStrategy]"
             },
             {
               "async": false,
@@ -2297,650 +2297,6 @@
                 }
               ],
               "returns": null
-            }
-          ]
-        }
-      ],
-      "functions": []
-    },
-    "app/core/clinical_compliance.py": {
-      "classes": [
-        {
-          "class_name": "ClinicalComplianceEngine",
-          "decorators": [],
-          "methods": [
-            {
-              "async": false,
-              "decorators": [],
-              "name": "__init__",
-              "parameters": [
-                {
-                  "annotation": null,
-                  "default": null,
-                  "name": "self"
-                }
-              ],
-              "returns": null
-            },
-            {
-              "async": false,
-              "decorators": [],
-              "name": "evaluate_compliance",
-              "parameters": [
-                {
-                  "annotation": null,
-                  "default": null,
-                  "name": "self"
-                },
-                {
-                  "annotation": "Dict[str, str]",
-                  "default": null,
-                  "name": "classified_artifacts"
-                },
-                {
-                  "annotation": "List[str]",
-                  "default": null,
-                  "name": "all_filenames"
-                },
-                {
-                  "annotation": "str",
-                  "default": "''",
-                  "name": "base_dir"
-                }
-              ],
-              "returns": "ClinicalComplianceResult"
-            },
-            {
-              "async": false,
-              "decorators": [],
-              "name": "export_json_report",
-              "parameters": [
-                {
-                  "annotation": null,
-                  "default": null,
-                  "name": "self"
-                },
-                {
-                  "annotation": "Union[ClinicalComplianceResult, Dict[str, Any]]",
-                  "default": null,
-                  "name": "compliance_data"
-                },
-                {
-                  "annotation": "str",
-                  "default": null,
-                  "name": "output_path"
-                }
-              ],
-              "returns": "str"
-            },
-            {
-              "async": false,
-              "decorators": [],
-              "name": "generate_html_report",
-              "parameters": [
-                {
-                  "annotation": null,
-                  "default": null,
-                  "name": "self"
-                },
-                {
-                  "annotation": "Union[ClinicalComplianceResult, Dict[str, Any]]",
-                  "default": null,
-                  "name": "compliance_data"
-                },
-                {
-                  "annotation": "str",
-                  "default": null,
-                  "name": "output_path"
-                }
-              ],
-              "returns": "str"
-            }
-          ]
-        },
-        {
-          "class_name": "ClinicalComplianceResult",
-          "decorators": [],
-          "methods": [
-            {
-              "async": false,
-              "decorators": [],
-              "name": "dict",
-              "parameters": [
-                {
-                  "annotation": null,
-                  "default": null,
-                  "name": "self"
-                },
-                {
-                  "annotation": null,
-                  "default": null,
-                  "name": "*args"
-                },
-                {
-                  "annotation": null,
-                  "default": null,
-                  "name": "**kwargs"
-                }
-              ],
-              "returns": "Dict[str, Any]"
-            },
-            {
-              "async": false,
-              "decorators": [],
-              "name": "get",
-              "parameters": [
-                {
-                  "annotation": null,
-                  "default": null,
-                  "name": "self"
-                },
-                {
-                  "annotation": "str",
-                  "default": null,
-                  "name": "item"
-                },
-                {
-                  "annotation": "Any",
-                  "default": "None",
-                  "name": "default"
-                }
-              ],
-              "returns": "Any"
-            }
-          ]
-        },
-        {
-          "class_name": "FoundEssentialDocument",
-          "decorators": [],
-          "methods": [
-            {
-              "async": false,
-              "decorators": [],
-              "name": "dict",
-              "parameters": [
-                {
-                  "annotation": null,
-                  "default": null,
-                  "name": "self"
-                },
-                {
-                  "annotation": null,
-                  "default": null,
-                  "name": "*args"
-                },
-                {
-                  "annotation": null,
-                  "default": null,
-                  "name": "**kwargs"
-                }
-              ],
-              "returns": "Dict[str, Any]"
-            },
-            {
-              "async": false,
-              "decorators": [],
-              "name": "get",
-              "parameters": [
-                {
-                  "annotation": null,
-                  "default": null,
-                  "name": "self"
-                },
-                {
-                  "annotation": "str",
-                  "default": null,
-                  "name": "item"
-                },
-                {
-                  "annotation": "Any",
-                  "default": "None",
-                  "name": "default"
-                }
-              ],
-              "returns": "Any"
-            }
-          ]
-        },
-        {
-          "class_name": "MissingEssentialDocument",
-          "decorators": [],
-          "methods": [
-            {
-              "async": false,
-              "decorators": [],
-              "name": "dict",
-              "parameters": [
-                {
-                  "annotation": null,
-                  "default": null,
-                  "name": "self"
-                },
-                {
-                  "annotation": null,
-                  "default": null,
-                  "name": "*args"
-                },
-                {
-                  "annotation": null,
-                  "default": null,
-                  "name": "**kwargs"
-                }
-              ],
-              "returns": "Dict[str, Any]"
-            },
-            {
-              "async": false,
-              "decorators": [],
-              "name": "get",
-              "parameters": [
-                {
-                  "annotation": null,
-                  "default": null,
-                  "name": "self"
-                },
-                {
-                  "annotation": "str",
-                  "default": null,
-                  "name": "item"
-                },
-                {
-                  "annotation": "Any",
-                  "default": "None",
-                  "name": "default"
-                }
-              ],
-              "returns": "Any"
-            }
-          ]
-        }
-      ],
-      "functions": []
-    },
-    "app/core/clinical_renamer.py": {
-      "classes": [
-        {
-          "class_name": "ClinicalRenamer",
-          "decorators": [],
-          "methods": [
-            {
-              "async": false,
-              "decorators": [
-                "@staticmethod"
-              ],
-              "name": "extract_date_or_version",
-              "parameters": [
-                {
-                  "annotation": "str",
-                  "default": null,
-                  "name": "text"
-                },
-                {
-                  "annotation": "str",
-                  "default": null,
-                  "name": "filename"
-                }
-              ],
-              "returns": "Optional[str]"
-            },
-            {
-              "async": false,
-              "decorators": [
-                "@staticmethod"
-              ],
-              "name": "extract_investigator_name",
-              "parameters": [
-                {
-                  "annotation": "str",
-                  "default": null,
-                  "name": "text"
-                }
-              ],
-              "returns": "Optional[str]"
-            },
-            {
-              "async": false,
-              "decorators": [
-                "@staticmethod"
-              ],
-              "name": "extract_protocol_id",
-              "parameters": [
-                {
-                  "annotation": "str",
-                  "default": null,
-                  "name": "text"
-                },
-                {
-                  "annotation": "str",
-                  "default": null,
-                  "name": "filename"
-                }
-              ],
-              "returns": "Optional[str]"
-            },
-            {
-              "async": false,
-              "decorators": [
-                "@classmethod"
-              ],
-              "name": "generate_standard_filename",
-              "parameters": [
-                {
-                  "annotation": null,
-                  "default": null,
-                  "name": "cls"
-                },
-                {
-                  "annotation": "str",
-                  "default": null,
-                  "name": "original_filename"
-                },
-                {
-                  "annotation": "str",
-                  "default": null,
-                  "name": "artifact_name"
-                },
-                {
-                  "annotation": "str",
-                  "default": null,
-                  "name": "text"
-                }
-              ],
-              "returns": "str"
-            }
-          ]
-        }
-      ],
-      "functions": []
-    },
-    "app/core/clinical_strategy.py": {
-      "classes": [
-        {
-          "class_name": "ClinicalTMFStrategy",
-          "decorators": [],
-          "methods": [
-            {
-              "async": false,
-              "decorators": [],
-              "name": "__init__",
-              "parameters": [
-                {
-                  "annotation": null,
-                  "default": null,
-                  "name": "self"
-                },
-                {
-                  "annotation": "str",
-                  "default": "'tmf'",
-                  "name": "mode"
-                },
-                {
-                  "annotation": "bool",
-                  "default": "False",
-                  "name": "smart_renaming"
-                },
-                {
-                  "annotation": "bool",
-                  "default": "True",
-                  "name": "generate_audit_report"
-                }
-              ],
-              "returns": null
-            },
-            {
-              "async": false,
-              "decorators": [],
-              "name": "generate_plan",
-              "parameters": [
-                {
-                  "annotation": null,
-                  "default": null,
-                  "name": "self"
-                },
-                {
-                  "annotation": "List[str]",
-                  "default": null,
-                  "name": "filenames"
-                },
-                {
-                  "annotation": "List[str]",
-                  "default": null,
-                  "name": "documents"
-                },
-                {
-                  "annotation": "int",
-                  "default": "15",
-                  "name": "max_folders"
-                },
-                {
-                  "annotation": "Optional[set]",
-                  "default": "None",
-                  "name": "stop_words"
-                },
-                {
-                  "annotation": "int",
-                  "default": "5",
-                  "name": "max_depth"
-                },
-                {
-                  "annotation": "int",
-                  "default": "3",
-                  "name": "max_features"
-                },
-                {
-                  "annotation": "Optional[List[list]]",
-                  "default": "None",
-                  "name": "pre_fetched_vectors"
-                },
-                {
-                  "annotation": null,
-                  "default": "None",
-                  "name": "cancel_check"
-                },
-                {
-                  "annotation": "Optional[Any]",
-                  "default": "None",
-                  "name": "pre_fetched_corpus"
-                }
-              ],
-              "returns": "Tuple[dict, float]"
-            }
-          ]
-        }
-      ],
-      "functions": []
-    },
-    "app/core/clinical_taxonomy.py": {
-      "classes": [
-        {
-          "class_name": "ClinicalArtifactDefinition",
-          "decorators": [
-            "@dataclass"
-          ],
-          "methods": []
-        }
-      ],
-      "functions": [
-        {
-          "async": false,
-          "decorators": [],
-          "name": "get_artifact_by_id",
-          "parameters": [
-            {
-              "annotation": "str",
-              "default": null,
-              "name": "artifact_id"
-            }
-          ],
-          "returns": "Optional[ClinicalArtifactDefinition]"
-        }
-      ]
-    },
-    "app/core/cro_multi_study_pipeline.py": {
-      "classes": [
-        {
-          "class_name": "CROMultiStudyPipeline",
-          "decorators": [],
-          "methods": [
-            {
-              "async": false,
-              "decorators": [],
-              "name": "__init__",
-              "parameters": [
-                {
-                  "annotation": null,
-                  "default": null,
-                  "name": "self"
-                },
-                {
-                  "annotation": "str",
-                  "default": "'tmf'",
-                  "name": "mode"
-                },
-                {
-                  "annotation": "bool",
-                  "default": "True",
-                  "name": "smart_renaming"
-                }
-              ],
-              "returns": null
-            },
-            {
-              "async": false,
-              "decorators": [],
-              "name": "run_pipeline",
-              "parameters": [
-                {
-                  "annotation": null,
-                  "default": null,
-                  "name": "self"
-                },
-                {
-                  "annotation": "str",
-                  "default": null,
-                  "name": "source_root"
-                },
-                {
-                  "annotation": "str",
-                  "default": null,
-                  "name": "target_root"
-                },
-                {
-                  "annotation": "Optional[Callable[[int, str], None]]",
-                  "default": "None",
-                  "name": "progress_callback"
-                },
-                {
-                  "annotation": "Optional[Callable[[], bool]]",
-                  "default": "None",
-                  "name": "cancel_check"
-                }
-              ],
-              "returns": "MasterPipelineResult"
-            }
-          ]
-        },
-        {
-          "class_name": "MasterPipelineResult",
-          "decorators": [],
-          "methods": [
-            {
-              "async": false,
-              "decorators": [],
-              "name": "dict",
-              "parameters": [
-                {
-                  "annotation": null,
-                  "default": null,
-                  "name": "self"
-                },
-                {
-                  "annotation": null,
-                  "default": null,
-                  "name": "*args"
-                },
-                {
-                  "annotation": null,
-                  "default": null,
-                  "name": "**kwargs"
-                }
-              ],
-              "returns": "Dict[str, Any]"
-            },
-            {
-              "async": false,
-              "decorators": [],
-              "name": "get",
-              "parameters": [
-                {
-                  "annotation": null,
-                  "default": null,
-                  "name": "self"
-                },
-                {
-                  "annotation": "str",
-                  "default": null,
-                  "name": "item"
-                },
-                {
-                  "annotation": "Any",
-                  "default": "None",
-                  "name": "default"
-                }
-              ],
-              "returns": "Any"
-            }
-          ]
-        },
-        {
-          "class_name": "StudyIngestSummary",
-          "decorators": [],
-          "methods": [
-            {
-              "async": false,
-              "decorators": [],
-              "name": "dict",
-              "parameters": [
-                {
-                  "annotation": null,
-                  "default": null,
-                  "name": "self"
-                },
-                {
-                  "annotation": null,
-                  "default": null,
-                  "name": "*args"
-                },
-                {
-                  "annotation": null,
-                  "default": null,
-                  "name": "**kwargs"
-                }
-              ],
-              "returns": "Dict[str, Any]"
-            },
-            {
-              "async": false,
-              "decorators": [],
-              "name": "get",
-              "parameters": [
-                {
-                  "annotation": null,
-                  "default": null,
-                  "name": "self"
-                },
-                {
-                  "annotation": "str",
-                  "default": null,
-                  "name": "item"
-                },
-                {
-                  "annotation": "Any",
-                  "default": "None",
-                  "name": "default"
-                }
-              ],
-              "returns": "Any"
             }
           ]
         }
@@ -9117,6 +8473,317 @@
         }
       ]
     },
+    "app/core/plugin_registry.py": {
+      "classes": [
+        {
+          "class_name": "PluginRegistry",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [],
+              "name": "__init__",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": null
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "get_clustering_strategy",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "name"
+                }
+              ],
+              "returns": "Optional[Any]"
+            },
+            {
+              "async": false,
+              "decorators": [
+                "@classmethod"
+              ],
+              "name": "get_instance",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "cls"
+                }
+              ],
+              "returns": "'PluginRegistry'"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "get_quarantine_scan_hooks",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": "List[Callable]"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "get_tui_strategy_options",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": "List[Tuple[str, str]]"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "get_tui_switches",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                }
+              ],
+              "returns": "List[Dict[str, Any]]"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "get_tui_view",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "view_name"
+                }
+              ],
+              "returns": "Optional[Any]"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "has_tui_view",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "view_name"
+                }
+              ],
+              "returns": "bool"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "load_plugin",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "plugin_name_or_module"
+                }
+              ],
+              "returns": "bool"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "load_plugins_from_settings",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "Any",
+                  "default": "None",
+                  "name": "settings"
+                }
+              ],
+              "returns": "None"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "register_clustering_strategy",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "name"
+                },
+                {
+                  "annotation": "Any",
+                  "default": null,
+                  "name": "strategy"
+                }
+              ],
+              "returns": "None"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "register_quarantine_scan_hook",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "Callable",
+                  "default": null,
+                  "name": "hook_fn"
+                }
+              ],
+              "returns": "None"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "register_tui_strategy_options",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "List[Tuple[str, str]]",
+                  "default": null,
+                  "name": "options"
+                }
+              ],
+              "returns": "None"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "register_tui_switch",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "Dict[str, Any]",
+                  "default": null,
+                  "name": "switch_config"
+                }
+              ],
+              "returns": "None"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "register_tui_view",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "view_name"
+                },
+                {
+                  "annotation": "Any",
+                  "default": null,
+                  "name": "view_component"
+                }
+              ],
+              "returns": "None"
+            },
+            {
+              "async": false,
+              "decorators": [
+                "@classmethod"
+              ],
+              "name": "reset_instance",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "cls"
+                }
+              ],
+              "returns": "None"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "trigger_quarantine_scan",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "orig_rel_path"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "extracted_text"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "base_dir"
+                }
+              ],
+              "returns": "None"
+            }
+          ]
+        }
+      ],
+      "functions": []
+    },
     "app/core/policy_engine.py": {
       "classes": [
         {
@@ -11019,78 +10686,6 @@
           "returns": null
         }
       ]
-    },
-    "app/core/study_disambiguator.py": {
-      "classes": [
-        {
-          "class_name": "StudyDisambiguator",
-          "decorators": [],
-          "methods": [
-            {
-              "async": false,
-              "decorators": [],
-              "name": "__init__",
-              "parameters": [
-                {
-                  "annotation": null,
-                  "default": null,
-                  "name": "self"
-                }
-              ],
-              "returns": null
-            },
-            {
-              "async": false,
-              "decorators": [],
-              "name": "discover_and_partition_studies",
-              "parameters": [
-                {
-                  "annotation": null,
-                  "default": null,
-                  "name": "self"
-                },
-                {
-                  "annotation": "List[DiscoveredDocument]",
-                  "default": null,
-                  "name": "documents"
-                }
-              ],
-              "returns": "Dict[str, List[DiscoveredDocument]]"
-            },
-            {
-              "async": false,
-              "decorators": [],
-              "name": "extract_site_number",
-              "parameters": [
-                {
-                  "annotation": null,
-                  "default": null,
-                  "name": "self"
-                },
-                {
-                  "annotation": "str",
-                  "default": null,
-                  "name": "text"
-                },
-                {
-                  "annotation": "str",
-                  "default": null,
-                  "name": "path"
-                }
-              ],
-              "returns": "Optional[str]"
-            }
-          ]
-        },
-        {
-          "class_name": "StudyEntity",
-          "decorators": [
-            "@dataclass"
-          ],
-          "methods": []
-        }
-      ],
-      "functions": []
     },
     "app/core/text_utils.py": {
       "classes": [],

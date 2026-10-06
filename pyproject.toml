@@ -20,12 +20,16 @@ dependencies = [
     "cryptography>=41.0.0",
     "keyring>=24.0.0",
     "jsonschema>=4.25.1",
-    "easyocr>=1.7.0",
     "sqlcipher3-wheels==0.5.7",
+    "textual>=0.50.0",
+]
+
+[project.optional-dependencies]
+ml = [
+    "easyocr>=1.7.0",
     "transformers>=4.57.6",
     "onnxruntime>=1.28.0",
     "llama-cpp-python>=0.3.34",
-    "textual>=0.50.0",
 ]
 
 [project.scripts]
@@ -134,7 +138,7 @@ pythonpath = [
 timeout = 360
 addopts = "-n auto --dist=loadgroup"
 markers = [
-    "slow: marks tests as slow / heavy ML or integration tests (deselect with '-m \"not slow\"')",
+    "slow: marks tests as slow / heavy ML, snapshot, or integration tests (deselect with '-m \"not slow\"')",
     "integration: marks integration tests",
     "ml: marks machine learning model tests",
 ]

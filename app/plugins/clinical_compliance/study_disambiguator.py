@@ -10,8 +10,8 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Set
 
-from app.core.clinical_renamer import ClinicalRenamer
 from app.core.forensic_scanner import DiscoveredDocument
+from app.plugins.clinical_compliance.clinical_renamer import ClinicalRenamer
 
 logger = logging.getLogger(__name__)
 

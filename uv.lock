@@ -3922,8 +3922,8 @@ name = "secretstorage"
 version = "3.5.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "cryptography" },
-    { name = "jeepney" },
+    { name = "cryptography", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
+    { name = "jeepney", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/1c/03/e834bcd866f2f8a49a85eaff47340affa3bfa391ee9912a952a1faa68c7b/secretstorage-3.5.0.tar.gz", hash = "sha256:f04b8e4689cbce351744d5537bf6b1329c6fc68f91fa666f60a380edddcd11be", size = 19884, upload-time = "2025-11-23T19:02:53.191Z" }
 wheels = [
@@ -4023,11 +4023,8 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "cryptography" },
-    { name = "easyocr" },
     { name = "jsonschema" },
     { name = "keyring" },
-    { name = "llama-cpp-python" },
-    { name = "onnxruntime" },
     { name = "openpyxl" },
     { name = "pandas" },
     { name = "pydantic-settings" },
@@ -4037,8 +4034,15 @@ dependencies = [
     { name = "scikit-learn" },
     { name = "sqlcipher3-wheels" },
     { name = "textual" },
-    { name = "transformers" },
     { name = "watchdog" },
+]
+
+[package.optional-dependencies]
+ml = [
+    { name = "easyocr" },
+    { name = "llama-cpp-python" },
+    { name = "onnxruntime" },
+    { name = "transformers" },
 ]
 
 [package.dev-dependencies]
@@ -4067,11 +4071,11 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "cryptography", specifier = ">=41.0.0" },
-    { name = "easyocr", specifier = ">=1.7.0" },
+    { name = "easyocr", marker = "extra == 'ml'", specifier = ">=1.7.0" },
     { name = "jsonschema", specifier = ">=4.25.1" },
     { name = "keyring", specifier = ">=24.0.0" },
-    { name = "llama-cpp-python", specifier = ">=0.3.34" },
-    { name = "onnxruntime", specifier = ">=1.28.0" },
+    { name = "llama-cpp-python", marker = "extra == 'ml'", specifier = ">=0.3.34" },
+    { name = "onnxruntime", marker = "extra == 'ml'", specifier = ">=1.28.0" },
     { name = "openpyxl" },
     { name = "pandas" },
     { name = "pydantic-settings" },
@@ -4081,9 +4085,10 @@ requires-dist = [
     { name = "scikit-learn" },
     { name = "sqlcipher3-wheels", specifier = "==0.5.7" },
     { name = "textual", specifier = ">=0.50.0" },
-    { name = "transformers", specifier = ">=4.57.6" },
+    { name = "transformers", marker = "extra == 'ml'", specifier = ">=4.57.6" },
     { name = "watchdog", specifier = ">=6.0.0" },
 ]
+provides-extras = ["ml"]
 
 [package.metadata.requires-dev]
 build = [

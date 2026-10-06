@@ -4,7 +4,7 @@ import json
 import os
 import tempfile
 
-from app.core.clinical_compliance import ClinicalComplianceEngine
+from app.plugins.clinical_compliance.clinical_compliance import ClinicalComplianceEngine
 
 
 def test_compliance_evaluation_full_and_partial():
