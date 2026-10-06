@@ -9257,6 +9257,26 @@
         },
         {
           "async": false,
+          "decorators": [
+            "@contextmanager"
+          ],
+          "name": "atomic_quarantine_relocation",
+          "parameters": [
+            {
+              "annotation": "Optional[str | os.PathLike]",
+              "default": null,
+              "name": "staged_path"
+            },
+            {
+              "annotation": "str | os.PathLike",
+              "default": null,
+              "name": "dest_file_path"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
           "decorators": [],
           "name": "resilient_file_hash",
           "parameters": [
