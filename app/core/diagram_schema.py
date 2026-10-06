@@ -586,15 +586,10 @@ def _create_core_architecture_spec() -> ComponentDiagramSpec:
             ],
         ),
         DiagramSubgraph(
-            id="clinical_pipeline",
-            title="Clinical Trial & Multi-Study Pipeline (app.core)",
+            id="plugin_extensibility",
+            title="Plugin Extensibility Architecture (app.core)",
             nodes=[
-                "core_cro_multi_study_pipeline",
-                "core_study_disambiguator",
-                "core_clinical_taxonomy",
-                "core_clinical_compliance",
-                "core_clinical_renamer",
-                "core_clinical_strategy",
+                "core_plugin_registry",
             ],
         ),
         DiagramSubgraph(
@@ -688,20 +683,11 @@ def _create_core_architecture_spec() -> ComponentDiagramSpec:
         DiagramNode(
             id="core_semantic_embeddings", label="app.core.semantic_embeddings"
         ),
-        # Clinical
+        # Plugin Registry
         DiagramNode(
-            id="core_cro_multi_study_pipeline",
-            label="app.core.cro_multi_study_pipeline",
+            id="core_plugin_registry",
+            label="app.core.plugin_registry",
         ),
-        DiagramNode(
-            id="core_study_disambiguator", label="app.core.study_disambiguator"
-        ),
-        DiagramNode(id="core_clinical_taxonomy", label="app.core.clinical_taxonomy"),
-        DiagramNode(
-            id="core_clinical_compliance", label="app.core.clinical_compliance"
-        ),
-        DiagramNode(id="core_clinical_renamer", label="app.core.clinical_renamer"),
-        DiagramNode(id="core_clinical_strategy", label="app.core.clinical_strategy"),
         # Memory & Cache
         DiagramNode(
             id="core_cache",
@@ -769,19 +755,13 @@ def _create_core_architecture_spec() -> ComponentDiagramSpec:
         DiagramEdge(source="core_analyzer", target="core_analyzer_strategies"),
         DiagramEdge(source="core_analyzer", target="core_jev_classifier"),
         DiagramEdge(source="core_analyzer", target="core_semantic_embeddings"),
+        DiagramEdge(source="core_session", target="core_plugin_registry"),
         DiagramEdge(
-            source="core_cro_multi_study_pipeline", target="core_study_disambiguator"
+            source="core_quarantine_interceptor", target="core_plugin_registry"
         ),
         DiagramEdge(
-            source="core_cro_multi_study_pipeline", target="core_clinical_taxonomy"
+            source="core_analyzer_strategies", target="core_plugin_registry"
         ),
-        DiagramEdge(
-            source="core_cro_multi_study_pipeline", target="core_clinical_compliance"
-        ),
-        DiagramEdge(
-            source="core_cro_multi_study_pipeline", target="core_clinical_renamer"
-        ),
-        DiagramEdge(source="core_clinical_renamer", target="core_clinical_strategy"),
         DiagramEdge(source="core_db_conn", target="core_cache"),
         DiagramEdge(source="core_link_manager", target="core_cache"),
         DiagramEdge(source="core_semantic_embeddings", target="core_cache"),

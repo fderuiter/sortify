@@ -25,13 +25,8 @@ flowchart TD
         core_jev_classifier["app.core.jev_classifier"]
         core_semantic_embeddings["app.core.semantic_embeddings"]
     end
-    subgraph clinical_pipeline ["Clinical Trial & Multi-Study Pipeline (app.core)"]
-        core_cro_multi_study_pipeline["app.core.cro_multi_study_pipeline"]
-        core_study_disambiguator["app.core.study_disambiguator"]
-        core_clinical_taxonomy["app.core.clinical_taxonomy"]
-        core_clinical_compliance["app.core.clinical_compliance"]
-        core_clinical_renamer["app.core.clinical_renamer"]
-        core_clinical_strategy["app.core.clinical_strategy"]
+    subgraph plugin_extensibility ["Plugin Extensibility Architecture (app.core)"]
+        core_plugin_registry["app.core.plugin_registry"]
     end
     subgraph memory_cache ["Caching & Memory Layer (app.core)"]
         core_cache[("app.core.cache (BoundedMemoryCache)")]
@@ -92,11 +87,9 @@ flowchart TD
     core_analyzer --> core_analyzer_strategies
     core_analyzer --> core_jev_classifier
     core_analyzer --> core_semantic_embeddings
-    core_cro_multi_study_pipeline --> core_study_disambiguator
-    core_cro_multi_study_pipeline --> core_clinical_taxonomy
-    core_cro_multi_study_pipeline --> core_clinical_compliance
-    core_cro_multi_study_pipeline --> core_clinical_renamer
-    core_clinical_renamer --> core_clinical_strategy
+    core_session --> core_plugin_registry
+    core_quarantine_interceptor --> core_plugin_registry
+    core_analyzer_strategies --> core_plugin_registry
     core_db_conn --> core_cache
     core_link_manager --> core_cache
     core_semantic_embeddings --> core_cache

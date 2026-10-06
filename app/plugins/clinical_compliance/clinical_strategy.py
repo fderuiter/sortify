@@ -11,13 +11,13 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from app.core.analyzer import SortingPlan, _validate_sorting_plan_nodes
 from app.core.analyzer_strategies import IsolatedStrategyMixin
-from app.core.clinical_compliance import ClinicalComplianceEngine
-from app.core.clinical_renamer import ClinicalRenamer
-from app.core.clinical_taxonomy import (
+from app.core.path_utils import sanitize_name
+from app.plugins.clinical_compliance.clinical_compliance import ClinicalComplianceEngine
+from app.plugins.clinical_compliance.clinical_renamer import ClinicalRenamer
+from app.plugins.clinical_compliance.clinical_taxonomy import (
     CLINICAL_ARTIFACTS,
     ClinicalArtifactDefinition,
 )
-from app.core.path_utils import sanitize_name
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +38,7 @@ class ClinicalTMFStrategy(IsolatedStrategyMixin):
         self.smart_renaming = smart_renaming
         self.generate_audit_report = generate_audit_report
         self.compliance_engine = ClinicalComplianceEngine()
-        self.last_compliance_result: Optional[Dict[str, Any]] = None
+        self.last_compliance_result: Any = None
 
     def _classify_document(
         self,

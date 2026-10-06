@@ -1,6 +1,6 @@
 """Tests for clinical taxonomy, TMF reference models, and regex signatures."""
 
-from app.core.clinical_taxonomy import (
+from app.plugins.clinical_compliance.clinical_taxonomy import (
     CLINICAL_ARTIFACTS,
     ICH_GCP_ESSENTIAL_CHECKLIST,
     ISF_SECTIONS,

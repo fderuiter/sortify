@@ -3167,21 +3167,23 @@ class ClusteringRegistry:
         """Register a new clustering strategy under the given name."""
         self._strategies[name] = strategy
 
-    def get_strategy(self, name: str) -> ClusteringStrategy:
+    def get_strategy(self, name: str) -> Optional[ClusteringStrategy]:
         """Retrieve a clustering strategy by name."""
         if name not in self._strategies:
             if name == "default":
                 self._strategies["default"] = RecursiveKMeansStrategy()
             elif name == "generative":
                 self._strategies["generative"] = GenerativeNamingStrategy()
-            elif name == "clinical_tmf":
-                from app.core.clinical_strategy import ClinicalTMFStrategy
+            else:
+                try:
+                    from app.core.plugin_registry import PluginRegistry
 
-                self._strategies["clinical_tmf"] = ClinicalTMFStrategy(mode="tmf")
-            elif name == "clinical_isf":
-                from app.core.clinical_strategy import ClinicalTMFStrategy
-
-                self._strategies["clinical_isf"] = ClinicalTMFStrategy(mode="isf")
+                    registry = PluginRegistry.get_instance()
+                    strat = registry.get_clustering_strategy(name)
+                    if strat is not None:
+                        self._strategies[name] = strat
+                except Exception as e:
+                    logging.warning(f"Error querying PluginRegistry for strategy '{name}': {e}")
         return self._strategies.get(name)
 
 

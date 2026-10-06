@@ -30,8 +30,6 @@ from textual.widgets import (
 )
 from textual.widgets.tree import TreeNode
 
-from app.core.progress import ProgressUpdate
-
 logger = logging.getLogger(__name__)
 
 
@@ -744,9 +742,14 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
             options = [
                 ("Standard Semantic", "default"),
                 ("Generative AI", "generative"),
-                ("Clinical TMF", "clinical_tmf"),
-                ("Clinical ISF", "clinical_isf"),
             ]
+            from app.core.plugin_registry import PluginRegistry
+
+            reg = PluginRegistry.get_instance()
+            reg.load_plugins_from_settings(self.settings)
+            options.extend(reg.get_tui_strategy_options())
+            if not any(opt[1] == strat for opt in options):
+                options.append((f"Extension ({strat})", strat))
             sel_strat = Select(options=options, value=strat, id="select-strategy")
             sel_strat.tooltip = (
                 "Select sorting strategy engine for document classification"
@@ -754,16 +757,17 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
             yield sel_strat
 
             yield Label("Compliance & Renaming Toggles:", classes="field-label")
-            with Horizontal(classes="switch-row"):
-                sw_clin = Switch(
-                    value=bool(
-                        getattr(self.settings, "CLINICAL_SMART_RENAMING", False)
-                    ),
-                    id="switch-clinical-renaming",
-                )
-                sw_clin.tooltip = "Toggle clinical smart renaming compliance mode"
-                yield sw_clin
-                yield Label(" Clinical Smart Renaming")
+            for sw_cfg in reg.get_tui_switches():
+                sw_key = sw_cfg.get("key", "")
+                sw_id = sw_cfg.get("id", f"switch-{sw_key.lower()}")
+                sw_lbl = sw_cfg.get("label", f" {sw_key}")
+                sw_tip = sw_cfg.get("tooltip", "")
+                sw_val = bool(getattr(self.settings, sw_key, False))
+                with Horizontal(classes="switch-row"):
+                    sw_elem = Switch(value=sw_val, id=sw_id)
+                    sw_elem.tooltip = sw_tip
+                    yield sw_elem
+                    yield Label(sw_lbl)
 
             with Horizontal(classes="switch-row"):
                 sw_ctx = Switch(
@@ -826,7 +830,12 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         if strat == Select.BLANK:
             strat = "default"
 
-        clin_renaming = self.query_one("#switch-clinical-renaming", Switch).value
+        clin_sw = self.query(Switch).filter("#switch-clinical-renaming")
+        clin_renaming = (
+            clin_sw.first().value
+            if clin_sw
+            else bool(getattr(self.settings, "CLINICAL_SMART_RENAMING", False))
+        )
         ctx_renaming = self.query_one("#switch-contextual-renaming", Switch).value
 
         res = {
@@ -966,185 +975,7 @@ class WizardModal(A11yMixin, ModalScreen[None]):
         self.dismiss(None)
 
 
-class CROForensicModal(A11yMixin, ModalScreen[None]):
-    """Modal dialog for CRO multi-study forensic ingestion."""
 
-    BINDINGS = [
-        Binding("escape", "close", "Close dialog", show=True),
-    ]
-
-    CSS = """
-    CROForensicModal {
-        align: center middle;
-        background: rgba(0, 0, 0, 0.6);
-    }
-    .modal-box {
-        padding: 1 2;
-        background: $panel;
-        border: thick $primary;
-        width: 90%;
-        max-width: 80;
-        min-width: 30;
-        height: auto;
-        max-height: 90%;
-        overflow-y: auto;
-    }
-    .narrow .modal-box {
-        padding: 0 1;
-        width: 95%;
-    }
-    .modal-title {
-        text-style: bold;
-        color: $accent;
-        margin-bottom: 1;
-    }
-    .log-area {
-        height: auto;
-        max-height: 6;
-        min-height: 3;
-        margin-top: 1;
-        border: solid $secondary;
-    }
-    .button-row {
-        margin-top: 1;
-        height: 3;
-        align: right middle;
-    }
-    Button:focus, Input:focus, Log:focus {
-        border: heavy $accent;
-        text-style: bold;
-    }
-    """
-
-    def __init__(self, settings, base_dir: str = ""):
-        super().__init__()
-        self.settings = settings
-        self.base_dir = base_dir
-
-    def compose(self) -> ComposeResult:
-        """Compose modal dialog children."""
-        with Vertical(classes="modal-box"):
-            yield Label(
-                "CRO Multi-Study Forensic Ingestion [Ctrl+C]", classes="modal-title"
-            )
-            yield Label("Source Storage Drive / Archive Root:")
-            inp_src = Input(
-                value=self.base_dir,
-                placeholder="Select source drive to scan...",
-                id="input-source",
-            )
-            inp_src.tooltip = "Source storage drive path or archive directory root"
-            yield inp_src
-
-            yield Label("Target Audit Output Folder:")
-            default_target = (
-                (Path(self.base_dir) / "CRO_Audit_Output").as_posix()
-                if self.base_dir
-                else ""
-            )
-            inp_tgt = Input(
-                value=default_target,
-                placeholder="Select target output folder...",
-                id="input-target",
-            )
-            inp_tgt.tooltip = (
-                "Target output directory path for CRO forensic audit files"
-            )
-            yield inp_tgt
-
-            log_w = Log(classes="log-area", id="log-widget")
-            log_w.tooltip = (
-                "Live execution log output for CRO forensic ingestion worker"
-            )
-            yield log_w
-
-            with Horizontal(classes="button-row"):
-                btn_close = Button("Close", id="btn-close", variant="default")
-                btn_close.tooltip = "Close CRO forensic ingestion modal dialog"
-                yield btn_close
-                btn_run = Button("Run Forensic Ingest", id="btn-run", variant="success")
-                btn_run.tooltip = (
-                    "Trigger CRO multi-study forensic ingestion worker execution"
-                )
-                yield btn_run
-
-    def _update_layout(self, width: int) -> None:
-        """Update modal layout based on viewport width breakpoint."""
-        if width < 80:
-            self.add_class("narrow")
-        else:
-            self.remove_class("narrow")
-
-    def on_resize(self, event: events.Resize) -> None:
-        """Handle modal viewport resize event."""
-        self._update_layout(event.size.width)
-
-    def on_mount(self) -> None:
-        """Focus input field on mount and emit announcement."""
-        self._update_layout(self.size.width)
-        self.query_one("#input-source", Input).focus()
-        self.announce("Opened CRO multi-study forensic ingestion dialog.")
-
-    @on(Button.Pressed, "#btn-run")
-    def action_run(self) -> None:
-        """Trigger forensic worker execution."""
-        self.announce("Started CRO forensic multi-study ingestion worker execution.")
-        self.run_forensic_worker()
-
-    @work(exclusive=True, thread=True)
-    def run_forensic_worker(self) -> None:
-        """Run CRO multi-study forensic pipeline in worker thread."""
-        log_w = self.query_one("#log-widget", Log)
-        src = self.query_one("#input-source", Input).value.strip()
-        tgt = self.query_one("#input-target", Input).value.strip()
-
-        if not src or not os.path.exists(src):
-            log_w.write_line("Error: Source directory does not exist.")
-            err_msg = "Forensic scan error: Source directory does not exist."
-            if self.app:
-                self.app.call_from_thread(self.announce, err_msg)
-            else:
-                self.announce(err_msg)
-            return
-
-        log_w.write_line(f"Starting CRO Forensic Ingestion on: {src}")
-        try:
-            from app.core.cro_multi_study_pipeline import CROMultiStudyPipeline
-
-            pipeline = CROMultiStudyPipeline(
-                mode="tmf",
-                smart_renaming=getattr(self.settings, "CLINICAL_SMART_RENAMING", True),
-            )
-
-            def progress_cb(update: ProgressUpdate) -> None:
-                pct = int(update.progress * 100)
-                msg = update.stage or ""
-                log_w.write_line(f"[{pct}%] {msg}")
-
-            result = pipeline.run_pipeline(
-                source_root=src,
-                target_root=tgt,
-                progress_callback=progress_cb,
-            )
-            summary_msg = f"Completed successfully! Total scanned: {result.total_scanned_files}, Discovered studies: {result.discovered_studies_count}"
-            log_w.write_line(summary_msg)
-            if self.app:
-                self.app.call_from_thread(self.announce, summary_msg)
-            else:
-                self.announce(summary_msg)
-        except Exception as e:
-            log_w.write_line(f"Execution error: {e}")
-            err_msg = f"Forensic scan error: {e}"
-            if self.app:
-                self.app.call_from_thread(self.announce, err_msg)
-            else:
-                self.announce(err_msg)
-
-    @on(Button.Pressed, "#btn-close")
-    def action_close(self) -> None:
-        """Dismiss forensic modal."""
-        self.announce("Closed CRO forensic ingestion dialog.")
-        self.dismiss(None)
 
 
 class SessionRecoveryModal(A11yMixin, ModalScreen[Optional[str]]):
@@ -1698,7 +1529,15 @@ class AutoSorterTUI(A11yMixin, App):
         """Open CRO multi-study forensic ingestion modal screen."""
         if self._is_text_control_focused():
             return
-        self.push_screen(CROForensicModal(self.settings, base_dir=self.base_dir))
+        from app.core.plugin_registry import PluginRegistry
+
+        reg = PluginRegistry.get_instance()
+        reg.load_plugins_from_settings(self.settings)
+        view_cls = reg.get_tui_view("cro_forensic")
+        if view_cls:
+            self.push_screen(view_cls(self.settings, base_dir=self.base_dir))
+        else:
+            self.announce("CRO Forensic ingestion plugin is not enabled.")
 
     def action_scan_directory(self) -> None:
         """Trigger directory scanning background worker."""
@@ -2259,3 +2098,12 @@ def inspect_tui_component(component: Any) -> List[A11yViolation]:
             )
 
     return violations
+
+
+def __getattr__(name: str) -> Any:
+    """Lazy module attribute getter for dynamic extension component resolution."""
+    if name == "CROForensicModal":
+        from app.plugins.clinical_compliance.tui_views import CROForensicModal
+
+        return CROForensicModal
+    raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
