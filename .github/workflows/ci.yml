@@ -21,42 +21,81 @@ jobs:
         fetch-depth: 0
 
     - name: Install uv
-      uses: astral-sh/setup-uv@v5
+      uses: astral-sh/setup-uv@v7
       with:
         version: "latest"
         enable-cache: false
 
     - name: Set up Python
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v7
       with:
         python-version: "3.12"
 
     - name: Install dependencies
       run: |
-        uv sync --all-groups
+        uv sync --only-group dev --no-install-project
 
     - name: Run Dependency Audit
       run: |
         uv audit --ignore-until-fixed GHSA-w8v5-vhqr-4h9v
 
     - name: Secret Scanning Guardrails
-      uses: gitleaks/gitleaks-action@v2
+      uses: gitleaks/gitleaks-action@v3
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Set up Go
-      uses: actions/setup-go@v5
+      uses: actions/setup-go@v7
       with:
         go-version: '1.23'
 
-    - name: Workflow Linting
+    - name: Cache Actionlint Binary
+      id: cache-actionlint
+      uses: actions/cache@v4
+      with:
+        path: ~/go/bin/actionlint
+        key: actionlint-${{ runner.os }}-v1.7.7
+
+    - name: Install Actionlint
+      if: steps.cache-actionlint.outputs.cache-hit != 'true'
       run: |
         go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
+
+    - name: Workflow Linting
+      run: |
         gopath="$(go env GOPATH)"
+        if [ ! -f "${gopath}/bin/actionlint" ]; then
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
+        fi
         "${gopath}/bin/actionlint"
 
   type-check:
     name: Type Check (MyPy)
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v7
+      with:
+        version: "latest"
+        enable-cache: false
+
+    - name: Set up Python
+      uses: actions/setup-python@v7
+      with:
+        python-version: "3.12"
+
+    - name: Install dependencies
+      run: |
+        uv sync --only-group dev
+
+    - name: Run MyPy Type Check
+      run: |
+        uv run mypy app/
+
+  static-checks:
+    name: Static Checks
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
@@ -76,13 +115,32 @@ jobs:
       run: |
         uv sync --all-groups
 
-    - name: Run MyPy Type Check
+    - name: Lint with Ruff
       run: |
-        uv run mypy app/
+        uv run ruff check .
+
+    - name: Validate External Links
+      run: |
+        uv run python scripts/validate_links.py
+
+    - name: Validate API and CLI Signatures
+      run: |
+        uv run python scripts/validate_signatures.py
+
+    - name: Validate Architectural Guardrails
+      run: |
+        uv run python scripts/validate_architecture.py
+
+    - name: Validate Agent Prompts Manifest
+      run: |
+        uv run python scripts/prompt_manifest.py verify
+
+    - name: Validate Documentation and Integrity
+      run: |
+        uv run docs --check
 
   build-and-test:
     name: Build & Test
-    needs: [security-and-audit]
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
@@ -93,13 +151,13 @@ jobs:
     - uses: actions/checkout@v4
 
     - name: Install uv
-      uses: astral-sh/setup-uv@v5
+      uses: astral-sh/setup-uv@v7
       with:
         version: "latest"
         enable-cache: false
 
     - name: Set up Python
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v7
       with:
         python-version: "3.12"
 
@@ -107,49 +165,19 @@ jobs:
       run: |
         uv sync --all-groups
 
-    - name: Lint with Ruff
-      if: matrix.os == 'ubuntu-latest'
-      run: |
-        uv run ruff check .
-
-    - name: Validate External Links
-      if: matrix.os == 'ubuntu-latest'
-      run: |
-        uv run python scripts/validate_links.py
-
-    - name: Validate API and CLI Signatures
-      if: matrix.os == 'ubuntu-latest'
-      run: |
-        uv run python scripts/validate_signatures.py
-
-    - name: Validate Architectural Guardrails
-      if: matrix.os == 'ubuntu-latest'
-      run: |
-        uv run python scripts/validate_architecture.py
-
     - name: Terminal Interface Snapshot Validation
       run: |
         uv run pytest tests/test_visual_snapshots.py
 
     - name: Upload Snapshot Mismatch Artifacts
       if: failure()
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: snapshot-mismatches-${{ matrix.os }}
         path: |
           tests/snapshots/tui_svg/*.actual
           tests/snapshots/*.actual
         retention-days: 7
-
-    - name: Validate Agent Prompts Manifest
-      if: matrix.os == 'ubuntu-latest'
-      run: |
-        uv run python scripts/prompt_manifest.py verify
-
-    - name: Validate Documentation and Integrity
-      if: matrix.os == 'ubuntu-latest'
-      run: |
-        uv run docs --check
 
     - name: Validate Configuration Schema
       run: |
@@ -176,7 +204,7 @@ jobs:
 
     - name: Upload Test Coverage Artifacts
       if: matrix.os == 'ubuntu-latest'
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: test-coverage-report
         path: |
@@ -220,7 +248,7 @@ jobs:
       docs: ${{ steps.filter.outputs.docs }}
     steps:
     - uses: actions/checkout@v4
-    - uses: dorny/paths-filter@v3
+    - uses: dorny/paths-filter@v4
       id: filter
       with:
         filters: |
@@ -239,19 +267,19 @@ jobs:
     - uses: actions/checkout@v4
 
     - name: Install uv
-      uses: astral-sh/setup-uv@v5
+      uses: astral-sh/setup-uv@v7
       with:
         version: "latest"
         enable-cache: false
 
     - name: Set up Python
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v7
       with:
         python-version: "3.12"
 
     - name: Install dependencies
       run: |
-        uv sync --all-groups
+        uv sync --only-group dev
 
     - name: Deploy Documentation
       if: github.ref == 'refs/heads/main'
@@ -260,13 +288,12 @@ jobs:
 
   heavy-tests:
     name: Heavy Tests
-    needs: [security-and-audit]
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
 
     - name: Cache Model Weights and Assets
-      uses: actions/cache@v4
+      uses: actions/cache@v6
       with:
         path: |
           ~/.smart-autosorter/offline_bundle
@@ -277,13 +304,13 @@ jobs:
           model-weights-${{ runner.os }}-
 
     - name: Install uv
-      uses: astral-sh/setup-uv@v5
+      uses: astral-sh/setup-uv@v7
       with:
         version: "latest"
         enable-cache: false
 
     - name: Set up Python
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v7
       with:
         python-version: "3.12"
 
@@ -294,6 +321,7 @@ jobs:
     - name: Heavy ML and Integration Tests
       shell: bash
       run: |
+        uv sync --all-groups --extra ml
         if ! uv run pytest -m "slow" -n auto --cov --cov-report=term tests/; then
           if [ -f pytest_failures.txt ]; then
             echo "=== PYTEST FAILURES ==="
@@ -307,11 +335,11 @@ jobs:
   required-ci:
     name: Required CI
     runs-on: ubuntu-latest
-    needs: [security-and-audit, type-check, build-and-test, heavy-tests]
+    needs: [security-and-audit, type-check, static-checks, build-and-test, heavy-tests]
     if: ${{ always() }}
     steps:
       - name: Verify Required Gates
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const needsResults = ${{ toJson(needs) }};

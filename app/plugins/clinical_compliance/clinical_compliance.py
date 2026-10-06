@@ -7,7 +7,9 @@ from typing import Any, Dict, List, Set, Union
 
 from pydantic import BaseModel, ConfigDict
 
-from app.core.clinical_taxonomy import ICH_GCP_ESSENTIAL_CHECKLIST
+from app.plugins.clinical_compliance.clinical_taxonomy import (
+    ICH_GCP_ESSENTIAL_CHECKLIST,
+)
 
 
 class FoundEssentialDocument(BaseModel):
@@ -45,9 +47,9 @@ class FoundEssentialDocument(BaseModel):
 
     def __contains__(self, item: str) -> bool:
         """Check if key exists in attributes or extra fields."""
+        extra = getattr(self, "__pydantic_extra__", None)
         return hasattr(self, item) or (
-            getattr(self, "__pydantic_extra__", None) is not None
-            and item in self.__pydantic_extra__
+            extra is not None and item in extra
         )
 
 
@@ -84,9 +86,9 @@ class MissingEssentialDocument(BaseModel):
 
     def __contains__(self, item: str) -> bool:
         """Check if key exists in attributes or extra fields."""
+        extra = getattr(self, "__pydantic_extra__", None)
         return hasattr(self, item) or (
-            getattr(self, "__pydantic_extra__", None) is not None
-            and item in self.__pydantic_extra__
+            extra is not None and item in extra
         )
 
 
@@ -129,9 +131,9 @@ class ClinicalComplianceResult(BaseModel):
 
     def __contains__(self, item: str) -> bool:
         """Check if key exists in attributes or extra fields."""
+        extra = getattr(self, "__pydantic_extra__", None)
         return hasattr(self, item) or (
-            getattr(self, "__pydantic_extra__", None) is not None
-            and item in self.__pydantic_extra__
+            extra is not None and item in extra
         )
 
 

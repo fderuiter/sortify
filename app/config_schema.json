@@ -153,6 +153,13 @@
       "title": "Audio Max Workers",
       "type": "integer"
     },
+    "PLUGINS": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Plugins",
+      "type": "array"
+    },
     "OCR_LANGUAGES": {
       "default": "en",
       "title": "Ocr Languages",
@@ -178,12 +185,6 @@
     },
     "SORTING_STRATEGY": {
       "default": "default",
-      "enum": [
-        "default",
-        "generative",
-        "clinical_tmf",
-        "clinical_isf"
-      ],
       "title": "Sorting Strategy",
       "type": "string"
     },

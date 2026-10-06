@@ -1,4 +1,5 @@
 import queue
+import sys
 from unittest.mock import MagicMock, patch
 
 from app.core.analyzer_strategies import GenerativeNamingStrategy, gguf_worker_main
@@ -18,7 +19,10 @@ def test_gguf_worker_applies_stop_sequences():
     mock_llm = MagicMock()
     mock_llm.return_value = {"choices": [{"text": "Target Folder Name"}]}
 
-    with patch("llama_cpp.Llama", return_value=mock_llm):
+    mock_llama_module = MagicMock()
+    mock_llama_module.Llama = MagicMock(return_value=mock_llm)
+
+    with patch.dict(sys.modules, {"llama_cpp": mock_llama_module}):
         input_queue.put(task_with_stop)
         input_queue.put(None)
 
@@ -47,7 +51,10 @@ def test_gguf_worker_applies_stop_sequences_alternate_key():
     mock_llm = MagicMock()
     mock_llm.return_value = {"choices": [{"text": "Folder Title"}]}
 
-    with patch("llama_cpp.Llama", return_value=mock_llm):
+    mock_llama_module = MagicMock()
+    mock_llama_module.Llama = MagicMock(return_value=mock_llm)
+
+    with patch.dict(sys.modules, {"llama_cpp": mock_llama_module}):
         input_queue.put(task_with_stop_seqs)
         input_queue.put(None)
 
@@ -75,7 +82,10 @@ def test_gguf_worker_fallback_when_stop_absent():
     mock_llm = MagicMock()
     mock_llm.return_value = {"choices": [{"text": "Standard Response"}]}
 
-    with patch("llama_cpp.Llama", return_value=mock_llm):
+    mock_llama_module = MagicMock()
+    mock_llama_module.Llama = MagicMock(return_value=mock_llm)
+
+    with patch.dict(sys.modules, {"llama_cpp": mock_llama_module}):
         input_queue.put(task_without_stop)
         input_queue.put(None)
 

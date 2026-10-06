@@ -546,18 +546,22 @@ def test_sandbox_address_resolution_supports_mocks():
 
 def test_hardware_helpers():
     """Test environment helper hardware check functions."""
+    import sys
+
     from app.core.env_helper import is_cuda_available, is_mps_available
 
-    with patch("torch.cuda.is_available", return_value=True):
+    mock_torch = MagicMock()
+    with patch.dict(sys.modules, {"torch": mock_torch}):
+        mock_torch.cuda.is_available.return_value = True
         assert is_cuda_available() is True
 
-    with patch("torch.cuda.is_available", return_value=False):
+        mock_torch.cuda.is_available.return_value = False
         assert is_cuda_available() is False
 
-    with patch("torch.backends.mps.is_available", return_value=True):
+        mock_torch.backends.mps.is_available.return_value = True
         assert is_mps_available() is True
 
-    with patch("torch.backends.mps.is_available", return_value=False):
+        mock_torch.backends.mps.is_available.return_value = False
         assert is_mps_available() is False
 
 
