@@ -165,7 +165,7 @@ sqlcipher3-wheels==0.5.7
     # via smart-autosorter (pyproject.toml)
 sympy==1.14.0
     # via torch
-textual==0.50.0
+textual==8.2.8
     # via smart-autosorter (pyproject.toml)
 threadpoolctl==3.6.0
     # via scikit-learn
