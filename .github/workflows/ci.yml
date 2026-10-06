@@ -96,7 +96,6 @@ jobs:
 
   build-and-test:
     name: Build & Test
-    needs: [security-and-audit]
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
@@ -274,7 +273,6 @@ jobs:
 
   heavy-tests:
     name: Heavy Tests
-    needs: [security-and-audit]
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
