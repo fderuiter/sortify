@@ -33,7 +33,7 @@ jobs:
 
     - name: Install dependencies
       run: |
-        uv sync --all-groups
+        uv sync --only-group dev --no-install-project
 
     - name: Run Dependency Audit
       run: |
@@ -49,10 +49,24 @@ jobs:
       with:
         go-version: '1.23'
 
-    - name: Workflow Linting
+    - name: Cache Actionlint Binary
+      id: cache-actionlint
+      uses: actions/cache@v4
+      with:
+        path: ~/go/bin/actionlint
+        key: actionlint-${{ runner.os }}-v1.7.7
+
+    - name: Install Actionlint
+      if: steps.cache-actionlint.outputs.cache-hit != 'true'
       run: |
         go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
+
+    - name: Workflow Linting
+      run: |
         gopath="$(go env GOPATH)"
+        if [ ! -f "${gopath}/bin/actionlint" ]; then
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
+        fi
         "${gopath}/bin/actionlint"
 
   type-check:
@@ -74,7 +88,7 @@ jobs:
 
     - name: Install dependencies
       run: |
-        uv sync --all-groups
+        uv sync --only-group dev
 
     - name: Run MyPy Type Check
       run: |
@@ -251,7 +265,7 @@ jobs:
 
     - name: Install dependencies
       run: |
-        uv sync --all-groups
+        uv sync --only-group dev
 
     - name: Deploy Documentation
       if: github.ref == 'refs/heads/main'
