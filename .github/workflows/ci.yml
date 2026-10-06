@@ -311,7 +311,7 @@ jobs:
     if: ${{ always() }}
     steps:
       - name: Verify Required Gates
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const needsResults = ${{ toJson(needs) }};
