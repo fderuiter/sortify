@@ -241,6 +241,8 @@ class DaemonIPCServer:
         elif method == "resume":
             self.daemon.resume()
             return {"status": "resumed", "message": "Daemon triage pipeline resumed"}
+        elif method == "drop":
+            return self._handle_drop_rpc(params)
         elif method == "stop":
             # Schedule daemon shutdown after response is sent
             loop = asyncio.get_running_loop()
@@ -248,6 +250,78 @@ class DaemonIPCServer:
             return {"status": "stopping", "message": "Daemon shutting down"}
         else:
             raise ValueError(f"Method '{method}' not found")
+
+    def _handle_drop_rpc(self, params: dict) -> Dict[str, Any]:
+        """Handle 'drop' JSON-RPC method request forwarding payloads to active triage pipeline."""
+        if not isinstance(params, dict):
+            raise ValueError("Invalid parameters: params must be a JSON object")
+
+        raw_paths = params.get("paths")
+        if raw_paths is None:
+            raw_paths = params.get("path")
+
+        if not raw_paths:
+            raise ValueError("Missing required 'paths' or 'path' parameter")
+
+        if isinstance(raw_paths, str):
+            path_list = [raw_paths]
+        elif isinstance(raw_paths, list):
+            path_list = raw_paths
+        else:
+            raise ValueError("Parameter 'paths' must be a string or array of strings")
+
+        dry_run = bool(params.get("dry_run", False))
+        dest_dir = params.get("dest_dir")
+
+        validated_paths = []
+        invalid_reasons = []
+
+        for p in path_list:
+            if not p or not isinstance(p, str):
+                continue
+            clean_p = p.strip().strip("'\"")
+            if not clean_p:
+                continue
+            abs_p = os.path.abspath(clean_p)
+            if not os.path.exists(abs_p):
+                invalid_reasons.append(f"Path does not exist: {clean_p}")
+                continue
+
+            if hasattr(self.daemon, "should_ignore_path") and self.daemon.should_ignore_path(abs_p):
+                invalid_reasons.append(f"Ignored path pattern: {clean_p}")
+                continue
+
+            settings = getattr(self.daemon, "settings", None)
+            if settings:
+                protected = getattr(settings, "PROTECTED_PATHS", [])
+                from app.core.mover import is_subpath_or_equal
+
+                is_prot = False
+                for prot in protected:
+                    if prot and is_subpath_or_equal(abs_p, prot):
+                        is_prot = True
+                        break
+                if is_prot:
+                    invalid_reasons.append(f"Protected path blocked: {clean_p}")
+                    continue
+
+            validated_paths.append(abs_p)
+
+        if not validated_paths:
+            reasons_str = "; ".join(invalid_reasons) if invalid_reasons else "No valid file paths supplied."
+            raise ValueError(f"Path validation failed: {reasons_str}")
+
+        if hasattr(self.daemon, "process_dropped_items"):
+            res = self.daemon.process_dropped_items(validated_paths, dry_run=dry_run, dest_dir=dest_dir)
+            res["validated_paths"] = validated_paths
+            return res
+        else:
+            return {
+                "status": "success",
+                "processed_count": len(validated_paths),
+                "validated_paths": validated_paths,
+                "message": f"Successfully forwarded {len(validated_paths)} dropped items to triage pipeline",
+            }
 
     def _trigger_daemon_stop(self):
         """Asynchronously trigger daemon stop in a background thread."""

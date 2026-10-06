@@ -1111,6 +1111,147 @@ def handle_undo_command(args: argparse.Namespace, settings: AppSettings):
             session_obj.close()
 
 
+def handle_drop_command(args: argparse.Namespace, settings: AppSettings):
+    """Execute drop triage on specified target files or directories or launch TUI dropzone."""
+    import json
+    from pathlib import Path
+
+    apply_config_overrides(settings, args)
+
+    if getattr(args, "tui", False) or getattr(args, "interactive", False):
+        from app.ui.tui import run_tui
+
+        raw_p = getattr(args, "paths", None)
+        init_dir = getattr(args, "directory", None) or (raw_p[0] if raw_p else None)
+        run_tui(
+            settings,
+            init_dir,
+            skip_wizard=_extract_bool_arg(args, "skip_wizard"),
+            non_interactive=_extract_bool_arg(args, "non_interactive"),
+        )
+        sys.exit(0)
+
+    raw_paths = getattr(args, "paths", [])
+    if not raw_paths:
+        print("Error: No target paths provided for drop command.", file=sys.stderr)
+        sys.exit(1)
+
+    validated_paths = []
+    for p in raw_paths:
+        clean_p = p.strip().strip("'\"")
+        if not clean_p:
+            continue
+        abs_p = os.path.abspath(clean_p)
+        if not os.path.exists(abs_p):
+            print(f"Error: Target path '{clean_p}' does not exist.", file=sys.stderr)
+            sys.exit(1)
+
+        protected = getattr(settings, "PROTECTED_PATHS", [])
+        from app.core.mover import is_subpath_or_equal
+
+        for prot in protected:
+            if prot and is_subpath_or_equal(abs_p, prot):
+                print(f"Error: Target path '{clean_p}' is protected.", file=sys.stderr)
+                sys.exit(1)
+
+        validated_paths.append(abs_p)
+
+    if not validated_paths:
+        print("Error: No valid target paths to process.", file=sys.stderr)
+        sys.exit(1)
+
+    dest_dir = getattr(args, "dest_dir", None)
+    dry_run = getattr(args, "dry_run", False)
+    json_output = getattr(args, "json", False)
+    quiet = getattr(args, "quiet", False)
+
+    processed_results = []
+    from app.core.extractor import build_corpus_generator
+    from app.core.scanner import get_files_recursively
+    from app.core.session import AppSession
+
+    for path in validated_paths:
+        if os.path.isdir(path):
+            base_dir = path
+            files = get_files_recursively(base_dir)
+        else:
+            base_dir = os.path.dirname(path)
+            files = [path]
+
+        session = None
+        try:
+            session = AppSession(settings, base_dir=base_dir)
+
+            generator = build_corpus_generator(
+                base_dir=base_dir,
+                items_to_sort=files,
+                progress_callback=lambda info=None: None,
+                max_workers=getattr(settings, "MAX_WORKERS", 2),
+                db=session.db,
+                settings=settings,
+            )
+            for chunk in generator:
+                session.partial_fit(chunk)
+
+            plan = session.generate_sorting_plan()
+
+            if dest_dir:
+                dest_base = Path(dest_dir).resolve()
+                dest_base.mkdir(parents=True, exist_ok=True)
+                re_rooted_plan = {}
+                plan_items = (
+                    plan.plan.items()
+                    if hasattr(plan, "plan") and isinstance(plan.plan, dict)
+                    else plan.items()
+                )
+                for k, v in plan_items:
+                    if os.path.isabs(k):
+                        re_rooted_plan[k] = v
+                    else:
+                        new_key = str(dest_base / k)
+                        re_rooted_plan[new_key] = v
+                plan = re_rooted_plan
+
+            serializable_plan = _make_json_serializable(plan)
+            if dry_run:
+                summary = {"status": "dry_run", "plan": serializable_plan}
+            else:
+                summary = session.execute_moves(plan)
+
+            processed_results.append(
+                {
+                    "target": path,
+                    "base_dir": base_dir,
+                    "plan": serializable_plan,
+                    "summary": summary,
+                }
+            )
+        finally:
+            if session:
+                session.close()
+
+    result = {
+        "status": "success",
+        "command": "drop",
+        "dry_run": dry_run,
+        "processed_count": len(processed_results),
+        "results": processed_results,
+    }
+
+    if json_output:
+        sys.stdout.write(json.dumps(result, indent=2) + "\n")
+        sys.stdout.flush()
+    else:
+        if not quiet:
+            print(
+                f"Drop triage completed successfully for {len(processed_results)} target item(s).",
+                file=sys.stderr,
+            )
+        print(json.dumps(_make_json_serializable(result), indent=2))
+
+    sys.exit(0)
+
+
 def build_parser(prog: str | None = "app/main.py") -> argparse.ArgumentParser:
     """Build and return the main command-line argument parser for Smart AutoSorter AI Pro."""
     parser = argparse.ArgumentParser(prog=prog, description="Smart AutoSorter AI Pro")
@@ -1405,6 +1546,41 @@ def build_parser(prog: str | None = "app/main.py") -> argparse.ArgumentParser:
     )
     add_common_override_args(parser_undo)
 
+    # Subcommand: drop
+    parser_drop = subparsers.add_parser(
+        "drop", help="Quick file drop triage receiver for target files or directories"
+    )
+    parser_drop.add_argument(
+        "paths",
+        nargs="+",
+        type=str,
+        help="Target file or directory paths to process",
+    )
+    parser_drop.add_argument(
+        "--preset",
+        type=str,
+        choices=["demo", "downloads", "documents"],
+        default=None,
+        help="Use standard workspace preset directory",
+    )
+    parser_drop.add_argument(
+        "--dest-dir",
+        type=str,
+        default=None,
+        help="Destination directory for sorted files",
+    )
+    parser_drop.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Perform dry run analysis without executing physical moves",
+    )
+    parser_drop.add_argument(
+        "--json",
+        action="store_true",
+        help="Output result in structured JSON format",
+    )
+    add_common_override_args(parser_drop)
+
     # Register modular domain subcommands
     from app.cli import register_cli_subcommands
 
@@ -1430,6 +1606,7 @@ def main():
         "ledger",
         "quarantine",
         "undo",
+        "drop",
     )
     legacy_directory = None
     if (
@@ -1498,6 +1675,8 @@ def main():
         handle_daemon_command(args, settings)
     elif getattr(args, "subcommand", None) == "undo":
         handle_undo_command(args, settings)
+    elif getattr(args, "subcommand", None) == "drop":
+        handle_drop_command(args, settings)
     else:
         from app.cli import handle_cli_command
 

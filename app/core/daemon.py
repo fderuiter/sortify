@@ -13,7 +13,10 @@ from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
 from app.config import AppSettings
-from app.core.domain_contracts import validate_quarantine_record
+from app.core.domain_contracts import (
+    _make_json_serializable,
+    validate_quarantine_record,
+)
 from app.core.metadata import MetadataPass
 from app.core.mover import is_subpath_or_equal
 from app.core.quarantine_interceptor import QuarantineInterceptorService
@@ -934,6 +937,114 @@ class ContinuousWatchdogDaemon:
             logger.info(
                 f"Reconciliation audit enqueued {enqueued_count} untracked files."
             )
+
+    def process_dropped_items(
+        self,
+        paths: list[str],
+        dry_run: bool = False,
+        dest_dir: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Process dropped file or directory path payloads through active triage pipeline."""
+        processed_items = []
+        errors = []
+
+        for item_path in paths:
+            if not item_path or not isinstance(item_path, str):
+                continue
+            clean_path = item_path.strip().strip("'\"")
+            if not clean_path:
+                continue
+            abs_path = os.path.abspath(clean_path)
+            if not os.path.exists(abs_path):
+                errors.append(f"Path does not exist: {clean_path}")
+                continue
+
+            if self.should_ignore_path(abs_path):
+                logger.info(f"Skipping ignored dropped path: {abs_path}")
+                continue
+
+            protected_paths = getattr(self.settings, "PROTECTED_PATHS", [])
+            is_protected = False
+            for prot in protected_paths:
+                if prot and is_subpath_or_equal(abs_path, prot):
+                    is_protected = True
+                    break
+            if is_protected:
+                errors.append(f"Protected path blocked: {abs_path}")
+                continue
+
+            try:
+                if os.path.isdir(abs_path):
+                    files = get_files_recursively(abs_path)
+                    session = AppSession(self.settings, base_dir=abs_path)
+                    try:
+                        from app.core.extractor import build_corpus_generator
+
+                        gen = build_corpus_generator(
+                            base_dir=abs_path,
+                            items_to_sort=files,
+                            progress_callback=lambda info=None: None,
+                            max_workers=getattr(self.settings, "MAX_WORKERS", 2),
+                            db=session.db,
+                            settings=self.settings,
+                        )
+                        for chunk in gen:
+                            session.partial_fit(chunk)
+                        plan = session.generate_sorting_plan()
+                        if dry_run:
+                            summary = {
+                                "status": "dry_run",
+                                "plan": _make_json_serializable(plan),
+                            }
+                        else:
+                            summary = session.execute_moves(plan)
+                        processed_items.append(
+                            {"path": abs_path, "type": "directory", "summary": summary}
+                        )
+                    finally:
+                        session.close()
+                elif os.path.isfile(abs_path):
+                    parent_dir = os.path.dirname(abs_path)
+                    session = AppSession(self.settings, base_dir=parent_dir)
+                    try:
+                        from app.core.extractor import build_corpus_generator
+
+                        gen = build_corpus_generator(
+                            base_dir=parent_dir,
+                            items_to_sort=[abs_path],
+                            progress_callback=lambda info=None: None,
+                            max_workers=getattr(self.settings, "MAX_WORKERS", 2),
+                            db=session.db,
+                            settings=self.settings,
+                        )
+                        for chunk in gen:
+                            session.partial_fit(chunk)
+                        plan = session.generate_sorting_plan()
+                        if dry_run:
+                            summary = {
+                                "status": "dry_run",
+                                "plan": _make_json_serializable(plan),
+                            }
+                        else:
+                            summary = session.execute_moves(plan)
+                        processed_items.append(
+                            {"path": abs_path, "type": "file", "summary": summary}
+                        )
+                    finally:
+                        session.close()
+            except Exception as e:
+                logger.error(f"Error processing dropped path {abs_path}: {e}")
+                errors.append(f"Processing error for {abs_path}: {e}")
+
+        status_res = (
+            "success" if processed_items else ("error" if errors else "no_op")
+        )
+        return {
+            "status": status_res,
+            "processed_count": len(processed_items),
+            "processed_items": processed_items,
+            "errors": errors,
+        }
 
     def start(self):
         """Start the continuous watchdog daemon, workers, event loop, and file system observer."""

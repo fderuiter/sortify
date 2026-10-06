@@ -320,6 +320,7 @@ def test_build_parser_factory():
         "ledger",
         "quarantine",
         "undo",
+        "drop",
     }
 
     undo_parser = subparsers_action.choices["undo"]
@@ -462,3 +463,20 @@ def test_undo_subcommand_list_and_rollback(tmp_path, monkeypatch):
     data_undo = json.loads(stdout_undo)
     assert data_undo["status"] == "success"
     assert data_undo["session_id"] == session_id
+
+
+@pytest.mark.xdist_group(name="cli_subcommands")
+def test_drop_subcommand_dry_run_json(tmp_path):
+    """Test drop subcommand with --dry-run and --json flags."""
+    test_file = tmp_path / "financial_report.pdf"
+    test_file.write_text("Q3 Financial results and accounting projections")
+
+    code, stdout, stderr = run_cli(["drop", str(test_file), "--dry-run", "--json"])
+    assert code == 0, f"Expected 0 exit code, got {code}. Stderr: {stderr}"
+    data = json.loads(stdout)
+    assert data["status"] == "success"
+    assert data["command"] == "drop"
+    assert data["dry_run"] is True
+    assert data["processed_count"] == 1
+    assert len(data["results"]) == 1
+
