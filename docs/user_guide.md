@@ -4,36 +4,71 @@ Welcome to the User Guides for Smart AutoSorter AI Pro.
 
 ## First-Run Steps & Setup Wizard
 
-When you launch Smart AutoSorter AI Pro for the first time, you will be presented with the **Privacy & Data Setup Wizard**. The AI features require a small, one-time 80MB model download from Hugging Face.
+When you launch Smart AutoSorter AI Pro for the first time, you are prompted with the **Privacy & Data Setup Wizard** to configure AI consent. The AI features require a small, one-time 80MB model download from Hugging Face.
 
 ![First-Run Setup Wizard Flowchart](assets/diagrams/user_guide_setup_wizard.svg)
 
-1. **Accept & Download:** Click this to download the 80MB model and enable Smart AutoSorter's semantic sorting. This connects to Hugging Face only once.
-2. **Decline (Offline Mode):** Skip the download and run the application entirely offline in flat non-semantic sorting mode.
-3. **Help:** View this user guide to learn more about the implications of your choice.
+You can complete first-run setup using either CLI arguments or TUI keyboard navigation:
+
+### Command-Line Interface (CLI) Setup
+- **Grant AI Consent & Enable Model:** Pass the `--accept-ai-consent` flag to grant consent and initialize local model downloading:
+  ```bash
+  python app/main.py --accept-ai-consent
+  ```
+- **Decline AI Consent (Offline Non-Semantic Mode):** Pass the `--decline-ai-consent` flag to opt out of model downloads and run in offline non-semantic sorting mode:
+  ```bash
+  python app/main.py --decline-ai-consent
+  ```
+- **Non-Interactive & Headless Environments:** When running in automated scripts or non-interactive environments without an interactive TTY, combine consent flags with `--skip-wizard` or `--non-interactive` to bypass interactive wizard prompts:
+  ```bash
+  python app/main.py --accept-ai-consent --non-interactive
+  ```
+
+### Text User Interface (TUI) Setup
+When launching the interactive terminal interface (`python app/main.py --tui`), the setup wizard modal opens automatically on initial startup:
+1. **Navigate Controls:** Use `[Tab]` or `[Shift+Tab]` to move focus between the AI Consent toggle switch and button controls.
+2. **Toggle Consent:** Press `[Space]` or `[Enter]` on the switch control to toggle AI consent on or off.
+3. **Confirm & Save:** Use `[Tab]` to highlight **Finish & Save** and press `[Enter]` to confirm your selection and proceed.
 
 ## Privacy Configurations
 
 Your privacy is our priority.
-- **Local Processing:** If you download the model, all semantic analysis occurs strictly on your machine.
+- **Local Processing:** If you enable AI features and download the model, all semantic analysis occurs strictly on your machine.
 - **No External Communication:** We never send your files or personal data to any external server. 
-- **Privacy Settings:** You can always verify if the model is downloaded and change your preferences in the Settings panel.
+- **Privacy Settings:** You can verify or update your AI consent preferences at any time via the TUI Settings modal (`[Ctrl+O]` or `[Ctrl+W]` for the setup wizard) or via CLI configuration commands:
+  ```bash
+  python app/main.py config --set AI_CONSENT_GRANTED true
+  ```
 
 ## Exclusion List Configuration
 
-The Settings panel allows you to manage an **Exclusion List** (stop words). Words added to this list are common text terms (e.g., 'the', 'and', 'for') that are ignored during text normalization and AI semantic analysis.
+You can manage an **Exclusion List** (stop words) to specify common text terms (e.g., 'the', 'and', 'for') that are ignored during text normalization and AI semantic analysis.
 
 It is important to distinguish stop word text filtering from file extension or filesystem rules:
 - **Text Filtering:** Exclusion list terms remove frequent or generic words from document content before text analysis and clustering take place.
 - **File Extensions:** Stop words do not filter file extensions (e.g., `.pdf`, `.docx`) or exclude specific file types from being processed by the application.
 
 To manage your exclusion list:
-- Type a word in the text box and press Enter to add it.
-- Click the '×' button next to a word to remove it.
+- **Via CLI:** Use the `config --set` command with a comma-separated string of stop words:
+  ```bash
+  python app/main.py config --set STOP_WORDS "word1,word2,word3"
+  ```
+- **Via TUI:** In the terminal interface, navigate configuration fields using `[Tab]`, type or modify terms in the input fields, and use `[Backspace]` or `[Delete]` to edit or remove stop word entries.
 
 ## Folder Cleanup Options
 
-To keep your output directory organized, you can enable **Cleanup Empty Folders** in the Settings panel under *File Operations*. When enabled, the application will automatically remove any folders left empty after the sorting or clustering processes are completed.
+To keep your output directory organized, you can enable **Cleanup Empty Folders**. When enabled, the application automatically removes any folders left empty after the sorting or clustering processes are completed.
+
+To configure folder cleanup:
+- **Via CLI:** Set the `CLEANUP_EMPTY_FOLDERS` configuration option using the CLI command:
+  ```bash
+  python app/main.py config --set CLEANUP_EMPTY_FOLDERS true
+  ```
+  To disable cleanup, set it to `false`:
+  ```bash
+  python app/main.py config --set CLEANUP_EMPTY_FOLDERS false
+  ```
+- **Via TUI:** Press `[Ctrl+O]` to open Application Settings in the interactive terminal interface, press `[Tab]` to highlight toggle controls, and press `[Space]` or `[Enter]` to toggle folder cleanup options.
 
 ## Background Folder Monitoring
 
