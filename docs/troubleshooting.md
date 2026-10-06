@@ -17,15 +17,32 @@ Welcome to the Smart AutoSorter AI Pro troubleshooting guide. If you are experie
 **Cause:** The 80MB AI model download requires free disk space on your local drive.
 **Solution:**
 - Free up at least 200MB of space on your main system drive.
-- Use the Settings panel to clear up any unneeded files, then retry the download.
+- Clear unneeded temporary files on your drive, then retry the download.
 
 ## Manual Retries
 
-If the initial download in the Setup Wizard fails or if you accidentally clicked "Decline (Offline Mode)", you can manually trigger the download at any time:
+If the initial download in the Setup Wizard fails or if you previously declined AI consent, you can manually trigger consent setup or retry the AI model download at any time:
 
-1. Open the **Settings** panel from the main application window.
-2. Scroll down to the **AI Features & Privacy** section.
-3. Click the **Download AI Model** button. 
-4. The setup wizard will reappear, allowing you to try the 80MB model download again.
+### Using CLI Commands
+- Grant consent and trigger model setup directly from the command line:
+  ```bash
+  python app/main.py --accept-ai-consent
+  ```
+- Alternatively, update your stored configuration setting directly:
+  ```bash
+  python app/main.py config --set AI_CONSENT_GRANTED true
+  ```
+- In non-interactive or headless execution environments without a TTY, include non-interactive flags to bypass interactive dialog prompts:
+  ```bash
+  python app/main.py --accept-ai-consent --skip-wizard --non-interactive
+  ```
 
-If the problem persists and you cannot resolve your network issues, you can continue using the application in **Offline Non-Semantic Mode**, which will still process your files automatically, albeit without advanced AI context.
+### Using Text User Interface (TUI)
+- Launch the interactive terminal interface:
+  ```bash
+  python app/main.py --tui
+  ```
+- Press `[Ctrl+W]` to reopen the Model Onboarding Wizard modal.
+- Use `[Tab]` to navigate to the **AI Consent Granted** toggle switch, press `[Space]` or `[Enter]` to toggle consent on, and press `[Enter]` on **Finish & Save** to save your preferences and retry initialization.
+
+If the problem persists and you cannot resolve your network issues, you can continue using the application in **Offline Non-Semantic Mode** (`python app/main.py --decline-ai-consent`), which will still process your files automatically, albeit without advanced AI context.
