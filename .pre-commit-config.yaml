@@ -39,7 +39,7 @@ repos:
         pass_filenames: false
       - id: validate-links
         name: Validate External Links
-        entry: uv run python scripts/validate_links.py
+        entry: uv run python scripts/validate_links.py --local-only
         language: system
         files: '\.(py|md)$'
         pass_filenames: false

@@ -11,6 +11,7 @@ from scripts.validate_links import (
     URL_REGEX,
     get_all_python_files,
     get_all_target_files,
+    main,
     validate_url,
 )
 
@@ -105,3 +106,46 @@ def test_bypass_domain():
     assert success is True
     assert "Bypassed (bypassed.com)" in msg
     assert is_critical is False
+
+
+@patch("urllib.request.urlopen")
+def test_validate_url_local_only_valid(mock_urlopen):
+    success, msg, is_critical = validate_url(
+        "https://nonexistent-external-domain-12345.com/path", set(), local_only=True
+    )
+    assert success is True
+    assert "Local-only" in msg
+    assert is_critical is False
+    mock_urlopen.assert_not_called()
+
+
+@patch("urllib.request.urlopen")
+def test_validate_url_local_only_invalid(mock_urlopen):
+    success, msg, is_critical = validate_url(
+        "invalid_url_scheme_without_netloc", set(), local_only=True
+    )
+    assert success is False
+    assert "Invalid URL structure" in msg
+    assert is_critical is True
+    mock_urlopen.assert_not_called()
+
+
+@patch("urllib.request.urlopen")
+def test_main_local_only(mock_urlopen, monkeypatch, tmp_path):
+    test_file = tmp_path / "test.md"
+    test_file.write_text(
+        "Check https://external-domain-test-xyz.org/doc for info.", encoding="utf-8"
+    )
+
+    monkeypatch.setattr(
+        "scripts.validate_links.get_all_target_files",
+        lambda extensions=(".py", ".md"): [str(test_file)],
+    )
+    monkeypatch.setattr(sys, "argv", ["validate_links.py", "--local-only"])
+
+    try:
+        main()
+    except SystemExit as exc:
+        assert exc.code == 0
+
+    mock_urlopen.assert_not_called()
