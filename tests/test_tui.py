@@ -421,7 +421,7 @@ def test_tui_cro_forensic_modal(temp_workspace):
             )
 
             with patch(
-                "app.core.cro_multi_study_pipeline.CROMultiStudyPipeline.run_pipeline"
+                "app.plugins.clinical_compliance.cro_multi_study_pipeline.CROMultiStudyPipeline.run_pipeline"
             ) as mock_run:
                 mock_res = MagicMock()
                 mock_res.total_scanned_files = 5

@@ -106,6 +106,10 @@ The following parameters are extracted directly from the application's configura
 - **Default**: `2`
 - **Required**: `False`
 
+### `PLUGINS`
+- **Default**: `PydanticUndefined`
+- **Required**: `False`
+
 ### `OCR_LANGUAGES`
 - **Default**: `en`
 - **Required**: `False`

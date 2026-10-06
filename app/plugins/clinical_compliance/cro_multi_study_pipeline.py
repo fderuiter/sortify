@@ -13,14 +13,14 @@ from typing import Any, Callable, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
-from app.core.clinical_compliance import ClinicalComplianceEngine
-from app.core.clinical_renamer import ClinicalRenamer
-from app.core.clinical_strategy import ClinicalTMFStrategy
 from app.core.forensic_scanner import ForensicScanner
 from app.core.mover import get_safe_path
 from app.core.path_utils import sanitize_name
 from app.core.progress import ProgressUpdate, emit_progress
-from app.core.study_disambiguator import StudyDisambiguator
+from app.plugins.clinical_compliance.clinical_compliance import ClinicalComplianceEngine
+from app.plugins.clinical_compliance.clinical_renamer import ClinicalRenamer
+from app.plugins.clinical_compliance.clinical_strategy import ClinicalTMFStrategy
+from app.plugins.clinical_compliance.study_disambiguator import StudyDisambiguator
 
 logger = logging.getLogger(__name__)
 
@@ -59,9 +59,9 @@ class StudyIngestSummary(BaseModel):
 
     def __contains__(self, item: str) -> bool:
         """Check if key exists in attributes or extra fields."""
+        extra = getattr(self, "__pydantic_extra__", None)
         return hasattr(self, item) or (
-            getattr(self, "__pydantic_extra__", None) is not None
-            and item in self.__pydantic_extra__
+            extra is not None and item in extra
         )
 
 
@@ -100,9 +100,9 @@ class MasterPipelineResult(BaseModel):
 
     def __contains__(self, item: str) -> bool:
         """Check if key exists in attributes or extra fields."""
+        extra = getattr(self, "__pydantic_extra__", None)
         return hasattr(self, item) or (
-            getattr(self, "__pydantic_extra__", None) is not None
-            and item in self.__pydantic_extra__
+            extra is not None and item in extra
         )
 
 
@@ -229,7 +229,7 @@ class CROMultiStudyPipeline:
                     # Compute destination subfolder
                     if art_id == "99.01.01":
                         subfolder_rel = "Ancillary_Non_TMF"
-                    elif art_id == "unclassified":
+                    elif artifact is None or art_id == "unclassified":
                         subfolder_rel = "Unclassified_Review"
                     elif self.mode == "isf":
                         subfolder_rel = sanitize_name(artifact.isf_section)
