@@ -4,7 +4,7 @@ import os
 import tempfile
 
 from app.core.analyzer_strategies import clustering_registry
-from app.core.clinical_strategy import ClinicalTMFStrategy
+from app.plugins.clinical_compliance.clinical_strategy import ClinicalTMFStrategy
 
 
 def test_clinical_strategies_registered():

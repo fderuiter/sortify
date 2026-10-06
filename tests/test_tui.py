@@ -16,6 +16,7 @@ from app.ui.tui import (
     RenameModal,
     SessionRecoveryModal,
     SettingsModal,
+    ShortcutCheatSheetModal,
     WizardModal,
 )
 
@@ -421,7 +422,7 @@ def test_tui_cro_forensic_modal(temp_workspace):
             )
 
             with patch(
-                "app.core.cro_multi_study_pipeline.CROMultiStudyPipeline.run_pipeline"
+                "app.plugins.clinical_compliance.cro_multi_study_pipeline.CROMultiStudyPipeline.run_pipeline"
             ) as mock_run:
                 mock_res = MagicMock()
                 mock_res.total_scanned_files = 5
@@ -484,6 +485,7 @@ def test_tui_modals_render_on_small_viewports(temp_workspace):
                 ),
             )
         )
+        asyncio.run(_test(size, ShortcutCheatSheetModal))
 
 
 def test_main_cli_tui_invocation():
@@ -600,6 +602,7 @@ def test_tui_wcag_tooltips_and_attributes(temp_workspace):
         SessionRecoveryModal(
             {"session_id": "s1", "base_dir": temp_workspace, "status": "failed"}
         ),
+        ShortcutCheatSheetModal(),
     ]
 
     async def _test(modal_inst):
@@ -637,6 +640,7 @@ def test_tui_automated_audit_hooks(temp_workspace):
         SessionRecoveryModal(
             {"session_id": "s1", "base_dir": temp_workspace, "status": "failed"}
         ),
+        ShortcutCheatSheetModal(),
     ]
 
     async def _test():
@@ -1033,6 +1037,7 @@ def test_tui_speech_binary_windows_posix_path_filtering(temp_workspace):
 
 def test_tui_adaptive_breakpoint_layout_narrow_and_wide(temp_workspace):
     """Verify AutoSorterTUI toggles narrow container class based on 100-column breakpoint."""
+
     async def _test():
         settings = AppSettings()
         app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
@@ -1057,6 +1062,7 @@ def test_tui_adaptive_breakpoint_layout_narrow_and_wide(temp_workspace):
 
 def test_modal_screens_responsive_layout(temp_workspace):
     """Verify modal screens toggle narrow class when resized below 80 columns."""
+
     async def _test():
         settings = AppSettings()
 
@@ -1090,6 +1096,7 @@ def test_modal_screens_responsive_layout(temp_workspace):
 
 def test_tui_vim_tree_navigation(temp_workspace):
     """Verify native vim motion navigation (h, j, k, l) on Tree control."""
+
     async def _test():
         settings = AppSettings()
         settings._settings_model.AI_CONSENT_GRANTED = True
@@ -1218,6 +1225,7 @@ def test_tui_scoped_hotkeys_ctrl_combinations(temp_workspace):
 
 def test_tui_input_focus_guard_clauses(temp_workspace):
     """Verify input fields guard against triggering background application hotkey actions."""
+
     async def _test():
         settings = AppSettings()
         settings._settings_model.AI_CONSENT_GRANTED = True
@@ -1255,3 +1263,100 @@ def test_tui_input_focus_guard_clauses(temp_workspace):
 
     asyncio.run(_test())
 
+
+def test_tui_shortcut_cheat_sheet_modal_trigger_and_dismiss(temp_workspace):
+    """Verify ShortcutCheatSheetModal triggers via ?, F1, or action, and dismisses via Escape, ?, F1, or Close button."""
+    settings = AppSettings()
+    settings._settings_model.AI_CONSENT_GRANTED = True
+
+    async def _test():
+        app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
+        async with app.run_test() as pilot:
+            await pilot.pause(0.05)
+
+            # Trigger via action_open_cheat_sheet
+            app.action_open_cheat_sheet()
+            await pilot.pause(0.05)
+            modal = app.screen
+            assert isinstance(modal, ShortcutCheatSheetModal)
+            assert (
+                "Opened keyboard shortcut cheat sheet dialog."
+                in modal.get_last_announcement()
+            )
+
+            # Dismiss via Escape key
+            await pilot.press("escape")
+            await pilot.pause(0.05)
+            assert not isinstance(app.screen, ShortcutCheatSheetModal)
+
+            # Trigger via ? key
+            await pilot.press("question_mark")
+            await pilot.pause(0.05)
+            modal = app.screen
+            assert isinstance(modal, ShortcutCheatSheetModal)
+
+            # Dismiss via ? key
+            await pilot.press("question_mark")
+            await pilot.pause(0.05)
+            assert not isinstance(app.screen, ShortcutCheatSheetModal)
+
+            # Trigger via F1 key
+            await pilot.press("f1")
+            await pilot.pause(0.05)
+            modal = app.screen
+            assert isinstance(modal, ShortcutCheatSheetModal)
+
+            # Dismiss via F1 key
+            await pilot.press("f1")
+            await pilot.pause(0.05)
+            assert not isinstance(app.screen, ShortcutCheatSheetModal)
+
+            # Trigger via action and dismiss via Close button action / Enter key
+            app.action_open_cheat_sheet()
+            await pilot.pause(0.05)
+            modal = app.screen
+            assert isinstance(modal, ShortcutCheatSheetModal)
+
+            await pilot.press("enter")
+            await pilot.pause(0.05)
+            assert not isinstance(app.screen, ShortcutCheatSheetModal)
+
+    asyncio.run(_test())
+
+
+def test_tui_shortcut_cheat_sheet_suppressed_on_text_input_focus(temp_workspace):
+    """Verify shortcut cheat sheet modal is suppressed when a text input control holds focus."""
+    settings = AppSettings()
+    settings._settings_model.AI_CONSENT_GRANTED = True
+
+    async def _test():
+        app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
+        async with app.run_test() as pilot:
+            await pilot.pause(0.05)
+
+            modal = NewFolderModal()
+            app.push_screen(modal)
+            await pilot.pause(0.05)
+
+            inp = modal.query_one("#input-folder-name", Input)
+            inp.focus()
+            await pilot.pause(0.05)
+
+            assert app._is_text_control_focused() is True
+
+            # Invoking action_open_cheat_sheet when text input is focused must do nothing
+            app.action_open_cheat_sheet()
+            await pilot.pause(0.05)
+
+            assert (
+                app.screen is modal
+            )  # Screen remains NewFolderModal, cheat sheet not opened
+
+            # Typing ? into input field puts '?' in the input field without opening cheat sheet
+            await pilot.press("question_mark")
+            await pilot.pause(0.05)
+
+            assert inp.value == "?"
+            assert app.screen is modal
+
+    asyncio.run(_test())

@@ -123,12 +123,11 @@ class Settings(BaseSettings):
     def MAX_AUDIO_WORKERS(self, val: int) -> None:
         self.AUDIO_MAX_WORKERS = val
 
+    PLUGINS: list[str] = Field(default_factory=list)
     OCR_LANGUAGES: str = Field(default="en")
     VISION_ENGINE: Literal["easyocr", "florence-2"] = Field(default="easyocr")
     CONFLICT_POLICY: Literal["skip", "rename"] = Field(default="rename")
-    SORTING_STRATEGY: Literal[
-        "default", "generative", "clinical_tmf", "clinical_isf"
-    ] = Field(default="default")
+    SORTING_STRATEGY: str = Field(default="default")
     CLINICAL_SMART_RENAMING: bool = Field(default=False)
     CLINICAL_GENERATE_AUDIT_REPORT: bool = Field(default=True)
     COHERENCE_THRESHOLD: float = Field(default=0.5, ge=0.0, le=1.0)

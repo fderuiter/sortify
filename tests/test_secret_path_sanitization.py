@@ -3,11 +3,13 @@
 import os
 from unittest.mock import patch
 
-from app.core.clinical_renamer import ClinicalRenamer
-from app.core.cro_multi_study_pipeline import CROMultiStudyPipeline
 from app.core.file_renamer import ContextExtractor, FileRenamerEngine
 from app.core.forensic_scanner import DiscoveredDocument
 from app.core.path_utils import sanitize_folder_key, sanitize_name
+from app.plugins.clinical_compliance.clinical_renamer import ClinicalRenamer
+from app.plugins.clinical_compliance.cro_multi_study_pipeline import (
+    CROMultiStudyPipeline,
+)
 
 
 def test_sanitize_name_strips_secret_patterns():

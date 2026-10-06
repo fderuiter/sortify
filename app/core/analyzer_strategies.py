@@ -1794,24 +1794,28 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         if self.generator is None:
             return ""
 
-        torch = sys.modules.get("torch")
-        if torch is None:
-            import torch
-        elif (
-            hasattr(torch, "__spec__") and type(torch.__spec__).__name__ == "MagicMock"
-        ):
-            from importlib.machinery import ModuleSpec
+        try:
+            torch = sys.modules.get("torch")
+            if torch is None:
+                import torch
+            elif (
+                hasattr(torch, "__spec__") and type(torch.__spec__).__name__ == "MagicMock"
+            ):
+                from importlib.machinery import ModuleSpec
 
-            torch.__spec__ = ModuleSpec("torch", None)
+                torch.__spec__ = ModuleSpec("torch", None)
+
+            from app.core.shared_registry import SharedModelRegistry
+
+            if hasattr(torch, "set_num_threads"):
+                torch.set_num_threads(SharedModelRegistry.get_instance().get_thread_limit())
+        except (ImportError, Exception):
+            torch = None
 
         try:
             from transformers import LogitsProcessorList
         except (ImportError, Exception):
             LogitsProcessorList = _LogitsProcessorList
-
-        from app.core.shared_registry import SharedModelRegistry
-
-        torch.set_num_threads(SharedModelRegistry.get_instance().get_thread_limit())
 
         logits_processor = LogitsProcessorList()
         if getattr(self, "token_biases", None):
@@ -3167,21 +3171,23 @@ class ClusteringRegistry:
         """Register a new clustering strategy under the given name."""
         self._strategies[name] = strategy
 
-    def get_strategy(self, name: str) -> ClusteringStrategy:
+    def get_strategy(self, name: str) -> Optional[ClusteringStrategy]:
         """Retrieve a clustering strategy by name."""
         if name not in self._strategies:
             if name == "default":
                 self._strategies["default"] = RecursiveKMeansStrategy()
             elif name == "generative":
                 self._strategies["generative"] = GenerativeNamingStrategy()
-            elif name == "clinical_tmf":
-                from app.core.clinical_strategy import ClinicalTMFStrategy
+            else:
+                try:
+                    from app.core.plugin_registry import PluginRegistry
 
-                self._strategies["clinical_tmf"] = ClinicalTMFStrategy(mode="tmf")
-            elif name == "clinical_isf":
-                from app.core.clinical_strategy import ClinicalTMFStrategy
-
-                self._strategies["clinical_isf"] = ClinicalTMFStrategy(mode="isf")
+                    registry = PluginRegistry.get_instance()
+                    strat = registry.get_clustering_strategy(name)
+                    if strat is not None:
+                        self._strategies[name] = strat
+                except Exception as e:
+                    logging.warning(f"Error querying PluginRegistry for strategy '{name}': {e}")
         return self._strategies.get(name)
 
 
