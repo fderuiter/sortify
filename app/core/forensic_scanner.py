@@ -8,13 +8,13 @@ import email
 import hashlib
 import logging
 import os
-import shutil
 import tarfile
 import tempfile
 import zipfile
 from dataclasses import dataclass
 from typing import Callable, Dict, List, Optional
 
+from app.core.exceptions import ArchiveSafetyError
 from app.core.extractor import extract_file_text
 from app.core.progress import emit_progress
 from app.core.resilient_file_ops import _set_posix_mode, resilient_rmtree
@@ -64,10 +64,21 @@ class DiscoveredDocument:
 class ForensicScanner:
     """Scans storage volumes, extracts archives, and builds cryptographically verified document registries."""
 
-    def __init__(self, temp_staging_dir: Optional[str] = None):
+    def __init__(
+        self,
+        temp_staging_dir: Optional[str] = None,
+        max_files: int = 1000,
+        max_total_size_bytes: int = 500 * 1024 * 1024,
+        max_file_size_bytes: int = 100 * 1024 * 1024,
+        max_ratio: float = 100.0,
+    ):
         self.staging_dir = temp_staging_dir or tempfile.mkdtemp(
             prefix="sortify_forensic_"
         )
+        self.max_files = max_files
+        self.max_total_size_bytes = max_total_size_bytes
+        self.max_file_size_bytes = max_file_size_bytes
+        self.max_ratio = max_ratio
         self.discovered_documents: List[DiscoveredDocument] = []
         self.seen_hashes: Dict[str, str] = {}  # sha256 -> source_path
         self.seen_texts: Dict[str, str] = {}  # sha256 -> extracted text
@@ -80,25 +91,105 @@ class ForensicScanner:
 
         return resilient_file_hash(filepath)
 
-    def unpack_archive(self, archive_path: str, destination_dir: str) -> List[str]:
-        """Safely unpack compressed archives (.zip, .tar, .tgz) into staging destination."""
+    def unpack_archive(
+        self,
+        archive_path: str,
+        destination_dir: str,
+        max_files: Optional[int] = None,
+        max_total_size_bytes: Optional[int] = None,
+        max_file_size_bytes: Optional[int] = None,
+        max_ratio: Optional[float] = None,
+    ) -> List[str]:
+        """Safely unpack compressed archives (.zip, .tar, .tgz) into staging destination with streaming limits."""
+        eff_max_files = max_files if max_files is not None else self.max_files
+        eff_max_total_size = (
+            max_total_size_bytes
+            if max_total_size_bytes is not None
+            else self.max_total_size_bytes
+        )
+        eff_max_file_size = (
+            max_file_size_bytes
+            if max_file_size_bytes is not None
+            else self.max_file_size_bytes
+        )
+        eff_max_ratio = max_ratio if max_ratio is not None else self.max_ratio
+
         extracted_files = []
+        created_paths = []
         os.makedirs(destination_dir, exist_ok=True)
+
+        archive_size = 0
+        if os.path.exists(archive_path):
+            try:
+                archive_size = os.path.getsize(archive_path)
+            except Exception:
+                archive_size = 0
+
+        file_count = 0
+        total_uncompressed_bytes = 0
+        chunk_size = 64 * 1024  # 64 KB constant chunked buffer
+
+        def check_limits(chunk_len: int, current_file_bytes: int):
+            nonlocal total_uncompressed_bytes
+            current_file_bytes += chunk_len
+            total_uncompressed_bytes += chunk_len
+
+            if current_file_bytes > eff_max_file_size:
+                raise ArchiveSafetyError(
+                    f"File uncompressed size ({current_file_bytes} bytes) exceeds limit ({eff_max_file_size} bytes)"
+                )
+            if total_uncompressed_bytes > eff_max_total_size:
+                raise ArchiveSafetyError(
+                    f"Total uncompressed archive size ({total_uncompressed_bytes} bytes) exceeds limit ({eff_max_total_size} bytes)"
+                )
+            if archive_size > 0:
+                ratio = total_uncompressed_bytes / archive_size
+                if ratio > eff_max_ratio:
+                    raise ArchiveSafetyError(
+                        f"Compression expansion ratio ({ratio:.2f}:1) exceeds limit ({eff_max_ratio:.1f}:1)"
+                    )
+            elif total_uncompressed_bytes > 0:
+                raise ArchiveSafetyError(
+                    f"Compression expansion ratio exceeds limit ({eff_max_ratio:.1f}:1) for 0-byte archive"
+                )
+
+            return current_file_bytes
 
         try:
             if zipfile.is_zipfile(archive_path):
                 with zipfile.ZipFile(archive_path, "r") as zf:
-                    # Sanitize paths against directory traversal (Zip Slip)
                     for member in zf.namelist():
+                        # Sanitize paths against directory traversal (Zip Slip)
                         if member.startswith("/") or ".." in member:
                             continue
-                        target = os.path.join(destination_dir, member)
+                        target = os.path.abspath(os.path.join(destination_dir, member))
+                        dest_abs = os.path.abspath(destination_dir)
+                        if not target.startswith(dest_abs):
+                            continue
+
                         if member.endswith("/"):
                             os.makedirs(target, exist_ok=True)
+                            created_paths.append(target)
                         else:
+                            file_count += 1
+                            if file_count > eff_max_files:
+                                raise ArchiveSafetyError(
+                                    f"Archive file count ({file_count}) exceeds limit ({eff_max_files})"
+                                )
                             os.makedirs(os.path.dirname(target), exist_ok=True)
+                            created_paths.append(target)
+
+                            curr_file_size = 0
                             with zf.open(member) as src, open(target, "wb") as dst:
-                                shutil.copyfileobj(src, dst)
+                                while True:
+                                    chunk = src.read(chunk_size)
+                                    if not chunk:
+                                        break
+                                    curr_file_size = check_limits(
+                                        len(chunk), curr_file_size
+                                    )
+                                    dst.write(chunk)
+
                             _set_posix_mode(target, 0o600)
                             extracted_files.append(target)
 
@@ -107,11 +198,54 @@ class ForensicScanner:
                     for member in tf.getmembers():
                         if member.name.startswith("/") or ".." in member.name:
                             continue
-                        tf.extract(member, path=destination_dir)
-                        extracted_path = os.path.join(destination_dir, member.name)
-                        if os.path.isfile(extracted_path):
-                            _set_posix_mode(extracted_path, 0o600)
-                        extracted_files.append(extracted_path)
+                        target = os.path.abspath(
+                            os.path.join(destination_dir, member.name)
+                        )
+                        dest_abs = os.path.abspath(destination_dir)
+                        if not target.startswith(dest_abs):
+                            continue
+
+                        if member.isdir():
+                            os.makedirs(target, exist_ok=True)
+                            created_paths.append(target)
+                        elif member.isfile() or member.isreg():
+                            file_count += 1
+                            if file_count > eff_max_files:
+                                raise ArchiveSafetyError(
+                                    f"Archive file count ({file_count}) exceeds limit ({eff_max_files})"
+                                )
+                            os.makedirs(os.path.dirname(target), exist_ok=True)
+                            created_paths.append(target)
+
+                            curr_file_size = 0
+                            src = tf.extractfile(member)
+                            if src is not None:
+                                with src, open(target, "wb") as dst:
+                                    while True:
+                                        chunk = src.read(chunk_size)
+                                        if not chunk:
+                                            break
+                                        curr_file_size = check_limits(
+                                            len(chunk), curr_file_size
+                                        )
+                                        dst.write(chunk)
+                                _set_posix_mode(target, 0o600)
+                                extracted_files.append(target)
+
+        except ArchiveSafetyError as ase:
+            logger.warning(
+                f"Archive safety limit exceeded during extraction of {archive_path}: {ase}"
+            )
+            for p in reversed(created_paths):
+                try:
+                    if os.path.isfile(p) or os.path.islink(p):
+                        os.remove(p)
+                    elif os.path.isdir(p):
+                        os.rmdir(p)
+                except Exception as cleanup_err:
+                    logger.debug(f"Cleanup error for {p}: {cleanup_err}")
+            raise ase
+
         except Exception as e:
             logger.warning(f"Error unpacking archive {archive_path}: {e}")
 
@@ -189,24 +323,29 @@ class ForensicScanner:
                         "archives",
                         hashlib.md5(full_path.encode()).hexdigest(),
                     )
-                    extracted = self.unpack_archive(full_path, archive_staging)
-                    for ext_file in extracted:
-                        if os.path.isfile(ext_file):
-                            _, e_ext = os.path.splitext(ext_file)
-                            if e_ext.lower() in SUPPORTED_DOC_EXTENSIONS:
-                                self._ingest_file(
-                                    source_path=full_path,
-                                    actual_file_path=ext_file,
-                                    rel_path=os.path.relpath(ext_file, archive_staging),
-                                    archive_origin=rel_path,
-                                )
-                                count += 1
-                                emit_progress(
-                                    progress_callback,
-                                    stage=f"Unpacked: {os.path.basename(ext_file)}",
-                                    unit_count=count,
-                                    unit_type="items",
-                                )
+                    try:
+                        extracted = self.unpack_archive(full_path, archive_staging)
+                        for ext_file in extracted:
+                            if os.path.isfile(ext_file):
+                                _, e_ext = os.path.splitext(ext_file)
+                                if e_ext.lower() in SUPPORTED_DOC_EXTENSIONS:
+                                    self._ingest_file(
+                                        source_path=full_path,
+                                        actual_file_path=ext_file,
+                                        rel_path=os.path.relpath(ext_file, archive_staging),
+                                        archive_origin=rel_path,
+                                    )
+                                    count += 1
+                                    emit_progress(
+                                        progress_callback,
+                                        stage=f"Unpacked: {os.path.basename(ext_file)}",
+                                        unit_count=count,
+                                        unit_type="items",
+                                    )
+                    except ArchiveSafetyError as ase:
+                        logger.warning(
+                            f"Forensic scan skipped unsafe archive '{full_path}': {ase}"
+                        )
 
                 # 2. Handle EML Emails
                 elif ext_lower == ".eml":
