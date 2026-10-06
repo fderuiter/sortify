@@ -593,6 +593,22 @@ def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
 
     apply_config_overrides(settings, args)
 
+    from app.core.verifier import is_ml_available
+
+    if not is_ml_available():
+        requested_ml = (
+            getattr(args, "strategy", None) == "generative"
+            or getattr(settings, "SORTING_STRATEGY", None) == "generative"
+            or getattr(settings, "AI_ASSISTED_NAMING", False)
+        )
+        if requested_ml:
+            print(
+                "Warning: Machine learning features requested, but ML dependencies are not installed.\n"
+                "To enable ML features, please install the 'ml' extra group: uv sync --extra ml (or pip install '.[ml]')\n"
+                "Proceeding in offline fallback mode.",
+                file=sys.stderr,
+            )
+
     if getattr(args, "tui", False) or getattr(args, "interactive", False):
         from app.ui.tui import run_tui
 

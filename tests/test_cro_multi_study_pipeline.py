@@ -7,7 +7,9 @@ import zipfile
 
 import pytest
 
-from app.core.cro_multi_study_pipeline import CROMultiStudyPipeline
+from app.plugins.clinical_compliance.cro_multi_study_pipeline import (
+    CROMultiStudyPipeline,
+)
 
 pytestmark = [pytest.mark.slow, pytest.mark.integration]
 
