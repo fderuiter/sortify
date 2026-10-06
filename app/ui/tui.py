@@ -1641,6 +1641,7 @@ class ExportReportModal(A11yMixin, ModalScreen[Optional[Tuple[str, str]]]):
         """Cancel report export modal."""
         self.dismiss(None)
 
+
 class VimTree(Tree):
     """Tree control with native vim motion navigation (h, j, k, l)."""
 
