@@ -80,6 +80,51 @@ jobs:
       run: |
         uv run mypy app/
 
+  static-checks:
+    name: Static Checks
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v5
+      with:
+        version: "latest"
+        enable-cache: false
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    - name: Install dependencies
+      run: |
+        uv sync --all-groups
+
+    - name: Lint with Ruff
+      run: |
+        uv run ruff check .
+
+    - name: Validate External Links
+      run: |
+        uv run python scripts/validate_links.py
+
+    - name: Validate API and CLI Signatures
+      run: |
+        uv run python scripts/validate_signatures.py
+
+    - name: Validate Architectural Guardrails
+      run: |
+        uv run python scripts/validate_architecture.py
+
+    - name: Validate Agent Prompts Manifest
+      run: |
+        uv run python scripts/prompt_manifest.py verify
+
+    - name: Validate Documentation and Integrity
+      run: |
+        uv run docs --check
+
   build-and-test:
     name: Build & Test
     needs: [security-and-audit]
@@ -107,26 +152,6 @@ jobs:
       run: |
         uv sync --all-groups
 
-    - name: Lint with Ruff
-      if: matrix.os == 'ubuntu-latest'
-      run: |
-        uv run ruff check .
-
-    - name: Validate External Links
-      if: matrix.os == 'ubuntu-latest'
-      run: |
-        uv run python scripts/validate_links.py
-
-    - name: Validate API and CLI Signatures
-      if: matrix.os == 'ubuntu-latest'
-      run: |
-        uv run python scripts/validate_signatures.py
-
-    - name: Validate Architectural Guardrails
-      if: matrix.os == 'ubuntu-latest'
-      run: |
-        uv run python scripts/validate_architecture.py
-
     - name: Terminal Interface Snapshot Validation
       run: |
         uv run pytest tests/test_visual_snapshots.py
@@ -140,16 +165,6 @@ jobs:
           tests/snapshots/tui_svg/*.actual
           tests/snapshots/*.actual
         retention-days: 7
-
-    - name: Validate Agent Prompts Manifest
-      if: matrix.os == 'ubuntu-latest'
-      run: |
-        uv run python scripts/prompt_manifest.py verify
-
-    - name: Validate Documentation and Integrity
-      if: matrix.os == 'ubuntu-latest'
-      run: |
-        uv run docs --check
 
     - name: Validate Configuration Schema
       run: |
@@ -307,7 +322,7 @@ jobs:
   required-ci:
     name: Required CI
     runs-on: ubuntu-latest
-    needs: [security-and-audit, type-check, build-and-test, heavy-tests]
+    needs: [security-and-audit, type-check, static-checks, build-and-test, heavy-tests]
     if: ${{ always() }}
     steps:
       - name: Verify Required Gates
