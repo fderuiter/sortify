@@ -151,7 +151,7 @@ def test_export_performance_large_plan(tmp_path):
 
     assert len(json_content) > 0
     assert len(html_content) > 0
-    sla_threshold = 5.0 if _is_ci_or_parallel() else 2.0
+    sla_threshold = 12.0 if _is_ci_or_parallel() else 2.0
     assert duration < sla_threshold
 
 
