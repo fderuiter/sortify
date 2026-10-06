@@ -27,7 +27,10 @@ def test_gguf_worker_main_grammar_compilation():
     mock_llm = MagicMock()
     mock_llm.return_value = {"choices": [{"text": "YES"}]}
 
-    with patch("llama_cpp.Llama", return_value=mock_llm) as mock_llama_class:
+    mock_llama_module = MagicMock()
+    mock_llama_module.Llama = MagicMock(return_value=mock_llm)
+
+    with patch.dict("sys.modules", {"llama_cpp": mock_llama_module}):
         with patch("llama_cpp.LlamaGrammar.from_string") as mock_from_string:
             mock_compiled_grammar = MagicMock()
 

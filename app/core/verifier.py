@@ -85,11 +85,11 @@ def check_ai_status(settings) -> tuple[bool, str | None]:
         )
         if is_sandboxed and not is_lite:
             raise ValueError(
-                "Machine learning dependencies (PyTorch/EasyOCR) are missing in sandboxed execution."
+                "Machine learning dependencies (PyTorch/EasyOCR) are missing in sandboxed execution. To enable ML features, install the 'ml' extra group: uv sync --extra ml or pip install '.[ml]'"
             )
         return (
             False,
-            "Machine learning dependencies (PyTorch/EasyOCR) are not installed. Running in fallback state.",
+            "Machine learning dependencies (PyTorch/EasyOCR) are not installed. Running in fallback state. To enable ML features, install the 'ml' extra group: uv sync --extra ml or pip install '.[ml]'",
         )
 
     from app.config import get_app_dir

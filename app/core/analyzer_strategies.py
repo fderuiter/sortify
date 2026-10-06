@@ -1794,24 +1794,28 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         if self.generator is None:
             return ""
 
-        torch = sys.modules.get("torch")
-        if torch is None:
-            import torch
-        elif (
-            hasattr(torch, "__spec__") and type(torch.__spec__).__name__ == "MagicMock"
-        ):
-            from importlib.machinery import ModuleSpec
+        try:
+            torch = sys.modules.get("torch")
+            if torch is None:
+                import torch
+            elif (
+                hasattr(torch, "__spec__") and type(torch.__spec__).__name__ == "MagicMock"
+            ):
+                from importlib.machinery import ModuleSpec
 
-            torch.__spec__ = ModuleSpec("torch", None)
+                torch.__spec__ = ModuleSpec("torch", None)
+
+            from app.core.shared_registry import SharedModelRegistry
+
+            if hasattr(torch, "set_num_threads"):
+                torch.set_num_threads(SharedModelRegistry.get_instance().get_thread_limit())
+        except (ImportError, Exception):
+            torch = None
 
         try:
             from transformers import LogitsProcessorList
         except (ImportError, Exception):
             LogitsProcessorList = _LogitsProcessorList
-
-        from app.core.shared_registry import SharedModelRegistry
-
-        torch.set_num_threads(SharedModelRegistry.get_instance().get_thread_limit())
 
         logits_processor = LogitsProcessorList()
         if getattr(self, "token_biases", None):
