@@ -33,7 +33,7 @@ jobs:
 
     - name: Install dependencies
       run: |
-        uv sync --all-groups
+        uv sync --only-group dev --no-install-project
 
     - name: Run Dependency Audit
       run: |
@@ -44,16 +44,8 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Set up Go
-      uses: actions/setup-go@v7
-      with:
-        go-version: '1.23'
-
     - name: Workflow Linting
-      run: |
-        go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
-        gopath="$(go env GOPATH)"
-        "${gopath}/bin/actionlint"
+      uses: rhysd/actionlint-action@v1
 
   type-check:
     name: Type Check (MyPy)
@@ -74,7 +66,7 @@ jobs:
 
     - name: Install dependencies
       run: |
-        uv sync --all-groups
+        uv sync --only-group dev
 
     - name: Run MyPy Type Check
       run: |
@@ -127,7 +119,6 @@ jobs:
 
   build-and-test:
     name: Build & Test
-    needs: [security-and-audit]
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
@@ -266,7 +257,7 @@ jobs:
 
     - name: Install dependencies
       run: |
-        uv sync --all-groups
+        uv sync --only-group dev
 
     - name: Deploy Documentation
       if: github.ref == 'refs/heads/main'
@@ -275,7 +266,6 @@ jobs:
 
   heavy-tests:
     name: Heavy Tests
-    needs: [security-and-audit]
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4

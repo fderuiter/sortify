@@ -1232,6 +1232,287 @@ class ShortcutCheatSheetModal(A11yMixin, ModalScreen[None]):
         self.dismiss(None)
 
 
+class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
+    """Floating overlay modal dialog for quick drag-and-drop or paste file triage."""
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel dialog", show=True),
+    ]
+
+    CSS = """
+    DropZoneModal {
+        align: center middle;
+        background: rgba(0, 0, 0, 0.7);
+    }
+    .modal-box {
+        padding: 1 2;
+        background: $panel;
+        border: double $accent;
+        width: 90%;
+        max-width: 80;
+        min-width: 40;
+        height: auto;
+        max-height: 90%;
+        overflow-y: auto;
+    }
+    .narrow .modal-box {
+        padding: 0 1;
+        width: 95%;
+    }
+    .modal-title {
+        text-style: bold;
+        color: $accent;
+        margin-bottom: 1;
+    }
+    .dropzone-target {
+        border: dashed $primary;
+        background: $surface;
+        padding: 1 2;
+        margin-top: 1;
+        margin-bottom: 1;
+        align: center middle;
+        height: auto;
+    }
+    .dropzone-instructions {
+        text-style: bold;
+        color: $primary;
+        text-align: center;
+        margin-bottom: 1;
+    }
+    .dropzone-subinstructions {
+        color: $text-muted;
+        text-align: center;
+    }
+    .status-text {
+        color: $accent;
+        margin-top: 1;
+        margin-bottom: 1;
+        text-style: italic;
+    }
+    .button-row {
+        margin-top: 1;
+        height: 3;
+        align: right middle;
+    }
+    Button:focus, Input:focus {
+        border: heavy $accent;
+        text-style: bold;
+    }
+    """
+
+    def __init__(self, settings: Any = None, base_dir: Optional[str] = None):
+        super().__init__()
+        self.settings = settings
+        self.base_dir = base_dir
+        self.processed_result: Optional[Dict[str, Any]] = None
+
+    def compose(self) -> ComposeResult:
+        """Compose floating dropzone modal overlay controls."""
+        with Vertical(classes="modal-box"):
+            yield Label("Floating DropZone - Quick File Triage", classes="modal-title")
+            with Vertical(classes="dropzone-target"):
+                yield Label(
+                    "📥 Drop or Paste File / Folder Paths Here",
+                    classes="dropzone-instructions",
+                )
+                yield Label(
+                    "Drag items onto terminal or paste absolute file paths to organize automatically",
+                    classes="dropzone-subinstructions",
+                )
+            inp = Input(
+                placeholder="Paste or drop file / directory paths here...",
+                id="input-drop-paths",
+            )
+            inp.tooltip = "Enter or drop target file or folder paths to trigger automated sorting"
+            yield inp
+
+            status_lbl = Label("Ready. Drop or enter paths above.", id="dropzone-status", classes="status-text")
+            status_lbl.tooltip = "Live visual progress indicators and classification status messages"
+            yield status_lbl
+
+            with Horizontal(classes="button-row"):
+                btn_cancel = Button("Cancel", id="btn-cancel", variant="default")
+                btn_cancel.tooltip = "Cancel dropzone triage operation and close dialog"
+                yield btn_cancel
+
+                btn_process = Button("Sort Items", id="btn-process", variant="primary")
+                btn_process.tooltip = "Start automated classification and relocation on dropped paths"
+                yield btn_process
+
+    def _update_layout(self, width: int) -> None:
+        """Update modal layout based on viewport width breakpoint."""
+        if width < 80:
+            self.add_class("narrow")
+        else:
+            self.remove_class("narrow")
+
+    def on_resize(self, event: events.Resize) -> None:
+        """Handle modal viewport resize event."""
+        self._update_layout(event.size.width)
+
+    def on_mount(self) -> None:
+        """Focus input on mount and announce modal opening."""
+        self._app_ref = self.app
+        self._update_layout(self.size.width)
+        try:
+            self.query_one("#input-drop-paths", Input).focus()
+        except Exception:
+            pass
+        self.announce("Opened floating dropzone overlay for quick file triage.")
+
+    def on_paste(self, event: events.Paste) -> None:
+        """Handle clipboard paste event for dropped path payloads."""
+        if event.text:
+            try:
+                inp = self.query_one("#input-drop-paths", Input)
+                inp.value = event.text.strip()
+                self.announce(f"Pasted path payload into dropzone: {event.text.strip()}")
+            except Exception:
+                pass
+
+    @on(Input.Submitted, "#input-drop-paths")
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        """Handle enter key in drop paths input field."""
+        self.trigger_drop_triage()
+
+    @on(Button.Pressed, "#btn-process")
+    def on_btn_process_pressed(self, event: Button.Pressed) -> None:
+        """Handle Sort Items button press."""
+        self.trigger_drop_triage()
+
+    @on(Button.Pressed, "#btn-cancel")
+    def action_cancel(self) -> None:
+        """Dismiss dropzone modal."""
+        self.announce("Cancelled dropzone modal dialog.")
+        self.dismiss(None)
+
+    def trigger_drop_triage(self) -> None:
+        """Parse input paths and trigger automated classification worker."""
+        try:
+            inp = self.query_one("#input-drop-paths", Input)
+            raw_text = inp.value.strip()
+        except Exception:
+            raw_text = ""
+
+        if not raw_text:
+            self.update_status_msg("No file or folder paths provided. Please paste or type a path.")
+            return
+
+        raw_items = [p.strip().strip("'\"") for p in raw_text.replace("\r", "\n").split("\n") if p.strip()]
+        validated_paths = []
+        invalid_messages = []
+
+        for item in raw_items:
+            abs_p = os.path.abspath(item)
+            if not os.path.exists(abs_p):
+                invalid_messages.append(f"Path does not exist: {item}")
+                continue
+
+            if self.settings:
+                protected = getattr(self.settings, "PROTECTED_PATHS", [])
+                from app.core.mover import is_subpath_or_equal
+
+                is_prot = False
+                for prot in protected:
+                    if prot and is_subpath_or_equal(abs_p, prot):
+                        is_prot = True
+                        break
+                if is_prot:
+                    invalid_messages.append(f"Protected path blocked: {item}")
+                    continue
+
+            validated_paths.append(abs_p)
+
+        if not validated_paths:
+            err_text = "; ".join(invalid_messages) if invalid_messages else "No valid paths found."
+            self.update_status_msg(f"Error: {err_text}")
+            return
+
+        self.update_status_msg(f"Processing {len(validated_paths)} dropped item(s)...")
+        self.run_drop_worker(validated_paths)
+
+    def update_status_msg(self, msg: str) -> None:
+        """Update live status message region and screen reader announcement."""
+        try:
+            lbl = self.query_one("#dropzone-status", Label)
+            lbl.update(msg)
+        except Exception:
+            pass
+        self.announce(msg)
+
+    @work(exclusive=True, thread=True)
+    def run_drop_worker(self, target_paths: List[str]) -> None:
+        """Execute automated file classification and relocation in worker thread."""
+        app_ref = getattr(self, "_app_ref", None)
+        try:
+            from app.core.extractor import build_corpus_generator
+            from app.core.scanner import get_files_recursively
+            from app.core.session import AppSession
+
+            processed_items = []
+            for path in target_paths:
+                if os.path.isdir(path):
+                    base_dir = path
+                    files = get_files_recursively(base_dir)
+                else:
+                    base_dir = os.path.dirname(path)
+                    files = [path]
+
+                if app_ref:
+                    app_ref.call_from_thread(
+                        self.update_status_msg,
+                        f"Classifying {len(files)} file(s) in '{os.path.basename(path)}'...",
+                    )
+
+                session = None
+                try:
+                    session = AppSession(self.settings, base_dir=base_dir)
+                    generator = build_corpus_generator(
+                        base_dir=base_dir,
+                        items_to_sort=files,
+                        progress_callback=lambda info=None: None,
+                        max_workers=getattr(self.settings, "MAX_WORKERS", 2),
+                        db=session.db,
+                        settings=self.settings,
+                    )
+                    for chunk in generator:
+                        session.partial_fit(chunk)
+
+                    plan = session.generateSorting_plan() if hasattr(session, "generateSorting_plan") else session.generate_sorting_plan()
+                    if app_ref:
+                        app_ref.call_from_thread(
+                            self.update_status_msg,
+                            "Relocating items according to generated sorting plan...",
+                        )
+                    summary = session.execute_moves(plan)
+                    processed_items.append({"path": path, "summary": summary})
+                finally:
+                    if session:
+                        session.close()
+
+            final_msg = f"Completed triage of {len(processed_items)} dropped item(s)!"
+            if app_ref:
+                app_ref.call_from_thread(self.update_status_msg, final_msg)
+            result_dict = {
+                "status": "success",
+                "processed_count": len(processed_items),
+                "items": processed_items,
+            }
+            self.processed_result = result_dict
+            try:
+                if app_ref:
+                    app_ref.call_from_thread(self.dismiss, result_dict)
+                else:
+                    self.dismiss(result_dict)
+            except Exception:
+                pass
+        except Exception as e:
+            logger.exception(f"Error during dropzone classification: {e}")
+            if app_ref:
+                app_ref.call_from_thread(
+                    self.update_status_msg, f"Dropzone triage error: {e}"
+                )
+
 class VimTree(Tree):
     """Tree control with native vim motion navigation (h, j, k, l)."""
 
@@ -1283,6 +1564,7 @@ class AutoSorterTUI(A11yMixin, App):
         Binding("ctrl+o", "open_settings", "Settings", show=True),
         Binding("ctrl+w", "open_wizard", "Wizard", show=True),
         Binding("ctrl+c", "open_cro_forensic", "CRO Ingest", show=True),
+        Binding("ctrl+d", "open_dropzone", "DropZone", show=True),
         Binding("ctrl+s", "scan_directory", "Scan", show=True),
         Binding("ctrl+e", "execute_sort", "Execute", show=True),
         Binding("enter", "execute_sort", "Execute", show=False),
@@ -1686,6 +1968,23 @@ class AutoSorterTUI(A11yMixin, App):
         if self._is_text_control_focused():
             return
         self.push_screen(ShortcutCheatSheetModal())
+
+    def action_open_dropzone(self) -> None:
+        """Open floating dropzone overlay modal screen."""
+        if self._is_text_control_focused():
+            return
+
+        def on_drop_done(res: Optional[Dict[str, Any]]) -> None:
+            if res:
+                cnt = res.get("processed_count", 0)
+                self.announce(f"DropZone triage finished: {cnt} item(s) organized.")
+                if self.base_dir and os.path.exists(self.base_dir):
+                    self.action_scan_directory()
+
+        self.push_screen(
+            DropZoneModal(settings=self.settings, base_dir=self.base_dir),
+            on_drop_done,
+        )
 
     def action_scan_directory(self) -> None:
         """Trigger directory scanning background worker."""

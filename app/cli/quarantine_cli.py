@@ -10,7 +10,7 @@ from app.config import AppSettings, get_app_dir
 from app.core.db import Database
 from app.core.db_worker import DBWorker
 from app.core.quarantine_interceptor import QuarantineInterceptorService
-from app.core.resilient_file_ops import resilient_move
+from app.core.resilient_file_ops import atomic_quarantine_relocation
 
 
 def register_subparser(subparsers: argparse._SubParsersAction) -> None:
@@ -304,20 +304,17 @@ def handle_quarantine_command(args: argparse.Namespace, settings: AppSettings) -
             target_dir.mkdir(parents=True, exist_ok=True)
             dest_file_path = target_dir / os.path.basename(orig_rel)
 
-            if staged_path and os.path.exists(staged_path):
-                if os.path.abspath(staged_path) != os.path.abspath(dest_file_path):
-                    resilient_move(staged_path, str(dest_file_path))
-
-            db.update_quarantine_status(
-                job_id=job_id,
-                status="RELEASED",
-                policy_action="release",
-                audit_entry={
-                    "timestamp": __import__("time").time(),
-                    "status": "RELEASED",
-                    "details": f"Manually released from quarantine to {dest_file_path}",
-                },
-            )
+            with atomic_quarantine_relocation(staged_path, str(dest_file_path)):
+                db.update_quarantine_status(
+                    job_id=job_id,
+                    status="RELEASED",
+                    policy_action="release",
+                    audit_entry={
+                        "timestamp": __import__("time").time(),
+                        "status": "RELEASED",
+                        "details": f"Manually released from quarantine to {dest_file_path}",
+                    },
+                )
 
             res = {
                 "status": "success",

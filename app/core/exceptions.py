@@ -37,6 +37,12 @@ class CacheError(SortifyBaseError):
     pass
 
 
+class ArchiveSafetyError(SortifyBaseError):
+    """Base exception for archive decompression guardrail and safety limit failures."""
+
+    pass
+
+
 class SchemaValidationError(SortifyBaseError, ValueError):
     """Base exception for schema contract validation failures across event loop boundaries."""
 

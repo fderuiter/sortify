@@ -11,6 +11,7 @@ from app.core.analyzer_strategies import redact_sensitive_text
 from app.core.crypto import zero_vector_buffer
 from app.core.db import Database
 from app.core.domain_contracts import QuarantineRecordModel, validate_quarantine_record
+from app.core.exceptions import ArchiveSafetyError
 from app.core.extractor import extract_file_text
 from app.core.forensic_scanner import ForensicScanner
 from app.core.mover import is_subpath_or_equal
@@ -18,8 +19,8 @@ from app.core.path_utils import validate_target_path
 from app.core.policy_engine import PolicyEngine
 from app.core.resilient_file_ops import (
     _set_posix_mode,
+    atomic_quarantine_relocation,
     resilient_file_hash,
-    resilient_move,
 )
 
 logger = logging.getLogger(__name__)
@@ -275,17 +276,44 @@ class QuarantineInterceptorService:
             if os.path.exists(staged_path):
                 ext = os.path.splitext(staged_path)[1].lower()
                 if ext in (".zip", ".tar", ".gz", ".tgz", ".tar.gz"):
-                    extracted_files = self.forensic_scanner.unpack_archive(
-                        staged_path, os.path.dirname(staged_path)
-                    )
-                    extracted_texts = []
-                    for ef in extracted_files:
-                        if os.path.isfile(ef):
-                            _set_posix_mode(ef, 0o600)
-                            t = str(extract_file_text(ef) or "")
-                            if t:
-                                extracted_texts.append(t)
-                    extracted_text = "\n".join(extracted_texts)
+                    try:
+                        extracted_files = self.forensic_scanner.unpack_archive(
+                            staged_path, os.path.dirname(staged_path)
+                        )
+                        extracted_texts = []
+                        for ef in extracted_files:
+                            if os.path.isfile(ef):
+                                _set_posix_mode(ef, 0o600)
+                                t = str(extract_file_text(ef) or "")
+                                if t:
+                                    extracted_texts.append(t)
+                        extracted_text = "\n".join(extracted_texts)
+                    except ArchiveSafetyError as ase:
+                        logger.warning(
+                            f"Archive safety limit error in job {job_id}: {ase}"
+                        )
+                        err_msg = f"Archive safety violation: {ase}"
+                        self.db.update_quarantine_status(
+                            job_id=job_id,
+                            status="MANUAL_REVIEW_REQUIRED",
+                            error_message=err_msg,
+                            audit_entry={
+                                "timestamp": time.time(),
+                                "status": "MANUAL_REVIEW_REQUIRED",
+                                "details": f"Archive safety limit exceeded: {ase}",
+                            },
+                        )
+                        dlq_item = self.db.get_quarantine_record(job_id)
+                        if dlq_item:
+                            dlq_item["status"] = "DEAD_LETTER_QUEUE"
+                            self.dlq_records.append(dlq_item)
+                            return validate_quarantine_record(dlq_item)
+                        fallback = {
+                            "job_id": job_id,
+                            "status": "DEAD_LETTER_QUEUE",
+                            "error": err_msg,
+                        }
+                        return validate_quarantine_record(fallback)
                 else:
                     extracted_text = extract_file_text(staged_path) or ""
 
@@ -463,32 +491,33 @@ class QuarantineInterceptorService:
                 os.makedirs(dest_dir, exist_ok=True)
                 dest_file_path = os.path.join(dest_dir, os.path.basename(orig_rel_path))
 
-                resilient_move(staged_path, dest_file_path)
+                with atomic_quarantine_relocation(
+                    staged_path, dest_file_path
+                ) as actual_dest:
+                    # Transition to RELEASED
+                    self.db.update_quarantine_status(
+                        job_id=job_id,
+                        status="RELEASED",
+                        policy_action="redact",
+                        audit_entry={
+                            "timestamp": time.time(),
+                            "status": "RELEASED",
+                            "details": f"Sanitized document released to {dest_subfolder}",
+                        },
+                    )
 
-                # Transition to RELEASED
-                self.db.update_quarantine_status(
-                    job_id=job_id,
-                    status="RELEASED",
-                    policy_action="redact",
-                    audit_entry={
-                        "timestamp": time.time(),
-                        "status": "RELEASED",
-                        "details": f"Sanitized document released to {dest_subfolder}",
-                    },
-                )
-
-                # Upsert sanitized document record in DB
-                final_hash = (
-                    resilient_file_hash(dest_file_path)
-                    if os.path.exists(dest_file_path)
-                    else record["file_hash"]
-                )
-                self.db.upsert_document(
-                    base_dir,
-                    os.path.relpath(dest_file_path, base_dir).replace("\\", "/"),
-                    final_hash,
-                    scrubbed_text,
-                )
+                    # Upsert sanitized document record in DB
+                    final_hash = (
+                        resilient_file_hash(actual_dest)
+                        if os.path.exists(actual_dest)
+                        else record["file_hash"]
+                    )
+                    self.db.upsert_document(
+                        base_dir,
+                        os.path.relpath(actual_dest, base_dir).replace("\\", "/"),
+                        final_hash,
+                        scrubbed_text,
+                    )
 
             elif action == "archive":
                 archive_dir = self.resolve_safe_target_dir(
@@ -504,18 +533,17 @@ class QuarantineInterceptorService:
                     archive_dir, os.path.basename(orig_rel_path)
                 )
 
-                resilient_move(staged_path, archive_file_path)
-
-                self.db.update_quarantine_status(
-                    job_id=job_id,
-                    status="ARCHIVED",
-                    policy_action="archive",
-                    audit_entry={
-                        "timestamp": time.time(),
-                        "status": "ARCHIVED",
-                        "details": f"Document archived to {archive_subfolder}",
-                    },
-                )
+                with atomic_quarantine_relocation(staged_path, archive_file_path):
+                    self.db.update_quarantine_status(
+                        job_id=job_id,
+                        status="ARCHIVED",
+                        policy_action="archive",
+                        audit_entry={
+                            "timestamp": time.time(),
+                            "status": "ARCHIVED",
+                            "details": f"Document archived to {archive_subfolder}",
+                        },
+                    )
 
             elif action == "quarantine":
                 self.db.update_quarantine_status(
@@ -539,18 +567,17 @@ class QuarantineInterceptorService:
                 os.makedirs(dest_dir, exist_ok=True)
                 dest_file_path = os.path.join(dest_dir, os.path.basename(orig_rel_path))
 
-                resilient_move(staged_path, dest_file_path)
-
-                self.db.update_quarantine_status(
-                    job_id=job_id,
-                    status="RELEASED",
-                    policy_action="retain",
-                    audit_entry={
-                        "timestamp": time.time(),
-                        "status": "RELEASED",
-                        "details": f"Document retained and released to {dest_subfolder}",
-                    },
-                )
+                with atomic_quarantine_relocation(staged_path, dest_file_path):
+                    self.db.update_quarantine_status(
+                        job_id=job_id,
+                        status="RELEASED",
+                        policy_action="retain",
+                        audit_entry={
+                            "timestamp": time.time(),
+                            "status": "RELEASED",
+                            "details": f"Document retained and released to {dest_subfolder}",
+                        },
+                    )
 
             else:
                 # Default release to target destination or original base_dir
@@ -563,30 +590,30 @@ class QuarantineInterceptorService:
                 os.makedirs(dest_dir, exist_ok=True)
                 dest_file_path = os.path.join(dest_dir, os.path.basename(orig_rel_path))
 
-                if os.path.abspath(staged_path) != os.path.abspath(dest_file_path):
-                    resilient_move(staged_path, dest_file_path)
-
-                self.db.update_quarantine_status(
-                    job_id=job_id,
-                    status="RELEASED",
-                    policy_action="release",
-                    audit_entry={
-                        "timestamp": time.time(),
-                        "status": "RELEASED",
-                        "details": f"Document released from quarantine to {dest_file_path}",
-                    },
-                )
-                final_hash = (
-                    resilient_file_hash(dest_file_path)
-                    if os.path.exists(dest_file_path)
-                    else record["file_hash"]
-                )
-                self.db.upsert_document(
-                    base_dir,
-                    os.path.relpath(dest_file_path, base_dir).replace("\\", "/"),
-                    final_hash,
-                    str(extracted_text),
-                )
+                with atomic_quarantine_relocation(
+                    staged_path, dest_file_path
+                ) as actual_dest:
+                    self.db.update_quarantine_status(
+                        job_id=job_id,
+                        status="RELEASED",
+                        policy_action="release",
+                        audit_entry={
+                            "timestamp": time.time(),
+                            "status": "RELEASED",
+                            "details": f"Document released from quarantine to {dest_file_path}",
+                        },
+                    )
+                    final_hash = (
+                        resilient_file_hash(actual_dest)
+                        if os.path.exists(actual_dest)
+                        else record["file_hash"]
+                    )
+                    self.db.upsert_document(
+                        base_dir,
+                        os.path.relpath(actual_dest, base_dir).replace("\\", "/"),
+                        final_hash,
+                        str(extracted_text),
+                    )
 
             res = self.db.get_quarantine_record(job_id)
             if isinstance(res, dict):
