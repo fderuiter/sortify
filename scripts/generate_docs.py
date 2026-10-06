@@ -676,6 +676,12 @@ def main():
         action="store_false",
         help="Disable strict validation mode on MkDocs build.",
     )
+    parser.add_argument(
+        "--no-build",
+        "--skip-build",
+        action="store_true",
+        help="Skip MkDocs HTML site generation build step.",
+    )
 
     args = parser.parse_args()
 
@@ -774,17 +780,20 @@ def main():
             sys.exit(1)
 
     # 4. Run MkDocs build (and preserve strict build flags)
-    build_cmd = [sys.executable, "-m", "mkdocs", "build"]
-    if args.strict:
-        build_cmd.append("--strict")
+    if not args.no_build:
+        build_cmd = [sys.executable, "-m", "mkdocs", "build"]
+        if args.strict:
+            build_cmd.append("--strict")
 
-    print(f"Running MkDocs build: {' '.join(build_cmd)}")
-    result = subprocess.run(build_cmd, capture_output=False)
-    if result.returncode != 0:
-        sys.stderr.write(
-            f"Error: MkDocs build failed with exit code {result.returncode}\n"
-        )
-        sys.exit(result.returncode)
+        print(f"Running MkDocs build: {' '.join(build_cmd)}")
+        result = subprocess.run(build_cmd, capture_output=False)
+        if result.returncode != 0:
+            sys.stderr.write(
+                f"Error: MkDocs build failed with exit code {result.returncode}\n"
+            )
+            sys.exit(result.returncode)
+    else:
+        print("Skipping MkDocs build (--no-build).")
 
     # 5. Report if files were out of sync
     if args.check and changed_files:
