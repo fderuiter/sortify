@@ -215,3 +215,38 @@ def test_cli_daemon_control_commands(tmp_path, capsys):
 
     finally:
         daemon.stop()
+
+
+@pytest.mark.anyio
+async def test_ipc_drop_endpoint(tmp_path):
+    settings = DummySettings()
+    settings.PROTECTED_PATHS = [str(tmp_path / "protected")]
+    daemon = ContinuousWatchdogDaemon(settings, str(tmp_path))
+    daemon._is_running = True
+
+    server = DaemonIPCServer(daemon)
+    await server.start()
+
+    client = DaemonIPCClient(str(tmp_path))
+
+    try:
+        # Create a sample file to drop
+        drop_file = tmp_path / "sample.pdf"
+        drop_file.write_text("sample document content")
+
+        # Test drop endpoint with valid file
+        drop_res = await client.send_command("drop", {"paths": [str(drop_file)], "dry_run": True})
+        assert drop_res["status"] == "success"
+        assert drop_res["processed_count"] == 1
+
+        # Test drop endpoint with protected path
+        prot_file = tmp_path / "protected" / "secret.txt"
+        prot_file.parent.mkdir(parents=True, exist_ok=True)
+        prot_file.write_text("secret")
+
+        with pytest.raises(RuntimeError, match="Protected path blocked"):
+            await client.send_command("drop", {"paths": [str(prot_file)]})
+
+    finally:
+        server.stop()
+

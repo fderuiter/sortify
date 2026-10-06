@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "c0d4717f29b675947e8054f650471b483f34468e1b22ef23643883c1c3440692"
+    "checksum": "73b0d17779c48da0463f60446e210d9eb6427a47a4949837705a5596d2027323"
   },
   "cli": {
     "app/main.py": [
@@ -435,6 +435,79 @@
         "keywords": {
           "action": "store_true",
           "help": "Output session list or rollback status in structured JSON format"
+        },
+        "method": "add_argument"
+      },
+      {
+        "args": [
+          "drop"
+        ],
+        "caller": "subparsers",
+        "keywords": {
+          "help": "Quick file drop triage receiver for target files or directories"
+        },
+        "method": "add_parser"
+      },
+      {
+        "args": [
+          "paths"
+        ],
+        "caller": "parser_drop",
+        "keywords": {
+          "help": "Target file or directory paths to process",
+          "nargs": "+",
+          "type": "str"
+        },
+        "method": "add_argument"
+      },
+      {
+        "args": [
+          "--preset"
+        ],
+        "caller": "parser_drop",
+        "keywords": {
+          "choices": [
+            "demo",
+            "downloads",
+            "documents"
+          ],
+          "default": null,
+          "help": "Use standard workspace preset directory",
+          "type": "str"
+        },
+        "method": "add_argument"
+      },
+      {
+        "args": [
+          "--dest-dir"
+        ],
+        "caller": "parser_drop",
+        "keywords": {
+          "default": null,
+          "help": "Destination directory for sorted files",
+          "type": "str"
+        },
+        "method": "add_argument"
+      },
+      {
+        "args": [
+          "--dry-run"
+        ],
+        "caller": "parser_drop",
+        "keywords": {
+          "action": "store_true",
+          "help": "Perform dry run analysis without executing physical moves"
+        },
+        "method": "add_argument"
+      },
+      {
+        "args": [
+          "--json"
+        ],
+        "caller": "parser_drop",
+        "keywords": {
+          "action": "store_true",
+          "help": "Output result in structured JSON format"
         },
         "method": "add_argument"
       },
@@ -3042,6 +3115,34 @@
                 }
               ],
               "returns": "bool"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "process_dropped_items",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "list[str]",
+                  "default": null,
+                  "name": "paths"
+                },
+                {
+                  "annotation": "bool",
+                  "default": "False",
+                  "name": "dry_run"
+                },
+                {
+                  "annotation": "Optional[str]",
+                  "default": "None",
+                  "name": "dest_dir"
+                }
+              ],
+              "returns": "dict[str, Any]"
             },
             {
               "async": false,
