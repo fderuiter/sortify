@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "73b0d17779c48da0463f60446e210d9eb6427a47a4949837705a5596d2027323"
+    "checksum": "0b8cb9057bb0b0f91d0d2830866c7362cde08fda74aef5ec1f3d1b2fbf675849"
   },
   "cli": {
     "app/main.py": [
@@ -5680,6 +5680,11 @@
     "app/core/exceptions.py": {
       "classes": [
         {
+          "class_name": "ArchiveSafetyError",
+          "decorators": [],
+          "methods": []
+        },
+        {
           "class_name": "CacheError",
           "decorators": [],
           "methods": []
@@ -6680,6 +6685,26 @@
                   "annotation": "Optional[str]",
                   "default": "None",
                   "name": "temp_staging_dir"
+                },
+                {
+                  "annotation": "int",
+                  "default": "1000",
+                  "name": "max_files"
+                },
+                {
+                  "annotation": "int",
+                  "default": "500 * 1024 * 1024",
+                  "name": "max_total_size_bytes"
+                },
+                {
+                  "annotation": "int",
+                  "default": "100 * 1024 * 1024",
+                  "name": "max_file_size_bytes"
+                },
+                {
+                  "annotation": "float",
+                  "default": "100.0",
+                  "name": "max_ratio"
                 }
               ],
               "returns": null
@@ -6782,6 +6807,26 @@
                   "annotation": "str",
                   "default": null,
                   "name": "destination_dir"
+                },
+                {
+                  "annotation": "Optional[int]",
+                  "default": "None",
+                  "name": "max_files"
+                },
+                {
+                  "annotation": "Optional[int]",
+                  "default": "None",
+                  "name": "max_total_size_bytes"
+                },
+                {
+                  "annotation": "Optional[int]",
+                  "default": "None",
+                  "name": "max_file_size_bytes"
+                },
+                {
+                  "annotation": "Optional[float]",
+                  "default": "None",
+                  "name": "max_ratio"
                 }
               ],
               "returns": "List[str]"
@@ -9310,6 +9355,26 @@
             }
           ],
           "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@contextmanager"
+          ],
+          "name": "atomic_quarantine_relocation",
+          "parameters": [
+            {
+              "annotation": "Optional[str | os.PathLike]",
+              "default": null,
+              "name": "staged_path"
+            },
+            {
+              "annotation": "str | os.PathLike",
+              "default": null,
+              "name": "dest_file_path"
+            }
+          ],
+          "returns": null
         },
         {
           "async": false,
