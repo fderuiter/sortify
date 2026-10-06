@@ -8,7 +8,6 @@ import uuid
 from typing import Any, Dict, List, Optional
 
 from app.core.analyzer_strategies import redact_sensitive_text
-from app.core.clinical_compliance import ClinicalComplianceEngine
 from app.core.crypto import zero_vector_buffer
 from app.core.db import Database
 from app.core.domain_contracts import QuarantineRecordModel, validate_quarantine_record
@@ -81,7 +80,6 @@ class QuarantineInterceptorService:
         self.policies = policies or []
         self.worker_timeout = worker_timeout
         self.forensic_scanner = ForensicScanner()
-        self.clinical_engine = ClinicalComplianceEngine()
         self.dlq_records: List[Dict[str, Any]] = []
         if jev_classifier is not None:
             self.jev_classifier = jev_classifier
@@ -300,20 +298,17 @@ class QuarantineInterceptorService:
                     f"Forensic scanning job exceeded timeout of {effective_timeout}s"
                 )
 
-            # 3. Clinical Compliance Gap Analysis if relevant
-            if extracted_text and (
-                "clinical" in orig_rel_path.lower() or "trial" in orig_rel_path.lower()
-            ):
-                try:
-                    _ = self.clinical_engine.evaluate_compliance(
-                        classified_artifacts={
-                            os.path.basename(orig_rel_path): "01.01.01"
-                        },
-                        all_filenames=[os.path.basename(orig_rel_path)],
-                        base_dir=base_dir,
-                    )
-                except Exception as e:
-                    logger.warning(f"Clinical compliance evaluation warning: {e}")
+            # 3. Dynamic Plugin Lifecycle Scan Hooks
+            try:
+                from app.core.plugin_registry import PluginRegistry
+
+                PluginRegistry.get_instance().trigger_quarantine_scan(
+                    orig_rel_path=orig_rel_path,
+                    extracted_text=extracted_text,
+                    base_dir=base_dir,
+                )
+            except Exception as e:
+                logger.warning(f"Plugin quarantine scan execution warning: {e}")
 
             # 4. Extended Policy Engine Evaluation
             matched_rule = PolicyEngine.evaluate_policies(

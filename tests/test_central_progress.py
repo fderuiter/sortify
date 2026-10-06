@@ -2,11 +2,13 @@
 
 from unittest.mock import MagicMock
 
-from app.core.cro_multi_study_pipeline import CROMultiStudyPipeline
 from app.core.extractor import process_item_worker
 from app.core.forensic_scanner import ForensicScanner
 from app.core.metadata import MetadataPass
 from app.core.progress import ProgressUpdate, emit_progress
+from app.plugins.clinical_compliance.cro_multi_study_pipeline import (
+    CROMultiStudyPipeline,
+)
 
 
 def test_progress_update_dataclass_defaults_and_clamping():
