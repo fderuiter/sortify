@@ -33,7 +33,7 @@ jobs:
 
     - name: Install dependencies
       run: |
-        uv sync --all-groups
+        uv sync --only-group dev --no-install-project
 
     - name: Run Dependency Audit
       run: |
@@ -49,10 +49,24 @@ jobs:
       with:
         go-version: '1.23'
 
-    - name: Workflow Linting
+    - name: Cache Actionlint Binary
+      id: cache-actionlint
+      uses: actions/cache@v4
+      with:
+        path: ~/go/bin/actionlint
+        key: actionlint-${{ runner.os }}-v1.7.7
+
+    - name: Install Actionlint
+      if: steps.cache-actionlint.outputs.cache-hit != 'true'
       run: |
         go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
+
+    - name: Workflow Linting
+      run: |
         gopath="$(go env GOPATH)"
+        if [ ! -f "${gopath}/bin/actionlint" ]; then
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
+        fi
         "${gopath}/bin/actionlint"
 
   type-check:
@@ -74,15 +88,59 @@ jobs:
 
     - name: Install dependencies
       run: |
-        uv sync --all-groups
+        uv sync --only-group dev
 
     - name: Run MyPy Type Check
       run: |
         uv run mypy app/
 
+  static-checks:
+    name: Static Checks
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v5
+      with:
+        version: "latest"
+        enable-cache: false
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    - name: Install dependencies
+      run: |
+        uv sync --all-groups
+
+    - name: Lint with Ruff
+      run: |
+        uv run ruff check .
+
+    - name: Validate External Links
+      run: |
+        uv run python scripts/validate_links.py
+
+    - name: Validate API and CLI Signatures
+      run: |
+        uv run python scripts/validate_signatures.py
+
+    - name: Validate Architectural Guardrails
+      run: |
+        uv run python scripts/validate_architecture.py
+
+    - name: Validate Agent Prompts Manifest
+      run: |
+        uv run python scripts/prompt_manifest.py verify
+
+    - name: Validate Documentation and Integrity
+      run: |
+        uv run docs --check
+
   build-and-test:
     name: Build & Test
-    needs: [security-and-audit]
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
@@ -107,26 +165,6 @@ jobs:
       run: |
         uv sync --all-groups
 
-    - name: Lint with Ruff
-      if: matrix.os == 'ubuntu-latest'
-      run: |
-        uv run ruff check .
-
-    - name: Validate External Links
-      if: matrix.os == 'ubuntu-latest'
-      run: |
-        uv run python scripts/validate_links.py
-
-    - name: Validate API and CLI Signatures
-      if: matrix.os == 'ubuntu-latest'
-      run: |
-        uv run python scripts/validate_signatures.py
-
-    - name: Validate Architectural Guardrails
-      if: matrix.os == 'ubuntu-latest'
-      run: |
-        uv run python scripts/validate_architecture.py
-
     - name: Terminal Interface Snapshot Validation
       run: |
         uv run pytest tests/test_visual_snapshots.py
@@ -140,16 +178,6 @@ jobs:
           tests/snapshots/tui_svg/*.actual
           tests/snapshots/*.actual
         retention-days: 7
-
-    - name: Validate Agent Prompts Manifest
-      if: matrix.os == 'ubuntu-latest'
-      run: |
-        uv run python scripts/prompt_manifest.py verify
-
-    - name: Validate Documentation and Integrity
-      if: matrix.os == 'ubuntu-latest'
-      run: |
-        uv run docs --check
 
     - name: Validate Configuration Schema
       run: |
@@ -251,7 +279,7 @@ jobs:
 
     - name: Install dependencies
       run: |
-        uv sync --all-groups
+        uv sync --only-group dev
 
     - name: Deploy Documentation
       if: github.ref == 'refs/heads/main'
@@ -260,7 +288,6 @@ jobs:
 
   heavy-tests:
     name: Heavy Tests
-    needs: [security-and-audit]
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
@@ -308,7 +335,7 @@ jobs:
   required-ci:
     name: Required CI
     runs-on: ubuntu-latest
-    needs: [security-and-audit, type-check, build-and-test, heavy-tests]
+    needs: [security-and-audit, type-check, static-checks, build-and-test, heavy-tests]
     if: ${{ always() }}
     steps:
       - name: Verify Required Gates

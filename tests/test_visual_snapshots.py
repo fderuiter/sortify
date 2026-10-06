@@ -18,7 +18,7 @@ from app.ui.tui import (
     WizardModal,
 )
 
-pytestmark = pytest.mark.xdist_group(name="tui")
+pytestmark = [pytest.mark.slow, pytest.mark.xdist_group(name="tui")]
 
 SNAPSHOT_DIR = os.path.join(os.path.dirname(__file__), "snapshots", "tui_svg")
 
@@ -162,6 +162,7 @@ def isolated_app_dir(monkeypatch, tmp_path):
         monkeypatch.delattr(app.config, "settings", raising=False)
 
 
+@pytest.mark.slow
 def test_tui_main_screen_snapshot():
     """Verify visual layout of default AutoSorterTUI main screen."""
 
@@ -177,6 +178,7 @@ def test_tui_main_screen_snapshot():
     asyncio.run(_test())
 
 
+@pytest.mark.slow
 def test_tui_populated_plan_snapshot():
     """Verify visual layout of AutoSorterTUI with a populated tree plan."""
 
@@ -220,6 +222,7 @@ def test_tui_populated_plan_snapshot():
     asyncio.run(_test())
 
 
+@pytest.mark.slow
 def test_wizard_modal_snapshot():
     """Verify visual layout of WizardModal onboarding screen."""
 
@@ -236,6 +239,7 @@ def test_wizard_modal_snapshot():
     asyncio.run(_test())
 
 
+@pytest.mark.slow
 def test_settings_modal_snapshot():
     """Verify visual layout of SettingsModal screen."""
 
@@ -255,6 +259,7 @@ def test_settings_modal_snapshot():
     asyncio.run(_test())
 
 
+@pytest.mark.slow
 def test_rename_modal_snapshot():
     """Verify visual layout of RenameModal screen."""
 
@@ -276,6 +281,7 @@ def test_rename_modal_snapshot():
     asyncio.run(_test())
 
 
+@pytest.mark.slow
 def test_cro_forensic_modal_snapshot():
     """Verify visual layout of CROForensicModal screen."""
 
@@ -292,6 +298,7 @@ def test_cro_forensic_modal_snapshot():
     asyncio.run(_test())
 
 
+@pytest.mark.slow
 def test_new_folder_modal_snapshot():
     """Verify visual layout of NewFolderModal screen."""
 
@@ -308,6 +315,7 @@ def test_new_folder_modal_snapshot():
     asyncio.run(_test())
 
 
+@pytest.mark.slow
 def test_directory_select_modal_snapshot():
     """Verify visual layout of DirectorySelectModal screen."""
 

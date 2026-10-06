@@ -144,6 +144,54 @@ def test_main_default_strict():
             assert "--strict" in cmd
 
 
+def test_main_no_build_flag():
+    """Verify that --no-build skips running subprocess.run for mkdocs build."""
+    with patch("sys.argv", ["generate_docs.py", "--no-build"]):
+        with (
+            patch("scripts.generate_docs.compile_diagram_assets") as mock_diag,
+            patch("scripts.generate_docs.generate_tutorial_docs") as mock_tut,
+            patch("scripts.generate_docs.generate_api_docs") as mock_api,
+            patch("scripts.generate_docs.generate_ui_docs") as mock_ui,
+            patch("scripts.generate_docs.generate_admin_guide") as mock_admin,
+            patch("scripts.generate_docs.update_security_md") as mock_sec,
+            patch("scripts.generate_docs.validate_mermaid_diagrams", return_value=[]),
+            patch("subprocess.run") as mock_run,
+        ):
+            main()
+
+            mock_diag.assert_called_once()
+            mock_tut.assert_called_once()
+            mock_api.assert_called_once()
+            mock_ui.assert_called_once()
+            mock_admin.assert_called_once()
+            mock_sec.assert_called_once()
+            mock_run.assert_not_called()
+
+
+def test_main_skip_build_flag():
+    """Verify that --skip-build skips running subprocess.run for mkdocs build."""
+    with patch("sys.argv", ["generate_docs.py", "--skip-build"]):
+        with (
+            patch("scripts.generate_docs.compile_diagram_assets") as mock_diag,
+            patch("scripts.generate_docs.generate_tutorial_docs") as mock_tut,
+            patch("scripts.generate_docs.generate_api_docs") as mock_api,
+            patch("scripts.generate_docs.generate_ui_docs") as mock_ui,
+            patch("scripts.generate_docs.generate_admin_guide") as mock_admin,
+            patch("scripts.generate_docs.update_security_md") as mock_sec,
+            patch("scripts.generate_docs.validate_mermaid_diagrams", return_value=[]),
+            patch("subprocess.run") as mock_run,
+        ):
+            main()
+
+            mock_diag.assert_called_once()
+            mock_tut.assert_called_once()
+            mock_api.assert_called_once()
+            mock_ui.assert_called_once()
+            mock_admin.assert_called_once()
+            mock_sec.assert_called_once()
+            mock_run.assert_not_called()
+
+
 def test_main_detects_unsynced_files_on_check():
     """Verify that --check detects modified files and exits with code 1."""
     original_open = open

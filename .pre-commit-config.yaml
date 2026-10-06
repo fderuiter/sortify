@@ -27,8 +27,9 @@ repos:
         files: '(\.pytest_cache/|\.venv/|\.coverage$|htmlcov/|__pycache__/|.*\.py[co]$)'
       - id: validate-docs
         name: Validate Documentation
-        entry: uv run docs --check
+        entry: uv run docs --check --no-build
         language: system
+        files: '^(docs/|notebooks/|scripts/.*\.py|mkdocs\.yml|README\.md|PRIVACY\.md|SECURITY\.md)'
         pass_filenames: false
       - id: validate-diagram-artifacts
         name: Validate Diagram Artifacts and Mermaid Compilation
@@ -38,7 +39,7 @@ repos:
         pass_filenames: false
       - id: validate-links
         name: Validate External Links
-        entry: uv run python scripts/validate_links.py
+        entry: uv run python scripts/validate_links.py --local-only
         language: system
         files: '\.(py|md)$'
         pass_filenames: false

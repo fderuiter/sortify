@@ -40,7 +40,7 @@ DEFAULT_BYPASS_DOMAINS = {
 }
 
 
-def validate_url(url: str, bypass_domains: set = None):
+def validate_url(url: str, bypass_domains: set = None, local_only: bool = False):
     """Validate a single URL using HEAD with a fallback to GET."""
     parsed = urlparse(url)
     bypass_set = bypass_domains or set()
@@ -54,6 +54,16 @@ def validate_url(url: str, bypass_domains: set = None):
         )
     ):
         return True, f"Bypassed ({parsed.netloc})", False
+
+    if local_only:
+        try:
+            if parsed.scheme in ("http", "https") and bool(
+                parsed.netloc or parsed.hostname
+            ):
+                return True, "OK (Local-only)", False
+            return False, "Invalid URL structure", True
+        except Exception as e:
+            return False, f"Invalid URL structure: {str(e)}", True
 
     # Using a common user agent to avoid being blocked immediately
     req = urllib.request.Request(
@@ -129,6 +139,11 @@ def main():
     """Parse arguments and run concurrent URL validation."""
     parser = argparse.ArgumentParser(description="Local-First Link Validator")
     parser.add_argument("--bypass", nargs="*", default=[], help="Domains to bypass")
+    parser.add_argument(
+        "--local-only",
+        action="store_true",
+        help="Validate URL syntax locally without network requests",
+    )
     args = parser.parse_args()
 
     bypass_domains = set(args.bypass) | DEFAULT_BYPASS_DOMAINS
@@ -160,7 +175,8 @@ def main():
     # We use ThreadPoolExecutor to run validations concurrently for speed
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
         future_to_url = {
-            executor.submit(validate_url, url, bypass_domains): url for url in urls
+            executor.submit(validate_url, url, bypass_domains, args.local_only): url
+            for url in urls
         }
         for future in concurrent.futures.as_completed(future_to_url):
             url = future_to_url[future]
