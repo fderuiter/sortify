@@ -96,7 +96,7 @@ opencv-python-headless==5.0.0.93
     # via easyocr
 openpyxl==3.1.5
     # via smart-autosorter (pyproject.toml)
-packaging==24.1
+packaging==26.3
     # via
     #   lazy-loader
     #   scikit-image
