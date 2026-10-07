@@ -431,7 +431,8 @@ def test_tui_cro_forensic_modal(temp_workspace):
                 mock_run.return_value = mock_res
 
                 modal.action_run()
-                await pilot.pause(0.2)
+                await app.workers.wait_for_complete()
+                await pilot.pause(0.05)
 
                 assert mock_run.called
 
@@ -1432,7 +1433,8 @@ def test_tui_cro_forensic_modal_help_button_and_error(temp_workspace):
             # Set invalid source path to trigger worker error
             modal.query_one("#input-source", Input).value = "/nonexistent/invalid/path"
             modal.action_run()
-            await pilot.pause(0.1)
+            await app.workers.wait_for_complete()
+            await pilot.pause(0.05)
 
             assert not btn_help.has_class("hidden")
             assert modal.help_url == "https://docs.smartautosorter.com/troubleshooting/#cro-forensic-ingestion"
