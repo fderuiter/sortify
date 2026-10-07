@@ -124,6 +124,65 @@ class Settings(BaseSettings):
         self.AUDIO_MAX_WORKERS = val
 
     PLUGINS: list[str] = Field(default_factory=list)
+
+    @field_validator("PLUGINS", mode="before")
+    @classmethod
+    def validate_plugins(cls, v: list[str]) -> list[str]:
+        """Validate and sanitize plugin module path identifiers."""
+        if not isinstance(v, (list, tuple, set)):
+            raise ValueError("PLUGINS must be a list of strings.")
+        validated = []
+        stdlib_modules: set[str] = set(getattr(sys, "stdlib_module_names", set()))
+
+        for entry in v:
+            if not isinstance(entry, str):
+                raise ValueError("Plugin entry must be a string.")
+            cleaned = entry.strip()
+            if not cleaned:
+                raise ValueError("Plugin entry cannot be blank or whitespace-only.")
+
+            if any(
+                char in cleaned
+                for char in ("/", "\\", "*", "?", "<", ">", "|", ":", ";", " ", "\t")
+            ):
+                raise ValueError(
+                    f"Invalid characters in plugin identifier: '{cleaned}'"
+                )
+
+            parts = cleaned.split(".")
+            if not all(part.isidentifier() for part in parts):
+                raise ValueError(
+                    f"Plugin entry '{cleaned}' is not a valid Python module identifier path."
+                )
+
+            if "." in cleaned and not cleaned.startswith(
+                ("app.plugins.", "sortify_plugin_")
+            ):
+                raise ValueError(
+                    f"Forbidden plugin module path '{cleaned}'. "
+                    "Explicit plugin module paths must start with 'app.plugins.' or 'sortify_plugin_'."
+                )
+
+            first_part = parts[0]
+            if cleaned in stdlib_modules or first_part in (
+                "os",
+                "sys",
+                "subprocess",
+                "builtins",
+                "importlib",
+                "shutil",
+                "ctypes",
+                "socket",
+                "http",
+            ):
+                if not cleaned.startswith(("app.plugins.", "sortify_plugin_")):
+                    raise ValueError(
+                        f"Forbidden plugin module path '{cleaned}': standard library or system modules cannot be configured as plugins."
+                    )
+
+            if cleaned not in validated:
+                validated.append(cleaned)
+        return validated
     OCR_LANGUAGES: str = Field(default="en")
     VISION_ENGINE: Literal["easyocr", "florence-2"] = Field(default="easyocr")
     CONFLICT_POLICY: Literal["skip", "rename"] = Field(default="rename")

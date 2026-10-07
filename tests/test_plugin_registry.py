@@ -99,3 +99,73 @@ def test_default_isolation_when_no_plugin_active():
     assert len(registry.get_quarantine_scan_hooks()) == 0
     assert len(registry.get_tui_strategy_options()) == 0
     assert registry.has_tui_view("cro_forensic") is False
+
+
+def test_disallowed_stdlib_module_rejection_no_import(mocker, caplog):
+    """Verify raw stdlib module names like os/sys/subprocess fail safely and NEVER invoke importlib.import_module on raw name."""
+    import importlib
+
+    registry = PluginRegistry.get_instance()
+    spy_import = mocker.spy(importlib, "import_module")
+
+    with caplog.at_level(logging.WARNING):
+        for raw_mod in ["os", "sys", "subprocess", "math", "shutil"]:
+            success = registry.load_plugin(raw_mod)
+            assert success is False
+
+    imported_args = [call.args[0] for call in spy_import.call_args_list]
+    for forbidden in ["os", "sys", "subprocess", "math", "shutil"]:
+        assert forbidden not in imported_args
+
+
+def test_unprefixed_module_path_rejection(mocker, caplog):
+    """Verify un-prefixed arbitrary module paths outside allowed prefixes are rejected without raw import."""
+    import importlib
+
+    registry = PluginRegistry.get_instance()
+    spy_import = mocker.spy(importlib, "import_module")
+
+    with caplog.at_level(logging.WARNING):
+        success = registry.load_plugin("some_external_package.some_module")
+        assert success is False
+
+    imported_args = [call.args[0] for call in spy_import.call_args_list]
+    assert "some_external_package.some_module" not in imported_args
+    assert "app.plugins.some_external_package.some_module" in imported_args
+
+
+def test_config_validation_rejects_disallowed_plugins():
+    """Verify Settings model rejects raw stdlib or un-prefixed module paths in PLUGINS configuration."""
+    from pydantic import ValidationError
+
+    from app.config import Settings
+
+    for bad_plugin in ["os", "sys", "subprocess", "some_external_pkg.mod"]:
+        with pytest.raises(ValidationError):
+            Settings(PLUGINS=[bad_plugin])
+
+
+def test_valid_plugins_in_settings():
+    """Verify Settings accepts valid plugin names and prefixed module paths."""
+    from app.config import Settings
+
+    s1 = Settings(PLUGINS=["clinical_compliance"])
+    assert s1.PLUGINS == ["clinical_compliance"]
+
+    s2 = Settings(PLUGINS=["app.plugins.clinical_compliance"])
+    assert s2.PLUGINS == ["app.plugins.clinical_compliance"]
+
+    s3 = Settings(PLUGINS=["sortify_plugin_external"])
+    assert s3.PLUGINS == ["sortify_plugin_external"]
+
+
+def test_app_settings_graceful_handling_of_invalid_plugins_config(tmp_path, caplog):
+    """Verify AppSettings handling invalid plugin in settings file logs warning and resets to default PLUGINS."""
+    settings_file = tmp_path / "settings.json"
+    settings_file.write_text('{"PLUGINS": ["os"]}', encoding="utf-8")
+
+    with caplog.at_level(logging.WARNING):
+        app_settings = AppSettings(filepath=str(settings_file))
+        assert app_settings.PLUGINS == []
+
+    assert "Invalid PLUGINS in config" in caplog.text or "Forbidden plugin module path" in caplog.text
