@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "a5aec287939b378fb388602ddfde931eec02de1609840dff6e60d45c99c4798f"
+    "checksum": "9e9fab873afd47b2d423d3a4cf6ee6efb1004f3ce05feba91ccb4274c891c967"
   },
   "cli": {
     "app/main.py": [
@@ -2037,6 +2037,88 @@
             }
           ],
           "returns": "Path"
+        }
+      ]
+    },
+    "app/core/audit_reporter.py": {
+      "classes": [],
+      "functions": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "export_audit_report",
+          "parameters": [
+            {
+              "annotation": "Dict[str, Any]",
+              "default": null,
+              "name": "report_data"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "output_path"
+            },
+            {
+              "annotation": "str",
+              "default": "'json'",
+              "name": "format_type"
+            }
+          ],
+          "returns": "str"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "export_audit_report_csv",
+          "parameters": [
+            {
+              "annotation": "Dict[str, Any]",
+              "default": null,
+              "name": "report_data"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "output_path"
+            }
+          ],
+          "returns": "str"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "export_audit_report_json",
+          "parameters": [
+            {
+              "annotation": "Dict[str, Any]",
+              "default": null,
+              "name": "report_data"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "output_path"
+            }
+          ],
+          "returns": "str"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "generate_audit_report",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": "List[Dict[str, Any]]",
+              "default": null,
+              "name": "move_records"
+            }
+          ],
+          "returns": "Dict[str, Any]"
         }
       ]
     },
@@ -5709,6 +5791,11 @@
       "classes": [
         {
           "class_name": "ArchiveSafetyError",
+          "decorators": [],
+          "methods": []
+        },
+        {
+          "class_name": "AuditExportError",
           "decorators": [],
           "methods": []
         },
