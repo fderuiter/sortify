@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
+from rich.text import Text
 from textual import events, on, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -657,6 +658,123 @@ class NewFolderModal(A11yMixin, ModalScreen[Optional[str]]):
     @on(Input.Submitted)
     def action_submit(self) -> None:
         """Submit input on Enter key press."""
+        self.action_confirm()
+
+
+class ReassignModal(A11yMixin, ModalScreen[Optional[str]]):
+    """Modal dialog for reassigning checked file nodes to a target category folder."""
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel dialog", show=True),
+    ]
+
+    CSS = """
+    ReassignModal {
+        align: center middle;
+        background: rgba(0, 0, 0, 0.6);
+    }
+    .modal-box {
+        padding: 1 2;
+        background: $panel;
+        border: thick $primary;
+        width: 90%;
+        max-width: 80;
+        min-width: 30;
+        height: auto;
+        max-height: 90%;
+        overflow-y: auto;
+    }
+    .narrow .modal-box {
+        padding: 0 1;
+        width: 95%;
+    }
+    .modal-title {
+        text-style: bold;
+        color: $accent;
+        margin-bottom: 1;
+    }
+    .button-row {
+        margin-top: 1;
+        height: 3;
+        align: right middle;
+    }
+    Button:focus, Input:focus, Select:focus {
+        border: heavy $accent;
+        text-style: bold;
+    }
+    """
+
+    def __init__(self, existing_folders: List[str], count: int = 1):
+        super().__init__()
+        self.existing_folders = [f for f in existing_folders if f]
+        self.count = count
+
+    def compose(self) -> ComposeResult:
+        """Compose modal dialog children."""
+        with Vertical(classes="modal-box"):
+            yield Label(f"Reassign {self.count} Selected File(s)", classes="modal-title")
+            yield Label("Select Existing Target Folder:")
+            options = [(f, f) for f in sorted(self.existing_folders)]
+            if options:
+                yield Select(options, prompt="Choose folder...", id="select-folder")
+            yield Label("Or Enter New Target Category Folder Name:")
+            inp = Input(
+                placeholder="e.g. Drafts, Financials, Archive",
+                id="input-target-folder",
+            )
+            inp.tooltip = "Enter target folder category name"
+            yield inp
+            with Horizontal(classes="button-row"):
+                btn_cancel = Button("Cancel", id="btn-cancel", variant="default")
+                btn_cancel.tooltip = "Cancel reassign dialog"
+                yield btn_cancel
+                btn_confirm = Button("Reassign", id="btn-confirm", variant="primary")
+                btn_confirm.tooltip = "Confirm bulk reassignment"
+                yield btn_confirm
+
+    def _update_layout(self, width: int) -> None:
+        """Update modal layout based on viewport width breakpoint."""
+        if width < 80:
+            self.add_class("narrow")
+        else:
+            self.remove_class("narrow")
+
+    def on_resize(self, event: events.Resize) -> None:
+        """Handle modal viewport resize event."""
+        self._update_layout(event.size.width)
+
+    def on_mount(self) -> None:
+        """Focus input field on mount and emit announcement."""
+        self._update_layout(self.size.width)
+        self.query_one("#input-target-folder", Input).focus()
+        self.announce(f"Opened bulk reassign dialog for {self.count} items.")
+
+    @on(Button.Pressed, "#btn-confirm")
+    def action_confirm(self) -> None:
+        """Confirm reassign action."""
+        val = self.query_one("#input-target-folder", Input).value.strip()
+        if not val:
+            try:
+                sel = self.query_one("#select-folder", Select)
+                if sel.value is not Select.BLANK and sel.value:
+                    val = str(sel.value)
+            except Exception:
+                pass
+        if val:
+            self.announce(f"Reassigning to target folder '{val}'.")
+        else:
+            self.announce("Cancelled bulk reassign.")
+        self.dismiss(val if val else None)
+
+    @on(Button.Pressed, "#btn-cancel")
+    def action_cancel(self) -> None:
+        """Cancel reassign action."""
+        self.announce("Cancelled bulk reassign.")
+        self.dismiss(None)
+
+    @on(Input.Submitted)
+    def action_submit(self) -> None:
+        """Submit reassign on Enter key press."""
         self.action_confirm()
 
 
@@ -2992,10 +3110,14 @@ class VimTree(Tree):
 
         if event.key == "j":
             self.action_cursor_down()
+            if getattr(self.app, "visual_select_active", False) and self.cursor_node:
+                self.app.register_visual_selected_node(self.cursor_node)
             event.stop()
             event.prevent_default()
         elif event.key == "k":
             self.action_cursor_up()
+            if getattr(self.app, "visual_select_active", False) and self.cursor_node:
+                self.app.register_visual_selected_node(self.cursor_node)
             event.stop()
             event.prevent_default()
         elif event.key == "h":
@@ -3016,6 +3138,36 @@ class VimTree(Tree):
                     self.action_cursor_down()
             event.stop()
             event.prevent_default()
+        elif event.key in ("space", " "):
+            if hasattr(self.app, "action_toggle_selection"):
+                self.app.action_toggle_selection()
+            event.stop()
+            event.prevent_default()
+        elif event.key in ("x", "X"):
+            if hasattr(self.app, "action_exclude_selected"):
+                self.app.action_exclude_selected()
+            event.stop()
+            event.prevent_default()
+        elif event.key in ("i", "I"):
+            if hasattr(self.app, "action_include_selected"):
+                self.app.action_include_selected()
+            event.stop()
+            event.prevent_default()
+        elif event.key in ("r", "R"):
+            if hasattr(self.app, "action_reassign_selected"):
+                self.app.action_reassign_selected()
+            event.stop()
+            event.prevent_default()
+        elif event.key in ("v", "V"):
+            if hasattr(self.app, "action_visual_range_select"):
+                self.app.action_visual_range_select()
+            event.stop()
+            event.prevent_default()
+        elif event.key in ("a", "A"):
+            if hasattr(self.app, "action_toggle_select_all"):
+                self.app.action_toggle_select_all()
+            event.stop()
+            event.prevent_default()
         elif event.key in ("enter", "return"):
             node = self.cursor_node
             if node:
@@ -3034,6 +3186,12 @@ class AutoSorterTUI(A11yMixin, App):
     SUB_TITLE = "Interactive Tree & Modal Controls"
 
     BINDINGS = [
+        Binding("space", "toggle_selection", "Toggle Checkbox", show=True),
+        Binding("x", "exclude_selected", "Exclude Checked", show=True),
+        Binding("i", "include_selected", "Include Checked", show=True),
+        Binding("r", "reassign_selected", "Reassign Checked", show=True),
+        Binding("v", "visual_range_select", "Range Select", show=True),
+        Binding("a", "toggle_select_all", "Select/Deselect All", show=True),
         Binding("ctrl+l", "toggle_lock", "Lock/Unlock", show=True),
         Binding("ctrl+r", "rename_node", "Rename Node", show=True),
         Binding("ctrl+n", "new_folder", "New Folder", show=True),
@@ -3143,6 +3301,8 @@ class AutoSorterTUI(A11yMixin, App):
         self._ratings_cache: Dict[str, str] = {}
         self.app_session = None
         self.active_tree_node = None
+        self.visual_select_active: bool = False
+        self.visual_selected_nodes: list = []
 
     def compose(self) -> ComposeResult:
         """Compose main dual-pane TUI layout."""
@@ -3786,6 +3946,11 @@ class AutoSorterTUI(A11yMixin, App):
             self.announce("No plan available to execute. Run [Ctrl+S] Scan first.")
             return
 
+        exec_plan = self._get_executable_plan()
+        if not self._has_file_nodes(exec_plan):
+            self.announce("No checked files in sorting plan to execute.")
+            return
+
         self.announce("Executing file moves according to plan...")
         self.run_execute_worker()
 
@@ -3796,8 +3961,9 @@ class AutoSorterTUI(A11yMixin, App):
             def move_progress_cb(update_or_prog: Any, stage: Optional[str] = None, **kwargs: Any) -> None:
                 self.call_from_thread(self._handle_progress_update, update_or_prog, stage, **kwargs)
 
+            exec_plan = self._get_executable_plan()
             summary = self.app_session.execute_moves(
-                self.plan,
+                exec_plan,
                 progress_callback=move_progress_cb,
             )
             msg = f"Execution completed successfully! Summary: {summary}"
@@ -3807,12 +3973,12 @@ class AutoSorterTUI(A11yMixin, App):
             audit_report = (
                 summary.get("audit_report") if isinstance(summary, dict) else None
             )
-            if not audit_report and self.plan:
+            if not audit_report and exec_plan:
                 from app.core.audit_reporter import generate_audit_report
                 from app.core.verifier import VerificationEngine
 
                 base_dir = self.app_session.base_dir if self.app_session else "."
-                moves = VerificationEngine.get_moves(base_dir, self.plan)
+                moves = VerificationEngine.get_moves(base_dir, exec_plan)
                 records = [
                     {"source_path": src, "destination_path": dst}
                     for _, src, dst in moves
@@ -3861,6 +4027,10 @@ class AutoSorterTUI(A11yMixin, App):
                     return True
                 if self._has_file_nodes(v):
                     return True
+            elif isinstance(v, list) and len(v) > 0:
+                return True
+            elif isinstance(v, str) and k != "action":
+                return True
         return False
 
     def rebuild_tree(self) -> None:
@@ -3895,6 +4065,19 @@ class AutoSorterTUI(A11yMixin, App):
         except Exception as e:
             logger.error(f"Error rebuilding tree: {e}")
 
+    def _collect_file_nodes_from_dict(self, d: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Collect all file info dicts nested within a plan directory subtree."""
+        files = []
+        if not isinstance(d, dict):
+            return files
+        for val in d.values():
+            if isinstance(val, dict):
+                if val.get("__type__") == "file":
+                    files.append(val)
+                else:
+                    files.extend(self._collect_file_nodes_from_dict(val))
+        return files
+
     def _build_tree_nodes(
         self, node_dict: Dict[str, Any], parent_item: TreeNode, current_folder: str
     ) -> None:
@@ -3922,9 +4105,22 @@ class AutoSorterTUI(A11yMixin, App):
                 )
                 rating = self._ratings_cache.get(filepath) or file_info.get("rating")
 
-                label_parts = []
+                is_excluded = file_info.get("is_excluded", False)
+                if "is_checked" not in file_info:
+                    is_checked = not is_excluded
+                else:
+                    is_checked = file_info.get("is_checked", True)
+                if is_excluded:
+                    is_checked = False
+                file_info["is_checked"] = is_checked
+                file_info["is_excluded"] = is_excluded
+
+                cb_str = "[x]" if is_checked else "[ ]"
+                label_parts = [cb_str]
                 if is_locked:
                     label_parts.append("[LOCKED]")
+                if is_excluded:
+                    label_parts.append("[EXCLUDED]")
                 if rating == "positive":
                     label_parts.append("[+]")
                 elif rating == "negative":
@@ -3956,7 +4152,7 @@ class AutoSorterTUI(A11yMixin, App):
                 if target_filename and target_filename != file_key:
                     label_parts.append(f"-> {target_filename}")
 
-                label_str = "📄 " + " ".join(label_parts)
+                label_str = cb_str + " 📄 " + " ".join(label_parts[1:])
                 node_data = {
                     "is_file": True,
                     "key": file_key,
@@ -3965,8 +4161,10 @@ class AutoSorterTUI(A11yMixin, App):
                     "info": file_info,
                     "is_locked": is_locked,
                     "rating": rating,
+                    "is_checked": is_checked,
+                    "is_excluded": is_excluded,
                 }
-                parent_item.add_leaf(label_str, data=node_data)
+                parent_item.add_leaf(Text(label_str), data=node_data)
             elif isinstance(v, dict):
                 sub_folder = (
                     (Path(current_folder) / k).as_posix() if current_folder else k
@@ -3977,8 +4175,24 @@ class AutoSorterTUI(A11yMixin, App):
                     "folder": sub_folder,
                     "info": v,
                 }
+                child_files = self._collect_file_nodes_from_dict(v)
+                if child_files:
+                    checked_count = sum(
+                        1
+                        for f in child_files
+                        if f.get("is_checked", True) and not f.get("is_excluded", False)
+                    )
+                    if checked_count == len(child_files):
+                        folder_cb = "[x] "
+                    elif checked_count > 0:
+                        folder_cb = "[-] "
+                    else:
+                        folder_cb = "[ ] "
+                else:
+                    folder_cb = ""
+
                 child_tree_node = parent_item.add(
-                    f"📁 {k}", data=node_data, expand=True
+                    Text(f"{folder_cb}📁 {k}"), data=node_data, expand=True
                 )
                 self._build_tree_nodes(v, child_tree_node, current_folder=sub_folder)
 
@@ -4121,6 +4335,240 @@ class AutoSorterTUI(A11yMixin, App):
                     self.action_generate_sample_corpus()
                 elif action == "select_dir":
                     self.action_select_dir()
+
+    # --- Checkbox Selection & Bulk Action Handlers ---
+
+    def register_visual_selected_node(self, node: TreeNode) -> None:
+        """Register node into visual range selection list when visual selection is active."""
+        if not self.visual_select_active or not node:
+            return
+        if node not in self.visual_selected_nodes:
+            self.visual_selected_nodes.append(node)
+
+    def action_visual_range_select(self) -> None:
+        """Toggle visual range selection mode [V]."""
+        if self._is_text_control_focused():
+            return
+        self.visual_select_active = not self.visual_select_active
+        if self.visual_select_active:
+            self.visual_selected_nodes = []
+            node = self._get_active_node()
+            if node:
+                self.visual_selected_nodes.append(node)
+            self.announce("Visual range selection mode enabled. Move cursor [j/k] to extend range.")
+        else:
+            self.announce("Visual range selection mode disabled.")
+
+    def action_toggle_selection(self) -> None:
+        """Toggle checkbox selection for active node, folder group, or visual range [Space]."""
+        if self._is_text_control_focused():
+            return
+
+        nodes_to_toggle = []
+        if self.visual_select_active and self.visual_selected_nodes:
+            nodes_to_toggle = list(self.visual_selected_nodes)
+            self.visual_select_active = False
+            self.visual_selected_nodes = []
+        else:
+            active_node = self._get_active_node()
+            if active_node:
+                nodes_to_toggle = [active_node]
+
+        if not nodes_to_toggle:
+            self.announce("Select a tree node to toggle checkbox [Space].")
+            return
+
+        file_infos_to_toggle: List[Dict[str, Any]] = []
+        for n in nodes_to_toggle:
+            data = getattr(n, "data", None)
+            if not data or not isinstance(data, dict):
+                continue
+            if data.get("is_file"):
+                file_infos_to_toggle.append(data["info"])
+            else:
+                info_dict = data.get("info", {})
+                file_infos_to_toggle.extend(self._collect_file_nodes_from_dict(info_dict))
+
+        if not file_infos_to_toggle:
+            self.announce("No file nodes found to toggle.")
+            return
+
+        all_checked = all(
+            fi.get("is_checked", True) and not fi.get("is_excluded", False)
+            for fi in file_infos_to_toggle
+        )
+        new_checked = not all_checked
+
+        for fi in file_infos_to_toggle:
+            fi["is_checked"] = new_checked
+            if new_checked:
+                fi["is_excluded"] = False
+
+        self.rebuild_tree()
+        status_str = "checked [x]" if new_checked else "unchecked [ ]"
+        self.announce(f"Toggled {len(file_infos_to_toggle)} document item(s) to {status_str}.")
+
+    def _get_target_file_infos(self) -> List[Dict[str, Any]]:
+        """Return checked file info dicts, or active/focused node file infos if none checked."""
+        all_files = self._collect_file_nodes_from_dict(self.plan)
+        checked_files = [
+            f for f in all_files
+            if f.get("is_checked", True) and not f.get("is_excluded", False)
+        ]
+        if checked_files:
+            return checked_files
+
+        active_node = self._get_active_node()
+        if not active_node:
+            return all_files
+
+        data = getattr(active_node, "data", None)
+        if not data or not isinstance(data, dict):
+            return all_files
+
+        if data.get("is_file"):
+            return [data["info"]]
+        else:
+            folder_files = self._collect_file_nodes_from_dict(data.get("info", {}))
+            return folder_files if folder_files else all_files
+
+    def action_exclude_selected(self) -> None:
+        """Bulk exclude checked items or active node [X]."""
+        if self._is_text_control_focused():
+            return
+
+        target_files = self._get_target_file_infos()
+        if not target_files:
+            self.announce("No file items available to exclude.")
+            return
+
+        for fi in target_files:
+            fi["is_checked"] = False
+            fi["is_excluded"] = True
+
+        self.rebuild_tree()
+        self.announce(f"Excluded {len(target_files)} file(s) from sorting plan.")
+
+    def action_include_selected(self) -> None:
+        """Bulk include selected items or active node [I]."""
+        if self._is_text_control_focused():
+            return
+
+        target_files = self._get_target_file_infos()
+        if not target_files:
+            self.announce("No file items available to include.")
+            return
+
+        for fi in target_files:
+            fi["is_checked"] = True
+            fi["is_excluded"] = False
+
+        self.rebuild_tree()
+        self.announce(f"Included {len(target_files)} file(s) in sorting plan.")
+
+    def action_reassign_selected(self) -> None:
+        """Bulk reassign checked file items or active node to target category [R]."""
+        if self._is_text_control_focused():
+            return
+
+        target_files = self._get_target_file_infos()
+        if not target_files:
+            self.announce("No file items available to reassign.")
+            return
+
+        existing_folders = [
+            k for k, v in self.plan.items()
+            if isinstance(v, dict) and v.get("__type__") != "file"
+        ]
+
+        def on_reassigned(target_folder: Optional[str]) -> None:
+            if not target_folder:
+                return
+
+            reassigned_count = 0
+            for fi in target_files:
+                file_key = None
+                old_folder = fi.get("folder", "")
+
+                for f_name, f_content in list(self.plan.items()):
+                    if isinstance(f_content, dict):
+                        for k, v in list(f_content.items()):
+                            if v is fi:
+                                file_key = k
+                                old_folder = f_name
+                                break
+                    if file_key:
+                        break
+
+                if not file_key:
+                    file_key = fi.get("target_filename") or fi.get("key")
+
+                if file_key and old_folder in self.plan:
+                    if file_key in self.plan[old_folder]:
+                        self.plan[old_folder].pop(file_key, None)
+                    if target_folder not in self.plan:
+                        self.plan[target_folder] = {}
+                    self.plan[target_folder][file_key] = fi
+                    fi["folder"] = target_folder
+                    fi["is_locked"] = True
+                    self.locked_files[file_key] = target_folder
+                    if self.app_session:
+                        self.app_session.db.set_user_verified_target_path(
+                            self.base_dir, file_key, target_folder
+                        )
+                    reassigned_count += 1
+
+            self.rebuild_tree()
+            self.announce(f"Reassigned {reassigned_count} file(s) to folder '{target_folder}'.")
+
+        self.push_screen(ReassignModal(existing_folders, count=len(target_files)), on_reassigned)
+
+    def action_toggle_select_all(self) -> None:
+        """Toggle Select All / Deselect All file nodes in plan [A]."""
+        if self._is_text_control_focused():
+            return
+
+        all_files = self._collect_file_nodes_from_dict(self.plan)
+        if not all_files:
+            self.announce("No file items available to select/deselect.")
+            return
+
+        all_checked = all(
+            f.get("is_checked", True) and not f.get("is_excluded", False)
+            for f in all_files
+        )
+        new_state = not all_checked
+
+        for f in all_files:
+            f["is_checked"] = new_state
+            if new_state:
+                f["is_excluded"] = False
+
+        self.rebuild_tree()
+        status_str = "Selected all" if new_state else "Deselected all"
+        self.announce(f"{status_str} {len(all_files)} file item(s).")
+
+    def _get_executable_plan(
+        self, plan_dict: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """Return filtered plan dictionary containing only checked, non-excluded file nodes."""
+        if plan_dict is None:
+            plan_dict = self.plan
+
+        result: Dict[str, Any] = {}
+        for k, v in plan_dict.items():
+            if isinstance(v, dict) and v.get("__type__") == "file":
+                is_checked = v.get("is_checked", True)
+                is_excluded = v.get("is_excluded", False)
+                if is_checked and not is_excluded:
+                    result[k] = v
+            elif isinstance(v, dict):
+                sub = self._get_executable_plan(v)
+                if sub:
+                    result[k] = sub
+            else:
+                result[k] = v
+        return result
 
     # --- Keyboard Action Hotkeys ---
 
