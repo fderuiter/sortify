@@ -122,6 +122,8 @@ def test_settings_modal_labeled_switch_click_label(tmp_path):
             # Scroll visible and click the label text for AI Consent
             ls_ai.scroll_visible()
             await pilot.pause(0.05)
+            ls_ai.label_widget.scroll_visible()
+            await pilot.pause(0.05)
             await pilot.click(ls_ai.label_widget)
             await pilot.pause(0.05)
 
