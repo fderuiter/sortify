@@ -601,16 +601,18 @@ options:
 
 ##### `ledger`
 ```text
-usage: app/main.py ledger [-h] {status,reconcile,purge} ...
+usage: app/main.py ledger [-h] {status,reconcile,purge,export} ...
 
 positional arguments:
-  {status,reconcile,purge}
+  {status,reconcile,purge,export}
                         Ledger subcommands
     status              Display incomplete or pending transaction ledger
                         entries
     reconcile           Execute automated headless reconciliation for
                         interrupted file moves
     purge               Purge completed or session transaction ledger records
+    export              Export session history transaction records as CSV or
+                        JSON audit log
 
 options:
   -h, --help            show this help message and exit

@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "a72f3f1fcc13fe17cb96844070a8eb6100296c1d54be5a6930d2e5fa4807edd8"
+    "checksum": "365b9b7d913a171b99bda3021688fbbe72089558bbfb87c2c8cad72c50f260f5"
   },
   "cli": {
     "app/main.py": [
@@ -7080,6 +7080,34 @@
                 }
               ],
               "returns": "str"
+            },
+            {
+              "async": false,
+              "decorators": [],
+              "name": "export_audit_log",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "output_path"
+                },
+                {
+                  "annotation": "Any",
+                  "default": "None",
+                  "name": "session_id"
+                },
+                {
+                  "annotation": "Any",
+                  "default": "None",
+                  "name": "format"
+                }
+              ],
+              "returns": "Dict[str, Any]"
             },
             {
               "async": false,
