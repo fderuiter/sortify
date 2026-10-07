@@ -49,3 +49,9 @@ class SchemaValidationError(SortifyBaseError, ValueError):
     def __init__(self, message: str, payload_context: str | None = None) -> None:
         super().__init__(message)
         self.payload_context = payload_context
+
+
+class AuditExportError(SortifyBaseError, OSError):
+    """Base exception for audit report export and file write operations."""
+
+    pass

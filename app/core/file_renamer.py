@@ -355,6 +355,44 @@ class FileRenamerEngine:
 
         return f"{safe_base}{ext}"
 
+    def format_pattern_name(
+        self,
+        original_filename: str,
+        pattern: str,
+        category: str = "",
+        seq: int = 1,
+        file_date: Optional[str] = None,
+    ) -> str:
+        """Format filename using a pattern template string with metadata tokens.
+
+        Args:
+            original_filename: Source filename or path.
+            pattern: Pattern template string containing placeholders.
+            category: Document or destination folder category name.
+            seq: Sequence index number.
+            file_date: Optional explicit date string.
+
+        Returns
+        -------
+            Sanitized formatted filename string.
+        """
+        from app.core.pattern_formatter import PatternTokenFormatter
+
+        stem, ext = os.path.splitext(os.path.basename(original_filename))
+        metadata = {
+            "original": stem,
+            "extension": ext,
+            "category": category,
+            "date": file_date,
+            "seq": seq,
+        }
+        return PatternTokenFormatter.format_pattern(
+            pattern=pattern,
+            metadata=metadata,
+            seq=seq,
+            fallback_original=original_filename,
+        )
+
     def process_sorting_plan(
         self,
         plan: dict,

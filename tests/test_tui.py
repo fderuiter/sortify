@@ -797,7 +797,7 @@ def test_tui_jev_tree_node_tags_and_inspector(temp_workspace):
 
 
 def test_tui_expanded_settings_fields(temp_workspace):
-    """Verify SettingsModal MAX_FOLDERS, CLINICAL_SMART_RENAMING, and CONTEXTUAL_RENAMING controls."""
+    """Verify SettingsModal MAX_FOLDERS, CLINICAL_SMART_RENAMING, CONTEXTUAL_RENAMING, and AI_CONSENT_GRANTED controls."""
 
     async def _test():
         settings = AppSettings()
@@ -815,6 +815,7 @@ def test_tui_expanded_settings_fields(temp_workspace):
                 modal.query_one("#input-max-folders", Input).value = "8"
                 modal.query_one("#switch-clinical-renaming", Switch).value = True
                 modal.query_one("#switch-contextual-renaming", Switch).value = True
+                modal.query_one("#switch-ai-consent", Switch).value = False
 
                 modal.action_save()
                 await pilot.pause(0.1)
@@ -822,6 +823,56 @@ def test_tui_expanded_settings_fields(temp_workspace):
                 assert app.settings.MAX_FOLDERS == 8
                 assert app.settings.CLINICAL_SMART_RENAMING is True
                 assert app.settings.CONTEXTUAL_RENAMING is True
+                assert app.settings.AI_CONSENT_GRANTED is False
+                sb = app.query_one("#status-bar", Static)
+                assert "[AI: Disabled]" in str(sb.render())
+
+    asyncio.run(_test())
+
+
+def test_tui_settings_modal_ai_consent_toggle_flow(temp_workspace):
+    """Verify toggling AI consent inside SettingsModal updates settings and status bar badge dynamically."""
+
+    async def _test():
+        settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = False
+        app = AutoSorterTUI(settings=settings, base_dir=temp_workspace, skip_wizard=True)
+
+        with patch.object(AppSettings, "_save") as mock_save:
+            async with app.run_test() as pilot:
+                sb = app.query_one("#status-bar", Static)
+                assert "[AI: Disabled]" in str(sb.render())
+
+                # Open settings modal and enable AI consent
+                app.action_open_settings()
+                await pilot.pause(0.1)
+                modal = app.screen
+                assert isinstance(modal, SettingsModal)
+                sw = modal.query_one("#switch-ai-consent", Switch)
+                assert sw.value is False
+                sw.value = True
+
+                modal.action_save()
+                await pilot.pause(0.1)
+
+                assert app.settings.AI_CONSENT_GRANTED is True
+                assert mock_save.called
+                assert "[AI: Active]" in str(sb.render())
+
+                # Re-open settings modal and disable AI consent
+                app.action_open_settings()
+                await pilot.pause(0.1)
+                modal2 = app.screen
+                assert isinstance(modal2, SettingsModal)
+                sw2 = modal2.query_one("#switch-ai-consent", Switch)
+                assert sw2.value is True
+                sw2.value = False
+
+                modal2.action_save()
+                await pilot.pause(0.1)
+
+                assert app.settings.AI_CONSENT_GRANTED is False
+                assert "[AI: Disabled]" in str(sb.render())
 
     asyncio.run(_test())
 
