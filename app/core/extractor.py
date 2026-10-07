@@ -466,15 +466,11 @@ def build_corpus_generator(
                         base_dir, item, progress_callback, db, settings=settings
                     )
 
-                    doc = db.get_document(base_dir, item_name)
-                    if doc and doc["file_hash"] == file_hash:
-                        # Already processed and unchanged, no need to yield to analyzer
-                        continue
-
                     item_text_str = str(item_text)
                     chunk[item_name] = {
                         "text": item_text_str
                         if item_text_str.startswith("[STATUS:")
+                        or item_text_str.startswith(item_name + " ")
                         else item_name + " " + item_text_str,
                         "hash": file_hash,
                     }
@@ -517,14 +513,11 @@ def build_corpus_generator(
                         file_hash = ""
                         future.cancel()
 
-                    doc = db.get_document(base_dir, item_name)
-                    if doc and doc["file_hash"] == file_hash:
-                        continue
-
                     item_text_str = str(item_text)
                     chunk[item_name] = {
                         "text": item_text_str
                         if item_text_str.startswith("[STATUS:")
+                        or item_text_str.startswith(item_name + " ")
                         else item_name + " " + item_text_str,
                         "hash": file_hash,
                     }

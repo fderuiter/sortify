@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "4e13a68b5c1ea6ed389f7e7e52d1e11f06dac71ee1da21617dfd54ca24ccb676"
+    "checksum": "4645279f04fbe20e17a7561ccfa3919a958eb8791e52feefb2e17fc46a57923d"
   },
   "classes": [
     {
@@ -36,13 +36,18 @@
             },
             {
               "annotation": null,
-              "default": null,
+              "default": "None",
               "name": "callback"
             },
             {
               "annotation": null,
-              "default": null,
+              "default": "None",
               "name": "cancel_check"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "progress_callback"
             }
           ],
           "returns": "list"

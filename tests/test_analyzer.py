@@ -730,3 +730,28 @@ def test_unclassified_non_extractor_files_route_to_unsupported(mocker):
     if mock_generate_plan.called:
         args = mock_generate_plan.call_args[0]
         assert "foo.py" not in args[0]
+
+
+def test_partial_fit_preserves_corpus_and_bypasses_upsert_for_cached_items(mocker):
+    """Verify partial_fit updates analyzer.corpus for all items but skips db.upsert_documents for unchanged cached files."""
+    mock_db = mocker.MagicMock()
+    mock_db.get_document.return_value = {
+        "file_hash": "hash_cached",
+        "extracted_text": "doc.txt cached content",
+    }
+
+    analyzer = IncrementalAnalyzer(
+        max_folders=3, stop_words={"the"}, db=mock_db, strategy_name="default"
+    )
+
+    chunk = {
+        "doc.txt": {
+            "text": "doc.txt cached content",
+            "hash": "hash_cached",
+        }
+    }
+
+    analyzer.partial_fit("test_base", chunk)
+
+    assert "doc.txt" in analyzer.corpus
+    mock_db.upsert_documents.assert_not_called()

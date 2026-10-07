@@ -492,6 +492,11 @@ class IncrementalAnalyzer:
                     file_hash = hashlib.md5(text.encode("utf-8")).hexdigest()
                     hashes[i] = file_hash
 
+                if self.db:
+                    doc = self.db.get_document(base_dir, filepath)
+                    if doc and doc.get("file_hash") == file_hash and file_hash:
+                        continue
+
                 documents_to_upsert.append(
                     (
                         base_dir,
@@ -501,7 +506,8 @@ class IncrementalAnalyzer:
                     )
                 )
 
-            self.db.upsert_documents(documents_to_upsert)
+            if documents_to_upsert and self.db:
+                self.db.upsert_documents(documents_to_upsert)
 
             # Immediately purge raw text string payloads post-extraction and DB persistence
             texts.clear()

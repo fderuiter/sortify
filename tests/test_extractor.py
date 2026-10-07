@@ -226,3 +226,31 @@ def test_extract_whitespace_only_file(tmp_path):
 
     text = extract_file_text(str(whitespace_file))
     assert text == "[STATUS:EMPTY]"
+
+
+def test_build_corpus_generator_yields_cached_items(mocker):
+    """Verify build_corpus_generator yields non-empty chunks containing cached documents."""
+    mocker.patch(
+        "app.core.extractor.process_item_worker",
+        return_value=("cached.txt", "cached.txt cached content", "h_cached"),
+    )
+    mock_db = MagicMock()
+    mock_db.get_document.return_value = {
+        "file_hash": "h_cached",
+        "extracted_text": "cached.txt cached content",
+    }
+
+    generator = build_corpus_generator(
+        "/base",
+        ["cached.txt"],
+        MagicMock(),
+        max_workers=1,
+        chunk_size=1,
+        db=mock_db,
+    )
+
+    chunks = list(generator)
+    assert len(chunks) == 1
+    assert "cached.txt" in chunks[0]
+    assert chunks[0]["cached.txt"]["hash"] == "h_cached"
+    assert chunks[0]["cached.txt"]["text"] == "cached.txt cached content"
