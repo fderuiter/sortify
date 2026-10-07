@@ -1897,7 +1897,7 @@ class ShortcutCheatSheetModal(A11yMixin, ModalScreen[None]):
                 "  Ctrl+H      - Session history & audit log export",
                 classes="shortcut-row",
             )
-            yield Label("  Ctrl+E/Enter- Execute sorting plan", classes="shortcut-row")
+            yield Label("  Ctrl+E      - Execute sorting plan", classes="shortcut-row")
             yield Label(
                 "  Ctrl+B      - Browse / select target directory",
                 classes="shortcut-row",
@@ -2908,6 +2908,15 @@ class VimTree(Tree):
                     self.action_cursor_down()
             event.stop()
             event.prevent_default()
+        elif event.key in ("enter", "return"):
+            node = self.cursor_node
+            if node:
+                if node.children or node.allow_expand:
+                    node.toggle()
+                else:
+                    self.select_node(node)
+            event.stop()
+            event.prevent_default()
 
 
 class AutoSorterTUI(A11yMixin, App):
@@ -2929,9 +2938,8 @@ class AutoSorterTUI(A11yMixin, App):
         Binding("ctrl+d", "open_dropzone", "DropZone", show=True),
         Binding("ctrl+s", "scan_directory", "Scan", show=True),
         Binding("ctrl+h", "open_history", "History View", show=True),
-        Binding("ctrl+e", "export_simulation_report", "Export Report", show=True),
+        Binding("ctrl+e", "execute_sort", "Execute Plan", show=True),
         Binding("ctrl+a", "open_audit_report", "Audit Report", show=True),
-        Binding("enter", "execute_sort", "Execute", show=False),
         Binding("ctrl+b", "select_dir", "Browse Dir", show=True),
         Binding("g", "generate_sample_corpus", "Sample Dataset", show=False),
         Binding("question_mark", "open_cheat_sheet", "Help (?)", show=True),
