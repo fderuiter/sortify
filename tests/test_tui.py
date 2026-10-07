@@ -1532,3 +1532,64 @@ def test_tui_settings_modal_help_button_on_validation_error(temp_workspace):
 
     asyncio.run(_test())
 
+
+def test_tui_bindings_no_global_enter_and_ctrl_e_executes():
+    """Verify global BINDINGS does not bind enter to execute_sort and ctrl+e binds to execute_sort."""
+    bindings_by_key = {b.key: b.action for b in AutoSorterTUI.BINDINGS if hasattr(b, "key")}
+    assert "enter" not in bindings_by_key or bindings_by_key["enter"] != "execute_sort"
+    assert bindings_by_key.get("ctrl+e") == "execute_sort"
+
+
+def test_tui_enter_key_navigates_tree_without_executing_plan(temp_workspace):
+    """Verify pressing Enter on VimTree node toggles tree node without executing plan or moving files."""
+    from pathlib import Path
+    from unittest.mock import MagicMock
+
+    from textual.widgets import Tree
+
+    settings = AppSettings()
+    settings._settings_model.AI_CONSENT_GRANTED = True
+
+    # Create dummy files
+    (Path(temp_workspace) / "folder1").mkdir(exist_ok=True)
+    (Path(temp_workspace) / "folder1" / "file1.txt").write_text("hello world")
+
+    async def _test():
+        app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
+        mock_execute = MagicMock()
+        app.run_execute_worker = mock_execute
+
+        async with app.run_test(size=(100, 50)) as pilot:
+            await pilot.pause(0.05)
+            app.plan = {"folder1": {"files": ["file1.txt"]}}
+            app.app_session = MagicMock()
+            app.rebuild_tree()
+            await pilot.pause(0.05)
+
+            tree = app.query_one("#plan-tree", Tree)
+            tree.focus()
+            await pilot.pause(0.05)
+
+            # Get root node
+            root = tree.root
+            assert root is not None
+            initial_expanded = root.is_expanded
+
+            # Press Enter while tree is focused
+            await pilot.press("enter")
+            await pilot.pause(0.05)
+
+            # Check that run_execute_worker was NOT called
+            mock_execute.assert_not_called()
+
+            # Check that root node toggled its expanded state
+            assert root.is_expanded != initial_expanded
+
+            # Press Ctrl+E while tree is focused to verify execution trigger
+            await pilot.press("ctrl+e")
+            await pilot.pause(0.05)
+
+            mock_execute.assert_called_once()
+
+    asyncio.run(_test())
+
