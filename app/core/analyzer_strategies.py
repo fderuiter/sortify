@@ -1562,23 +1562,27 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         from app.core.shared_registry import SharedModelRegistry
 
         registry = SharedModelRegistry.get_instance()
-        if not registry.is_model_loaded("generative_naming"):
-            if getattr(self, "_model_initialized", False) and getattr(
-                self, "model_path", None
-            ):
-                gen, task, tok = registry.get_generative_model(self.model_path)
-                self.task = task
-                if tok:
-                    self.token_biases = self._build_logit_biases(tok)
-                self._generator = gen
-                return gen
+        try:
+            if not registry.is_model_loaded("generative_naming"):
+                if getattr(self, "_model_initialized", False) and getattr(
+                    self, "model_path", None
+                ):
+                    gen, task, tok = registry.get_generative_model(self.model_path)
+                    self.task = task
+                    if tok:
+                        self.token_biases = self._build_logit_biases(tok)
+                    self._generator = gen
+                    return gen
+                return None
+            gen, task, tok = registry.get_generative_model(self.model_path)
+            self.task = task
+            if tok:
+                self.token_biases = self._build_logit_biases(tok)
+            self._generator = gen
+            return gen
+        except Exception as e:
+            logging.error(f"Failed to load generative model in generator property: {e}")
             return None
-        gen, task, tok = registry.get_generative_model(self.model_path)
-        self.task = task
-        if tok:
-            self.token_biases = self._build_logit_biases(tok)
-        self._generator = gen
-        return gen
 
     @generator.setter
     def generator(self, value):
@@ -1706,6 +1710,8 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
 
     def _init_pytorch_model(self):
         self._model_initialized = True
+        if self._generator is not None:
+            return
         if not self.model_path or not os.path.exists(self.model_path):
             logging.warning(
                 "Offline model bundle not found in either the local project directory or the user configuration directory."
@@ -1717,13 +1723,13 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         registry = SharedModelRegistry.get_instance()
         try:
             generator, task, tokenizer = registry.get_generative_model(self.model_path)
-            self.generator = generator
+            self._generator = generator
             self.task = task
             if tokenizer:
                 self.token_biases = self._build_logit_biases(tokenizer)
         except Exception as e:
             logging.error(f"Failed to load generative model via shared registry: {e}")
-            self.generator = None
+            self._generator = None
 
     def _run_prompt(
         self,
