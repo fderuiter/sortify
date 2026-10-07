@@ -16,6 +16,26 @@
       "title": "Preserve Hierarchy",
       "type": "boolean"
     },
+    "LICENSE_KEY": {
+      "default": "",
+      "title": "License Key",
+      "type": "string"
+    },
+    "LICENSE_TIER": {
+      "default": "Community",
+      "title": "License Tier",
+      "type": "string"
+    },
+    "LICENSE_EXPIRATION": {
+      "default": "",
+      "title": "License Expiration",
+      "type": "string"
+    },
+    "LICENSE_OWNER": {
+      "default": "",
+      "title": "License Owner",
+      "type": "string"
+    },
     "MAX_FOLDERS": {
       "default": 12,
       "exclusiveMinimum": 0,

@@ -91,6 +91,10 @@ class Settings(BaseSettings):
     CONTEXTUAL_RENAMING: bool = Field(default=False)
     AI_ASSISTED_NAMING: bool = Field(default=False)
     PRESERVE_HIERARCHY: bool = Field(default=False)
+    LICENSE_KEY: str = Field(default="")
+    LICENSE_TIER: str = Field(default="Community")
+    LICENSE_EXPIRATION: str = Field(default="")
+    LICENSE_OWNER: str = Field(default="")
     MAX_FOLDERS: int = Field(default=12, gt=0, le=50)
     MAX_WORKERS: int = Field(default=4, gt=0, le=64)
     MAX_DEPTH: int = Field(default=5, gt=0, le=10)
@@ -477,6 +481,24 @@ class AppSettings:
 
             if needs_migration and not has_validation_errors:
                 self._trigger_save()
+
+            # Validate active license key if present
+            lic_key = getattr(self._settings_model, "LICENSE_KEY", "")
+            if lic_key:
+                from app.core.license import validate_license_key
+
+                val_res = validate_license_key(lic_key)
+                if val_res["valid"]:
+                    self._settings_model.LICENSE_TIER = val_res["tier"]
+                    self._settings_model.LICENSE_OWNER = val_res["owner"]
+                    self._settings_model.LICENSE_EXPIRATION = val_res["expires"]
+                else:
+                    logging.warning(
+                        f"Stored license key validation failed: {val_res['message']}"
+                    )
+                    self._settings_model.LICENSE_TIER = "Community"
+            else:
+                self._settings_model.LICENSE_TIER = "Community"
 
             if hasattr(self._settings_model, "PROXY"):
                 self._notify_observers("PROXY", getattr(self._settings_model, "PROXY"))

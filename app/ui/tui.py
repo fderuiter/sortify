@@ -882,6 +882,20 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                 yield sw_ctx
                 yield Label(" AI Contextual Renaming")
 
+            yield Label("Subscription Tier & License:", classes="field-label")
+            lic_tier = getattr(self.settings, "LICENSE_TIER", "Community")
+            lic_key = getattr(self.settings, "LICENSE_KEY", "")
+            from app.core.license import mask_license_key
+            masked_k = mask_license_key(lic_key) if lic_key else "None"
+            yield Label(
+                f"Active Tier: {lic_tier} | Key: {masked_k}",
+                id="label-settings-license-status",
+                classes="modal-subtitle",
+            )
+            btn_lic = Button("Activate / Manage License", id="btn-open-license", variant="default")
+            btn_lic.tooltip = "Open license key activation dialog"
+            yield btn_lic
+
             with Horizontal(classes="button-row"):
                 btn_cancel = Button("Cancel", id="btn-cancel", variant="default")
                 btn_cancel.tooltip = "Cancel settings modification and close dialog"
@@ -911,6 +925,23 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         self._update_layout(self.size.width)
         self.query_one("#input-protected", Input).focus()
         self.announce("Opened application settings dialog.")
+
+    @on(Button.Pressed, "#btn-open-license")
+    def action_open_license(self) -> None:
+        """Open LicenseModal from SettingsModal."""
+        def on_license_closed(res: Optional[Dict[str, Any]]) -> None:
+            if res and isinstance(res, dict):
+                try:
+                    lbl = self.query_one("#label-settings-license-status", Label)
+                    tier = getattr(self.settings, "LICENSE_TIER", "Community")
+                    key = getattr(self.settings, "LICENSE_KEY", "")
+                    from app.core.license import mask_license_key
+                    masked_k = mask_license_key(key) if key else "None"
+                    lbl.update(f"Active Tier: {tier} | Key: {masked_k}")
+                except Exception:
+                    pass
+
+        self.app.push_screen(LicenseModal(self.settings), on_license_closed)
 
     @on(Button.Pressed, "#btn-save")
     def action_save(self) -> None:
@@ -1002,6 +1033,210 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
     def action_cancel(self) -> None:
         """Cancel settings modification."""
         self.announce("Cancelled settings modification.")
+        self.dismiss(None)
+
+
+class LicenseModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
+    """Modal dialog for entering, verifying, and deactivating license keys."""
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel dialog", show=True),
+    ]
+
+    CSS = """
+    LicenseModal {
+        align: center middle;
+        background: rgba(0, 0, 0, 0.6);
+    }
+    .modal-box {
+        padding: 1 2;
+        background: $panel;
+        border: thick $primary;
+        width: 90%;
+        max-width: 80;
+        min-width: 30;
+        height: auto;
+        max-height: 90%;
+        overflow-y: auto;
+    }
+    .narrow .modal-box {
+        padding: 0 1;
+        width: 95%;
+    }
+    .modal-title {
+        text-style: bold;
+        color: $accent;
+        margin-bottom: 1;
+    }
+    .field-label {
+        margin-top: 1;
+        color: $text;
+        text-style: bold;
+    }
+    .info-label {
+        color: $text-muted;
+        margin-bottom: 1;
+    }
+    .status-text {
+        margin-top: 1;
+        margin-bottom: 1;
+        color: $warning;
+        text-style: bold;
+    }
+    .button-row {
+        margin-top: 1;
+        height: 3;
+        align: right middle;
+    }
+    Button:focus, Input:focus {
+        border: heavy $accent;
+        text-style: bold;
+    }
+    """
+
+    def __init__(self, settings: Any):
+        super().__init__()
+        self.settings = settings
+
+    def compose(self) -> ComposeResult:
+        """Compose license modal dialog children."""
+        from app.core.license import mask_license_key
+
+        tier = getattr(self.settings, "LICENSE_TIER", "Community")
+        tier_display = "Pro Tier Active" if tier == "Pro" else "Community Tier (Free)"
+        owner = getattr(self.settings, "LICENSE_OWNER", "")
+        expires = getattr(self.settings, "LICENSE_EXPIRATION", "")
+        key = getattr(self.settings, "LICENSE_KEY", "")
+        masked_key = mask_license_key(key) if key else "None"
+
+        with Vertical(classes="modal-box"):
+            yield Label("Sortify License Activation [Ctrl+L]", classes="modal-title")
+            yield Label(f"Current Status: {tier_display}", classes="field-label", id="lbl-tier-status")
+
+            if tier == "Pro" and owner:
+                yield Label(
+                    f"Licensed to: {owner} | Expires: {expires or 'Never'}",
+                    classes="info-label",
+                    id="lbl-license-info",
+                )
+            if masked_key != "None":
+                yield Label(f"Active Key: {masked_key}", classes="info-label", id="lbl-masked-key")
+
+            yield Label("Enter License Key:", classes="field-label")
+            inp = Input(
+                value="",
+                placeholder="SORTIFY-PRO-...",
+                id="input-license-key",
+            )
+            inp.tooltip = "Enter your purchased Pro subscription license key"
+            yield inp
+
+            yield Label("", id="license-status-msg", classes="status-text")
+
+            with Horizontal(classes="button-row"):
+                btn_cancel = Button("Close", id="btn-cancel", variant="default")
+                btn_cancel.tooltip = "Close license dialog"
+                yield btn_cancel
+
+                if tier == "Pro":
+                    btn_deactivate = Button("Deactivate", id="btn-deactivate", variant="error")
+                    btn_deactivate.tooltip = "Deactivate current Pro license key"
+                    yield btn_deactivate
+
+                btn_activate = Button("Activate License", id="btn-activate", variant="primary")
+                btn_activate.tooltip = "Validate and activate license key"
+                yield btn_activate
+
+    def _update_layout(self, width: int) -> None:
+        """Update modal layout based on viewport width breakpoint."""
+        if width < 80:
+            self.add_class("narrow")
+        else:
+            self.remove_class("narrow")
+
+    def on_resize(self, event: events.Resize) -> None:
+        """Handle modal viewport resize event."""
+        self._update_layout(event.size.width)
+
+    def on_mount(self) -> None:
+        """Focus input field on mount and emit announcement."""
+        self._update_layout(self.size.width)
+        try:
+            self.query_one("#input-license-key", Input).focus()
+        except Exception:
+            pass
+        self.announce("Opened license activation dialog. Enter key and select Activate License.")
+
+    @on(Button.Pressed, "#btn-activate")
+    @on(Input.Submitted, "#input-license-key")
+    def action_activate(self) -> None:
+        """Validate and activate entered license key."""
+        from app.core.license import validate_license_key
+
+        try:
+            inp = self.query_one("#input-license-key", Input)
+            raw_key = inp.value.strip()
+        except Exception:
+            raw_key = ""
+
+        val_res = validate_license_key(raw_key)
+        lbl_msg = self.query_one("#license-status-msg", Label)
+
+        if val_res["valid"]:
+            # Valid license! Save to settings.
+            self.settings.LICENSE_KEY = raw_key
+            self.settings.LICENSE_TIER = val_res["tier"]
+            self.settings.LICENSE_OWNER = val_res["owner"]
+            self.settings.LICENSE_EXPIRATION = val_res["expires"]
+
+            # Automatically expand configuration resource thresholds
+            if getattr(self.settings, "MAX_FOLDERS", 12) <= 12:
+                self.settings.MAX_FOLDERS = 50
+
+            if hasattr(self.settings, "_save"):
+                try:
+                    self.settings._save()
+                except Exception:
+                    pass
+
+            success_msg = f"License Activated! {val_res['tier']} Tier unlocked."
+            lbl_msg.update(success_msg)
+            self.announce(success_msg)
+            self.dismiss({
+                "status": "activated",
+                "tier": val_res["tier"],
+                "owner": val_res["owner"],
+                "expires": val_res["expires"],
+                "masked_key": val_res["masked_key"],
+            })
+        else:
+            err_msg = val_res["message"]
+            lbl_msg.update(f"Error: {err_msg}")
+            self.announce(f"License activation failed: {err_msg}")
+            # Non-blocking: Dialog stays open, existing tier state preserved!
+
+    @on(Button.Pressed, "#btn-deactivate")
+    def action_deactivate(self) -> None:
+        """Deactivate current license key and return to Community tier."""
+        self.settings.LICENSE_KEY = ""
+        self.settings.LICENSE_TIER = "Community"
+        self.settings.LICENSE_OWNER = ""
+        self.settings.LICENSE_EXPIRATION = ""
+        self.settings.MAX_FOLDERS = 12
+
+        if hasattr(self.settings, "_save"):
+            try:
+                self.settings._save()
+            except Exception:
+                pass
+
+        self.announce("Deactivated license key. Switched to Community Tier.")
+        self.dismiss({"status": "deactivated", "tier": "Community"})
+
+    @on(Button.Pressed, "#btn-cancel")
+    def action_cancel(self) -> None:
+        """Close license modal."""
+        self.announce("Closed license activation dialog.")
         self.dismiss(None)
 
 
@@ -1353,7 +1588,7 @@ class ShortcutCheatSheetModal(A11yMixin, ModalScreen[None]):
                 classes="shortcut-row",
             )
             yield Label(
-                "  Ctrl+L      - Toggle file lock state", classes="shortcut-row"
+                "  Ctrl+L      - Open license key activation dialog", classes="shortcut-row"
             )
             yield Label("  Ctrl+R      - Rename selected node", classes="shortcut-row")
             yield Label(
@@ -2222,7 +2457,8 @@ class AutoSorterTUI(A11yMixin, App):
     SUB_TITLE = "Interactive Tree & Modal Controls"
 
     BINDINGS = [
-        Binding("ctrl+l", "toggle_lock", "Lock/Unlock", show=True),
+        Binding("ctrl+l", "open_license", "License", show=True),
+        Binding("ctrl+k", "toggle_lock", "Lock/Unlock", show=False),
         Binding("ctrl+r", "rename_node", "Rename Node", show=True),
         Binding("ctrl+n", "new_folder", "New Folder", show=True),
         Binding("plus", "rate_positive", "Rating (+)", show=True),
@@ -2343,7 +2579,8 @@ class AutoSorterTUI(A11yMixin, App):
                 tui_log = Log(id="tui-log", classes="tui-log-area")
                 tui_log.tooltip = "Live operation execution log output feed"
                 yield tui_log
-        initial_status = f"{self._get_ai_status_badge()} Ready. Press [Ctrl+S] to Scan or [Ctrl+B] to select Directory."
+        tier = getattr(self.settings, "LICENSE_TIER", "Community") if self.settings else "Community"
+        initial_status = f"{self._get_ai_status_badge()} Ready [{tier} Tier]. Press [Ctrl+S] to Scan or [Ctrl+L] for License."
         sb = Static(
             initial_status,
             id="status-bar",
@@ -2569,8 +2806,9 @@ class AutoSorterTUI(A11yMixin, App):
                         clean_text = clean_text[len(badge_str) :].lstrip()
                 self._current_status_text = clean_text
             elif not hasattr(self, "_current_status_text"):
+                tier = getattr(self.settings, "LICENSE_TIER", "Community") if self.settings else "Community"
                 self._current_status_text = (
-                    "Ready. Press [Ctrl+S] to Scan or [Ctrl+B] to select Directory."
+                    f"Ready [{tier} Tier]. Press [Ctrl+S] to Scan or [Ctrl+L] for License."
                 )
 
             badge = self._get_ai_status_badge()
@@ -2676,6 +2914,21 @@ class AutoSorterTUI(A11yMixin, App):
                     self.action_scan_directory()
 
         self.push_screen(SettingsModal(self.settings), on_saved)
+
+    def action_open_license(self) -> None:
+        """Open license key activation modal screen [Ctrl+L]."""
+        if self._is_text_control_focused():
+            return
+
+        def on_license_closed(res: Optional[Dict[str, Any]]) -> None:
+            tier = getattr(self.settings, "LICENSE_TIER", "Community")
+            self.update_status(
+                f"Ready [{tier} Tier]. Press [Ctrl+S] to Scan or [Ctrl+L] for License."
+            )
+            if res and isinstance(res, dict) and res.get("status") == "activated":
+                self.announce(f"License updated to {tier} Tier.")
+
+        self.push_screen(LicenseModal(self.settings), on_license_closed)
 
     def action_open_wizard(self) -> None:
         """Open model onboarding wizard modal screen."""

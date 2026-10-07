@@ -1246,9 +1246,16 @@ def test_tui_scoped_hotkeys_ctrl_combinations(temp_workspace):
             file_node = tree.root.children[0].children[0]
             app.active_tree_node = file_node
 
-            # Ctrl+L -> Lock
+            # Ctrl+L -> License modal
             await pilot.press("ctrl+l")
             await pilot.pause(0.05)
+            from app.ui.tui import LicenseModal
+            assert isinstance(app.screen, LicenseModal)
+            await pilot.press("escape")
+            await pilot.pause(0.05)
+
+            # Toggle lock action
+            app.action_toggle_lock()
             assert "doc.pdf" in app.locked_files or filepath in app.locked_files
 
             # Ctrl+N -> New Folder modal

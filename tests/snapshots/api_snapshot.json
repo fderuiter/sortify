@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "a72f3f1fcc13fe17cb96844070a8eb6100296c1d54be5a6930d2e5fa4807edd8"
+    "checksum": "d844a678efb8941fa1b6e9d24654fbe8d432204af2ba141b531bd2e3a4bdc6f2"
   },
   "cli": {
     "app/main.py": [
@@ -7832,6 +7832,70 @@
           "name": "get_default_ledger_path",
           "parameters": [],
           "returns": "str"
+        }
+      ]
+    },
+    "app/core/license.py": {
+      "classes": [],
+      "functions": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "generate_license_key",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "owner"
+            },
+            {
+              "annotation": "str",
+              "default": "'Pro'",
+              "name": "tier"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "expires"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "private_key_hex"
+            }
+          ],
+          "returns": "str"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "mask_license_key",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "key"
+            }
+          ],
+          "returns": "str"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "validate_license_key",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "key_str"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "public_key_hex"
+            }
+          ],
+          "returns": "Dict[str, Any]"
         }
       ]
     },

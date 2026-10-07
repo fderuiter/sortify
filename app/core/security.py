@@ -10,6 +10,11 @@ from typing import Dict, Optional, Union
 
 from app.config import get_app_dir
 from app.core.crypto import SessionCrypto
+from app.core.license import (
+    generate_license_key,
+    mask_license_key,
+    validate_license_key,
+)
 
 
 def get_key_info(db_path: Optional[Union[str, Path]] = None) -> Dict[str, str]:
@@ -121,4 +126,7 @@ __all__ = [
     "get_key_info",
     "rotate_database_key",
     "export_database_key",
+    "mask_license_key",
+    "generate_license_key",
+    "validate_license_key",
 ]
