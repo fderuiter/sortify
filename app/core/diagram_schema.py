@@ -385,7 +385,6 @@ class StateDiagramSpec(BaseModel, defer_build=True):
         return "\n".join(lines) + "\n"
 
 
-
 # Data Flow Diagram (DFD) Models
 class DataStoreNode(DiagramNode):
     """Specification model for a data store node in a Data Flow Diagram."""
@@ -418,9 +417,9 @@ class DataFlowDiagramSpec(BaseModel):
     title: str
     diagram_type: str = "flowchart"
     direction: Literal["TD", "LR", "BT", "RL"] = "TD"
-    nodes: List[
-        Union[DataStoreNode, ProcessNode, ExternalEntityNode, DiagramNode]
-    ] = Field(default_factory=list)
+    nodes: List[Union[DataStoreNode, ProcessNode, ExternalEntityNode, DiagramNode]] = (
+        Field(default_factory=list)
+    )
     edges: List[Union[DataStreamEdge, DiagramEdge]] = Field(default_factory=list)
     subgraphs: List[DiagramSubgraph] = Field(default_factory=list)
 
@@ -432,7 +431,7 @@ class DataFlowDiagramSpec(BaseModel):
             def format_node(
                 node: Union[
                     DataStoreNode, ProcessNode, ExternalEntityNode, DiagramNode
-                ]
+                ],
             ) -> str:
                 s = node.shape or "rectangle"
                 if isinstance(node, DataStoreNode) and not node.shape:
@@ -538,255 +537,264 @@ BaseDiagramSpec = Union[
 def _create_core_architecture_spec() -> ComponentDiagramSpec:
     """Build core_architecture diagram specification."""
     return ComponentDiagramSpec(
-    id="core_architecture",
-    title="Smart AutoSorter AI Pro Full System Architecture",
-    diagram_type="flowchart",
-    direction="TD",
-    subgraphs=[
-        DiagramSubgraph(
-            id="ui_layer",
-            title="Presentation & User Interfaces (app.tui)",
-            nodes=[
-                "app_main",
-                "app_tui",
-            ],
-        ),
-        DiagramSubgraph(
-            id="session_orchestration",
-            title="Session Orchestration & Lifecycle (app.core)",
-            nodes=[
-                "core_session",
-                "core_user_space_bootstrap",
-                "core_daemon",
-                "core_ipc",
-                "core_integration",
-                "core_diagram_schema",
-                "core_domain_contracts",
-            ],
-        ),
-        DiagramSubgraph(
-            id="ingestion_extraction",
-            title="Ingestion & Extraction Engine (app.core)",
-            nodes=[
-                "core_extractor",
-                "core_extractor_strategies",
-                "core_forensic_scanner",
-                "core_offline_loader",
-                "core_downloader",
-            ],
-        ),
-        DiagramSubgraph(
-            id="analytics_intelligence",
-            title="Analytics & Machine Learning (app.core)",
-            nodes=[
-                "core_analyzer",
-                "core_analyzer_strategies",
-                "core_jev_classifier",
-                "core_semantic_embeddings",
-            ],
-        ),
-        DiagramSubgraph(
-            id="plugin_extensibility",
-            title="Plugin Extensibility Architecture (app.core)",
-            nodes=[
-                "core_plugin_registry",
-            ],
-        ),
-        DiagramSubgraph(
-            id="memory_cache",
-            title="Caching & Memory Layer (app.core)",
-            nodes=[
-                "core_cache",
-                "core_db_conn",
-                "core_link_manager",
-                "core_hashes_registry",
-            ],
-        ),
-        DiagramSubgraph(
-            id="concurrency_shared",
-            title="Concurrency & Shared Registry (app.core)",
-            nodes=[
-                "core_shared_registry",
-                "core_db_worker",
-            ],
-        ),
-        DiagramSubgraph(
-            id="storage_persistence",
-            title="Storage & Database Persistence (app.core)",
-            nodes=[
-                "core_db",
-                "core_ledger",
-                "core_history",
-            ],
-        ),
-        DiagramSubgraph(
-            id="execution_operations",
-            title="Policy, Validation & File Operations (app.core)",
-            nodes=[
-                "core_policy_engine",
-                "core_quarantine_interceptor",
-                "core_domain_contracts",
-                "core_verifier",
-                "core_domain_contracts",
-                "core_mover",
-                "core_file_renamer",
-                "core_resilient_file_ops",
-                "core_scanner",
-                "core_progress",
-                "core_metadata",
-                "core_domain_contracts",
-            ],
-        ),
-        DiagramSubgraph(
-            id="utilities_security",
-            title="Security & Utilities (app.core)",
-            nodes=[
-                "core_text_utils",
-                "core_path_utils",
-                "core_env_helper",
-                "core_crypto",
-                "core_security",
-                "core_domain_contracts",
-                "core_exceptions",
-                "core_domain_contracts",
-            ],
-        ),
-    ],
-    nodes=[
-        # Presentation
-        DiagramNode(id="app_main", label="app.main (CLI Entry Point)", shape="round"),
-        DiagramNode(id="app_tui", label="app.tui (Textual Terminal Interface)"),
-        # Orchestration
-        DiagramNode(id="core_session", label="app.core.session"),
-        DiagramNode(id="core_diagram_schema", label="app.core.diagram_schema"),
-        DiagramNode(
-            id="core_user_space_bootstrap", label="app.core.user_space_bootstrap"
-        ),
-        DiagramNode(id="core_daemon", label="app.core.daemon"),
-        DiagramNode(id="core_ipc", label="app.core.ipc"),
-        DiagramNode(id="core_integration", label="app.core.integration"),
-        DiagramNode(id="core_domain_contracts", label="app.core.domain_contracts"),
-        # Ingestion & Extraction
-        DiagramNode(id="core_extractor", label="app.core.extractor"),
-        DiagramNode(
-            id="core_extractor_strategies", label="app.core.extractor_strategies"
-        ),
-        DiagramNode(id="core_forensic_scanner", label="app.core.forensic_scanner"),
-        DiagramNode(id="core_offline_loader", label="app.core.offline_loader"),
-        DiagramNode(id="core_downloader", label="app.core.downloader"),
-        # Analytics & ML
-        DiagramNode(id="core_analyzer", label="app.core.analyzer"),
-        DiagramNode(
-            id="core_analyzer_strategies", label="app.core.analyzer_strategies"
-        ),
-        DiagramNode(id="core_jev_classifier", label="app.core.jev_classifier"),
-        DiagramNode(
-            id="core_semantic_embeddings", label="app.core.semantic_embeddings"
-        ),
-        # Plugin Registry
-        DiagramNode(
-            id="core_plugin_registry",
-            label="app.core.plugin_registry",
-        ),
-        # Memory & Cache
-        DiagramNode(
-            id="core_cache",
-            label="app.core.cache (BoundedMemoryCache)",
-            shape="database",
-        ),
-        DiagramNode(id="core_db_conn", label="app.core.db_conn"),
-        DiagramNode(id="core_link_manager", label="app.core.link_manager"),
-        DiagramNode(id="core_hashes_registry", label="app.core.hashes_registry"),
-        # Concurrency & Shared
-        DiagramNode(
-            id="core_shared_registry",
-            label="app.core.shared_registry (SharedWorkerPool)",
-        ),
-        DiagramNode(id="core_db_worker", label="app.core.db_worker"),
-        # Storage
-        DiagramNode(id="core_db", label="app.core.db", shape="database"),
-        DiagramNode(id="core_ledger", label="app.core.ledger", shape="database"),
-        DiagramNode(id="core_history", label="app.core.history", shape="database"),
-        # Policy & Execution
-        DiagramNode(
-            id="core_policy_engine", label="app.core.policy_engine", shape="rhombus"
-        ),
-        DiagramNode(
-            id="core_quarantine_interceptor", label="app.core.quarantine_interceptor"
-        ),
-        DiagramNode(id="core_domain_contracts", label="app.core.domain_contracts"),
-        DiagramNode(id="core_verifier", label="app.core.verifier", shape="rhombus"),
-        DiagramNode(id="core_domain_contracts", label="app.core.domain_contracts"),
-        DiagramNode(id="core_mover", label="app.core.mover"),
-        DiagramNode(id="core_file_renamer", label="app.core.file_renamer"),
-        DiagramNode(id="core_resilient_file_ops", label="app.core.resilient_file_ops"),
-        DiagramNode(id="core_scanner", label="app.core.scanner"),
-        DiagramNode(id="core_progress", label="app.core.progress"),
-        DiagramNode(id="core_metadata", label="app.core.metadata"),
-        DiagramNode(id="core_domain_contracts", label="app.core.domain_contracts"),
-        # Utilities
-        DiagramNode(id="core_text_utils", label="app.core.text_utils"),
-        DiagramNode(id="core_path_utils", label="app.core.path_utils"),
-        DiagramNode(id="core_env_helper", label="app.core.env_helper"),
-        DiagramNode(id="core_crypto", label="app.core.crypto"),
-        DiagramNode(id="core_security", label="app.core.security"),
-        DiagramNode(id="core_domain_contracts", label="app.core.domain_contracts"),
-        DiagramNode(id="core_exceptions", label="app.core.exceptions"),
-        DiagramNode(id="core_domain_contracts", label="app.core.domain_contracts"),
-    ],
-    edges=[
-        DiagramEdge(source="app_main", target="app_tui"),
-        DiagramEdge(source="app_main", target="core_session"),
-        DiagramEdge(source="app_tui", target="core_session"),
-        DiagramEdge(source="core_session", target="core_user_space_bootstrap"),
-        DiagramEdge(source="core_session", target="core_scanner"),
-        DiagramEdge(source="core_session", target="core_extractor"),
-        DiagramEdge(source="core_session", target="core_analyzer"),
-        DiagramEdge(source="core_session", target="core_policy_engine"),
-        DiagramEdge(source="core_session", target="core_verifier"),
-        DiagramEdge(source="core_session", target="core_mover"),
-        DiagramEdge(source="core_daemon", target="core_session"),
-        DiagramEdge(source="core_daemon", target="core_ipc"),
-        DiagramEdge(source="core_integration", target="core_session"),
-        DiagramEdge(source="core_extractor", target="core_extractor_strategies"),
-        DiagramEdge(source="core_extractor", target="core_forensic_scanner"),
-        DiagramEdge(source="core_extractor", target="core_offline_loader"),
-        DiagramEdge(source="core_downloader", target="core_env_helper"),
-        DiagramEdge(source="core_analyzer", target="core_analyzer_strategies"),
-        DiagramEdge(source="core_analyzer", target="core_jev_classifier"),
-        DiagramEdge(source="core_analyzer", target="core_semantic_embeddings"),
-        DiagramEdge(source="core_session", target="core_plugin_registry"),
-        DiagramEdge(
-            source="core_quarantine_interceptor", target="core_plugin_registry"
-        ),
-        DiagramEdge(
-            source="core_analyzer_strategies", target="core_plugin_registry"
-        ),
-        DiagramEdge(source="core_db_conn", target="core_cache"),
-        DiagramEdge(source="core_link_manager", target="core_cache"),
-        DiagramEdge(source="core_semantic_embeddings", target="core_cache"),
-        DiagramEdge(source="core_jev_classifier", target="core_cache"),
-        DiagramEdge(source="core_hashes_registry", target="core_crypto"),
-        DiagramEdge(source="core_shared_registry", target="core_mover"),
-        DiagramEdge(source="core_shared_registry", target="core_extractor"),
-        DiagramEdge(source="core_db_worker", target="core_shared_registry"),
-        DiagramEdge(source="core_db", target="core_cache"),
-        DiagramEdge(source="core_ledger", target="core_db"),
-        DiagramEdge(source="core_history", target="core_db"),
-        DiagramEdge(source="core_policy_engine", target="core_quarantine_interceptor"),
-        DiagramEdge(
-            source="core_quarantine_interceptor", target="core_domain_contracts"
-        ),
-        DiagramEdge(source="core_policy_engine", target="core_mover"),
-        DiagramEdge(source="core_verifier", target="core_mover"),
-        DiagramEdge(source="core_mover", target="core_file_renamer"),
-        DiagramEdge(source="core_mover", target="core_resilient_file_ops"),
-        DiagramEdge(source="core_mover", target="core_progress"),
-        DiagramEdge(source="core_mover", target="core_metadata"),
-        DiagramEdge(source="core_text_utils", target="core_exceptions"),
-        DiagramEdge(source="core_path_utils", target="core_exceptions"),
-    ],
-)
+        id="core_architecture",
+        title="Smart AutoSorter AI Pro Full System Architecture",
+        diagram_type="flowchart",
+        direction="TD",
+        subgraphs=[
+            DiagramSubgraph(
+                id="ui_layer",
+                title="Presentation & User Interfaces (app.tui)",
+                nodes=[
+                    "app_main",
+                    "app_tui",
+                ],
+            ),
+            DiagramSubgraph(
+                id="session_orchestration",
+                title="Session Orchestration & Lifecycle (app.core)",
+                nodes=[
+                    "core_session",
+                    "core_user_space_bootstrap",
+                    "core_daemon",
+                    "core_ipc",
+                    "core_integration",
+                    "core_diagram_schema",
+                    "core_domain_contracts",
+                ],
+            ),
+            DiagramSubgraph(
+                id="ingestion_extraction",
+                title="Ingestion & Extraction Engine (app.core)",
+                nodes=[
+                    "core_extractor",
+                    "core_extractor_strategies",
+                    "core_forensic_scanner",
+                    "core_offline_loader",
+                    "core_downloader",
+                ],
+            ),
+            DiagramSubgraph(
+                id="analytics_intelligence",
+                title="Analytics & Machine Learning (app.core)",
+                nodes=[
+                    "core_analyzer",
+                    "core_analyzer_strategies",
+                    "core_jev_classifier",
+                    "core_semantic_embeddings",
+                ],
+            ),
+            DiagramSubgraph(
+                id="plugin_extensibility",
+                title="Plugin Extensibility Architecture (app.core)",
+                nodes=[
+                    "core_plugin_registry",
+                ],
+            ),
+            DiagramSubgraph(
+                id="memory_cache",
+                title="Caching & Memory Layer (app.core)",
+                nodes=[
+                    "core_cache",
+                    "core_db_conn",
+                    "core_link_manager",
+                    "core_hashes_registry",
+                ],
+            ),
+            DiagramSubgraph(
+                id="concurrency_shared",
+                title="Concurrency & Shared Registry (app.core)",
+                nodes=[
+                    "core_shared_registry",
+                    "core_db_worker",
+                ],
+            ),
+            DiagramSubgraph(
+                id="storage_persistence",
+                title="Storage & Database Persistence (app.core)",
+                nodes=[
+                    "core_db",
+                    "core_ledger",
+                    "core_history",
+                ],
+            ),
+            DiagramSubgraph(
+                id="execution_operations",
+                title="Policy, Validation & File Operations (app.core)",
+                nodes=[
+                    "core_policy_engine",
+                    "core_quarantine_interceptor",
+                    "core_domain_contracts",
+                    "core_verifier",
+                    "core_domain_contracts",
+                    "core_mover",
+                    "core_file_renamer",
+                    "core_resilient_file_ops",
+                    "core_scanner",
+                    "core_progress",
+                    "core_metadata",
+                    "core_domain_contracts",
+                ],
+            ),
+            DiagramSubgraph(
+                id="utilities_security",
+                title="Security & Utilities (app.core)",
+                nodes=[
+                    "core_text_utils",
+                    "core_path_utils",
+                    "core_env_helper",
+                    "core_crypto",
+                    "core_security",
+                    "core_domain_contracts",
+                    "core_exceptions",
+                    "core_domain_contracts",
+                ],
+            ),
+        ],
+        nodes=[
+            # Presentation
+            DiagramNode(
+                id="app_main", label="app.main (CLI Entry Point)", shape="round"
+            ),
+            DiagramNode(id="app_tui", label="app.tui (Textual Terminal Interface)"),
+            # Orchestration
+            DiagramNode(id="core_session", label="app.core.session"),
+            DiagramNode(id="core_diagram_schema", label="app.core.diagram_schema"),
+            DiagramNode(
+                id="core_user_space_bootstrap", label="app.core.user_space_bootstrap"
+            ),
+            DiagramNode(id="core_daemon", label="app.core.daemon"),
+            DiagramNode(id="core_ipc", label="app.core.ipc"),
+            DiagramNode(id="core_integration", label="app.core.integration"),
+            DiagramNode(id="core_domain_contracts", label="app.core.domain_contracts"),
+            # Ingestion & Extraction
+            DiagramNode(id="core_extractor", label="app.core.extractor"),
+            DiagramNode(
+                id="core_extractor_strategies", label="app.core.extractor_strategies"
+            ),
+            DiagramNode(id="core_forensic_scanner", label="app.core.forensic_scanner"),
+            DiagramNode(id="core_offline_loader", label="app.core.offline_loader"),
+            DiagramNode(id="core_downloader", label="app.core.downloader"),
+            # Analytics & ML
+            DiagramNode(id="core_analyzer", label="app.core.analyzer"),
+            DiagramNode(
+                id="core_analyzer_strategies", label="app.core.analyzer_strategies"
+            ),
+            DiagramNode(id="core_jev_classifier", label="app.core.jev_classifier"),
+            DiagramNode(
+                id="core_semantic_embeddings", label="app.core.semantic_embeddings"
+            ),
+            # Plugin Registry
+            DiagramNode(
+                id="core_plugin_registry",
+                label="app.core.plugin_registry",
+            ),
+            # Memory & Cache
+            DiagramNode(
+                id="core_cache",
+                label="app.core.cache (BoundedMemoryCache)",
+                shape="database",
+            ),
+            DiagramNode(id="core_db_conn", label="app.core.db_conn"),
+            DiagramNode(id="core_link_manager", label="app.core.link_manager"),
+            DiagramNode(id="core_hashes_registry", label="app.core.hashes_registry"),
+            # Concurrency & Shared
+            DiagramNode(
+                id="core_shared_registry",
+                label="app.core.shared_registry (SharedWorkerPool)",
+            ),
+            DiagramNode(id="core_db_worker", label="app.core.db_worker"),
+            # Storage
+            DiagramNode(id="core_db", label="app.core.db", shape="database"),
+            DiagramNode(id="core_ledger", label="app.core.ledger", shape="database"),
+            DiagramNode(id="core_history", label="app.core.history", shape="database"),
+            # Policy & Execution
+            DiagramNode(
+                id="core_policy_engine", label="app.core.policy_engine", shape="rhombus"
+            ),
+            DiagramNode(id="core_rule_templates", label="app.core.rule_templates"),
+            DiagramNode(
+                id="core_quarantine_interceptor",
+                label="app.core.quarantine_interceptor",
+            ),
+            DiagramNode(id="core_domain_contracts", label="app.core.domain_contracts"),
+            DiagramNode(id="core_verifier", label="app.core.verifier", shape="rhombus"),
+            DiagramNode(id="core_domain_contracts", label="app.core.domain_contracts"),
+            DiagramNode(id="core_mover", label="app.core.mover"),
+            DiagramNode(id="core_file_renamer", label="app.core.file_renamer"),
+            DiagramNode(
+                id="core_resilient_file_ops", label="app.core.resilient_file_ops"
+            ),
+            DiagramNode(id="core_scanner", label="app.core.scanner"),
+            DiagramNode(id="core_progress", label="app.core.progress"),
+            DiagramNode(id="core_metadata", label="app.core.metadata"),
+            DiagramNode(id="core_domain_contracts", label="app.core.domain_contracts"),
+            # Utilities
+            DiagramNode(id="core_text_utils", label="app.core.text_utils"),
+            DiagramNode(id="core_path_utils", label="app.core.path_utils"),
+            DiagramNode(id="core_env_helper", label="app.core.env_helper"),
+            DiagramNode(id="core_crypto", label="app.core.crypto"),
+            DiagramNode(id="core_security", label="app.core.security"),
+            DiagramNode(id="core_domain_contracts", label="app.core.domain_contracts"),
+            DiagramNode(id="core_exceptions", label="app.core.exceptions"),
+            DiagramNode(id="core_domain_contracts", label="app.core.domain_contracts"),
+        ],
+        edges=[
+            DiagramEdge(source="app_main", target="app_tui"),
+            DiagramEdge(source="app_main", target="core_session"),
+            DiagramEdge(source="app_tui", target="core_session"),
+            DiagramEdge(source="core_session", target="core_user_space_bootstrap"),
+            DiagramEdge(source="core_session", target="core_scanner"),
+            DiagramEdge(source="core_session", target="core_extractor"),
+            DiagramEdge(source="core_session", target="core_analyzer"),
+            DiagramEdge(source="core_session", target="core_policy_engine"),
+            DiagramEdge(source="core_session", target="core_verifier"),
+            DiagramEdge(source="core_session", target="core_mover"),
+            DiagramEdge(source="core_daemon", target="core_session"),
+            DiagramEdge(source="core_daemon", target="core_ipc"),
+            DiagramEdge(source="core_integration", target="core_session"),
+            DiagramEdge(source="core_extractor", target="core_extractor_strategies"),
+            DiagramEdge(source="core_extractor", target="core_forensic_scanner"),
+            DiagramEdge(source="core_extractor", target="core_offline_loader"),
+            DiagramEdge(source="core_downloader", target="core_env_helper"),
+            DiagramEdge(source="core_analyzer", target="core_analyzer_strategies"),
+            DiagramEdge(source="core_analyzer", target="core_jev_classifier"),
+            DiagramEdge(source="core_analyzer", target="core_semantic_embeddings"),
+            DiagramEdge(source="core_session", target="core_plugin_registry"),
+            DiagramEdge(
+                source="core_quarantine_interceptor", target="core_plugin_registry"
+            ),
+            DiagramEdge(
+                source="core_analyzer_strategies", target="core_plugin_registry"
+            ),
+            DiagramEdge(source="core_db_conn", target="core_cache"),
+            DiagramEdge(source="core_link_manager", target="core_cache"),
+            DiagramEdge(source="core_semantic_embeddings", target="core_cache"),
+            DiagramEdge(source="core_jev_classifier", target="core_cache"),
+            DiagramEdge(source="core_hashes_registry", target="core_crypto"),
+            DiagramEdge(source="core_shared_registry", target="core_mover"),
+            DiagramEdge(source="core_shared_registry", target="core_extractor"),
+            DiagramEdge(source="core_db_worker", target="core_shared_registry"),
+            DiagramEdge(source="core_db", target="core_cache"),
+            DiagramEdge(source="core_ledger", target="core_db"),
+            DiagramEdge(source="core_history", target="core_db"),
+            DiagramEdge(
+                source="core_policy_engine", target="core_quarantine_interceptor"
+            ),
+            DiagramEdge(
+                source="core_quarantine_interceptor", target="core_domain_contracts"
+            ),
+            DiagramEdge(source="core_policy_engine", target="core_mover"),
+            DiagramEdge(source="core_verifier", target="core_mover"),
+            DiagramEdge(source="core_mover", target="core_file_renamer"),
+            DiagramEdge(source="core_mover", target="core_resilient_file_ops"),
+            DiagramEdge(source="core_mover", target="core_progress"),
+            DiagramEdge(source="core_mover", target="core_metadata"),
+            DiagramEdge(source="core_text_utils", target="core_exceptions"),
+            DiagramEdge(source="core_path_utils", target="core_exceptions"),
+        ],
+    )
+
 
 ARCHITECTURE_DATAFLOW_SPEC = DataFlowDiagramSpec(
     id="architecture_dataflow",

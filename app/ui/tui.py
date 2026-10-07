@@ -18,6 +18,7 @@ from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import (
     Button,
+    Checkbox,
     Footer,
     Header,
     Input,
@@ -778,6 +779,16 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                 yield sw_ctx
                 yield Label(" AI Contextual Renaming")
 
+            btn_templates = Button(
+                "Starter Rule Template Gallery",
+                id="btn-open-templates",
+                variant="primary",
+            )
+            btn_templates.tooltip = (
+                "View and apply pre-configured starter rule template packs"
+            )
+            yield btn_templates
+
             with Horizontal(classes="button-row"):
                 btn_cancel = Button("Cancel", id="btn-cancel", variant="default")
                 btn_cancel.tooltip = "Cancel settings modification and close dialog"
@@ -802,6 +813,11 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         self._update_layout(self.size.width)
         self.query_one("#input-protected", Input).focus()
         self.announce("Opened application settings dialog.")
+
+    @on(Button.Pressed, "#btn-open-templates")
+    def action_open_templates(self) -> None:
+        """Open starter rule template gallery modal."""
+        self.app.push_screen(TemplateGalleryModal(self.settings))
 
     @on(Button.Pressed, "#btn-save")
     def action_save(self) -> None:
@@ -857,6 +873,167 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         self.dismiss(None)
 
 
+class TemplateGalleryModal(A11yMixin, ModalScreen[None]):
+    """Modal screen for browsing and applying starter rule template packs."""
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel dialog", show=True),
+    ]
+
+    CSS = """
+    TemplateGalleryModal {
+        align: center middle;
+        background: rgba(0, 0, 0, 0.6);
+    }
+    .modal-box {
+        padding: 1 2;
+        background: $panel;
+        border: thick $primary;
+        width: 90%;
+        max-width: 80;
+        min-width: 30;
+        height: auto;
+        max-height: 90%;
+        overflow-y: auto;
+    }
+    .narrow .modal-box {
+        padding: 0 1;
+        width: 95%;
+    }
+    .modal-title {
+        text-style: bold;
+        color: $accent;
+        margin-bottom: 1;
+    }
+    .field-label {
+        margin-top: 1;
+        color: $text;
+        text-style: bold;
+    }
+    .template-card {
+        margin-top: 1;
+        margin-bottom: 1;
+        padding: 0 1;
+        border: solid $accent;
+        height: auto;
+    }
+    .template-desc {
+        color: $text-muted;
+        margin-left: 3;
+    }
+    .button-row {
+        margin-top: 1;
+        height: 3;
+        align: right middle;
+    }
+    Button:focus, Checkbox:focus {
+        border: heavy $accent;
+        text-style: bold;
+    }
+    """
+
+    def __init__(self, settings):
+        super().__init__()
+        self.settings = settings
+
+    def compose(self) -> ComposeResult:
+        """Compose template gallery children."""
+        with Vertical(classes="modal-box"):
+            yield Label("Starter Rule Template Gallery", classes="modal-title")
+            yield Label(
+                "Select starter template packs to apply. Template rules merge safely without overwriting custom rules:"
+            )
+
+            from app.core.rule_templates import get_starter_templates
+
+            for pack in get_starter_templates():
+                with Vertical(classes="template-card"):
+                    chk = Checkbox(
+                        f"{pack.icon} {pack.title}",
+                        value=False,
+                        id=f"chk-gallery-{pack.id}",
+                    )
+                    chk.tooltip = pack.description
+                    yield chk
+                    yield Label(pack.description, classes="template-desc")
+
+            with Horizontal(classes="button-row"):
+                btn_close = Button("Close", id="btn-close-gallery", variant="default")
+                btn_close.tooltip = "Close template gallery"
+                yield btn_close
+                btn_apply = Button(
+                    "Apply Selected Templates",
+                    id="btn-apply-templates",
+                    variant="primary",
+                )
+                btn_apply.tooltip = "Merge selected template packs into settings"
+                yield btn_apply
+
+    def _update_layout(self, width: int) -> None:
+        """Update modal layout based on viewport width breakpoint."""
+        if width < 80:
+            self.add_class("narrow")
+        else:
+            self.remove_class("narrow")
+
+    def on_resize(self, event: events.Resize) -> None:
+        """Handle modal viewport resize event."""
+        self._update_layout(event.size.width)
+
+    def on_mount(self) -> None:
+        """Focus initial checkbox on mount and emit announcement."""
+        self._update_layout(self.size.width)
+        from app.core.rule_templates import get_starter_templates
+
+        templates = get_starter_templates()
+        if templates:
+            first_id = templates[0].id
+            try:
+                self.query_one(f"#chk-gallery-{first_id}", Checkbox).focus()
+            except Exception:
+                pass
+        self.announce("Opened starter rule template gallery.")
+
+    @on(Button.Pressed, "#btn-apply-templates")
+    def action_apply_templates(self) -> None:
+        """Apply selected starter template packs to settings."""
+        from app.core.rule_templates import (
+            apply_starter_templates,
+            get_starter_templates,
+        )
+
+        selected_pack_ids = []
+        for pack in get_starter_templates():
+            try:
+                chk = self.query_one(f"#chk-gallery-{pack.id}", Checkbox)
+                if chk.value:
+                    selected_pack_ids.append(pack.id)
+            except Exception:
+                pass
+
+        if selected_pack_ids:
+            apply_starter_templates(self.settings, selected_pack_ids)
+            msg = f"Applied {len(selected_pack_ids)} starter rule template pack(s) to settings."
+            self.announce(msg)
+            if hasattr(self.app, "notify"):
+                self.app.notify(msg)
+        else:
+            self.announce("No starter template packs were selected.")
+
+        self.dismiss(None)
+
+    @on(Button.Pressed, "#btn-close-gallery")
+    def action_close(self) -> None:
+        """Close template gallery dialog."""
+        self.announce("Closed starter rule template gallery.")
+        self.dismiss(None)
+
+    def action_cancel(self) -> None:
+        """Cancel on Escape key."""
+        self.announce("Closed starter rule template gallery.")
+        self.dismiss(None)
+
+
 class WizardModal(A11yMixin, ModalScreen[None]):
     """Modal dialog for model onboarding wizard."""
 
@@ -889,6 +1066,11 @@ class WizardModal(A11yMixin, ModalScreen[None]):
         color: $accent;
         margin-bottom: 1;
     }
+    .field-label {
+        margin-top: 1;
+        color: $text;
+        text-style: bold;
+    }
     .switch-row {
         margin-top: 1;
         margin-bottom: 1;
@@ -900,7 +1082,7 @@ class WizardModal(A11yMixin, ModalScreen[None]):
         height: 3;
         align: right middle;
     }
-    Button:focus, Switch:focus {
+    Button:focus, Checkbox:focus, Switch:focus {
         border: heavy $accent;
         text-style: bold;
     }
@@ -925,6 +1107,23 @@ class WizardModal(A11yMixin, ModalScreen[None]):
                 sw.tooltip = "Toggle AI consent for semantic document classification"
                 yield sw
                 yield Label(" AI Consent Granted")
+
+            yield Label("Starter Rule Template Packs:", classes="field-label")
+            yield Label(
+                "Select pre-built template packs to populate keyword rules & compliance policies:"
+            )
+
+            from app.core.rule_templates import get_starter_templates
+
+            for pack in get_starter_templates():
+                is_default = pack.id in ("financial_tax", "personal_admin")
+                chk = Checkbox(
+                    f"{pack.icon} {pack.title}",
+                    value=is_default,
+                    id=f"chk-template-{pack.id}",
+                )
+                chk.tooltip = pack.description
+                yield chk
 
             yield Label("Status: Local embedded AI model weights verified.")
 
@@ -954,15 +1153,35 @@ class WizardModal(A11yMixin, ModalScreen[None]):
 
     @on(Button.Pressed, "#btn-finish")
     def action_finish(self) -> None:
-        """Finish wizard and save consent settings."""
+        """Finish wizard, save consent settings, and apply selected starter rule templates."""
         consent = self.query_one("#switch-consent", Switch).value
         self.settings.AI_CONSENT_GRANTED = consent
+
+        from app.core.rule_templates import (
+            apply_starter_templates,
+            get_starter_templates,
+        )
+
+        selected_packs = []
+        for pack in get_starter_templates():
+            try:
+                chk = self.query_one(f"#chk-template-{pack.id}", Checkbox)
+                if chk.value:
+                    selected_packs.append(pack.id)
+            except Exception:
+                pass
+
+        if selected_packs:
+            apply_starter_templates(self.settings, selected_packs)
+
         if hasattr(self.settings, "_save"):
             try:
                 self.settings._save()
             except Exception as e:
                 logger.error(f"Error saving consent setting: {e}")
-        self.announce("Finished model onboarding wizard and saved consent settings.")
+        self.announce(
+            "Finished model onboarding wizard and applied selected starter rule templates."
+        )
         self.dismiss(None)
 
     def action_cancel(self) -> None:
@@ -973,9 +1192,6 @@ class WizardModal(A11yMixin, ModalScreen[None]):
                 self.settings._save()
         self.announce("Closed model onboarding wizard dialog.")
         self.dismiss(None)
-
-
-
 
 
 class SessionRecoveryModal(A11yMixin, ModalScreen[Optional[str]]):
@@ -1323,11 +1539,19 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                 placeholder="Paste or drop file / directory paths here...",
                 id="input-drop-paths",
             )
-            inp.tooltip = "Enter or drop target file or folder paths to trigger automated sorting"
+            inp.tooltip = (
+                "Enter or drop target file or folder paths to trigger automated sorting"
+            )
             yield inp
 
-            status_lbl = Label("Ready. Drop or enter paths above.", id="dropzone-status", classes="status-text")
-            status_lbl.tooltip = "Live visual progress indicators and classification status messages"
+            status_lbl = Label(
+                "Ready. Drop or enter paths above.",
+                id="dropzone-status",
+                classes="status-text",
+            )
+            status_lbl.tooltip = (
+                "Live visual progress indicators and classification status messages"
+            )
             yield status_lbl
 
             with Horizontal(classes="button-row"):
@@ -1336,7 +1560,9 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                 yield btn_cancel
 
                 btn_process = Button("Sort Items", id="btn-process", variant="primary")
-                btn_process.tooltip = "Start automated classification and relocation on dropped paths"
+                btn_process.tooltip = (
+                    "Start automated classification and relocation on dropped paths"
+                )
                 yield btn_process
 
     def _update_layout(self, width: int) -> None:
@@ -1366,7 +1592,9 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
             try:
                 inp = self.query_one("#input-drop-paths", Input)
                 inp.value = event.text.strip()
-                self.announce(f"Pasted path payload into dropzone: {event.text.strip()}")
+                self.announce(
+                    f"Pasted path payload into dropzone: {event.text.strip()}"
+                )
             except Exception:
                 pass
 
@@ -1395,10 +1623,16 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
             raw_text = ""
 
         if not raw_text:
-            self.update_status_msg("No file or folder paths provided. Please paste or type a path.")
+            self.update_status_msg(
+                "No file or folder paths provided. Please paste or type a path."
+            )
             return
 
-        raw_items = [p.strip().strip("'\"") for p in raw_text.replace("\r", "\n").split("\n") if p.strip()]
+        raw_items = [
+            p.strip().strip("'\"")
+            for p in raw_text.replace("\r", "\n").split("\n")
+            if p.strip()
+        ]
         validated_paths = []
         invalid_messages = []
 
@@ -1424,7 +1658,11 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
             validated_paths.append(abs_p)
 
         if not validated_paths:
-            err_text = "; ".join(invalid_messages) if invalid_messages else "No valid paths found."
+            err_text = (
+                "; ".join(invalid_messages)
+                if invalid_messages
+                else "No valid paths found."
+            )
             self.update_status_msg(f"Error: {err_text}")
             return
 
@@ -1478,7 +1716,11 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                     for chunk in generator:
                         session.partial_fit(chunk)
 
-                    plan = session.generateSorting_plan() if hasattr(session, "generateSorting_plan") else session.generate_sorting_plan()
+                    plan = (
+                        session.generateSorting_plan()
+                        if hasattr(session, "generateSorting_plan")
+                        else session.generate_sorting_plan()
+                    )
                     if app_ref:
                         app_ref.call_from_thread(
                             self.update_status_msg,
@@ -1512,6 +1754,7 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                 app_ref.call_from_thread(
                     self.update_status_msg, f"Dropzone triage error: {e}"
                 )
+
 
 class VimTree(Tree):
     """Tree control with native vim motion navigation (h, j, k, l)."""

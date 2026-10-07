@@ -238,12 +238,12 @@ usage: app/main.py [-h] [-q] [--no-color] [--demo] [--smoke-test]
                    [--interactive]
                    [--accept-ai-consent | --decline-ai-consent]
                    [--skip-wizard] [--non-interactive]
-                   {sort,scan,config,daemon,undo,ledger,quarantine} ...
+                   {sort,scan,config,daemon,undo,drop,ledger,quarantine} ...
 
 Smart AutoSorter AI Pro
 
 positional arguments:
-  {sort,scan,config,daemon,undo,ledger,quarantine}
+  {sort,scan,config,daemon,undo,drop,ledger,quarantine}
                         Available subcommands
     sort                Run document sorting in headless batch processing mode
     scan                Run directory scanning and analysis without moving
@@ -252,6 +252,8 @@ positional arguments:
     daemon              Launch or control persistent directory-watching daemon
     undo                Rollback sorting operations and manage history
                         sessions
+    drop                Quick file drop triage receiver for target files or
+                        directories
     ledger              Manage transaction ledger entries and automated
                         reconciliation
     quarantine          Manage compliance quarantine staging, inspection, and
@@ -489,6 +491,54 @@ options:
   --force               Force rollback even if original files are missing
   --json                Output session list or rollback status in structured
                         JSON format
+  -q, --quiet           Suppress informational prints and non-essential
+                        progress output
+  --no-color            Disable ANSI color and style formatting
+  --max-folders MAX_FOLDERS
+                        Maximum number of generated subfolders
+  --strategy {default,generative,clinical_tmf,clinical_isf}
+                        Sorting strategy
+  --conflict-policy {skip,rename}
+                        Conflict resolution policy
+  --contextual-renaming
+                        Enable AI contextual renaming
+  --no-contextual-renaming
+                        Disable AI contextual renaming
+  --tui                 Launch full-screen Textual TUI interface
+  --interactive         Launch full-screen interactive TUI mode
+  --accept-ai-consent   Pre-configure AI consent as granted and bypass
+                        onboarding wizard
+  --decline-ai-consent  Pre-configure AI consent as declined and bypass
+                        onboarding wizard
+  --skip-wizard         Bypass onboarding wizard modal during startup
+  --non-interactive     Run in non-interactive mode and bypass interactive
+                        modal dialogs
+```
+
+##### `drop`
+```text
+usage: app/main.py drop [-h] [--preset {demo,downloads,documents}]
+                        [--dest-dir DEST_DIR] [--dry-run] [--json] [-q]
+                        [--no-color] [--max-folders MAX_FOLDERS]
+                        [--strategy {default,generative,clinical_tmf,clinical_isf}]
+                        [--conflict-policy {skip,rename}]
+                        [--contextual-renaming] [--no-contextual-renaming]
+                        [--tui] [--interactive]
+                        [--accept-ai-consent | --decline-ai-consent]
+                        [--skip-wizard] [--non-interactive]
+                        paths [paths ...]
+
+positional arguments:
+  paths                 Target file or directory paths to process
+
+options:
+  -h, --help            show this help message and exit
+  --preset {demo,downloads,documents}
+                        Use standard workspace preset directory
+  --dest-dir DEST_DIR   Destination directory for sorted files
+  --dry-run             Perform dry run analysis without executing physical
+                        moves
+  --json                Output result in structured JSON format
   -q, --quiet           Suppress informational prints and non-essential
                         progress output
   --no-color            Disable ANSI color and style formatting

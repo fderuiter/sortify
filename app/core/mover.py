@@ -281,7 +281,9 @@ def _resolve_source_path(
     """Resolve normalized absolute source path for a plan node."""
     src_p = _get_val(content, "source_path")
     if src_p:
-        abs_sp = os.path.normpath(src_p if os.path.isabs(src_p) else os.path.join(base_dir, src_p))
+        abs_sp = os.path.normpath(
+            src_p if os.path.isabs(src_p) else os.path.join(base_dir, src_p)
+        )
         if os.path.lexists(abs_sp):
             return abs_sp
 
