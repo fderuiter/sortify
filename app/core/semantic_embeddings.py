@@ -798,8 +798,13 @@ class SemanticEmbeddingManager:
         for fp, text in resolved_texts.items():
             try:
                 vec = self.generate_embedding(text)
-                retrieved_vectors[fp] = vec
-                new_vectors_to_upsert.append((fp, vec))
+                if (
+                    vec
+                    and self.validate_vector_dimension(vec)
+                    and not getattr(self, "is_degraded", False)
+                ):
+                    retrieved_vectors[fp] = vec
+                    new_vectors_to_upsert.append((fp, vec))
             except Exception as e:
                 logging.error(f"Failed to generate embedding for {fp}: {e}")
 
