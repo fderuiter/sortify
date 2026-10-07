@@ -140,7 +140,9 @@ def test_build_corpus_generator_sequential_continue(tmp_path):
         sequential=True,
     )
     chunks = list(gen)
-    assert len(chunks) == 0
+    assert len(chunks) == 1
+    assert "test.txt" in chunks[0]
+    assert chunks[0]["test.txt"]["hash"] == file_hash
 
     gen2 = build_corpus_generator(
         str(tmp_path),
@@ -152,7 +154,9 @@ def test_build_corpus_generator_sequential_continue(tmp_path):
         sequential=True,
     )
     chunks2 = list(gen2)
-    assert len(chunks2) == 0
+    assert len(chunks2) == 1
+    assert "test.txt" in chunks2[0]
+    assert chunks2[0]["test.txt"]["hash"] == file_hash
 
 
 def test_build_corpus_generator_parallel_continue(tmp_path):
@@ -171,7 +175,9 @@ def test_build_corpus_generator_parallel_continue(tmp_path):
         sequential=False,
     )
     chunks = list(gen)
-    assert len(chunks) == 0
+    assert len(chunks) == 1
+    assert "test.txt" in chunks[0]
+    assert chunks[0]["test.txt"]["hash"] == file_hash
 
     gen2 = build_corpus_generator(
         str(tmp_path),
@@ -183,7 +189,9 @@ def test_build_corpus_generator_parallel_continue(tmp_path):
         sequential=False,
     )
     chunks2 = list(gen2)
-    assert len(chunks2) == 0
+    assert len(chunks2) == 1
+    assert "test.txt" in chunks2[0]
+    assert chunks2[0]["test.txt"]["hash"] == file_hash
 
 
 def test_mover_get_safe_path_samefile(tmp_path):
