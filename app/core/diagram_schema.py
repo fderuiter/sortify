@@ -635,6 +635,7 @@ def _create_core_architecture_spec() -> ComponentDiagramSpec:
                     "core_scanner",
                     "core_progress",
                     "core_metadata",
+                    "core_sidecar_tags",
                 ],
             ),
             DiagramSubgraph(
@@ -733,6 +734,7 @@ def _create_core_architecture_spec() -> ComponentDiagramSpec:
             DiagramNode(id="core_scanner", label="app.core.scanner"),
             DiagramNode(id="core_progress", label="app.core.progress"),
             DiagramNode(id="core_metadata", label="app.core.metadata"),
+            DiagramNode(id="core_sidecar_tags", label="app.core.sidecar_tags"),
             # Utilities
             DiagramNode(id="core_text_utils", label="app.core.text_utils"),
             DiagramNode(id="core_path_utils", label="app.core.path_utils"),
@@ -754,6 +756,7 @@ def _create_core_architecture_spec() -> ComponentDiagramSpec:
             DiagramEdge(source="core_session", target="core_policy_engine"),
             DiagramEdge(source="core_session", target="core_verifier"),
             DiagramEdge(source="core_session", target="core_mover"),
+            DiagramEdge(source="core_session", target="core_sidecar_tags"),
             DiagramEdge(source="core_daemon", target="core_session"),
             DiagramEdge(source="core_daemon", target="core_ipc"),
             DiagramEdge(source="core_integration", target="core_session"),

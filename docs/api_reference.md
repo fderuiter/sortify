@@ -186,6 +186,10 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.core.shared_registry
 
+## `app.core.sidecar_tags`
+
+::: app.core.sidecar_tags
+
 ## `app.core.simulation_exporter`
 
 ::: app.core.simulation_exporter

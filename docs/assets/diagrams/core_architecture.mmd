@@ -57,6 +57,7 @@ flowchart TD
         core_scanner["app.core.scanner"]
         core_progress["app.core.progress"]
         core_metadata["app.core.metadata"]
+        core_sidecar_tags["app.core.sidecar_tags"]
     end
     subgraph utilities_security ["Security & Utilities (app.core)"]
         core_text_utils["app.core.text_utils"]
@@ -79,6 +80,7 @@ flowchart TD
     core_session --> core_policy_engine
     core_session --> core_verifier
     core_session --> core_mover
+    core_session --> core_sidecar_tags
     core_daemon --> core_session
     core_daemon --> core_ipc
     core_integration --> core_session
