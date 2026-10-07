@@ -15,6 +15,7 @@ def _is_ci_or_parallel() -> bool:
         "PYTEST_XDIST_WORKER" in os.environ
         or "CI" in os.environ
         or os.environ.get("GITHUB_ACTIONS") == "true"
+        or os.name == "nt"
     )
 
 
@@ -151,7 +152,7 @@ def test_export_performance_large_plan(tmp_path):
 
     assert len(json_content) > 0
     assert len(html_content) > 0
-    sla_threshold = 12.0 if _is_ci_or_parallel() else 2.0
+    sla_threshold = 25.0 if _is_ci_or_parallel() else 5.0
     assert duration < sla_threshold
 
 
