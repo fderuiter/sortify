@@ -236,7 +236,7 @@ jobs:
 
   doc-deploy:
     name: Doc Deploy
-    needs: [build-and-test, changes]
+    needs: [static-checks, changes]
     if: needs.changes.outputs.docs == 'true'
     runs-on: ubuntu-latest
     permissions:
