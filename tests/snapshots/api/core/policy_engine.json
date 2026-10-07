@@ -1,0 +1,205 @@
+{
+  "_metadata": {
+    "checksum": "19c2f9f265e2919829815383a4089b87511b4cd5af740bbc7d24471c86cf019a"
+  },
+  "classes": [
+    {
+      "class_name": "PolicyEngine",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [
+            "@staticmethod"
+          ],
+          "name": "contains_secrets",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "text"
+            }
+          ],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@classmethod"
+          ],
+          "name": "evaluate_policies",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cls"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "file_path"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "doc_text"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "status_match"
+            },
+            {
+              "annotation": "list[dict]",
+              "default": null,
+              "name": "policies"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "return_halting"
+            }
+          ],
+          "returns": "PolicyEvaluationResult | None | tuple[PolicyEvaluationResult | None, bool]"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@staticmethod"
+          ],
+          "name": "match_policy",
+          "parameters": [
+            {
+              "annotation": "dict",
+              "default": null,
+              "name": "rule"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "file_path"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "doc_text"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "status_match"
+            }
+          ],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@staticmethod"
+          ],
+          "name": "validate_lock_path",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "lock_path"
+            },
+            {
+              "annotation": "str",
+              "default": "None",
+              "name": "file_path"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@staticmethod"
+          ],
+          "name": "validate_policy_action",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "action"
+            }
+          ],
+          "returns": "bool"
+        }
+      ]
+    },
+    {
+      "class_name": "PolicyEvaluationResult",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "dict",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "*args"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "**kwargs"
+            }
+          ],
+          "returns": "Dict[str, Any]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "item"
+            },
+            {
+              "annotation": "Any",
+              "default": "None",
+              "name": "default"
+            }
+          ],
+          "returns": "Any"
+        }
+      ]
+    }
+  ],
+  "functions": [
+    {
+      "async": false,
+      "decorators": [],
+      "name": "is_masked_by",
+      "parameters": [
+        {
+          "annotation": "Any",
+          "default": null,
+          "name": "higher_rule"
+        },
+        {
+          "annotation": "Any",
+          "default": null,
+          "name": "lower_rule"
+        }
+      ],
+      "returns": "bool"
+    }
+  ]
+}

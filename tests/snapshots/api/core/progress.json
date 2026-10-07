@@ -1,0 +1,54 @@
+{
+  "_metadata": {
+    "checksum": "5ec8a2aa91163e3e338f6178c736f6570142f1e965d8af162cda874fd25eac5a"
+  },
+  "classes": [
+    {
+      "class_name": "ProgressUpdate",
+      "decorators": [
+        "@dataclass"
+      ],
+      "methods": []
+    }
+  ],
+  "functions": [
+    {
+      "async": false,
+      "decorators": [],
+      "name": "emit_progress",
+      "parameters": [
+        {
+          "annotation": "Optional[Callable[..., Any]]",
+          "default": null,
+          "name": "callback"
+        },
+        {
+          "annotation": "Union[ProgressUpdate, float, int, str, None]",
+          "default": "0.0",
+          "name": "progress_or_update"
+        },
+        {
+          "annotation": "Optional[str]",
+          "default": "None",
+          "name": "stage"
+        },
+        {
+          "annotation": "Optional[int]",
+          "default": "None",
+          "name": "unit_count"
+        },
+        {
+          "annotation": "Optional[str]",
+          "default": "None",
+          "name": "unit_type"
+        },
+        {
+          "annotation": "Any",
+          "default": null,
+          "name": "**kwargs"
+        }
+      ],
+      "returns": "None"
+    }
+  ]
+}

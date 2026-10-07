@@ -1,0 +1,54 @@
+{
+  "_metadata": {
+    "checksum": "7b818d441b50013d40ef0c97e5a9f89240953ab8b7c4c116a257df46201a43f4"
+  },
+  "classes": [],
+  "functions": [
+    {
+      "async": false,
+      "decorators": [],
+      "name": "clear_connection_cache",
+      "parameters": [
+        {
+          "annotation": "bool",
+          "default": "True",
+          "name": "only_current_and_inactive"
+        }
+      ],
+      "returns": null
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "clear_dead_thread_connections",
+      "parameters": [],
+      "returns": null
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "escape_pragma_key",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "key_str"
+        }
+      ],
+      "returns": "str"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "get_db_connection",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "db_path"
+        }
+      ],
+      "returns": null
+    }
+  ]
+}

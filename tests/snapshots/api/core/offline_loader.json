@@ -1,0 +1,266 @@
+{
+  "_metadata": {
+    "checksum": "9012c7e87eeeb4c71b829fd7deb6bfb407f4b4d5f222e69052bd161383b85b95"
+  },
+  "classes": [
+    {
+      "class_name": "Florence2VisualProcessor",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "__init__",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": "'florence-2'",
+              "name": "model_id"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "load",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@classmethod"
+          ],
+          "name": "parse_and_sanitize",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cls"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "text"
+            },
+            {
+              "annotation": "Tuple[int, int]",
+              "default": null,
+              "name": "image_size"
+            }
+          ],
+          "returns": "Dict[str, Any]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "process_image",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Any",
+              "default": null,
+              "name": "image_path"
+            },
+            {
+              "annotation": "str",
+              "default": "'<OD>'",
+              "name": "task_prompt"
+            },
+            {
+              "annotation": "Optional[Tuple[int, int]]",
+              "default": "None",
+              "name": "image_size"
+            }
+          ],
+          "returns": "Dict[str, Any]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "unload",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "None"
+        }
+      ]
+    },
+    {
+      "class_name": "ModelWeightsNotFoundError",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "__init__",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "model_id"
+            },
+            {
+              "annotation": "List[str]",
+              "default": null,
+              "name": "searched_paths"
+            }
+          ],
+          "returns": null
+        }
+      ]
+    },
+    {
+      "class_name": "OfflineModelLoadError",
+      "decorators": [],
+      "methods": []
+    },
+    {
+      "class_name": "OfflineModelLoader",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [
+            "@classmethod"
+          ],
+          "name": "hydrate_sidecar_models",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cls"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "sidecar_zip_path"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "target_dir"
+            },
+            {
+              "annotation": "Optional[Callable[..., Any]]",
+              "default": "None",
+              "name": "progress_callback"
+            }
+          ],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@classmethod"
+          ],
+          "name": "load_model",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cls"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "model_id"
+            },
+            {
+              "annotation": "Callable[..., Any]",
+              "default": null,
+              "name": "loader_fn"
+            },
+            {
+              "annotation": "Any",
+              "default": null,
+              "name": "*args"
+            },
+            {
+              "annotation": "Any",
+              "default": null,
+              "name": "**kwargs"
+            }
+          ],
+          "returns": "Any"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@classmethod"
+          ],
+          "name": "register_model",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cls"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "model_id"
+            },
+            {
+              "annotation": "Optional[List[str]]",
+              "default": "None",
+              "name": "expected_files"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@classmethod"
+          ],
+          "name": "resolve_model_path",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cls"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "model_id"
+            },
+            {
+              "annotation": "Optional[Callable[..., Any]]",
+              "default": "None",
+              "name": "progress_callback"
+            }
+          ],
+          "returns": "str"
+        }
+      ]
+    }
+  ],
+  "functions": []
+}

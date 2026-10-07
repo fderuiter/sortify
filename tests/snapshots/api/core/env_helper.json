@@ -1,0 +1,109 @@
+{
+  "_metadata": {
+    "checksum": "7c536bbe53d8930a37a9114323af9e5c0b5cc1faece533e919fd0ee8c4a402a9"
+  },
+  "classes": [],
+  "functions": [
+    {
+      "async": false,
+      "decorators": [],
+      "name": "check_linux_sandbox_support",
+      "parameters": [],
+      "returns": "bool"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "check_macos_sandbox_support",
+      "parameters": [],
+      "returns": "bool"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "check_windows_sandbox_support",
+      "parameters": [],
+      "returns": "bool"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "get_cleaned_env",
+      "parameters": [
+        {
+          "annotation": "dict",
+          "default": "None",
+          "name": "env"
+        }
+      ],
+      "returns": "dict"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "get_subprocess_startupinfo",
+      "parameters": [],
+      "returns": null
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "is_cuda_available",
+      "parameters": [],
+      "returns": "bool"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "is_mps_available",
+      "parameters": [],
+      "returns": "bool"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "run_background_process",
+      "parameters": [
+        {
+          "annotation": null,
+          "default": null,
+          "name": "cmd"
+        },
+        {
+          "annotation": "bool",
+          "default": "SANDBOX_SUPPORTED",
+          "name": "sandbox"
+        },
+        {
+          "annotation": null,
+          "default": null,
+          "name": "**kwargs"
+        }
+      ],
+      "returns": null
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "spawn_background_process",
+      "parameters": [
+        {
+          "annotation": null,
+          "default": null,
+          "name": "cmd"
+        },
+        {
+          "annotation": "bool",
+          "default": "SANDBOX_SUPPORTED",
+          "name": "sandbox"
+        },
+        {
+          "annotation": null,
+          "default": null,
+          "name": "**kwargs"
+        }
+      ],
+      "returns": null
+    }
+  ]
+}

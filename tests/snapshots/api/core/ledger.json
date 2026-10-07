@@ -1,0 +1,188 @@
+{
+  "_metadata": {
+    "checksum": "67c8958a2763b5ca6cba1f8393a8b1cae291fe0a635547dd1930e6133c3fd369"
+  },
+  "classes": [
+    {
+      "class_name": "TransactionLedger",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "__init__",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "db_path"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_pending_entries",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "session_id"
+            }
+          ],
+          "returns": "List[Dict]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "log_intent",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "session_id"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "source_path"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "dest_path"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "source_rel_path"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "dest_rel_path"
+            },
+            {
+              "annotation": "str",
+              "default": "''",
+              "name": "current_dest"
+            },
+            {
+              "annotation": "str",
+              "default": "''",
+              "name": "file_hash"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "entry_id"
+            }
+          ],
+          "returns": "str"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "purge_completed",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "purge_session",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "session_id"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "reconcile_incomplete_transactions",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "db"
+            }
+          ],
+          "returns": "int"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "update_status",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "entry_id"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "status"
+            }
+          ],
+          "returns": null
+        }
+      ]
+    }
+  ],
+  "functions": [
+    {
+      "async": false,
+      "decorators": [],
+      "name": "get_default_ledger_path",
+      "parameters": [],
+      "returns": "str"
+    }
+  ]
+}

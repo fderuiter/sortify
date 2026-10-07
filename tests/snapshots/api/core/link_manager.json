@@ -1,0 +1,74 @@
+{
+  "_metadata": {
+    "checksum": "83ef305606b16c00c88637b7dfbe0e01dbd488b6f3d7f82615831a110fb0e308"
+  },
+  "classes": [
+    {
+      "class_name": "LinkManager",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [
+            "@classmethod"
+          ],
+          "name": "clear",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cls"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@classmethod"
+          ],
+          "name": "get_link_info",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cls"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "full_path"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@classmethod"
+          ],
+          "name": "register_link",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cls"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "rel_path"
+            }
+          ],
+          "returns": null
+        }
+      ]
+    }
+  ],
+  "functions": []
+}

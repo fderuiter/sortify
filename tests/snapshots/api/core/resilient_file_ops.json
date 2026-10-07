@@ -1,0 +1,123 @@
+{
+  "_metadata": {
+    "checksum": "362f06d479e1bfce0951fa96c65995ff2a44fc70c365df08fb290da3924a1f0c"
+  },
+  "classes": [],
+  "functions": [
+    {
+      "async": false,
+      "decorators": [],
+      "name": "atomic_move_non_clobber",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "src"
+        },
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "dst"
+        }
+      ],
+      "returns": "None"
+    },
+    {
+      "async": false,
+      "decorators": [
+        "@contextmanager"
+      ],
+      "name": "atomic_quarantine_relocation",
+      "parameters": [
+        {
+          "annotation": "Optional[str | os.PathLike]",
+          "default": null,
+          "name": "staged_path"
+        },
+        {
+          "annotation": "str | os.PathLike",
+          "default": null,
+          "name": "dest_file_path"
+        }
+      ],
+      "returns": null
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "resilient_file_hash",
+      "parameters": [
+        {
+          "annotation": "str | os.PathLike",
+          "default": null,
+          "name": "file_path"
+        },
+        {
+          "annotation": "bool",
+          "default": "False",
+          "name": "skip_media_tags"
+        },
+        {
+          "annotation": "int",
+          "default": "65536",
+          "name": "chunk_size"
+        },
+        {
+          "annotation": "bool",
+          "default": "False",
+          "name": "normalize_text"
+        }
+      ],
+      "returns": "str"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "resilient_move",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "src"
+        },
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "dst"
+        }
+      ],
+      "returns": "str"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "resilient_remove",
+      "parameters": [
+        {
+          "annotation": null,
+          "default": null,
+          "name": "path"
+        }
+      ],
+      "returns": null
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "resilient_rmtree",
+      "parameters": [
+        {
+          "annotation": null,
+          "default": null,
+          "name": "path"
+        },
+        {
+          "annotation": null,
+          "default": "False",
+          "name": "ignore_errors"
+        }
+      ],
+      "returns": null
+    }
+  ]
+}

@@ -1,0 +1,85 @@
+{
+  "_metadata": {
+    "checksum": "6057c70cc1e2d55cfc3bfa94b9dc4ca0bd4f258aacfcb7a12869ef91e40302f3"
+  },
+  "classes": [],
+  "functions": [
+    {
+      "async": false,
+      "decorators": [],
+      "name": "export_audit_report",
+      "parameters": [
+        {
+          "annotation": "Dict[str, Any]",
+          "default": null,
+          "name": "report_data"
+        },
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "output_path"
+        },
+        {
+          "annotation": "str",
+          "default": "'json'",
+          "name": "format_type"
+        }
+      ],
+      "returns": "str"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "export_audit_report_csv",
+      "parameters": [
+        {
+          "annotation": "Dict[str, Any]",
+          "default": null,
+          "name": "report_data"
+        },
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "output_path"
+        }
+      ],
+      "returns": "str"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "export_audit_report_json",
+      "parameters": [
+        {
+          "annotation": "Dict[str, Any]",
+          "default": null,
+          "name": "report_data"
+        },
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "output_path"
+        }
+      ],
+      "returns": "str"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "generate_audit_report",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "base_dir"
+        },
+        {
+          "annotation": "List[Dict[str, Any]]",
+          "default": null,
+          "name": "move_records"
+        }
+      ],
+      "returns": "Dict[str, Any]"
+    }
+  ]
+}

@@ -1,0 +1,216 @@
+{
+  "_metadata": {
+    "checksum": "32065c6acdce4eaaa60dedbb3e52f18c45ed257dada61e33ce77b9ea8cd12a67"
+  },
+  "classes": [
+    {
+      "class_name": "AppSession",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "__init__",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "settings"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "base_dir"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "session_id"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "close",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "execute_moves",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "plan"
+            },
+            {
+              "annotation": null,
+              "default": "False",
+              "name": "resume"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "cancel_check"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "chunk_size"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "progress_callback"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "**kwargs"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "generate_sorting_plan",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "fast_path_only"
+            },
+            {
+              "annotation": "Optional[list[str]]",
+              "default": "None",
+              "name": "target_paths"
+            },
+            {
+              "annotation": "Optional[Dict[str, Any]]",
+              "default": "None",
+              "name": "jev_results"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "partial_fit",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "chunk"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": true,
+          "decorators": [],
+          "name": "process_items_async",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "items_to_sort"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cancel_check"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "progress_callback"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "rollback",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "session_id"
+            },
+            {
+              "annotation": null,
+              "default": "False",
+              "name": "ignore_missing"
+            }
+          ],
+          "returns": null
+        }
+      ]
+    }
+  ],
+  "functions": [
+    {
+      "async": true,
+      "decorators": [],
+      "name": "scan_abandoned_sessions_async",
+      "parameters": [],
+      "returns": null
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "split_plan_phases",
+      "parameters": [
+        {
+          "annotation": "Dict[str, Any]",
+          "default": null,
+          "name": "plan"
+        }
+      ],
+      "returns": "Tuple[Dict[str, Any], Dict[str, Any]]"
+    }
+  ]
+}

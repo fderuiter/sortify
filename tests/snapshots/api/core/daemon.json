@@ -1,0 +1,374 @@
+{
+  "_metadata": {
+    "checksum": "c8ad509898d9bc4f26ac9ae24252e62d2be87162d6567fe1a4aac3459830c1d2"
+  },
+  "classes": [
+    {
+      "class_name": "ContinuousWatchdogDaemon",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "__init__",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "AppSettings",
+              "default": null,
+              "name": "settings"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "enqueue_event",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "FileChangeEvent",
+              "default": null,
+              "name": "change_event"
+            }
+          ],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_health_telemetry",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "dict"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_metrics_telemetry",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "dict"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_status_telemetry",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "dict"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@property"
+          ],
+          "name": "is_moving",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@property"
+          ],
+          "name": "is_paused",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "is_self_generated_event",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "event"
+            }
+          ],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "mark_pending_dirty",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "pause",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@property"
+          ],
+          "name": "pending_dirty",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "process_dropped_items",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "list[str]",
+              "default": null,
+              "name": "paths"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "dry_run"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "dest_dir"
+            }
+          ],
+          "returns": "dict[str, Any]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "resume",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@contextlib.contextmanager"
+          ],
+          "name": "scoped_move_phase",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "plan"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "active_paths"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "should_ignore_path",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "path"
+            }
+          ],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "start",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "stop",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "trigger_recalculation",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": null
+        }
+      ]
+    },
+    {
+      "class_name": "DaemonFolderHandler",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "__init__",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "daemon"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "on_any_event",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "event"
+            }
+          ],
+          "returns": null
+        }
+      ]
+    },
+    {
+      "class_name": "FileChangeEvent",
+      "decorators": [
+        "@dataclass"
+      ],
+      "methods": []
+    }
+  ],
+  "functions": [
+    {
+      "async": false,
+      "decorators": [],
+      "name": "start_daemon",
+      "parameters": [
+        {
+          "annotation": "AppSettings",
+          "default": null,
+          "name": "settings"
+        },
+        {
+          "annotation": "str",
+          "default": "None",
+          "name": "base_dir"
+        }
+      ],
+      "returns": null
+    }
+  ]
+}

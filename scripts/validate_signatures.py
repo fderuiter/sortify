@@ -2,7 +2,7 @@
 """AST-based Signature & CLI Snapshot Validation.
 
 This script parses developer protocols and CLI tools statically to verify
-backwards compatibility against a checked-in API/CLI snapshot file.
+backwards compatibility against checked-in per-module API/CLI snapshot files under tests/snapshots/api/.
 """
 
 import argparse
@@ -13,17 +13,10 @@ import json
 import os
 import sys
 
-# Compute project base directory (/app) based on script location
 BASE_DIR = os.path.realpath(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-SNAPSHOT_PATH = os.path.join(BASE_DIR, "tests", "snapshots", "api_snapshot.json")
+SNAPSHOT_DIR = os.path.join(BASE_DIR, "tests", "snapshots", "api")
+SNAPSHOT_PATH = SNAPSHOT_DIR  # Backwards-compatibility alias
 
-# Source files to parse
-ANALYZER_STRATEGIES_PATH = os.path.join(
-    BASE_DIR, "app", "core", "analyzer_strategies.py"
-)
-EXTRACTOR_STRATEGIES_PATH = os.path.join(
-    BASE_DIR, "app", "core", "extractor_strategies.py"
-)
 MAIN_CLI_PATH = os.path.join(BASE_DIR, "app", "main.py")
 SANDBOX_CLI_PATH = os.path.join(BASE_DIR, "sandbox_cli.py")
 
@@ -167,7 +160,6 @@ def extract_module_signatures(file_path):
 
     for node in tree.body:
         if isinstance(node, ast.ClassDef):
-            # Only extract public classes
             if node.name.startswith("_"):
                 continue
 
@@ -176,7 +168,6 @@ def extract_module_signatures(file_path):
 
             for body_node in node.body:
                 if isinstance(body_node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                    # Include public methods and __init__
                     if body_node.name.startswith("_") and body_node.name != "__init__":
                         continue
                     methods.append(extract_function_signature(body_node))
@@ -191,7 +182,6 @@ def extract_module_signatures(file_path):
             )
 
         elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            # Only extract public top-level functions
             if node.name.startswith("_"):
                 continue
 
@@ -314,6 +304,33 @@ def collect_current_definitions():
     }
 
 
+def source_path_to_snapshot_path(source_rel_path: str) -> str:
+    """Map a relative source file path to its snapshot JSON file path under SNAPSHOT_DIR."""
+    norm = source_rel_path.replace("\\", "/")
+    if norm == "app/main.py":
+        rel_snap = "cli/main.json"
+    elif norm == "sandbox_cli.py":
+        rel_snap = "cli/sandbox_cli.json"
+    elif norm.startswith("app/"):
+        rel_snap = norm[len("app/") :].removesuffix(".py") + ".json"
+    else:
+        rel_snap = norm.removesuffix(".py") + ".json"
+
+    return os.path.join(SNAPSHOT_DIR, rel_snap)
+
+
+def snapshot_path_to_source_path(snapshot_abs_path: str) -> str:
+    """Map an absolute snapshot JSON path back to its corresponding relative source file path."""
+    rel_snap = safe_relpath(snapshot_abs_path, SNAPSHOT_DIR).replace("\\", "/")
+    if rel_snap == "cli/main.json":
+        return "app/main.py"
+    if rel_snap == "cli/sandbox_cli.json":
+        return "sandbox_cli.py"
+    if rel_snap.startswith("cli/"):
+        return f"app/cli/{rel_snap[len('cli/') :].removesuffix('.json')}.py"
+    return f"app/{rel_snap.removesuffix('.json')}.py"
+
+
 def compute_payload_checksum(payload: dict) -> str:
     """Compute SHA-256 checksum of canonical JSON payload definitions."""
     canonical_json = json.dumps(payload, indent=2, sort_keys=True)
@@ -342,10 +359,7 @@ def extract_metadata_and_payload(snapshot_data: dict) -> tuple[dict | None, dict
 def verify_snapshot_integrity(
     snapshot_data: dict, snapshot_path: str = None
 ) -> tuple[bool, str, dict]:
-    """Verify inline checksum header of a snapshot data dictionary.
-
-    Returns (is_valid, error_message, payload_definitions).
-    """
+    """Verify inline checksum header of a snapshot data dictionary."""
     if not isinstance(snapshot_data, dict):
         path_str = f" in {snapshot_path}" if snapshot_path else ""
         return (
@@ -385,24 +399,111 @@ def verify_snapshot_integrity(
     return True, "", payload
 
 
+def matches_target(source_rel: str, snapshot_abs: str, target_arg: str) -> bool:
+    """Check if target_arg matches the given source or snapshot path."""
+    norm_target = target_arg.replace("\\", "/").strip()
+    norm_source = source_rel.replace("\\", "/")
+    norm_snap = safe_relpath(snapshot_abs, BASE_DIR).replace("\\", "/")
+    rel_snap = safe_relpath(snapshot_abs, SNAPSHOT_DIR).replace("\\", "/")
+
+    candidates = {
+        norm_source,
+        norm_snap,
+        rel_snap,
+        norm_source.removesuffix(".py"),
+        rel_snap.removesuffix(".json"),
+        os.path.basename(norm_source),
+        os.path.splitext(os.path.basename(norm_source))[0],
+    }
+
+    if norm_target in candidates:
+        return True
+    if (
+        norm_source.endswith(norm_target)
+        or norm_snap.endswith(norm_target)
+        or rel_snap.endswith(norm_target)
+    ):
+        return True
+    return False
+
+
+def collect_modules_and_payloads():
+    """Collect all current modules, their target snapshot paths, and extracted payloads."""
+    defs = collect_current_definitions()
+    modules = []
+
+    if isinstance(defs, dict):
+        cli_dict = defs.get("cli", {})
+        if isinstance(cli_dict, dict):
+            for source_rel, cli_calls in cli_dict.items():
+                snap_path = source_path_to_snapshot_path(source_rel)
+                payload = {"cli": cli_calls}
+                modules.append(
+                    {
+                        "category": "cli",
+                        "source_rel": source_rel,
+                        "snapshot_path": snap_path,
+                        "payload": payload,
+                    }
+                )
+
+        core_dict = defs.get("core", {})
+        if isinstance(core_dict, dict):
+            for source_rel, core_sigs in core_dict.items():
+                snap_path = source_path_to_snapshot_path(source_rel)
+                payload = core_sigs
+                modules.append(
+                    {
+                        "category": "core",
+                        "source_rel": source_rel,
+                        "snapshot_path": snap_path,
+                        "payload": payload,
+                    }
+                )
+
+    return modules
+
+
 def main():
     """Run CLI snapshot validation engine."""
     parser = argparse.ArgumentParser(
-        description="Verify public protocol signatures and CLI interfaces statically."
+        description="Verify public protocol signatures and CLI interfaces statically against modular snapshots."
     )
     parser.add_argument(
         "--update",
         "--regenerate",
         action="store_true",
         dest="regenerate",
-        help="Update/regenerate the verified API/CLI baseline snapshot file.",
+        help="Update/regenerate verified API/CLI baseline snapshot file(s).",
+    )
+    parser.add_argument(
+        "module_paths",
+        nargs="*",
+        default=[],
+        help="Optional module path(s) to validate or update.",
     )
     args = parser.parse_args()
 
-    # Collect current codebase signatures
-    current_definitions = collect_current_definitions()
-
     is_ci = os.environ.get("CI", "").lower() in ("true", "1")
+    all_modules = collect_modules_and_payloads()
+
+    if args.module_paths:
+        target_modules = [
+            m
+            for m in all_modules
+            if any(
+                matches_target(m["source_rel"], m["snapshot_path"], t)
+                for t in args.module_paths
+            )
+        ]
+        if not target_modules:
+            print(
+                f"Error: No matching modules found for specified path(s): {', '.join(args.module_paths)}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+    else:
+        target_modules = all_modules
 
     if args.regenerate:
         if is_ci:
@@ -412,94 +513,157 @@ def main():
             )
             sys.exit(1)
 
-        checksum = compute_payload_checksum(current_definitions)
-        snapshot_data = {
-            "_metadata": {
-                "checksum": checksum,
-            },
-            **current_definitions,
-        }
+        updated_count = 0
+        for m in target_modules:
+            snap_path = m["snapshot_path"]
+            payload = m["payload"]
+            checksum = compute_payload_checksum(payload)
+            file_data = {
+                "_metadata": {
+                    "checksum": checksum,
+                },
+                **payload,
+            }
 
-        # Create directory if missing
-        os.makedirs(os.path.dirname(SNAPSHOT_PATH), exist_ok=True)
-        with open(SNAPSHOT_PATH, "w", encoding="utf-8") as f:
-            json.dump(snapshot_data, f, indent=2, sort_keys=True)
-            f.write("\n")
-        print(f"Successfully generated new baseline snapshot at {SNAPSHOT_PATH}")
+            if os.path.exists(snap_path) and not args.module_paths:
+                try:
+                    with open(snap_path, "r", encoding="utf-8") as f:
+                        existing_data = json.load(f)
+                    is_v, _, existing_payload = verify_snapshot_integrity(
+                        existing_data, snap_path
+                    )
+                    if is_v and json.dumps(
+                        existing_payload, sort_keys=True
+                    ) == json.dumps(payload, sort_keys=True):
+                        continue
+                except Exception:
+                    pass
+
+            os.makedirs(os.path.dirname(snap_path), exist_ok=True)
+            with open(snap_path, "w", encoding="utf-8") as f:
+                json.dump(file_data, f, indent=2, sort_keys=True)
+                f.write("\n")
+            rel_snap = safe_relpath(snap_path, BASE_DIR)
+            print(f"Updated baseline snapshot: {rel_snap}")
+            updated_count += 1
+
+        if not args.module_paths and os.path.exists(SNAPSHOT_DIR):
+            valid_snap_paths = {
+                os.path.realpath(m["snapshot_path"]) for m in all_modules
+            }
+            for root, _, files in os.walk(SNAPSHOT_DIR):
+                for file in files:
+                    if file.endswith(".json"):
+                        full_snap = os.path.realpath(os.path.join(root, file))
+                        if full_snap not in valid_snap_paths:
+                            os.remove(full_snap)
+                            rel_removed = safe_relpath(full_snap, BASE_DIR)
+                            print(f"Removed orphaned snapshot file: {rel_removed}")
+
+        print(
+            f"Successfully processed baseline snapshot updates ({updated_count} files written)."
+        )
         sys.exit(0)
 
-    # Check if snapshot baseline exists
-    if not os.path.exists(SNAPSHOT_PATH):
-        print(
-            f"Error: Baseline snapshot file does not exist at {SNAPSHOT_PATH}.\n"
-            f"Run this script with --regenerate to initialize it.",
-            file=sys.stderr,
-        )
-        sys.exit(1)
+    # Validation Mode
+    has_errors = False
+    valid_snap_paths = set()
 
-    # Load checked-in baseline snapshot
-    with open(SNAPSHOT_PATH, "r", encoding="utf-8") as f:
-        try:
-            snapshot_data = json.load(f)
-        except Exception as e:
+    for m in target_modules:
+        snap_path = m["snapshot_path"]
+        rel_snap = safe_relpath(snap_path, BASE_DIR)
+        valid_snap_paths.add(os.path.realpath(snap_path))
+
+        if not os.path.exists(snap_path):
             print(
-                f"Error: Failed to parse checked-in baseline snapshot JSON: {e}",
+                f"FAIL: Baseline snapshot file missing for module '{m['source_rel']}': {rel_snap}",
                 file=sys.stderr,
             )
-            sys.exit(1)
+            has_errors = True
+            continue
 
-    # Verify snapshot integrity prior to evaluating interface definitions
-    is_valid, err_msg, snapshot_definitions = verify_snapshot_integrity(
-        snapshot_data, SNAPSHOT_PATH
-    )
-    if not is_valid:
-        print(err_msg, file=sys.stderr)
-        sys.exit(1)
-
-    # Compare current against snapshot payload definitions
-    current_json = json.dumps(current_definitions, indent=2, sort_keys=True)
-    snapshot_json = json.dumps(snapshot_definitions, indent=2, sort_keys=True)
-
-    if current_json != snapshot_json:
-        print(
-            "FAIL: Public interface or CLI signature drift detected!",
-            file=sys.stderr,
-        )
-        print(
-            "----------------------------------------------------------------",
-            file=sys.stderr,
-        )
-        diff = list(
-            difflib.unified_diff(
-                snapshot_json.splitlines(keepends=True),
-                current_json.splitlines(keepends=True),
-                fromfile=f"Snapshot ({safe_relpath(SNAPSHOT_PATH, BASE_DIR)})",
-                tofile="Current Codebase",
+        try:
+            with open(snap_path, "r", encoding="utf-8") as f:
+                snapshot_data = json.load(f)
+        except Exception as e:
+            print(
+                f"FAIL: Failed to parse snapshot JSON at {rel_snap}: {e}",
+                file=sys.stderr,
             )
+            has_errors = True
+            continue
+
+        is_valid, err_msg, snapshot_payload = verify_snapshot_integrity(
+            snapshot_data, rel_snap
         )
-        sys.stderr.writelines(diff)
+        if not is_valid:
+            print(err_msg, file=sys.stderr)
+            has_errors = True
+            continue
+
+        current_json = json.dumps(m["payload"], indent=2, sort_keys=True)
+        snapshot_json = json.dumps(snapshot_payload, indent=2, sort_keys=True)
+
+        if current_json != snapshot_json:
+            print(
+                f"FAIL: Signature drift detected in '{m['source_rel']}' ({rel_snap})!",
+                file=sys.stderr,
+            )
+            print(
+                "----------------------------------------------------------------",
+                file=sys.stderr,
+            )
+            diff = list(
+                difflib.unified_diff(
+                    snapshot_json.splitlines(keepends=True),
+                    current_json.splitlines(keepends=True),
+                    fromfile=f"Snapshot ({rel_snap})",
+                    tofile=f"Current Codebase ({m['source_rel']})",
+                )
+            )
+            sys.stderr.writelines(diff)
+            print(
+                "----------------------------------------------------------------",
+                file=sys.stderr,
+            )
+            has_errors = True
+
+    if not args.module_paths and os.path.exists(SNAPSHOT_DIR):
+        for root, _, files in os.walk(SNAPSHOT_DIR):
+            for file in files:
+                if file.endswith(".json"):
+                    full_snap = os.path.realpath(os.path.join(root, file))
+                    if full_snap not in valid_snap_paths:
+                        rel_orphaned = safe_relpath(full_snap, BASE_DIR)
+                        print(
+                            f"FAIL: Orphaned snapshot file detected: {rel_orphaned}",
+                            file=sys.stderr,
+                        )
+                        has_errors = True
+
+    if has_errors:
         print(
-            "----------------------------------------------------------------",
+            "\nAPI/CLI signature verification failed!",
             file=sys.stderr,
         )
         if not is_ci:
             print(
-                "If this change was intentional, update the baseline snapshot by running:",
+                "If these changes were intentional, update the baseline snapshot by running:",
                 file=sys.stderr,
             )
             print(
-                f"  python3 {safe_relpath(__file__, BASE_DIR)} --regenerate",
+                f"  python3 {safe_relpath(__file__, BASE_DIR)} --update",
                 file=sys.stderr,
             )
         else:
             print(
                 "In CI, automated baseline regeneration is disabled. "
-                f"Please commit the updated snapshot file '{safe_relpath(SNAPSHOT_PATH, BASE_DIR)}'.",
+                "Please update snapshot files locally and commit the changes.",
                 file=sys.stderr,
             )
         sys.exit(1)
 
-    print("SUCCESS: Codebase signatures match baseline snapshot.")
+    print("SUCCESS: Codebase signatures match baseline snapshots.")
     sys.exit(0)
 
 

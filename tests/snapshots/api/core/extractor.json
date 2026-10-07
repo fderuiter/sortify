@@ -1,0 +1,325 @@
+{
+  "_metadata": {
+    "checksum": "6def403c8e47ba46c67191baf11100601e203404583bb9f54776fb346fbfacf0"
+  },
+  "classes": [
+    {
+      "class_name": "ExtractionResult",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "dict",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "*args"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "**kwargs"
+            }
+          ],
+          "returns": "Dict[str, Any]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "item"
+            },
+            {
+              "annotation": "Any",
+              "default": "None",
+              "name": "default"
+            }
+          ],
+          "returns": "Any"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "startswith",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "prefix"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "*args"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "**kwargs"
+            }
+          ],
+          "returns": "bool"
+        }
+      ]
+    },
+    {
+      "class_name": "ExtractionStatus",
+      "decorators": [],
+      "methods": []
+    }
+  ],
+  "functions": [
+    {
+      "async": false,
+      "decorators": [],
+      "name": "build_corpus_generator",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "base_dir"
+        },
+        {
+          "annotation": "list",
+          "default": null,
+          "name": "items_to_sort"
+        },
+        {
+          "annotation": "Callable",
+          "default": null,
+          "name": "progress_callback"
+        },
+        {
+          "annotation": "int",
+          "default": null,
+          "name": "max_workers"
+        },
+        {
+          "annotation": null,
+          "default": null,
+          "name": "db"
+        },
+        {
+          "annotation": "int",
+          "default": "50",
+          "name": "chunk_size"
+        },
+        {
+          "annotation": "bool",
+          "default": "False",
+          "name": "sequential"
+        },
+        {
+          "annotation": "Callable | None",
+          "default": "None",
+          "name": "cancel_check"
+        },
+        {
+          "annotation": null,
+          "default": "None",
+          "name": "settings"
+        }
+      ],
+      "returns": null
+    },
+    {
+      "async": true,
+      "decorators": [],
+      "name": "build_corpus_generator_async",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "base_dir"
+        },
+        {
+          "annotation": "list",
+          "default": null,
+          "name": "items_to_sort"
+        },
+        {
+          "annotation": null,
+          "default": null,
+          "name": "db"
+        },
+        {
+          "annotation": "Callable | None",
+          "default": "None",
+          "name": "cancel_check"
+        },
+        {
+          "annotation": null,
+          "default": "None",
+          "name": "settings"
+        },
+        {
+          "annotation": "Callable | None",
+          "default": "None",
+          "name": "progress_callback"
+        },
+        {
+          "annotation": "int",
+          "default": "50",
+          "name": "batch_size"
+        }
+      ],
+      "returns": null
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "evaluate_text_confidence",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "text"
+        },
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "ext"
+        }
+      ],
+      "returns": "float"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "extract_file_text",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "file_path"
+        },
+        {
+          "annotation": null,
+          "default": "None",
+          "name": "settings"
+        },
+        {
+          "annotation": null,
+          "default": "None",
+          "name": "progress_callback"
+        },
+        {
+          "annotation": null,
+          "default": "None",
+          "name": "cancel_check"
+        },
+        {
+          "annotation": "bool",
+          "default": "False",
+          "name": "fast_triage"
+        },
+        {
+          "annotation": null,
+          "default": "None",
+          "name": "db"
+        },
+        {
+          "annotation": "str | None",
+          "default": "None",
+          "name": "base_dir"
+        }
+      ],
+      "returns": "ExtractionResult"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "fast_triage_extract",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "file_path"
+        },
+        {
+          "annotation": null,
+          "default": "None",
+          "name": "settings"
+        },
+        {
+          "annotation": null,
+          "default": "None",
+          "name": "db"
+        },
+        {
+          "annotation": "str | None",
+          "default": "None",
+          "name": "base_dir"
+        }
+      ],
+      "returns": "str"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "get_file_hash",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "file_path"
+        }
+      ],
+      "returns": "str"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "process_item_worker",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "base_dir"
+        },
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "item"
+        },
+        {
+          "annotation": "Callable",
+          "default": null,
+          "name": "progress_callback"
+        },
+        {
+          "annotation": null,
+          "default": null,
+          "name": "db"
+        },
+        {
+          "annotation": null,
+          "default": "None",
+          "name": "settings"
+        }
+      ],
+      "returns": "Tuple[str, str, str]"
+    }
+  ]
+}

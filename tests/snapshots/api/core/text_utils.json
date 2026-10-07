@@ -1,0 +1,65 @@
+{
+  "_metadata": {
+    "checksum": "4411d289f8b77fe14659503aa0eae5ecee36181a7d1592fa49c95988f3af4058"
+  },
+  "classes": [],
+  "functions": [
+    {
+      "async": false,
+      "decorators": [],
+      "name": "calculate_shannon_entropy",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "text"
+        }
+      ],
+      "returns": "float"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "contains_secrets",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "text"
+        }
+      ],
+      "returns": "bool"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "sanitize_secret_patterns",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "text"
+        },
+        {
+          "annotation": "str",
+          "default": "''",
+          "name": "replacement"
+        }
+      ],
+      "returns": "str"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "sanitize_text",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "text"
+        }
+      ],
+      "returns": "str"
+    }
+  ]
+}

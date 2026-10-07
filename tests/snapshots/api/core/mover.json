@@ -1,0 +1,326 @@
+{
+  "_metadata": {
+    "checksum": "5858c02f137dc3e8bfe35132145665f2d83b4ecbfd97ca682c1ea9897797d44e"
+  },
+  "classes": [
+    {
+      "class_name": "AsyncMoveEngine",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "__init__",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "int",
+              "default": "None",
+              "name": "max_workers"
+            },
+            {
+              "annotation": "int",
+              "default": "None",
+              "name": "chunk_size"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "execute",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": "dict",
+              "default": null,
+              "name": "plan"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "db"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "history_manager"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "runtime_settings"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "resume"
+            },
+            {
+              "annotation": "int",
+              "default": "50",
+              "name": "batch_size"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "cancel_check"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "cancel_event"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "cancellation_token"
+            },
+            {
+              "annotation": "str",
+              "default": "None",
+              "name": "priority"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "progress_callback"
+            }
+          ],
+          "returns": "dict"
+        }
+      ]
+    }
+  ],
+  "functions": [
+    {
+      "async": false,
+      "decorators": [],
+      "name": "execute_moves",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "base_dir"
+        },
+        {
+          "annotation": "dict",
+          "default": null,
+          "name": "plan"
+        },
+        {
+          "annotation": null,
+          "default": null,
+          "name": "db"
+        },
+        {
+          "annotation": null,
+          "default": null,
+          "name": "history_manager"
+        },
+        {
+          "annotation": null,
+          "default": "None",
+          "name": "runtime_settings"
+        },
+        {
+          "annotation": "bool",
+          "default": "False",
+          "name": "resume"
+        },
+        {
+          "annotation": "int",
+          "default": "50",
+          "name": "batch_size"
+        },
+        {
+          "annotation": "int",
+          "default": "None",
+          "name": "chunk_size"
+        },
+        {
+          "annotation": "int",
+          "default": "None",
+          "name": "max_workers"
+        },
+        {
+          "annotation": null,
+          "default": "None",
+          "name": "cancel_check"
+        },
+        {
+          "annotation": null,
+          "default": "None",
+          "name": "cancel_event"
+        },
+        {
+          "annotation": null,
+          "default": "None",
+          "name": "cancellation_token"
+        },
+        {
+          "annotation": "str",
+          "default": "None",
+          "name": "priority"
+        },
+        {
+          "annotation": null,
+          "default": "None",
+          "name": "progress_callback"
+        }
+      ],
+      "returns": "dict"
+    },
+    {
+      "async": true,
+      "decorators": [],
+      "name": "execute_moves_async",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "base_dir"
+        },
+        {
+          "annotation": "dict",
+          "default": null,
+          "name": "plan"
+        },
+        {
+          "annotation": null,
+          "default": null,
+          "name": "db"
+        },
+        {
+          "annotation": null,
+          "default": null,
+          "name": "history_manager"
+        },
+        {
+          "annotation": null,
+          "default": "None",
+          "name": "runtime_settings"
+        },
+        {
+          "annotation": "bool",
+          "default": "False",
+          "name": "resume"
+        },
+        {
+          "annotation": "int",
+          "default": "50",
+          "name": "batch_size"
+        },
+        {
+          "annotation": "int",
+          "default": "None",
+          "name": "chunk_size"
+        },
+        {
+          "annotation": "int",
+          "default": "None",
+          "name": "max_workers"
+        },
+        {
+          "annotation": null,
+          "default": "None",
+          "name": "cancel_check"
+        },
+        {
+          "annotation": null,
+          "default": "None",
+          "name": "cancel_event"
+        },
+        {
+          "annotation": null,
+          "default": "None",
+          "name": "cancellation_token"
+        },
+        {
+          "annotation": "str",
+          "default": "None",
+          "name": "priority"
+        },
+        {
+          "annotation": null,
+          "default": "None",
+          "name": "progress_callback"
+        }
+      ],
+      "returns": "dict"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "get_safe_path",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "dest_dir"
+        },
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "filename"
+        },
+        {
+          "annotation": "str",
+          "default": "None",
+          "name": "source_path"
+        }
+      ],
+      "returns": "str"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "is_subpath_or_equal",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "child"
+        },
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "parent"
+        }
+      ],
+      "returns": "bool"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "resolve_new_target",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "abs_target"
+        },
+        {
+          "annotation": "dict",
+          "default": null,
+          "name": "path_map"
+        }
+      ],
+      "returns": "str"
+    }
+  ]
+}

@@ -1,0 +1,451 @@
+{
+  "_metadata": {
+    "checksum": "1537578d6264bd89c9ff653bb2c295bc7ea3bde7ec3da27e0b8fca13b8699c5f"
+  },
+  "classes": [
+    {
+      "class_name": "IncrementalAnalyzer",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "__init__",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "int",
+              "default": null,
+              "name": "max_folders"
+            },
+            {
+              "annotation": "set",
+              "default": null,
+              "name": "stop_words"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "db"
+            },
+            {
+              "annotation": "str",
+              "default": "'generative'",
+              "name": "strategy_name"
+            },
+            {
+              "annotation": "str | None",
+              "default": "_UNSPECIFIED",
+              "name": "model_path"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "close",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "generate_sorting_plan",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "runtime_settings"
+            },
+            {
+              "annotation": "dict",
+              "default": "None",
+              "name": "locked_files"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "cancel_check"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "fast_path_only"
+            },
+            {
+              "annotation": "Optional[list[str]]",
+              "default": "None",
+              "name": "target_paths"
+            },
+            {
+              "annotation": "Optional[Dict[str, Any]]",
+              "default": "None",
+              "name": "jev_results"
+            }
+          ],
+          "returns": "SortingPlan"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "partial_fit",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": "dict",
+              "default": null,
+              "name": "new_corpus"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "runtime_settings"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "reload_stop_words",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "set",
+              "default": null,
+              "name": "new_stop_words"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "terminate",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": null
+        }
+      ]
+    },
+    {
+      "class_name": "SortingPlan",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "__init__",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Optional[Dict[str, Any]]",
+              "default": "None",
+              "name": "plan"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "**kwargs"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "dict",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "*args"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "**kwargs"
+            }
+          ],
+          "returns": "Dict[str, Any]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "model_dump",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "*args"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "**kwargs"
+            }
+          ],
+          "returns": "Dict[str, Any]"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@classmethod"
+          ],
+          "name": "model_validate",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cls"
+            },
+            {
+              "annotation": "Any",
+              "default": null,
+              "name": "obj"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "*args"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "**kwargs"
+            }
+          ],
+          "returns": "'SortingPlan'"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@property"
+          ],
+          "name": "plan",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "Dict[str, Any]"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@plan.setter"
+          ],
+          "name": "plan",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Dict[str, Any]",
+              "default": null,
+              "name": "value"
+            }
+          ],
+          "returns": "None"
+        }
+      ]
+    },
+    {
+      "class_name": "SortingPlanNode",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "dict",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "*args"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "**kwargs"
+            }
+          ],
+          "returns": "Dict[str, Any]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "model_dump",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "*args"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "**kwargs"
+            }
+          ],
+          "returns": "Dict[str, Any]"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@classmethod"
+          ],
+          "name": "model_validate",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cls"
+            },
+            {
+              "annotation": "Any",
+              "default": null,
+              "name": "obj"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "*args"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "**kwargs"
+            }
+          ],
+          "returns": "'SortingPlanNode'"
+        }
+      ]
+    }
+  ],
+  "functions": [
+    {
+      "async": false,
+      "decorators": [],
+      "name": "pre_fetch_historical_corpus",
+      "parameters": [
+        {
+          "annotation": null,
+          "default": null,
+          "name": "db"
+        },
+        {
+          "annotation": null,
+          "default": null,
+          "name": "base_dir"
+        },
+        {
+          "annotation": null,
+          "default": null,
+          "name": "filenames"
+        },
+        {
+          "annotation": null,
+          "default": null,
+          "name": "documents"
+        },
+        {
+          "annotation": null,
+          "default": "None",
+          "name": "pre_fetched_vectors"
+        },
+        {
+          "annotation": null,
+          "default": "50",
+          "name": "max_examples"
+        }
+      ],
+      "returns": null
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "run_incremental_training_in_background",
+      "parameters": [
+        {
+          "annotation": "Any",
+          "default": null,
+          "name": "session"
+        },
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "base_dir"
+        }
+      ],
+      "returns": "None"
+    }
+  ]
+}

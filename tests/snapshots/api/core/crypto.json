@@ -1,0 +1,568 @@
+{
+  "_metadata": {
+    "checksum": "94aef8aba7154be92c359b5a64e6a7634f9991d52ed340a8d176fd2972eda232"
+  },
+  "classes": [
+    {
+      "class_name": "CryptoManager",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [
+            "@staticmethod"
+          ],
+          "name": "decrypt_proxy_setting",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "proxy_str"
+            },
+            {
+              "annotation": "Any",
+              "default": "None",
+              "name": "crypto"
+            },
+            {
+              "annotation": "Path | str | None",
+              "default": "None",
+              "name": "db_path"
+            }
+          ],
+          "returns": "str"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@staticmethod"
+          ],
+          "name": "derive_db_hash",
+          "parameters": [
+            {
+              "annotation": "Path | str",
+              "default": null,
+              "name": "db_path"
+            },
+            {
+              "annotation": "str",
+              "default": "'sha256'",
+              "name": "algorithm"
+            }
+          ],
+          "returns": "str"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@staticmethod"
+          ],
+          "name": "derive_isolated_key_path",
+          "parameters": [
+            {
+              "annotation": "Path | str",
+              "default": null,
+              "name": "db_path"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "legacy_md5"
+            }
+          ],
+          "returns": "Path"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@staticmethod"
+          ],
+          "name": "derive_keyring_account",
+          "parameters": [
+            {
+              "annotation": "Path | str",
+              "default": null,
+              "name": "db_path"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "legacy_md5"
+            }
+          ],
+          "returns": "str"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@staticmethod"
+          ],
+          "name": "encrypt_proxy_setting",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "proxy_str"
+            },
+            {
+              "annotation": "Any",
+              "default": "None",
+              "name": "crypto"
+            },
+            {
+              "annotation": "Path | str | None",
+              "default": "None",
+              "name": "db_path"
+            }
+          ],
+          "returns": "str"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@staticmethod"
+          ],
+          "name": "generate_bootstrap_key",
+          "parameters": [],
+          "returns": "str"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@staticmethod"
+          ],
+          "name": "is_encrypted_proxy",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "proxy_str"
+            }
+          ],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@staticmethod"
+          ],
+          "name": "rotate_database_key",
+          "parameters": [
+            {
+              "annotation": "Path | str",
+              "default": null,
+              "name": "db_path"
+            },
+            {
+              "annotation": "Path | str",
+              "default": null,
+              "name": "key_path"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "name": "new_key_str"
+            }
+          ],
+          "returns": "str"
+        }
+      ]
+    },
+    {
+      "class_name": "EphemeralSessionCrypto",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "__init__",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "bytes | str | None",
+              "default": "None",
+              "name": "session_key"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "decrypt_payload",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "bytes",
+              "default": null,
+              "name": "encrypted_bytes"
+            }
+          ],
+          "returns": "Any"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "encrypt_payload",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Any",
+              "default": null,
+              "name": "payload"
+            }
+          ],
+          "returns": "bytes"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "purge",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "None"
+        }
+      ]
+    },
+    {
+      "class_name": "SessionCrypto",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "__init__",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Path",
+              "default": null,
+              "name": "key_path"
+            },
+            {
+              "annotation": "Path",
+              "default": null,
+              "name": "db_path"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "decrypt_and_parse_vector",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "bytes",
+              "default": null,
+              "name": "cipher_bytes"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "decrypt_text",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "bytes",
+              "default": null,
+              "name": "cipher_bytes"
+            }
+          ],
+          "returns": "str"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "decrypt_vector",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "bytes",
+              "default": null,
+              "name": "cipher_bytes"
+            }
+          ],
+          "returns": "str"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "encrypt_text",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "text"
+            }
+          ],
+          "returns": "bytes"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "encrypt_vector",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "text"
+            }
+          ],
+          "returns": "bytes"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_cipher",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_raw_key",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "str | None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "rotate_key",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "name": "new_key_str"
+            }
+          ],
+          "returns": "str"
+        }
+      ]
+    },
+    {
+      "class_name": "VectorBuffer",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "__init__",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Any",
+              "default": null,
+              "name": "vector"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "is_zeroed",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "to_list",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "list[float]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "to_numpy",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "Any"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "zero_fill",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "None"
+        }
+      ]
+    }
+  ],
+  "functions": [
+    {
+      "async": false,
+      "decorators": [],
+      "name": "decrypt_ipc_payload",
+      "parameters": [
+        {
+          "annotation": "bytes",
+          "default": null,
+          "name": "encrypted_bytes"
+        },
+        {
+          "annotation": "bytes | str",
+          "default": null,
+          "name": "session_key"
+        }
+      ],
+      "returns": "Any"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "encrypt_ipc_payload",
+      "parameters": [
+        {
+          "annotation": "Any",
+          "default": null,
+          "name": "payload"
+        },
+        {
+          "annotation": "bytes | str",
+          "default": null,
+          "name": "session_key"
+        }
+      ],
+      "returns": "bytes"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "get_fallback_keys_dir",
+      "parameters": [],
+      "returns": "Path"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "secure_delete_dir",
+      "parameters": [
+        {
+          "annotation": "Path",
+          "default": null,
+          "name": "dir_path"
+        }
+      ],
+      "returns": null
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "secure_delete_file",
+      "parameters": [
+        {
+          "annotation": "Path",
+          "default": null,
+          "name": "file_path"
+        }
+      ],
+      "returns": null
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "zero_vector_buffer",
+      "parameters": [
+        {
+          "annotation": "Any",
+          "default": null,
+          "name": "target"
+        }
+      ],
+      "returns": "None"
+    }
+  ]
+}

@@ -1,0 +1,314 @@
+{
+  "_metadata": {
+    "checksum": "0206d84bc296e58bd92c947fb4bd52f474db1d8f0f1c66db1a9ea436ba4b4a64"
+  },
+  "classes": [
+    {
+      "class_name": "DiskSpaceError",
+      "decorators": [],
+      "methods": []
+    },
+    {
+      "class_name": "DownloadCancelledError",
+      "decorators": [],
+      "methods": []
+    },
+    {
+      "class_name": "DownloadError",
+      "decorators": [],
+      "methods": []
+    },
+    {
+      "class_name": "DownloadManager",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "__init__",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "settings"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "cancel_download",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "delete_model_async",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "model_dir"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "on_done"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@classmethod"
+          ],
+          "name": "get_instance",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cls"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_opener",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": "None",
+              "name": "proxy"
+            }
+          ],
+          "returns": "urllib.request.OpenerDirector"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@classmethod"
+          ],
+          "name": "reset_instance",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cls"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "start_download",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "url"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "model_dir"
+            },
+            {
+              "annotation": "str",
+              "default": "''",
+              "name": "proxy"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "update_proxy",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "proxy_str"
+            }
+          ],
+          "returns": null
+        }
+      ]
+    },
+    {
+      "class_name": "ModelVerificationError",
+      "decorators": [],
+      "methods": []
+    },
+    {
+      "class_name": "NetworkError",
+      "decorators": [],
+      "methods": []
+    },
+    {
+      "class_name": "ThreadSafeState",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "__init__",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "**kwargs"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "key"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "default"
+            }
+          ],
+          "returns": null
+        }
+      ]
+    }
+  ],
+  "functions": [
+    {
+      "async": false,
+      "decorators": [],
+      "name": "run_background_download",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "url"
+        },
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "model_dir"
+        },
+        {
+          "annotation": "str",
+          "default": "''",
+          "name": "proxy"
+        },
+        {
+          "annotation": null,
+          "default": "None",
+          "name": "progress_callback"
+        },
+        {
+          "annotation": null,
+          "default": "None",
+          "name": "on_success"
+        },
+        {
+          "annotation": null,
+          "default": "None",
+          "name": "on_failure"
+        },
+        {
+          "annotation": null,
+          "default": "None",
+          "name": "cancel_event"
+        },
+        {
+          "annotation": null,
+          "default": "None",
+          "name": "download_manager"
+        }
+      ],
+      "returns": null
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "verify_downloaded_model",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "model_dir"
+        }
+      ],
+      "returns": "bool"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "verify_temp_file_hash",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "temp_path"
+        },
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "target_path"
+        }
+      ],
+      "returns": "bool"
+    }
+  ]
+}

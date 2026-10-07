@@ -1,0 +1,730 @@
+{
+  "_metadata": {
+    "checksum": "6ffbd156c0b084ab3f9b64af2e2a0b9c046d5eb672cfc2bf0367899b5743ab93"
+  },
+  "classes": [
+    {
+      "class_name": "ClusteringRegistry",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "__init__",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_strategy",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "name"
+            }
+          ],
+          "returns": "Optional[ClusteringStrategy]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "register",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "name"
+            },
+            {
+              "annotation": "ClusteringStrategy",
+              "default": null,
+              "name": "strategy"
+            }
+          ],
+          "returns": null
+        }
+      ]
+    },
+    {
+      "class_name": "ClusteringStrategy",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "generate_plan",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "List[str]",
+              "default": null,
+              "name": "filenames"
+            },
+            {
+              "annotation": "List[str]",
+              "default": null,
+              "name": "documents"
+            },
+            {
+              "annotation": "int",
+              "default": null,
+              "name": "max_folders"
+            },
+            {
+              "annotation": "set",
+              "default": null,
+              "name": "stop_words"
+            },
+            {
+              "annotation": "int",
+              "default": "5",
+              "name": "max_depth"
+            },
+            {
+              "annotation": "int",
+              "default": "3",
+              "name": "max_features"
+            },
+            {
+              "annotation": "List[list] | None",
+              "default": "None",
+              "name": "pre_fetched_vectors"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "cancel_check"
+            },
+            {
+              "annotation": "list | dict | None",
+              "default": "None",
+              "name": "pre_fetched_corpus"
+            }
+          ],
+          "returns": "tuple[dict, float]"
+        }
+      ]
+    },
+    {
+      "class_name": "GenerativeNamingStrategy",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "__init__",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": "None",
+              "name": "model_path"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@thread_isolated_execution"
+          ],
+          "name": "generate_plan",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "List[str]",
+              "default": null,
+              "name": "filenames"
+            },
+            {
+              "annotation": "List[str]",
+              "default": null,
+              "name": "documents"
+            },
+            {
+              "annotation": "int",
+              "default": null,
+              "name": "max_folders"
+            },
+            {
+              "annotation": "set",
+              "default": null,
+              "name": "stop_words"
+            },
+            {
+              "annotation": "int",
+              "default": "5",
+              "name": "max_depth"
+            },
+            {
+              "annotation": "int",
+              "default": "3",
+              "name": "max_features"
+            },
+            {
+              "annotation": "List[list] | None",
+              "default": "None",
+              "name": "pre_fetched_vectors"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "cancel_check"
+            },
+            {
+              "annotation": "list | dict | None",
+              "default": "None",
+              "name": "pre_fetched_corpus"
+            }
+          ],
+          "returns": "tuple[dict, float]"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@property"
+          ],
+          "name": "generator",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@generator.setter"
+          ],
+          "name": "generator",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "value"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "set_db_context",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "db"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "base_dir"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "unload",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": null
+        }
+      ]
+    },
+    {
+      "class_name": "InMemoryDBMock",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "__init__",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "dict | None",
+              "default": "None",
+              "name": "meta"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_model_metadata",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "key"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "set_model_metadata",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "key"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "value"
+            }
+          ],
+          "returns": null
+        }
+      ]
+    },
+    {
+      "class_name": "IsolatedStrategyMixin",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "__init__",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "*args"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "**kwargs"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "clear_isolated_state",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": null
+        }
+      ]
+    },
+    {
+      "class_name": "NegativeLogitBiasProcessor",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "__init__",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "dict",
+              "default": null,
+              "name": "token_biases"
+            }
+          ],
+          "returns": null
+        }
+      ]
+    },
+    {
+      "class_name": "RecursiveKMeansStrategy",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [
+            "@thread_isolated_execution"
+          ],
+          "name": "generate_plan",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "List[str]",
+              "default": null,
+              "name": "filenames"
+            },
+            {
+              "annotation": "List[str]",
+              "default": null,
+              "name": "documents"
+            },
+            {
+              "annotation": "int",
+              "default": null,
+              "name": "max_folders"
+            },
+            {
+              "annotation": "set",
+              "default": null,
+              "name": "stop_words"
+            },
+            {
+              "annotation": "int",
+              "default": "5",
+              "name": "max_depth"
+            },
+            {
+              "annotation": "int",
+              "default": "3",
+              "name": "max_features"
+            },
+            {
+              "annotation": "List[list] | None",
+              "default": "None",
+              "name": "pre_fetched_vectors"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "cancel_check"
+            },
+            {
+              "annotation": "list | dict | None",
+              "default": "None",
+              "name": "pre_fetched_corpus"
+            }
+          ],
+          "returns": "tuple[dict, float]"
+        }
+      ]
+    }
+  ],
+  "functions": [
+    {
+      "async": false,
+      "decorators": [
+        "@contextmanager"
+      ],
+      "name": "block_external_network",
+      "parameters": [],
+      "returns": null
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "cooperative_join",
+      "parameters": [
+        {
+          "annotation": null,
+          "default": null,
+          "name": "target"
+        },
+        {
+          "annotation": null,
+          "default": "1.0",
+          "name": "timeout"
+        }
+      ],
+      "returns": null
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "cooperative_queue_get",
+      "parameters": [
+        {
+          "annotation": null,
+          "default": null,
+          "name": "q"
+        },
+        {
+          "annotation": null,
+          "default": "8.0",
+          "name": "timeout"
+        }
+      ],
+      "returns": null
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "get_decryption_executor",
+      "parameters": [],
+      "returns": null
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "gguf_worker_main",
+      "parameters": [
+        {
+          "annotation": null,
+          "default": null,
+          "name": "model_path"
+        },
+        {
+          "annotation": null,
+          "default": null,
+          "name": "input_queue"
+        },
+        {
+          "annotation": null,
+          "default": null,
+          "name": "output_queue"
+        },
+        {
+          "annotation": null,
+          "default": "None",
+          "name": "n_threads"
+        },
+        {
+          "annotation": null,
+          "default": "None",
+          "name": "session_key"
+        }
+      ],
+      "returns": null
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "is_debug_active",
+      "parameters": [],
+      "returns": "bool"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "is_gguf_model_dir",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "model_path"
+        }
+      ],
+      "returns": "bool"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "is_prompt_dump_enabled",
+      "parameters": [],
+      "returns": "bool"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "recursive_kmeans_worker_main",
+      "parameters": [
+        {
+          "annotation": null,
+          "default": null,
+          "name": "filenames_or_input_queue"
+        },
+        {
+          "annotation": null,
+          "default": "None",
+          "name": "documents_or_output_queue"
+        },
+        {
+          "annotation": null,
+          "default": "None",
+          "name": "max_folders_or_key"
+        },
+        {
+          "annotation": null,
+          "default": "None",
+          "name": "stop_words"
+        },
+        {
+          "annotation": null,
+          "default": "5",
+          "name": "max_depth"
+        },
+        {
+          "annotation": null,
+          "default": "3",
+          "name": "max_features"
+        },
+        {
+          "annotation": null,
+          "default": "None",
+          "name": "pre_fetched_vectors"
+        },
+        {
+          "annotation": null,
+          "default": "None",
+          "name": "output_queue"
+        },
+        {
+          "annotation": "str",
+          "default": "'RecursiveKMeansStrategy'",
+          "name": "strategy_class_name"
+        },
+        {
+          "annotation": "int | None",
+          "default": "None",
+          "name": "thread_limit"
+        },
+        {
+          "annotation": "list | dict | None",
+          "default": "None",
+          "name": "pre_fetched_corpus"
+        },
+        {
+          "annotation": "bytes | str | None",
+          "default": "None",
+          "name": "session_key"
+        }
+      ],
+      "returns": null
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "redact_sensitive_text",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "text"
+        }
+      ],
+      "returns": "str"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "scrub_inference_prompt",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "text"
+        }
+      ],
+      "returns": "str"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "scrub_prompt_text",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "text"
+        }
+      ],
+      "returns": "str"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "thread_isolated_execution",
+      "parameters": [
+        {
+          "annotation": null,
+          "default": null,
+          "name": "func"
+        }
+      ],
+      "returns": null
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "validate_prompt_dump_path",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "dump_file"
+        }
+      ],
+      "returns": "Path"
+    }
+  ]
+}

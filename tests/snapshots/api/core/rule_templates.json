@@ -1,0 +1,54 @@
+{
+  "_metadata": {
+    "checksum": "191fc81aba5c61e939ad31bb3c23fb7a2e4b188656923032ff3aa3d9302d2448"
+  },
+  "classes": [
+    {
+      "class_name": "StarterTemplatePack",
+      "decorators": [
+        "@dataclass"
+      ],
+      "methods": []
+    }
+  ],
+  "functions": [
+    {
+      "async": false,
+      "decorators": [],
+      "name": "apply_starter_templates",
+      "parameters": [
+        {
+          "annotation": "Any",
+          "default": null,
+          "name": "settings"
+        },
+        {
+          "annotation": "List[str]",
+          "default": null,
+          "name": "pack_ids"
+        }
+      ],
+      "returns": "tuple[Dict[str, str], List[Dict[str, Any]]]"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "get_starter_template_by_id",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "pack_id"
+        }
+      ],
+      "returns": "Optional[StarterTemplatePack]"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "get_starter_templates",
+      "parameters": [],
+      "returns": "List[StarterTemplatePack]"
+    }
+  ]
+}

@@ -1,0 +1,342 @@
+{
+  "_metadata": {
+    "checksum": "27e847f9b990d50573a96c7fe68c19783d918bd967454e935072ff9772ea8b98"
+  },
+  "classes": [
+    {
+      "class_name": "VerificationEngine",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [
+            "@staticmethod"
+          ],
+          "name": "get_moves",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": "Any",
+              "default": null,
+              "name": "plan"
+            },
+            {
+              "annotation": "str",
+              "default": "''",
+              "name": "current_dest"
+            },
+            {
+              "annotation": "str",
+              "default": "''",
+              "name": "active_parent_path"
+            },
+            {
+              "annotation": "int",
+              "default": "0",
+              "name": "depth"
+            }
+          ],
+          "returns": "list"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@staticmethod"
+          ],
+          "name": "sanitize_plan",
+          "parameters": [
+            {
+              "annotation": "dict",
+              "default": null,
+              "name": "plan"
+            }
+          ],
+          "returns": "tuple[dict, list[str]]"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@staticmethod"
+          ],
+          "name": "verify_plan_integrity",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": "Any",
+              "default": null,
+              "name": "plan"
+            }
+          ],
+          "returns": "dict"
+        }
+      ]
+    },
+    {
+      "class_name": "VirtualFilesystemTracker",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "__init__",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "check_broken_links",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "list",
+              "default": null,
+              "name": "moves_list"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": "dict",
+              "default": null,
+              "name": "final_nodes"
+            }
+          ],
+          "returns": "list"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "check_circular_renames",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "list",
+              "default": null,
+              "name": "moves_list"
+            }
+          ],
+          "returns": "list"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "check_collisions",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "list",
+              "default": null,
+              "name": "moves_list"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            }
+          ],
+          "returns": "list"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "check_rename_proposals",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": "dict",
+              "default": null,
+              "name": "plan"
+            }
+          ],
+          "returns": "tuple[list, list]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "populate_from_disk",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "populate_from_moves",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "list",
+              "default": null,
+              "name": "moves_list"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "simulate_final_state",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "list",
+              "default": null,
+              "name": "moves_list"
+            }
+          ],
+          "returns": "dict"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "verify_integrity",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": "dict",
+              "default": null,
+              "name": "plan"
+            }
+          ],
+          "returns": "dict"
+        }
+      ]
+    },
+    {
+      "class_name": "VirtualNode",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "__init__",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "path"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "is_dir"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "inode"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "size"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "symlink_target"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "shortcut_target"
+            }
+          ],
+          "returns": null
+        }
+      ]
+    }
+  ],
+  "functions": [
+    {
+      "async": false,
+      "decorators": [],
+      "name": "check_ai_status",
+      "parameters": [
+        {
+          "annotation": null,
+          "default": null,
+          "name": "settings"
+        }
+      ],
+      "returns": "tuple[bool, str | None]"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "is_ml_available",
+      "parameters": [],
+      "returns": "bool"
+    }
+  ]
+}

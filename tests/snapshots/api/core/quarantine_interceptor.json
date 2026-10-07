@@ -1,0 +1,155 @@
+{
+  "_metadata": {
+    "checksum": "633a72bfae19ebed4b83a20dee8233ec33658cca0b764af026f8c2c0045938b6"
+  },
+  "classes": [
+    {
+      "class_name": "QuarantineInterceptorService",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "__init__",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Database",
+              "default": null,
+              "name": "db"
+            },
+            {
+              "annotation": "Optional[List[Dict[str, Any]]]",
+              "default": "None",
+              "name": "policies"
+            },
+            {
+              "annotation": "float",
+              "default": "300.0",
+              "name": "worker_timeout"
+            },
+            {
+              "annotation": "Optional[Any]",
+              "default": "None",
+              "name": "jev_classifier"
+            },
+            {
+              "annotation": "Optional[List[str]]",
+              "default": "None",
+              "name": "auto_quarantine_ratings"
+            },
+            {
+              "annotation": "Optional[Any]",
+              "default": "None",
+              "name": "runtime_settings"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "process_quarantine_job",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "job_id"
+            },
+            {
+              "annotation": "Optional[float]",
+              "default": "None",
+              "name": "timeout_override"
+            }
+          ],
+          "returns": "QuarantineRecordModel"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "resolve_safe_target_dir",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": null,
+              "name": "target_subfolder"
+            },
+            {
+              "annotation": "str",
+              "default": "''",
+              "name": "default_subfolder"
+            }
+          ],
+          "returns": "str"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "stage_incoming_file",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "source_path"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "original_relative_path"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "policy_action"
+            }
+          ],
+          "returns": "Dict[str, Any]"
+        }
+      ]
+    }
+  ],
+  "functions": [
+    {
+      "async": false,
+      "decorators": [],
+      "name": "scrub_pii_from_text",
+      "parameters": [
+        {
+          "annotation": "Any",
+          "default": null,
+          "name": "text"
+        }
+      ],
+      "returns": "str"
+    }
+  ]
+}

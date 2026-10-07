@@ -1,0 +1,28 @@
+{
+  "_metadata": {
+    "checksum": "702ec64131d5cb961543783752104e8231afc3c2f9ed06a3b68342b46148508c"
+  },
+  "classes": [],
+  "functions": [
+    {
+      "async": false,
+      "decorators": [],
+      "name": "is_admin",
+      "parameters": [],
+      "returns": null
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "register_context_menu",
+      "parameters": [
+        {
+          "annotation": "bool",
+          "default": null,
+          "name": "enable"
+        }
+      ],
+      "returns": null
+    }
+  ]
+}

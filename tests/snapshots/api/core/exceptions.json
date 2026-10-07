@@ -1,0 +1,77 @@
+{
+  "_metadata": {
+    "checksum": "7b325ad727b7bb46ff25fc0b1b80d20492efd4df2b85111dbe2b2505989f3a1d"
+  },
+  "classes": [
+    {
+      "class_name": "ArchiveSafetyError",
+      "decorators": [],
+      "methods": []
+    },
+    {
+      "class_name": "AuditExportError",
+      "decorators": [],
+      "methods": []
+    },
+    {
+      "class_name": "CacheError",
+      "decorators": [],
+      "methods": []
+    },
+    {
+      "class_name": "CryptoError",
+      "decorators": [],
+      "methods": []
+    },
+    {
+      "class_name": "DownloaderError",
+      "decorators": [],
+      "methods": []
+    },
+    {
+      "class_name": "OfflineLoaderError",
+      "decorators": [],
+      "methods": []
+    },
+    {
+      "class_name": "SchemaValidationError",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "__init__",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "message"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "name": "payload_context"
+            }
+          ],
+          "returns": "None"
+        }
+      ]
+    },
+    {
+      "class_name": "SemanticEmbeddingError",
+      "decorators": [],
+      "methods": []
+    },
+    {
+      "class_name": "SortifyBaseError",
+      "decorators": [],
+      "methods": []
+    }
+  ],
+  "functions": []
+}

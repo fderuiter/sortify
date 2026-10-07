@@ -1,0 +1,31 @@
+{
+  "_metadata": {
+    "checksum": "7b83cb50e3416010602ebf68e126825ccd2dc795fd8465cd3578e8c8da7dc325"
+  },
+  "classes": [],
+  "functions": [
+    {
+      "async": false,
+      "decorators": [],
+      "name": "get_files_recursively",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "base"
+        },
+        {
+          "annotation": "str",
+          "default": "''",
+          "name": "rel_path"
+        },
+        {
+          "annotation": "bool",
+          "default": "False",
+          "name": "include_hidden"
+        }
+      ],
+      "returns": "list"
+    }
+  ]
+}

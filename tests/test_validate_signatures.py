@@ -1,9 +1,20 @@
+import json
+import os
+import sys
+
+import pytest
+
+from scripts import validate_signatures
 from scripts.validate_signatures import (
+    SNAPSHOT_DIR,
     collect_core_definitions,
     collect_current_definitions,
+    collect_modules_and_payloads,
+    compute_payload_checksum,
     extract_cli,
     extract_module_signatures,
     extract_protocols,
+    verify_snapshot_integrity,
 )
 
 
@@ -155,41 +166,30 @@ def test_collect_current_definitions():
 
 
 def test_api_signature_snapshot_matches():
-    import json
-    import os
+    modules = collect_modules_and_payloads()
+    assert len(modules) > 0
 
-    from scripts.validate_signatures import (
-        SNAPSHOT_PATH,
-        collect_current_definitions,
-        verify_snapshot_integrity,
-    )
+    assert os.path.exists(SNAPSHOT_DIR)
 
-    current_definitions = collect_current_definitions()
-
-    if not os.path.exists(SNAPSHOT_PATH):
-        raise AssertionError(
-            f"Baseline snapshot file does not exist at {SNAPSHOT_PATH}. "
-            "Please run 'python scripts/validate_signatures.py --regenerate' to initialize it."
+    for m in modules:
+        snap_path = m["snapshot_path"]
+        assert os.path.exists(snap_path), (
+            f"Missing snapshot for {m['source_rel']} at {snap_path}"
         )
 
-    with open(SNAPSHOT_PATH, "r", encoding="utf-8") as f:
-        snapshot_data = json.load(f)
+        with open(snap_path, "r", encoding="utf-8") as f:
+            snapshot_data = json.load(f)
 
-    is_valid, err_msg, snapshot_definitions = verify_snapshot_integrity(
-        snapshot_data, SNAPSHOT_PATH
-    )
-    if not is_valid:
-        raise AssertionError(err_msg)
+        is_valid, err_msg, snapshot_payload = verify_snapshot_integrity(
+            snapshot_data, snap_path
+        )
+        assert is_valid, err_msg
 
-    current_json = json.dumps(current_definitions, indent=2, sort_keys=True)
-    snapshot_json = json.dumps(snapshot_definitions, indent=2, sort_keys=True)
+        current_json = json.dumps(m["payload"], indent=2, sort_keys=True)
+        snapshot_json = json.dumps(snapshot_payload, indent=2, sort_keys=True)
 
-    if current_json != snapshot_json:
-        raise AssertionError(
-            "Public interface or CLI signature drift detected! "
-            "Automated baseline regeneration is disabled. "
-            "If this change was intentional, update the baseline snapshot locally "
-            "by running: 'python scripts/validate_signatures.py --regenerate' and committing the updated file."
+        assert current_json == snapshot_json, (
+            f"Signature drift detected for {m['source_rel']} in {snap_path}!"
         )
 
 
@@ -215,7 +215,6 @@ class AsyncGenericProtocol(Protocol[T]):
     assert proto_data["class_name"] == "AsyncGenericProtocol"
     assert len(proto_data["methods"]) == 2
 
-    # Methods are sorted by name: [process, sync_method]
     methods = proto_data["methods"]
     assert methods[0]["name"] == "process"
     assert methods[0]["async"] is True
@@ -259,7 +258,6 @@ class TypingVariationProtocol(typing.Protocol):
     assert method["async"] is True
 
     params = method["parameters"]
-    # self, *args, kw_only_val, **kwargs
     assert len(params) == 4
     assert params[0]["name"] == "self"
     assert params[1]["name"] == "*args"
@@ -272,23 +270,21 @@ class TypingVariationProtocol(typing.Protocol):
 
 
 def test_signature_mismatch_detection():
-    # Setup two mismatched definition dicts
     dict_a = {
-        "protocols": {
-            "MyProtocol": {
+        "classes": [
+            {
                 "class_name": "MyProtocol",
                 "methods": [
                     {"name": "run", "async": False, "parameters": [], "returns": "None"}
                 ],
             }
-        },
-        "cli": {},
+        ],
+        "functions": [],
     }
 
-    # Dict B has different parameter name (breaking change)
     dict_b = {
-        "protocols": {
-            "MyProtocol": {
+        "classes": [
+            {
                 "class_name": "MyProtocol",
                 "methods": [
                     {
@@ -301,25 +297,21 @@ def test_signature_mismatch_detection():
                     }
                 ],
             }
-        },
-        "cli": {},
+        ],
+        "functions": [],
     }
 
-    # Dict C has different async modifier (breaking change)
     dict_c = {
-        "protocols": {
-            "MyProtocol": {
+        "classes": [
+            {
                 "class_name": "MyProtocol",
                 "methods": [
                     {"name": "run", "async": True, "parameters": [], "returns": "None"}
                 ],
             }
-        },
-        "cli": {},
+        ],
+        "functions": [],
     }
-
-    # Test JSON string inequality which triggers mismatch
-    import json
 
     json_a = json.dumps(dict_a, indent=2, sort_keys=True)
     json_b = json.dumps(dict_b, indent=2, sort_keys=True)
@@ -329,89 +321,12 @@ def test_signature_mismatch_detection():
     assert json_a != json_c
 
 
-def test_validation_runner_detects_mismatch(tmp_path, monkeypatch):
-    import json
-    import sys
-
-    from scripts import validate_signatures
-
-    fake_snapshot = tmp_path / "fake_snapshot.json"
-
-    # Pre-populate fake snapshot with one definition and valid checksum header
-    initial_defs = {
-        "protocols": {
-            "MyProtocol": {
-                "class_name": "MyProtocol",
-                "methods": [
-                    {"name": "run", "async": True, "parameters": [], "returns": "None"}
-                ],
-            }
-        },
-        "cli": {},
-    }
-
-    initial_data = {
-        "_metadata": {
-            "checksum": validate_signatures.compute_payload_checksum(initial_defs)
-        },
-        **initial_defs,
-    }
-    fake_snapshot.write_text(json.dumps(initial_data, indent=2, sort_keys=True))
-
-    # Now simulate changed codebase definitions (e.g. async changed to false)
-    changed_defs = {
-        "protocols": {
-            "MyProtocol": {
-                "class_name": "MyProtocol",
-                "methods": [
-                    {
-                        "name": "run",
-                        "async": False,  # mismatch!
-                        "parameters": [],
-                        "returns": "None",
-                    }
-                ],
-            }
-        },
-        "cli": {},
-    }
-
-    # Mock variables and functions
-    monkeypatch.setattr(validate_signatures, "SNAPSHOT_PATH", str(fake_snapshot))
-    monkeypatch.setattr(
-        validate_signatures, "collect_current_definitions", lambda: changed_defs
-    )
-    monkeypatch.setenv("CI", "true")
-
-    exited_code = None
-
-    def mock_exit(code):
-        nonlocal exited_code
-        exited_code = code
-        raise SystemExit(code)
-
-    monkeypatch.setattr(sys, "exit", mock_exit)
-    monkeypatch.setattr(sys, "argv", ["validate_signatures.py"])
-
-    # Run main, should exit with 1 because of mismatch in CI
-    import pytest
-
-    with pytest.raises(SystemExit) as exc_info:
-        validate_signatures.main()
-    assert exc_info.value.code == 1
-    assert exited_code == 1
-
-
 def test_safe_relpath(monkeypatch):
-    import os
-
     from scripts.validate_signatures import safe_relpath
 
-    # Standard case where paths are on the same mount/drive
     res = safe_relpath("/app/tests/fake.json", "/app")
     assert res in ("tests/fake.json", "tests\\fake.json")
 
-    # Mock os.path.relpath to raise ValueError (simulating Windows cross-drive)
     def mock_relpath(path, start):
         raise ValueError("path is on mount 'C:', start on mount 'D:'")
 
@@ -421,45 +336,117 @@ def test_safe_relpath(monkeypatch):
     )
 
 
-def test_validation_local_fails_by_default_on_mismatch(tmp_path, monkeypatch):
-    import json
-    import sys
+def test_validation_runner_detects_mismatch(tmp_path, monkeypatch):
+    fake_snap_dir = tmp_path / "api"
+    fake_snap_dir.mkdir(parents=True)
 
-    from scripts import validate_signatures
+    module_snap = fake_snap_dir / "core" / "analyzer_strategies.json"
+    module_snap.parent.mkdir(parents=True, exist_ok=True)
 
-    fake_snapshot = tmp_path / "fake_snapshot.json"
-    initial_defs = {
-        "protocols": {
-            "MyProtocol": {
+    initial_payload = {
+        "classes": [
+            {
                 "class_name": "MyProtocol",
+                "decorators": [],
                 "methods": [
                     {"name": "run", "async": True, "parameters": [], "returns": "None"}
                 ],
             }
-        },
-        "cli": {},
+        ],
+        "functions": [],
     }
     initial_data = {
-        "_metadata": {
-            "checksum": validate_signatures.compute_payload_checksum(initial_defs)
-        },
-        **initial_defs,
+        "_metadata": {"checksum": compute_payload_checksum(initial_payload)},
+        **initial_payload,
     }
-    fake_snapshot.write_text(json.dumps(initial_data, indent=2, sort_keys=True))
+    module_snap.write_text(json.dumps(initial_data, indent=2, sort_keys=True))
 
-    changed_defs = {
-        "protocols": {
-            "MyProtocol": {
+    changed_payload = {
+        "classes": [
+            {
                 "class_name": "MyProtocol",
+                "decorators": [],
                 "methods": [
                     {"name": "run", "async": False, "parameters": [], "returns": "None"}
                 ],
             }
-        },
-        "cli": {},
+        ],
+        "functions": [],
     }
 
-    monkeypatch.setattr(validate_signatures, "SNAPSHOT_PATH", str(fake_snapshot))
+    changed_defs = {
+        "cli": {},
+        "core": {"app/core/analyzer_strategies.py": changed_payload},
+    }
+
+    monkeypatch.setattr(validate_signatures, "SNAPSHOT_DIR", str(fake_snap_dir))
+    monkeypatch.setattr(validate_signatures, "SNAPSHOT_PATH", str(fake_snap_dir))
+    monkeypatch.setattr(
+        validate_signatures, "collect_current_definitions", lambda: changed_defs
+    )
+    monkeypatch.setenv("CI", "true")
+
+    exited_code = None
+
+    def mock_exit(code):
+        nonlocal exited_code
+        exited_code = code
+        raise SystemExit(code)
+
+    monkeypatch.setattr(sys, "exit", mock_exit)
+    monkeypatch.setattr(sys, "argv", ["validate_signatures.py"])
+
+    with pytest.raises(SystemExit) as exc_info:
+        validate_signatures.main()
+    assert exc_info.value.code == 1
+    assert exited_code == 1
+
+
+def test_validation_local_fails_by_default_on_mismatch(tmp_path, monkeypatch):
+    fake_snap_dir = tmp_path / "api"
+    fake_snap_dir.mkdir(parents=True)
+
+    module_snap = fake_snap_dir / "core" / "analyzer_strategies.json"
+    module_snap.parent.mkdir(parents=True, exist_ok=True)
+
+    initial_payload = {
+        "classes": [
+            {
+                "class_name": "MyProtocol",
+                "decorators": [],
+                "methods": [
+                    {"name": "run", "async": True, "parameters": [], "returns": "None"}
+                ],
+            }
+        ],
+        "functions": [],
+    }
+    initial_data = {
+        "_metadata": {"checksum": compute_payload_checksum(initial_payload)},
+        **initial_payload,
+    }
+    module_snap.write_text(json.dumps(initial_data, indent=2, sort_keys=True))
+
+    changed_payload = {
+        "classes": [
+            {
+                "class_name": "MyProtocol",
+                "decorators": [],
+                "methods": [
+                    {"name": "run", "async": False, "parameters": [], "returns": "None"}
+                ],
+            }
+        ],
+        "functions": [],
+    }
+
+    changed_defs = {
+        "cli": {},
+        "core": {"app/core/analyzer_strategies.py": changed_payload},
+    }
+
+    monkeypatch.setattr(validate_signatures, "SNAPSHOT_DIR", str(fake_snap_dir))
+    monkeypatch.setattr(validate_signatures, "SNAPSHOT_PATH", str(fake_snap_dir))
     monkeypatch.setattr(
         validate_signatures, "collect_current_definitions", lambda: changed_defs
     )
@@ -475,58 +462,62 @@ def test_validation_local_fails_by_default_on_mismatch(tmp_path, monkeypatch):
     monkeypatch.setattr(sys, "exit", mock_exit)
     monkeypatch.setattr(sys, "argv", ["validate_signatures.py"])
 
-    import pytest
-
     with pytest.raises(SystemExit) as exc_info:
         validate_signatures.main()
     assert exc_info.value.code == 1
     assert exited_code == 1
 
-    # Ensure the baseline file was NOT updated
-    with open(fake_snapshot, "r") as f:
+    # Ensure baseline file was NOT modified
+    with open(module_snap, "r", encoding="utf-8") as f:
         data = json.load(f)
-    assert data["protocols"]["MyProtocol"]["methods"][0]["async"] is True
+    assert data["classes"][0]["methods"][0]["async"] is True
 
 
 def test_validation_local_success_on_regenerate(tmp_path, monkeypatch):
-    import json
-    import sys
+    fake_snap_dir = tmp_path / "api"
+    fake_snap_dir.mkdir(parents=True)
 
-    from scripts import validate_signatures
+    module_snap = fake_snap_dir / "core" / "analyzer_strategies.json"
+    module_snap.parent.mkdir(parents=True, exist_ok=True)
 
-    fake_snapshot = tmp_path / "fake_snapshot.json"
-    initial_defs = {
-        "protocols": {
-            "MyProtocol": {
+    initial_payload = {
+        "classes": [
+            {
                 "class_name": "MyProtocol",
+                "decorators": [],
                 "methods": [
                     {"name": "run", "async": True, "parameters": [], "returns": "None"}
                 ],
             }
-        },
-        "cli": {},
+        ],
+        "functions": [],
     }
     initial_data = {
-        "_metadata": {
-            "checksum": validate_signatures.compute_payload_checksum(initial_defs)
-        },
-        **initial_defs,
+        "_metadata": {"checksum": compute_payload_checksum(initial_payload)},
+        **initial_payload,
     }
-    fake_snapshot.write_text(json.dumps(initial_data, indent=2, sort_keys=True))
+    module_snap.write_text(json.dumps(initial_data, indent=2, sort_keys=True))
 
-    changed_defs = {
-        "protocols": {
-            "MyProtocol": {
+    changed_payload = {
+        "classes": [
+            {
                 "class_name": "MyProtocol",
+                "decorators": [],
                 "methods": [
                     {"name": "run", "async": False, "parameters": [], "returns": "None"}
                 ],
             }
-        },
-        "cli": {},
+        ],
+        "functions": [],
     }
 
-    monkeypatch.setattr(validate_signatures, "SNAPSHOT_PATH", str(fake_snapshot))
+    changed_defs = {
+        "cli": {},
+        "core": {"app/core/analyzer_strategies.py": changed_payload},
+    }
+
+    monkeypatch.setattr(validate_signatures, "SNAPSHOT_DIR", str(fake_snap_dir))
+    monkeypatch.setattr(validate_signatures, "SNAPSHOT_PATH", str(fake_snap_dir))
     monkeypatch.setattr(
         validate_signatures, "collect_current_definitions", lambda: changed_defs
     )
@@ -540,57 +531,122 @@ def test_validation_local_success_on_regenerate(tmp_path, monkeypatch):
         raise SystemExit(code)
 
     monkeypatch.setattr(sys, "exit", mock_exit)
-    monkeypatch.setattr(sys, "argv", ["validate_signatures.py", "--regenerate"])
-
-    import pytest
+    monkeypatch.setattr(sys, "argv", ["validate_signatures.py", "--update"])
 
     with pytest.raises(SystemExit) as exc_info:
         validate_signatures.main()
     assert exc_info.value.code == 0
     assert exited_code == 0
 
-    # Ensure the baseline file WAS updated and contains valid checksum
-    with open(fake_snapshot, "r") as f:
+    with open(module_snap, "r", encoding="utf-8") as f:
         data = json.load(f)
-    assert data["protocols"]["MyProtocol"]["methods"][0]["async"] is False
+    assert data["classes"][0]["methods"][0]["async"] is False
     assert "_metadata" in data
     assert "checksum" in data["_metadata"]
-    expected_hash = validate_signatures.compute_payload_checksum(changed_defs)
+    expected_hash = compute_payload_checksum(changed_payload)
     assert data["_metadata"]["checksum"] == expected_hash
 
 
-def test_validation_ci_fails_on_regenerate(tmp_path, monkeypatch):
-    import json
-    import sys
+def test_validation_partial_update_preserves_other_snapshots(tmp_path, monkeypatch):
+    fake_snap_dir = tmp_path / "api"
+    fake_snap_dir.mkdir(parents=True)
 
-    from scripts import validate_signatures
+    snap1 = fake_snap_dir / "core" / "analyzer_strategies.json"
+    snap2 = fake_snap_dir / "core" / "extractor_strategies.json"
+    snap1.parent.mkdir(parents=True, exist_ok=True)
 
-    fake_snapshot = tmp_path / "fake_snapshot.json"
-    initial_defs = {
-        "protocols": {},
-        "cli": {},
+    payload1_old = {
+        "classes": [{"class_name": "A", "decorators": [], "methods": []}],
+        "functions": [],
     }
-    initial_data = {
-        "_metadata": {
-            "checksum": validate_signatures.compute_payload_checksum(initial_defs)
-        },
-        **initial_defs,
+    payload2_old = {
+        "classes": [{"class_name": "B", "decorators": [], "methods": []}],
+        "functions": [],
     }
-    fake_snapshot.write_text(json.dumps(initial_data, indent=2, sort_keys=True))
+
+    snap1.write_text(
+        json.dumps(
+            {
+                "_metadata": {"checksum": compute_payload_checksum(payload1_old)},
+                **payload1_old,
+            },
+            indent=2,
+        )
+    )
+    snap2.write_text(
+        json.dumps(
+            {
+                "_metadata": {"checksum": compute_payload_checksum(payload2_old)},
+                **payload2_old,
+            },
+            indent=2,
+        )
+    )
+
+    payload1_new = {
+        "classes": [{"class_name": "A_Modified", "decorators": [], "methods": []}],
+        "functions": [],
+    }
+    payload2_new = {
+        "classes": [{"class_name": "B_Modified", "decorators": [], "methods": []}],
+        "functions": [],
+    }
 
     changed_defs = {
-        "protocols": {
-            "MyProtocol": {
-                "class_name": "MyProtocol",
-                "methods": [],
-            }
-        },
         "cli": {},
+        "core": {
+            "app/core/analyzer_strategies.py": payload1_new,
+            "app/core/extractor_strategies.py": payload2_new,
+        },
     }
 
-    monkeypatch.setattr(validate_signatures, "SNAPSHOT_PATH", str(fake_snapshot))
+    monkeypatch.setattr(validate_signatures, "SNAPSHOT_DIR", str(fake_snap_dir))
+    monkeypatch.setattr(validate_signatures, "SNAPSHOT_PATH", str(fake_snap_dir))
     monkeypatch.setattr(
         validate_signatures, "collect_current_definitions", lambda: changed_defs
+    )
+    monkeypatch.delenv("CI", raising=False)
+
+    exited_code = None
+
+    def mock_exit(code):
+        nonlocal exited_code
+        exited_code = code
+        raise SystemExit(code)
+
+    monkeypatch.setattr(sys, "exit", mock_exit)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["validate_signatures.py", "--update", "app/core/analyzer_strategies.py"],
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        validate_signatures.main()
+    assert exc_info.value.code == 0
+    assert exited_code == 0
+
+    # snap1 should be updated to payload1_new
+    with open(snap1, "r", encoding="utf-8") as f:
+        data1 = json.load(f)
+    assert data1["classes"][0]["class_name"] == "A_Modified"
+
+    # snap2 should NOT be updated (should still be payload2_old)
+    with open(snap2, "r", encoding="utf-8") as f:
+        data2 = json.load(f)
+    assert data2["classes"][0]["class_name"] == "B"
+
+
+def test_validation_ci_fails_on_regenerate(tmp_path, monkeypatch):
+    fake_snap_dir = tmp_path / "api"
+    fake_snap_dir.mkdir(parents=True)
+
+    initial_defs = {"cli": {}, "core": {}}
+
+    monkeypatch.setattr(validate_signatures, "SNAPSHOT_DIR", str(fake_snap_dir))
+    monkeypatch.setattr(validate_signatures, "SNAPSHOT_PATH", str(fake_snap_dir))
+    monkeypatch.setattr(
+        validate_signatures, "collect_current_definitions", lambda: initial_defs
     )
     monkeypatch.setenv("CI", "true")
 
@@ -602,33 +658,25 @@ def test_validation_ci_fails_on_regenerate(tmp_path, monkeypatch):
         raise SystemExit(code)
 
     monkeypatch.setattr(sys, "exit", mock_exit)
-    monkeypatch.setattr(sys, "argv", ["validate_signatures.py", "--regenerate"])
-
-    import pytest
+    monkeypatch.setattr(sys, "argv", ["validate_signatures.py", "--update"])
 
     with pytest.raises(SystemExit) as exc_info:
         validate_signatures.main()
     assert exc_info.value.code == 1
     assert exited_code == 1
 
-    # Ensure snapshot file was NOT updated
-    with open(fake_snapshot, "r") as f:
-        data = json.load(f)
-    assert "MyProtocol" not in data["protocols"]
-
 
 def test_validation_fails_on_missing_snapshot(tmp_path, monkeypatch):
-    import sys
+    fake_snap_dir = tmp_path / "api"
+    fake_snap_dir.mkdir(parents=True)
 
-    from scripts import validate_signatures
-
-    fake_snapshot = tmp_path / "non_existent_snapshot.json"
     current_defs = {
-        "protocols": {},
         "cli": {},
+        "core": {"app/core/analyzer_strategies.py": {"classes": [], "functions": []}},
     }
 
-    monkeypatch.setattr(validate_signatures, "SNAPSHOT_PATH", str(fake_snapshot))
+    monkeypatch.setattr(validate_signatures, "SNAPSHOT_DIR", str(fake_snap_dir))
+    monkeypatch.setattr(validate_signatures, "SNAPSHOT_PATH", str(fake_snap_dir))
     monkeypatch.setattr(
         validate_signatures, "collect_current_definitions", lambda: current_defs
     )
@@ -644,8 +692,6 @@ def test_validation_fails_on_missing_snapshot(tmp_path, monkeypatch):
     monkeypatch.setattr(sys, "exit", mock_exit)
     monkeypatch.setattr(sys, "argv", ["validate_signatures.py"])
 
-    import pytest
-
     with pytest.raises(SystemExit) as exc_info:
         validate_signatures.main()
     assert exc_info.value.code == 1
@@ -653,50 +699,34 @@ def test_validation_fails_on_missing_snapshot(tmp_path, monkeypatch):
 
 
 def test_snapshot_integrity_checksum_mismatch(tmp_path, monkeypatch):
-    """Verify that tampering with snapshot definitions without updating checksum fails validation."""
-    import json
-    import sys
+    fake_snap_dir = tmp_path / "api"
+    fake_snap_dir.mkdir(parents=True)
 
-    from scripts import validate_signatures
+    module_snap = fake_snap_dir / "core" / "analyzer_strategies.json"
+    module_snap.parent.mkdir(parents=True, exist_ok=True)
 
-    fake_snapshot = tmp_path / "tampered_snapshot.json"
-    valid_defs = {
-        "protocols": {
-            "MyProtocol": {
-                "class_name": "MyProtocol",
-                "methods": [],
-            }
-        },
-        "cli": {},
-    }
-    # Calculate checksum for valid_defs
-    valid_checksum = validate_signatures.compute_payload_checksum(valid_defs)
+    valid_payload = {"classes": [], "functions": []}
+    valid_checksum = compute_payload_checksum(valid_payload)
 
-    # Now tamper with payload definitions in the file while keeping valid_checksum
+    # Tampered payload but keeping old checksum
     tampered_data = {
         "_metadata": {
             "checksum": valid_checksum,
         },
-        "protocols": {
-            "MyProtocol": {
-                "class_name": "MyProtocol",
-                "methods": [
-                    {
-                        "name": "tampered_method",
-                        "async": False,
-                        "parameters": [],
-                        "returns": "None",
-                    }
-                ],
-            }
-        },
-        "cli": {},
+        "classes": [{"class_name": "TamperedClass", "decorators": [], "methods": []}],
+        "functions": [],
     }
-    fake_snapshot.write_text(json.dumps(tampered_data, indent=2, sort_keys=True))
+    module_snap.write_text(json.dumps(tampered_data, indent=2, sort_keys=True))
 
-    monkeypatch.setattr(validate_signatures, "SNAPSHOT_PATH", str(fake_snapshot))
+    current_defs = {
+        "cli": {},
+        "core": {"app/core/analyzer_strategies.py": tampered_data},
+    }
+
+    monkeypatch.setattr(validate_signatures, "SNAPSHOT_DIR", str(fake_snap_dir))
+    monkeypatch.setattr(validate_signatures, "SNAPSHOT_PATH", str(fake_snap_dir))
     monkeypatch.setattr(
-        validate_signatures, "collect_current_definitions", lambda: valid_defs
+        validate_signatures, "collect_current_definitions", lambda: current_defs
     )
 
     exited_code = None
@@ -708,8 +738,6 @@ def test_snapshot_integrity_checksum_mismatch(tmp_path, monkeypatch):
 
     monkeypatch.setattr(sys, "exit", mock_exit)
     monkeypatch.setattr(sys, "argv", ["validate_signatures.py"])
-
-    import pytest
 
     with pytest.raises(SystemExit) as exc_info:
         validate_signatures.main()
@@ -719,22 +747,24 @@ def test_snapshot_integrity_checksum_mismatch(tmp_path, monkeypatch):
 
 
 def test_snapshot_integrity_missing_metadata(tmp_path, monkeypatch):
-    """Verify that snapshot file missing metadata header fails validation."""
-    import json
-    import sys
+    fake_snap_dir = tmp_path / "api"
+    fake_snap_dir.mkdir(parents=True)
 
-    from scripts import validate_signatures
+    module_snap = fake_snap_dir / "core" / "analyzer_strategies.json"
+    module_snap.parent.mkdir(parents=True, exist_ok=True)
 
-    fake_snapshot = tmp_path / "missing_meta_snapshot.json"
-    data_without_meta = {
-        "protocols": {},
+    data_without_meta = {"classes": [], "functions": []}
+    module_snap.write_text(json.dumps(data_without_meta, indent=2, sort_keys=True))
+
+    current_defs = {
         "cli": {},
+        "core": {"app/core/analyzer_strategies.py": data_without_meta},
     }
-    fake_snapshot.write_text(json.dumps(data_without_meta, indent=2, sort_keys=True))
 
-    monkeypatch.setattr(validate_signatures, "SNAPSHOT_PATH", str(fake_snapshot))
+    monkeypatch.setattr(validate_signatures, "SNAPSHOT_DIR", str(fake_snap_dir))
+    monkeypatch.setattr(validate_signatures, "SNAPSHOT_PATH", str(fake_snap_dir))
     monkeypatch.setattr(
-        validate_signatures, "collect_current_definitions", lambda: data_without_meta
+        validate_signatures, "collect_current_definitions", lambda: current_defs
     )
 
     exited_code = None
@@ -747,10 +777,54 @@ def test_snapshot_integrity_missing_metadata(tmp_path, monkeypatch):
     monkeypatch.setattr(sys, "exit", mock_exit)
     monkeypatch.setattr(sys, "argv", ["validate_signatures.py"])
 
-    import pytest
-
     with pytest.raises(SystemExit) as exc_info:
         validate_signatures.main()
 
     assert exc_info.value.code == 1
     assert exited_code == 1
+
+
+def test_validation_runner_detects_orphaned_snapshot(tmp_path, monkeypatch):
+    fake_snap_dir = tmp_path / "api"
+    fake_snap_dir.mkdir(parents=True)
+
+    valid_snap = fake_snap_dir / "core" / "analyzer_strategies.json"
+    orphaned_snap = fake_snap_dir / "core" / "deleted_module.json"
+    valid_snap.parent.mkdir(parents=True, exist_ok=True)
+
+    payload = {"classes": [], "functions": []}
+    data = {"_metadata": {"checksum": compute_payload_checksum(payload)}, **payload}
+
+    valid_snap.write_text(json.dumps(data, indent=2))
+    orphaned_snap.write_text(json.dumps(data, indent=2))
+
+    current_defs = {"cli": {}, "core": {"app/core/analyzer_strategies.py": payload}}
+
+    monkeypatch.setattr(validate_signatures, "SNAPSHOT_DIR", str(fake_snap_dir))
+    monkeypatch.setattr(validate_signatures, "SNAPSHOT_PATH", str(fake_snap_dir))
+    monkeypatch.setattr(
+        validate_signatures, "collect_current_definitions", lambda: current_defs
+    )
+    monkeypatch.delenv("CI", raising=False)
+
+    exited_code = None
+
+    def mock_exit(code):
+        nonlocal exited_code
+        exited_code = code
+        raise SystemExit(code)
+
+    monkeypatch.setattr(sys, "exit", mock_exit)
+    monkeypatch.setattr(sys, "argv", ["validate_signatures.py"])
+
+    # Validation should detect orphan and fail
+    with pytest.raises(SystemExit) as exc_info:
+        validate_signatures.main()
+    assert exc_info.value.code == 1
+
+    # Regenerate should remove orphan
+    monkeypatch.setattr(sys, "argv", ["validate_signatures.py", "--update"])
+    with pytest.raises(SystemExit) as exc_info:
+        validate_signatures.main()
+    assert exc_info.value.code == 0
+    assert not orphaned_snap.exists()

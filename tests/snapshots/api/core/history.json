@@ -1,0 +1,308 @@
+{
+  "_metadata": {
+    "checksum": "d7c765f42bd61bce6699c8e2ab4c3981ee74d2c37f7b998cc82bebb38544d2be"
+  },
+  "classes": [
+    {
+      "class_name": "HistoryManager",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "__init__",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "db"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cache_manager"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "db_path"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "check_missing_files",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "session_id"
+            }
+          ],
+          "returns": "List[str]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "clear_step_ledger",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "session_id"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "create_snapshot",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            }
+          ],
+          "returns": "str"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "export_audit_log",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "output_path"
+            },
+            {
+              "annotation": "Any",
+              "default": "None",
+              "name": "session_id"
+            },
+            {
+              "annotation": "Any",
+              "default": "None",
+              "name": "format"
+            }
+          ],
+          "returns": "Dict[str, Any]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_bidirectional_path_map",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "session_id"
+            }
+          ],
+          "returns": "Dict[str, Any]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_sessions",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "List[Dict[str, Any]]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_step_ledger",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "session_id"
+            }
+          ],
+          "returns": "List[Dict[str, Any]]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "log_step",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "session_id"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "source_path"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "target_path"
+            },
+            {
+              "annotation": "str",
+              "default": "None",
+              "name": "original_path"
+            },
+            {
+              "annotation": "str",
+              "default": "None",
+              "name": "original_filename"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "is_cross_volume"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "is_collision_renamed"
+            },
+            {
+              "annotation": "str",
+              "default": "None",
+              "name": "file_hash"
+            }
+          ],
+          "returns": "int"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "resume_rollback",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "session_id"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "revert_rollback",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "safety_session_id"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "rollback",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "session_id"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "ignore_missing"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "unwind_session",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "session_id"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "db"
+            }
+          ],
+          "returns": "int"
+        }
+      ]
+    }
+  ],
+  "functions": []
+}

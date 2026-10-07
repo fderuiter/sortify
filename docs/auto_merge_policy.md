@@ -40,7 +40,7 @@ The controller **fails closed** and blocks auto-merge for PRs touching any of th
 - Quarantine & interceptor logic (`app/core/quarantine_interceptor.py`, `app/core/session.py`)
 - Release & compilation toolchains (`scripts/build.py`, `smart-autosorter.spec`)
 - Major dependency updates (e.g. major version bumps)
-- Snapshot baselines (`tests/snapshots/api_snapshot.json`, `tests/snapshots/tui_svg/**`)
+- Snapshot baselines (`tests/snapshots/api/**`, `tests/snapshots/tui_svg/**`)
 
 ---
 

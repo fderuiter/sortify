@@ -1,0 +1,224 @@
+{
+  "_metadata": {
+    "checksum": "3afd22fa07d68faadcd665426f2e484d8456829a9996090a98e44c464ef68f34"
+  },
+  "classes": [
+    {
+      "class_name": "JevClassificationResult",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "dict",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "*args"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "**kwargs"
+            }
+          ],
+          "returns": "Dict[str, Any]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "item"
+            },
+            {
+              "annotation": "Any",
+              "default": "None",
+              "name": "default"
+            }
+          ],
+          "returns": "Any"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "model_dump",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "*args"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "**kwargs"
+            }
+          ],
+          "returns": "Dict[str, Any]"
+        }
+      ]
+    },
+    {
+      "class_name": "JevClassifierEngine",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "__init__",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "float",
+              "default": "0.5",
+              "name": "confidence_threshold"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "db_path"
+            },
+            {
+              "annotation": "Any",
+              "default": "None",
+              "name": "worker"
+            },
+            {
+              "annotation": "int",
+              "default": "1000",
+              "name": "max_cache_size"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "classify",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "file_path"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "text_content"
+            }
+          ],
+          "returns": "JevClassificationResult"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "classify_file",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "file_path"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "text_content"
+            }
+          ],
+          "returns": "JevClassificationResult"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@classmethod"
+          ],
+          "name": "get_supported_extensions",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cls"
+            }
+          ],
+          "returns": "set"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "invalidate",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "file_path"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "set_database",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "db_path"
+            },
+            {
+              "annotation": "Any",
+              "default": "None",
+              "name": "worker"
+            }
+          ],
+          "returns": "None"
+        }
+      ]
+    }
+  ],
+  "functions": []
+}

@@ -1,0 +1,908 @@
+{
+  "_metadata": {
+    "checksum": "94c3238070e59f23a009278e5786847e49b99385099554bff64894ef5dcc4f45"
+  },
+  "classes": [
+    {
+      "class_name": "Database",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "__init__",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Path",
+              "default": null,
+              "name": "db_path"
+            },
+            {
+              "annotation": "DBWorker",
+              "default": null,
+              "name": "worker"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "clear",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "base_dir"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "clear_all_document_vectors",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "clear_corrupted_vectors",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": "list[str]",
+              "default": null,
+              "name": "filepaths"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "execute_batch_updates",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "updates"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_all_document_ratings",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            }
+          ],
+          "returns": "dict[str, str]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_all_documents",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "target_paths"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_all_quarantine_records",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "list[dict]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_corrupted_vectors_by_base_dir",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            }
+          ],
+          "returns": "list[str]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_document",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "filepath"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_document_rating",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "filepath"
+            }
+          ],
+          "returns": "str | None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_document_vector",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "filepath"
+            }
+          ],
+          "returns": "list[float] | None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_document_vectors_batch",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": "list[str]",
+              "default": null,
+              "name": "filepaths"
+            }
+          ],
+          "returns": "dict[str, list[float]]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_documents_by_filepaths",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": "list[str]",
+              "default": null,
+              "name": "filepaths"
+            }
+          ],
+          "returns": "list[tuple[str, str]]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_documents_missing_vectors",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": "int",
+              "default": "50",
+              "name": "limit"
+            },
+            {
+              "annotation": "int",
+              "default": "0",
+              "name": "offset"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "name": "active_model_signature"
+            }
+          ],
+          "returns": "list[tuple[str, str]]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_model_metadata",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "key"
+            }
+          ],
+          "returns": "str | None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_quarantine_record",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "job_id"
+            }
+          ],
+          "returns": "dict | None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_quarantine_records_by_base_dir",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "name": "status"
+            }
+          ],
+          "returns": "list[dict]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_tfidf_matrix_cache",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_tfidf_stats",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_transaction_steps",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "session_id"
+            }
+          ],
+          "returns": "list"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "init_db",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "invalidate_cache",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "record_transaction_step",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "session_id"
+            },
+            {
+              "annotation": "int",
+              "default": null,
+              "name": "step_number"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "source_path"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "destination_path"
+            },
+            {
+              "annotation": "str",
+              "default": "None",
+              "name": "file_hash"
+            },
+            {
+              "annotation": "str",
+              "default": "'file'",
+              "name": "item_type"
+            },
+            {
+              "annotation": "str",
+              "default": "None",
+              "name": "metadata"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "remove_document",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "filepath"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "set_document_rating",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "filepath"
+            },
+            {
+              "annotation": "str | None",
+              "default": null,
+              "name": "rating"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "set_document_rating_by_hash",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "file_hash"
+            },
+            {
+              "annotation": "str | None",
+              "default": null,
+              "name": "rating"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "set_model_metadata",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "key"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "value"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "set_user_verified_target",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "file_hash"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "target_path"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "set_user_verified_target_path",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "filepath"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "target_path"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "stage_quarantine_record",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "job_id"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "original_filepath"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "staged_filepath"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "name": "file_hash"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "name": "policy_action"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "track_corrupted_vector",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "filepath"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "update_document_path",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "old_filepath"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "new_filepath"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "update_quarantine_status",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "job_id"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "status"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "name": "policy_action"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "name": "error_message"
+            },
+            {
+              "annotation": "dict | str | None",
+              "default": "None",
+              "name": "audit_entry"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "update_tfidf_matrix_cache",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "upsert_document",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "filepath"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "file_hash"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "extracted_text"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "upsert_document_vectors",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": "list[tuple[str, list[float]]]",
+              "default": null,
+              "name": "vectors_data"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "name": "model_signature"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "upsert_documents",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "documents"
+            }
+          ],
+          "returns": null
+        }
+      ]
+    }
+  ],
+  "functions": []
+}
