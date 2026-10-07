@@ -6,12 +6,13 @@ import tempfile
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from textual.widgets import Input, Static, Switch, Tree
+from textual.widgets import Button, Input, Static, Switch, Tree
 
 from app.config import AppSettings
 from app.ui.tui import (
     AutoSorterTUI,
     CROForensicModal,
+    DropZoneModal,
     NewFolderModal,
     RenameModal,
     SessionRecoveryModal,
@@ -1360,3 +1361,123 @@ def test_tui_shortcut_cheat_sheet_suppressed_on_text_input_focus(temp_workspace)
             assert app.screen is modal
 
     asyncio.run(_test())
+
+
+def test_tui_cro_forensic_modal_help_button_and_error(temp_workspace):
+    """Verify CROForensicModal shows Help button and includes help_url on error."""
+    settings = AppSettings()
+    settings._settings_model.AI_CONSENT_GRANTED = True
+
+    async def _test():
+        app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
+        async with app.run_test(size=(100, 50)) as pilot:
+            modal = CROForensicModal(settings, temp_workspace)
+            app.push_screen(modal)
+            await pilot.pause(0.05)
+
+            btn_help = modal.query_one("#btn-help", Button)
+            assert btn_help.has_class("hidden")
+
+            # Set invalid source path to trigger worker error
+            modal.query_one("#input-source", Input).value = "/nonexistent/invalid/path"
+            modal.action_run()
+            await pilot.pause(0.1)
+
+            assert not btn_help.has_class("hidden")
+            assert modal.help_url == "https://docs.smartautosorter.com/troubleshooting/#cro-forensic-ingestion"
+
+            # Trigger help action
+            modal.action_help()
+            await pilot.pause(0.05)
+            assert "Opened documentation link:" in modal.get_last_announcement()
+
+    asyncio.run(_test())
+
+
+def test_tui_dropzone_modal_help_button_and_error(temp_workspace):
+    """Verify DropZoneModal shows Help button and includes help_url on invalid path or error."""
+    settings = AppSettings()
+    settings._settings_model.AI_CONSENT_GRANTED = True
+
+    async def _test():
+        app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
+        async with app.run_test(size=(100, 50)) as pilot:
+            modal = DropZoneModal(settings, temp_workspace)
+            app.push_screen(modal)
+            await pilot.pause(0.05)
+
+            btn_help = modal.query_one("#btn-help", Button)
+            assert btn_help.has_class("hidden")
+
+            # Submit invalid path
+            modal.query_one("#input-drop-paths", Input).value = "/nonexistent/path/dropzone"
+            modal.trigger_drop_triage()
+            await pilot.pause(0.05)
+
+            assert not btn_help.has_class("hidden")
+            assert modal.help_url == "https://docs.smartautosorter.com/troubleshooting/#dropzone-errors"
+
+            # Trigger Help action
+            modal.action_help()
+            await pilot.pause(0.05)
+            assert "Opened documentation link:" in modal.get_last_announcement()
+
+    asyncio.run(_test())
+
+
+def test_tui_session_recovery_modal_help_action(temp_workspace):
+    """Verify SessionRecoveryModal Help button triggers help link action."""
+    settings = AppSettings()
+    settings._settings_model.AI_CONSENT_GRANTED = True
+    session_info = {
+        "session_id": "test_sess_help",
+        "base_dir": temp_workspace,
+        "status": "failed",
+    }
+
+    async def _test():
+        app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
+        async with app.run_test(size=(100, 50)) as pilot:
+            modal = SessionRecoveryModal(session_info)
+            app.push_screen(modal)
+            await pilot.pause(0.05)
+
+            btn_help = modal.query_one("#btn-help", Button)
+            assert btn_help is not None
+
+            modal.action_help()
+            await pilot.pause(0.05)
+            assert "Opened documentation link:" in modal.get_last_announcement()
+
+    asyncio.run(_test())
+
+
+def test_tui_settings_modal_help_button_on_validation_error(temp_workspace):
+    """Verify SettingsModal shows Help button on concurrency validation error."""
+    settings = AppSettings()
+    settings._settings_model.AI_CONSENT_GRANTED = True
+
+    async def _test():
+        app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
+        async with app.run_test(size=(100, 50)) as pilot:
+            modal = SettingsModal(settings)
+            app.push_screen(modal)
+            await pilot.pause(0.05)
+
+            btn_help = modal.query_one("#btn-help", Button)
+            assert btn_help.has_class("hidden")
+
+            # Set invalid concurrency
+            modal.query_one("#input-concurrency", Input).value = "invalid_int"
+            modal.action_save()
+            await pilot.pause(0.05)
+
+            assert not btn_help.has_class("hidden")
+            assert modal.help_url == "https://docs.smartautosorter.com/troubleshooting/#settings-configuration"
+
+            modal.action_help()
+            await pilot.pause(0.05)
+            assert "Opened documentation link:" in modal.get_last_announcement()
+
+    asyncio.run(_test())
+

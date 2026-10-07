@@ -56,12 +56,16 @@ class CROForensicModal(A11yMixin, ModalScreen[None]):
     .button-row Button {
         margin-left: 1;
     }
+    Button.hidden {
+        display: none;
+    }
     """
 
     def __init__(self, settings: Any = None, base_dir: str = ""):
         super().__init__()
         self.settings = settings
         self.base_dir = base_dir
+        self.help_url = "https://docs.smartautosorter.com/troubleshooting/#cro-forensic-ingestion"
 
     def compose(self) -> ComposeResult:
         """Compose modal dialog children."""
@@ -104,6 +108,13 @@ class CROForensicModal(A11yMixin, ModalScreen[None]):
                 btn_close = Button("Close", id="btn-close", variant="default")
                 btn_close.tooltip = "Close CRO forensic ingestion modal dialog"
                 yield btn_close
+                btn_help = Button(
+                    "Help", id="btn-help", variant="warning", classes="hidden"
+                )
+                btn_help.tooltip = (
+                    "Open troubleshooting documentation for CRO forensic errors"
+                )
+                yield btn_help
                 btn_run = Button("Run Forensic Ingest", id="btn-run", variant="success")
                 btn_run.tooltip = (
                     "Trigger CRO multi-study forensic ingestion worker execution"
@@ -137,14 +148,20 @@ class CROForensicModal(A11yMixin, ModalScreen[None]):
         log_w = self.query_one("#log-widget", Log)
         src = self.query_one("#input-source", Input).value.strip()
         tgt = self.query_one("#input-target", Input).value.strip()
+        help_url = "https://docs.smartautosorter.com/troubleshooting/#cro-forensic-ingestion"
 
         if not src or not os.path.exists(src):
-            log_w.write_line("Error: Source directory does not exist.")
+            log_w.write_line(f"Error: Source directory does not exist. [Help: {help_url}]")
             err_msg = "Forensic scan error: Source directory does not exist."
+            self._show_help_button(help_url)
+            from app.ui.notifications import notify
+            notify(err_msg, type="error", help_url=help_url)
             if self.app:
-                self.app.call_from_thread(self.announce, err_msg)
+                self.app.call_from_thread(
+                    self.announce, f"{err_msg} [Help: {help_url}]"
+                )
             else:
-                self.announce(err_msg)
+                self.announce(f"{err_msg} [Help: {help_url}]")
             return
 
         log_w.write_line(f"Starting CRO Forensic Ingestion on: {src}")
@@ -173,12 +190,29 @@ class CROForensicModal(A11yMixin, ModalScreen[None]):
             else:
                 self.announce(summary_msg)
         except Exception as e:
-            log_w.write_line(f"Execution error: {e}")
+            log_w.write_line(f"Execution error: {e} [Help: {help_url}]")
             err_msg = f"Forensic scan error: {e}"
+            self._show_help_button(help_url)
+            from app.ui.notifications import notify
+            notify(err_msg, type="error", help_url=help_url)
             if self.app:
-                self.app.call_from_thread(self.announce, err_msg)
+                self.app.call_from_thread(
+                    self.announce, f"{err_msg} [Help: {help_url}]"
+                )
             else:
-                self.announce(err_msg)
+                self.announce(f"{err_msg} [Help: {help_url}]")
+
+    @on(Button.Pressed, "#btn-help")
+    def action_help(self) -> None:
+        """Open troubleshooting documentation link."""
+        url = getattr(
+            self,
+            "help_url",
+            "https://docs.smartautosorter.com/troubleshooting/#cro-forensic-ingestion",
+        )
+        from app.ui.notifications import notify
+        notify(f"Opening help link: {url}", type="info", help_url=url)
+        self.announce(f"Opened documentation link: {url}")
 
     @on(Button.Pressed, "#btn-close")
     def action_close(self) -> None:

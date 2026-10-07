@@ -103,15 +103,22 @@ class A11yMixin:
         except (FileNotFoundError, OSError):
             return None
 
-    def announce(self, message: str, priority: str = "polite") -> str:
+    def announce(
+        self,
+        message: str,
+        priority: str = "polite",
+        help_url: Optional[str] = None,
+    ) -> str:
         """Emit auditory screen reader announcement and log accessibility event."""
+        full_msg = f"{message} [Help: {help_url}]" if help_url else message
         entry = {
-            "message": message,
+            "message": full_msg,
             "priority": priority,
             "timestamp": time.time(),
+            "help_url": help_url,
         }
         self.announcements.append(entry)
-        self.last_announcement = message
+        self.last_announcement = full_msg
 
         forwarded = False
         # Forward to parent app if available
@@ -122,7 +129,7 @@ class A11yMixin:
             and hasattr(self.app, "announce")
         ):
             try:
-                self.app.announce(message, priority=priority)
+                self.app.announce(message, priority=priority, help_url=help_url)
                 forwarded = True
             except Exception:
                 pass
@@ -262,6 +269,26 @@ class A11yMixin:
             "speech_binary_fallback_ready": True,
             "status_bar_available": status_bar_available,
         }
+
+    def _show_help_button(self, help_url: str) -> None:
+        """Show the Help button and record contextual help_url."""
+        self.help_url = help_url
+
+        def _unhide() -> None:
+            try:
+                btn = self.query_one("#btn-help", Button)
+                btn.remove_class("hidden")
+            except Exception:
+                pass
+
+        app_obj = getattr(self, "app", None)
+        if app_obj and hasattr(app_obj, "call_from_thread"):
+            try:
+                app_obj.call_from_thread(_unhide)
+            except Exception:
+                _unhide()
+        else:
+            _unhide()
 
 
 class RenameModal(A11yMixin, ModalScreen[Optional[str]]):
@@ -676,11 +703,15 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         border: heavy $accent;
         text-style: bold;
     }
+    Button.hidden {
+        display: none;
+    }
     """
 
     def __init__(self, settings):
         super().__init__()
         self.settings = settings
+        self.help_url = "https://docs.smartautosorter.com/troubleshooting/#settings-configuration"
 
     def compose(self) -> ComposeResult:
         """Compose modal dialog children."""
@@ -782,6 +813,11 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                 btn_cancel = Button("Cancel", id="btn-cancel", variant="default")
                 btn_cancel.tooltip = "Cancel settings modification and close dialog"
                 yield btn_cancel
+                btn_help = Button(
+                    "Help", id="btn-help", variant="warning", classes="hidden"
+                )
+                btn_help.tooltip = "Open settings configuration troubleshooting guide"
+                yield btn_help
                 btn_save = Button("Save Settings", id="btn-save", variant="primary")
                 btn_save.tooltip = "Save modified application settings"
                 yield btn_save
@@ -816,15 +852,30 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
             if i.strip()
         ]
 
+        help_url = "https://docs.smartautosorter.com/troubleshooting/#settings-configuration"
         try:
-            conc = int(self.query_one("#input-concurrency", Input).value.strip())
-        except ValueError:
-            conc = 4
+            conc_val = self.query_one("#input-concurrency", Input).value.strip()
+            conc = int(conc_val)
+            if conc <= 0:
+                raise ValueError("Worker concurrency must be greater than 0.")
+        except ValueError as e:
+            self._show_help_button(help_url)
+            from app.ui.notifications import notify
+            notify(f"Settings error: {e}", type="error", help_url=help_url)
+            self.announce(f"Settings error: {e}", help_url=help_url)
+            return
 
         try:
-            max_f = int(self.query_one("#input-max-folders", Input).value.strip())
-        except ValueError:
-            max_f = 12
+            max_f_val = self.query_one("#input-max-folders", Input).value.strip()
+            max_f = int(max_f_val)
+            if max_f <= 0:
+                raise ValueError("Max folders must be greater than 0.")
+        except ValueError as e:
+            self._show_help_button(help_url)
+            from app.ui.notifications import notify
+            notify(f"Settings error: {e}", type="error", help_url=help_url)
+            self.announce(f"Settings error: {e}", help_url=help_url)
+            return
 
         strat = self.query_one("#select-strategy", Select).value
         if strat == Select.BLANK:
@@ -849,6 +900,18 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         }
         self.announce("Saved application settings.")
         self.dismiss(res)
+
+    @on(Button.Pressed, "#btn-help")
+    def action_help(self) -> None:
+        """Open settings troubleshooting documentation."""
+        url = getattr(
+            self,
+            "help_url",
+            "https://docs.smartautosorter.com/troubleshooting/#settings-configuration",
+        )
+        from app.ui.notifications import notify
+        notify(f"Opening help link: {url}", type="info", help_url=url)
+        self.announce(f"Opened documentation link: {url}")
 
     @on(Button.Pressed, "#btn-cancel")
     def action_cancel(self) -> None:
@@ -1047,6 +1110,10 @@ class SessionRecoveryModal(A11yMixin, ModalScreen[Optional[str]]):
                 )
                 yield btn_rollback
 
+                btn_help = Button("Help", id="btn-help", variant="default")
+                btn_help.tooltip = "Open session recovery troubleshooting guide"
+                yield btn_help
+
                 btn_resume = Button("Resume", id="btn-resume", variant="primary")
                 btn_resume.tooltip = "Resume pending file moves for interrupted run"
                 yield btn_resume
@@ -1085,6 +1152,14 @@ class SessionRecoveryModal(A11yMixin, ModalScreen[Optional[str]]):
         """Confirm clean action."""
         self.announce("Confirmed session clean.")
         self.dismiss("clean")
+
+    @on(Button.Pressed, "#btn-help")
+    def action_help(self) -> None:
+        """Open session recovery troubleshooting guide."""
+        url = "https://docs.smartautosorter.com/troubleshooting/#session-recovery"
+        from app.ui.notifications import notify
+        notify(f"Opening help link: {url}", type="info", help_url=url)
+        self.announce(f"Opened documentation link: {url}")
 
     @on(Button.Pressed, "#btn-cancel")
     def action_cancel(self) -> None:
@@ -1298,6 +1373,9 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         border: heavy $accent;
         text-style: bold;
     }
+    Button.hidden {
+        display: none;
+    }
     """
 
     def __init__(self, settings: Any = None, base_dir: Optional[str] = None):
@@ -1334,6 +1412,14 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                 btn_cancel = Button("Cancel", id="btn-cancel", variant="default")
                 btn_cancel.tooltip = "Cancel dropzone triage operation and close dialog"
                 yield btn_cancel
+
+                btn_help = Button(
+                    "Help", id="btn-help", variant="warning", classes="hidden"
+                )
+                btn_help.tooltip = (
+                    "Open troubleshooting documentation for dropzone errors"
+                )
+                yield btn_help
 
                 btn_process = Button("Sort Items", id="btn-process", variant="primary")
                 btn_process.tooltip = "Start automated classification and relocation on dropped paths"
@@ -1380,6 +1466,18 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         """Handle Sort Items button press."""
         self.trigger_drop_triage()
 
+    @on(Button.Pressed, "#btn-help")
+    def action_help(self) -> None:
+        """Open troubleshooting documentation link for dropzone."""
+        url = getattr(
+            self,
+            "help_url",
+            "https://docs.smartautosorter.com/troubleshooting/#dropzone-errors",
+        )
+        from app.ui.notifications import notify
+        notify(f"Opening help link: {url}", type="info", help_url=url)
+        self.announce(f"Opened documentation link: {url}")
+
     @on(Button.Pressed, "#btn-cancel")
     def action_cancel(self) -> None:
         """Dismiss dropzone modal."""
@@ -1394,8 +1492,13 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         except Exception:
             raw_text = ""
 
+        help_url = "https://docs.smartautosorter.com/troubleshooting/#dropzone-errors"
+
         if not raw_text:
-            self.update_status_msg("No file or folder paths provided. Please paste or type a path.")
+            self._show_help_button(help_url)
+            from app.ui.notifications import notify
+            notify("No file or folder paths provided.", type="error", help_url=help_url)
+            self.update_status_msg("No file or folder paths provided. Please paste or type a path.", help_url=help_url)
             return
 
         raw_items = [p.strip().strip("'\"") for p in raw_text.replace("\r", "\n").split("\n") if p.strip()]
@@ -1425,20 +1528,24 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
 
         if not validated_paths:
             err_text = "; ".join(invalid_messages) if invalid_messages else "No valid paths found."
-            self.update_status_msg(f"Error: {err_text}")
+            self._show_help_button(help_url)
+            from app.ui.notifications import notify
+            notify(f"DropZone error: {err_text}", type="error", help_url=help_url)
+            self.update_status_msg(f"Error: {err_text}", help_url=help_url)
             return
 
         self.update_status_msg(f"Processing {len(validated_paths)} dropped item(s)...")
         self.run_drop_worker(validated_paths)
 
-    def update_status_msg(self, msg: str) -> None:
+    def update_status_msg(self, msg: str, help_url: Optional[str] = None) -> None:
         """Update live status message region and screen reader announcement."""
+        display_msg = f"{msg} [Help: {help_url}]" if help_url else msg
         try:
             lbl = self.query_one("#dropzone-status", Label)
-            lbl.update(msg)
+            lbl.update(display_msg)
         except Exception:
             pass
-        self.announce(msg)
+        self.announce(msg, help_url=help_url)
 
     @work(exclusive=True, thread=True)
     def run_drop_worker(self, target_paths: List[str]) -> None:
@@ -1812,12 +1919,18 @@ class AutoSorterTUI(A11yMixin, App):
         yield sb
         yield Footer()
 
-    def announce(self, message: str, priority: str = "polite") -> str:
+    def announce(
+        self,
+        message: str,
+        priority: str = "polite",
+        help_url: Optional[str] = None,
+    ) -> str:
         """Emit screen reader announcement and log to live execution log feed."""
-        res = super().announce(message, priority=priority)
+        res = super().announce(message, priority=priority, help_url=help_url)
         try:
             log_w = self.query_one("#tui-log", Log)
-            log_w.write_line(message)
+            display_msg = f"{message} [Help: {help_url}]" if help_url else message
+            log_w.write_line(display_msg)
         except Exception:
             pass
         return res

@@ -35,6 +35,7 @@ EXCLUDED_METHOD_NAMES = {
     "__bool__",
     "dict",
     "get",
+    "get_instance",
 }
 
 # Python builtins and special identifiers preserved during AST variable normalization
